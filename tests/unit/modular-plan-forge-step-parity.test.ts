@@ -11,7 +11,11 @@ vi.mock('@kernlang/agon-core', async original => ({ ...await original<Record<str
   resolveWorkingDir: () => '/fixture', readPatchFromPath: effects.read, applyPatchToTree: effects.apply,
 }));
 vi.mock('@kernlang/agon-support-worktree', async original => ({ ...await original<Record<string, unknown>>(),
-  readPatchFromPath: effects.read, applyPatchToTree: effects.apply,
+  readPatchContent: (path: string) => {
+    const patch = effects.read(path);
+    if (!patch) throw new Error('unreadable fixture');
+    return patch.content;
+  }, applyPatchToTree: effects.apply,
 }));
 vi.mock('@kernlang/agon-forge', async original => ({ ...await original<Record<string, unknown>>(), runForge: effects.run }));
 import { buildLegacyBuildStepExecutors } from '../fixtures/modular-plan-build-steps-legacy.js';
@@ -31,7 +35,7 @@ it('keeps Forge step algorithms and progress policies in the physical owner', ()
   expect(cli).not.toContain('const notePlanForgeEvent');
   const coreImport = cli.match(/import\s*\{[^}]*\}\s*from '@kernlang\/agon-core'/)?.[0];
   expect(coreImport).not.toMatch(/readPatchFromPath|applyPatchToTree/);
-  expect(cli).toMatch(/import\s*\{[^}]*readPatchFromPath[^}]*applyPatchToTree[^}]*\}\s*from '@kernlang\/agon-support-worktree'/);
+  expect(cli).toMatch(/import\s*\{[^}]*readPatchContent[^}]*applyPatchToTree[^}]*\}\s*from '@kernlang\/agon-support-worktree'/);
   expect(cli).not.toContain('const applyForgeWinnerToCwd');
 });
 
@@ -99,5 +103,15 @@ it.each(cases)('matches raw $kind/$scenario with UI=$ui', async ({ kind, ui, sce
     results.push({ output, events, calls, read: effects.read.mock.calls.slice(), apply: effects.apply.mock.calls.slice() });
     expect(vi.getTimerCount()).toBe(0);
   }
-  expect(results[1]).toEqual(results[0]);
+  const previous = results[0];
+  if (['success', 'empty-patch', 'declared-noop', 'inferred-noop', 'no-engines'].includes(scenario)) {
+    // Keep every legacy field and effect exact. Only the new receipt is additive.
+    const artifact = ['declared-noop', 'inferred-noop'].includes(scenario)
+      ? { status: 'not-needed', cwd: '/fixture', reason: 'already-satisfied' }
+      : scenario === 'empty-patch' ? { status: 'not-needed', cwd: '/fixture', reason: 'empty-patch' }
+      : { status: 'applied', cwd: '/fixture', patchPath: '/patch',
+        patchHash: 'sha256:a4895eb44afc336fecbba6e520cd67e178dace0276655d102fceffa8e5f70570' };
+    const output = previous.output as { result: Record<string, unknown> };
+    expect(results[1]).toEqual({ ...previous, output: { ...output, result: { ...output.result, artifact } } });
+  } else expect(results[1]).toEqual(previous);
 });

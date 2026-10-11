@@ -4,7 +4,7 @@ import { join, dirname } from 'node:path';
 
 import { planCostEstimator, resolveWorkingDir, RUNS_DIR, tracker, cesarPlanMarkdownPath, saveCesarPlan, spawnWithTimeout, getCoreWorkflowRegistry, compileWorkflowSpec, verifyWorkflowExecutionPlanFlow, verifyWorkflowRunFlow, throwWorkflowConformance, createWorkflowRun, appendWorkflowPhaseEvent } from '@kernlang/agon-core';
 import { publishPlanProposal, exitPlanSession, createPanelStepExecutors, createSelfStepExecutor, createAgentReviewStepExecutors, createForgeStepExecutors, createPipelineStepExecutor } from '@kernlang/agon-mod-plan';
-import { readPatchFromPath, applyPatchToTree } from '@kernlang/agon-support-worktree';
+import { readPatchContent, applyPatchToTree } from '@kernlang/agon-support-worktree';
 import { SurfaceGenerationError } from '@kernlang/agon-kernel';
 
 import type { CesarPlan, StepExecutor } from '@kernlang/agon-core';
@@ -125,6 +125,11 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
   
   const getPlanDispatch = (): Dispatch | undefined => liveDispatch ?? ctx.cesar?.planDispatch ?? ctx.cesar?.lastDispatch ?? undefined;
   
+  // Plan accepts an empty artifact as an explicit no-change outcome.
+  const readPlanPatch = (path: string): { content: string } | null => {
+    try { return { content: readPatchContent(path) }; }
+    catch { return null; }
+  };
   const forgeExecutors = createForgeStepExecutors({
     cwd,
     outputDir,
@@ -133,13 +138,15 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
     getDispatch: getPlanDispatch,
     activeEngines: () => ctx.activeEngines?.() ?? [],
     mkdir: path => { mkdirSync(path, { recursive: true }); },
-    readPatch: readPatchFromPath,
+    readPatch: readPlanPatch,
     applyPatch: applyPatchToTree,
     run: (options, onEvent, owner) => runForge(options, ctx.registry, guardedAdapter(owner, options.signal), onEvent),
   });
   const pipelineExecutor = createPipelineStepExecutor({
     cwd,
     outputDir,
+    readPatch: readPlanPatch,
+    applyPatch: applyPatchToTree,
     assertAvailable: assertStepAvailable,
     isCancellation: signal => Boolean(signal?.aborted && !(signal.reason instanceof SurfaceGenerationError)),
     snapshot: snapshotTokens,

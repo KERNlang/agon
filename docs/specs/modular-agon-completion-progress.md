@@ -567,9 +567,18 @@ A15 diagnosis and final serialized clean-checkout qualification also remain open
   executor creation or publication. Duplicate manual/automatic/resume entry writes
   are removed. The original post-execution save-failure test still fails storage
   after a successful initial save; it was not replaced by the startup case.
-- Dirty status remains an inherited proxy for unapplied Forge output. It cannot
-  prove which patch was applied. Explicit applied-artifact evidence belongs in
-  the remaining backend/session work; this limitation is not release acceptance.
+- The dirty-status proxy is superseded by Plan artifact outcomes: the executor
+  records application target, input-patch SHA-256 and path, or an explicit
+  already-satisfied/empty-patch result. Historical outcomes remain readable but
+  cannot prove application, even after a successful prior review. This records
+  an observed application, not current workspace contents or task correctness.
+  Pipeline applies before Tribunal and retains evidence when review later fails.
+  Failed applied work requires inspection and explicit restart; fallback and
+  ordinary resume cannot discard its receipt and replay the whole pipeline.
+  Plan uses the existing exact UTF-8 reader; interactive Apply is unchanged.
+  Regression and real Git/persistence coverage lives in modular-plan-coordinator,
+  modular-plan-pipeline-step-owner and modular-plan-step-admission tests. This
+  component repair is not acceptance of the modular release.
 - Remaining follow-ups include partial-engine fallback policy, resume summary
   handling for deliberately skipped work, callback logging, and pre-execution
   session authority checks. These remain requirements, not waived findings.

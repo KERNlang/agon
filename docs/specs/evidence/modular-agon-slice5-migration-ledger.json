@@ -51,7 +51,7 @@
         "@kernlang/agon-support-dedup"
       ],
       "assignments": 12,
-      "assignmentHash": "sha256:78a5f234c1b30b6a262df32ef4dde43479744f7188e1a4801736f4c0560b5fe2",
+      "assignmentHash": "sha256:61b71b9f562c51cb2bb3ae27893c1b2d6cd5d525f8a9be78b4ee7a71381c7748",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -79,7 +79,7 @@
         "@kernlang/agon-support-judge"
       ],
       "assignments": 12,
-      "assignmentHash": "sha256:f346ee2a8a6d7ff5800bc0e463dc0a7f8f746a1fe10c6f29dde06914d40e8017",
+      "assignmentHash": "sha256:75261a6d8269a18ad2784184bbe5ce56df70598d42c87f7fa15c8ac9ce27805f",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -106,7 +106,7 @@
         "@kernlang/agon-support-panel"
       ],
       "assignments": 10,
-      "assignmentHash": "sha256:327679a7c73ed86b47a4261180b19309ebd7d3bc092edcd56260aba4f8f2316c",
+      "assignmentHash": "sha256:4dabfdfe8e618c27236d8def495ff77e380bc9ab2d704054a895f837501264c4",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -122,7 +122,7 @@
         "@kernlang/agon-support-verification"
       ],
       "assignments": 51,
-      "assignmentHash": "sha256:6014dbfa072c6f206bd0bd7ec6243888050cfa98f8145f05fe0c7f85ce4d27c2",
+      "assignmentHash": "sha256:30c316a1dcb0744f60d021bc0b54d7650feae70ebc608cee6bd65c857b38a533",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -136,7 +136,7 @@
         "@kernlang/agon-support-panel"
       ],
       "assignments": 6,
-      "assignmentHash": "sha256:11f98e12173473d56803d138d3af713da32dd24834edb0e70386bfb6dfa41f2f",
+      "assignmentHash": "sha256:2b4c6fc1f420290c882338cb22815933064a271b41bb4a602e1d43ef3981ff58",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -165,7 +165,7 @@
         "@kernlang/agon-support-worktree"
       ],
       "assignments": 17,
-      "assignmentHash": "sha256:15025517958ef14abd2c1194fcedb6623be68739ead77f1ccfde15ec53d64f94",
+      "assignmentHash": "sha256:296d6baf31c06fae7c5b856e600c17dba946ae72979dc5394825ed162682f68f",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -194,7 +194,7 @@
         "@kernlang/agon-mod-review"
       ],
       "assignments": 6,
-      "assignmentHash": "sha256:d2b71949109b9a0ff1fbce46415a60d7c33747be285f90b6ba12d237a414cb3d",
+      "assignmentHash": "sha256:5f168aa5cd2480e0b5438c9bb7c56df50a8869d9f3c7d76c912e028ab91e9d61",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -207,7 +207,7 @@
         "@kernlang/agon-support-agent-runtime"
       ],
       "assignments": 37,
-      "assignmentHash": "sha256:0aaba7988a71edcfebabf9a92b7b67986d99277b202991ea3039792066100417",
+      "assignmentHash": "sha256:9beb76af683bd5b24f813e98ceef8c04a2ac1fb7dfbda7ef7fc75b4bd2912ee1",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -638,7 +638,7 @@
       "legacyPresent": false,
       "removalEvidence": "tests/unit/modular-plan-facade-retirement.test.ts",
       "definitionOwner": "@kernlang/agon-mod-plan",
-      "definitionHash": "sha256:32277648202fe83a51314c82ca6069f7bb97a0046fe15c514fd3d8d399d3962d",
+      "definitionHash": "sha256:30de87432bd682484db3955eac3887f4226a117a3a8586ecc9749bd1c531aa88",
       "removalEvidenceHash": "sha256:dff24895e46f91f00c00790325f0870b540c90e235a63c2fc416567314166c53",
       "evidenceScope": "declaration-relocation-only",
       "remainingRuntimeBindings": [
@@ -646,7 +646,7 @@
         "packages/cli/src/signals/dispatch/plan-execution.ts"
       ],
       "runtimeBindingHashes": {
-        "packages/cli/src/handlers/plan-mode.ts": "sha256:fb03e6bb71844a5cad1a410a65971855459e8894ed9e32e7f1823e047bdc9ab1",
+        "packages/cli/src/handlers/plan-mode.ts": "sha256:02d184d6ad0685d5e5fbe46058f3f1eaa39768f553e46de024bcff902f9fa573",
         "packages/cli/src/signals/dispatch/plan-execution.ts": "sha256:87037405d54ab57c573d2ecf76a89a6f35a3529ad218ed61238c935d33d376b5"
       },
       "registrationBoundary": "public-mod-api",
@@ -731,7 +731,7 @@
       "legacyPresent": false,
       "removalEvidence": "tests/unit/modular-plan-facade-retirement.test.ts",
       "definitionOwner": "@kernlang/agon-mod-plan",
-      "definitionHash": "sha256:32277648202fe83a51314c82ca6069f7bb97a0046fe15c514fd3d8d399d3962d",
+      "definitionHash": "sha256:30de87432bd682484db3955eac3887f4226a117a3a8586ecc9749bd1c531aa88",
       "removalEvidenceHash": "sha256:dff24895e46f91f00c00790325f0870b540c90e235a63c2fc416567314166c53",
       "evidenceScope": "declaration-relocation-only",
       "remainingRuntimeBindings": [
@@ -739,7 +739,7 @@
         "packages/cli/src/signals/dispatch/plan-execution.ts"
       ],
       "runtimeBindingHashes": {
-        "packages/cli/src/handlers/plan-mode.ts": "sha256:fb03e6bb71844a5cad1a410a65971855459e8894ed9e32e7f1823e047bdc9ab1",
+        "packages/cli/src/handlers/plan-mode.ts": "sha256:02d184d6ad0685d5e5fbe46058f3f1eaa39768f553e46de024bcff902f9fa573",
         "packages/cli/src/signals/dispatch/plan-execution.ts": "sha256:87037405d54ab57c573d2ecf76a89a6f35a3529ad218ed61238c935d33d376b5"
       },
       "registrationBoundary": "public-mod-api",
@@ -824,7 +824,7 @@
       "legacyPresent": false,
       "removalEvidence": "tests/unit/modular-plan-facade-retirement.test.ts",
       "definitionOwner": "@kernlang/agon-mod-plan",
-      "definitionHash": "sha256:32277648202fe83a51314c82ca6069f7bb97a0046fe15c514fd3d8d399d3962d",
+      "definitionHash": "sha256:30de87432bd682484db3955eac3887f4226a117a3a8586ecc9749bd1c531aa88",
       "removalEvidenceHash": "sha256:dff24895e46f91f00c00790325f0870b540c90e235a63c2fc416567314166c53",
       "evidenceScope": "declaration-relocation-only",
       "remainingRuntimeBindings": [
@@ -832,7 +832,7 @@
         "packages/cli/src/signals/dispatch/plan-execution.ts"
       ],
       "runtimeBindingHashes": {
-        "packages/cli/src/handlers/plan-mode.ts": "sha256:fb03e6bb71844a5cad1a410a65971855459e8894ed9e32e7f1823e047bdc9ab1",
+        "packages/cli/src/handlers/plan-mode.ts": "sha256:02d184d6ad0685d5e5fbe46058f3f1eaa39768f553e46de024bcff902f9fa573",
         "packages/cli/src/signals/dispatch/plan-execution.ts": "sha256:87037405d54ab57c573d2ecf76a89a6f35a3529ad218ed61238c935d33d376b5"
       },
       "registrationBoundary": "public-mod-api",
@@ -1397,7 +1397,7 @@
       "legacyPresent": false,
       "removalEvidence": "tests/unit/modular-plan-facade-retirement.test.ts",
       "definitionOwner": "@kernlang/agon-mod-plan",
-      "definitionHash": "sha256:32277648202fe83a51314c82ca6069f7bb97a0046fe15c514fd3d8d399d3962d",
+      "definitionHash": "sha256:30de87432bd682484db3955eac3887f4226a117a3a8586ecc9749bd1c531aa88",
       "removalEvidenceHash": "sha256:dff24895e46f91f00c00790325f0870b540c90e235a63c2fc416567314166c53",
       "evidenceScope": "declaration-relocation-only",
       "remainingRuntimeBindings": [
@@ -1405,7 +1405,7 @@
         "packages/cli/src/signals/dispatch/plan-execution.ts"
       ],
       "runtimeBindingHashes": {
-        "packages/cli/src/handlers/plan-mode.ts": "sha256:fb03e6bb71844a5cad1a410a65971855459e8894ed9e32e7f1823e047bdc9ab1",
+        "packages/cli/src/handlers/plan-mode.ts": "sha256:02d184d6ad0685d5e5fbe46058f3f1eaa39768f553e46de024bcff902f9fa573",
         "packages/cli/src/signals/dispatch/plan-execution.ts": "sha256:87037405d54ab57c573d2ecf76a89a6f35a3529ad218ed61238c935d33d376b5"
       },
       "registrationBoundary": "public-mod-api",
@@ -1990,7 +1990,7 @@
       "legacyPresent": false,
       "removalEvidence": "tests/unit/modular-plan-facade-retirement.test.ts",
       "definitionOwner": "@kernlang/agon-mod-plan",
-      "definitionHash": "sha256:32277648202fe83a51314c82ca6069f7bb97a0046fe15c514fd3d8d399d3962d",
+      "definitionHash": "sha256:30de87432bd682484db3955eac3887f4226a117a3a8586ecc9749bd1c531aa88",
       "removalEvidenceHash": "sha256:dff24895e46f91f00c00790325f0870b540c90e235a63c2fc416567314166c53",
       "evidenceScope": "declaration-relocation-only",
       "remainingRuntimeBindings": [
@@ -1998,7 +1998,7 @@
         "packages/cli/src/signals/dispatch/plan-execution.ts"
       ],
       "runtimeBindingHashes": {
-        "packages/cli/src/handlers/plan-mode.ts": "sha256:fb03e6bb71844a5cad1a410a65971855459e8894ed9e32e7f1823e047bdc9ab1",
+        "packages/cli/src/handlers/plan-mode.ts": "sha256:02d184d6ad0685d5e5fbe46058f3f1eaa39768f553e46de024bcff902f9fa573",
         "packages/cli/src/signals/dispatch/plan-execution.ts": "sha256:87037405d54ab57c573d2ecf76a89a6f35a3529ad218ed61238c935d33d376b5"
       },
       "registrationBoundary": "public-mod-api",
@@ -2463,7 +2463,7 @@
       "legacyPresent": false,
       "removalEvidence": "tests/unit/modular-plan-facade-retirement.test.ts",
       "definitionOwner": "@kernlang/agon-mod-plan",
-      "definitionHash": "sha256:32277648202fe83a51314c82ca6069f7bb97a0046fe15c514fd3d8d399d3962d",
+      "definitionHash": "sha256:30de87432bd682484db3955eac3887f4226a117a3a8586ecc9749bd1c531aa88",
       "removalEvidenceHash": "sha256:dff24895e46f91f00c00790325f0870b540c90e235a63c2fc416567314166c53",
       "evidenceScope": "declaration-relocation-only",
       "remainingRuntimeBindings": [
@@ -2471,7 +2471,7 @@
         "packages/cli/src/signals/dispatch/plan-execution.ts"
       ],
       "runtimeBindingHashes": {
-        "packages/cli/src/handlers/plan-mode.ts": "sha256:fb03e6bb71844a5cad1a410a65971855459e8894ed9e32e7f1823e047bdc9ab1",
+        "packages/cli/src/handlers/plan-mode.ts": "sha256:02d184d6ad0685d5e5fbe46058f3f1eaa39768f553e46de024bcff902f9fa573",
         "packages/cli/src/signals/dispatch/plan-execution.ts": "sha256:87037405d54ab57c573d2ecf76a89a6f35a3529ad218ed61238c935d33d376b5"
       },
       "registrationBoundary": "public-mod-api",
@@ -4600,7 +4600,7 @@
       "legacyPresent": false,
       "removalEvidence": "tests/unit/modular-plan-facade-retirement.test.ts",
       "definitionOwner": "@kernlang/agon-mod-plan",
-      "definitionHash": "sha256:32277648202fe83a51314c82ca6069f7bb97a0046fe15c514fd3d8d399d3962d",
+      "definitionHash": "sha256:30de87432bd682484db3955eac3887f4226a117a3a8586ecc9749bd1c531aa88",
       "removalEvidenceHash": "sha256:dff24895e46f91f00c00790325f0870b540c90e235a63c2fc416567314166c53",
       "evidenceScope": "declaration-relocation-only",
       "remainingRuntimeBindings": [
@@ -4608,7 +4608,7 @@
         "packages/cli/src/signals/dispatch/plan-execution.ts"
       ],
       "runtimeBindingHashes": {
-        "packages/cli/src/handlers/plan-mode.ts": "sha256:fb03e6bb71844a5cad1a410a65971855459e8894ed9e32e7f1823e047bdc9ab1",
+        "packages/cli/src/handlers/plan-mode.ts": "sha256:02d184d6ad0685d5e5fbe46058f3f1eaa39768f553e46de024bcff902f9fa573",
         "packages/cli/src/signals/dispatch/plan-execution.ts": "sha256:87037405d54ab57c573d2ecf76a89a6f35a3529ad218ed61238c935d33d376b5"
       },
       "registrationBoundary": "public-mod-api",
@@ -5893,7 +5893,7 @@
       "legacyPresent": false,
       "removalEvidence": "tests/unit/modular-plan-facade-retirement.test.ts",
       "definitionOwner": "@kernlang/agon-mod-plan",
-      "definitionHash": "sha256:32277648202fe83a51314c82ca6069f7bb97a0046fe15c514fd3d8d399d3962d",
+      "definitionHash": "sha256:30de87432bd682484db3955eac3887f4226a117a3a8586ecc9749bd1c531aa88",
       "removalEvidenceHash": "sha256:dff24895e46f91f00c00790325f0870b540c90e235a63c2fc416567314166c53",
       "evidenceScope": "declaration-relocation-only",
       "remainingRuntimeBindings": [
@@ -5901,7 +5901,7 @@
         "packages/cli/src/signals/dispatch/plan-execution.ts"
       ],
       "runtimeBindingHashes": {
-        "packages/cli/src/handlers/plan-mode.ts": "sha256:fb03e6bb71844a5cad1a410a65971855459e8894ed9e32e7f1823e047bdc9ab1",
+        "packages/cli/src/handlers/plan-mode.ts": "sha256:02d184d6ad0685d5e5fbe46058f3f1eaa39768f553e46de024bcff902f9fa573",
         "packages/cli/src/signals/dispatch/plan-execution.ts": "sha256:87037405d54ab57c573d2ecf76a89a6f35a3529ad218ed61238c935d33d376b5"
       },
       "registrationBoundary": "public-mod-api",
@@ -6912,7 +6912,7 @@
       "legacyPresent": false,
       "removalEvidence": "tests/unit/modular-plan-facade-retirement.test.ts",
       "definitionOwner": "@kernlang/agon-mod-plan",
-      "definitionHash": "sha256:32277648202fe83a51314c82ca6069f7bb97a0046fe15c514fd3d8d399d3962d",
+      "definitionHash": "sha256:30de87432bd682484db3955eac3887f4226a117a3a8586ecc9749bd1c531aa88",
       "removalEvidenceHash": "sha256:dff24895e46f91f00c00790325f0870b540c90e235a63c2fc416567314166c53",
       "evidenceScope": "declaration-relocation-only",
       "remainingRuntimeBindings": [
@@ -6920,7 +6920,7 @@
         "packages/cli/src/signals/dispatch/plan-execution.ts"
       ],
       "runtimeBindingHashes": {
-        "packages/cli/src/handlers/plan-mode.ts": "sha256:fb03e6bb71844a5cad1a410a65971855459e8894ed9e32e7f1823e047bdc9ab1",
+        "packages/cli/src/handlers/plan-mode.ts": "sha256:02d184d6ad0685d5e5fbe46058f3f1eaa39768f553e46de024bcff902f9fa573",
         "packages/cli/src/signals/dispatch/plan-execution.ts": "sha256:87037405d54ab57c573d2ecf76a89a6f35a3529ad218ed61238c935d33d376b5"
       },
       "registrationBoundary": "public-mod-api",
@@ -7225,7 +7225,7 @@
       "legacyPresent": false,
       "removalEvidence": "tests/unit/modular-plan-facade-retirement.test.ts",
       "definitionOwner": "@kernlang/agon-mod-plan",
-      "definitionHash": "sha256:32277648202fe83a51314c82ca6069f7bb97a0046fe15c514fd3d8d399d3962d",
+      "definitionHash": "sha256:30de87432bd682484db3955eac3887f4226a117a3a8586ecc9749bd1c531aa88",
       "removalEvidenceHash": "sha256:dff24895e46f91f00c00790325f0870b540c90e235a63c2fc416567314166c53",
       "evidenceScope": "declaration-relocation-only",
       "remainingRuntimeBindings": [
@@ -7233,7 +7233,7 @@
         "packages/cli/src/signals/dispatch/plan-execution.ts"
       ],
       "runtimeBindingHashes": {
-        "packages/cli/src/handlers/plan-mode.ts": "sha256:fb03e6bb71844a5cad1a410a65971855459e8894ed9e32e7f1823e047bdc9ab1",
+        "packages/cli/src/handlers/plan-mode.ts": "sha256:02d184d6ad0685d5e5fbe46058f3f1eaa39768f553e46de024bcff902f9fa573",
         "packages/cli/src/signals/dispatch/plan-execution.ts": "sha256:87037405d54ab57c573d2ecf76a89a6f35a3529ad218ed61238c935d33d376b5"
       },
       "registrationBoundary": "public-mod-api",
@@ -7534,7 +7534,7 @@
       "implementationPaths": [
         "packages/mod-plan/src/execution-model.ts"
       ],
-      "definitionHash": "sha256:32277648202fe83a51314c82ca6069f7bb97a0046fe15c514fd3d8d399d3962d",
+      "definitionHash": "sha256:30de87432bd682484db3955eac3887f4226a117a3a8586ecc9749bd1c531aa88",
       "removalEvidence": "tests/unit/modular-plan-facade-retirement.test.ts",
       "removalEvidenceHash": "sha256:dff24895e46f91f00c00790325f0870b540c90e235a63c2fc416567314166c53",
       "evidenceScope": "declaration-relocation-only",
@@ -7543,7 +7543,7 @@
         "packages/cli/src/signals/dispatch/plan-execution.ts"
       ],
       "runtimeBindingHashes": {
-        "packages/cli/src/handlers/plan-mode.ts": "sha256:fb03e6bb71844a5cad1a410a65971855459e8894ed9e32e7f1823e047bdc9ab1",
+        "packages/cli/src/handlers/plan-mode.ts": "sha256:02d184d6ad0685d5e5fbe46058f3f1eaa39768f553e46de024bcff902f9fa573",
         "packages/cli/src/signals/dispatch/plan-execution.ts": "sha256:87037405d54ab57c573d2ecf76a89a6f35a3529ad218ed61238c935d33d376b5"
       }
     },
@@ -7560,7 +7560,7 @@
       "implementationPaths": [
         "packages/mod-plan/src/execution-model.ts"
       ],
-      "definitionHash": "sha256:32277648202fe83a51314c82ca6069f7bb97a0046fe15c514fd3d8d399d3962d",
+      "definitionHash": "sha256:30de87432bd682484db3955eac3887f4226a117a3a8586ecc9749bd1c531aa88",
       "removalEvidence": "tests/unit/modular-plan-facade-retirement.test.ts",
       "removalEvidenceHash": "sha256:dff24895e46f91f00c00790325f0870b540c90e235a63c2fc416567314166c53",
       "evidenceScope": "declaration-relocation-only",
@@ -7569,7 +7569,7 @@
         "packages/cli/src/signals/dispatch/plan-execution.ts"
       ],
       "runtimeBindingHashes": {
-        "packages/cli/src/handlers/plan-mode.ts": "sha256:fb03e6bb71844a5cad1a410a65971855459e8894ed9e32e7f1823e047bdc9ab1",
+        "packages/cli/src/handlers/plan-mode.ts": "sha256:02d184d6ad0685d5e5fbe46058f3f1eaa39768f553e46de024bcff902f9fa573",
         "packages/cli/src/signals/dispatch/plan-execution.ts": "sha256:87037405d54ab57c573d2ecf76a89a6f35a3529ad218ed61238c935d33d376b5"
       }
     },
@@ -7586,7 +7586,7 @@
       "implementationPaths": [
         "packages/mod-plan/src/execution-model.ts"
       ],
-      "definitionHash": "sha256:32277648202fe83a51314c82ca6069f7bb97a0046fe15c514fd3d8d399d3962d",
+      "definitionHash": "sha256:30de87432bd682484db3955eac3887f4226a117a3a8586ecc9749bd1c531aa88",
       "removalEvidence": "tests/unit/modular-plan-facade-retirement.test.ts",
       "removalEvidenceHash": "sha256:dff24895e46f91f00c00790325f0870b540c90e235a63c2fc416567314166c53",
       "evidenceScope": "declaration-relocation-only",
@@ -7595,7 +7595,7 @@
         "packages/cli/src/signals/dispatch/plan-execution.ts"
       ],
       "runtimeBindingHashes": {
-        "packages/cli/src/handlers/plan-mode.ts": "sha256:fb03e6bb71844a5cad1a410a65971855459e8894ed9e32e7f1823e047bdc9ab1",
+        "packages/cli/src/handlers/plan-mode.ts": "sha256:02d184d6ad0685d5e5fbe46058f3f1eaa39768f553e46de024bcff902f9fa573",
         "packages/cli/src/signals/dispatch/plan-execution.ts": "sha256:87037405d54ab57c573d2ecf76a89a6f35a3529ad218ed61238c935d33d376b5"
       }
     },
@@ -7612,7 +7612,7 @@
       "implementationPaths": [
         "packages/mod-plan/src/execution-model.ts"
       ],
-      "definitionHash": "sha256:32277648202fe83a51314c82ca6069f7bb97a0046fe15c514fd3d8d399d3962d",
+      "definitionHash": "sha256:30de87432bd682484db3955eac3887f4226a117a3a8586ecc9749bd1c531aa88",
       "removalEvidence": "tests/unit/modular-plan-facade-retirement.test.ts",
       "removalEvidenceHash": "sha256:dff24895e46f91f00c00790325f0870b540c90e235a63c2fc416567314166c53",
       "evidenceScope": "declaration-relocation-only",
@@ -7621,7 +7621,7 @@
         "packages/cli/src/signals/dispatch/plan-execution.ts"
       ],
       "runtimeBindingHashes": {
-        "packages/cli/src/handlers/plan-mode.ts": "sha256:fb03e6bb71844a5cad1a410a65971855459e8894ed9e32e7f1823e047bdc9ab1",
+        "packages/cli/src/handlers/plan-mode.ts": "sha256:02d184d6ad0685d5e5fbe46058f3f1eaa39768f553e46de024bcff902f9fa573",
         "packages/cli/src/signals/dispatch/plan-execution.ts": "sha256:87037405d54ab57c573d2ecf76a89a6f35a3529ad218ed61238c935d33d376b5"
       }
     },
@@ -7638,7 +7638,7 @@
       "implementationPaths": [
         "packages/mod-plan/src/execution-model.ts"
       ],
-      "definitionHash": "sha256:32277648202fe83a51314c82ca6069f7bb97a0046fe15c514fd3d8d399d3962d",
+      "definitionHash": "sha256:30de87432bd682484db3955eac3887f4226a117a3a8586ecc9749bd1c531aa88",
       "removalEvidence": "tests/unit/modular-plan-facade-retirement.test.ts",
       "removalEvidenceHash": "sha256:dff24895e46f91f00c00790325f0870b540c90e235a63c2fc416567314166c53",
       "evidenceScope": "declaration-relocation-only",
@@ -7647,7 +7647,7 @@
         "packages/cli/src/signals/dispatch/plan-execution.ts"
       ],
       "runtimeBindingHashes": {
-        "packages/cli/src/handlers/plan-mode.ts": "sha256:fb03e6bb71844a5cad1a410a65971855459e8894ed9e32e7f1823e047bdc9ab1",
+        "packages/cli/src/handlers/plan-mode.ts": "sha256:02d184d6ad0685d5e5fbe46058f3f1eaa39768f553e46de024bcff902f9fa573",
         "packages/cli/src/signals/dispatch/plan-execution.ts": "sha256:87037405d54ab57c573d2ecf76a89a6f35a3529ad218ed61238c935d33d376b5"
       }
     },
@@ -7664,7 +7664,7 @@
       "implementationPaths": [
         "packages/mod-plan/src/execution-model.ts"
       ],
-      "definitionHash": "sha256:32277648202fe83a51314c82ca6069f7bb97a0046fe15c514fd3d8d399d3962d",
+      "definitionHash": "sha256:30de87432bd682484db3955eac3887f4226a117a3a8586ecc9749bd1c531aa88",
       "removalEvidence": "tests/unit/modular-plan-facade-retirement.test.ts",
       "removalEvidenceHash": "sha256:dff24895e46f91f00c00790325f0870b540c90e235a63c2fc416567314166c53",
       "evidenceScope": "declaration-relocation-only",
@@ -7673,7 +7673,7 @@
         "packages/cli/src/signals/dispatch/plan-execution.ts"
       ],
       "runtimeBindingHashes": {
-        "packages/cli/src/handlers/plan-mode.ts": "sha256:fb03e6bb71844a5cad1a410a65971855459e8894ed9e32e7f1823e047bdc9ab1",
+        "packages/cli/src/handlers/plan-mode.ts": "sha256:02d184d6ad0685d5e5fbe46058f3f1eaa39768f553e46de024bcff902f9fa573",
         "packages/cli/src/signals/dispatch/plan-execution.ts": "sha256:87037405d54ab57c573d2ecf76a89a6f35a3529ad218ed61238c935d33d376b5"
       }
     },
@@ -7690,7 +7690,7 @@
       "implementationPaths": [
         "packages/mod-plan/src/execution-model.ts"
       ],
-      "definitionHash": "sha256:32277648202fe83a51314c82ca6069f7bb97a0046fe15c514fd3d8d399d3962d",
+      "definitionHash": "sha256:30de87432bd682484db3955eac3887f4226a117a3a8586ecc9749bd1c531aa88",
       "removalEvidence": "tests/unit/modular-plan-facade-retirement.test.ts",
       "removalEvidenceHash": "sha256:dff24895e46f91f00c00790325f0870b540c90e235a63c2fc416567314166c53",
       "evidenceScope": "declaration-relocation-only",
@@ -7699,7 +7699,7 @@
         "packages/cli/src/signals/dispatch/plan-execution.ts"
       ],
       "runtimeBindingHashes": {
-        "packages/cli/src/handlers/plan-mode.ts": "sha256:fb03e6bb71844a5cad1a410a65971855459e8894ed9e32e7f1823e047bdc9ab1",
+        "packages/cli/src/handlers/plan-mode.ts": "sha256:02d184d6ad0685d5e5fbe46058f3f1eaa39768f553e46de024bcff902f9fa573",
         "packages/cli/src/signals/dispatch/plan-execution.ts": "sha256:87037405d54ab57c573d2ecf76a89a6f35a3529ad218ed61238c935d33d376b5"
       }
     },
@@ -7716,7 +7716,7 @@
       "implementationPaths": [
         "packages/mod-plan/src/execution-model.ts"
       ],
-      "definitionHash": "sha256:32277648202fe83a51314c82ca6069f7bb97a0046fe15c514fd3d8d399d3962d",
+      "definitionHash": "sha256:30de87432bd682484db3955eac3887f4226a117a3a8586ecc9749bd1c531aa88",
       "removalEvidence": "tests/unit/modular-plan-facade-retirement.test.ts",
       "removalEvidenceHash": "sha256:dff24895e46f91f00c00790325f0870b540c90e235a63c2fc416567314166c53",
       "evidenceScope": "declaration-relocation-only",
@@ -7725,7 +7725,7 @@
         "packages/cli/src/signals/dispatch/plan-execution.ts"
       ],
       "runtimeBindingHashes": {
-        "packages/cli/src/handlers/plan-mode.ts": "sha256:fb03e6bb71844a5cad1a410a65971855459e8894ed9e32e7f1823e047bdc9ab1",
+        "packages/cli/src/handlers/plan-mode.ts": "sha256:02d184d6ad0685d5e5fbe46058f3f1eaa39768f553e46de024bcff902f9fa573",
         "packages/cli/src/signals/dispatch/plan-execution.ts": "sha256:87037405d54ab57c573d2ecf76a89a6f35a3529ad218ed61238c935d33d376b5"
       }
     },
@@ -7742,7 +7742,7 @@
       "implementationPaths": [
         "packages/mod-plan/src/execution-model.ts"
       ],
-      "definitionHash": "sha256:32277648202fe83a51314c82ca6069f7bb97a0046fe15c514fd3d8d399d3962d",
+      "definitionHash": "sha256:30de87432bd682484db3955eac3887f4226a117a3a8586ecc9749bd1c531aa88",
       "removalEvidence": "tests/unit/modular-plan-facade-retirement.test.ts",
       "removalEvidenceHash": "sha256:dff24895e46f91f00c00790325f0870b540c90e235a63c2fc416567314166c53",
       "evidenceScope": "declaration-relocation-only",
@@ -7751,7 +7751,7 @@
         "packages/cli/src/signals/dispatch/plan-execution.ts"
       ],
       "runtimeBindingHashes": {
-        "packages/cli/src/handlers/plan-mode.ts": "sha256:fb03e6bb71844a5cad1a410a65971855459e8894ed9e32e7f1823e047bdc9ab1",
+        "packages/cli/src/handlers/plan-mode.ts": "sha256:02d184d6ad0685d5e5fbe46058f3f1eaa39768f553e46de024bcff902f9fa573",
         "packages/cli/src/signals/dispatch/plan-execution.ts": "sha256:87037405d54ab57c573d2ecf76a89a6f35a3529ad218ed61238c935d33d376b5"
       }
     },
@@ -7768,7 +7768,7 @@
       "implementationPaths": [
         "packages/mod-plan/src/execution-model.ts"
       ],
-      "definitionHash": "sha256:32277648202fe83a51314c82ca6069f7bb97a0046fe15c514fd3d8d399d3962d",
+      "definitionHash": "sha256:30de87432bd682484db3955eac3887f4226a117a3a8586ecc9749bd1c531aa88",
       "removalEvidence": "tests/unit/modular-plan-facade-retirement.test.ts",
       "removalEvidenceHash": "sha256:dff24895e46f91f00c00790325f0870b540c90e235a63c2fc416567314166c53",
       "evidenceScope": "declaration-relocation-only",
@@ -7777,7 +7777,7 @@
         "packages/cli/src/signals/dispatch/plan-execution.ts"
       ],
       "runtimeBindingHashes": {
-        "packages/cli/src/handlers/plan-mode.ts": "sha256:fb03e6bb71844a5cad1a410a65971855459e8894ed9e32e7f1823e047bdc9ab1",
+        "packages/cli/src/handlers/plan-mode.ts": "sha256:02d184d6ad0685d5e5fbe46058f3f1eaa39768f553e46de024bcff902f9fa573",
         "packages/cli/src/signals/dispatch/plan-execution.ts": "sha256:87037405d54ab57c573d2ecf76a89a6f35a3529ad218ed61238c935d33d376b5"
       }
     },
@@ -7794,7 +7794,7 @@
       "implementationPaths": [
         "packages/mod-plan/src/execution-model.ts"
       ],
-      "definitionHash": "sha256:32277648202fe83a51314c82ca6069f7bb97a0046fe15c514fd3d8d399d3962d",
+      "definitionHash": "sha256:30de87432bd682484db3955eac3887f4226a117a3a8586ecc9749bd1c531aa88",
       "removalEvidence": "tests/unit/modular-plan-facade-retirement.test.ts",
       "removalEvidenceHash": "sha256:dff24895e46f91f00c00790325f0870b540c90e235a63c2fc416567314166c53",
       "evidenceScope": "declaration-relocation-only",
@@ -7803,7 +7803,7 @@
         "packages/cli/src/signals/dispatch/plan-execution.ts"
       ],
       "runtimeBindingHashes": {
-        "packages/cli/src/handlers/plan-mode.ts": "sha256:fb03e6bb71844a5cad1a410a65971855459e8894ed9e32e7f1823e047bdc9ab1",
+        "packages/cli/src/handlers/plan-mode.ts": "sha256:02d184d6ad0685d5e5fbe46058f3f1eaa39768f553e46de024bcff902f9fa573",
         "packages/cli/src/signals/dispatch/plan-execution.ts": "sha256:87037405d54ab57c573d2ecf76a89a6f35a3529ad218ed61238c935d33d376b5"
       }
     },
@@ -7820,7 +7820,7 @@
       "implementationPaths": [
         "packages/mod-plan/src/execution-model.ts"
       ],
-      "definitionHash": "sha256:32277648202fe83a51314c82ca6069f7bb97a0046fe15c514fd3d8d399d3962d",
+      "definitionHash": "sha256:30de87432bd682484db3955eac3887f4226a117a3a8586ecc9749bd1c531aa88",
       "removalEvidence": "tests/unit/modular-plan-facade-retirement.test.ts",
       "removalEvidenceHash": "sha256:dff24895e46f91f00c00790325f0870b540c90e235a63c2fc416567314166c53",
       "evidenceScope": "declaration-relocation-only",
@@ -7840,7 +7840,7 @@
       "implementationPaths": [
         "packages/mod-plan/src/execution-model.ts"
       ],
-      "definitionHash": "sha256:32277648202fe83a51314c82ca6069f7bb97a0046fe15c514fd3d8d399d3962d",
+      "definitionHash": "sha256:30de87432bd682484db3955eac3887f4226a117a3a8586ecc9749bd1c531aa88",
       "removalEvidence": "tests/unit/modular-plan-facade-retirement.test.ts",
       "removalEvidenceHash": "sha256:dff24895e46f91f00c00790325f0870b540c90e235a63c2fc416567314166c53",
       "evidenceScope": "declaration-relocation-only",

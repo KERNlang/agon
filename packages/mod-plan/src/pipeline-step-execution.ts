@@ -3,7 +3,7 @@ import type { StepExecutor } from './executor.js';
 import type { CesarStepResult } from './execution-model.js';
 import { buildPlanStepContext, resolvePlanStepEngines } from './panel-step-execution.js';
 import type { PlanPanelStepHost } from './panel-step-execution.js';
-import { notePlanForgeEvent, startPlanForgeProgress, withPlanStepUiDiagnostics } from './forge-step-execution.js';
+import { applyPlanForgeWinner, isAlreadySatisfiedNoopForge, notePlanForgeEvent, startPlanForgeProgress, withPlanStepUiDiagnostics } from './forge-step-execution.js';
 import type { PlanForgeHost, PlanForgeEvent, PlanForgeUiEvent } from './forge-step-execution.js';
 
 export type PlanPipelinePhaseEventType = 'started' | 'completed' | 'failed' | 'cancelled';
@@ -25,7 +25,7 @@ export type PlanPipelineUiEvent = PlanForgeUiEvent
  * Generic plan/run values stay opaque beyond the metadata this policy reads.
  */
 export interface PlanPipelineHost<P extends { logicalPlanId: string }, R extends PlanPipelineRun, I extends PlanPipelineIssue>
-  extends Pick<PlanForgeHost, 'cwd' | 'outputDir' | 'snapshot' | 'activeEngines'>,
+  extends Pick<PlanForgeHost, 'cwd' | 'outputDir' | 'snapshot' | 'activeEngines' | 'readPatch' | 'applyPatch'>,
   Pick<PlanPanelStepHost, 'brainstorm' | 'tribunal'> {
   assertAvailable(type: 'pipeline' | 'brainstorm' | 'forge' | 'tribunal', signal?: AbortSignal): void;
   isCancellation(signal?: AbortSignal): boolean;
@@ -61,6 +61,7 @@ export function createPipelineStepExecutor<P extends { logicalPlanId: string }, 
     const before = host.snapshot();
     const task = buildPlanStepContext(step, context);
     let pipelineContext = '';
+    let artifact: CesarStepResult['artifact'];
     const engines = resolvePlanStepEngines(step, () => host.activeEngines?.() ?? []) ?? [];
     const dispatch = withPlanStepUiDiagnostics(host.getDispatch());
     const engineStatus: Record<string,string> = {};
@@ -80,7 +81,7 @@ export function createPipelineStepExecutor<P extends { logicalPlanId: string }, 
     };
     const pipelineTrackingFailureResult = (): { result: CesarStepResult } => {
       const after = host.snapshot();
-      return { result: { status: 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: partialPipelineOutput(), error: 'workflow-conformance-failed' } };
+      return { result: { status: 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: partialPipelineOutput(), error: 'workflow-conformance-failed', ...(artifact ? { artifact } : {}) } };
     };
     const pipelineUiType = (type: PlanPipelinePhaseEventType): `workflow-phase-${PlanPipelinePhaseEventType}` => `workflow-phase-${type}`;
     const emitPipelinePhase = (phaseId: string, type: PlanPipelinePhaseEventType, reason = '') => {
@@ -146,7 +147,7 @@ export function createPipelineStepExecutor<P extends { logicalPlanId: string }, 
         progressInterval = null;
         dispatch?.({ type: 'progress-clear' });
       }
-      if (!manifest.winner) {
+      if (!manifest.winner && !isAlreadySatisfiedNoopForge(manifest)) {
         if (!emitPipelinePhase('forge', 'failed', 'forge-produced-no-winner')) return pipelineTrackingFailureResult();
         currentWorkflowPhase = '';
         closePipelineRun('failed', 'forge-produced-no-winner');
@@ -154,13 +155,20 @@ export function createPipelineStepExecutor<P extends { logicalPlanId: string }, 
         const after = host.snapshot();
         return { result: { status: 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: 'Pipeline forge step: no winner', error: 'Forge produced no winner' } };
       }
+      const applied = applyPlanForgeWinner(host, manifest, () => assertPhaseAuthority('forge'));
+      if (!applied.ok) throw new Error(`patch apply failed: ${applied.error ?? 'application refused'}`);
+      artifact = applied.artifact;
+      const winnerLabel = manifest.winner ?? 'already satisfied';
+      assertPhaseAuthority('forge');
       if (!emitPipelinePhase('forge', 'completed')) return pipelineTrackingFailureResult();
       currentWorkflowPhase = '';
 
       // 3. Tribunal — review the forge winner
       currentWorkflowPhase = 'tribunal';
       if (!emitPipelinePhase('tribunal', 'started')) return pipelineTrackingFailureResult();
-      const tribunalQ = `Review the implementation from forge winner ${manifest.winner} for: ${task}`;
+      const tribunalQ = manifest.winner
+        ? `Review the implementation from forge winner ${manifest.winner} for: ${task}`
+        : `Verify the already-satisfied Forge outcome for: ${task}`;
       assertPhaseAuthority('tribunal');
       const tResult = await host.tribunal({ question: tribunalQ, engines: engines.slice(0, 3), rounds: 2, timeout: 120, outputDir: join(host.outputDir, step.id, 'tribunal'), signal });
       assertPhaseAuthority('tribunal');
@@ -171,8 +179,8 @@ export function createPipelineStepExecutor<P extends { logicalPlanId: string }, 
 
       const after = host.snapshot();
       return {
-        result: { status: 'success', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: `[workflow:${workflowId}] Pipeline: brainstorm → forge (${manifest.winner}) → tribunal\n${tResult.summary}` },
-        contextExport: `Pipeline result: forge winner ${manifest.winner}. Tribunal: ${tResult.summary.slice(0, 300)}`,
+        result: { status: 'success', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: `[workflow:${workflowId}] Pipeline: brainstorm → forge (${winnerLabel}) → tribunal\n${tResult.summary}`, artifact },
+        contextExport: `Pipeline result: forge winner ${winnerLabel}. Tribunal: ${tResult.summary.slice(0, 300)}`,
       };
     } catch (err) {
       const cancelled = host.isCancellation(signal);
@@ -183,7 +191,7 @@ export function createPipelineStepExecutor<P extends { logicalPlanId: string }, 
       closePipelineRun(cancelled ? 'cancelled' : 'failed', cancelled ? 'aborted' : (err instanceof Error ? err.message : String(err)));
       if (pipelineTrackingFailed) return pipelineTrackingFailureResult();
       const after = host.snapshot();
-      return { result: { status: 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: partialPipelineOutput(), error: err instanceof Error ? err.message : String(err) } };
+      return { result: { status: 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: partialPipelineOutput(), error: err instanceof Error ? err.message : String(err), ...(artifact ? { artifact } : {}) } };
     } finally {
       if (progressInterval) clearInterval(progressInterval);
       dispatch?.({ type: 'progress-clear' });

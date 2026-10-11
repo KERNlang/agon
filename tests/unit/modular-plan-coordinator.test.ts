@@ -442,6 +442,19 @@ describe('physical Plan execution coordinator', () => {
       result: { status: 'failure', error: 'timeout', output: '', actualTokens: 0, actualCostUsd: 0, durationMs: 0 } };
     expect(physical.preparePlanFallbackRetry(value, 'fixture')).toBeNull();
   });
+  it.each(['fallback', 'resume'])('does not discard an applied artifact for %s', mode => {
+    const value = plan('forge');
+    value.state = 'paused';
+    value.steps[0] = { ...value.steps[0], type: 'pipeline', state: 'failed', engine: 'original',
+      result: { status: 'failure', error: 'Tribunal timeout', output: 'partially completed', actualTokens: 8, actualCostUsd: 0.5, durationMs: 100,
+        artifact: { status: 'applied', cwd: '/fixture', patchPath: '/patch', patchHash: `sha256:${'a'.repeat(64)}` } } };
+    const before = structuredClone(value);
+    if (mode === 'fallback') expect(physical.preparePlanFallbackRetry(value, 'fallback')).toBeNull();
+    else expect(() => physical.prepareCesarPlanResume(value, 'resume')).toThrow(/applied.*restart/i);
+    expect(value).toEqual(before);
+    expect(physical.prepareCesarPlanResume(value, 'restart').steps[0]).toMatchObject({ state: 'pending', result: undefined });
+    expect(value).toEqual(before);
+  });
   it('owns fallback policies instead of importing the CLI owner', async () => {
     const legacy = await import('../../packages/cli/src/signals/dispatch/plan-execution.js');
     expect(physical).toHaveProperty('preparePlanFallbackRetry', legacy.preparePlanFallbackRetry);
@@ -464,6 +477,39 @@ describe('physical Plan execution coordinator', () => {
     const result = await coordinator.finalizePlanWithReviewGate(value, {}, new AbortController().signal);
     expect(result).toEqual({ ...value, state: 'paused' });
     expect(host.save).toHaveBeenCalledWith(result);
+    expect(host.executePlan).not.toHaveBeenCalled();
+  });
+  it.each([false, true])('refuses unproven application despite unrelated edits (prior review: %s)', async reviewed => {
+    const { coordinator, host } = fixture(['unrelated-user-edit.txt']);
+    const value = plan('forge');
+    value.steps[0].result = { status: 'success', output: 'A winner was selected',
+      actualTokens: 1, actualCostUsd: 0, durationMs: 1 };
+    if (reviewed) {
+      value.reviewCyclesUsed = 1;
+      value.steps.push({ id: 'review', type: 'review', description: 'prior review', state: 'done', selfReviewCycle: 1,
+        estimatedTokens: 1, estimatedCostUsd: 0,
+        result: { status: 'success', output: 'reviewed', actualTokens: 1, actualCostUsd: 0, durationMs: 1 } });
+    }
+    const result = await coordinator.finalizePlanWithReviewGate(value, {}, new AbortController().signal);
+    expect(result.state).toBe('paused');
+    expect(host.executePlan).not.toHaveBeenCalled();
+  });
+  it.each(['already-satisfied', 'empty-patch'] as const)('accepts the actual Forge %s outcome without unrelated workspace changes', async outcome => {
+    const executors = physical.createForgeStepExecutors({
+      cwd: '/fixture', outputDir: '/fixture/runs', assertAvailable: () => {},
+      snapshot: () => ({ tokens: 0, cost: 0 }), getDispatch: () => undefined,
+      activeEngines: () => ['engine'], mkdir: () => {}, readPatch: () => ({ content: '' }),
+      applyPatch: () => { throw new Error('No-change execution must not apply a patch'); },
+      run: async () => outcome === 'already-satisfied'
+        ? { winner: null, alreadySatisfied: true }
+        : { winner: 'engine', patches: { engine: '/fixture/empty.patch' } },
+    });
+    const value = plan('forge');
+    value.steps[0].result = (await executors.forge.execute(value.steps[0], {})).result;
+    expect(value.steps[0].result.status).toBe('success');
+    const { coordinator, host } = fixture([]);
+    const result = await coordinator.finalizePlanWithReviewGate(value, {}, new AbortController().signal);
+    expect(result.state).toBe('done');
     expect(host.executePlan).not.toHaveBeenCalled();
   });
   it('clears completion metadata when an unapplied Forge plan becomes paused', async () => {

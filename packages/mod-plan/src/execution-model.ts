@@ -16,6 +16,9 @@ export interface CesarStepResult {
   durationMs: number;
   output: string;
   error?: string;
+  /** The executor records this only after it observes the application outcome. */
+  artifact?: { status: 'applied'; cwd: string; patchPath: string; patchHash: string }
+    | { status: 'not-needed'; cwd: string; reason: 'already-satisfied' | 'empty-patch' };
 }
 
 export interface CesarPlanStep {

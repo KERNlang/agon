@@ -27,6 +27,10 @@ export function buildResumePromptContext(plan: CesarPlan): ResumePromptContext {
 
 /** Preserve completed work, dependency blocks and exhausted review failures. */
 export function skipCompletedSteps(plan: CesarPlan): CesarPlan {
+  const applied = plan.steps.find(step => step.state === 'failed' && step.result?.artifact?.status === 'applied');
+  if (applied) {
+    throw new Error(`Cannot resume: step '${applied.id}' applied a patch before failing. Saved evidence is unchanged. Inspect the workspace before choosing an explicit restart; restarting can repeat completed work.`);
+  }
   const interrupted = findUnknownPlanOutcome(plan);
   if (interrupted) {
     throw new Error(`Cannot resume: step '${interrupted.id}' has an outcome that is unknown. Saved plan unchanged. Inspect its effects before choosing an explicit restart; restarting can repeat completed work.`);

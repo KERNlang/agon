@@ -6,11 +6,27 @@ import { createPlanExecutor } from '../../packages/mod-plan/src/executor.js';
 import { runPlanResumeApproval } from '../../packages/mod-plan/src/resume-workflow.js';
 import type { CesarPlan } from '../../packages/mod-plan/src/execution-model.js';
 import { createCesarPlan, approveCesarPlan } from '../../packages/mod-plan/src/execution-state.js';
-import { assertExecutablePlan } from '../../packages/mod-plan/src/execution-record.js';
+import { assertExecutablePlan, isCesarStepResult } from '../../packages/mod-plan/src/execution-record.js';
 
 function valid(): CesarPlan {
   return approveCesarPlan(createCesarPlan('admission fixture', [{ id: 'first', type: 'self', description: 'fixture', estimatedTokens: 1, estimatedCostUsd: 0 }]));
 }
+
+it('validates optional artifact evidence without rejecting historical results', () => {
+  const result = { status: 'success', actualTokens: 0, actualCostUsd: 0, durationMs: 0, output: 'done' };
+  expect(isCesarStepResult(result)).toBe(true);
+  for (const artifact of [
+    { status: 'applied', cwd: '/fixture', patchPath: '/patch', patchHash: `sha256:${'a'.repeat(64)}` },
+    { status: 'not-needed', cwd: '/fixture', reason: 'already-satisfied' },
+    { status: 'not-needed', cwd: '/fixture', reason: 'empty-patch' },
+  ]) expect(isCesarStepResult({ ...result, artifact })).toBe(true);
+  for (const artifact of [null, {}, 'applied',
+    { status: 'applied', cwd: '/fixture', patchPath: '/patch', patchHash: 'unverified' },
+    { status: 'not-needed', cwd: '', reason: 'already-satisfied' },
+    { status: 'not-needed', cwd: '/fixture', reason: 'winner-selected' },
+    { status: 'not-needed', cwd: '/fixture', reason: { toString: null } },
+  ]) expect(isCesarStepResult({ ...result, artifact })).toBe(false);
+});
 
 it.each([
   ['missing totals', (plan: any) => { delete plan.totalActualTokens; }],

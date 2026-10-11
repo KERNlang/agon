@@ -1,4 +1,6 @@
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
+import { createHash } from 'node:crypto';
+import type { CesarStepResult } from './execution-model.js';
 import type { StepExecutor } from './executor.js';
 import { buildPlanStepContext, resolvePlanStepEngines } from './panel-step-execution.js';
 
@@ -118,6 +120,45 @@ export const startPlanForgeProgress = (dispatch: PlanForgeDispatch | undefined, 
   return setInterval(() => emitPlanForgeProgress(dispatch, engines, engineStatus, startTime), 500);
 };
 
+export function applyPlanForgeWinner(host: Pick<PlanForgeHost, 'cwd' | 'readPatch' | 'applyPatch'>,
+  manifest: PlanForgeManifest, assertCurrentAuthority: () => void): { ok: boolean; error?: string; artifact?: CesarStepResult['artifact'] } {
+  assertCurrentAuthority();
+  if (!manifest.winner) return isAlreadySatisfiedNoopForge(manifest)
+    ? { ok: true, artifact: { status: 'not-needed', cwd: resolve(host.cwd), reason: 'already-satisfied' } }
+    : { ok: false, error: 'No winner' };
+  const patchPath: string | undefined = manifest.patches?.[manifest.winner];
+  if (!patchPath) return { ok: false, error: `Winner ${manifest.winner} has no patchPath in manifest` };
+  const patch = host.readPatch(patchPath);
+  // A host callback can revoke authority even without an async boundary.
+  assertCurrentAuthority();
+  if (!patch) return { ok: false, error: `Failed to read patch at ${patchPath}` };
+  const content = patch.content;
+  const cwd = resolve(host.cwd);
+  if (!content || content.trim().length === 0) {
+    // Winner produced an empty diff — not an error, just nothing to apply.
+    return { ok: true, artifact: { status: 'not-needed', cwd, reason: 'empty-patch' } };
+  }
+  const applied = host.applyPatch(host.cwd, content);
+  return applied.ok ? { ...applied, artifact: { status: 'applied', cwd, patchPath,
+    patchHash: `sha256:${createHash('sha256').update(content).digest('hex')}` } } : applied;
+}
+
+export const isAlreadySatisfiedNoopForge = (manifest: PlanForgeManifest): boolean => {
+  // Forge reports a passing baseline or an all-no-change competition.
+  if (manifest?.alreadySatisfied) return true;
+  if (!manifest?.baselinePasses) return false;
+  const results = Object.values(manifest.results ?? {});
+  if (results.length === 0) return false;
+  return results.every((r) => {
+    if (!r) return false;
+    const hasFitnessLog = typeof r.fitnessLogPath === 'string' && r.fitnessLogPath.length > 0;
+    const noPatch = Number(r.diffLines ?? 0) === 0 && Number(r.filesChanged ?? 0) === 0;
+    const zeroScore = Number(r.score ?? 0) === 0;
+    const notDispatchCrash = !String(r.dispatchStdout ?? '').startsWith('ERROR:');
+    return r.pass === false && hasFitnessLog && noPatch && zeroScore && notDispatchCrash;
+  });
+};
+
 export function createForgeStepExecutors(host: PlanForgeHost): Record<'forge' | 'teamforge', StepExecutor> {
   const assertCurrentAuthority = (type: 'forge' | 'teamforge', signal?: AbortSignal): void => {
     signal?.throwIfAborted();
@@ -129,39 +170,6 @@ export function createForgeStepExecutors(host: PlanForgeHost): Record<'forge' | 
       return execute(step, context, signal);
     },
   });
-  const applyForgeWinnerToCwd = (manifest: PlanForgeManifest, type: 'forge' | 'teamforge', signal?: AbortSignal): { ok: boolean; error?: string } => {
-    assertCurrentAuthority(type, signal);
-    if (!manifest.winner) return { ok: false, error: 'No winner' };
-    const patchPath: string | undefined = manifest.patches?.[manifest.winner];
-    if (!patchPath) return { ok: false, error: `Winner ${manifest.winner} has no patchPath in manifest` };
-    const patch = host.readPatch(patchPath);
-    // A host callback can revoke authority even without an async boundary.
-    assertCurrentAuthority(type, signal);
-    if (!patch) return { ok: false, error: `Failed to read patch at ${patchPath}` };
-    if (!patch.content || patch.content.trim().length === 0) {
-      // Winner produced an empty diff — not an error, just nothing to apply.
-      return { ok: true };
-    }
-    return host.applyPatch(host.cwd, patch.content);
-  };
-  
-  const isAlreadySatisfiedNoopForge = (manifest: PlanForgeManifest): boolean => {
-    // Forge layer now sets manifest.alreadySatisfied for both the
-    // early-baseline-passes case and the all-no-op-after-stage2 case.
-    // Trust that flag when set.
-    if (manifest?.alreadySatisfied) return true;
-    if (!manifest?.baselinePasses) return false;
-    const results = Object.values(manifest.results ?? {});
-    if (results.length === 0) return false;
-    return results.every((r) => {
-      if (!r) return false;
-      const hasFitnessLog = typeof r.fitnessLogPath === 'string' && r.fitnessLogPath.length > 0;
-      const noPatch = Number(r.diffLines ?? 0) === 0 && Number(r.filesChanged ?? 0) === 0;
-      const zeroScore = Number(r.score ?? 0) === 0;
-      const notDispatchCrash = !String(r.dispatchStdout ?? '').startsWith('ERROR:');
-      return r.pass === false && hasFitnessLog && noPatch && zeroScore && notDispatchCrash;
-    });
-  };
   
   return {
     forge: wrap('forge', async (step, context, signal) => {
@@ -193,7 +201,8 @@ export function createForgeStepExecutors(host: PlanForgeHost): Record<'forge' | 
           if (isAlreadySatisfiedNoopForge(manifest)) {
             const message = `Already satisfied: baseline fitness passed and all forge candidates left a clean worktree.\n${engineSummaries}`;
             return {
-              result: { status: 'success', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: message },
+              result: { status: 'success', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: message,
+                artifact: { status: 'not-needed', cwd: resolve(host.cwd), reason: 'already-satisfied' } },
               contextExport: 'Forge step already satisfied; no patch needed.',
             };
           }
@@ -214,7 +223,7 @@ export function createForgeStepExecutors(host: PlanForgeHost): Record<'forge' | 
   
         // FU-9: apply the winning patch to cwd so downstream review/
         // verify steps see real changes. Failure to apply = step failure.
-        const applied = applyForgeWinnerToCwd(manifest, 'forge', signal);
+        const applied = applyPlanForgeWinner(host, manifest, () => assertCurrentAuthority('forge', signal));
         if (!applied.ok) {
           return {
             result: { status: 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: `Winner ${manifest.winner} but patch apply failed: ${applied.error}`, error: `patch apply failed: ${applied.error}` },
@@ -222,7 +231,7 @@ export function createForgeStepExecutors(host: PlanForgeHost): Record<'forge' | 
         }
   
         return {
-          result: { status: 'success', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: `Winner: ${manifest.winner} (patch applied to cwd)` },
+          result: { status: 'success', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: `Winner: ${manifest.winner} (patch applied to cwd)`, artifact: applied.artifact },
           contextExport: `Forge winner: ${manifest.winner}`,
         };
       } catch (err) {
@@ -258,7 +267,8 @@ export function createForgeStepExecutors(host: PlanForgeHost): Record<'forge' | 
         if (!manifest.winner) {
           if (isAlreadySatisfiedNoopForge(manifest)) {
             return {
-              result: { status: 'success', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: 'Already satisfied: baseline fitness passed and all team-forge candidates left a clean worktree.' },
+              result: { status: 'success', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: 'Already satisfied: baseline fitness passed and all team-forge candidates left a clean worktree.',
+                artifact: { status: 'not-needed', cwd: resolve(host.cwd), reason: 'already-satisfied' } },
               contextExport: 'TeamForge step already satisfied; no patch needed.',
             };
           }
@@ -267,14 +277,14 @@ export function createForgeStepExecutors(host: PlanForgeHost): Record<'forge' | 
           };
         }
         // FU-9: apply winning patch to cwd.
-        const applied = applyForgeWinnerToCwd(manifest, 'teamforge', signal);
+        const applied = applyPlanForgeWinner(host, manifest, () => assertCurrentAuthority('teamforge', signal));
         if (!applied.ok) {
           return {
             result: { status: 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: `Winner ${manifest.winner} but patch apply failed: ${applied.error}`, error: `patch apply failed: ${applied.error}` },
           };
         }
         return {
-          result: { status: 'success', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: `Winner: ${manifest.winner} (patch applied to cwd)` },
+          result: { status: 'success', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: `Winner: ${manifest.winner} (patch applied to cwd)`, artifact: applied.artifact },
           contextExport: `TeamForge winner: ${manifest.winner}`,
         };
       } catch (err) {

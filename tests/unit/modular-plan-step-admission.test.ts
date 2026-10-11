@@ -42,8 +42,9 @@ beforeEach(async () => {
   effects.brainstorm.mockResolvedValue({ winner: 'fixture', response: 'answer' });
   effects.brain.mockReset().mockResolvedValue({ terminalState: 'completed', responded: true });
   effects.delegate.mockResolvedValue({ response: 'answer' });
-  effects.other.mockResolvedValue({ winner: 'fixture', summary: 'review', status: 'completed' });
   root = await mkdtemp(join(tmpdir(), 'agon-step-admission-'));
+  await writeFile(join(root, 'empty.patch'), '');
+  effects.other.mockResolvedValue({ winner: 'fixture', patches: { fixture: join(root, 'empty.patch') }, summary: 'review', status: 'completed' });
   vi.stubEnv('AGON_HOME', join(root, 'execution-home'));
   host = new DurableModHost(root, { kernelVersion: '1.0.0', processIdentity: 'step-admission-test' });
 });
@@ -271,7 +272,7 @@ it.each(['brainstorm', 'forge', 'tribunal'])('refuses continuation after authori
   };
   if (phase === 'brainstorm') effects.brainstorm.mockImplementationOnce(revoke);
   else if (phase === 'forge') effects.other.mockImplementationOnce(revoke);
-  else effects.other.mockResolvedValueOnce({ winner: 'fixture' }).mockImplementationOnce(revoke);
+  else effects.other.mockResolvedValueOnce({ winner: 'fixture', patches: { fixture: join(root, 'empty.patch') } }).mockImplementationOnce(revoke);
   const dispatch = vi.fn();
   const result = await buildStepExecutors(context(), dispatch).pipeline.execute(step('pipeline'), {});
   expect(result.result).toMatchObject({ status: 'failure', error: expect.stringContaining('restart') });
@@ -316,7 +317,7 @@ it.each(['brainstorm', 'forge', 'tribunal'])('stops after cancellation during %s
   };
   if (phase === 'brainstorm') effects.brainstorm.mockImplementationOnce(cancel);
   else if (phase === 'forge') effects.other.mockImplementationOnce(cancel);
-  else effects.other.mockResolvedValueOnce({ winner: 'fixture' }).mockImplementationOnce(cancel);
+  else effects.other.mockResolvedValueOnce({ winner: 'fixture', patches: { fixture: join(root, 'empty.patch') } }).mockImplementationOnce(cancel);
   const dispatch = vi.fn();
   const result = await buildStepExecutors(context(), dispatch).pipeline.execute(step('pipeline'), {}, controller.signal);
   expect(result.result).toMatchObject({ status: 'failure', error: 'cancel fixture' });
@@ -543,7 +544,7 @@ it.each(['brainstorm', 'forge', 'tribunal'])('blocks late provider dispatch insi
   };
   if (phase === 'brainstorm') effects.brainstorm.mockImplementationOnce(run);
   else if (phase === 'forge') effects.other.mockImplementationOnce(run);
-  else effects.other.mockResolvedValueOnce({ winner: 'fixture' }).mockImplementationOnce(run);
+  else effects.other.mockResolvedValueOnce({ winner: 'fixture', patches: { fixture: join(root, 'empty.patch') } }).mockImplementationOnce(run);
   const result = await buildStepExecutors(ctx).pipeline.execute(step('pipeline'), {});
   expect(dispatch).not.toHaveBeenCalled();
   expect(result.result).toMatchObject({ status: 'failure', error: expect.stringContaining('restart') });

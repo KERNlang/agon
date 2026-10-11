@@ -6,6 +6,10 @@ import { tracker } from '@kernlang/agon-core';
 import type { HandlerContext } from '../../packages/cli/src/handlers/types.js';
 
 const backends = vi.hoisted(() => ({ brainstorm: vi.fn(), forge: vi.fn(), tribunal: vi.fn() }));
+const patches = vi.hoisted(() => ({ read: vi.fn(), apply: vi.fn() }));
+vi.mock('@kernlang/agon-support-worktree', async original => ({ ...await original<Record<string, unknown>>(),
+  readPatchContent: (path: string) => patches.read(path).content, applyPatchToTree: patches.apply,
+}));
 const validation = vi.hoisted(() => ({ fault: '' }));
 vi.mock('@kernlang/agon-core', async original => {
   const actual = await original<typeof import('@kernlang/agon-core')>();
@@ -22,7 +26,11 @@ import { buildLegacyBuildStepExecutors } from '../fixtures/modular-plan-build-st
 import { buildStepExecutors } from '../../packages/cli/src/handlers/plan-mode.js';
 
 let home: string;
-beforeEach(() => { home = mkdtempSync(join(tmpdir(), 'agon-pipeline-parity-')); vi.stubEnv('AGON_HOME', home); vi.useFakeTimers(); });
+beforeEach(() => {
+  home = mkdtempSync(join(tmpdir(), 'agon-pipeline-parity-')); vi.stubEnv('AGON_HOME', home); vi.useFakeTimers();
+  patches.read.mockReset().mockReturnValue({ content: 'patch' });
+  patches.apply.mockReset().mockReturnValue({ ok: true });
+});
 afterEach(() => { validation.fault = ''; vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }); });
 const scenarios = ['success', 'brainstorm-fails', 'forge-fails', 'tribunal-fails', 'no-winner', 'abort-brainstorm', 'abort-forge', 'pre-abort', 'no-engines', 'explicit-engines'];
 const cases = ['none', 'live', 'plan', 'last'].flatMap(ui => scenarios.map(scenario => ({ ui, scenario })));
@@ -39,7 +47,7 @@ it.each(['issues', 'exception', 'empty-exception'])('refuses invalid final verif
   const results: { output: unknown; events: Record<string, unknown>[] }[] = [];
   for (const build of [buildLegacyBuildStepExecutors, buildStepExecutors]) {
     backends.brainstorm.mockResolvedValue({ winner: 'one', response: 'approach' });
-    backends.forge.mockResolvedValue({ winner: 'one', results: {} });
+    backends.forge.mockResolvedValue({ winner: 'one', patches: { one: '/patch' }, results: {} });
     backends.tribunal.mockResolvedValue({ summary: 'review' });
     const events: Record<string, unknown>[] = [];
     const ctx = { registry: {}, adapter: {}, activeEngines: () => ['one'] } as unknown as HandlerContext;
@@ -113,7 +121,7 @@ it.each(cases)('compares raw pipeline $scenario with dispatch=$ui', async ({ ui,
         if (scenario === `${phase}-fails`) throw new Error(`${phase} failed`);
         if (scenario === `abort-${phase}`) controller.abort(new Error('cancelled'));
         if (phase === 'brainstorm') return { winner: 'one', response: 'approach' };
-        if (phase === 'forge') return { winner: scenario === 'no-winner' ? null : 'one', results: {} };
+        if (phase === 'forge') return { winner: scenario === 'no-winner' ? null : 'one', patches: { one: '/patch' }, results: {} };
         return { summary: 'review result' };
       });
     }
@@ -130,11 +138,24 @@ it.each(cases)('compares raw pipeline $scenario with dispatch=$ui', async ({ ui,
     results.push({ output, events, calls });
     expect(vi.getTimerCount()).toBe(0);
   }
+  const artifact = { status: 'applied', cwd: '/fixture', patchPath: '/patch',
+    patchHash: 'sha256:a4895eb44afc336fecbba6e520cd67e178dace0276655d102fceffa8e5f70570' };
+  if (['success', 'no-engines', 'explicit-engines', 'tribunal-fails'].includes(scenario)) {
+    expect(patches.read).toHaveBeenCalledExactlyOnceWith('/patch');
+    expect(patches.apply).toHaveBeenCalledExactlyOnceWith('/fixture', 'patch');
+  } else {
+    expect(patches.read).not.toHaveBeenCalled();
+    expect(patches.apply).not.toHaveBeenCalled();
+  }
   if (scenario === 'tribunal-fails') {
     const previous = results[0];
     const result = (previous.output as { result: Record<string, unknown> }).result;
     expect(result.output).toBe('Partial pipeline (brainstorm done): approach');
-    expect(results[1]).toEqual({ ...previous, output: { result: { ...result, output: 'Partial pipeline (brainstorm → forge done): approach' } } });
+    expect(results[1]).toEqual({ ...previous, output: { result: { ...result, output: 'Partial pipeline (brainstorm → forge done): approach', artifact } } });
+  } else if (['success', 'no-engines', 'explicit-engines'].includes(scenario)) {
+    const previous = results[0];
+    const output = previous.output as { result: Record<string, unknown> };
+    expect(results[1]).toEqual({ ...previous, output: { ...output, result: { ...output.result, artifact } } });
   } else {
     expect(results[1]).toEqual(results[0]);
   }

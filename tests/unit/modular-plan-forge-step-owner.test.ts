@@ -90,6 +90,8 @@ it.each(['forge', 'teamforge'] as const)('applies the winning %s patch and clear
   expect(host.readPatch).toHaveBeenCalledExactlyOnceWith('/patch');
   expect(host.applyPatch).toHaveBeenCalledExactlyOnceWith('/fixture', 'patch');
   expect(output.result).toMatchObject({ status: 'success', actualTokens: 15, actualCostUsd: 0.5, output: 'Winner: engine (patch applied to cwd)' });
+  expect(output.result.artifact).toEqual({ status: 'applied', cwd: '/fixture', patchPath: '/patch',
+    patchHash: 'sha256:a4895eb44afc336fecbba6e520cd67e178dace0276655d102fceffa8e5f70570' });
   expect(dispatch.mock.calls.at(-1)?.[0]).toEqual({ type: 'progress-clear' });
   expect(vi.getTimerCount()).toBe(0);
 });
@@ -99,7 +101,23 @@ it.each(['forge', 'teamforge'] as const)('fails %s if the winning patch cannot a
   host.applyPatch = vi.fn(() => ({ ok: false, error: 'conflict' }));
   const result = await createForgeStepExecutors(host)[kind].execute(step(kind), {});
   expect(result.result).toMatchObject({ status: 'failure', error: 'patch apply failed: conflict' });
+  expect(result.result.artifact).toBeUndefined();
   expect(result).not.toHaveProperty('contextExport');
+});
+
+it.each(['forge', 'teamforge'] as const)('records the exact %s bytes and target supplied to application', async kind => {
+  const { host } = fixture();
+  const patch = { content: 'patch' };
+  host.readPatch = vi.fn(() => patch);
+  host.applyPatch = vi.fn(() => {
+    patch.content = 'changed after application';
+    host.cwd = '/another-target';
+    return { ok: true };
+  });
+  const { result } = await createForgeStepExecutors(host)[kind].execute(step(kind), {});
+  expect(host.applyPatch).toHaveBeenCalledExactlyOnceWith('/fixture', 'patch');
+  expect(result.artifact).toEqual({ status: 'applied', cwd: '/fixture', patchPath: '/patch',
+    patchHash: 'sha256:a4895eb44afc336fecbba6e520cd67e178dace0276655d102fceffa8e5f70570' });
 });
 
 it.each(['forge', 'teamforge'] as const)('requires %s patch metadata and bytes', async kind => {
@@ -115,7 +133,9 @@ it.each(['forge', 'teamforge'] as const)('requires %s patch metadata and bytes',
 
 it.each(['forge', 'teamforge'] as const)('does not apply an empty %s patch', async kind => {
   const { host } = fixture(); host.readPatch = vi.fn(() => ({ content: ' \n ' }));
-  expect((await createForgeStepExecutors(host)[kind].execute(step(kind), {})).result.status).toBe('success');
+  const result = (await createForgeStepExecutors(host)[kind].execute(step(kind), {})).result;
+  expect(result.status).toBe('success');
+  expect(result.artifact).toEqual({ status: 'not-needed', cwd: '/fixture', reason: 'empty-patch' });
   expect(host.applyPatch).not.toHaveBeenCalled();
 });
 

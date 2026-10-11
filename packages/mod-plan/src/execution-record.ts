@@ -24,7 +24,11 @@ const dictionary = (value: unknown, accepts: (item: unknown) => boolean): boolea
 export function isCesarStepResult(value: unknown): value is CesarStepResult {
   return object(value) && string(value.status) && ['success', 'failure', 'paused'].includes(value.status)
     && ['actualTokens', 'actualCostUsd', 'durationMs'].every(key => nonnegative(value[key]))
-    && string(value.output) && optional(value, ['error'], string);
+    && string(value.output) && optional(value, ['error'], string)
+    && optional(value, ['artifact'], item => object(item) && string(item.cwd) && item.cwd.length > 0
+      && (item.status === 'applied'
+        ? string(item.patchPath) && item.patchPath.length > 0 && string(item.patchHash) && /^sha256:[a-f0-9]{64}$/.test(item.patchHash)
+        : item.status === 'not-needed' && string(item.reason) && ['already-satisfied', 'empty-patch'].includes(item.reason)));
 }
 
 export function isPersistedCesarPlanStep(value: unknown): value is CesarPlanStep {

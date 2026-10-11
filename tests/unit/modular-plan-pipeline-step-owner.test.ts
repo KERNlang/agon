@@ -1,17 +1,29 @@
 import { afterEach, expect, it, vi } from 'vitest';
+import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { readPatchFromPath, applyPatchToTree } from '@kernlang/agon-support-worktree';
 import { createPipelineStepExecutor } from '../../packages/mod-plan/src/pipeline-step-execution.js';
 import type { PlanPipelineHost, PlanPipelineIssue, PlanPipelineRun } from '../../packages/mod-plan/src/pipeline-step-execution.js';
+import { createCesarPlan, advanceCesarStep } from '../../packages/mod-plan/src/execution-state.js';
+import { saveCesarPlan, loadCesarPlan, cesarPlanJsonPath } from '../../packages/mod-plan/src/execution-store.js';
+import { assertExecutablePlan } from '../../packages/mod-plan/src/execution-record.js';
+import { preparePlanFallbackRetry } from '../../packages/mod-plan/src/execution-coordinator.js';
+import { prepareCesarPlanResume } from '../../packages/mod-plan/src/resume-policy.js';
 
 const step = { id: 'p', type: 'pipeline' as const, description: 'task', estimatedTokens: 0, estimatedCostUsd: 0 };
 function fixture() {
   const dispatch = vi.fn();
   const host: PlanPipelineHost<{ logicalPlanId: string }, PlanPipelineRun, PlanPipelineIssue> = {
     cwd: '/fixture', outputDir: '/runs', assertAvailable: vi.fn((_, signal) => signal?.throwIfAborted()),
+    readPatch: vi.fn(() => ({ content: 'patch' })), applyPatch: vi.fn(() => ({ ok: true })),
     isCancellation: signal => signal?.aborted ?? false,
     snapshot: vi.fn().mockReturnValueOnce({ tokens: 10, cost: 1 }).mockReturnValue({ tokens: 20, cost: 1.5 }),
     activeEngines: () => ['one', 'two', 'three', 'four'], getDispatch: () => dispatch,
     brainstorm: vi.fn().mockResolvedValue({ winner: 'one', response: 'approach' }),
-    forge: vi.fn().mockResolvedValue({ winner: 'one' }),
+    forge: vi.fn().mockResolvedValue({ winner: 'one', patches: { one: '/patch' } }),
     tribunal: vi.fn().mockResolvedValue({ summary: 'review' }),
     workflow: {
       resolve: vi.fn(() => ({ id: 'workflow', plan: { logicalPlanId: 'plan' } })),
@@ -24,6 +36,136 @@ function fixture() {
   return { host, dispatch, execute: (signal?: AbortSignal) => createPipelineStepExecutor(host).execute(step, {}, signal) };
 }
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
+
+it('applies the winning artifact before Tribunal sees the workspace', async () => {
+  const { host, execute } = fixture();
+  host.tribunal = vi.fn(async () => {
+    expect(host.applyPatch).toHaveBeenCalledExactlyOnceWith('/fixture', 'patch');
+    return { summary: 'review' };
+  });
+  expect((await execute()).result).toMatchObject({ status: 'success', artifact: {
+    status: 'applied', cwd: '/fixture', patchPath: '/patch',
+    patchHash: 'sha256:a4895eb44afc336fecbba6e520cd67e178dace0276655d102fceffa8e5f70570',
+  } });
+});
+
+it('refuses pipeline success when patch application fails', async () => {
+  const { host, execute } = fixture();
+  vi.mocked(host.applyPatch).mockReturnValue({ ok: false });
+  const output = await execute();
+  expect(output.result.status).toBe('failure');
+  expect(output.result.artifact).toBeUndefined();
+  expect(host.tribunal).not.toHaveBeenCalled();
+});
+
+it.each(['pipeline', 'forge', 'abort'])('does not apply a patch when reading it revokes %s authority', async revoked => {
+  const { host, execute } = fixture();
+  const controller = new AbortController();
+  let unavailable = '';
+  host.assertAvailable = type => { if (type === unavailable) throw new Error('disabled'); };
+  vi.mocked(host.readPatch).mockImplementation(() => {
+    if (revoked === 'abort') controller.abort(new Error('cancelled'));
+    else unavailable = revoked;
+    return { content: 'patch' };
+  });
+  expect((await execute(controller.signal)).result.status).toBe('failure');
+  expect(host.applyPatch).not.toHaveBeenCalled();
+  expect(host.tribunal).not.toHaveBeenCalled();
+});
+
+it.each(['tribunal', 'tracking', 'revoked-after-apply'])('retains applied-artifact evidence after %s fails', async fault => {
+  const { host, execute } = fixture();
+  if (fault === 'tribunal') host.tribunal = vi.fn(async () => { throw new Error('review failed'); });
+  if (fault === 'tracking') vi.mocked(host.workflow.verifyRun).mockReturnValue([{ code: 'invalid-phase', message: 'invalid' }]);
+  if (fault === 'revoked-after-apply') vi.mocked(host.applyPatch).mockImplementation(() => {
+    host.assertAvailable = () => { throw new Error('disabled'); };
+    return { ok: true };
+  });
+  const result = (await execute()).result;
+  expect(result.status).toBe('failure');
+  expect(result.artifact).toEqual({ status: 'applied', cwd: '/fixture', patchPath: '/patch',
+    patchHash: 'sha256:a4895eb44afc336fecbba6e520cd67e178dace0276655d102fceffa8e5f70570' });
+});
+
+it.each(['missing-path', 'unreadable', 'empty'])('handles %s winner patch explicitly', async fault => {
+  const { host, execute } = fixture();
+  if (fault === 'missing-path') vi.mocked(host.forge).mockResolvedValue({ winner: 'one' });
+  if (fault === 'unreadable') vi.mocked(host.readPatch).mockReturnValue(null);
+  if (fault === 'empty') vi.mocked(host.readPatch).mockReturnValue({ content: ' \n' });
+  const result = (await execute()).result;
+  expect(result.status).toBe(fault === 'empty' ? 'success' : 'failure');
+  expect(result.artifact).toEqual(fault === 'empty' ? { status: 'not-needed', cwd: '/fixture', reason: 'empty-patch' } : undefined);
+  expect(host.applyPatch).not.toHaveBeenCalled();
+  if (fault !== 'empty') expect(host.tribunal).not.toHaveBeenCalled();
+});
+
+it('continues to review a declared already-satisfied Forge outcome', async () => {
+  const { host, execute } = fixture();
+  vi.mocked(host.forge).mockResolvedValue({ winner: null, alreadySatisfied: true });
+  const { result } = await execute();
+  expect(result.status).toBe('success');
+  expect(result.artifact).toEqual({ status: 'not-needed', cwd: '/fixture', reason: 'already-satisfied' });
+  expect(result.output).not.toContain('(null)');
+  expect(host.readPatch).not.toHaveBeenCalled();
+  expect(host.applyPatch).not.toHaveBeenCalled();
+  expect(host.tribunal).toHaveBeenCalledOnce();
+});
+
+it.each(['success', 'tribunal-timeout'])('retains a real Git application receipt through %s and plan persistence', async outcome => {
+  const directory = mkdtempSync(join(tmpdir(), 'agon-plan-patch-'));
+  const originalHome = process.env.AGON_HOME;
+  process.env.AGON_HOME = join(directory, 'isolated-home');
+  try {
+    execFileSync('git', ['init', '--quiet', directory]);
+    const file = join(directory, 'value.txt');
+    writeFileSync(file, 'before\n');
+    execFileSync('git', ['add', '--', 'value.txt'], { cwd: directory });
+    const patch = 'diff --git a/value.txt b/value.txt\n--- a/value.txt\n+++ b/value.txt\n@@ -1 +1 @@\n-before\n+after\n';
+    const patchPath = join(directory, 'winner.patch');
+    writeFileSync(patchPath, patch);
+    const { host, execute } = fixture();
+    host.cwd = directory;
+    host.readPatch = readPatchFromPath;
+    host.applyPatch = applyPatchToTree;
+    vi.mocked(host.forge).mockResolvedValue({ winner: 'one', patches: { one: patchPath } });
+    host.tribunal = vi.fn(async () => {
+      expect(readFileSync(file, 'utf8')).toBe('after\n');
+      if (outcome === 'tribunal-timeout') throw new Error('Tribunal timeout');
+      return { summary: 'observed applied bytes' };
+    });
+    const { result } = await execute();
+    expect(result.status).toBe(outcome === 'success' ? 'success' : 'failure');
+    expect(result.artifact).toEqual({ status: 'applied', cwd: directory, patchPath,
+      patchHash: `sha256:${createHash('sha256').update(patch).digest('hex')}` });
+    const plan = advanceCesarStep(createCesarPlan('real patch fixture', [step]), step.id, result);
+    expect(cesarPlanJsonPath(plan.id)).toBe(join(directory, 'isolated-home', 'plans', `${plan.id}.json`));
+    saveCesarPlan(plan);
+    const loaded = loadCesarPlan(plan.id);
+    expect(loaded?.steps[0].result).toEqual(result);
+    expect(() => assertExecutablePlan(loaded)).not.toThrow();
+    expect(JSON.parse(readFileSync(cesarPlanJsonPath(plan.id), 'utf8')).payload.steps[0].result).toEqual(result);
+    expect(loaded).toMatchObject({ totalActualTokens: 10, totalActualCostUsd: 0.5 });
+    if (!loaded) throw new Error('persisted plan missing');
+    if (outcome === 'tribunal-timeout') {
+      const savedBytes = readFileSync(cesarPlanJsonPath(plan.id), 'utf8');
+      const snapshot = structuredClone(loaded);
+      expect(preparePlanFallbackRetry(loaded, 'fallback')).toBeNull();
+      expect(() => prepareCesarPlanResume(loaded, 'resume')).toThrow(/applied.*restart/i);
+      expect(loaded).toEqual(snapshot);
+      expect(readFileSync(cesarPlanJsonPath(plan.id), 'utf8')).toBe(savedBytes);
+    }
+    // The same patch cannot be applied twice; unrelated dirty files cannot make it succeed.
+    const second = await execute();
+    expect(second.result.status).toBe('failure');
+    expect(second.result.artifact).toBeUndefined();
+    expect(host.tribunal).toHaveBeenCalledOnce();
+    expect(readFileSync(file, 'utf8')).toBe('after\n');
+  } finally {
+    if (originalHome === undefined) delete process.env.AGON_HOME;
+    else process.env.AGON_HOME = originalHome;
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
 
 it('preserves the engine-provider method receiver', async () => {
   const { host, execute } = fixture();

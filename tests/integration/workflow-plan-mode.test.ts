@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -66,6 +66,7 @@ describe('workflow-plan-mode — agon.brainstorm-forge-tribunal@v1 wiring', () =
   beforeEach(() => {
     originalAgonHome = process.env.AGON_HOME;
     tempHome = mkdtempSync(join(tmpdir(), 'agon-workflow-plan-'));
+    writeFileSync(join(tempHome, 'empty.patch'), '');
     process.env.AGON_HOME = tempHome;
     handleCesarBrainMock.mockReset();
     runDelegateMock.mockReset();
@@ -105,6 +106,7 @@ describe('workflow-plan-mode — agon.brainstorm-forge-tribunal@v1 wiring', () =
     runBrainstormMock.mockResolvedValue({ response: 'approach X' });
     runForgeMock.mockResolvedValue({
       winner: 'claude',
+      patches: { claude: join(tempHome, 'empty.patch') },
       baselinePasses: false,
       results: {
         claude: {
@@ -148,6 +150,7 @@ describe('workflow-plan-mode — agon.brainstorm-forge-tribunal@v1 wiring', () =
     runBrainstormMock.mockResolvedValue({ response: 'approach X' });
     runForgeMock.mockResolvedValue({
       winner: 'claude',
+      patches: { claude: join(tempHome, 'empty.patch') },
       baselinePasses: false,
       results: {
         claude: {
@@ -194,6 +197,7 @@ describe('workflow-plan-mode — agon.brainstorm-forge-tribunal@v1 wiring', () =
     runBrainstormMock.mockResolvedValue({ response: 'use redis' });
     runForgeMock.mockResolvedValue({
       winner: 'codex',
+      patches: { codex: join(tempHome, 'empty.patch') },
       baselinePasses: false,
       results: {
         codex: {
@@ -224,6 +228,7 @@ describe('workflow-plan-mode — agon.brainstorm-forge-tribunal@v1 wiring', () =
     );
 
     expect(result.result.status).toBe('success');
+    expect(result.result.artifact).toMatchObject({ status: 'not-needed', reason: 'empty-patch' });
     expect(result.result.output).toContain('agon.brainstorm-forge-tribunal');
   });
 
@@ -231,6 +236,7 @@ describe('workflow-plan-mode — agon.brainstorm-forge-tribunal@v1 wiring', () =
     runBrainstormMock.mockResolvedValue({ response: 'plan' });
     runForgeMock.mockResolvedValue({
       winner: 'claude',
+      patches: { claude: join(tempHome, 'empty.patch') },
       baselinePasses: false,
       results: {
         claude: { engineId: 'claude', pass: true, score: 80, diffLines: 3, filesChanged: 1, durationSec: 5, lintWarnings: 0, styleScore: 85, dispatchStdout: 'ok' },

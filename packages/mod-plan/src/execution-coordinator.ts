@@ -17,7 +17,7 @@ function verificationPolicy(plan: CesarPlan) {
   const reviewSatisfied = cycles > 0 && plan.steps.some((step, index) => index > lastMutation
     && step.type === 'review' && step.selfReviewCycle === cycles && step.result?.status === 'success'
     && (step.state === 'done' || (step.state === 'skipped' && !newMutation)));
-  if (reviewSatisfied) return { inspectForge: false, appendReview: false };
+  if (reviewSatisfied) return { inspectForge: plan.steps.some(step => FORGE_LIKE.has(step.type) && ran(step)), appendReview: false };
   return { inspectForge: plan.steps.some(step => FORGE_LIKE.has(step.type) && ran(step)),
     appendReview: (plan.selfReview ?? true) && lastMutation >= 0 && cycles < 2 };
 }
@@ -51,7 +51,7 @@ export interface PlanCoordinatorHost {
  * Return true when a failed plan step looks like it was interrupted by stall/fallback handling rather than a semantic task failure.
  */
 export function failedPlanStepIsFallbackRetryable(step: CesarPlanStep | null | undefined): boolean {
-  if (!step || step.state !== 'failed') {
+  if (!step || step.state !== 'failed' || step.result?.artifact?.status === 'applied') {
     return false;
   }
   const text = `${String(step.result?.error ?? '')}\n${String(step.result?.output ?? '')}`.toLowerCase();
@@ -368,19 +368,17 @@ export function createPlanCoordinator(host: PlanCoordinatorHost) {
     observe(pendingVerification);
     saveAndPublish(pendingVerification);
 
-    // Tribunal fix #2 + #8: source of truth is the actual cwd, not step state.
-    const hasUncommittedChanges = host.hasWorkingTreeChanges();
-
-    // Only forge/teamforge/pipeline produce un-applied "winner" patches —
-    // self/agent/delegate live-edit (or don't edit at all). A self-only plan
-    // that left cwd clean is a no-op success, not a stuck forge.
-    if (policy.inspectForge && !hasUncommittedChanges) {
-      emit({ type: 'warning', message: 'Plan completed forge steps but cwd has no changes. Forge winners may need to be applied. Use /forge accept or inspect ~/.agon/runs.' });
+    // Existing user edits do not prove that this plan applied its artifacts.
+    const unproven = finalPlan.steps.filter(step => FORGE_LIKE.has(step.type) && ran(step))
+      .some(step => step.result?.status !== 'success' || !step.result.artifact);
+    if (policy.inspectForge && unproven) {
+      emit({ type: 'warning', message: 'Plan has Forge output without recorded application evidence. Inspect its run artifacts and workspace before continuing; unrelated workspace changes do not prove application.' });
       const paused = { ...finalPlan, state: 'paused' as const, completedAt: undefined };
       saveAndPublish(paused);
       return paused;
     }
 
+    const hasUncommittedChanges = host.hasWorkingTreeChanges();
     const wantsReview = policy.appendReview && hasUncommittedChanges;
 
     if (!wantsReview) {

@@ -49,7 +49,7 @@ function observesContract(moduleUrl: string, check: string): Promise<boolean> {
 
 const mutants = [
   { name: 'ignore pre-step cancellation', from: 'if (signal?.aborted) break;', to: '/* mutation: ignore cancellation */', check: 'abort' },
-  { name: 'drop ready steps', from: "return plan.steps.filter((s) => s.state === 'pending');", to: 'return [];', check: 'completion' },
+  { name: 'drop ready steps', from: 'return plan.steps.filter((step) =>', to: 'return ([] as CesarPlanStep[]).filter((step) =>', check: 'completion' },
   { name: 'suppress budget warning', from: 'callbacks.onBudgetWarning(current.totalActualCostUsd, current.totalEstimatedCostUsd);', to: '/* mutation: suppress warning */', check: 'budget' },
   { name: 'allow history reporter to corrupt completed work', from: 'try { services.onEstimationError?.(stepType, error); } catch { /* reporting only */ }', to: 'services.onEstimationError?.(stepType, error);', check: 'history' },
 ] as const;

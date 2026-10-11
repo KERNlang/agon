@@ -1,5 +1,11 @@
 import type { CesarPlanStep } from './execution-model.js';
 
+/** Keep proposal and saved-record writer admission on one policy. */
+export function planParallelWriterError(steps: readonly Pick<CesarPlanStep, 'id' | 'type' | 'parallel'>[]): string | undefined {
+  const writers = steps.filter(step => step.parallel && ['forge', 'teamforge', 'pipeline', 'agent', 'team-agent'].includes(step.type));
+  return writers.length > 1 ? `parallel workspace writers require explicit serialization: ${writers.map(step => step.id).join(', ')}` : undefined;
+}
+
 /** Shared graph rules for proposals and saved execution records. Iterative DFS
  * keeps deeply nested model output from exhausting the JavaScript call stack. */
 export function planGraphError(steps: readonly Pick<CesarPlanStep, 'id' | 'dependsOn'>[]): string | undefined {

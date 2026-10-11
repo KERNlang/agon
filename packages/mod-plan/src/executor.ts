@@ -24,7 +24,14 @@ export interface PlanExecutorCallbacks {
 }
 
 export function getReadySteps(plan: CesarPlan): CesarPlanStep[] {
-  return plan.steps.filter((s) => s.state === 'pending');
+  const byId = new Map(plan.steps.map(step => [step.id, step]));
+  return plan.steps.filter((step) =>
+    (step.state === 'pending' || (step.state === 'blocked' && !!step.dependsOn?.length))
+    && (step.dependsOn ?? []).every(id => {
+      const dependency = byId.get(id);
+      return dependency && (dependency.state === 'done' || dependency.state === 'skipped')
+        && dependency.result?.status === 'success';
+    }));
 }
 
 const cancelledBeforeStart = (): CesarStepResult => ({ status: 'failure', actualTokens: 0,

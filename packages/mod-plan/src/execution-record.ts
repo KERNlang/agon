@@ -1,6 +1,6 @@
 import { CESAR_PLAN_STATES, CESAR_STEP_TYPE_TABLE } from './execution-model.js';
 import type { CesarPlan, CesarPlanStep } from './execution-model.js';
-import { planGraphError } from './dependency-graph.js';
+import { planGraphError, planParallelWriterError } from './dependency-graph.js';
 
 type RecordValue = Record<string, unknown>;
 const object = (value: unknown): value is RecordValue =>
@@ -55,7 +55,8 @@ export function isPersistedCesarPlan(value: unknown, expectedId: string): value 
     && optional(value, ['reviewCyclesUsed'], counter)
     && optional(value, ['fallbackRetriesUsed'], item => dictionary(item, counter))
     && optional(value, ['planningCost'], item => object(item) && nonnegative(item.tokens) && nonnegative(item.costUsd))
-    && planGraphError(value.steps as CesarPlanStep[]) === undefined;
+    && planGraphError(value.steps as CesarPlanStep[]) === undefined
+    && planParallelWriterError(value.steps as CesarPlanStep[]) === undefined;
 }
 
 /** Refuse incomplete records before effects; historical inspection stays available. */

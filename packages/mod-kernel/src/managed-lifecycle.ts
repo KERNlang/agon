@@ -11,6 +11,7 @@ import { rollbackGeneration } from './host-rollback.js';
 import { referencedInstallations } from './lifecycle-recovery.js';
 import { makeTreeRemovable } from './removable-tree.js';
 import { WriterFence, type WriterLockOptions } from './writer-lock.js';
+import { assertMigrationSourceRevision, type MigrationSourceRevision } from './migration-engine.js';
 import { evaluateThirdPartyAuthority, TrustGrantStore, type TrustPublisher } from './trust-authority.js';
 
 export type ManagedLifecycleOperation = 'install' | 'update' | 'downgrade';
@@ -114,6 +115,7 @@ async function assertPersistedThirdPartyAuthority(
 
 
 export interface ManagedLifecycleRequest {
+  readonly configSource?: MigrationSourceRevision;
   readonly operation: ManagedLifecycleOperation;
   readonly networkPolicy: ManagedNetworkPolicy;
   readonly kernelVersion: string;
@@ -144,6 +146,7 @@ export interface ManagedLifecyclePackagePlan {
 }
 
 export interface ManagedLifecyclePlan {
+  readonly configSource?: MigrationSourceRevision;
   readonly schemaVersion: 1;
   readonly planId: string;
   readonly operation: ManagedLifecycleOperation;
@@ -394,6 +397,8 @@ export async function createManagedLifecyclePlan(
     ...(entry.source === 'linked-development' ? [`linked-source:${entry.id}`] : []),
     ...(entry.trustTier === 'third-party' ? [`full-code-trust:${entry.id}`] : []),
   ]).sort();
+  const configSource = request.configSource === undefined ? undefined : { ...request.configSource };
+  if (configSource) await assertMigrationSourceRevision(configSource, host.hostIo);
   const unsigned = freeze({
     schemaVersion: 1 as const,
     planId: sha256Canonical({ operation: request.operation, networkPolicy: request.networkPolicy, lock: request.lock, requestedPackageIds: [...request.requestedPackageIds].sort() }).slice(7, 39),
@@ -409,6 +414,7 @@ export async function createManagedLifecyclePlan(
     approvalReasons,
     desiredState: request.desiredState,
     lock: request.lock,
+    ...(configSource ? { configSource } : {}),
   });
   return freeze({ ...unsigned, planHash: planSubject(unsigned) });
 }
@@ -492,14 +498,17 @@ export class ManagedLifecycleService {
     await writeNewImmutableFile(this.#io, join(this.receiptsRoot, `${receipt.transactionId}.${receipt.outcome}.json`), `${canonicalJson(receipt)}\n`);
   }
 
-  async apply(plan: ManagedLifecyclePlan, installer: CandidateInstaller, verifier: CandidateVerifier, approval?: { readonly approvedPlanHash: string }): Promise<ManagedLifecycleApplyResult> {
-    await this.initialize();
+  async apply(input: ManagedLifecyclePlan, installer: CandidateInstaller, verifier: CandidateVerifier, approval?: { readonly approvedPlanHash: string }): Promise<ManagedLifecycleApplyResult> {
+    // Callers can deserialize plans. Retain the approved bytes across callbacks.
+    const plan = freeze(structuredClone(input));
     const { planHash, ...unsignedPlan } = plan;
     if (planHash !== planSubject(unsignedPlan)) throw new TypeError('lifecycle plan hash mismatch');
+    if (plan.configSource) await assertMigrationSourceRevision(plan.configSource, this.#io);
     if (plan.approvalReasons.length > 0 && approval?.approvedPlanHash !== plan.planHash) {
       throw new DurableHostError('MOD_TRANSACTION_CONFLICT', 'lifecycle approval does not match the exact candidate plan', { approvalReasons: plan.approvalReasons });
     }
     if (plan.missing.length > 0) throw new DurableHostError('MOD_TRANSACTION_FAILED', 'candidate plan has unavailable packages', { missing: plan.missing });
+    await this.initialize();
     const pointer = await this.host.readCurrentPointer();
     const actualPointerHash = pointer ? sha256Canonical(pointer) : null;
     if ((pointer?.generation ?? 0) !== plan.baseGeneration || actualPointerHash !== plan.basePointerHash) {
@@ -592,6 +601,7 @@ export class ManagedLifecycleService {
           planHash: plan.planHash,
         },
         files: { 'installation.json': `${canonicalJson(installation)}\n` },
+        configSource: plan.configSource,
       });
       selectedGeneration = result.pointer.generation;
       steps.push({ id: 'select-generation', state: 'passed' });

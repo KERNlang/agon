@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { chmod, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { defineCommand } from 'citty';
+import { persistencePath } from '@kernlang/agon-support-persistence';
 import {
   DurableModHost,
   ManagedLifecycleService,
@@ -10,6 +11,7 @@ import {
   createFirstPartyModCatalog,
   createReleaseSetupSelection,
   parseDesiredState,
+  readMigrationSourceRevision,
   resolveDesiredState,
   runBoundedCandidateProcess,
   sha256Canonical,
@@ -82,7 +84,8 @@ export async function runManagedSetup(args: ManagedSetupArgs, options: { preserv
     console.log(JSON.stringify({ status: 'already-qualified', profile: selection.profile, generationUnchanged: true, launcher, packageCount: artifacts.length }, null, 2));
     return;
   }
-  const plan = await createManagedLifecyclePlan(host, { operation: existing ? 'update' : 'install', networkPolicy: args.offline ? 'frozen-offline' : 'online', kernelVersion: VERSION, apiVersion: VERSION,
+  const configSource = await readMigrationSourceRevision(persistencePath('config.json'));
+  const plan = await createManagedLifecyclePlan(host, { operation: existing ? 'update' : 'install', networkPolicy: args.offline ? 'frozen-offline' : 'online', kernelVersion: VERSION, apiVersion: VERSION, configSource,
     requestedPackageIds: artifacts.map(({ id }) => id), artifacts, desiredState: selection.desiredState, lock });
   if (plan.basePointerHash !== (selectedPointer ? sha256Canonical(selectedPointer) : null)) {
     throw new Error('modular selection changed during setup; rerun setup to create a current plan');

@@ -21,6 +21,25 @@ vi.mock('node:fs/promises', async importOriginal => {
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); });
 
 describe('setup preserves selected desired state', () => {
+  it('refuses a setup preview after its global configuration changes', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'agon-setup-config-source-'));
+    vi.stubEnv('AGON_HOME', home);
+    vi.stubEnv('AGON_MODULAR_HOST_ROOT', join(home, 'modular-host'));
+    const source = join(home, 'config.json');
+    await writeFile(source, '{"forgeFitnessTimeout":91}\n');
+    const output = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await runManagedSetup({ profile: 'minimal', plan: true });
+    const plan = JSON.parse(String(output.mock.calls.at(-1)?.[0])).lifecycle;
+    await writeFile(source, '{"forgeFitnessTimeout":137}\n');
+    const host = new DurableModHost(join(home, 'modular-host'), { kernelVersion: '1.0.0' });
+    const install = vi.fn(installer.install);
+    await expect(new ManagedLifecycleService(host).apply(plan, { install }, verifier))
+      .rejects.toMatchObject({ code: 'MOD_TRANSACTION_CONFLICT' });
+    expect(install).not.toHaveBeenCalled();
+    expect(await host.readCurrentPointer()).toBeNull();
+    expect(await readFile(source, 'utf8')).toBe('{"forgeFitnessTimeout":137}\n');
+  });
+
   it.each([false, true])('does not write a launcher when previewing an already installed selection (launcher exists=%s)', async exists => {
     const home = await mkdtemp(join(tmpdir(), 'agon-setup-preview-'));
     const root = join(home, 'modular-host');

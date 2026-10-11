@@ -9,6 +9,7 @@ import { parseGenerationManifest, parseGenerationPointer, parseHostTransactionJo
 import { makeTreeRemovable } from './removable-tree.js';
 import { GenerationLeaseStore } from './generation-leases.js';
 import { disposeGenerationOwners } from './generation-disposal.js';
+import { assertMigrationSourceRevision, type MigrationSourceRevision } from './migration-engine.js';
 
 export type HostTransactionOperation =
   | 'install' | 'update' | 'enable' | 'disable' | 'remove' | 'import'
@@ -88,6 +89,7 @@ export interface DurableHostOptions {
 }
 
 export interface CommitGenerationInput {
+  readonly configSource?: MigrationSourceRevision;
   readonly operation: HostTransactionOperation;
   readonly expectedBaseGeneration?: number;
   readonly expectedBasePointerHash?: `sha256:${string}` | null;
@@ -320,6 +322,7 @@ export class DurableModHost {
   }
 
   async commitGeneration(input: CommitGenerationInput): Promise<CommitGenerationResult> {
+    const configSource = input.configSource === undefined ? undefined : Object.freeze({ ...input.configSource });
     await this.initialize();
     const ownerId = this.#options.ownerId ?? 'agon.kernel';
     const fence = await WriterFence.acquire(this.paths.writerLock, ownerId, {
@@ -337,6 +340,7 @@ export class DurableModHost {
     const eventOffset = this.#events.length;
     try {
       await this.#fault('after-lock');
+      if (configSource) await assertMigrationSourceRevision(configSource, this.#io);
       const previous = await this.readCurrentPointer();
       if (input.expectedBaseGeneration !== undefined && input.expectedBaseGeneration !== (previous?.generation ?? 0)) {
         throw new DurableHostError('MOD_TRANSACTION_CONFLICT', 'generation changed after activation preview', {
@@ -407,6 +411,7 @@ export class DurableModHost {
         transactionId,
         selectedAt: this.#now().toISOString(),
       });
+      if (configSource) await assertMigrationSourceRevision(configSource, this.#io);
       selectedPointer = pointer;
       await atomicWrite(this.#io, this.paths.current, `${canonicalJson(pointer)}\n`);
       committed = true;

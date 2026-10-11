@@ -130,9 +130,9 @@ export type {
   HostTransactionReceipt,
 } from './durable-host.js';
 export type { HostIo } from './host-io.js';
-export { migrateStagedCopy } from './migration-engine.js';
+export { migrateStagedCopy, readMigrationSourceRevision } from './migration-engine.js';
 export { withSynchronousWriterFence } from './writer-lock.js';
-export type { MigrationReceipt, VersionedMigration } from './migration-engine.js';
+export type { MigrationReceipt, MigrationSourceRevision, VersionedMigration } from './migration-engine.js';
 export type { HostBlockedReason, HostDoctorReport, HostEvent, HostEventLevel } from './host-observability.js';
 export { rollbackGeneration } from './host-rollback.js';
 export type { RollbackGenerationOptions } from './host-rollback.js';

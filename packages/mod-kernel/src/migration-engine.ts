@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { dirname } from 'node:path';
+import { dirname, isAbsolute } from 'node:path';
 import { atomicWrite, nodeHostIo, type HostIo } from './host-io.js';
 import { DurableHostError } from './host-errors.js';
 
@@ -25,6 +25,33 @@ export interface MigrationReceipt {
 
 function sha256(bytes: Uint8Array): `sha256:${string}` {
   return `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+}
+
+export interface MigrationSourceRevision {
+  readonly path: string;
+  /** Null binds absence, not an empty file. */
+  readonly contentHash: `sha256:${string}` | null;
+}
+
+/** Capture bytes without exposing configuration values in a plan. */
+export async function readMigrationSourceRevision(path: string, io: HostIo = nodeHostIo): Promise<MigrationSourceRevision> {
+  if (typeof path !== 'string' || !isAbsolute(path) || path.includes('\0')) throw new TypeError('migration source path must be absolute');
+  try { return Object.freeze({ path, contentHash: sha256(await io.readFile(path)) }); }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    return Object.freeze({ path, contentHash: null });
+  }
+}
+
+/** Recheck inside the publication fence before selecting staged outputs. */
+export async function assertMigrationSourceRevision(source: MigrationSourceRevision, io: HostIo = nodeHostIo): Promise<void> {
+  if (!source || (source.contentHash !== null && (typeof source.contentHash !== 'string' || !/^sha256:[a-f0-9]{64}$/.test(source.contentHash)))) {
+    throw new TypeError('migration source hash is malformed');
+  }
+  const current = await readMigrationSourceRevision(source.path, io);
+  if (current.contentHash !== source.contentHash) {
+    throw new DurableHostError('MOD_TRANSACTION_CONFLICT', 'configuration source changed after preview; create a new plan');
+  }
 }
 
 function resolveMigrationPath(fromVersion: number, toVersion: number, migrations: readonly VersionedMigration[]): readonly VersionedMigration[] {

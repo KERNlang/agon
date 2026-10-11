@@ -1,13 +1,63 @@
-import { mkdtemp, readFile, readdir } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { DurableModHost } from '../../packages/mod-kernel/src/durable-host.js';
 import { ManagedLifecycleService, createManagedLifecyclePlan } from '../../packages/mod-kernel/src/managed-lifecycle.js';
 import { rollbackGeneration } from '../../packages/mod-kernel/src/host-rollback.js';
+import { readMigrationSourceRevision } from '../../packages/mod-kernel/src/migration-engine.js';
 import { artifact, installer, lifecycleLock, request, verifier } from '../helpers/modular-lifecycle.js';
 
 describe('managed lifecycle concurrency', () => {
+  it.each(['remove', 'replace'] as const)('retains the approved binding when a caller tries to %s it during verification', async mutation => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-lifecycle-plan-mutation-'));
+    const path = join(root, 'config.json');
+    await writeFile(path, '{"value":1}\n');
+    const host = new DurableModHost(join(root, 'host'), { kernelVersion: '1.0.0' });
+    const service = new ManagedLifecycleService(host);
+    const plan = JSON.parse(JSON.stringify(await createManagedLifecyclePlan(host, request([artifact('@test/app')], {
+      configSource: await readMigrationSourceRevision(path),
+    }))));
+    await expect(service.apply(plan, installer, { async verify(prefix, verified) {
+      await writeFile(path, '{"value":2}\n');
+      if (mutation === 'remove') delete plan.configSource;
+      else plan.configSource = await readMigrationSourceRevision(path);
+      return verifier.verify(prefix, verified);
+    } })).rejects.toMatchObject({ code: 'MOD_TRANSACTION_CONFLICT' });
+    expect(await host.readCurrentPointer()).toBeNull();
+    expect(await readdir(service.installationsRoot)).toEqual([]);
+    expect(await readdir(service.stagingRoot)).toEqual([]);
+    expect(await readFile(path, 'utf8')).toBe('{"value":2}\n');
+  });
+
+  it.each(['after-packages-staged', 'after-prefix-promoted'] as const)('refuses a changed config source at %s and permits a fresh plan', async boundary => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-lifecycle-config-'));
+    const sourcePath = join(root, 'config.json');
+    await writeFile(sourcePath, '{"value":1}\n');
+    const host = new DurableModHost(join(root, 'host'), { kernelVersion: '1.0.0' });
+    const stable = new ManagedLifecycleService(host);
+    const entry = artifact('@test/app');
+    await stable.apply(await createManagedLifecyclePlan(host, request([entry])), installer, verifier);
+    const installedBefore = await readdir(stable.installationsRoot);
+    const pointerBefore = await readFile(host.paths.current);
+    const source = { path: sourcePath, contentHash: `sha256:${createHash('sha256').update(await readFile(sourcePath)).digest('hex')}` as const };
+    const plan = await createManagedLifecyclePlan(host, request([entry], { operation: 'update', configSource: source }));
+    const racing = new ManagedLifecycleService(host, { fault: async point => {
+      if (point === boundary) await writeFile(sourcePath, '{"value":2}\n');
+    } });
+    await expect(racing.apply(plan, installer, verifier)).rejects.toMatchObject({ code: 'MOD_TRANSACTION_CONFLICT' });
+    expect(await readFile(host.paths.current)).toEqual(pointerBefore);
+    expect(await readFile(sourcePath, 'utf8')).toBe('{"value":2}\n');
+    expect(await readdir(stable.installationsRoot)).toEqual(installedBefore);
+    expect(await readdir(stable.stagingRoot)).toEqual([]);
+    const refreshed = { path: sourcePath, contentHash: `sha256:${createHash('sha256').update(await readFile(sourcePath)).digest('hex')}` as const };
+    const next = await createManagedLifecyclePlan(host, request([entry], { operation: 'update', configSource: refreshed }));
+    expect(next.planHash).not.toBe(plan.planHash);
+    await expect(stable.apply({ ...plan, configSource: refreshed }, installer, verifier)).rejects.toThrow('plan hash mismatch');
+    await expect(stable.apply(next, installer, verifier)).resolves.toMatchObject({ pointer: { generation: 2 } });
+  });
+
   it('rejects update when activation changes away and back during staging', async () => {
     const root = await mkdtemp(join(tmpdir(), 'agon-lifecycle-aba-'));
     const host = new DurableModHost(root, { kernelVersion: '1.0.0' });

@@ -2,10 +2,39 @@ import { mkdtemp, readFile, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { migrateStagedCopy } from '../../packages/mod-kernel/src/migration-engine.js';
+import { migrateStagedCopy, readMigrationSourceRevision, assertMigrationSourceRevision } from '../../packages/mod-kernel/src/migration-engine.js';
 import { nodeHostIo } from '../../packages/mod-kernel/src/host-io.js';
 
 describe('staged migration engine', () => {
+  it('binds absent and empty sources separately and accepts unchanged bytes', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-migration-revision-'));
+    const source = join(root, 'config.json');
+    const absent = await readMigrationSourceRevision(source);
+    expect(absent.contentHash).toBeNull();
+    await expect(assertMigrationSourceRevision(absent)).resolves.toBeUndefined();
+    await writeFile(source, '');
+    await expect(assertMigrationSourceRevision(absent)).rejects.toMatchObject({ code: 'MOD_TRANSACTION_CONFLICT' });
+    const empty = await readMigrationSourceRevision(source);
+    expect(empty.contentHash).toBe('sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855');
+    await expect(assertMigrationSourceRevision(empty)).resolves.toBeUndefined();
+    expect(Object.isFrozen(empty)).toBe(true);
+  });
+
+  it('does not classify unreadable sources as absent or expose their bytes', async () => {
+    const error = Object.assign(new Error('fixture denied'), { code: 'EACCES' });
+    const io = { ...nodeHostIo, readFile: vi.fn(async () => { throw error; }) };
+    await expect(readMigrationSourceRevision('/fixture/config.json', io)).rejects.toBe(error);
+    await expect(assertMigrationSourceRevision({ path: '/fixture/config.json', contentHash: null }, io)).rejects.toBe(error);
+  });
+
+  it('rejects malformed source identities before file access', async () => {
+    const readFile = vi.fn(nodeHostIo.readFile);
+    const io = { ...nodeHostIo, readFile };
+    await expect(readMigrationSourceRevision('relative/config.json', io)).rejects.toThrow('absolute');
+    await expect(assertMigrationSourceRevision({ path: '/fixture/config.json', contentHash: 'sha256:nope' }, io)).rejects.toThrow('malformed');
+    expect(readFile).not.toHaveBeenCalled();
+  });
+
   it('wraps reservation directory failures without invoking a callback or cleanup', async () => {
     const root = await mkdtemp(join(tmpdir(), 'agon-migration-'));
     const source = join(root, 'source'); await writeFile(source, 'original');

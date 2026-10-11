@@ -1,4 +1,4 @@
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile, unlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -6,8 +6,42 @@ import { DurableModHost } from '../../packages/mod-kernel/src/durable-host.js';
 import { SimulatedHostCrash } from '../../packages/mod-kernel/src/host-errors.js';
 import { WriterFence } from '../../packages/mod-kernel/src/writer-lock.js';
 import { hostLock } from '../helpers/modular-host.js';
+import { readMigrationSourceRevision } from '../../packages/mod-kernel/src/migration-engine.js';
 
 describe('durable host boundary invariants', () => {
+  it.each(['after-lock', 'after-staging', 'after-generation-rename'] as const)('rechecks a config source at %s without replacing the previous generation', async boundary => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-host-source-'));
+    const source = join(root, 'config.json');
+    await writeFile(source, '{"value":1}\n');
+    const stable = new DurableModHost(join(root, 'host'), { kernelVersion: '1.0.0' });
+    await stable.commitGeneration({ operation: 'install', lock: hostLock('a'), desiredState: {}, installedIndex: {} });
+    const pointerBefore = await readFile(stable.paths.current);
+    const configSource = await readMigrationSourceRevision(source);
+    const host = new DurableModHost(stable.root, { kernelVersion: '1.0.0', fault: async point => {
+      if (point === boundary) await writeFile(source, '{"value":2}\n');
+    } });
+    await expect(host.commitGeneration({ operation: 'update', lock: hostLock('b'), desiredState: {}, installedIndex: {}, configSource }))
+      .rejects.toMatchObject({ code: 'MOD_TRANSACTION_CONFLICT' });
+    expect(await readFile(stable.paths.current)).toEqual(pointerBefore);
+    expect(await readFile(source, 'utf8')).toBe('{"value":2}\n');
+    await expect(stable.validateGeneration(1)).resolves.toMatchObject({ generation: 1 });
+    await expect(stable.commitGeneration({ operation: 'update', lock: hostLock('b'), desiredState: {}, installedIndex: {},
+      configSource: await readMigrationSourceRevision(source) })).resolves.toMatchObject({ pointer: { generation: 2 } });
+  });
+
+  it.each(['create', 'delete'] as const)('refuses source %s after preview', async action => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-host-source-existence-'));
+    const source = join(root, 'config.json');
+    if (action === 'delete') await writeFile(source, '{}');
+    const configSource = await readMigrationSourceRevision(source);
+    if (action === 'create') await writeFile(source, '{}');
+    else await unlink(source);
+    const host = new DurableModHost(join(root, 'host'), { kernelVersion: '1.0.0' });
+    await expect(host.commitGeneration({ operation: 'install', lock: hostLock('a'), desiredState: {}, installedIndex: {}, configSource }))
+      .rejects.toMatchObject({ code: 'MOD_TRANSACTION_CONFLICT' });
+    expect(await host.readCurrentPointer()).toBeNull();
+  });
+
   it('finishes both top-level snapshots after process death behind the commit point', async () => {
     const root = await mkdtemp(join(tmpdir(), 'agon-host-snapshots-'));
     const stable = new DurableModHost(root, { kernelVersion: '1.0.0', processIdentity: 'stable' });

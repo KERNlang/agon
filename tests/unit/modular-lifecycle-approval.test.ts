@@ -7,6 +7,19 @@ import { ManagedLifecycleService, createManagedLifecyclePlan } from '../../packa
 import { artifact, installer, request, verifier } from '../helpers/modular-lifecycle.js';
 
 describe('managed lifecycle approval binding', () => {
+  it('binds installed payload identity to the approved plan', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-lifecycle-payload-'));
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
+    const first = { ...artifact('@test/app'), payloadHash: `sha256:${'1'.repeat(64)}` as const };
+    const second = { ...first, payloadHash: `sha256:${'2'.repeat(64)}` as const };
+    const a = await createManagedLifecyclePlan(host, request([first]));
+    const b = await createManagedLifecyclePlan(host, request([second]));
+    expect(a.packages[0]).toMatchObject({ payloadHash: first.payloadHash });
+    expect(a.planHash).not.toBe(b.planHash);
+    await expect(createManagedLifecyclePlan(host, request([{ ...first, payloadHash: 'sha256:bad' }])))
+      .rejects.toThrow('integrity metadata');
+  });
+
   it('requires exact plan approval when provenance or source changes need a decision', async () => {
     const root = await mkdtemp(join(tmpdir(), 'agon-lifecycle-approval-'));
     const host = new DurableModHost(root, { kernelVersion: '1.0.0' });

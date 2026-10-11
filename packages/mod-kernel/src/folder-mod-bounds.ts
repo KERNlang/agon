@@ -1,10 +1,12 @@
 import { constants } from 'node:fs';
-import { lstat, open, readdir } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { lstat, open, opendir } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { StaticDiscoveryError } from './discovery.js';
 import { readExactBounded } from './bounded-file-read.js';
 import { FOLDER_MOD_LIMITS } from './folder-mod-limits.js';
+import { sha256Canonical } from './lock.js';
 
 const ARCHIVE_FILE = /(?:\.zip|\.tar|\.tgz|\.tar\.gz|\.tar\.bz2|\.tar\.xz|\.7z|\.rar)$/i;
 
@@ -27,23 +29,30 @@ export async function assertNoSymlinkComponents(root: string, relativePath: stri
 }
 
 /** Iteratively enumerate a package without following links or allowing resource exhaustion. */
-export async function walkBoundedPackage(root: string): Promise<readonly BoundedPackageFile[]> {
+export async function walkBoundedPackage(root: string, options: { readonly omitRootNodeModules?: boolean } = {}): Promise<readonly BoundedPackageFile[]> {
   const pending: Array<{ readonly prefix: string; readonly depth: number }> = [{ prefix: '', depth: 0 }];
   const files: BoundedPackageFile[] = [];
   let totalBytes = 0;
+  let totalEntries = 0;
   while (pending.length > 0) {
     const { prefix, depth } = pending.pop()!;
     if (depth > FOLDER_MOD_LIMITS.maxDepth) {
       throw new StaticDiscoveryError('folder mod exceeds the directory depth limit', { maxDepth: FOLDER_MOD_LIMITS.maxDepth });
     }
     await assertNoSymlinkComponents(root, prefix);
-    const entries = await readdir(join(root, prefix), { withFileTypes: true });
-    await assertNoSymlinkComponents(root, prefix);
-    for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name)).reverse()) {
+    const entries = await opendir(join(root, prefix));
+    for await (const entry of entries) {
+      await assertNoSymlinkComponents(root, prefix);
+      totalEntries++;
+      if (totalEntries > FOLDER_MOD_LIMITS.maxEntries) {
+        throw new StaticDiscoveryError('folder mod exceeds the entry-count limit', { maxEntries: FOLDER_MOD_LIMITS.maxEntries });
+      }
       const path = prefix ? `${prefix}/${entry.name}` : entry.name;
       const stat = await lstat(join(root, path));
       if (stat.isSymbolicLink()) throw new StaticDiscoveryError('symbolic links are forbidden in folder mods', { path });
       if (stat.isDirectory()) {
+        // npm dependencies have separate package identities, not payload identity.
+        if (options.omitRootNodeModules && path === 'node_modules') continue;
         pending.push({ prefix: path, depth: depth + 1 });
         continue;
       }
@@ -61,14 +70,27 @@ export async function walkBoundedPackage(root: string): Promise<readonly Bounded
         throw new StaticDiscoveryError('folder mod exceeds the total-byte limit', { totalBytes, maxBytes: FOLDER_MOD_LIMITS.maxTotalBytes });
       }
     }
+    await assertNoSymlinkComponents(root, prefix);
   }
   return Object.freeze(files.sort((left, right) => left.path.localeCompare(right.path)));
+}
+
+/** Hash package-owned files. Dependency resolution needs separate verification. */
+export async function hashInstalledPackagePayload(root: string): Promise<`sha256:${string}`> {
+  const files = await walkBoundedPackage(root, { omitRootNodeModules: true });
+  const byPath = new Map(files.map(file => [file.path, file]));
+  const inventory: Array<{ path: string; size: number; contentHash: string }> = [];
+  for (const path of [...byPath.keys()].sort()) {
+    const bytes = await readBoundedPackageFile(root, byPath.get(path)!);
+    inventory.push({ path, size: bytes.byteLength, contentHash: `sha256:${createHash('sha256').update(bytes).digest('hex')}` });
+  }
+  return sha256Canonical(inventory);
 }
 
 /** Read one already-enumerated file while rechecking size and no-follow semantics. */
 export async function readBoundedPackageFile(root: string, file: BoundedPackageFile): Promise<Uint8Array> {
   await assertNoSymlinkComponents(root, file.path);
-  const handle = await open(join(root, file.path), constants.O_RDONLY | constants.O_NOFOLLOW);
+  const handle = await open(join(root, file.path), constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
     const stat = await handle.stat();
     await assertNoSymlinkComponents(root, file.path);

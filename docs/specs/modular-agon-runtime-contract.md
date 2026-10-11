@@ -232,10 +232,31 @@ have additional approvals, but not a separate mutation mechanism.
 ### Phase 2: apply
 
 1. Download/install into a staging directory with lifecycle scripts disabled.
+   npm receives an explicit temporary HOME/XDG/TMPDIR and empty user/global
+   config files. Preserve only a caller-selected cache outside that owned tree.
 2. Verify package identity, integrity, manifest, containment, and compatibility.
+
+   Managed npm artifacts bind `payloadHash` into the lifecycle plan. This hash is
+   SHA-256 of canonical JSON for the package-owned file inventory, ordered by
+   path using JavaScript's default string sort. Each record has `path`, `size`
+   in bytes, and `contentHash` (a `sha256:` file digest). Generate the inventory
+   from the actual packed archive. Verify installed bytes before importing code.
+   This does not change the archive meaning of `contentHash` or SRI `integrity`.
+   The root `node_modules` directory is a separate dependency namespace, excluded
+   from this payload hash. Its resolution and package identities require separate
+   verification; a passing payload hash alone does not qualify activation.
+
 3. Run declarative data/config migrations against staged copies.
 4. Build a complete immutable candidate generation, including desired config,
    canonical lock, packages, static assets, and migration outputs.
+   The candidate subprocess consumes the staged configuration bytes and exact
+   planned selection. It verifies all five surface projections with multiplicity
+   preserved, then disposes activation handles before emitting its completion
+   record. A zero exit without this record does not qualify activation.
+   Recheck package containment and payloads after activation and launcher smoke.
+   On macOS/Linux, terminate the owned process group on every terminal path.
+   This is not a sandbox: a descendant that creates a new session can escape
+   process-group cleanup. Dependency-resolution qualification remains separate.
 5. Import/register the candidate graph only in a sacrificial subprocess. Apply
    time/output/resource bounds and run registry invariants and mod smoke checks.
 6. If validation succeeds, atomically select the candidate as the durable current
@@ -400,6 +421,14 @@ Guide content, examples, “when to use,” dependencies, costs, and availabilit
 generated from active/installed registry data. Documentation can display disabled
 mods in an “available to install/enable” section without advertising them as
 callable.
+
+## Package inspection bounds
+
+Package inspection streams directory entries and rejects trees with more than
+4,096 entries, including directories. The existing limits of 2,048 files,
+32 directory levels, 16 MiB per file, and 64 MiB total remain in force.
+File reads use nonblocking, no-follow opens and recheck descriptor identity;
+a file replaced by a named pipe must fail without waiting for a writer.
 
 ## Configuration contract
 

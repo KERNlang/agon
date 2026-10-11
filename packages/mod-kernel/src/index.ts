@@ -152,7 +152,8 @@ export type {
   ManagedNetworkPolicy, ManagedPackageArtifact, ManagedPackageSourceKind,
 } from './managed-lifecycle.js';
 
-export { NpmCandidateInstaller, SubprocessCandidateVerifier, runBoundedCandidateProcess } from './candidate-process.js';
+export { NpmCandidateInstaller, SubprocessCandidateVerifier, runBoundedCandidateProcess, runIsolatedNpmCandidateProcess } from './candidate-process.js';
+export { hashInstalledPackagePayload } from './folder-mod-bounds.js';
 export type {
   BoundedProcessRequest, BoundedProcessResult, BoundedProcessRunner,
   NpmCandidateInstallerOptions, SubprocessCandidateVerifierOptions,

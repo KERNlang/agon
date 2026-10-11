@@ -10,6 +10,8 @@ import {
   createFullCompatDesiredState,
   createFirstPartyActivationService,
   planDesiredStateChange,
+  bootstrapFirstPartySurfaceGeneration,
+  createReleaseSetupSelection,
 } from '../../packages/mod-kernel/src/index.js';
 import { surfaceLockFor } from '../helpers/modular-surface-lock.js';
 import {
@@ -30,6 +32,43 @@ afterEach(async () => {
 });
 
 describe('production physical surface bootstrap', () => {
+  it('qualifies a staged selection without activating the full compatibility profile', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-candidate-selection-'));
+    const { desiredState } = createReleaseSetupSelection({ profile: 'minimal', with: ['think'], now: NOW });
+    const lock = await surfaceLockFor(desiredState);
+    const unexpectedExecution = () => { throw new Error('candidate qualification must not execute a workflow'); };
+    const boot = await bootstrapFirstPartySurfaceGeneration({ hostRoot: root,
+      candidateSelection: { desiredState, lock, configurationFiles: {} },
+      runtime: { command: unexpectedExecution, tool: unexpectedExecution, parseIntent: unexpectedExecution, renderDocs: unexpectedExecution } });
+    try {
+      expect(boot.activePackageIds).toEqual(['@kernlang/agon-mod-ask', '@kernlang/agon-mod-think']);
+      expect(boot.desiredState).toEqual(desiredState);
+      for (const surface of ['cli', 'tui', 'mcp', 'cesar', 'docs'] as const) {
+        const projection = boot.activated.generation.project(surface);
+        // Think declares CLI and TUI contributions, not MCP/Cesar/docs entries.
+        expect(projection.entries.some(entry => entry.owner.id === 'agon.think'), surface).toBe(surface === 'cli' || surface === 'tui');
+        expect(projection.entries.some(entry => entry.owner.id === 'agon.brainstorm')).toBe(false);
+      }
+      expect(await new DurableModHost(root, { kernelVersion: '1.0.0' }).readCurrentPointer()).toBeNull();
+    } finally { await boot.activated.dispose(); }
+  });
+
+  it.each(['safe-mode', 'bad-lock', 'missing-config', 'partial-config'] as const)
+    ('rejects invalid staged qualification input: %s', async fault => {
+      const root = await mkdtemp(join(tmpdir(), 'agon-candidate-invalid-'));
+      const { desiredState } = createReleaseSetupSelection({ profile: 'minimal', now: NOW });
+      const lock = await surfaceLockFor(desiredState);
+      const unexpectedExecution = () => { throw new Error('unexpected workflow execution'); };
+      const operation = bootstrapFirstPartySurfaceGeneration({ hostRoot: root, safeMode: fault === 'safe-mode',
+        candidateSelection: { desiredState,
+          lock: fault === 'bad-lock' ? { ...lock, graphHash: `sha256:${'0'.repeat(64)}` } : lock,
+          configSource: fault === 'missing-config' ? { path: join(root, 'config.json'), contentHash: null } : undefined,
+          configurationFiles: fault === 'partial-config' ? { 'config/index.json': new TextEncoder().encode('{}') } : {} },
+        runtime: { command: unexpectedExecution, tool: unexpectedExecution, parseIntent: unexpectedExecution, renderDocs: unexpectedExecution } });
+      await expect(operation).rejects.toThrow(fault === 'safe-mode' ? /safe mode/ : fault === 'bad-lock' ? /hash/ : /configuration/);
+      expect(await new DurableModHost(root, { kernelVersion: '1.0.0' }).readCurrentPointer()).toBeNull();
+    });
+
   it.each(['{}', '{broken'])('refuses orphan management state without a pointer: %s', async bytes => {
     const root = await mkdtemp(join(tmpdir(), 'agon-management-orphan-'));
     vi.stubEnv('AGON_MODULAR_HOST_ROOT', root);

@@ -1,11 +1,18 @@
-import { chmod, cp, mkdir, mkdtemp, readFile, readdir, stat, symlink, unlink, writeFile } from 'node:fs/promises';
+import { chmod, cp, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, symlink, unlink, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { DurableModHost as SetupHost, ManagedLifecycleService as SetupLifecycleService } from '@kernlang/agon-kernel';
+import { DurableModHost as SetupHost, ManagedLifecycleService as SetupLifecycleService,
+  bootstrapFirstPartySurfaceGeneration, currentInvocationConfiguration } from '@kernlang/agon-kernel';
+import { invalidateConfigCache, loadConfig } from '@kernlang/agon-core';
 import { DurableModHost, ManagedLifecycleService, createManagedLifecyclePlan,
-  createReleaseSetupSelection, sha256Canonical } from '../../packages/mod-kernel/src/index.js';
+  hashInstalledPackagePayload,
+  createReleaseSetupSelection, createFirstPartyModCatalog, runBoundedCandidateProcess, sha256Canonical } from '../../packages/mod-kernel/src/index.js';
+import { stageConfigurationMigration } from '../../packages/mod-kernel/src/configuration-migration.js';
+import { nodeHostIo } from '../../packages/mod-kernel/src/host-io.js';
+import type { CommandContribution } from '../../packages/mod-api/src/index.js';
 import { runManagedSetup, ReleaseSetVerifier } from '../../packages/cli/src/commands/setup.js';
 import { artifact, installer, request, verifier } from '../helpers/modular-lifecycle.js';
 import { manifest } from '../helpers/modular-agon.js';
@@ -20,9 +27,125 @@ vi.mock('node:fs/promises', async importOriginal => {
   } };
 });
 
-afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); });
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); invalidateConfigCache(); });
 
 describe('setup preserves selected desired state', () => {
+  it.each(['none', 'selected-bytes', 'source-identity', 'missing-artifacts'] as const)
+    ('hands staged configuration through the verifier to the real runner: %s', async fault => {
+      const home = await mkdtemp(join(tmpdir(), 'agon-staged-config-probe-'));
+      try {
+        vi.stubEnv('AGON_HOME', home);
+        const hostRoot = join(home, 'host');
+        vi.stubEnv('AGON_MODULAR_HOST_ROOT', hostRoot);
+        const source = '{"forgeFitnessTimeout":77,"unknown":"preserve"}\n';
+        await writeFile(join(home, 'config.json'), source);
+        const output = vi.spyOn(console, 'log').mockImplementation(() => {});
+        await runManagedSetup({ profile: 'minimal', with: 'forge', plan: true });
+        const original = JSON.parse(String(output.mock.calls.at(-1)?.[0])).lifecycle;
+        const release = JSON.parse(await readFile(new URL('../../docs/specs/evidence/modular-agon-release-set.json', import.meta.url), 'utf8'));
+        const prefix = join(home, 'candidate');
+        for (const entry of original.packages) {
+          const metadata = release.packages.find((item: { id: string }) => item.id === entry.id);
+          const root = join(prefix, 'node_modules', entry.id);
+          await mkdir(root, { recursive: true });
+          const sourceRoot = new URL(`../../${metadata.directory}/`, import.meta.url);
+          await cp(new URL('package.json', sourceRoot), join(root, 'package.json'));
+          if (metadata.modId) {
+            const declaration = JSON.parse(await readFile(new URL('agon.mod.json', sourceRoot), 'utf8'));
+            for (const path of declaration.pack.include) {
+              await mkdir(dirname(join(root, path)), { recursive: true });
+              await cp(new URL(path, sourceRoot), join(root, path));
+            }
+          }
+        }
+        // This bridge tests serialization against the actual built runner. It does
+        // not qualify dependency resolution from a fully packed installation.
+        const runnerRoot = join(prefix, 'node_modules/@kernlang/agon-kernel/dist');
+        await mkdir(runnerRoot, { recursive: true });
+        await writeFile(join(runnerRoot, 'candidate-activation-runner.js'),
+          `import ${JSON.stringify(new URL('../../packages/mod-kernel/dist/candidate-activation-runner.js', import.meta.url).href)};`);
+        const launcherRoot = join(prefix, 'node_modules/@kernlang/agon');
+        await mkdir(join(launcherRoot, 'dist'), { recursive: true });
+        await writeFile(join(launcherRoot, 'package.json'), '{"name":"@kernlang/agon","version":"1.0.0"}');
+        await writeFile(join(launcherRoot, 'dist/index.js'), 'console.log("1.0.0");');
+        const { planHash: _hash, ...unsigned } = original;
+        const packages = await Promise.all(original.packages.map(async (entry: { id: string }) => ({
+          ...entry, payloadHash: await hashInstalledPackagePayload(join(prefix, 'node_modules', entry.id)),
+        })));
+        const subject = { ...unsigned, packages };
+        const plan = { ...subject, planHash: sha256Canonical(subject) };
+        const configurationFiles = await stageConfigurationMigration(plan, prefix, nodeHostIo);
+        const selected = JSON.parse(Buffer.from(configurationFiles['config/selected-global.json']!).toString('utf8'));
+        expect(selected.mods['agon.forge'].forgeFitnessTimeout).toBe(77);
+        expect(selected.unknown).toBe('preserve');
+        let verificationPlan = plan;
+        let verificationFiles = configurationFiles;
+        if (fault === 'selected-bytes') verificationFiles = { ...configurationFiles, 'config/selected-global.json': Buffer.from('{}') };
+        if (fault === 'missing-artifacts') verificationFiles = {};
+        if (fault === 'source-identity') {
+          const changed = { ...subject, configSource: { ...plan.configSource, path: join(home, 'other.json') } };
+          verificationPlan = { ...changed, planHash: sha256Canonical(changed) };
+        }
+        const verified = await new ReleaseSetVerifier().verify(prefix, verificationPlan, { configurationFiles: verificationFiles });
+        expect(verified.passed, JSON.stringify(verified.checks)).toBe(fault === 'none');
+        expect(verified.checks.find(check => check.id === 'sacrificial-activation')?.passed).toBe(fault === 'none');
+        if (fault === 'none') {
+          const unexpected = () => { throw new Error('fixture must not execute a workflow'); };
+          const boot = await bootstrapFirstPartySurfaceGeneration({ hostRoot,
+            candidateSelection: { desiredState: plan.desiredState, lock: plan.lock, configSource: plan.configSource, configurationFiles },
+            runtime: { command: unexpected, tool: unexpected, parseIntent: unexpected, renderDocs: unexpected } });
+          try {
+            // Inspect the invocation scope without dispatching a real workflow.
+            const registration = boot.activated.generation.registry.beginRegistration(manifest('agon.forge', '1.0.0', { contributes: {
+              cliCommands: [{ id: 'fixture-config-observer', aliases: [] }], tuiActions: [], mcpTools: [], cesarTools: [],
+              lifecycleHooks: [], resultTypes: [], configKeys: [], generatedDocs: [],
+            } }));
+            let observed: unknown;
+            registration.registrar.command('cli', { id: 'fixture-config-observer', description: 'fixture', run() {
+              observed = currentInvocationConfiguration()?.configuration;
+              expect(loadConfig(home).forgeFitnessTimeout).toBe(77);
+              return { exitCode: 0 };
+            } });
+            registration.commit();
+            const command = boot.activated.generation.registry.resolve('cli-command', 'fixture-config-observer')!.payload as CommandContribution;
+            await command.run({}, { invocationId: 'fixture', cwd: home, platform: 'darwin-arm64', signal: new AbortController().signal, config: {} });
+            expect(observed).toMatchObject({ source: plan.configSource,
+              owners: expect.arrayContaining([expect.objectContaining({ ownerId: 'agon.forge' })]) });
+            expect(currentInvocationConfiguration()).toBeUndefined();
+          } finally { await boot.activated.dispose(); }
+        }
+        expect(await readFile(join(home, 'config.json'), 'utf8')).toBe(source);
+        expect(await new DurableModHost(hostRoot, { kernelVersion: '1.0.0' }).readCurrentPointer()).toBeNull();
+        expect((await readdir(prefix)).some(name => name.startsWith('.qualification-'))).toBe(false);
+      } finally { await rm(home, { recursive: true, force: true }); }
+    });
+
+  it.each(['minimal', 'full-compat'] as const)('runs the real built activation probe for %s without executing workflows', async profile => {
+    const home = await mkdtemp(join(tmpdir(), 'agon-real-candidate-probe-'));
+    vi.stubEnv('AGON_HOME', home);
+    vi.stubEnv('AGON_MODULAR_HOST_ROOT', join(home, 'host'));
+    const output = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await runManagedSetup({ profile, plan: true });
+    // Qualify the supported config-less plan here. Migration tests cover staged configuration.
+    const { planHash: _hash, configSource: _source, ...unsigned } = JSON.parse(String(output.mock.calls.at(-1)?.[0])).lifecycle;
+    const plan = { ...unsigned, planHash: sha256Canonical(unsigned) };
+    const input = join(home, 'input.json');
+    await writeFile(input, JSON.stringify({ plan, hostRoot: join(home, 'probe-host'), configurationFiles: {} }));
+    const result = await runBoundedCandidateProcess({ executable: process.execPath,
+      args: [fileURLToPath(new URL('../../packages/mod-kernel/dist/candidate-activation-runner.js', import.meta.url)), input],
+      cwd: home, env: { HOME: home, AGON_HOME: join(home, 'agon'), XDG_CONFIG_HOME: join(home, 'config'),
+        XDG_CACHE_HOME: join(home, 'cache'), XDG_DATA_HOME: join(home, 'data'), XDG_STATE_HOME: join(home, 'state') },
+      timeoutMs: 10_000, maxOutputBytes: 128 * 1024 });
+    expect(result, result.stderr).toMatchObject({ exitCode: 0, signal: null, timedOut: false, outputTruncated: false });
+    const records = result.stdout.split('\n').filter(line => line.startsWith('AGON_CANDIDATE_RESULT:'));
+    expect(records).toHaveLength(1);
+    const receipt = JSON.parse(records[0]!.slice('AGON_CANDIDATE_RESULT:'.length));
+    const physical = createFirstPartyModCatalog().mods.map(entry => entry.id);
+    expect(receipt).toMatchObject({ schemaVersion: 1, planHash: plan.planHash, disposed: true,
+      activePackageIds: plan.packages.map((entry: { id: string }) => entry.id).filter((id: string) => physical.includes(id)).sort() });
+    expect(await new DurableModHost(join(home, 'probe-host'), { kernelVersion: '1.0.0' }).readCurrentPointer()).toBeNull();
+  });
+
   it.each(['current', 'legacy', 'changed-package'] as const)('qualifies the idempotence shortcut against %s state', async scenario => {
     const home = await mkdtemp(join(tmpdir(), 'agon-setup-qualified-'));
     vi.stubEnv('AGON_HOME', home);
@@ -68,14 +191,15 @@ describe('setup preserves selected desired state', () => {
     expect(await readFile(host.paths.current)).toEqual(before);
   });
 
-  it.each(['none', 'schema', 'manifest', 'name', 'missing-manifest', 'support', 'escape', 'launcher-name', 'launcher-escape'] as const)
+  it.each(['none', 'runtime', 'runtime-valid-hash', 'activation-exit-zero', 'activation-wrong-plan', 'activation-dispose-failure', 'activation-payload-write', 'activation-scope-link', 'activation-duplicate-receipt', 'extra-file', 'missing-payload-hash', 'schema', 'manifest', 'name', 'missing-manifest', 'support', 'escape', 'package-link', 'launcher-name', 'launcher-escape', 'launcher-output', 'launcher-payload-write'] as const)
     ('checks staged static identity before executing the launcher: %s', async fault => {
       const root = await mkdtemp(join(tmpdir(), 'agon-setup-static-'));
       const prefix = join(root, 'candidate');
       const app = join(prefix, 'node_modules', '@test', 'app');
       const support = join(prefix, 'node_modules', '@test', 'support');
       const launcher = join(prefix, 'node_modules', '@kernlang', 'agon');
-      for (const path of [join(app, 'dist'), join(app, 'schemas'), support, join(launcher, 'dist')]) await mkdir(path, { recursive: true });
+      const kernel = join(prefix, 'node_modules', '@kernlang', 'agon-kernel');
+      for (const path of [join(app, 'dist'), join(app, 'schemas'), support, join(launcher, 'dist'), join(kernel, 'dist')]) await mkdir(path, { recursive: true });
       const hash = (bytes: string): `sha256:${string}` => `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
       const schema = '{"type":"object","additionalProperties":true}';
       const definition = manifest('example.app', '1.0.0', { assets: [{ path: 'schemas/config.json', kind: 'schema', mediaType: 'application/schema+json',
@@ -86,14 +210,54 @@ describe('setup preserves selected desired state', () => {
       await writeFile(join(app, 'agon.mod.json'), JSON.stringify(definition));
       await writeFile(join(app, 'schemas/config.json'), schema);
       await writeFile(join(app, 'dist/index.js'), 'export {};');
+      if (fault === 'runtime-valid-hash') await writeFile(join(app, 'dist/index.js'), 'throw new Error("hash-matched broken runtime");');
       await writeFile(join(app, 'dist/index.d.ts'), 'export {};');
       await writeFile(join(support, 'package.json'), metadata);
       await writeFile(join(launcher, 'package.json'), JSON.stringify({ name: '@kernlang/agon', version: '1.0.0' }));
       const marker = join(root, 'executed');
       await writeFile(join(launcher, 'dist/index.js'), `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'yes'); console.log('1.0.0');`);
-      const entries = [artifact('@test/app', [], { manifestHash: sha256Canonical(definition) }), artifact('@test/support', [], { manifestHash: hash(metadata) })];
+      if (fault === 'launcher-payload-write') await writeFile(join(launcher, 'dist/index.js'),
+        `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'yes'); console.log('1.0.0');
+        require('node:fs').writeFileSync(require('node:path').join(__dirname, '../../../@test/app/dist/index.js'), 'export const changed = true;');`);
+      // This fixture tests the verifier protocol. Real bootstrap tests cover registration.
+      const kernelMetadata = JSON.stringify({ name: '@kernlang/agon-kernel', version: '1.0.0', type: 'module' });
+      const runner = `
+        import { readFile, writeFile, rename, symlink } from 'node:fs/promises';
+        import { fileURLToPath } from 'node:url';
+        const input = JSON.parse(await readFile(process.argv[2], 'utf8'));
+        ${fault === 'activation-exit-zero' ? 'process.exit(0);' : ''}
+        const app = new URL('../../../@test/app/dist/index.js', import.meta.url);
+        await import(app.href);
+        ${fault === 'activation-dispose-failure' ? 'throw new Error("fixture disposal failed");' : ''}
+        ${fault === 'activation-payload-write' ? 'await writeFile(app, "export const changed = true;");' : ''}
+        ${fault === 'activation-scope-link' ? `
+          const scope = new URL('../../../@test', import.meta.url);
+          const moved = new URL('../../../outside-scope', import.meta.url);
+          await rename(scope, moved); await symlink(fileURLToPath(moved), scope);
+        ` : ''}
+        const receipt = { schemaVersion: 1, planHash: ${fault === 'activation-wrong-plan' ? '"wrong-plan"' : 'input.plan.planHash'},
+          activePackageIds: [], surfaceCounts: { cli: 0, tui: 0, mcp: 0, cesar: 0, docs: 0 }, disposed: true };
+        console.log('AGON_CANDIDATE_RESULT:' + JSON.stringify(receipt));
+        ${fault === 'activation-duplicate-receipt' ? "console.log('AGON_CANDIDATE_RESULT:' + JSON.stringify(receipt));" : ''}
+      `;
+      await writeFile(join(kernel, 'package.json'), kernelMetadata);
+      await writeFile(join(kernel, 'dist/candidate-activation-runner.js'), runner);
+      const payload = await Promise.all([...definition.pack.include].sort().map(async path => {
+        const bytes = await readFile(join(app, path), 'utf8');
+        return { path, size: Buffer.byteLength(bytes), contentHash: hash(bytes) };
+      }));
+      const entries = [artifact('@test/app', [], { manifestHash: sha256Canonical(definition),
+        payloadHash: fault === 'missing-payload-hash' ? undefined : sha256Canonical(payload) }),
+        artifact('@test/support', [], { manifestHash: hash(metadata),
+          payloadHash: sha256Canonical([{ path: 'package.json', size: Buffer.byteLength(metadata), contentHash: hash(metadata) }]) }),
+        artifact('@kernlang/agon-kernel', [], { manifestHash: hash(kernelMetadata), payloadHash: sha256Canonical([
+          { path: 'dist/candidate-activation-runner.js', size: Buffer.byteLength(runner), contentHash: hash(runner) },
+          { path: 'package.json', size: Buffer.byteLength(kernelMetadata), contentHash: hash(kernelMetadata) },
+        ]) })];
       const host = new DurableModHost(join(root, 'host'), { kernelVersion: '1.0.0' });
       const plan = await createManagedLifecyclePlan(host, request(entries, { requestedPackageIds: entries.map(({ id }) => id) }));
+      if (fault === 'runtime') await writeFile(join(app, 'dist/index.js'), 'throw new Error("corrupt runtime");');
+      if (fault === 'extra-file') await writeFile(join(app, 'dist/injected.js'), 'export {};');
       if (fault === 'schema') await writeFile(join(app, 'schemas/config.json'), schema.replace('true', 'null'));
       if (fault === 'manifest') await writeFile(join(app, 'agon.mod.json'), JSON.stringify({ ...definition, name: 'changed' }));
       if (fault === 'name') await writeFile(join(app, 'package.json'), '{"name":"@wrong/app","version":"1.0.0"}');
@@ -104,7 +268,12 @@ describe('setup preserves selected desired state', () => {
         await writeFile(join(root, 'outside.json'), schema);
         await symlink(join(root, 'outside.json'), join(app, 'schemas/config.json'));
       }
+      if (fault === 'package-link') {
+        await rename(app, join(prefix, 'app-copy'));
+        await symlink(join(prefix, 'app-copy'), app);
+      }
       if (fault === 'launcher-name') await writeFile(join(launcher, 'package.json'), '{"name":"@wrong/launcher","version":"1.0.0"}');
+      if (fault === 'launcher-output') await writeFile(join(launcher, 'dist/index.js'), `console.log('1.0.0'); process.stdout.write('x'.repeat(128 * 1024));`);
       if (fault === 'launcher-escape') {
         const executable = await readFile(join(launcher, 'dist/index.js'));
         await writeFile(join(root, 'outside.cjs'), executable);
@@ -112,8 +281,9 @@ describe('setup preserves selected desired state', () => {
         await symlink(join(root, 'outside.cjs'), join(launcher, 'dist/index.js'));
       }
       const result = await new ReleaseSetVerifier().verify(prefix, plan);
-      expect(result.passed).toBe(fault === 'none');
-      if (fault === 'none') expect(await readFile(marker, 'utf8')).toBe('yes');
+      expect(result.passed, JSON.stringify(result.checks)).toBe(fault === 'none');
+      expect((await readdir(prefix)).filter(name => name.startsWith('.qualification-'))).toEqual([]);
+      if (fault === 'none' || fault === 'launcher-payload-write') expect(await readFile(marker, 'utf8')).toBe('yes');
       else await expect(stat(marker)).rejects.toMatchObject({ code: 'ENOENT' });
       const service = new ManagedLifecycleService(host);
       const application = service.apply(plan, { async install(entry, destination) {
@@ -128,7 +298,7 @@ describe('setup preserves selected desired state', () => {
         expect(await host.readCurrentPointer()).toBeNull();
         expect(await readdir(service.installationsRoot)).toEqual([]);
         expect(await readdir(service.stagingRoot)).toEqual([]);
-        await expect(stat(marker)).rejects.toMatchObject({ code: 'ENOENT' });
+        if (fault !== 'launcher-payload-write') await expect(stat(marker)).rejects.toMatchObject({ code: 'ENOENT' });
       }
     });
 

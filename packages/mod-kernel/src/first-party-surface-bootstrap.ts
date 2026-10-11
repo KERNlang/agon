@@ -26,11 +26,18 @@ import { createSafeExternalModServices } from './external-mod-services-safe.js';
 import { HOST_PROVIDED_DEPENDENCY_IDS } from './package-activation-order.js';
 import { AGON_RUNTIME_VERSION } from './runtime-version.js';
 import { createModObservability } from './mod-observability.js';
-import { readGenerationConfiguration, type GenerationConfiguration } from './configuration-migration.js';
+import { parseGenerationConfiguration, readGenerationConfiguration, type GenerationConfiguration } from './configuration-migration.js';
 
 interface FirstPartyModule {
   readonly MANIFEST: ModManifest;
   readonly createMod: (services: ModServices) => Promise<AgonModV1> | AgonModV1;
+}
+
+interface CandidateSurfaceSelection {
+  readonly desiredState: unknown;
+  readonly lock: CanonicalModLock;
+  readonly configSource?: GenerationConfiguration['source'];
+  readonly configurationFiles: Readonly<Record<string, Uint8Array | undefined>>;
 }
 
 export interface FirstPartySurfaceBoot {
@@ -57,7 +64,7 @@ async function readJsonIfPresent(path: string): Promise<unknown | undefined> {
   }
 }
 
-async function selectedDesiredState(hostRoot: string): Promise<{
+async function selectedDesiredState(hostRoot: string, candidate?: CandidateSurfaceSelection): Promise<{
   readonly state: DesiredModState;
   readonly generationId: string;
   readonly pointerPath: string;
@@ -67,6 +74,21 @@ async function selectedDesiredState(hostRoot: string): Promise<{
 }> {
   const catalog = createFirstPartyModCatalog();
   const pointerPath = join(hostRoot, 'current-generation.json');
+  if (candidate) {
+    assertSelectedLockIntegrity(candidate.lock, candidate.desiredState);
+    const configuration = parseGenerationConfiguration(candidate.configurationFiles);
+    if (canonicalJson(configuration?.source ?? null) !== canonicalJson(candidate.configSource ?? null)) {
+      throw new Error('candidate configuration does not match the planned source');
+    }
+    return {
+      state: parseDesiredState(candidate.desiredState),
+      generationId: `candidate:${candidate.lock.graphHash}`,
+      pointerPath,
+      pointerCanonical: null,
+      lock: candidate.lock,
+      configuration,
+    };
+  }
   const pointerInput = await readJsonIfPresent(pointerPath);
   if (pointerInput === undefined) {
     const desiredInput = await readJsonIfPresent(join(hostRoot, 'desired-state.json'));
@@ -159,10 +181,13 @@ export async function bootstrapFirstPartySurfaceGeneration(options: {
   readonly modsRoot?: string;
   readonly safeMode?: boolean;
   readonly activationTimeoutMs?: number;
+  /** Staged first-party qualification. Does not select a durable generation. */
+  readonly candidateSelection?: CandidateSurfaceSelection;
   /** Host capability, exposed to folder mods only through authority wrappers. */
   readonly dispatchEngine?: ModServices['engines']['dispatch'];
   readonly decorateFirstPartyServices?: (manifest: ModManifest, services: ModServices) => ModServices;
 }): Promise<FirstPartySurfaceBoot> {
+  if (options.safeMode && options.candidateSelection) throw new Error('safe mode cannot qualify a candidate selection');
   if (options.safeMode) {
     const safeCatalog = createFirstPartyModCatalog();
     const safeHost = new DurableModHost(options.hostRoot, { kernelVersion: AGON_RUNTIME_VERSION });
@@ -193,7 +218,7 @@ export async function bootstrapFirstPartySurfaceGeneration(options: {
       externalDiagnostics: Object.freeze([]),
     });
   }
-  const selection = await selectedDesiredState(options.hostRoot);
+  const selection = await selectedDesiredState(options.hostRoot, options.candidateSelection);
   const catalog = createFirstPartyModCatalog();
   const resolved = resolveDesiredState(catalog, selection.state);
   if (selection.lock) assertSelectedLockPackageClosure(selection.lock, resolved.effectivePackages);
@@ -204,7 +229,8 @@ export async function bootstrapFirstPartySurfaceGeneration(options: {
   if (selection.lock) assertFirstPartyPackagesMatchLock(activePackageIds, firstPartyPackages, selection.lock);
 
   const modsRoot = options.modsRoot ?? join(dirname(options.hostRoot), 'mods');
-  const discovery = await discoverUserFolderModsDetailed(modsRoot);
+  const discovery = options.candidateSelection ? { candidates: [], diagnostics: [] }
+    : await discoverUserFolderModsDetailed(modsRoot);
   const externalDiagnostics: FolderModDiagnostic[] = [...discovery.diagnostics];
   const authority = new TrustGrantStore(options.hostRoot);
   const activation = new ExternalActivationStore(options.hostRoot);

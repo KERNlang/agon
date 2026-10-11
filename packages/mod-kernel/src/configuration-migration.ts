@@ -64,7 +64,7 @@ export function readSelectedGenerationConfigurationSync(hostRoot: string): Gener
   }
 }
 
-function parseGenerationConfiguration(files: Readonly<Record<string, Uint8Array | undefined>>): GenerationConfiguration | undefined {
+export function parseGenerationConfiguration(files: Readonly<Record<string, Uint8Array | undefined>>): GenerationConfiguration | undefined {
   const paths = CONFIGURATION_PATHS;
   if (paths.every(path => files[path] === undefined)) return undefined;
   if (paths.some(path => files[path] === undefined)) throw new DurableHostError('MOD_GENERATION_CORRUPT', 'selected configuration artifacts are incomplete');

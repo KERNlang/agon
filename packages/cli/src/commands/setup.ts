@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { chmod, mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { defineCommand } from 'citty';
 import { persistencePath } from '@kernlang/agon-support-persistence';
@@ -7,6 +7,7 @@ import {
   DurableModHost,
   assertContainedPackagePath,
   inspectStaticManifest,
+  hashInstalledPackagePayload,
   ManagedLifecycleService,
   canonicalJson,
   createManagedLifecyclePlan,
@@ -17,6 +18,7 @@ import {
   readGenerationConfiguration,
   resolveDesiredState,
   runBoundedCandidateProcess,
+  runIsolatedNpmCandidateProcess,
   sha256Canonical,
   type BuiltInProfileId,
   type CandidateInstaller,
@@ -31,7 +33,7 @@ import { modularHostRoot } from '../surface-authority-runtime.js';
 
 const PROFILE_IDS = new Set(['minimal', 'maker', 'reviewer', 'researcher', 'full-compat', 'custom']);
 const VERSION = '1.0.0';
-interface ReleaseEntry { id: string; modId?: string; manifestDependencies?: string[]; version: string; dependencies: string[]; sourceLocator: string; integrity: `sha512-${string}`; contentHash: `sha256:${string}`; manifestHash: `sha256:${string}` }
+interface ReleaseEntry { id: string; modId?: string; manifestDependencies?: string[]; version: string; dependencies: string[]; sourceLocator: string; integrity: `sha512-${string}`; contentHash: `sha256:${string}`; manifestHash: `sha256:${string}`; payloadHash: `sha256:${string}` }
 interface ReleaseChannel { schemaVersion: 1; channel: string; version: string; packages: ReleaseEntry[] }
 
 function csv(value: unknown): string[] {
@@ -78,8 +80,8 @@ export async function runManagedSetup(args: ManagedSetupArgs, options: { preserv
   await verifyLocalSpecs(artifacts);
   const lock = buildLock(artifacts, selection.desiredState, release);
   const desiredShape = (value: any) => value ? { selected: value.selected, disabled: value.disabled, constraints: value.constraints } : null;
-  const packageShape = (values: readonly ManagedLifecyclePackagePlan[]) => values.map(({ id, version, source, sourceLocator, integrity, contentHash, manifestHash, dependencies, provenance }) =>
-    ({ id, version, source, sourceLocator, integrity, contentHash, manifestHash, dependencies, provenance })).sort((left, right) => left.id.localeCompare(right.id));
+  const packageShape = (values: readonly ManagedLifecyclePackagePlan[]) => values.map(({ id, version, source, sourceLocator, integrity, contentHash, manifestHash, payloadHash, dependencies, provenance }) =>
+    ({ id, version, source, sourceLocator, integrity, contentHash, manifestHash, payloadHash: payloadHash ?? null, dependencies, provenance })).sort((left, right) => left.id.localeCompare(right.id));
   if (!args.plan && existing && existing.kernelVersion === VERSION
     && canonicalJson(packageShape(existing.packages)) === canonicalJson(packageShape(artifacts))
     && canonicalJson(desiredShape(currentDesiredInput)) === canonicalJson(desiredShape(selection.desiredState))) {
@@ -160,19 +162,30 @@ class ReleaseSetInstaller implements CandidateInstaller {
   async install(_entry: ManagedLifecyclePackagePlan, candidatePrefix: string, context: { readonly ignoreLifecycleScripts: true; readonly networkPolicy: ManagedNetworkPolicy }): Promise<void> {
     if (this.#installed) return;
     this.#installed = true;
-    const result = await runBoundedCandidateProcess({ executable: 'npm', cwd: candidatePrefix, timeoutMs: 15 * 60_000, maxOutputBytes: 4 * 1024 * 1024,
+    const result = await runIsolatedNpmCandidateProcess({ executable: 'npm', cwd: candidatePrefix, timeoutMs: 15 * 60_000, maxOutputBytes: 4 * 1024 * 1024,
       args: ['install', '--ignore-scripts', '--no-audit', '--no-fund', '--save=false', '--omit=optional', '--bin-links=false', '--prefix', candidatePrefix,
-        ...(context.networkPolicy === 'frozen-offline' ? ['--offline'] : []), this.launcherSpec, ...this.packages.map(({ sourceLocator }) => sourceLocator)],
-      env: { npm_config_ignore_scripts: 'true', ...(this.cacheDirectory ? { npm_config_cache: this.cacheDirectory } : {}) } });
+        ...(context.networkPolicy === 'frozen-offline' ? ['--offline'] : []), this.launcherSpec, ...this.packages.map(({ sourceLocator }) => sourceLocator)] },
+      { cacheDirectory: this.cacheDirectory });
     if (result.exitCode !== 0 || result.timedOut || result.outputTruncated) throw new Error(`release-set npm staging failed: exit=${result.exitCode} timeout=${result.timedOut} truncated=${result.outputTruncated} ${result.stderr.slice(0, 1000)}`);
   }
 }
 export class ReleaseSetVerifier implements CandidateVerifier {
-  async verify(candidatePrefix: string, plan: ManagedLifecyclePlan): Promise<CandidateVerificationResult> {
+  async #packageRoot(candidatePrefix: string, id: string): Promise<string> {
+    const root = await assertContainedPackagePath(candidatePrefix, join('node_modules', id));
+    if (root !== join(candidatePrefix, 'node_modules', id)) throw new Error('candidate package path contains symbolic links');
+    return root;
+  }
+
+  async verify(candidatePrefix: string, plan: ManagedLifecyclePlan,
+    context: { readonly configurationFiles: Readonly<Record<string, Uint8Array>> } = { configurationFiles: {} }): Promise<CandidateVerificationResult> {
     const checks: Array<{ id: string; passed: boolean; detail?: string }> = [];
+    let qualificationHome: string | undefined;
     try {
+      candidatePrefix = await realpath(candidatePrefix);
       for (const entry of plan.packages) {
-        const root = await assertContainedPackagePath(candidatePrefix, join('node_modules', ...entry.id.split('/')));
+        const root = await this.#packageRoot(candidatePrefix, entry.id);
+        checks.push({ id: `installed-payload:${entry.id}`, passed: entry.payloadHash !== undefined
+          && await hashInstalledPackagePayload(root) === entry.payloadHash });
         const packagePath = await assertContainedPackagePath(root, 'package.json');
         const bytes = await readFile(packagePath);
         const metadata = JSON.parse(bytes.toString('utf8'));
@@ -189,16 +202,54 @@ export class ReleaseSetVerifier implements CandidateVerifier {
           : `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
         checks.push({ id: `static-identity:${entry.id}`, passed: manifestHash === entry.manifestHash });
       }
-      const launcherRoot = await assertContainedPackagePath(candidatePrefix, join('node_modules', '@kernlang', 'agon'));
+      const launcherRoot = await this.#packageRoot(candidatePrefix, '@kernlang/agon');
       const launcherMetadata = JSON.parse(await readFile(await assertContainedPackagePath(launcherRoot, 'package.json'), 'utf8'));
       checks.push({ id: 'launcher-package', passed: launcherMetadata.name === '@kernlang/agon' && launcherMetadata.version === VERSION,
         detail: `${launcherMetadata.name}@${launcherMetadata.version}` });
       if (checks.some(check => !check.passed)) return Object.freeze({ passed: false, checks: Object.freeze(checks.map(check => Object.freeze(check))) });
+      const kernelId = '@kernlang/agon-kernel';
+      if (!plan.packages.some(entry => entry.id === kernelId)) throw new Error('candidate plan lacks a verified kernel');
+      const kernelRoot = await this.#packageRoot(candidatePrefix, kernelId);
+      const activationRunner = await assertContainedPackagePath(kernelRoot, 'dist/candidate-activation-runner.js');
+      qualificationHome = await mkdtemp(join(candidatePrefix, '.qualification-'));
+      const isolatedEnvironment = { HOME: qualificationHome, AGON_HOME: join(qualificationHome, 'agon'),
+        XDG_CONFIG_HOME: join(qualificationHome, 'config'), XDG_CACHE_HOME: join(qualificationHome, 'cache'),
+        XDG_DATA_HOME: join(qualificationHome, 'data'), XDG_STATE_HOME: join(qualificationHome, 'state') };
+      const inputPath = join(qualificationHome, 'activation.json');
+      const input = JSON.stringify({ plan, hostRoot: join(qualificationHome, 'modular-host'),
+        configurationFiles: Object.fromEntries(Object.entries(context.configurationFiles).map(([path, bytes]) => [path, Buffer.from(bytes).toString('base64')])) });
+      if (Buffer.byteLength(input) > 8 * 1024 * 1024) throw new Error('candidate input exceeds byte limit');
+      await writeFile(inputPath, input, { flag: 'wx', mode: 0o600 });
+      const activation = await runBoundedCandidateProcess({ executable: process.execPath, args: [activationRunner, inputPath],
+        cwd: candidatePrefix, env: isolatedEnvironment, timeoutMs: 30_000, maxOutputBytes: 128 * 1024 });
+      const records = activation.stdout.split('\n').filter(line => line.startsWith('AGON_CANDIDATE_RESULT:'));
+      const receipt = records.length === 1 ? JSON.parse(records[0]!.slice('AGON_CANDIDATE_RESULT:'.length)) : null;
+      const installed = new Set(plan.packages.map(entry => entry.id));
+      const expectedActive = createFirstPartyModCatalog().mods.map(entry => entry.id).filter(id => installed.has(id)).sort();
+      checks.push({ id: 'sacrificial-activation', passed: activation.exitCode === 0 && activation.signal === null
+        && !activation.timedOut && !activation.outputTruncated && receipt?.schemaVersion === 1
+        && receipt.planHash === plan.planHash && receipt.disposed === true
+        && canonicalJson(receipt.activePackageIds) === canonicalJson(expectedActive)
+        && ['cli', 'tui', 'mcp', 'cesar', 'docs'].every(surface => Number.isSafeInteger(receipt.surfaceCounts?.[surface]) && receipt.surfaceCounts[surface] >= 0),
+        detail: `exit=${activation.exitCode} signal=${activation.signal} timeout=${activation.timedOut} truncated=${activation.outputTruncated} completionRecords=${records.length}` });
+      for (const entry of plan.packages) {
+        const root = await this.#packageRoot(candidatePrefix, entry.id);
+        checks.push({ id: `post-activation-payload:${entry.id}`, passed: await hashInstalledPackagePayload(root) === entry.payloadHash });
+      }
+      if (checks.some(check => !check.passed)) return Object.freeze({ passed: false, checks: Object.freeze(checks.map(check => Object.freeze(check))) });
       const executable = await assertContainedPackagePath(launcherRoot, 'dist/index.js');
+      if (executable !== join(launcherRoot, 'dist/index.js')) throw new Error('candidate launcher executable contains symbolic links');
       const smoke = await runBoundedCandidateProcess({ executable: process.execPath, args: [executable, '--version'], cwd: candidatePrefix,
-        env: { AGON_HOME: join(candidatePrefix, '.qualification-home'), AGON_MOD_SAFE_MODE: '1' }, timeoutMs: 30_000, maxOutputBytes: 128 * 1024 });
-      checks.push({ id: 'kernel-safe-mode-smoke', passed: smoke.exitCode === 0 && smoke.stdout.includes(VERSION), detail: `exit=${smoke.exitCode}` });
+        env: { ...isolatedEnvironment, AGON_MOD_SAFE_MODE: '1' }, timeoutMs: 30_000, maxOutputBytes: 128 * 1024 });
+      checks.push({ id: 'kernel-safe-mode-smoke',
+        passed: smoke.exitCode === 0 && smoke.signal === null && !smoke.timedOut && !smoke.outputTruncated && smoke.stdout.includes(VERSION),
+        detail: `exit=${smoke.exitCode} signal=${smoke.signal} timeout=${smoke.timedOut} truncated=${smoke.outputTruncated}` });
+      for (const entry of plan.packages) {
+        const root = await this.#packageRoot(candidatePrefix, entry.id);
+        checks.push({ id: `post-smoke-payload:${entry.id}`, passed: await hashInstalledPackagePayload(root) === entry.payloadHash });
+      }
     } catch (error) { checks.push({ id: 'candidate-inspection', passed: false, detail: String(error) }); }
+    finally { if (qualificationHome) await rm(qualificationHome, { recursive: true, force: true }); }
     return Object.freeze({ passed: checks.every(({ passed }) => passed), checks: Object.freeze(checks.map((check) => Object.freeze(check))) });
   }
 }

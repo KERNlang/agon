@@ -29,6 +29,8 @@ export interface ManagedPackageArtifact {
   readonly integrity: `sha512-${string}`;
   readonly contentHash: `sha256:${string}`;
   readonly manifestHash: `sha256:${string}`;
+  /** Installed package files, excluding the npm dependency namespace. */
+  readonly payloadHash?: `sha256:${string}`;
   readonly dependencies: readonly string[];
   readonly lifecycleScripts: readonly string[];
   readonly available: boolean;
@@ -142,6 +144,7 @@ export interface ManagedLifecyclePackagePlan {
   readonly integrity: `sha512-${string}`;
   readonly contentHash: `sha256:${string}`;
   readonly manifestHash: `sha256:${string}`;
+  readonly payloadHash?: `sha256:${string}`;
   readonly dependencies: readonly string[];
   readonly provenance: ManagedPackageArtifact['provenance'];
 }
@@ -183,7 +186,8 @@ export interface CandidateInstaller {
 }
 
 export interface CandidateVerifier {
-  verify(candidatePrefix: string, plan: ManagedLifecyclePlan): Promise<CandidateVerificationResult>;
+  verify(candidatePrefix: string, plan: ManagedLifecyclePlan,
+    context?: { readonly configurationFiles: Readonly<Record<string, Uint8Array>> }): Promise<CandidateVerificationResult>;
 }
 
 export type ManagedLifecycleFaultPoint =
@@ -330,7 +334,8 @@ export async function createManagedLifecyclePlan(
     if (artifactMap.has(artifact.id)) throw new TypeError(`duplicate artifact: ${artifact.id}`);
     if (!validSemver(artifact.version)) throw new TypeError(`artifact version is invalid: ${artifact.id}`);
     safeLocator(artifact.sourceLocator);
-    if (!SHA256.test(artifact.contentHash) || !SHA256.test(artifact.manifestHash) || !SHA512.test(artifact.integrity)) {
+    if (!SHA256.test(artifact.contentHash) || !SHA256.test(artifact.manifestHash) || !SHA512.test(artifact.integrity)
+      || (artifact.payloadHash !== undefined && !SHA256.test(artifact.payloadHash))) {
       throw new TypeError(`artifact integrity metadata is invalid: ${artifact.id}`);
     }
     if (new Set(artifact.dependencies).size !== artifact.dependencies.length) throw new TypeError(`duplicate dependency in artifact: ${artifact.id}`);
@@ -390,6 +395,7 @@ export async function createManagedLifecyclePlan(
     integrity: artifact.integrity,
     contentHash: artifact.contentHash,
     manifestHash: artifact.manifestHash,
+    ...(artifact.payloadHash === undefined ? {} : { payloadHash: artifact.payloadHash }),
     dependencies: [...artifact.dependencies].sort(),
     provenance: artifact.provenance,
   }));
@@ -557,7 +563,7 @@ export class ManagedLifecycleService {
       await this.#fault('after-packages-staged');
       const configurationFiles = await stageConfigurationMigration(plan, staging, this.#io);
       if (plan.configSource) steps.push({ id: 'stage-config-migration', state: 'passed' });
-      const verification = freeze(await verifier.verify(staging, plan));
+      const verification = freeze(await verifier.verify(staging, plan, { configurationFiles }));
       if (!verification.passed || verification.checks.some((check) => !check.passed)) {
         const failedChecks = verification.checks.filter((check) => !check.passed);
         throw new DurableHostError('MOD_TRANSACTION_FAILED', `sacrificial candidate verification failed: ${failedChecks.map((check) => `${check.id}${check.detail ? ` (${check.detail})` : ''}`).join(', ')}`, { failedChecks });

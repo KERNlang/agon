@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
-import { realpath } from 'node:fs/promises';
-import { isAbsolute, resolve } from 'node:path';
+import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
+import { isAbsolute, join, resolve } from 'node:path';
 import { DurableHostError } from './host-errors.js';
 import type {
   CandidateInstaller,
@@ -56,24 +56,43 @@ export const runBoundedCandidateProcess: BoundedProcessRunner = async (request) 
       cwd: request.cwd,
       env: { PATH: process.env.PATH ?? '', ...request.env },
       shell: false,
+      detached: process.platform !== 'win32',
       stdio: ['ignore', 'pipe', 'pipe'],
     });
+    let groupTerminated = false;
+    const terminateOwnedGroup = () => {
+      if (groupTerminated) return;
+      if (process.platform !== 'win32' && child.pid) {
+        try { process.kill(-child.pid, 'SIGKILL'); }
+        catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error; }
+      } else if (child.pid && child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+      groupTerminated = true;
+    };
     child.stdout.on('data', (chunk: Buffer) => appendBounded(stdout, chunk, outputState, request.maxOutputBytes));
     child.stderr.on('data', (chunk: Buffer) => appendBounded(stderr, chunk, outputState, request.maxOutputBytes));
     const timer = setTimeout(() => {
       timedOut = true;
-      child.kill('SIGKILL');
+      try { terminateOwnedGroup(); }
+      catch (error) { settled = true; reject(error); }
+      // Descendants can keep inherited pipes open after the direct child exits.
+      child.stdout.destroy();
+      child.stderr.destroy();
     }, request.timeoutMs);
     child.once('error', (error) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      try { terminateOwnedGroup(); }
+      catch (cleanupError) { reject(new AggregateError([error, cleanupError], 'candidate process failed and cleanup failed')); return; }
       reject(error);
     });
     child.once('close', (code, signal) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      // An exited child can leave descendants with ignored output pipes.
+      try { terminateOwnedGroup(); }
+      catch (error) { reject(error); return; }
       resolveResult(Object.freeze({
         exitCode: code ?? 1,
         signal,
@@ -94,6 +113,36 @@ export interface NpmCandidateInstallerOptions {
   readonly maxOutputBytes?: number;
   readonly activeInstallationPrefix?: string | null;
   readonly omitOptional?: boolean;
+}
+
+/** Keep npm state outside the operator home. Remove only the owned scratch tree. */
+export async function runIsolatedNpmCandidateProcess(
+  request: Omit<BoundedProcessRequest, 'env'>,
+  options: { readonly runner?: BoundedProcessRunner; readonly cacheDirectory?: string } = {},
+): Promise<BoundedProcessResult> {
+  const home = await mkdtemp(join(request.cwd, '.npm-staging-'));
+  try {
+    const env: Record<string, string> = {
+      HOME: home,
+      XDG_CONFIG_HOME: join(home, 'config'),
+      XDG_DATA_HOME: join(home, 'data'),
+      XDG_CACHE_HOME: join(home, 'cache'),
+      XDG_STATE_HOME: join(home, 'state'),
+      TMPDIR: join(home, 'tmp'),
+      npm_config_ignore_scripts: 'true',
+      npm_config_userconfig: join(home, 'user.npmrc'),
+      npm_config_globalconfig: join(home, 'global.npmrc'),
+      npm_config_cache: options.cacheDirectory ?? join(home, 'npm-cache'),
+    };
+    for (const key of ['XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_CACHE_HOME', 'XDG_STATE_HOME', 'TMPDIR']) {
+      await mkdir(env[key]!, { mode: 0o700 });
+    }
+    await writeFile(env.npm_config_userconfig!, '', { mode: 0o600 });
+    await writeFile(env.npm_config_globalconfig!, '', { mode: 0o600 });
+    return await (options.runner ?? runBoundedCandidateProcess)({ ...request, env });
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
 }
 
 export class NpmCandidateInstaller implements CandidateInstaller {
@@ -126,17 +175,13 @@ export class NpmCandidateInstaller implements CandidateInstaller {
       ...(context.networkPolicy === 'frozen-offline' ? ['--offline'] : []),
       packagePlan.sourceLocator,
     ];
-    const result = await this.#runner({
+    const result = await runIsolatedNpmCandidateProcess({
       executable: this.#options.npmExecutable ?? 'npm',
       args,
       cwd: prefix,
-      env: {
-        npm_config_ignore_scripts: 'true',
-        ...(this.#options.cacheDirectory ? { npm_config_cache: this.#options.cacheDirectory } : {}),
-      },
       timeoutMs: this.#options.timeoutMs ?? 300_000,
       maxOutputBytes: this.#options.maxOutputBytes ?? 1024 * 1024,
-    });
+    }, { runner: this.#runner, cacheDirectory: this.#options.cacheDirectory });
     if (result.exitCode !== 0 || result.timedOut || result.outputTruncated) {
       throw new DurableHostError('MOD_TRANSACTION_FAILED', `npm candidate staging failed: ${packagePlan.id}`, {
         exitCode: result.exitCode,

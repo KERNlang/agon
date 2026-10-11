@@ -93,6 +93,7 @@
     "test:modular-slice1a": "npm run spec:modular-projections:check && npm run spec:modular-package-graph:check && npm run spec:modular-pack && node scripts/run-node22.mjs vitest run tests/unit/modular-*.test.ts tests/spec/modular-agon-contracts.test.ts",
     "perf:modular-slice1a": "node --expose-gc scripts/spec/measure-modular-slice1a.mjs",
     "perf:modular-release": "node scripts/spec/measure-modular-release.mjs",
+    "test:modular-load": "node scripts/spec/measure-modular-load.mjs",
     "spec:modular-slice1b:self-test": "node scripts/spec/verify-modular-slice1b-gates.mjs",
     "spec:modular-slice1b:qualify:index": "node scripts/spec/qualify-modular-agon-clean-checkout.mjs --subject=index --run-clean",
     "spec:modular-slice1b:qualify:commit": "node scripts/spec/qualify-modular-agon-clean-checkout.mjs --subject=commit --run-clean",

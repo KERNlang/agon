@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { collectSubjectContamination, hashGitSubject, isSourceBearingPath, validateDependencyGraph, validateStoredSubjectBoundReview } from './slice1b-qualification-gates.mjs';
+import { loadEvidencePasses } from './measure-modular-load.mjs';
 
 const root = new URL('../..', import.meta.url).pathname.replace(/\/$/, '');
 const excluded = ['docs/specs/evidence/modular-agon-slice9-review-evidence.json', 'docs/specs/evidence/modular-agon-slice9-verification-receipt.json'];
@@ -62,6 +63,7 @@ function cleanSteps(subject) {
     ['spec-consistency', 'node', ['scripts/spec/check-modular-agon-consistency.mjs']],
     ['roadmap-contract', 'node', ['scripts/spec/verify-modular-agon-roadmap.mjs']],
     ['performance-release', 'node', ['scripts/spec/measure-modular-release.mjs']],
+    ['sustained-load', 'node', ['scripts/spec/measure-modular-load.mjs']],
   ];
   try {
     materialize(checkout, subject);
@@ -70,7 +72,7 @@ function cleanSteps(subject) {
       const output = `${result.stdout ?? ''}${result.stderr ?? ''}`;
       let evidence;
       let evidenceError;
-      if (['platform-matrix', 'performance-release'].includes(id)) {
+      if (['platform-matrix', 'performance-release', 'sustained-load'].includes(id)) {
         try { evidence = JSON.parse(result.stdout); }
         catch (error) { evidenceError = String(error); }
       }
@@ -109,6 +111,8 @@ const storedPerformances = ['1a', '2', '3', '4', '5', '6', '7', '8'].map((slice)
 const graph = validateDependencyGraph(packageMap.packages);
 const steps = process.argv.includes('--run-clean') ? cleanSteps(subjectKind) : [];
 const performanceStep = steps.find(({ id }) => id === 'performance-release');
+const loadStep = steps.find(({ id }) => id === 'sustained-load');
+const freshLoadPassed = loadStep?.passed === true && loadEvidencePasses(loadStep.evidence);
 const freshPerformanceSteps = performanceStep?.evidence?.steps;
 const freshPerformancePassed = performanceStep?.passed === true && performanceStep.evidence?.passed === true
   && Array.isArray(freshPerformanceSteps) && freshPerformanceSteps.length === 8
@@ -145,7 +149,7 @@ if (process.argv.includes('--self-test')) {
 const receipt = { schemaVersion: 1, qualification: 'modular-agon-slice9-release-candidate', subject: { kind: subjectKind, hash: expectedHash, indexHash, commitHash, indexEqualsCommit: indexHash === commitHash }, contamination, graph, coverage, reviewEvidence, cleanCheckoutSteps: steps };
 receipt.passed = Object.values(contamination).every((paths) => paths.length === 0) && (subjectKind === 'index' || indexHash === commitHash) && reviewEvidence.passed
   && graph.duplicateEdges.length === 0 && graph.uniqueEdges === 151 && coveragePasses(coverage) && freshPlatformPassed
-  && freshPerformancePassed && performances.every(performancePasses)
+  && freshPerformancePassed && performances.every(performancePasses) && freshLoadPassed
   && steps.length > 0 && steps.every(({ passed }) => passed);
 console.log(JSON.stringify(receipt, null, 2));
 rmSync(runtimeRoot, { recursive: true, force: true });

@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { basename, dirname, join, resolve } from 'node:path';
 import { expect, it } from 'vitest';
+import { loadEvidencePasses } from '../../scripts/spec/measure-modular-load.mjs';
+import { loadEvidenceFixture } from '../fixtures/modular-load-evidence.js';
 
 const source = readFileSync(new URL('../../scripts/spec/verify-modular-platform-matrix.mjs', import.meta.url), 'utf8')
   .replace(/^import .*;\n/gm, '').replaceAll('import.meta.dirname', JSON.stringify('/fixture/scripts/spec'));
@@ -53,7 +55,9 @@ it.each([false, true])('binds a cached executable to the verified archive (match
 it.each([
   [0, false, true, 'valid'], [1, true, true, 'valid'], [3, false, true, 'valid'],
   [3, true, true, 'valid'], [3, true, false, 'valid'],
-  ...['aggregate', 'step', 'child', 'missing', 'reordered', 'malformed', 'contradictory'].map(fault => [3, true, true, fault] as const),
+  ...['aggregate', 'step', 'child', 'missing', 'reordered', 'malformed', 'contradictory',
+    'load-exit', 'load-missing', 'load-malformed', 'load-false', 'load-short', 'load-control', 'load-identity']
+    .map(fault => [3, true, true, fault] as const),
 ] as const)('qualifies fresh %i-cell coverage with native attestation=%s and fresh performance=%s (%s)', (passed, native, performancePassed, fault) => {
   let receipt: { passed: boolean; coverage: { platformPassed: number }; cleanCheckoutSteps: Array<{ id: string; evidence?: { steps: Array<{ evidence: { diagnostic?: string } }> } }> } | undefined;
   const fresh = { status: 'completed', passed: passed > 0, runnerProvenance: native ? 'caller-attested-native' : 'diagnostic',
@@ -67,6 +71,7 @@ it.each([
     hashGitSubject: () => 'sha256:fixture',
     validateStoredSubjectBoundReview: () => ({ passed: true }),
     validateDependencyGraph: () => ({ duplicateEdges: [], uniqueEdges: 151 }),
+    loadEvidencePasses,
     readFileSync: (path: string) => {
       if (path.endsWith('package-map.json')) return JSON.stringify({ packages: Array.from({ length: 49 }, (_, i) => ({ class: i < 36 ? 'user-toggleable-mod-package' : 'support' })) });
       if (path.endsWith('ownership.json')) return JSON.stringify({ assignments: Array(872).fill(null) });
@@ -77,6 +82,15 @@ it.each([
       throw new Error(`unexpected fixture read: ${path}`);
     },
     spawnSync: (_command: string, args: string[]) => {
+      if (args[0] === 'scripts/spec/measure-modular-load.mjs') {
+        const evidence = loadEvidenceFixture();
+        if (fault === 'load-false') evidence.passed = false;
+        if (fault === 'load-short') evidence.phases[1].durationMs = 100;
+        if (fault === 'load-control') evidence.phases[1].controls.cancelledEngineGone = false;
+        if (fault === 'load-identity') evidence.platform = 'other';
+        return { status: fault === 'load-exit' ? 1 : 0, stderr: '', stdout: fault === 'load-malformed' ? '{'
+          : fault === 'load-missing' ? '{}' : JSON.stringify(evidence) };
+      }
       if (args[0] === 'scripts/spec/measure-modular-release.mjs') {
         const steps = ['1a', '2', '3', '4', '5', '6', '7', '8'].map(slice => ({ slice,
           passed: performancePassed && fault !== 'step', evidence: { passed: performancePassed && fault !== 'child',

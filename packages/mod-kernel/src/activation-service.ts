@@ -72,11 +72,15 @@ export class ModActivationService {
   ) {}
 
   async readDesiredState(): Promise<DesiredModState> {
+    return this.#readDesiredState(await this.host.readCurrentPointer());
+  }
+
+  async #readDesiredState(pointer: GenerationPointer | null): Promise<DesiredModState> {
     try {
-      const bytes = await this.host.hostIo.readFile(this.host.paths.desiredState);
-      return parseDesiredState(JSON.parse(new TextDecoder().decode(bytes)));
+      if (!pointer) throw new DurableHostError('MOD_SAFE_MODE', 'activation requires a selected generation');
+      return parseDesiredState(await this.host.readGenerationDesiredState(pointer));
     } catch (error) {
-      if (error instanceof DesiredStateConflictError) throw error;
+      if (error instanceof DesiredStateConflictError || error instanceof DurableHostError) throw error;
       throw new DurableHostError('MOD_GENERATION_CORRUPT', 'selected desired-state snapshot is malformed or missing', {
         cause: error instanceof Error ? error.message : String(error),
       });
@@ -86,8 +90,11 @@ export class ModActivationService {
   async preview(action: DesiredStateAction, now = new Date().toISOString()): Promise<ActivationTransactionPlan> {
     const pointer = await this.host.readCurrentPointer();
     if (!pointer) throw new DurableHostError('MOD_SAFE_MODE', 'activation requires a selected generation');
-    await this.host.validateGeneration(pointer.generation);
-    const current = await this.readDesiredState();
+    const current = await this.#readDesiredState(pointer);
+    const selected = await this.host.readCurrentPointer();
+    if (!selected || pointerSubject(selected) !== pointerSubject(pointer)) {
+      throw new DurableHostError('MOD_TRANSACTION_CONFLICT', 'selection changed during activation preview; create a new preview');
+    }
     return freeze({
       schemaVersion: 1,
       baseGeneration: pointer.generation,

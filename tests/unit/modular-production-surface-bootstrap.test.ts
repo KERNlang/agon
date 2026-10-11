@@ -1,12 +1,14 @@
-import { mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdtemp, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { loadModManagementView } from '../../packages/cli/src/commands/mod.js';
 
 import {
   DurableModHost,
   createFirstPartyModCatalog,
   createFullCompatDesiredState,
+  createFirstPartyActivationService,
   planDesiredStateChange,
 } from '../../packages/mod-kernel/src/index.js';
 import { surfaceLockFor } from '../helpers/modular-surface-lock.js';
@@ -24,9 +26,17 @@ import { detectIntent } from '../../packages/cli/src/signals/intent.js';
 const NOW = '2026-08-23T20:00:00.000Z';
 afterEach(async () => {
   await disposeProcessSurfaceAuthority();
+  vi.unstubAllEnvs();
 });
 
 describe('production physical surface bootstrap', () => {
+  it.each(['{}', '{broken'])('refuses orphan management state without a pointer: %s', async bytes => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-management-orphan-'));
+    vi.stubEnv('AGON_MODULAR_HOST_ROOT', root);
+    await writeFile(join(root, 'desired-state.json'), bytes);
+    await expect(loadModManagementView()).rejects.toThrow('without a canonical generation pointer');
+  });
+
   it('activates all physical first-party packages when no durable state exists and detects a new pointer', async () => {
     const root = await mkdtemp(join(tmpdir(), 'agon-s6-production-default-'));
     await initializeProcessSurfaceAuthority(join(root, 'absent-host'));
@@ -44,13 +54,21 @@ describe('production physical surface bootstrap', () => {
     expect(() => processSurfacePublicIds('cli')).toThrow(/changed/);
   });
 
-  it('uses the validated durable desired state and makes a disabled owner unreachable on all five surfaces', async () => {
+  it.each(['current', 'stale', 'missing', 'malformed'])('uses selected state with a %s mirror and blocks disabled owners on all five surfaces', async mirror => {
     const root = await mkdtemp(join(tmpdir(), 'agon-s6-production-disabled-'));
+    vi.stubEnv('AGON_MODULAR_HOST_ROOT', root);
     const catalog = createFirstPartyModCatalog();
     const full = createFullCompatDesiredState(catalog, NOW);
     const desired = planDesiredStateChange(catalog, full, { kind: 'disable', id: 'agon.brainstorm' }, '2026-08-23T20:00:01.000Z').nextState;
     const host = new DurableModHost(root, { kernelVersion: '1.0.0', processIdentity: 's6-production-test' });
     await host.commitGeneration({ operation: 'disable', lock: await surfaceLockFor(desired), desiredState: desired, installedIndex: {} });
+    if (mirror === 'stale') await writeFile(host.paths.desiredState, JSON.stringify(full));
+    if (mirror === 'missing') await unlink(host.paths.desiredState);
+    if (mirror === 'malformed') await writeFile(host.paths.desiredState, '{broken');
+    expect(await createFirstPartyActivationService(host).readDesiredState()).toEqual(desired);
+    const management = await loadModManagementView();
+    expect(management.groups.flatMap(group => group.entries).find(entry => entry.id === 'brainstorm'))
+      .toMatchObject({ status: 'disabled', callable: false });
 
     await initializeProcessSurfaceAuthority(root);
     expect(processSurfaceClient('cli').generation).toContain('generated:1:');

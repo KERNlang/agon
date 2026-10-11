@@ -228,6 +228,19 @@ export class DurableModHost {
     await writeNewImmutableFile(this.#io, join(this.paths.receipts, receipt.transactionId + '.' + receipt.outcome + '.json'), JSON.stringify(redacted, null, 2) + String.fromCharCode(10));
   }
 
+  /** Read authoritative desired state. Mutable mirrors are recovery outputs. */
+  async readGenerationDesiredState(pointer: GenerationPointer): Promise<unknown> {
+    const manifest = await this.validateGeneration(pointer.generation);
+    if (pointer.graphHash !== manifest.graphHash || pointer.lockHash !== manifest.lockHash) {
+      throw new DurableHostError('MOD_GENERATION_CORRUPT', 'canonical pointer does not bind the selected generation');
+    }
+    const bytes = await this.#io.readFile(join(this.generationPath(pointer.generation), 'desired-state.json'));
+    if (hashBytes(bytes) !== manifest.files['desired-state.json']) {
+      throw new DurableHostError('MOD_GENERATION_CORRUPT', 'selected desired state changed after verification; recover the modular host before setup');
+    }
+    return JSON.parse(new TextDecoder().decode(bytes));
+  }
+
   #transition(journal: HostTransactionJournal, state: HostJournalState, steps: readonly HostJournalStep[], rollback = journal.rollback): HostTransactionJournal {
     return Object.freeze({ ...journal, state, updatedAt: this.#now().toISOString(), steps: Object.freeze([...steps]), rollback: Object.freeze({ ...rollback }) });
   }

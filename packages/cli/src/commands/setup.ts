@@ -47,8 +47,18 @@ export async function runManagedSetup(args: ManagedSetupArgs, options: { preserv
   const hostRoot = modularHostRoot();
   const host = new DurableModHost(hostRoot, { kernelVersion: VERSION, processIdentity: `setup-${process.pid}` });
   const service = new ManagedLifecycleService(host, { processIdentity: `setup-lifecycle-${process.pid}` });
-  const existing = await service.readSelectedInstallation().catch(() => null);
-  const currentDesiredInput = existing ? await readFile(join(hostRoot, 'desired-state.json'), 'utf8').then((text) => JSON.parse(text)).catch(() => null) : null;
+  const selectedPointer = await host.readCurrentPointer();
+  const existing = await service.readSelectedInstallation();
+  let currentDesiredInput: unknown = null;
+  if (selectedPointer) {
+    currentDesiredInput = parseDesiredState(await host.readGenerationDesiredState(selectedPointer));
+  }
+  const assertSelectionCurrent = async () => {
+    if (canonicalJson(await host.readCurrentPointer()) !== canonicalJson(selectedPointer)) {
+      throw new Error('modular selection changed during setup; rerun setup to create a current plan');
+    }
+  };
+  await assertSelectionCurrent();
   let selection: ReturnType<typeof createReleaseSetupSelection>;
   if (options.preserveExistingState && existing && currentDesiredInput) {
     const desiredState = parseDesiredState(currentDesiredInput);
@@ -64,15 +74,19 @@ export async function runManagedSetup(args: ManagedSetupArgs, options: { preserv
   const lock = buildLock(artifacts, selection.desiredState, release);
   const desiredShape = (value: any) => value ? { selected: value.selected, disabled: value.disabled, constraints: value.constraints } : null;
   const packageShape = (values: readonly { id: string; version: string }[]) => values.map(({ id, version }) => ({ id, version })).sort((left, right) => left.id.localeCompare(right.id));
-  if (existing && existing.kernelVersion === VERSION
+  if (!args.plan && existing && existing.kernelVersion === VERSION
     && canonicalJson(packageShape(existing.packages)) === canonicalJson(packageShape(artifacts))
     && canonicalJson(desiredShape(currentDesiredInput)) === canonicalJson(desiredShape(selection.desiredState))) {
+    await assertSelectionCurrent();
     const launcher = await writeStableLauncher(hostRoot);
     console.log(JSON.stringify({ status: 'already-qualified', profile: selection.profile, generationUnchanged: true, launcher, packageCount: artifacts.length }, null, 2));
     return;
   }
   const plan = await createManagedLifecyclePlan(host, { operation: existing ? 'update' : 'install', networkPolicy: args.offline ? 'frozen-offline' : 'online', kernelVersion: VERSION, apiVersion: VERSION,
     requestedPackageIds: artifacts.map(({ id }) => id), artifacts, desiredState: selection.desiredState, lock });
+  if (plan.basePointerHash !== (selectedPointer ? sha256Canonical(selectedPointer) : null)) {
+    throw new Error('modular selection changed during setup; rerun setup to create a current plan');
+  }
   if (args.plan) { console.log(JSON.stringify({ status: 'planned', selection, lifecycle: plan, launcherSpec: process.env.AGON_SETUP_LAUNCHER_SPEC ?? `@kernlang/agon@${VERSION}` }, null, 2)); return; }
   const launcherSpec = process.env.AGON_SETUP_LAUNCHER_SPEC ?? `@kernlang/agon@${VERSION}`;
   const result = await service.apply(plan, new ReleaseSetInstaller(plan.packages, launcherSpec, typeof args.cache === 'string' ? resolve(args.cache) : undefined), new ReleaseSetVerifier());

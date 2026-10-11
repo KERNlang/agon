@@ -30,9 +30,12 @@ describe('every first-party mod through durable activation and fresh surface boo
       },
     } });
     await host.commitGeneration({ operation: 'install', lock: await surfaceLockFor(desired), desiredState: desired, installedIndex: {}, files: { 'snapshot.json': '{"version":1}' } });
-    const service = createFirstPartyActivationService(host);
+    const normal = createFirstPartyActivationService(host);
+    const service = new ModActivationService(host, catalog, async (...args) => {
+      armed = true;
+      return normal.buildArtifacts(...args);
+    });
     const plan = await service.preview({ kind: 'disable', id: 'agon.forge' });
-    armed = true;
     await expect(service.apply(plan)).rejects.toThrow(/artifact.*changed/);
     expect(reads).toBe(name === 'mods.lock.json' ? 3 : 2);
     expect((await host.readCurrentPointer())?.generation).toBe(1);

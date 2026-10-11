@@ -66,10 +66,8 @@ async function selectedDesiredState(hostRoot: string): Promise<{
   const catalog = createFirstPartyModCatalog();
   const pointerPath = join(hostRoot, 'current-generation.json');
   const pointerInput = await readJsonIfPresent(pointerPath);
-  const desiredPath = join(hostRoot, 'desired-state.json');
-  const desiredInput = await readJsonIfPresent(desiredPath);
-
   if (pointerInput === undefined) {
+    const desiredInput = await readJsonIfPresent(join(hostRoot, 'desired-state.json'));
     if (desiredInput !== undefined) throw new Error('modular desired state exists without a canonical generation pointer');
     return {
       state: createFullCompatDesiredState(catalog, '1970-01-01T00:00:00.000Z'),
@@ -79,8 +77,6 @@ async function selectedDesiredState(hostRoot: string): Promise<{
       lock: null,
     };
   }
-  if (desiredInput === undefined) throw new Error('canonical generation pointer exists without desired state');
-
   const pointer = pointerInput as Record<string, unknown>;
   if (!Number.isSafeInteger(pointer.generation) || typeof pointer.graphHash !== 'string' || typeof pointer.lockHash !== 'string') {
     throw new Error('canonical generation pointer is malformed');
@@ -91,19 +87,13 @@ async function selectedDesiredState(hostRoot: string): Promise<{
   const host = new DurableModHost(hostRoot, { kernelVersion: manifestInput.kernelVersion });
   const parsedPointer = await host.readCurrentPointer();
   if (!parsedPointer) throw new Error('canonical generation pointer disappeared during bootstrap');
-  const manifest = await host.validateGeneration(parsedPointer.generation);
-  if (parsedPointer.graphHash !== manifest.graphHash || parsedPointer.lockHash !== manifest.lockHash) {
-    throw new Error('canonical pointer does not bind the selected generation');
-  }
-  const generationDesired = await readJsonIfPresent(join(generationRoot, 'desired-state.json'));
+  if (canonicalJson(parsedPointer) !== canonicalJson(pointerInput)) throw new Error('canonical generation pointer changed during bootstrap');
+  const generationDesired = await host.readGenerationDesiredState(parsedPointer);
   const lock = await readJsonIfPresent(join(generationRoot, 'mods.lock.json')) as CanonicalModLock | undefined;
   if (!lock) throw new Error('selected generation lock is missing');
-  assertSelectedLockIntegrity(lock, desiredInput);
-  if (canonicalJson(generationDesired) !== canonicalJson(desiredInput)) {
-    throw new Error('selected generation and host desired-state snapshots differ');
-  }
+  assertSelectedLockIntegrity(lock, generationDesired);
   return {
-    state: parseDesiredState(desiredInput),
+    state: parseDesiredState(generationDesired),
     generationId: `generated:${parsedPointer.generation}:${parsedPointer.graphHash}`,
     pointerPath,
     pointerCanonical: canonicalJson(parsedPointer),

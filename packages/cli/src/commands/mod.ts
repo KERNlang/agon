@@ -2,6 +2,7 @@ import { lstat, mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative } from 'node:path';
 import { defineCommand } from 'citty';
 import {
+  AGON_RUNTIME_VERSION,
   DurableModHost,
   FolderModManager,
   createFirstPartyActivationService,
@@ -112,10 +113,15 @@ async function listOutput(selected: FolderModManager): Promise<any> {
   const discovery = await selected.discover();
   const catalog = createFirstPartyModCatalog();
   let desired = createFullCompatDesiredState(catalog, new Date().toISOString());
-  try {
-    desired = parseDesiredState(JSON.parse(await readFile(join(paths().hostRoot, "desired-state.json"), "utf8")));
-  } catch (error) {
-    if (!(error && typeof error === "object" && "code" in error && error.code === "ENOENT")) throw error;
+  const host = new DurableModHost(paths().hostRoot, { kernelVersion: AGON_RUNTIME_VERSION });
+  const pointer = await host.readCurrentPointer();
+  if (pointer) desired = parseDesiredState(await host.readGenerationDesiredState(pointer));
+  else {
+    const orphan = await lstat(host.paths.desiredState).then(() => true, error => {
+      if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') return false;
+      throw error;
+    });
+    if (orphan) throw new Error('modular desired state exists without a canonical generation pointer');
   }
   const mods = await Promise.all(discovery.candidates.map((candidate) => summary(selected, candidate)));
   const externalMods = mods.map((mod) => ({

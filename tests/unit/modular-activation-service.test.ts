@@ -1,7 +1,7 @@
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   DesiredStateConflictError,
   DurableHostError,
@@ -10,6 +10,7 @@ import {
   createFirstPartyModCatalog,
   createFullCompatDesiredState,
   parseDesiredState,
+  planDesiredStateChange,
   sha256Canonical,
 } from '../../packages/mod-kernel/src/index.js';
 import { surfaceLockFor as lockFor } from '../helpers/modular-surface-lock.js';
@@ -17,6 +18,38 @@ import { surfaceLockFor as lockFor } from '../helpers/modular-surface-lock.js';
 const NOW = '2026-08-23T20:00:00.000Z';
 
 describe('transactional modular activation service', () => {
+  it.each(['missing', 'corrupt'])('preserves typed errors for a %s pointer', async state => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-activation-pointer-'));
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
+    if (state === 'corrupt') await writeFile(host.paths.current, '{broken');
+    const service = new ModActivationService(host, createFirstPartyModCatalog(), async () => { throw new Error('must not build'); });
+    await expect(service.readDesiredState()).rejects.toMatchObject({ code: state === 'missing' ? 'MOD_SAFE_MODE' : 'MOD_POINTER_CORRUPT' });
+  });
+
+  it('refuses a preview when selection changes while its desired state is read', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-activation-preview-race-'));
+    const catalog = createFirstPartyModCatalog();
+    const initial = createFullCompatDesiredState(catalog, NOW);
+    const next = planDesiredStateChange(catalog, initial, { kind: 'disable', id: 'agon.forge' }, NOW).nextState;
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
+    const writer = new DurableModHost(root, { kernelVersion: '1.0.0' });
+    await writer.commitGeneration({ operation: 'install', lock: await lockFor(initial), desiredState: initial, installedIndex: {} });
+    const validate = host.validateGeneration.bind(host);
+    let switched = false;
+    vi.spyOn(host, 'validateGeneration').mockImplementation(async generation => {
+      const manifest = await validate(generation);
+      if (!switched) {
+        switched = true;
+        await writer.commitGeneration({ operation: 'disable', lock: await lockFor(next), desiredState: next, installedIndex: {} });
+      }
+      return manifest;
+    });
+    const service = new ModActivationService(host, catalog, async () => { throw new Error('must not build'); });
+    await expect(service.preview({ kind: 'disable', id: 'agon.think' })).rejects.toMatchObject({ code: 'MOD_TRANSACTION_CONFLICT' });
+    expect(switched).toBe(true);
+    expect((await writer.readCurrentPointer())?.generation).toBe(2);
+  });
+
   it('rejects a self-consistent but incomplete package closure before changing the pointer', async () => {
     const root = await mkdtemp(join(tmpdir(), 'agon-activation-closure-'));
     const catalog = createFirstPartyModCatalog();

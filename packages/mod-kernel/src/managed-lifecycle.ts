@@ -8,6 +8,7 @@ import { DurableModHost, type GenerationPointer } from './durable-host.js';
 import { DurableHostError } from './host-errors.js';
 import { atomicWrite, nodeHostIo, pathExists, readJson, writeNewImmutableFile, type HostIo } from './host-io.js';
 import { rollbackGeneration } from './host-rollback.js';
+import { referencedInstallations } from './lifecycle-recovery.js';
 import { makeTreeRemovable } from './removable-tree.js';
 import { WriterFence, type WriterLockOptions } from './writer-lock.js';
 import { evaluateThirdPartyAuthority, TrustGrantStore, type TrustPublisher } from './trust-authority.js';
@@ -580,6 +581,7 @@ export class ManagedLifecycleService {
       const result = await this.host.commitGeneration({
         operation: plan.operation === 'downgrade' ? 'update' : plan.operation,
         expectedBaseGeneration: plan.baseGeneration,
+        expectedBasePointerHash: plan.basePointerHash,
         lock: plan.lock,
         desiredState: plan.desiredState,
         installedIndex: {
@@ -624,11 +626,7 @@ export class ManagedLifecycleService {
             if (selected.installationId === installationId && selected.planHash === plan.planHash) selectedGeneration = pointer.generation;
           }
           canDiscard = selectedGeneration === null;
-          const candidateGeneration = plan.baseGeneration + 1;
-          if (canDiscard && await pathExists(this.#io, this.host.generationPath(candidateGeneration))) {
-            const candidate = await readJson<ManagedInstallationRecord>(this.#io, join(this.host.generationPath(candidateGeneration), 'installation.json'));
-            if (candidate.installationId === installationId) canDiscard = false;
-          }
+          if (canDiscard && (await referencedInstallations(this.host, this.#io)).has(installationId)) canDiscard = false;
         } catch {
           // Recovery must resolve uncertain ownership before deleting a prefix.
           canDiscard = false;

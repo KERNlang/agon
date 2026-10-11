@@ -29,9 +29,13 @@ function updateRequest() {
 }
 
 describe('managed lifecycle fault injection', () => {
-  it('retains a committed update when rollback precedes host and lifecycle recovery', async () => {
+  it.each([false, true])('retains a committed update when rollback precedes recovery (higher generation retained=%s)', async retained => {
     const root = await mkdtemp(join(tmpdir(), 'agon-lifecycle-delayed-recovery-'));
-    await base(root);
+    const initial = await base(root);
+    if (retained) {
+      await initial.stable.apply(await createManagedLifecyclePlan(initial.host, updateRequest()), installer, verifier);
+      await initial.stable.rollback(1);
+    }
     const interrupted = new DurableModHost(root, { kernelVersion: '1.0.0', fault: point => {
       if (point === 'after-pointer-switch') throw new Error('fixture post-commit failure');
     } });
@@ -44,7 +48,7 @@ describe('managed lifecycle fault injection', () => {
     expect(await host.boot()).toMatchObject({ mode: 'normal', pointer: { generation: 1 } });
     expect(JSON.parse(await readFile(host.paths.installedIndex, 'utf8')).packages[0].version).toBe('1.0.0');
     await recoverManagedLifecycle(host);
-    await recovered.rollback(2);
+    await recovered.rollback(retained ? 3 : 2);
     expect((await recovered.readSelectedInstallation())?.packages[0]?.version).toBe('2.0.0');
     expect((await host.boot()).mode).toBe('normal');
     expect(await recoverManagedLifecycle(host)).toMatchObject({ recoveredCommitted: [], recoveredRolledBack: [] });

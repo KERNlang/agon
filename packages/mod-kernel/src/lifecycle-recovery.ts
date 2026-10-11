@@ -187,7 +187,7 @@ function assertManagedPath(hostRoot: string, path: string): string {
   return absolute;
 }
 
-async function referencedInstallations(host: DurableModHost, io: HostIo = host.hostIo): Promise<Map<string, { generation: number; committed: boolean }>> {
+export async function referencedInstallations(host: DurableModHost, io: HostIo = host.hostIo): Promise<Map<string, { generation: number; committed: boolean }>> {
   const result = new Map<string, { generation: number; committed: boolean }>();
   const entries = await io.readdir(host.paths.generations, { withFileTypes: true }).catch(error => {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];

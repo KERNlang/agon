@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import { createHash } from 'node:crypto';
 import type { ActivationArtifacts } from './activation-service.js';
 import { ModActivationService } from './activation-service.js';
 import { createFirstPartyModCatalog } from './desired-state.js';
@@ -12,9 +13,16 @@ export function createFirstPartyActivationService(host: DurableModHost): ModActi
   return new ModActivationService(host, catalog, async (desired, _mods, packageIds) => {
     const pointer = await host.readCurrentPointer();
     if (!pointer) throw new Error('selected generation disappeared');
-    await host.validateGeneration(pointer.generation);
+    const manifest = await host.validateGeneration(pointer.generation);
     const root = host.generationPath(pointer.generation);
-    const read = async (name: string) => new TextDecoder().decode(await host.hostIo.readFile(join(root, name)));
+    const readArtifact = async (name: string) => {
+      const bytes = await host.hostIo.readFile(join(root, name));
+      if (`sha256:${createHash('sha256').update(bytes).digest('hex')}` !== manifest.files[name]) {
+        throw new TypeError('retained generation artifact changed after validation: ' + name);
+      }
+      return bytes;
+    };
+    const read = async (name: string) => new TextDecoder().decode(await readArtifact(name));
     const previous = JSON.parse(await read('mods.lock.json')) as CanonicalModLock;
     const index = JSON.parse(await read('installed-index.json')) as Record<string, unknown>;
     if (!index || typeof index !== 'object' || Array.isArray(index)) throw new TypeError('installed inventory is malformed');
@@ -38,10 +46,17 @@ export function createFirstPartyActivationService(host: DurableModHost): ModActi
     });
     const desiredStateHash = sha256Canonical(desired);
     const graphHash = sha256Canonical({ kernelVersion: previous.kernelVersion, apiVersion: previous.apiVersion, desiredStateHash, packages });
-    const files: Record<string, string> = {};
-    // The immutable installation descriptor is needed by update/rollback after
-    // an enablement change. Do not silently drop its lineage.
-    if (index.installationId !== undefined) files['installation.json'] = await read('installation.json');
+    const files: Record<string, Uint8Array> = {};
+    // Selection changes retain committed artifacts. The host regenerates state
+    // and lock files; migration outputs and installation lineage stay intact.
+    const rebuilt = new Set(['mods.lock.json', 'desired-state.json', 'installed-index.json']);
+    for (const name of Object.keys(manifest.files)) {
+      if (rebuilt.has(name)) continue;
+      files[name] = await readArtifact(name);
+    }
+    if (index.installationId !== undefined && !Object.hasOwn(files, 'installation.json')) {
+      throw new TypeError('selected installation descriptor is missing');
+    }
     return {
       lock: { ...previous, desiredStateHash, graphHash, packages },
       installedIndex: { ...index, lockedPackages: inventory },

@@ -231,7 +231,7 @@
         "range": "^19.2.0"
       }
     ],
-    "packedBytes": 1284912,
+    "packedBytes": 1284901,
     "unpackedBytes": 5767282,
     "fileCount": 101,
     "files": [
@@ -640,9 +640,9 @@
         "size": 36190
       }
     ],
-    "integrity": "sha512-GLoNPpMOUOvwAzAnWjooeJmmrvlqV+W+6yndpQvg20tbPQw7iHn/yoRa7BNGpc8IAK4TkCn1xsW14kzdzL/bQA==",
-    "shasum": "ab55c9f8f318e7a70328516babc9be889ef86d6d",
-    "tarballHash": "sha256:2507fbf821653a5cb35b4ea4e38298ef4e7309818ed0cc3d14b7a411455c90ab",
+    "integrity": "sha512-j5hfA8HbkdBoC8c1l76p3p78D2VAJVJIM5zlOE1AzxPCAEniBdEM8BqOxALznsosG8rIypU+IgD28MuJPhSK2Q==",
+    "shasum": "003caeb39c6bb239dfd9c55034376e954e3b0c67",
+    "tarballHash": "sha256:b001617964f0ad5c0e6f63c87d073c4db541b37a6c12a1eb8c05067bc2c4e92d",
     "packageJsonHash": "sha256:8905f40d1f1eef07d64063cd9ce8f783f828292654a2731fb52bab3328959ac2"
   },
   "packages": [
@@ -657,8 +657,8 @@
         "@kernlang/agon-mod-api"
       ],
       "peerDependencies": {},
-      "packedBytes": 159511,
-      "unpackedBytes": 1420509,
+      "packedBytes": 159944,
+      "unpackedBytes": 1422061,
       "fileCount": 70,
       "files": [
         {
@@ -699,7 +699,7 @@
         },
         {
           "path": "dist/durable-host.d.ts",
-          "size": 6025
+          "size": 6091
         },
         {
           "path": "dist/external-activation-state.d.ts",
@@ -803,7 +803,7 @@
         },
         {
           "path": "dist/index.js",
-          "size": 900796
+          "size": 902123
         },
         {
           "path": "dist/json-schema-input.d.ts",
@@ -815,7 +815,7 @@
         },
         {
           "path": "dist/lifecycle-recovery.d.ts",
-          "size": 1242
+          "size": 1401
         },
         {
           "path": "dist/lock.d.ts",
@@ -942,9 +942,9 @@
           "size": 548
         }
       ],
-      "integrity": "sha512-t5ZeJTbEmZugyG3k/bN4K73u5Jl4pRllSVj7wrvb55hQR1My2133GyHrrANZFUX7SdvudDRKAbCRtpaJx1ZI6A==",
-      "shasum": "a70a0dd7a2da052dbfa74647be2bd640d9dbc103",
-      "tarballHash": "sha256:f13b8c659239fd47b6a40eb8a07dbf39da51405367153d352ca6d2385f6ac443",
+      "integrity": "sha512-gbbKHMWKNdzayz5G6qk0sd9ETNXmRjTipEAfHGsx4tnmNlpcMmoW27wB4EjN6iTQUaMUbXz211MyGrlm0f1XuA==",
+      "shasum": "cec48c20744115861b4c999314a2d74638c28c53",
+      "tarballHash": "sha256:f0544267b48500644983b34be134c9e8e9250a7835e9c96cea6a5535762ba09e",
       "packageJsonHash": "sha256:583381b00786c2729a1e32eb2d42f6324cb58df263378f0d0ad57a1401970f17",
       "manifestHash": "sha256:583381b00786c2729a1e32eb2d42f6324cb58df263378f0d0ad57a1401970f17"
     },

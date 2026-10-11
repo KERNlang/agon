@@ -120,6 +120,7 @@ export class ModActivationService {
     const result = await this.host.commitGeneration({
       operation: plan.desired.operation,
       expectedBaseGeneration: plan.baseGeneration,
+      expectedBasePointerHash: plan.basePointerHash,
       lock: artifacts.lock,
       desiredState: desired,
       installedIndex: artifacts.installedIndex,

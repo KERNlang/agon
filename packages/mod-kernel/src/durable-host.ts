@@ -90,6 +90,7 @@ export interface DurableHostOptions {
 export interface CommitGenerationInput {
   readonly operation: HostTransactionOperation;
   readonly expectedBaseGeneration?: number;
+  readonly expectedBasePointerHash?: `sha256:${string}` | null;
   readonly lock: CanonicalModLock;
   readonly desiredState: unknown;
   readonly installedIndex: unknown;
@@ -329,7 +330,19 @@ export class DurableModHost {
           expectedBaseGeneration: input.expectedBaseGeneration, actualBaseGeneration: previous?.generation ?? 0,
         });
       }
-      const candidateGeneration = (previous?.generation ?? 0) + 1;
+      if (input.expectedBasePointerHash !== undefined && input.expectedBasePointerHash !== (previous ? sha256Canonical(previous) : null)) {
+        throw new DurableHostError('MOD_TRANSACTION_CONFLICT', 'generation selection changed after activation preview');
+      }
+      let latestGeneration = previous?.generation ?? 0;
+      // Rollback selects an older generation. Retained generations still own
+      // their numbers, including incomplete entries awaiting recovery.
+      for (const entry of await this.#io.readdir(this.paths.generations, { withFileTypes: true })) {
+        if (!/^\d{16}$/.test(entry.name)) continue;
+        const generation = Number(entry.name);
+        if (!Number.isSafeInteger(generation)) throw new DurableHostError('MOD_GENERATION_CORRUPT', 'retained generation number is outside the supported range');
+        latestGeneration = Math.max(latestGeneration, generation);
+      }
+      const candidateGeneration = latestGeneration + 1;
       const transactionId = randomUUID();
       staging = join(this.paths.staging, transactionId);
       candidatePath = this.generationPath(candidateGeneration);

@@ -1,4 +1,4 @@
-import { assertContributionInput } from '@kernlang/agon-kernel';
+import { assertContributionInput, selectModSettings } from '@kernlang/agon-kernel';
 
 import { ToolRegistry, getProjectFileStateCache, createReadTool, createEditTool, createMultiEditTool, createWriteTool, createBashTool, createGrepTool, createGlobTool, createReportConfidenceTool, createRetrieveResultTool, createTodoWriteTool, executeToolCall, resolveWorkingDir, parsePermissionRuleSet, parseToolHooks, isReadOnlyCommand, loadConfig } from '@kernlang/agon-core';
 
@@ -67,7 +67,7 @@ export function createCesarToolRegistry(engineId?: string, available: ReadonlySe
           if (!['darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64'].includes(platform)) return { ok: false, content: '', error: `unsupported platform: ${platform}` };
           const value = await payload.run(input, {
             invocationId: `cesar-${Date.now()}`, cwd: context.cwd, platform,
-            signal: context.abortSignal ?? new AbortController().signal, config: Object.freeze({}),
+            signal: context.abortSignal ?? new AbortController().signal, config: selectModSettings(loadConfig(context.cwd), record.owner.id),
           });
           return { ok: true, content: typeof value === 'string' ? value : JSON.stringify(value) };
         },

@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import type { EngineAdapter } from '@kernlang/agon-core';
+import { loadConfig } from '@kernlang/agon-core';
 import type { BrainstormWorkflowEvent } from '@kernlang/agon-mod-brainstorm';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -11,6 +12,7 @@ import {
   SurfaceGenerationSelector,
   bootstrapFirstPartySurfaceGeneration,
   canonicalJson,
+  selectModSettings,
 } from '@kernlang/agon-kernel';
 import type {
   FirstPartySurfaceBoot,
@@ -226,7 +228,7 @@ export async function executeProcessCesarRoute(
     cwd: context.cwd,
     platform,
     signal: context.signal,
-    config: Object.freeze({}),
+    config: selectModSettings(loadConfig(context.cwd), entry.owner.id),
   });
 }
 

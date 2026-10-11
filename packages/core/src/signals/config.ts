@@ -1,7 +1,7 @@
 import { mkdirSync, readdirSync, statSync, rmSync } from 'node:fs';
 
 import { join } from 'node:path';
-import { createScopedConfigStore, normalizeKernelSettings } from '@kernlang/agon-kernel';
+import { createScopedConfigStore, normalizeKernelSettings, mergeModSettingsLayers } from '@kernlang/agon-kernel';
 import { normalizeBrowserSettings } from '@kernlang/agon-support-browser-bridge';
 import { normalizeEngineSettings } from '@kernlang/agon-support-engine-runtime';
 
@@ -50,6 +50,8 @@ export function loadConfig(cwd?: string): Required<AgonConfig> {
 
 function mergeConfig(global: Partial<AgonConfig>, local: Partial<AgonConfig>, localPrivate: Partial<AgonConfig>): Required<AgonConfig> {
   const merged = { ...DEFAULT_AGON_CONFIG, ...global, ...local, ...localPrivate } as Required<AgonConfig>;
+  const mods = mergeModSettingsLayers(global, local, localPrivate);
+  if (mods !== undefined) Object.assign(merged, { mods });
   // Compiler can't emit object/array defaults for Record types — ensure correct runtime types
   normalizeEngineSettings(merged);
   normalizeBrowserSettings(merged);

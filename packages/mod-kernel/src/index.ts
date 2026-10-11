@@ -4,7 +4,7 @@ export { createScopedConfigStore } from './scoped-config-store.js';
 export type { ConfigMemoEntry, ScopedConfigStoreOptions } from './scoped-config-store.js';
 export { DEFAULT_KERNEL_SETTINGS, normalizeKernelSettings } from './settings.js';
 export type { KernelSettings } from './settings.js';
-export { selectModSettings } from './mod-settings.js';
+export { selectModSettings, mergeModSettingsLayers } from './mod-settings.js';
 
 export {
   ModResolutionError,

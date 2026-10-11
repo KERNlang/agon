@@ -2,7 +2,8 @@ import type { JobCliInvocationContext } from '@kernlang/agon-mod-jobs';
 import { captureProcessSurfaceAuthority } from './surface-authority-runtime.js';
 import type { CommandDef, CommandMeta, SubCommandsDef } from 'citty';
 import type { CommandContribution, CommandResult, Json, ModPlatform } from '@kernlang/agon-mod-api';
-import { assertContributionInput } from '@kernlang/agon-kernel';
+import { assertContributionInput, selectModSettings } from '@kernlang/agon-kernel';
+import { loadConfig } from '@kernlang/agon-core';
 import { assertProcessSurfaceAvailable, processSurfaceCatalog, processSurfaceClient, processSurfacePublicIds } from './surface-authority-runtime.js';
 
 // ── Lazy citty subcommand loading ──────────────────────────────────────────
@@ -141,7 +142,7 @@ function schemaGeneratedCommand(publicId: string, description: string, displayNa
       assertContributionInput(contribution.inputSchema ?? { type: 'object', additionalProperties: true }, input);
       const platform = `${process.platform}-${process.arch === 'x64' ? 'x64' : process.arch}` as ModPlatform;
       if (!['darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64'].includes(platform)) throw new TypeError(`unsupported mod platform: ${platform}`);
-      const context: JobCliInvocationContext = { invocationId: `cli:${process.pid}:${Date.now()}`, cwd: process.cwd(), platform, signal: new AbortController().signal, config: {} };
+      const context: JobCliInvocationContext = { invocationId: `cli:${process.pid}:${Date.now()}`, cwd: process.cwd(), platform, signal: new AbortController().signal, config: selectModSettings(loadConfig(process.cwd()), record.owner.id) };
       if (record.owner.id === 'agon.jobs') {
         if (publicId === 'daemon') {
           const { createCliDaemonHost } = await import('./commands/daemon.js');

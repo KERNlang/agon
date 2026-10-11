@@ -153,4 +153,38 @@ describe('Kernel configuration storage', () => {
     core.invalidateConfigCache();
     expect(store.cache.size).toBe(0);
   });
+
+  it('merges mod namespaces and owner fields across all three config layers', async () => {
+    home = setupTestAgonHome('mod-settings-layers');
+    const project = join(home, 'project');
+    mkdirSync(project);
+    const core = await import('../../packages/core/src/signals/config.js');
+    const layers = [
+      { debug: false, mods: { 'example.one': { first: 1, shared: 'global', nested: { original: true } }, 'example.two': { retained: true } } },
+      { debug: true, mods: { 'example.one': { second: 2, shared: 'project', nested: { replacement: true } } } },
+      { debug: false, mods: { 'example.one': { shared: 'private' }, 'example.unknown': { retained: 'unknown' } } },
+    ];
+    const paths = [join(home, 'config.json'), join(project, '.agon.json'), join(project, '.agon.local.json')];
+    paths.forEach((path, index) => writeFileSync(path, JSON.stringify(layers[index])));
+    core.invalidateConfigCache();
+    const loaded = core.loadConfig(project);
+    expect(loaded.debug).toBe(false);
+    expect(kernel.selectModSettings(loaded, 'example.one')).toEqual({ first: 1, second: 2, shared: 'private', nested: { replacement: true } });
+    expect(kernel.selectModSettings(loaded, 'example.two')).toEqual({ retained: true });
+    expect(kernel.selectModSettings(loaded, 'example.unknown')).toEqual({ retained: 'unknown' });
+    expect(kernel.selectModSettings(core.loadConfig(), 'example.one')).toEqual(layers[0].mods['example.one']);
+    paths.forEach((path, index) => expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual(layers[index]));
+  });
+
+  it('retains unknown values without applying them and rejects malformed namespace maps', () => {
+    expect(kernel.mergeModSettingsLayers({}, {})).toBeUndefined();
+    expect(kernel.mergeModSettingsLayers({ mods: {} }, {})).toEqual({});
+    const merged = kernel.mergeModSettingsLayers({ mods: { unknown: 'future format', selected: { value: false } } }, { mods: { selected: { count: 0 } } });
+    expect(merged).toEqual({ unknown: 'future format', selected: { value: false, count: 0 } });
+    expect(kernel.selectModSettings({ mods: merged }, 'selected')).toEqual({ value: false, count: 0 });
+    expect(() => kernel.selectModSettings({ mods: merged }, 'unknown')).toThrow(/namespace/);
+    for (const mods of [null, [], 'invalid']) expect(() => kernel.mergeModSettingsLayers({ mods })).toThrow(/namespaces/);
+    const inherited = Object.create({ mods: { unowned: { value: true } } });
+    expect(kernel.mergeModSettingsLayers(inherited)).toBeUndefined();
+  });
 });

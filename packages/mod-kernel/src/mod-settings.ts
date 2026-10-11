@@ -26,6 +26,22 @@ function snapshot(value: unknown, depth = 0): Json {
   return Object.freeze(Object.fromEntries(entries));
 }
 
+/** Retain inactive namespaces as data. Validate selected values at invocation. */
+export function mergeModSettingsLayers(...layers: readonly unknown[]): Record<string, unknown> | undefined {
+  const owners = new Map<string, unknown>();
+  let present = false;
+  for (const layer of layers) {
+    if (!record(layer) || !Object.hasOwn(layer, 'mods')) continue;
+    present = true;
+    if (!record(layer.mods)) throw new TypeError('mod settings namespaces must be an object');
+    for (const [ownerId, value] of Object.entries(layer.mods)) {
+      const previous = owners.get(ownerId);
+      owners.set(ownerId, record(previous) && record(value) ? { ...previous, ...value } : value);
+    }
+  }
+  return present ? Object.fromEntries(owners) : undefined;
+}
+
 /** Select data only. The caller must authorize the owner before invoking it. */
 export function selectModSettings(config: unknown, ownerId: string | undefined): Readonly<Record<string, Json>> {
   if (!ownerId) return Object.freeze({});

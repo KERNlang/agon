@@ -2,12 +2,14 @@ import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { loadConfig } from '@kernlang/agon-core';
 
 import {
   SurfaceGenerationError,
   assertContributionInput,
   bootstrapFirstPartySurfaceGeneration,
   canonicalJson,
+  selectModSettings,
 } from '@kernlang/agon-kernel';
 import type { FirstPartySurfaceBoot, GeneratedSurfaceRuntime } from '@kernlang/agon-kernel';
 import { createMcpEngineServices, decorateMcpFirstPartyServices } from './first-party-services.js';
@@ -87,8 +89,9 @@ export async function invokeActiveMcpSurfaceTool(name: string, input: Record<str
   assertContributionInput(payload.inputSchema, input);
   const platform = `${process.platform}-${process.arch}`;
   if (!['darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64'].includes(platform)) throw new Error(`unsupported MCP platform: ${platform}`);
+  const cwd = process.env.AGON_CWD ?? process.cwd();
   return payload.run(input, {
-    invocationId: randomUUID(), cwd: process.env.AGON_CWD ?? process.cwd(), platform,
-    signal, config: Object.freeze({}),
+    invocationId: randomUUID(), cwd, platform,
+    signal, config: selectModSettings(loadConfig(cwd), record.owner.id),
   });
 }

@@ -149,14 +149,18 @@ describeMaybe('agond survival — the daemon outlives its launcher', () => {
       exec: { args: [script, '{prompt}'] },
     }));
     const daemon = spawn(process.execPath, [CLI_ENTRY, 'daemon', 'run', '--foreground'], {
-      env: { ...process.env, AGON_HOME: home, AGON_DAEMON_ECHO: '0' }, stdio: 'ignore',
+      env: { ...process.env, AGON_HOME: home, AGON_DAEMON_ECHO: '0' }, stdio: ['ignore', 'ignore', 'pipe'],
     });
+    let daemonStderr = '';
+    daemon.stderr?.setEncoding('utf8');
+    daemon.stderr?.on('data', (chunk: string) => { daemonStderr = (daemonStderr + chunk).slice(-8192); });
     let enginePid: number | undefined;
     try {
       expect(await waitFor(() => existsSync(sockPath), 10_000)).toBe(true);
       const accepted = await sendRequest(sockPath, { type: 'job-submit', kind: 'think',
         payload: { input: 'Local cancellation fixture', engine: 'load-fixture', steps: '1', cwd: home } });
-      expect(accepted?.type).toBe('job-accepted');
+      expect(accepted?.type, JSON.stringify({ response: accepted, trace: lastRequestTrace,
+        exitCode: daemon.exitCode, signalCode: daemon.signalCode, stderr: daemonStderr })).toBe('job-accepted');
       if (accepted?.type !== 'job-accepted') throw new Error(JSON.stringify(accepted));
       expect(await waitFor(() => existsSync(ready), 10_000)).toBe(true);
       enginePid = Number(readFileSync(ready, 'utf8'));
@@ -215,6 +219,26 @@ describeMaybe('agond survival — the daemon outlives its launcher', () => {
     expect(lastRequestTrace).toMatchObject({ request: 'ping', connected: false, bytes: 0 });
     expect(lastRequestTrace?.reason).toContain('ENOENT');
   });
+
+  it.each(['close', 'timeout'] as const)('distinguishes a connected socket %s from a refused request', async failure => {
+    mkdirSync(join(home, 'daemon'));
+    const server = createServer(socket => {
+      socket.resume();
+      if (failure === 'close') socket.end();
+    });
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(sockPath, resolve);
+    });
+    try {
+      expect(await sendRequest(sockPath, { type: 'ping' }, failure === 'timeout' ? 500 : 3000)).toBeNull();
+      expect(lastRequestTrace).toMatchObject({ request: 'ping', connected: true, bytes: 0,
+        reason: failure === 'close' ? 'close: hadError=false' : 'timeout' });
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+    }
+  });
+
   it('submits the first job while starting an absent daemon', async () => {
     const child = spawn(
       process.execPath,

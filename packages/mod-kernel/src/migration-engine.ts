@@ -64,6 +64,15 @@ export async function migrateStagedCopy(options: {
   const original = await io.readFile(options.sourcePath);
   const beforeHash = sha256(original);
   const path = resolveMigrationPath(options.fromVersion, options.toVersion, options.migrations);
+  // Reserve output before callbacks. Failed reservations never own cleanup.
+  try {
+    await io.mkdir(dirname(options.stagedPath), { recursive: true, mode: 0o700 });
+    await io.writeFile(options.stagedPath, new Uint8Array(), { flag: 'wx', mode: 0o600 });
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    throw new DurableHostError('MOD_MIGRATION_FAILED', code === 'EEXIST'
+      ? 'migration staged output already exists' : 'migration cannot reserve staged output', { ownerId: options.ownerId, code });
+  }
   let migrated = new Uint8Array(original);
   try {
     for (const migration of path) migrated = new Uint8Array(await migration.migrate(migrated));

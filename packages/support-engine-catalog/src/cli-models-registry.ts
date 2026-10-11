@@ -2,15 +2,15 @@ import { execFileSync } from 'node:child_process';
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync } from 'node:fs';
 
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 
 import { homedir } from 'node:os';
 
-import { fileURLToPath } from 'node:url';
-
 import { createRequire } from 'node:module';
 
-import { spawnWithTimeout } from '@kernlang/agon-support-engine-runtime';
+import { resolveAgonModelProbeWrapper, spawnWithTimeout } from '@kernlang/agon-support-engine-runtime';
+
+export { resolveAgonModelProbeWrapper } from '@kernlang/agon-support-engine-runtime';
 
 function getCacheDir(): string {
   const override = process.env.AGON_HOME?.trim();
@@ -111,25 +111,6 @@ export function resolveModelProbeScript(): string|null {
   } catch {
     return null;
   }
-}
-
-/** Locate the Agon-owned compatibility wrapper shipped by the CLI package. */
-export function resolveAgonModelProbeWrapper(moduleUrl: string|URL = import.meta.url): string|null {
-  const here = dirname(fileURLToPath(moduleUrl));
-  const candidates = [
-    // S4 workspace: packages/support-engine-catalog/src -> packages/cli/py.
-    join(here, '..', '..', 'cli', 'py', 'agon-model-probe-wrapper.py'),
-    // Dev/vitest: packages/core/src/signals -> packages/cli/py.
-    join(here, '..', '..', '..', 'cli', 'py', 'agon-model-probe-wrapper.py'),
-    // Installed workspace: @kernlang/agon-core/dist -> @kernlang/agon/py.
-    join(here, '..', '..', 'agon', 'py', 'agon-model-probe-wrapper.py'),
-    // CLI bundle: @kernlang/agon/dist -> @kernlang/agon/py.
-    join(here, '..', 'py', 'agon-model-probe-wrapper.py'),
-  ];
-  for (const candidate of candidates) {
-    if (existsSync(candidate)) return candidate;
-  }
-  return null;
 }
 
 /**

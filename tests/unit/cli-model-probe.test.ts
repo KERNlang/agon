@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync, utimesSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { setupTestAgonHome, cleanupTestAgonHome } from '../helpers/agon-home.js';
 import {
   readProbedCliModels,
@@ -138,6 +138,57 @@ process.stdout.write(JSON.stringify({ models: [{ id: 'opus', name: 'Opus 4.8', c
     writeFileSync(wrapper, '# fixture');
 
     expect(resolveAgonModelProbeWrapper(pathToFileURL(coreModule).href)).toBe(wrapper);
+  });
+
+  it.each(['src', 'dist'])('resolves the runtime-owned wrapper from %s without the CLI package', (directory) => {
+    home = setupTestAgonHome('probe-runtime-owner');
+    const runtime = join(home, 'node_modules', '@kernlang', 'agon-support-engine-runtime');
+    const module = join(runtime, directory, 'index.js');
+    const wrapper = join(runtime, 'python', 'agon-model-probe-wrapper.py');
+    mkdirSync(join(runtime, directory), { recursive: true });
+    mkdirSync(join(runtime, 'python'), { recursive: true });
+    writeFileSync(module, '');
+    writeFileSync(wrapper, '# runtime fixture');
+
+    expect(resolveAgonModelProbeWrapper(pathToFileURL(module))).toBe(wrapper);
+  });
+
+  it('uses the physical runtime asset through the unchanged public resolver', () => {
+    const wrapper = fileURLToPath(new URL('../../packages/support-engine-runtime/python/agon-model-probe-wrapper.py', import.meta.url));
+    expect(resolveAgonModelProbeWrapper()).toBe(wrapper);
+    expect(existsSync(wrapper)).toBe(true);
+  });
+
+  it('prefers the runtime-owned wrapper when a legacy CLI copy also exists', () => {
+    home = setupTestAgonHome('probe-runtime-precedence');
+    const scope = join(home, 'node_modules', '@kernlang');
+    const runtime = join(scope, 'agon-support-engine-runtime');
+    const wrapper = join(runtime, 'python', 'agon-model-probe-wrapper.py');
+    mkdirSync(join(runtime, 'python'), { recursive: true });
+    mkdirSync(join(scope, 'agon', 'py'), { recursive: true });
+    writeFileSync(wrapper, '# runtime fixture');
+    writeFileSync(join(scope, 'agon', 'py', 'agon-model-probe-wrapper.py'), '# legacy fixture');
+
+    expect(resolveAgonModelProbeWrapper(pathToFileURL(join(runtime, 'dist', 'index.js')))).toBe(wrapper);
+  });
+
+  it('returns null when neither runtime nor legacy wrapper exists', () => {
+    home = setupTestAgonHome('probe-no-wrapper');
+    expect(resolveAgonModelProbeWrapper(pathToFileURL(join(home, 'absent', 'dist', 'index.js')))).toBeNull();
+  });
+
+  it.each([
+    ['packages/support-engine-catalog/src/index.js', 'packages/cli/py'],
+    ['packages/core/src/signals/cli-models-registry.js', 'packages/cli/py'],
+    ['node_modules/@kernlang/agon/dist/index.js', 'node_modules/@kernlang/agon/py'],
+  ])('retains the legacy wrapper lookup from %s', (modulePath, assetDirectory) => {
+    home = setupTestAgonHome('probe-legacy-layout');
+    const directory = join(home, assetDirectory);
+    const wrapper = join(directory, 'agon-model-probe-wrapper.py');
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(wrapper, '# legacy fixture');
+
+    expect(resolveAgonModelProbeWrapper(pathToFileURL(join(home, modulePath)))).toBe(wrapper);
   });
 
   it('rejects a nonzero PTY probe even when it emits plausible model JSON', async () => {

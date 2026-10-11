@@ -9,6 +9,7 @@ export * from './auth-store.js';
 export * from './isolation.js';
 export * from './process.js';
 export * from './semaphore.js';
+export * from './model-probe-assets.js';
 
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';

@@ -30,8 +30,8 @@
         "@kernlang/agon-kernel"
       ],
       "sourceLocator": "@kernlang/agon-support-engine-runtime@1.0.0",
-      "integrity": "sha512-UpiNVAdeSlyrnsCQjgdafYjohn1PqlWAbg9R5XrSWkIXloPfE/oyNgQ+7EmKvbRrkWshwof3Q5JC6+TH9/d43w==",
-      "contentHash": "sha256:9fe77ba7fae2050e6a476e017fcd4042c4d8e88561f7321abd8b369485c3dddb",
+      "integrity": "sha512-fKovCwdx9tmAA+hAh+Ua8+j5x3x1grgi0n273UuPLJbYkLC19sipjXRKz+R20FS1N8/D/2pXlp1xn6mcNcd7iw==",
+      "contentHash": "sha256:8d9e3a2e90c96a61f5bad4e20db4ee810aa1db6fc4fdcbe1f06d8f4bdee0de28",
       "manifestHash": "sha256:ceb6dc581e02ccfabe5d4fd042fcbab72d2b0fc3b64a34feedb155c0d9fa4362"
     },
     {
@@ -41,8 +41,8 @@
         "@kernlang/agon-support-engine-runtime"
       ],
       "sourceLocator": "@kernlang/agon-support-engine-catalog@1.0.0",
-      "integrity": "sha512-AO8b6myr3qyZRno5cZMfoiG/qewzu3+QBipSJRGM4zOamtBLsJinUlU4v15l2nIGFBstm1vhc133AjXx2eKqUw==",
-      "contentHash": "sha256:38e65599c21b6795bf4769931a85c8a3476947feaa6716f243129db7326ab441",
+      "integrity": "sha512-D+rxoM2OHC5Yk+ME0GVXXj0peIQqOcwmCb9K98J8XCtXNlGlSec+EZyrpfy3rLlZ/aEbdd4w5J7wX7XILytbsQ==",
+      "contentHash": "sha256:132ebbe8ff076a9af0073360dc96fb9040eeea6441821571884032f5d4a7e10c",
       "manifestHash": "sha256:fb2b89832a8070f14e24d007abff47e00676f10e5c63b201302e7cc3f33d3c16"
     },
     {

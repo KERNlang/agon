@@ -1,7 +1,7 @@
 import { mkdirSync, readdirSync, statSync, rmSync } from 'node:fs';
 
 import { join } from 'node:path';
-import { createScopedConfigStore, normalizeKernelSettings, mergeModSettingsLayers, selectModSettings } from '@kernlang/agon-kernel';
+import { createScopedConfigStore, normalizeKernelSettings, mergeModSettingsLayers, selectModSettings, withSynchronousWriterFence } from '@kernlang/agon-kernel';
 import { normalizeBrowserSettings } from '@kernlang/agon-support-browser-bridge';
 import { normalizeEngineSettings } from '@kernlang/agon-support-engine-runtime';
 
@@ -33,7 +33,10 @@ const configStore = createScopedConfigStore<Required<AgonConfig>>({
   localName: LOCAL_CONFIG_NAME,
   privateLocalName: LOCAL_PRIVATE_CONFIG_NAME,
   merge: mergeConfig,
-  withLock: (path, action) => withFileLock(path, action),
+  withLock: (path, action) => withFileLock(path, () => {
+    const hostRoot = process.env.AGON_MODULAR_HOST_ROOT ?? join(getAgonHome(), 'modular-host');
+    withSynchronousWriterFence(join(hostRoot, 'locks', 'writer.json'), 'agon.kernel.config', () => { action(); });
+  }),
   prepareWrite: (existing, key, value) => {
     const updated = { ...existing, [key]: value };
     if (!Object.hasOwn(LEGACY_MOD_SETTING_OWNERS, key)) return updated;

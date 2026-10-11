@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from '
 import { join } from 'node:path';
 import * as kernel from '../../packages/mod-kernel/src/index.js';
 import { setupTestAgonHome, cleanupTestAgonHome } from '../helpers/agon-home.js';
+import { WriterFence } from '../../packages/mod-kernel/src/writer-lock.js';
 
 vi.mock('@kernlang/agon-kernel', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@kernlang/agon-kernel')>();
@@ -10,7 +11,7 @@ vi.mock('@kernlang/agon-kernel', async (importOriginal) => {
 });
 
 let home = '';
-afterEach(() => { if (home) cleanupTestAgonHome(home); home = ''; vi.restoreAllMocks(); });
+afterEach(() => { vi.unstubAllEnvs(); if (home) cleanupTestAgonHome(home); home = ''; vi.restoreAllMocks(); });
 
 function fixture() {
   home = setupTestAgonHome('kernel-config-store');
@@ -27,6 +28,48 @@ function fixture() {
 }
 
 describe('Kernel configuration storage', () => {
+  it('follows changed home and host roots after Core has been imported', async () => {
+    home = setupTestAgonHome('config-fence-dynamic-home');
+    const firstHost = join(home, 'first-host');
+    vi.stubEnv('AGON_MODULAR_HOST_ROOT', firstHost);
+    const core = await import('../../packages/core/src/signals/config.js');
+    core.configSet('debug', false);
+    expect(existsSync(join(firstHost, 'locks'))).toBe(true);
+    for (const file of ['current-generation.json', 'desired-state.json', 'installed-index.json']) {
+      expect(existsSync(join(firstHost, file))).toBe(false);
+    }
+    const nextHome = join(home, 'second-home'); mkdirSync(nextHome);
+    const nextHost = join(nextHome, 'second-host');
+    const oldOwner = await WriterFence.acquire(join(firstHost, 'locks', 'writer.json'), 'old-host');
+    vi.stubEnv('AGON_HOME', nextHome);
+    vi.stubEnv('AGON_MODULAR_HOST_ROOT', nextHost);
+    try {
+      core.configSet('debug', true);
+      expect(JSON.parse(readFileSync(join(home, 'config.json'), 'utf8')).debug).toBe(false);
+      expect(JSON.parse(readFileSync(join(nextHome, 'config.json'), 'utf8')).debug).toBe(true);
+      expect(existsSync(join(nextHost, 'locks'))).toBe(true);
+    } finally { await oldOwner.release(); }
+  });
+
+  it.each([false, true])('coordinates actual synchronous Core writes with the host fence (custom root=%s)', async custom => {
+    home = setupTestAgonHome('config-publication-fence');
+    const hostRoot = join(home, custom ? 'custom-host' : 'modular-host');
+    if (custom) vi.stubEnv('AGON_MODULAR_HOST_ROOT', hostRoot);
+    const path = join(home, 'config.json');
+    const bytes = '{"debug":false,"unknown":"keep"}\n';
+    writeFileSync(path, bytes);
+    const owner = await WriterFence.acquire(join(hostRoot, 'locks', 'writer.json'), 'fixture.host');
+    const core = await import('../../packages/core/src/signals/config.js');
+    try {
+      expect(() => core.configSet('debug', true)).toThrowError(expect.objectContaining({ code: 'MOD_HOST_BUSY' }));
+      expect(readFileSync(path, 'utf8')).toBe(bytes);
+    } finally { await owner.release(); }
+    expect(core.configSet('debug', true)).toBeUndefined();
+    expect(core.loadConfig().debug).toBe(true);
+    expect(JSON.parse(readFileSync(path, 'utf8')).unknown).toBe('keep');
+    expect(existsSync(join(hostRoot, 'locks', 'writer.json'))).toBe(false);
+  });
+
   it('maps all nine aliases only to their assigned owners', async () => {
     home = setupTestAgonHome('settings-all-aliases');
     const fields = [

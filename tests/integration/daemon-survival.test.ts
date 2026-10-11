@@ -135,6 +135,54 @@ afterEach(async () => {
 });
 
 describeMaybe('agond survival — the daemon outlives its launcher', () => {
+  it.each(['cancel', 'shutdown'])('stops detached engine processes on job %s through the real CLI', async action => {
+    const ready = join(home, 'fixture-engine.pid');
+    const script = join(home, 'fixture-engine.cjs');
+    writeFileSync(script, `const fs = require('node:fs');
+      fs.writeFileSync(${JSON.stringify(ready + '.tmp')}, String(process.pid));
+      fs.renameSync(${JSON.stringify(ready + '.tmp')}, ${JSON.stringify(ready)});
+      setTimeout(() => process.exit(0), 15000);`);
+    mkdirSync(join(home, 'engines'));
+    writeFileSync(join(home, 'engines/load-fixture.json'), JSON.stringify({
+      schemaVersion: 3, id: 'load-fixture', displayName: 'Local cancellation fixture',
+      binary: process.execPath, isLocal: true, tier: 'user', timeout: 20,
+      exec: { args: [script, '{prompt}'] },
+    }));
+    const daemon = spawn(process.execPath, [CLI_ENTRY, 'daemon', 'run', '--foreground'], {
+      env: { ...process.env, AGON_HOME: home, AGON_DAEMON_ECHO: '0' }, stdio: 'ignore',
+    });
+    let enginePid: number | undefined;
+    try {
+      expect(await waitFor(() => existsSync(sockPath), 10_000)).toBe(true);
+      const accepted = await sendRequest(sockPath, { type: 'job-submit', kind: 'think',
+        payload: { input: 'Local cancellation fixture', engine: 'load-fixture', steps: '1', cwd: home } });
+      expect(accepted?.type).toBe('job-accepted');
+      if (accepted?.type !== 'job-accepted') throw new Error(JSON.stringify(accepted));
+      expect(await waitFor(() => existsSync(ready), 10_000)).toBe(true);
+      enginePid = Number(readFileSync(ready, 'utf8'));
+      expect(Number.isSafeInteger(enginePid) && enginePid > 0).toBe(true);
+      if (action === 'cancel') {
+        expect(await sendRequest(sockPath, { type: 'job-cancel', jobId: accepted.job.id })).toMatchObject({ type: 'job-cancelled', job: { state: 'cancelled' } });
+        expect(await sendRequest(sockPath, { type: 'job-result', jobId: accepted.job.id })).toMatchObject({ type: 'job-result', ready: true, outcome: { state: 'cancelled' } });
+      } else {
+        expect(await sendRequest(sockPath, { type: 'shutdown' })).toMatchObject({ type: 'bye' });
+      }
+      expect(await waitFor(() => {
+        try { process.kill(enginePid!, 0); return false; }
+        catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error; return true; }
+      }, 3500)).toBe(true);
+      if (action === 'cancel') expect(await sendRequest(sockPath, { type: 'ping' })).toMatchObject({ type: 'pong' });
+      else expect(await waitFor(() => daemon.exitCode !== null, 10_000)).toBe(true);
+    } finally {
+      if (existsSync(ready)) enginePid = Number(readFileSync(ready, 'utf8'));
+      if (Number.isSafeInteger(enginePid) && enginePid! > 0) {
+        try { process.kill(-enginePid!, 'SIGKILL'); } catch { /* Owned fixture already stopped. */ }
+      }
+      if (daemon.exitCode === null && daemon.signalCode === null) daemon.kill('SIGKILL');
+      await waitFor(() => daemon.exitCode !== null || daemon.signalCode !== null);
+    }
+  }, 30_000);
+
   it('refuses a second foreground server without damaging the current owner', async () => {
     const env = { ...process.env, AGON_HOME: home, AGON_DAEMON_ECHO: '1' };
     const first = spawn(process.execPath, [CLI_ENTRY, 'daemon', 'run', '--foreground'], { env, stdio: 'ignore' });

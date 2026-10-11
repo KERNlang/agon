@@ -4,6 +4,9 @@ import { dirname, join } from 'node:path';
 import { createGeneratedLazySubCommands } from './lazy-commands.js';
 import { initializeProcessSurfaceAuthority, modularHostRoot, processSurfacePublicIds } from './surface-authority-runtime.js';
 import { loadAllAuthKeys } from '@kernlang/agon-support-engine-runtime';
+import { installCliExitSignals } from './lib/exit-signals.js';
+
+installCliExitSignals();
 
 // `surfaces/app.js` (the whole interactive Cesar/Ink surface — ~2k lines
 // pulling in React/Ink + the full tool/agent stack) and

@@ -1,6 +1,7 @@
-import { readFileSync, writeFileSync, mkdirSync, renameSync, readdirSync, statSync, rmSync } from 'node:fs';
+import { mkdirSync, readdirSync, statSync, rmSync } from 'node:fs';
 
-import { join, dirname } from 'node:path';
+import { join } from 'node:path';
+import { createScopedConfigStore } from '@kernlang/agon-kernel';
 
 import {
   AGON_HOME, CORPUS_PATH, GLOBAL_CONFIG_PATH, RATINGS_PATH, RUNS_DIR, SKILLS_DIR, TEAM_ELO_PATH,
@@ -24,65 +25,28 @@ export const LOCAL_CONFIG_NAME: string = '.agon.json';
 
 export const LOCAL_PRIVATE_CONFIG_NAME: string = '.agon.local.json';
 
-export const _configMemoCache: Map<string, { globalMtime: number; localMtime: number; localPrivateMtime: number; result: Required<AgonConfig> }> = new Map();
+const configStore = createScopedConfigStore<Required<AgonConfig>>({
+  globalPath: () => agonPath('config.json'),
+  localName: LOCAL_CONFIG_NAME,
+  privateLocalName: LOCAL_PRIVATE_CONFIG_NAME,
+  merge: mergeConfig,
+  withLock: (path, action) => withFileLock(path, action),
+});
 
-function _statMtimeOrZero(path: string): number {
-  try { return statSync(path).mtimeMs; } catch { return 0; }
-}
+export const _configMemoCache = configStore.cache;
 
 /**
  * Clear the loadConfig() memoization cache. Call this after any direct write to config.json / .agon.json / .agon.local.json that doesn't already go through configSet — the mtime-keyed cache would normally self-invalidate on the next loadConfig() call anyway (the file's mtime changes), but this guards against a write landing within the same mtime tick as a subsequent read.
  */
 export function invalidateConfigCache(): void {
-  _configMemoCache.clear();
+  configStore.invalidate();
 }
 
 export function loadConfig(cwd?: string): Required<AgonConfig> {
-  function readJsonSafe<T>(path: string): T | null {
-    try { return JSON.parse(readFileSync(path, 'utf-8')) as T; }
-    catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-        console.warn(`[agon] warning: failed to parse config ${path}: ${err instanceof Error ? err.message : String(err)}`);
-      }
-      return null;
-    }
-  }
-  // Review #10: use agonPath() so setupTestAgonHome() env override works.
-  // The GLOBAL_CONFIG_PATH const is frozen at module load time and would
-  // point at the real ~/.agon even after process.env.AGON_HOME is set.
-  const globalConfigPath = agonPath('config.json');
-  const localPath = cwd ? join(cwd, LOCAL_CONFIG_NAME) : null;
-  const localPrivatePath = cwd ? join(cwd, LOCAL_PRIVATE_CONFIG_NAME) : null;
+  return configStore.load(cwd);
+}
 
-  // Keyed on the resolved paths themselves (not just cwd) — globalConfigPath
-  // already varies with AGON_HOME, so this keeps two different homes (e.g.
-  // parallel test runs) from ever sharing a cache slot even when cwd is the
-  // same or omitted in both.
-  const cacheKey = `${globalConfigPath}|${localPath ?? ''}|${localPrivatePath ?? ''}`;
-  const globalMtime = _statMtimeOrZero(globalConfigPath);
-  const localMtime = localPath ? _statMtimeOrZero(localPath) : 0;
-  const localPrivateMtime = localPrivatePath ? _statMtimeOrZero(localPrivatePath) : 0;
-  const memoed = _configMemoCache.get(cacheKey);
-  if (
-    memoed &&
-    memoed.globalMtime === globalMtime &&
-    memoed.localMtime === localMtime &&
-    memoed.localPrivateMtime === localPrivateMtime
-  ) {
-    // Return a CLONE, never the cached instance: pre-memo, every call built
-    // a fresh object, and callers among the 46 call sites mutate the result
-    // (permissions arrays, engineModels, hooks, …) — handing out the cached
-    // reference would let one caller's mutation poison the process-global
-    // cache for every later caller. structuredClone of a plain-JSON config
-    // is cheap next to the readFileSync+parse+merge+permission-dedup work
-    // this memo skips.
-    return structuredClone(memoed.result);
-  }
-
-  const global = readJsonSafe<Partial<AgonConfig>>(globalConfigPath) ?? {};
-  const local = localPath ? readJsonSafe<Partial<AgonConfig>>(localPath) ?? {} : {};
-  // .agon.local.json — gitignored personal overrides (debug, engine prefs)
-  const localPrivate = localPrivatePath ? readJsonSafe<Partial<AgonConfig>>(localPrivatePath) ?? {} : {};
+function mergeConfig(global: Partial<AgonConfig>, local: Partial<AgonConfig>, localPrivate: Partial<AgonConfig>): Required<AgonConfig> {
   const merged = { ...DEFAULT_AGON_CONFIG, ...global, ...local, ...localPrivate } as Required<AgonConfig>;
   // Compiler can't emit object/array defaults for Record types — ensure correct runtime types
   if (!Array.isArray((merged as any).forgeEnabledEngines)) (merged as any).forgeEnabledEngines = [];
@@ -127,11 +91,7 @@ export function loadConfig(cwd?: string): Required<AgonConfig> {
     allow: dedup([...g.allow, ...l.allow, ...lp.allow]),
     deny: dedup([...g.deny, ...l.deny, ...lp.deny]),
   };
-  _configMemoCache.set(cacheKey, { globalMtime, localMtime, localPrivateMtime, result: merged });
-  // Clone on the MISS path too — otherwise the first caller after a (re)read
-  // holds the very instance the cache stores, and its mutations would poison
-  // every later cache hit exactly like an unclosed hit path would.
-  return structuredClone(merged);
+  return merged;
 }
 
 export function configGet(key: keyof AgonConfig, cwd?: string): Required<AgonConfig>[keyof AgonConfig] {
@@ -142,29 +102,7 @@ export function configSet(key: keyof AgonConfig, value: AgonConfig[keyof AgonCon
   if (!(key in DEFAULT_AGON_CONFIG)) {
     throw new ConfigError(`Unknown config key: ${String(key)}`);
   }
-  function readJsonSafe<T>(path: string): T | null {
-    try { return JSON.parse(readFileSync(path, 'utf-8')) as T; }
-    catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-        console.warn(`[agon] warning: failed to parse config ${path}: ${err instanceof Error ? err.message : String(err)}`);
-      }
-      return null;
-    }
-  }
-  // Review #10: dynamic path lookup so env override in tests is respected.
-  // The read-modify-write runs under the cross-process lock — two concurrent
-  // configSet calls (or one racing a heavy run's set) would otherwise lose
-  // whichever key the second writer didn't know about.
-  const globalConfigPath = agonPath('config.json');
-  withFileLock(globalConfigPath + '.lock', () => {
-    const existing = readJsonSafe<Partial<AgonConfig>>(globalConfigPath) ?? {};
-    (existing as any)[key] = value;
-    mkdirSync(dirname(globalConfigPath), { recursive: true });
-    const tmpPath = globalConfigPath + '.tmp';
-    writeFileSync(tmpPath, JSON.stringify(existing, null, 2) + '\n');
-    renameSync(tmpPath, globalConfigPath);
-  });
-  invalidateConfigCache();
+  configStore.set(key, value);
 }
 
 /**

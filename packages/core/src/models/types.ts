@@ -4,6 +4,8 @@ import type { PersistenceSettings } from '@kernlang/agon-support-persistence';
 import { DEFAULT_PERSISTENCE_SETTINGS } from '@kernlang/agon-support-persistence';
 import type { BrowserSettings } from '@kernlang/agon-support-browser-bridge';
 import { DEFAULT_BROWSER_SETTINGS } from '@kernlang/agon-support-browser-bridge';
+import type { FirstPartyLegacySettings } from './first-party-settings.generated.js';
+import { DEFAULT_FIRST_PARTY_SETTINGS } from './first-party-settings.generated.js';
 export type {
   AgentDispatchResult, CliModelEntry, CompanionConfig, DispatchOptions, DispatchResult, EngineAdapter,
   EngineCliModelConfig, EngineDefinition, EngineEffortConfig, EngineEnvVar, EngineMode, EngineModeConfig,
@@ -46,15 +48,13 @@ export interface ScoreComponents {
 
 export type { GlickoRating, EngineMeta, RatingRecord } from '@kernlang/agon-mod-ratings';
 
-export interface AgonConfig extends EngineSettings, KernelSettings, PersistenceSettings, BrowserSettings {
+export interface AgonConfig extends EngineSettings, KernelSettings, PersistenceSettings, BrowserSettings, FirstPartyLegacySettings {
   forgeEnableSynthesis?: boolean;
   goalReviewEngines?: string[];
-  forgeFitnessTimeout?: number;
   forgeSynthesisTimeout?: number;
   skillSynthesisThreshold?: number;
   cesarAgenticContinuationLimit?: number;
   cesarMutateReflex?: boolean;
-  autoReviewAfterForge?: boolean;
   autoReviewAfterImpl?: boolean;
 }
 
@@ -74,7 +74,7 @@ export const DEFAULT_AGON_CONFIG: Required<AgonConfig> = {
   forgeRequireBaselineCheck: DEFAULT_KERNEL_SETTINGS.forgeRequireBaselineCheck,
   engineActivationMode: DEFAULT_ENGINE_SETTINGS.engineActivationMode,
   forgeEnabledEngines: DEFAULT_ENGINE_SETTINGS.forgeEnabledEngines,
-  forgeFitnessTimeout: 120,
+  forgeFitnessTimeout: DEFAULT_FIRST_PARTY_SETTINGS.forgeFitnessTimeout,
   forgeSynthesisTimeout: 300,
   forgeEarlyFinalizeEnabled: DEFAULT_KERNEL_SETTINGS.forgeEarlyFinalizeEnabled,
   forgeEarlyFinalizePassingCount: DEFAULT_KERNEL_SETTINGS.forgeEarlyFinalizePassingCount,
@@ -170,7 +170,7 @@ export const DEFAULT_AGON_CONFIG: Required<AgonConfig> = {
   statusLine: DEFAULT_KERNEL_SETTINGS.statusLine,
   iconTheme: DEFAULT_KERNEL_SETTINGS.iconTheme,
   narrationFold: DEFAULT_KERNEL_SETTINGS.narrationFold,
-  autoReviewAfterForge: true,
+  autoReviewAfterForge: DEFAULT_FIRST_PARTY_SETTINGS.autoReviewAfterForge,
   autoReviewAfterImpl: true,
   buddyTimeout: DEFAULT_KERNEL_SETTINGS.buddyTimeout,
   speculativeThresholdUsd: DEFAULT_KERNEL_SETTINGS.speculativeThresholdUsd,

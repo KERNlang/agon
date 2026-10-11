@@ -80,8 +80,8 @@
       "path": "schemas/config.schema.json",
       "kind": "schema",
       "mediaType": "application/schema+json",
-      "contentHash": "sha256:50007a043fe06fc2ba8693b82dbb6de9c1048141bbe55e9a6f7aa47b7d6bc974",
-      "bytes": 216,
+      "contentHash": "sha256:3d88a35e52360491d0ce6b40ecf2444c64252bd436fecfbb9ce1fe009e4280cc",
+      "bytes": 371,
       "executable": false,
       "platforms": [
         "darwin-arm64",

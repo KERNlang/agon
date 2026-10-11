@@ -13,6 +13,10 @@ import type {
 } from "@kernlang/agon-mod-api";
 import { createForgeArena } from "@kernlang/agon-support-worktree";
 import { runFitnessCommand } from "@kernlang/agon-support-verification";
+import ownerConfigSchema from '../schemas/config.schema.json' with { type: 'json' };
+
+// Resource identity is not part of the executable schema subset.
+const { $id: _configSchemaId, ...configSchema } = ownerConfigSchema;
 
 type Candidate = {
   engineId: string;
@@ -762,7 +766,7 @@ export const createMod: AgonModFactory = (services) =>
         );
       for (const id of ["configKeys:0006", "configKeys:0072"])
         disposers.push(
-          registrar.config(id, { type: "object", additionalProperties: true }),
+          registrar.config(id, configSchema),
         );
       return async () => {
         for (const dispose of [...disposers].reverse()) await dispose();

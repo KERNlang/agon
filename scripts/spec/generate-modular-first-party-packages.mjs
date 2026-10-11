@@ -68,6 +68,7 @@ function displayByShort() {
 const displays = displayByShort();
 const assignmentKey = (entry) => [entry.category, entry.id, entry.source].join('\0');
 const assignmentByOccurrence = new Map(ownership.assignments.map((entry) => [assignmentKey(entry), entry]));
+const legacySettings = new Map();
 
 function contributionsFor(packageName) {
   const result = [];
@@ -106,13 +107,22 @@ function expectedFiles(packageRecord) {
     .filter((entry) => entry.package === packageName)
     .sort((left, right) => compareAscii(left.category, right.category) || compareAscii(left.id, right.id) || compareAscii(left.source, right.source));
   const ownershipText = json({ schemaVersion: 1, package: packageName, assignments: packageAssignments });
-  const configSchema = json({
-    $schema: 'https://json-schema.org/draft/2020-12/schema',
-    $id: `https://kernlang.dev/schemas/${short}/config.schema.json`,
-    title: `${short} configuration`,
-    type: 'object',
-    additionalProperties: true,
-  });
+  // The owner authors this schema. Generated compatibility data cannot own it.
+  const configSchema = readFileSync(resolve(directory, 'schemas/config.schema.json'), 'utf8');
+  const configDefinition = JSON.parse(configSchema);
+  for (const assignment of packageAssignments.filter(entry => entry.category === 'configKeys')) {
+    if (!Object.hasOwn(configDefinition.properties ?? {}, assignment.id)) continue;
+    const property = configDefinition.properties?.[assignment.id];
+    if (!property || typeof property !== 'object' || Array.isArray(property)) throw new Error(`legacy setting requires a schema object: ${assignment.id}`);
+    if (legacySettings.has(assignment.id)) throw new Error(`duplicate settings owner: ${assignment.id}`);
+    const type = ['boolean', 'number', 'string'].includes(property.type) ? property.type
+      : property.type === 'array' && property.items?.type === 'string' ? 'string[]' : undefined;
+    if (!type || !Object.hasOwn(property, 'default')) throw new Error(`legacy setting requires an explicit type and default: ${assignment.id}`);
+    const validDefault = type === 'string[]' ? Array.isArray(property.default) && property.default.every(value => typeof value === 'string')
+      : typeof property.default === type && (type !== 'number' || Number.isFinite(property.default));
+    if (!validDefault) throw new Error(`legacy setting default has the wrong type: ${assignment.id}`);
+    legacySettings.set(assignment.id, { type, value: property.default });
+  }
   const contributions = contributionsFor(packageName);
   const byManifestKind = Object.fromEntries([
     'cliCommands', 'tuiActions', 'mcpTools', 'cesarTools', 'lifecycleHooks',
@@ -353,7 +363,6 @@ export type { BrainstormSessionHost, BrainstormSessionCommandResult, BrainstormS
     [resolve(directory, 'package.json'), json(packageJson)],
     [resolve(directory, 'agon.mod.json'), json(manifest)],
     [resolve(directory, 'ownership.json'), ownershipText],
-    [resolve(directory, 'schemas/config.schema.json'), configSchema],
     [resolve(directory, 'src/index.ts'), indexSource],
     [resolve(directory, 'LICENSE'), readFileSync(resolve(root, 'LICENSE'), 'utf8')],
     [resolve(directory, 'tsconfig.json'), json(tsconfig)],
@@ -365,6 +374,13 @@ const mods = packageMap.packages.filter((entry) => entry.class === 'user-togglea
 if (mods.length !== 36) throw new Error(`expected 36 first-party mods, got ${mods.length}`);
 const generated = new Map();
 for (const mod of mods) for (const [path, source] of expectedFiles(mod)) generated.set(path, source);
+const settings = [...legacySettings].sort(([left], [right]) => compareAscii(left, right));
+generated.set(resolve(root, 'packages/core/src/models/first-party-settings.generated.ts'),
+  '// Generated from owner configuration schemas. Run generate-modular-first-party-packages.mjs.\n'
+  + 'export interface FirstPartyLegacySettings {\n'
+  + settings.map(([key, value]) => `  ${key}?: ${value.type};`).join('\n')
+  + '\n}\n\nexport const DEFAULT_FIRST_PARTY_SETTINGS: Required<FirstPartyLegacySettings> = '
+  + JSON.stringify(Object.fromEntries(settings.map(([key, value]) => [key, value.value])), null, 2) + ';\n');
 
 const rootPackagePath = resolve(root, 'package.json');
 const rootPackage = JSON.parse(readFileSync(rootPackagePath, 'utf8'));

@@ -328,9 +328,9 @@
         "agon.worktree"
       ],
       "sourceLocator": "@kernlang/agon-mod-forge@1.0.0",
-      "integrity": "sha512-0SnLRSB6JBQvAXG+36cLI7ZS/9PEFI1oHO+8fSaV9QOseT05srJbpNYZYNzWh2/Aha95WH+EhPWF1mrVyIfSow==",
-      "contentHash": "sha256:f49d2b599639115b129ec30aebd01bba0b0564430764aeb6c87bdf09b674a060",
-      "manifestHash": "sha256:51611495124f797c24773afac348679648991ef60b85e5f2903e7e9d9620f3e0"
+      "integrity": "sha512-6HZcM4/WCN0hZJ1avXmL41MZswYC1rK7SpSDzLxo535vIWlGTfsdNVCZLjPEaZX8tLrExr39ku4mZqrjXTK7rg==",
+      "contentHash": "sha256:d905013196ee75df3d19d6dbd4ba0107b45dedb841ceeb19e16e7a3e58b82949",
+      "manifestHash": "sha256:3d7e62bf351e5ca3c4cfa37727ffdf99ff8b18f091e707d79ee70bbab009c191"
     },
     {
       "id": "@kernlang/agon-mod-team-forge",

@@ -9,6 +9,7 @@ import { tmpdir, homedir } from 'node:os';
 import { join, basename, dirname } from 'node:path';
 
 import { EngineRegistry, loadConfig, resolveWorkingDir, repoRoot, headSha, worktreeCreate, worktreeRemoveBestEffort, resolveDedupSidecar, resolveSidecarPython, agonPath } from '@kernlang/agon-core';
+import { resolveHistorySearchSidecar } from '@kernlang/agon-support-persistence';
 
 import { resolveBuiltinEnginesDir } from '../lib/engines-dir.js';
 
@@ -215,7 +216,7 @@ export interface PythonDoctorResult {
 }
 
 /**
- * Every Python file the bridges actually spawn. Doctor confirms ALL of them are reachable through resolveDedupSidecar — a bad package that ships only some is still a problem.
+ * Check each sidecar through the resolver used by its execution bridge.
  */
 export const EXPECTED_SIDECARS: string[] = ['history-search.py','syntax-validator.py','classifier.py','sidecar.py','embedder.py'];
 
@@ -262,25 +263,19 @@ export function diagnoseDedupPython(): PythonDoctorResult {
     };
   }
   if (result.status === 0) {
-    // Confirm EVERY expected sidecar resolves — a partial dedup package
-    // would otherwise pass the probe while leaving one or more bridges
-    // broken at runtime.
-    const missing = EXPECTED_SIDECARS.filter((name: string) => !resolveDedupSidecar(name));
-    if (missing.length === EXPECTED_SIDECARS.length) {
-      return {
-        status: 'fail',
-        detail: '@kernlang/agon-dedup not found in node_modules — Python sidecars unreachable',
-        installCommand: 'reinstall @kernlang/agon (or its workspace) — the dedup package should land automatically',
-      };
-    }
+    const sidecars = EXPECTED_SIDECARS.map((name) => name === 'history-search.py'
+      ? { name, path: resolveHistorySearchSidecar(), owner: '@kernlang/agon-support-persistence' }
+      : { name, path: resolveDedupSidecar(name), owner: '@kernlang/agon-support-dedup' });
+    const missing = sidecars.filter((sidecar) => !sidecar.path);
     if (missing.length > 0) {
+      const owners = [...new Set(missing.map((sidecar) => sidecar.owner))];
       return {
         status: 'fail',
-        detail: `@kernlang/agon-dedup is partial — missing sidecar(s): ${missing.join(', ')}`,
-        installCommand: 'reinstall @kernlang/agon-dedup — the published tarball should include all five .py files',
+        detail: `Python sidecar assets missing: ${missing.map((sidecar) => `${sidecar.name} (${sidecar.owner})`).join(', ')}`,
+        installCommand: `reinstall @kernlang/agon (or rebuild its workspace) to restore assets in ${owners.join(', ')}`,
       };
     }
-    const sample = resolveDedupSidecar('history-search.py');
+    const sample = sidecars.find((sidecar) => sidecar.name === 'history-search.py')?.path;
     return { status: 'ok', detail: `all sidecar deps importable via ${python}; all ${EXPECTED_SIDECARS.length} sidecars reachable (e.g. ${sample})` };
   }
   // Search the WHOLE stderr — Python emits a Traceback header before the

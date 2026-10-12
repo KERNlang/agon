@@ -4,8 +4,8 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { DurableHostError } from './host-errors.js';
 import { atomicWrite, nodeHostIo, readJson, type HostIo } from './host-io.js';
 import { canonicalJson } from './lock.js';
-import type { GenerationLease } from './durable-host.js';
-import { parseGenerationLease } from './host-contracts.js';
+import type { ArtifactGenerationLease, ArtifactLeaseIdentity, GenerationLease } from './durable-host.js';
+import { parseArtifactGenerationLease, parseArtifactLeaseIdentity, parseGenerationLease } from './host-contracts.js';
 import { WriterFence } from './writer-lock.js';
 
 export interface GenerationLeaseStoreOptions {
@@ -33,6 +33,7 @@ export class GenerationLeaseStore {
   readonly #now: () => Date;
   readonly #pendingFences = new Set<WriterFence>();
   readonly #pendingReleases = new Set<string>();
+  readonly #pendingArtifactWrites = new Map<string, ArtifactGenerationLease>();
   #cleanup: Promise<void> | undefined;
 
   constructor(options: GenerationLeaseStoreOptions) {
@@ -44,9 +45,11 @@ export class GenerationLeaseStore {
     this.#now = options.now ?? (() => new Date());
   }
 
-  async #readLease(path: string): Promise<GenerationLease> {
+  async #readRecord(path: string): Promise<GenerationLease | ArtifactGenerationLease> {
     try {
-      const lease = parseGenerationLease(await readJson<unknown>(this.#io, path));
+      const value = await readJson<unknown>(this.#io, path);
+      const lease = (value as { schemaVersion?: unknown } | null)?.schemaVersion === 2
+        ? parseArtifactGenerationLease(value) : parseGenerationLease(value);
       if (path !== leaseFile(this.#options.directory, lease.leaseId)) throw new TypeError('generation lease filename does not match its identity');
       return lease;
     } catch (error) {
@@ -54,6 +57,12 @@ export class GenerationLeaseStore {
         path, cause: error instanceof Error ? error.message : String(error),
       });
     }
+  }
+
+  async #readLease(path: string): Promise<GenerationLease> {
+    const lease = await this.#readRecord(path);
+    if (lease.schemaVersion !== 1) throw new DurableHostError('MOD_FENCE_LOST', 'artifact lease cannot be changed by process lease operations');
+    return lease;
   }
 
   async #releaseFence(fence: WriterFence): Promise<void> {
@@ -90,7 +99,39 @@ export class GenerationLeaseStore {
         await this.release(leaseId);
       } catch (error) { errors.push(error); }
     }
+    for (const [leaseId, expected] of [...this.#pendingArtifactWrites]) {
+      try {
+        await this.#mutate(async () => {
+          const path = leaseFile(this.#options.directory, leaseId);
+          try { await this.#io.stat(path); }
+          catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+            this.#pendingArtifactWrites.delete(leaseId);
+            return;
+          }
+          const current = await this.#readRecord(path);
+          if (current.schemaVersion !== 2
+            || canonicalJson({ ...current, releasedAt: expected.releasedAt }) !== canonicalJson(expected)
+            || (expected.releasedAt !== null && current.releasedAt !== expected.releasedAt)) {
+            throw new DurableHostError('MOD_FENCE_LOST', 'pending artifact publication identity changed');
+          }
+          await this.#io.syncFile(path);
+          await this.#io.syncDirectory(this.#options.directory);
+          this.#pendingArtifactWrites.delete(leaseId);
+        });
+      } catch (error) { errors.push(error); }
+    }
     if (errors.length) throw new AggregateError(errors, 'generation lease cleanup remains pending');
+  }
+
+  async #writeArtifact(lease: ArtifactGenerationLease): Promise<void> {
+    try {
+      await atomicWrite(this.#io, leaseFile(this.#options.directory, lease.leaseId), canonicalJson(lease) + '\n');
+      this.#pendingArtifactWrites.delete(lease.leaseId);
+    } catch (error) {
+      this.#pendingArtifactWrites.set(lease.leaseId, lease);
+      throw error;
+    }
   }
 
   async #mutate<T>(action: () => Promise<T>, signal?: AbortSignal): Promise<T> {
@@ -207,16 +248,61 @@ export class GenerationLeaseStore {
     });
   }
 
+  async acquireArtifact(generation: number, artifact: ArtifactLeaseIdentity, signal?: AbortSignal): Promise<ArtifactGenerationLease> {
+    const lease = parseArtifactGenerationLease({ schemaVersion: 2, kind: 'artifact', leaseId: randomUUID(),
+      generation, ...parseArtifactLeaseIdentity(artifact), createdAt: this.#now().toISOString(), releasedAt: null });
+    return this.#mutate(async () => {
+      await this.#options.validateGeneration(generation);
+      signal?.throwIfAborted();
+      await this.#writeArtifact(lease);
+      return lease;
+    }, signal);
+  }
+
+  async releaseArtifact(leaseId: string, artifact: ArtifactLeaseIdentity): Promise<ArtifactGenerationLease> {
+    const identity = parseArtifactLeaseIdentity(artifact);
+    return this.#mutate(async () => {
+      const path = leaseFile(this.#options.directory, leaseId);
+      const lease = await this.#readRecord(path);
+      if (lease.schemaVersion !== 2 || lease.ownerId !== identity.ownerId || lease.artifactId !== identity.artifactId || lease.artifactHash !== identity.artifactHash) {
+        throw new DurableHostError('MOD_FENCE_LOST', 'artifact lease identity does not match');
+      }
+      if (lease.releasedAt) {
+        // A prior rename can succeed before directory sync fails.
+        try {
+          await this.#io.syncFile(path);
+          await this.#io.syncDirectory(this.#options.directory);
+          this.#pendingArtifactWrites.delete(leaseId);
+        } catch (error) {
+          this.#pendingArtifactWrites.set(leaseId, lease);
+          throw error;
+        }
+        return lease;
+      }
+      const released: ArtifactGenerationLease = Object.freeze({ ...lease, releasedAt: this.#now().toISOString() });
+      await this.#writeArtifact(released);
+      return released;
+    });
+  }
+
   async active(generation?: number): Promise<readonly GenerationLease[]> {
+    return Object.freeze((await this.#activeRecords(generation)).filter((lease): lease is GenerationLease => lease.schemaVersion === 1));
+  }
+
+  async activeArtifacts(generation?: number): Promise<readonly ArtifactGenerationLease[]> {
+    return Object.freeze((await this.#activeRecords(generation)).filter((lease): lease is ArtifactGenerationLease => lease.schemaVersion === 2));
+  }
+
+  async #activeRecords(generation?: number): Promise<readonly (GenerationLease | ArtifactGenerationLease)[]> {
     const entries = await this.#io.readdir(this.#options.directory, { withFileTypes: true }).catch(error => {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
       throw error;
     });
-    const leases: GenerationLease[] = [];
+    const leases: (GenerationLease | ArtifactGenerationLease)[] = [];
     for (const entry of entries) {
       if (!entry.name.endsWith('.json')) continue;
       if (!entry.isFile()) throw new DurableHostError('MOD_GENERATION_CORRUPT', 'generation lease must be a regular file', { path: join(this.#options.directory, entry.name) });
-      const lease = await this.#readLease(join(this.#options.directory, entry.name));
+      const lease = await this.#readRecord(join(this.#options.directory, entry.name));
       if (!lease.releasedAt && (generation === undefined || lease.generation === generation)) leases.push(lease);
     }
     return Object.freeze(leases.sort((a, b) => a.leaseId.localeCompare(b.leaseId)));

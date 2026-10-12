@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto';
 import { canonicalJson, sha256Canonical } from './lock.js';
 import type {
+  ArtifactGenerationLease,
+  ArtifactLeaseIdentity,
   GenerationLease,
   GenerationManifest,
   GenerationPointer,
@@ -173,6 +175,26 @@ export function parseGenerationLease(value: unknown): GenerationLease {
     createdAt: timestamp(input.createdAt, 'lease createdAt'),
     heartbeatAt: timestamp(input.heartbeatAt, 'lease heartbeatAt'),
     releasedAt: input.releasedAt === null ? null : timestamp(input.releasedAt, 'lease releasedAt'),
+  });
+}
+
+export function parseArtifactLeaseIdentity(value: unknown): ArtifactLeaseIdentity {
+  const input = record(value, 'artifact lease identity');
+  exact(input, ['ownerId', 'artifactId', 'artifactHash'], 'artifact lease identity');
+  return Object.freeze({ ownerId: string(input.ownerId, 'artifact lease owner'),
+    artifactId: string(input.artifactId, 'artifact ID'), artifactHash: hash(input.artifactHash, 'artifact hash') });
+}
+
+export function parseArtifactGenerationLease(value: unknown): ArtifactGenerationLease {
+  const input = record(value, 'artifact generation lease');
+  exact(input, ['schemaVersion', 'kind', 'leaseId', 'generation', 'ownerId', 'artifactId', 'artifactHash', 'createdAt', 'releasedAt'], 'artifact generation lease');
+  if (input.schemaVersion !== 2 || input.kind !== 'artifact') throw new TypeError('artifact lease version or kind is invalid');
+  const generation = nonnegativeInteger(input.generation, 'artifact lease generation');
+  if (generation === 0) throw new TypeError('artifact lease generation must be positive');
+  return Object.freeze({ schemaVersion: 2, kind: 'artifact', leaseId: uuid(input.leaseId, 'lease ID'), generation,
+    ownerId: string(input.ownerId, 'artifact lease owner'), artifactId: string(input.artifactId, 'artifact ID'),
+    artifactHash: hash(input.artifactHash, 'artifact hash'), createdAt: timestamp(input.createdAt, 'artifact lease createdAt'),
+    releasedAt: input.releasedAt === null ? null : timestamp(input.releasedAt, 'artifact lease releasedAt'),
   });
 }
 

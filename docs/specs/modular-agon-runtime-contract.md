@@ -505,7 +505,7 @@ lifecycle then generation writer fences to keep the report consistent. It does
 not delete data, expire leases, or authorize collection. A lease for a missing
 generation blocks reference inspection and purge. Corrupt leases and generation
 references fail closed. Released leases are omitted. This report does not yet
-include rollback-window leases, reproducible-artifact leases, cache sizes, or
+include rollback-window leases, cache sizes, or
 quota policy. All retained generation references still protect installations.
 `hasCommittedGeneration` means at least one listed generation has a committed
 transaction; it does not label every listed generation committed. The kernel
@@ -521,6 +521,29 @@ paths count separately. Missing, unreadable, linked or special entries and unsaf
 integer totals fail the report. The existing writer fences cover the inspection.
 This does not count caches, staging directories, unreferenced installations or
 generation metadata, and does not authorize removal or implement quota policy.
+
+`artifactLeases` lists explicit reproducible-artifact references. Version-2 lease
+records bind one generation to an owner, opaque artifact ID and SHA-256 content
+hash. The hash is supplied by the caller, not independently verified by the host.
+These records share the process-lease directory and writer fence but contain no
+PID or heartbeat. They do not expire on age or process death. Process lease APIs
+reject artifact records; existing version-1 process records remain supported.
+Older readers reject version-2 records rather than silently ignoring protection.
+
+`leaseArtifactGeneration` validates the generation before durable publication.
+`releaseArtifactGenerationLease` requires the same owner, artifact ID and hash,
+including on an idempotent retry. Creation and release retain their timestamps in
+the atomic record. Failed acquisition cleanup never automatically releases an
+artifact reference. Release retries sync an already-released record and directory.
+Failed artifact writes remain pending in the owning store. Cleanup rechecks record
+identity under the writer fence and syncs the file and directory; it never converts
+an artifact reference into a process cleanup release. A changed identity blocks
+cleanup. If publication never created a record, cleanup removes only its pending
+in-memory entry. Cleanup failure is reported, not treated as durable success.
+Malformed records and missing referenced generations fail inspection and purge.
+Caller owns approval and artifact verification; identity matching is not a sandbox.
+Automatic workflow-artifact attachment, rollback-window policy and collection are
+still unimplemented. No active/global installation is migrated by these APIs.
 
 ### Approved purge replay
 

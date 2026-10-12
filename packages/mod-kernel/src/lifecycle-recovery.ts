@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
-import { DurableModHost, type GenerationLease } from './durable-host.js';
+import { DurableModHost, type ArtifactGenerationLease, type GenerationLease } from './durable-host.js';
 import { DurableHostError } from './host-errors.js';
 import { atomicWrite, pathExists, readJson, type HostIo } from './host-io.js';
 import { canonicalJson, sha256Canonical } from './lock.js';
@@ -323,7 +323,7 @@ export async function referencedInstallations(host: DurableModHost, io: HostIo =
       result.set(record.installationId, { generation, committed, generations });
     } else result.set(record.installationId, { ...previous, generations });
   }
-  for (const lease of await host.activeGenerationLeases()) {
+  for (const lease of [...await host.activeGenerationLeases(), ...await host.activeArtifactGenerationLeases()]) {
     if (!validatedGenerations.has(lease.generation)) throw new DurableHostError('MOD_GENERATION_CORRUPT', 'active lease refers to a missing generation', {
       leaseId: lease.leaseId, generation: lease.generation,
     });
@@ -343,6 +343,7 @@ export interface ManagedRetentionReport {
   }[];
   readonly totalInstallationLogicalBytes: number;
   readonly activeLeases: readonly GenerationLease[];
+  readonly artifactLeases: readonly ArtifactGenerationLease[];
 }
 
 /** Count one retained prefix without following links or reading file contents. */
@@ -433,6 +434,7 @@ export class ManagedRetentionInspector {
       report = Object.freeze({ schemaVersion: 1, selectedGeneration: pointer?.generation ?? null,
         installations: Object.freeze(installations), totalInstallationLogicalBytes,
         activeLeases: await host.activeGenerationLeases(),
+        artifactLeases: await host.activeArtifactGenerationLeases(),
       });
     } catch (error) { failures.push(error); }
     for (const fence of fences.reverse()) {

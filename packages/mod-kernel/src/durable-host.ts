@@ -77,6 +77,21 @@ export interface GenerationLease {
   readonly releasedAt: string | null;
 }
 
+export interface ArtifactLeaseIdentity {
+  readonly ownerId: string;
+  readonly artifactId: string;
+  readonly artifactHash: `sha256:${string}`;
+}
+
+export interface ArtifactGenerationLease extends ArtifactLeaseIdentity {
+  readonly schemaVersion: 2;
+  readonly kind: 'artifact';
+  readonly leaseId: string;
+  readonly generation: number;
+  readonly createdAt: string;
+  readonly releasedAt: string | null;
+}
+
 export interface DurableHostOptions {
   readonly kernelVersion: string;
   readonly io?: HostIo;
@@ -693,6 +708,18 @@ export class DurableModHost {
 
   async activeGenerationLeases(): Promise<readonly GenerationLease[]> {
     return this.#generationLeaseStore().active();
+  }
+
+  async leaseArtifactGeneration(generation: number, artifact: ArtifactLeaseIdentity, signal?: AbortSignal): Promise<ArtifactGenerationLease> {
+    return this.#generationLeaseStore().acquireArtifact(generation, artifact, signal);
+  }
+
+  async activeArtifactGenerationLeases(): Promise<readonly ArtifactGenerationLease[]> {
+    return this.#generationLeaseStore().activeArtifacts();
+  }
+
+  async releaseArtifactGenerationLease(leaseId: string, artifact: ArtifactLeaseIdentity): Promise<ArtifactGenerationLease> {
+    return this.#generationLeaseStore().releaseArtifact(leaseId, artifact);
   }
 
   async releaseGenerationLease(leaseId: string): Promise<GenerationLease> {

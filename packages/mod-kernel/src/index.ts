@@ -130,7 +130,7 @@ export type { DurableHostErrorCode } from './host-errors.js';
 export { DurableModHost } from './durable-host.js';
 export type {
   CommitGenerationInput, CommitGenerationResult, DisposableOwner, DurableHostOptions,
-  GenerationLease, GenerationManifest, GenerationPointer, HostBootResult, HostFaultPoint,
+  ArtifactGenerationLease, ArtifactLeaseIdentity, GenerationLease, GenerationManifest, GenerationPointer, HostBootResult, HostFaultPoint,
   HostJournalState, HostJournalStep, HostTransactionJournal, HostTransactionOperation,
   HostTransactionReceipt,
 } from './durable-host.js';

@@ -8,6 +8,23 @@ import { GenerationLeaseStore } from '../../packages/mod-kernel/src/generation-l
 import { hostLock } from '../helpers/modular-host.js';
 
 describe('generation lease corruption', () => {
+  it.each(['kind', 'hash', 'pid', 'identity'] as const)('fails closed for corrupt artifact %s in either inventory', async corrupt => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-artifact-corrupt-'));
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
+    await host.commitGeneration({ operation: 'install', lock: hostLock(), desiredState: {}, installedIndex: {} });
+    const lease = await host.leaseArtifactGeneration(1,
+      { ownerId: 'agon.plan', artifactId: 'result:example', artifactHash: `sha256:${'a'.repeat(64)}` });
+    const changed = corrupt === 'kind' ? { ...lease, kind: 'process' }
+      : corrupt === 'hash' ? { ...lease, artifactHash: 'invalid' }
+        : corrupt === 'pid' ? { ...lease, pid: 123 } : { ...lease, leaseId: randomUUID() };
+    const path = join(host.paths.leases, `${lease.leaseId}.json`);
+    const bytes = JSON.stringify(changed);
+    await writeFile(path, bytes);
+    await expect(host.activeGenerationLeases()).rejects.toMatchObject({ code: 'MOD_GENERATION_CORRUPT' });
+    await expect(host.activeArtifactGenerationLeases()).rejects.toMatchObject({ code: 'MOD_GENERATION_CORRUPT' });
+    expect(await readFile(path, 'utf8')).toBe(bytes);
+  });
+
   it.each(['active', 'heartbeat', 'release', 'recoverDead'] as const)('rejects a file/record identity mismatch during %s', async action => {
     const root = await mkdtemp(join(tmpdir(), 'agon-lease-identity-'));
     const host = new DurableModHost(root, { kernelVersion: '1.0.0' });

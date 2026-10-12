@@ -37,6 +37,21 @@ describe('first-party safe-mode CLI recovery', () => {
     const installed = await new ManagedLifecycleService(host).apply(
       await createManagedLifecyclePlan(host, request([artifact('@test/app')], { desiredState })), installer, verifier);
     const lease = await host.leaseGeneration(installed.pointer.generation, 'job:live');
+    const kernel = new URL('../../packages/mod-kernel/dist/index.js', import.meta.url).href;
+    const publisher = spawnSync(process.execPath, ['--input-type=module', '-e', `
+      import { DurableModHost } from ${JSON.stringify(kernel)};
+      import { writeSync } from 'node:fs';
+      const host = new DurableModHost(process.argv[1], { kernelVersion: '1.0.0' });
+      const lease = await host.leaseArtifactGeneration(Number(process.argv[2]),
+        { ownerId: 'agon.plan', artifactId: 'result:retained', artifactHash: 'sha256:' + 'a'.repeat(64) });
+      writeSync(1, JSON.stringify(lease));
+      process.kill(process.pid, 'SIGKILL');
+    `, host.root, String(installed.pointer.generation)], {
+      env: { ...process.env, HOME: root, AGON_HOME: root }, cwd: root, encoding: 'utf8', timeout: 10_000,
+    });
+    expect(publisher.error).toBeUndefined();
+    expect(publisher.signal, publisher.stderr).toBe('SIGKILL');
+    const artifactLease = JSON.parse(publisher.stdout);
     const before = await readFile(host.paths.current);
     const cli = fileURLToPath(new URL('../../packages/cli/dist/index.js', import.meta.url));
     const result = spawnSync(process.execPath, [cli, 'mod', 'retention'], {
@@ -50,9 +65,10 @@ describe('first-party safe-mode CLI recovery', () => {
       + Buffer.byteLength(JSON.stringify({ name: '@test/app', version: '1.0.0' }));
     expect(JSON.parse(result.stdout)).toMatchObject({ selectedGeneration: installed.pointer.generation,
       installations: [{ installationId: installed.installation.installationId, generations: [installed.pointer.generation], logicalBytes }],
-      totalInstallationLogicalBytes: logicalBytes, activeLeases: [lease] });
+      totalInstallationLogicalBytes: logicalBytes, activeLeases: [lease], artifactLeases: [artifactLease] });
     expect(await readFile(host.paths.current)).toEqual(before);
     expect(await host.activeGenerationLeases()).toEqual([lease]);
+    expect(await host.activeArtifactGenerationLeases()).toEqual([artifactLease]);
   });
 
   it.each(['marker-published', 'writer-removed'])('recovers after SIGKILL of the recovery process at %s', async point => {

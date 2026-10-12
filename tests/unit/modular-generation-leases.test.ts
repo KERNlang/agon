@@ -9,6 +9,168 @@ import { WriterFence } from '../../packages/mod-kernel/src/writer-lock.js';
 import { nodeHostIo } from '../../packages/mod-kernel/src/host-io.js';
 
 describe('fenced generation leases', () => {
+  it.each(['before-rename', 'changed-identity'] as const)('handles pending artifact publication safely: %s', async fault => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-artifact-pending-'));
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
+    await host.commitGeneration({ operation: 'install', lock: hostLock(), desiredState: {}, installedIndex: {} });
+    const store = new GenerationLeaseStore({ directory: host.paths.leases, writerLockPath: host.paths.writerLock,
+      processIdentity: 'artifact-owner', validateGeneration: generation => host.validateGeneration(generation), io: { ...nodeHostIo,
+        rename: async (from, to) => {
+          if (fault === 'before-rename' && to.startsWith(`${host.paths.leases}/`)) throw new Error('fixture interrupted rename');
+          return nodeHostIo.rename(from, to);
+        },
+        syncDirectory: async path => {
+          if (fault === 'changed-identity' && path === host.paths.leases) throw new Error('fixture interrupted sync');
+          return nodeHostIo.syncDirectory(path);
+        },
+      } });
+    await expect(store.acquireArtifact(1, { ownerId: 'agon.plan', artifactId: 'result:example', artifactHash: `sha256:${'a'.repeat(64)}` })).rejects.toThrow('fixture interrupted');
+    if (fault === 'before-rename') {
+      await store.retryPendingCleanup();
+      expect(await readdir(host.paths.leases)).toEqual([]);
+    } else {
+      const [lease] = await store.activeArtifacts();
+      const path = join(host.paths.leases, `${lease.leaseId}.json`);
+      const changed = JSON.stringify({ ...lease, artifactId: 'changed' });
+      await writeFile(path, changed);
+      const failure = await store.retryPendingCleanup().catch(error => error);
+      expect(failure).toBeInstanceOf(AggregateError);
+      expect(failure.errors).toEqual([expect.objectContaining({ code: 'MOD_FENCE_LOST' })]);
+      expect(await readFile(path, 'utf8')).toBe(changed);
+    }
+  });
+
+  it.each(['entry', 'validation'] as const)('does not publish an artifact lease cancelled at %s', async phase => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-artifact-cancel-'));
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
+    await host.commitGeneration({ operation: 'install', lock: hostLock(), desiredState: {}, installedIndex: {} });
+    const controller = new AbortController();
+    const reason = new Error('fixture artifact cancelled');
+    const store = new GenerationLeaseStore({ directory: host.paths.leases, writerLockPath: host.paths.writerLock,
+      processIdentity: 'artifact-owner', validateGeneration: async generation => {
+        await host.validateGeneration(generation);
+        if (phase === 'validation') controller.abort(reason);
+      } });
+    if (phase === 'entry') controller.abort(reason);
+    await expect(store.acquireArtifact(1,
+      { ownerId: 'agon.plan', artifactId: 'result:example', artifactHash: `sha256:${'a'.repeat(64)}` }, controller.signal)).rejects.toBe(reason);
+    expect(await readdir(host.paths.leases)).toEqual([]);
+  });
+
+  it.each(['empty-owner', 'empty-artifact', 'bad-hash', 'override-generation'] as const)('rejects invalid artifact identity before writing: %s', async invalid => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-artifact-invalid-'));
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
+    await host.commitGeneration({ operation: 'install', lock: hostLock(), desiredState: {}, installedIndex: {} });
+    const artifact = { ownerId: 'agon.plan', artifactId: 'result:example', artifactHash: `sha256:${'a'.repeat(64)}` as const };
+    const input = invalid === 'empty-owner' ? { ...artifact, ownerId: '' }
+      : invalid === 'empty-artifact' ? { ...artifact, artifactId: '' }
+        : invalid === 'bad-hash' ? { ...artifact, artifactHash: 'sha256:invalid' as const } : { ...artifact, generation: 2 };
+    await expect(host.leaseArtifactGeneration(1, input)).rejects.toBeInstanceOf(TypeError);
+    expect(await readdir(host.paths.leases)).toEqual([]);
+  });
+
+  it.each(['ownerId', 'artifactId', 'artifactHash'] as const)('requires matching artifact %s before release', async key => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-artifact-identity-'));
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
+    await host.commitGeneration({ operation: 'install', lock: hostLock(), desiredState: {}, installedIndex: {} });
+    const artifact = { ownerId: 'agon.plan', artifactId: 'result:example', artifactHash: `sha256:${'a'.repeat(64)}` as const };
+    const lease = await host.leaseArtifactGeneration(1, artifact);
+    const changed = { ...artifact, [key]: key === 'artifactHash' ? `sha256:${'b'.repeat(64)}` : 'other' };
+    await expect(host.releaseArtifactGenerationLease(lease.leaseId, changed)).rejects.toMatchObject({ code: 'MOD_FENCE_LOST' });
+    expect(await host.activeArtifactGenerationLeases()).toEqual([lease]);
+  });
+
+  it('keeps process and artifact operations separate', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-artifact-process-'));
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
+    await host.commitGeneration({ operation: 'install', lock: hostLock(), desiredState: {}, installedIndex: {} });
+    const identity = { ownerId: 'agon.plan', artifactId: 'result:example', artifactHash: `sha256:${'a'.repeat(64)}` as const };
+    const artifact = await host.leaseArtifactGeneration(1, identity);
+    const processLease = await host.leaseGeneration(1, 'job:example');
+    await expect(host.heartbeatGenerationLease(artifact.leaseId)).rejects.toMatchObject({ code: 'MOD_FENCE_LOST' });
+    await expect(host.releaseGenerationLease(artifact.leaseId)).rejects.toMatchObject({ code: 'MOD_FENCE_LOST' });
+    await expect(host.releaseArtifactGenerationLease(processLease.leaseId, identity)).rejects.toMatchObject({ code: 'MOD_FENCE_LOST' });
+    await host.retryGenerationLeaseCleanup();
+    expect(await host.activeGenerationLeases()).toEqual([processLease]);
+    expect(await host.activeArtifactGenerationLeases()).toEqual([artifact]);
+  });
+
+  it.each(['lease-sync', 'lock-remove'] as const)('keeps published artifact protection after %s failure and cleanup', async fault => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-artifact-fault-'));
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
+    await host.commitGeneration({ operation: 'install', lock: hostLock(), desiredState: {}, installedIndex: {} });
+    let broken = true;
+    const failure = new Error(`fixture ${fault}`);
+    const store = new GenerationLeaseStore({ directory: host.paths.leases, writerLockPath: host.paths.writerLock,
+      processIdentity: 'artifact-owner', validateGeneration: generation => host.validateGeneration(generation), io: { ...nodeHostIo,
+        syncDirectory: async path => {
+          if (broken && fault === 'lease-sync' && path === host.paths.leases) throw failure;
+          return nodeHostIo.syncDirectory(path);
+        },
+        rm: async (path, options) => {
+          if (broken && fault === 'lock-remove' && path === host.paths.writerLock) throw failure;
+          return nodeHostIo.rm(path, options);
+        },
+      } });
+    const identity = { ownerId: 'agon.plan', artifactId: 'result:example', artifactHash: `sha256:${'a'.repeat(64)}` as const };
+    await expect(store.acquireArtifact(1, identity)).rejects.toBe(failure);
+    const retained = await store.activeArtifacts();
+    expect(retained).toHaveLength(1);
+    await expect(store.retryPendingCleanup()).rejects.toBeInstanceOf(AggregateError);
+    broken = false;
+    await store.retryPendingCleanup();
+    expect(await store.activeArtifacts()).toEqual(retained);
+    await store.releaseArtifact(retained[0].leaseId, identity);
+    expect(await store.activeArtifacts()).toEqual([]);
+  });
+
+  it('resyncs a released artifact record when publication durability previously failed', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-artifact-release-sync-'));
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
+    await host.commitGeneration({ operation: 'install', lock: hostLock(), desiredState: {}, installedIndex: {} });
+    let broken = false;
+    const synced: string[] = [];
+    const store = new GenerationLeaseStore({ directory: host.paths.leases, writerLockPath: host.paths.writerLock,
+      processIdentity: 'artifact-owner', validateGeneration: generation => host.validateGeneration(generation), io: { ...nodeHostIo,
+        syncDirectory: async path => {
+          if (path === host.paths.leases) {
+            if (broken) throw new Error('fixture directory sync failed');
+            synced.push(path);
+          }
+          return nodeHostIo.syncDirectory(path);
+        },
+      } });
+    const identity = { ownerId: 'agon.plan', artifactId: 'result:example', artifactHash: `sha256:${'a'.repeat(64)}` as const };
+    const lease = await store.acquireArtifact(1, identity);
+    synced.length = 0;
+    broken = true;
+    await expect(store.releaseArtifact(lease.leaseId, identity)).rejects.toThrow('fixture directory sync failed');
+    broken = false;
+    await store.releaseArtifact(lease.leaseId, identity);
+    expect(synced).toEqual([host.paths.leases]);
+  });
+
+  it('retains artifact identity across host restarts and refuses process recovery', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-artifact-lease-'));
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0', processIdentity: 'first', now: () => new Date('2000-01-01T00:00:00Z') });
+    await host.commitGeneration({ operation: 'install', lock: hostLock(), desiredState: {}, installedIndex: {} });
+    const artifact = { ownerId: 'agon.plan', artifactId: 'result:example', artifactHash: `sha256:${'a'.repeat(64)}` as const };
+    const lease = await host.leaseArtifactGeneration(1, artifact);
+    const reopened = new DurableModHost(root, { kernelVersion: '1.0.0', processIdentity: 'second' });
+    expect(await reopened.activeArtifactGenerationLeases()).toEqual([lease]);
+    expect(await reopened.activeGenerationLeases()).toEqual([]);
+    const alive = vi.fn(async () => false);
+    await expect(reopened.recoverDeadGenerationLease(lease.leaseId, alive)).rejects.toMatchObject({ code: 'MOD_FENCE_LOST' });
+    expect(alive).not.toHaveBeenCalled();
+    await expect(reopened.releaseArtifactGenerationLease(lease.leaseId, { ...artifact, artifactHash: `sha256:${'b'.repeat(64)}` }))
+      .rejects.toMatchObject({ code: 'MOD_FENCE_LOST' });
+    expect(await reopened.activeArtifactGenerationLeases()).toEqual([lease]);
+    const released = await reopened.releaseArtifactGenerationLease(lease.leaseId, artifact);
+    expect(released).toMatchObject({ ...lease, releasedAt: expect.any(String) });
+    expect(await reopened.activeArtifactGenerationLeases()).toEqual([]);
+    expect(await reopened.releaseArtifactGenerationLease(lease.leaseId, artifact)).toEqual(released);
+  });
+
   it('does not start another acquisition after a delayed retry exceeds its budget', async () => {
     const root = await mkdtemp(join(tmpdir(), 'agon-generation-lease-'));
     const host = new DurableModHost(root, { kernelVersion: '1.0.0' });

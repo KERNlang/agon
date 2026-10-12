@@ -15,7 +15,7 @@ describe('managed purge generation retention', () => {
     const root = await mkdtemp(join(tmpdir(), 'agon-retention-empty-'));
     const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
     expect(await new ManagedRetentionInspector(host).inspect()).toEqual({
-      schemaVersion: 1, selectedGeneration: null, installations: [], activeLeases: [], totalInstallationLogicalBytes: 0,
+      schemaVersion: 1, selectedGeneration: null, installations: [], activeLeases: [], artifactLeases: [], totalInstallationLogicalBytes: 0,
     });
   });
 
@@ -122,7 +122,7 @@ describe('managed purge generation retention', () => {
     expect(report).toEqual({ schemaVersion: 1, selectedGeneration: second.pointer.generation,
       installations: [{ installationId: first.installation.installationId, generations: [1, 2], hasCommittedGeneration: true, logicalBytes }],
       totalInstallationLogicalBytes: logicalBytes,
-      activeLeases: [active] });
+      activeLeases: [active], artifactLeases: [] });
     expect(await readFile(host.paths.current)).toEqual(before);
     expect(await host.activeGenerationLeases()).toEqual([active]);
     expect(await readFile(join(host.generationPath(1), 'installation.json'), 'utf8')).toBe(installation);
@@ -130,11 +130,12 @@ describe('managed purge generation retention', () => {
     await expect(stat(join(root, 'locks', 'lifecycle-writer.json'))).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
-  it('refuses a missing leased generation in reports and purge', async () => {
+  it.each(['process', 'artifact'] as const)('refuses a missing %s-leased generation in reports and purge', async kind => {
     const root = await mkdtemp(join(tmpdir(), 'agon-retention-orphan-'));
     const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
     await host.commitGeneration({ operation: 'install', lock: hostLock(), desiredState: {}, installedIndex: {} });
-    const lease = await host.leaseGeneration(1, 'job:running');
+    const identity = { ownerId: 'agon.plan', artifactId: 'result:example', artifactHash: `sha256:${'a'.repeat(64)}` as const };
+    const lease = kind === 'process' ? await host.leaseGeneration(1, 'job:running') : await host.leaseArtifactGeneration(1, identity);
     await host.commitGeneration({ operation: 'enable', lock: hostLock(), desiredState: {}, installedIndex: {} });
     await chmod(host.generationPath(1), 0o700);
     await rename(host.generationPath(1), join(root, 'moved-generation'));
@@ -143,8 +144,10 @@ describe('managed purge generation retention', () => {
     await expect(previewManagedPurge(host)).rejects.toMatchObject({ code: 'MOD_GENERATION_CORRUPT' });
     await expect(stat(host.paths.writerLock)).rejects.toMatchObject({ code: 'ENOENT' });
     await expect(stat(join(root, 'locks', 'lifecycle-writer.json'))).rejects.toMatchObject({ code: 'ENOENT' });
-    await host.releaseGenerationLease(lease.leaseId);
+    if (kind === 'process') await host.releaseGenerationLease(lease.leaseId);
+    else await host.releaseArtifactGenerationLease(lease.leaseId, identity);
     expect((await inspector.inspect()).activeLeases).toEqual([]);
+    expect((await inspector.inspect()).artifactLeases).toEqual([]);
   });
 
   it.each([false, true])('retries only its own failed lock cleanup; replacement owner: %s', async replaced => {

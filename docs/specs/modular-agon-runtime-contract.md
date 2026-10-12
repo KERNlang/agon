@@ -559,6 +559,21 @@ create another reference. These commands never open the artifact ID as a path or
 delete artifact, generation or installation files. `agon mod retention` without
 a subcommand remains the read-only report.
 
+### Foundation mutation evidence
+
+`npm run test:modular-foundation-mutation` retains the existing verifier negative
+controls and separately tests six implementation faults in a disposable archive
+of committed HEAD. Runtime source and test inputs must match that commit. It
+uses installed dependencies but does not install or alter them. The selected
+faults affect manifest fields, dependency uniqueness, resolver precedence,
+registry owner identity, canonical JSON ordering and the public API boundary.
+A green baseline is mandatory. Each fault must fail its named existing assertion.
+Timeouts, syntax/import errors, teardown errors and missing reports are not kills.
+Real unchanged-code, syntax-error and teardown-error controls check the evaluator.
+The emitted receipt includes source hashes and raw test reports before scratch
+cleanup. This measures those six faults only, not all possible mutations or
+independently packed release behavior.
+
 ### Approved purge replay
 
 The kernel purge API issues version-2 plans. Each preview includes a fresh

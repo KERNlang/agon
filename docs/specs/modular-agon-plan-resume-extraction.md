@@ -18,6 +18,20 @@ This retires the A05 legacy session-routing callback, not every Plan host adapte
 or KL-011. CLI terminal effects and the execution-coordinator binding remain.
 The original extraction subject and evidence below remain historical.
 
+### Typed host binding (2026-10-12)
+
+The physical session scope now receives `PlanSessionActions` and an optional
+completion hook. The Plan package dispatches those actions and converts their
+result directly; it no longer calls back into the CLI request dispatcher.
+The CLI shares one action binding between physical and legacy-shaped requests.
+The published callback form remains available for compatibility.
+
+Completion hooks are awaited and failures propagate. A failing-before-fix test
+caught early completion; scope tests also cover concurrent bindings, cancellation,
+identity mismatch and inherited expiry. Auto and background-job event rules stay
+unchanged. This does not retire the remaining legacy handler policy or execution
+coordinator binding, and does not close A05/A11.
+
 ## Scope and ownership
 
 ### Legacy request authority update (2026-10-12)

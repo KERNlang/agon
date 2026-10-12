@@ -16,7 +16,8 @@ it('binds physical and legacy-shaped requests to one Plan dispatcher', () => {
   expect(content).not.toMatch(/dispatchSessionInfoIntent\(request,/);
   expect(content).toContain('dispatchPlanSession(request,');
   expect(content).toContain('return runInteractivePlanRequest(intent, input, cb)');
-  expect(content).toContain('await runInteractivePlanRequest(request,');
+  expect(content).not.toContain('await runInteractivePlanRequest(request,');
+  expect(content).toContain('actions: interactivePlanActions(cb)');
 });
 
 it('removes the CLI-owned session scope instead of retaining a second owner', () => {

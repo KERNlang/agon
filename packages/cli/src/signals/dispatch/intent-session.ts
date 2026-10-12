@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { createPatchApplicationUi, withPatchApplication } from '../../patch-application-host.js';
 import { escapeLiteralText } from '../../blocks/literal-text.js';
 import { withPlanSession, dispatchPlanSession, startPlanTaskSession, resumePlanSession, loadCesarPlan } from '@kernlang/agon-mod-plan';
+import type { PlanSessionActions, PlanSessionDispatchResult } from '@kernlang/agon-mod-plan';
 import type { SessionJobsInvocationContext } from '@kernlang/agon-mod-jobs';
 import { runBrainstormSession } from '../../blocks/brainstorm-session.js';
 
@@ -40,9 +41,9 @@ import { routeWithCesar } from './cesar-router.js';
 
 import { emitPostDispatch } from './utils.js';
 
-/** Bind terminal effects without re-entering the legacy session dispatcher. */
-async function runInteractivePlanRequest(request: PlanSessionRequest, input: string, cb: DispatchCallbacks) {
-  const result = await dispatchPlanSession(request, {
+/** Bind terminal effects without supplying another session dispatcher. */
+function interactivePlanActions(cb: DispatchCallbacks): PlanSessionActions {
+  return {
     show: planId => handlePlanShow(cb.dispatch, cb.ctx, planId),
     task: task => startPlanTaskSession(task, {
       setActive: plan => cb.setActivePlan(plan),
@@ -73,9 +74,17 @@ async function runInteractivePlanRequest(request: PlanSessionRequest, input: str
     cancelPending: () => cancelPendingCesarPlan(cb),
     cancelLegacy: () => handleCancel(cb.dispatch, cb.ctx),
     auto: async intent => (await import('./intent-skills.js')).dispatchSkillsUiIntent(intent, '', cb),
-  });
+  };
+}
+
+function finishPlanDispatch(request: PlanSessionRequest, input: string, cb: DispatchCallbacks, result: PlanSessionDispatchResult | null): void {
   // Auto owns its post-dispatch event. Background task dispatch has no tail event.
   if (request.type !== 'auto' && result?.handled && !result.ranAsJob) emitPostDispatch(request, input, cb);
+}
+
+async function runInteractivePlanRequest(request: PlanSessionRequest, input: string, cb: DispatchCallbacks) {
+  const result = await dispatchPlanSession(request, interactivePlanActions(cb));
+  finishPlanDispatch(request, input, cb, result);
   return result;
 }
 
@@ -414,11 +423,10 @@ export async function runPhysicalTuiContribution(
     });
     return;
   }
-  const run = () => withPlanSession(invocation.invocationId, async (request, context) => {
-      context.signal.throwIfAborted();
-      const result = await runInteractivePlanRequest(request, '', cb);
-      return result?.handled ? { exitCode: 0 } : { exitCode: 2, stderr: 'Unsupported Plan session action.\n' };
-    }, async () => contribution.run(normalized, invocation));
+  const run = () => withPlanSession(invocation.invocationId, {
+    actions: interactivePlanActions(cb),
+    onDispatched: (request, result) => finishPlanDispatch(request, '', cb, result),
+  }, async () => contribution.run(normalized, invocation));
   const output = record.owner?.id === 'agon.forge' && commandName === 'apply'
     ? await withPatchApplication(invocation.invocationId, createPatchApplicationUi(cb.dispatch, cb.ctx), run)
     : await run();

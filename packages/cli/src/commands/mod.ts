@@ -314,7 +314,7 @@ export async function runTuiModAction(input: string): Promise<string> {
   return 'Use: /mod list | /mod inspect <id>. Trust, grant, enable, and disable require the reviewable two-step `agon mod` CLI flow.';
 }
 
-const retentionCommand = defineCommand({ meta: { name: 'retention', description: 'Inspect retained installation generations and active process leases; deletes nothing' },
+const retentionCommand = defineCommand({ meta: { name: 'retention', description: 'Inspect retained installation references, logical file sizes and active process leases; deletes nothing' },
   async run() {
     const host = new DurableModHost(paths().hostRoot, { kernelVersion: AGON_RUNTIME_VERSION });
     console.log(JSON.stringify(await new ManagedRetentionInspector(host).inspect(), null, 2));

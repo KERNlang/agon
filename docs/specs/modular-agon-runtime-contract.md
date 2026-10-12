@@ -513,6 +513,15 @@ inspection object retains failed lock releases and retries only its own fences
 on the next call. It refuses a replacement owner's lock. Scan and cleanup errors
 are preserved together; an incomplete cleanup is not reported as success.
 
+Each listed installation includes `logicalBytes`. `totalInstallationLogicalBytes`
+sums each installation once, even when multiple generations reference it. These
+values count regular-file bytes per path, including installation metadata, without
+reading file contents. They are not allocated or reclaimable disk space; hard-linked
+paths count separately. Missing, unreadable, linked or special entries and unsafe
+integer totals fail the report. The existing writer fences cover the inspection.
+This does not count caches, staging directories, unreferenced installations or
+generation metadata, and does not authorize removal or implement quota policy.
+
 ### Approved purge replay
 
 The kernel purge API issues version-2 plans. Each preview includes a fresh

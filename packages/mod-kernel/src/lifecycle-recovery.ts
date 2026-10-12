@@ -338,8 +338,40 @@ export interface ManagedRetentionReport {
     readonly installationId: string;
     readonly generations: readonly number[];
     readonly hasCommittedGeneration: boolean;
+    /** Regular-file bytes per path, not allocated or reclaimable disk space. */
+    readonly logicalBytes: number;
   }[];
+  readonly totalInstallationLogicalBytes: number;
   readonly activeLeases: readonly GenerationLease[];
+}
+
+/** Count one retained prefix without following links or reading file contents. */
+async function retainedInstallationBytes(host: DurableModHost, installationId: string): Promise<number> {
+  const prefix = join(host.root, 'installations', installationId);
+  const pending = [prefix];
+  let total = 0;
+  try {
+    while (pending.length) {
+      const path = pending.pop()!;
+      await assertNoSymlinkComponents(host.root, relative(host.root, path));
+      const info = await host.hostIo.stat(path);
+      if (info.isDirectory()) {
+        const entries = await host.hostIo.readdir(path, { withFileTypes: true });
+        for (const entry of entries) pending.push(join(path, entry.name));
+      } else if (path !== prefix && info.isFile()) {
+        if (!Number.isSafeInteger(info.size) || info.size < 0 || !Number.isSafeInteger(total + info.size)) {
+          throw new TypeError('retained file sizes exceed safe integer bounds');
+        }
+        total += info.size;
+      } else throw new TypeError('retained installation contains a non-regular entry');
+      await assertNoSymlinkComponents(host.root, relative(host.root, path));
+    }
+    return total;
+  } catch (error) {
+    throw new DurableHostError('MOD_GENERATION_CORRUPT', 'cannot measure retained installation', {
+      installationId, cause: error instanceof Error ? error.message : String(error),
+    });
+  }
 }
 
 /** Own inspection locks and retain failed cleanup for the next inspection. */
@@ -387,9 +419,19 @@ export class ManagedRetentionInspector {
         }
       }
       const references = await referencedInstallations(host);
+      const installations: ManagedRetentionReport['installations'][number][] = [];
+      let totalInstallationLogicalBytes = 0;
+      for (const [installationId, reference] of [...references].sort(([a], [b]) => a.localeCompare(b))) {
+        const logicalBytes = await retainedInstallationBytes(host, installationId);
+        totalInstallationLogicalBytes += logicalBytes;
+        if (!Number.isSafeInteger(totalInstallationLogicalBytes)) {
+          throw new DurableHostError('MOD_GENERATION_CORRUPT', 'retained installation total exceeds safe integer bounds');
+        }
+        installations.push(Object.freeze({ installationId, generations: reference.generations,
+          hasCommittedGeneration: reference.committed, logicalBytes }));
+      }
       report = Object.freeze({ schemaVersion: 1, selectedGeneration: pointer?.generation ?? null,
-        installations: Object.freeze([...references].sort(([a], [b]) => a.localeCompare(b)).map(([installationId, reference]) =>
-          Object.freeze({ installationId, generations: reference.generations, hasCommittedGeneration: reference.committed }))),
+        installations: Object.freeze(installations), totalInstallationLogicalBytes,
         activeLeases: await host.activeGenerationLeases(),
       });
     } catch (error) { failures.push(error); }

@@ -7,14 +7,19 @@ import { surfaceLockFor } from '../helpers/modular-surface-lock.js';
 import { disposeProcessSurfaceAuthority, initializeProcessSurfaceAuthority } from '../../packages/cli/src/surface-authority-runtime.js';
 import * as authority from '../../packages/cli/src/surface-authority-runtime.js';
 import { createCesarPlan } from '@kernlang/agon-mod-plan';
+import { createPlan } from '@kernlang/agon-support-worktree';
 import type { DispatchCallbacks } from '../../packages/cli/src/signals/dispatch.js';
 
-const effects = vi.hoisted(() => ({ save: vi.fn(), execute: vi.fn(), executors: vi.fn(() => ({})) }));
+const effects = vi.hoisted(() => ({ save: vi.fn(), execute: vi.fn(), executors: vi.fn(() => ({})),
+  legacySave: vi.fn(), forge: vi.fn(async () => null) }));
 vi.mock('@kernlang/agon-core', async original => ({
   ...await original<Record<string, unknown>>(), saveCesarPlan: effects.save, executePlan: effects.execute,
+  savePlan: effects.legacySave,
 }));
 vi.mock('../../packages/cli/src/handlers/plan-mode.js', () => ({ buildStepExecutors: effects.executors }));
+vi.mock('../../packages/cli/src/handlers/forge.js', () => ({ handleForge: effects.forge }));
 import { executeApprovedPlan, resumeCesarPlan, handleProposedCesarPlan, approvePendingCesarPlan } from '../../packages/cli/src/signals/dispatch/plan-execution.js';
+import { dispatchSessionInfoIntent } from '../../packages/cli/src/signals/dispatch/intent-session.js';
 
 const NOW = '2026-10-09T00:00:00.000Z';
 let root: string;
@@ -34,10 +39,10 @@ afterEach(async () => {
   for (const generation of generations) await chmod(join(root, 'generations', generation), 0o755);
   await rm(root, { recursive: true, force: true });
 });
-async function install(disabled: boolean) {
+async function install(disabled: boolean, id = 'agon.plan') {
   const catalog = createFirstPartyModCatalog();
   const full = createFullCompatDesiredState(catalog, NOW);
-  const desired = disabled ? planDesiredStateChange(catalog, full, { kind: 'disable', id: 'agon.plan' }, NOW).nextState : full;
+  const desired = disabled ? planDesiredStateChange(catalog, full, { kind: 'disable', id }, NOW).nextState : full;
   await host.commitGeneration({ operation: disabled ? 'disable' : 'install', lock: await surfaceLockFor(desired), desiredState: desired, installedIndex: {} });
 }
 function callbacks(dispatch = vi.fn()): DispatchCallbacks {
@@ -46,6 +51,90 @@ function callbacks(dispatch = vi.fn()): DispatchCallbacks {
 function proposal() {
   return { ...createCesarPlan('fixture', []), state: 'awaiting_approval' as const, selfReview: false, autoApprove: true };
 }
+
+it.each((['approve', 'retry', 'plan'] as const).flatMap(type => [true, false].map(disabled => ({ type, disabled }))))('checks Forge through worktree Plan $type (disabled=$disabled)', async ({ type, disabled }) => {
+  await install(disabled, 'agon.forge');
+  await initializeProcessSurfaceAuthority(root);
+  const plan = createPlan({ type: 'forge', task: 'fixture' },
+    { id: 'fixture', path: root, headSha: 'abc', branch: 'fixture', dirty: false },
+    [{ id: 'build', kind: 'dispatch', label: 'Build', effects: ['write'] }]);
+  if (type === 'retry') {
+    plan.state = 'paused';
+    plan.steps[0].result.state = 'failed';
+  }
+  const cb = callbacks();
+  cb.ctx.currentPlan = plan;
+  cb.ctx.setCurrentPlan = next => { cb.ctx.currentPlan = next; };
+  cb.ctx.askQuestion = async () => 'yes';
+  await dispatchSessionInfoIntent({ type }, `/${type}`, cb);
+  if (!disabled) {
+    expect(effects.forge).toHaveBeenCalledOnce();
+    expect(effects.legacySave).toHaveBeenCalledTimes(type === 'retry' ? 2 : 1);
+    expect(cb.dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'error' }));
+    return;
+  }
+  expect(effects.forge).not.toHaveBeenCalled();
+  expect(effects.legacySave).not.toHaveBeenCalled();
+  expect(cb.ctx.currentPlan).toBe(plan);
+  expect(cb.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'error', message: expect.stringContaining('unavailable') }));
+});
+
+it('permits cancelling a worktree plan even when its Forge action is disabled', async () => {
+  await install(true, 'agon.forge');
+  await initializeProcessSurfaceAuthority(root);
+  const plan = createPlan({ type: 'forge', task: 'fixture' },
+    { id: 'fixture', path: root, headSha: 'abc', branch: 'fixture', dirty: false }, []);
+  const cb = callbacks();
+  cb.ctx.currentPlan = plan;
+  cb.ctx.setCurrentPlan = next => { cb.ctx.currentPlan = next; };
+  await dispatchSessionInfoIntent({ type: 'cancel' }, '/cancel', cb);
+  expect(effects.forge).not.toHaveBeenCalled();
+  expect(effects.legacySave).toHaveBeenCalledWith(expect.objectContaining({ state: 'cancelled' }));
+});
+
+it('does not enter Forge after host disposal during the execution handoff', async () => {
+  await install(false);
+  await initializeProcessSurfaceAuthority(root);
+  const plan = createPlan({ type: 'forge', task: 'fixture' },
+    { id: 'fixture', path: root, headSha: 'abc', branch: 'fixture', dirty: false }, []);
+  let disposal: Promise<void> | undefined;
+  const cb = callbacks(vi.fn(event => {
+    if (event.type === 'success') disposal = disposeProcessSurfaceAuthority();
+  }));
+  cb.ctx.currentPlan = plan;
+  cb.ctx.setCurrentPlan = next => { cb.ctx.currentPlan = next; };
+  try {
+    await dispatchSessionInfoIntent({ type: 'approve' }, '/approve', cb);
+    expect(effects.forge).not.toHaveBeenCalled();
+    expect(cb.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'error', message: expect.stringContaining('replaced') }));
+  } finally {
+    await disposal;
+  }
+});
+
+it.each(['disable', 'replace'] as const)('refuses worktree draft approval after host %s while asking', async change => {
+  await install(false);
+  await initializeProcessSurfaceAuthority(root);
+  const plan = createPlan({ type: 'build', task: 'fixture' },
+    { id: 'fixture', path: root, headSha: 'abc', branch: 'fixture', dirty: false }, []);
+  const cb = callbacks();
+  cb.ctx.currentPlan = plan;
+  cb.ctx.setCurrentPlan = next => { cb.ctx.currentPlan = next; };
+  cb.ctx.askQuestion = async () => {
+    if (change === 'disable') await install(true);
+    else {
+      await disposeProcessSurfaceAuthority();
+      await initializeProcessSurfaceAuthority(root);
+    }
+    return 'yes';
+  };
+  await dispatchSessionInfoIntent({ type: 'plan' }, '/plan', cb);
+  expect(effects.legacySave).not.toHaveBeenCalled();
+  expect(effects.forge).not.toHaveBeenCalled();
+  expect(cb.ctx.currentPlan).toBe(plan);
+  expect(plan.state).toBe('draft');
+  expect(cb.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'error', message: expect.stringMatching(/restart|replaced/) }));
+});
 
 it.each(['direct', 'approve', 'automatic', 'resume'] as const)('blocks disabled Plan at the %s entry', async route => {
   await install(true);

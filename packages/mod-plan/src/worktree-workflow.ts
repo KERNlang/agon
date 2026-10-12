@@ -9,6 +9,7 @@ export type WorktreePlanEvent =
 
 /** The host supplies session access and effects, not approval or retry policy. */
 export interface WorktreePlanHost {
+  available(plan?: Plan): boolean;
   current(): Plan | null;
   setCurrent(plan: Plan): void;
   load(id: string): Plan | null;
@@ -21,6 +22,7 @@ export interface WorktreePlanHost {
 }
 
 export async function showWorktreePlan(host: WorktreePlanHost, planId?: string): Promise<void> {
+  if (!host.available()) return;
   let plan: Plan | null = null;
 
   if (planId) {
@@ -48,6 +50,7 @@ export async function showWorktreePlan(host: WorktreePlanHost, planId?: string):
   if (plan.state === 'draft') {
     if (host.current() !== plan) host.setCurrent(plan);
     const answer = (await host.ask('Approve plan? Type y or yes to approve.')).trim();
+    if (!host.available()) return;
     if (host.current() !== plan || plan.state !== 'draft') {
       host.emit({ type: 'info', message: 'Plan changed while approval was pending. Show the current plan before approving.' });
       return;
@@ -64,6 +67,7 @@ export async function showWorktreePlan(host: WorktreePlanHost, planId?: string):
       host.save(cancelled);
       host.emit({ type: 'success', message: 'Plan cancelled.' });
     } else {
+      if (!host.available(plan)) return;
       const approved = approvePlan(plan, host.stateRuntime);
       host.setCurrent(approved);
       host.save(approved);
@@ -85,6 +89,7 @@ export function listWorktreePlans(host: Pick<WorktreePlanHost, 'list' | 'emit'>)
 
 export async function approveWorktreePlan(host: WorktreePlanHost): Promise<void> {
   const current = host.current();
+  if (!host.available(current ?? undefined)) return;
   if (!current) {
     host.emit({ type: 'warning', message: 'No active plan to approve.' });
     return;
@@ -108,6 +113,7 @@ export async function approveWorktreePlan(host: WorktreePlanHost): Promise<void>
 
 export async function retryWorktreePlan(host: WorktreePlanHost): Promise<void> {
   const current = host.current();
+  if (!host.available(current ?? undefined)) return;
   if (!current) {
     host.emit({ type: 'warning', message: 'No active plan to retry.' });
     return;
@@ -139,6 +145,7 @@ export async function retryWorktreePlan(host: WorktreePlanHost): Promise<void> {
 }
 
 export function cancelWorktreePlan(host: WorktreePlanHost): void {
+  if (!host.available()) return;
   const current = host.current();
   if (!current) {
     host.emit({ type: 'warning', message: 'No active plan to cancel.' });

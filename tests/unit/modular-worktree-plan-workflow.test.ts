@@ -9,6 +9,7 @@ function fixture(answer = 'y', kind: 'build' | 'forge' = 'forge') {
     { id: 'fixture', path: '/fixture', headSha: 'abc', branch: 'fixture', dirty: false },
     [{ id: 'build', kind: 'dispatch', label: 'Build', effects: ['write'] }]);
   const host = {
+    available: () => true,
     current: () => current,
     setCurrent: vi.fn((plan: Plan) => { current = plan; }),
     load: vi.fn((_id: string) => current), list: vi.fn((_limit: number) => current ? [current] : []),

@@ -9,6 +9,24 @@ import { WriterFence } from '../../packages/mod-kernel/src/writer-lock.js';
 import { nodeHostIo } from '../../packages/mod-kernel/src/host-io.js';
 
 describe('fenced generation leases', () => {
+  it('serializes one artifact request ID and never resurrects its released reference', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-artifact-idempotent-'));
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
+    await host.commitGeneration({ operation: 'install', lock: hostLock(), desiredState: {}, installedIndex: {} });
+    const identity = { ownerId: 'agon.plan', artifactId: 'result:example', artifactHash: `sha256:${'a'.repeat(64)}` as const };
+    const requestId = '00000000-0000-4000-8000-000000000042';
+    const results = await Promise.all(Array.from({ length: 8 }, () => host.leaseArtifactGeneration(1, identity, undefined, requestId)));
+    expect(results.every(lease => lease.leaseId === requestId)).toBe(true);
+    expect(new Set(results.map(lease => lease.createdAt)).size).toBe(1);
+    expect(await host.activeArtifactGenerationLeases()).toEqual([results[0]]);
+    await expect(host.leaseArtifactGeneration(1, { ...identity, artifactId: 'other' }, undefined, requestId)).rejects.toMatchObject({ code: 'MOD_FENCE_LOST' });
+    const separate = await host.leaseArtifactGeneration(1, identity);
+    expect(separate.leaseId).not.toBe(requestId);
+    const released = await host.releaseArtifactGenerationLease(requestId, identity);
+    expect(await host.leaseArtifactGeneration(1, identity, undefined, requestId)).toEqual(released);
+    expect(await host.activeArtifactGenerationLeases()).toEqual([separate]);
+  });
+
   it.each(['before-rename', 'changed-identity'] as const)('handles pending artifact publication safely: %s', async fault => {
     const root = await mkdtemp(join(tmpdir(), 'agon-artifact-pending-'));
     const host = new DurableModHost(root, { kernelVersion: '1.0.0' });

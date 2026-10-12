@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { modCommand } from '../../packages/cli/src/commands/mod.js';
-import { DurableModHost, createFirstPartyModCatalog, createFullCompatDesiredState, parseDesiredState, resolveDesiredState } from '../../packages/mod-kernel/src/index.js';
+import { DurableModHost, createFirstPartyModCatalog, createFullCompatDesiredState, parseDesiredState, resolveDesiredState, sha256Canonical } from '../../packages/mod-kernel/src/index.js';
 import { assertSelectedLockPackageClosure, assertSelectedLockIntegrity } from '../../packages/mod-kernel/src/selected-lock-integrity.js';
 import { surfaceLockFor } from '../helpers/modular-surface-lock.js';
 import { WriterFence } from '../../packages/mod-kernel/src/writer-lock.js';
@@ -30,6 +30,67 @@ async function previewAndApprove(command: any, target: string) {
 }
 
 describe('first-party safe-mode CLI recovery', () => {
+  it('previews and exactly approves artifact retention and release without deleting data', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-artifact-cli-'));
+    const host = new DurableModHost(join(root, 'host'), { kernelVersion: '1.0.0' });
+    const installed = await new ManagedLifecycleService(host).apply(
+      await createManagedLifecyclePlan(host, request([artifact('@test/app')])), installer, verifier);
+    process.env.AGON_MODULAR_HOST_ROOT = host.root;
+    const before = await readFile(host.paths.current);
+    const output: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation(value => { output.push(String(value)); });
+    const retain = modCommand.subCommands.retention.subCommands?.retain;
+    const release = modCommand.subCommands.retention.subCommands?.release;
+    expect(retain).toBeDefined();
+    expect(release).toBeDefined();
+    await retain.run({ args: { target: String(installed.pointer.generation), owner: 'agon.plan', artifact: 'result:example', hash: `sha256:${'a'.repeat(64)}` } });
+    const preview = JSON.parse(output.at(-1)!);
+    expect(preview.action).toBe('artifact-retain-preview');
+    expect(await host.activeArtifactGenerationLeases()).toEqual([]);
+    await expect(retain.run({ args: { target: preview.planPath, approve: 'wrong' } })).rejects.toThrow('approval');
+    await expect(release.run({ args: { target: preview.planPath, approve: preview.planHash } })).rejects.toThrow('approval');
+    await expect(retain.run({ args: { target: preview.planPath, approve: preview.planHash, owner: 'other' } })).rejects.toThrow('replacement flags');
+    expect(await host.activeArtifactGenerationLeases()).toEqual([]);
+    const originalPlan = await readFile(preview.planPath);
+    const plan = JSON.parse(originalPlan.toString());
+    const { planHash: _planHash, ...unsigned } = plan.preview;
+    const changed = { ...unsigned, generationContentHash: `sha256:${'f'.repeat(64)}` };
+    const changedHash = sha256Canonical(changed);
+    await writeFile(preview.planPath, JSON.stringify({ ...plan, preview: { ...changed, planHash: changedHash } }));
+    await expect(retain.run({ args: { target: preview.planPath, approve: changedHash } })).rejects.toThrow('changed after preview');
+    const { requestId: _requestId, ...missingId } = unsigned;
+    const missingHash = sha256Canonical(missingId);
+    await writeFile(preview.planPath, JSON.stringify({ ...plan, preview: { ...missingId, planHash: missingHash } }));
+    await expect(retain.run({ args: { target: preview.planPath, approve: missingHash } })).rejects.toThrow();
+    await writeFile(preview.planPath, originalPlan);
+    expect(await host.activeArtifactGenerationLeases()).toEqual([]);
+    await retain.run({ args: { target: preview.planPath, approve: preview.planHash } });
+    const applied = JSON.parse(output.at(-1)!);
+    await retain.run({ args: { target: preview.planPath, approve: preview.planHash } });
+    expect(JSON.parse(output.at(-1)!).lease).toEqual(applied.lease);
+    expect(await host.activeArtifactGenerationLeases()).toEqual([applied.lease]);
+    await release.run({ args: { target: applied.lease.leaseId } });
+    const releasePreview = JSON.parse(output.at(-1)!);
+    expect(await host.activeArtifactGenerationLeases()).toEqual([applied.lease]);
+    const leasePath = join(host.paths.leases, `${applied.lease.leaseId}.json`);
+    const leaseBytes = await readFile(leasePath);
+    await writeFile(leasePath, JSON.stringify({ ...applied.lease, artifactId: 'replacement' }));
+    await expect(release.run({ args: { target: releasePreview.planPath, approve: releasePreview.planHash } })).rejects.toThrow('changed after preview');
+    expect((await host.activeArtifactGenerationLeases())[0]?.artifactId).toBe('replacement');
+    await writeFile(leasePath, leaseBytes);
+    await expect(release.run({ args: { target: releasePreview.planPath, approve: 'wrong' } })).rejects.toThrow('approval');
+    await release.run({ args: { target: releasePreview.planPath, approve: releasePreview.planHash } });
+    const released = JSON.parse(output.at(-1)!);
+    await release.run({ args: { target: releasePreview.planPath, approve: releasePreview.planHash } });
+    expect(JSON.parse(output.at(-1)!).lease).toEqual(released.lease);
+    expect(await host.activeArtifactGenerationLeases()).toEqual([]);
+    expect(await readFile(host.paths.current)).toEqual(before);
+    await retain.run({ args: { target: preview.planPath, approve: preview.planHash } });
+    expect(await host.activeArtifactGenerationLeases()).toEqual([]);
+    expect(JSON.parse(await readFile(join(host.root, 'installations', installed.installation.installationId, 'node_modules', '@test/app', 'package.json'), 'utf8')))
+      .toEqual({ name: '@test/app', version: '1.0.0' });
+  });
+
   it('reports retention through the built safe-mode CLI without releasing a lease', async () => {
     const root = await mkdtemp(join(tmpdir(), 'agon-cli-retention-'));
     const host = new DurableModHost(join(root, 'host'), { kernelVersion: '1.0.0' });
@@ -69,6 +130,26 @@ describe('first-party safe-mode CLI recovery', () => {
     expect(await readFile(host.paths.current)).toEqual(before);
     expect(await host.activeGenerationLeases()).toEqual([lease]);
     expect(await host.activeArtifactGenerationLeases()).toEqual([artifactLease]);
+    const invoke = (...args: string[]) => {
+      const result = spawnSync(process.execPath, [cli, 'mod', 'retention', ...args], {
+        env: { ...process.env, HOME: root, AGON_HOME: root, AGON_MODULAR_HOST_ROOT: host.root, AGON_MOD_SAFE_MODE: '1' },
+        cwd: root, encoding: 'utf8', timeout: 10_000,
+      });
+      expect(result.error).toBeUndefined();
+      expect(result.status, result.stderr).toBe(0);
+      return JSON.parse(result.stdout);
+    };
+    const preview = invoke('retain', String(installed.pointer.generation), '--owner', 'agon.plan', '--artifact', 'cli:result', '--hash', `sha256:${'b'.repeat(64)}`);
+    expect(await host.activeArtifactGenerationLeases()).toEqual([artifactLease]);
+    const retained = invoke('retain', preview.planPath, '--approve', preview.planHash);
+    expect(retained.status).toBe('retained');
+    expect(invoke('retain', preview.planPath, '--approve', preview.planHash).lease).toEqual(retained.lease);
+    const release = invoke('release', retained.lease.leaseId);
+    expect(release.action).toBe('artifact-release-preview');
+    expect(invoke('release', release.planPath, '--approve', release.planHash).status).toBe('released');
+    expect(invoke('retain', preview.planPath, '--approve', preview.planHash).status).toBe('released');
+    expect(await host.activeArtifactGenerationLeases()).toEqual([artifactLease]);
+    expect(await readFile(host.paths.current)).toEqual(before);
   });
 
   it.each(['marker-published', 'writer-removed'])('recovers after SIGKILL of the recovery process at %s', async point => {

@@ -1,4 +1,5 @@
 import { lstat, mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import { dirname, isAbsolute, join, relative } from 'node:path';
 import { defineCommand } from 'citty';
 import {
@@ -14,6 +15,9 @@ import {
   renderModManagementText,
   recoverManagedLifecycle,
   ManagedRetentionInspector,
+  parseArtifactLeaseIdentity,
+  type ArtifactGenerationLease,
+  type ArtifactLeaseIdentity,
   rollbackGeneration,
   sha256Canonical,
   type FolderModActivationPreview,
@@ -74,7 +78,11 @@ async function summary(selected: FolderModManager, candidate: FolderModCandidate
   }
 }
 
+type ArtifactRetentionPreview = ({ readonly action: 'retain'; readonly generation: number; readonly generationContentHash: string; readonly artifact: ArtifactLeaseIdentity }
+  | { readonly action: 'release'; readonly lease: ArtifactGenerationLease }) & { readonly requestId: string; readonly planHash: string };
+
 type PendingPlan =
+  | { readonly schemaVersion: 2; readonly kind: 'artifact-retention'; readonly preview: ArtifactRetentionPreview }
   | { readonly schemaVersion: 2; readonly kind: 'authority'; readonly modId: string; readonly contentHash: string; readonly manifestHash: string; readonly preview: FolderModApprovalPreview }
   | { readonly schemaVersion: 2; readonly kind: 'activation'; readonly modId: string; readonly contentHash: string; readonly manifestHash: string; readonly preview: FolderModActivationPreview }
   | { readonly schemaVersion: 2; readonly kind: 'grant-revocation'; readonly modId: string; readonly contentHash: string; readonly manifestHash: string; readonly preview: FolderModGrantRevocationPreview }
@@ -97,6 +105,12 @@ async function readPlan(pathInput: string): Promise<PendingPlan> {
   const metadata = await lstat(candidate);
   if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.size > PLAN_LIMIT) throw new TypeError('approval plan must be a real JSON file no larger than 256 KiB');
   const value = JSON.parse(await readFile(candidate, 'utf8')) as PendingPlan;
+  if (value.kind === 'artifact-retention') {
+    if (value.schemaVersion !== 2 || !value.preview || typeof value.preview.requestId !== 'string' || !value.preview.requestId) {
+      throw new TypeError('artifact retention plan requires a request ID');
+    }
+    return value;
+  }
   if (value.schemaVersion !== 2 || !['authority', 'activation', 'grant-revocation', 'first-party-activation', 'generation-recovery'].includes(value.kind) || typeof value.modId !== 'string'
     || typeof value.contentHash !== 'string' || typeof value.manifestHash !== 'string' || !value.preview) throw new TypeError('approval plan is malformed');
   return value;
@@ -314,8 +328,67 @@ export async function runTuiModAction(input: string): Promise<string> {
   return 'Use: /mod list | /mod inspect <id>. Trust, grant, enable, and disable require the reviewable two-step `agon mod` CLI flow.';
 }
 
-const retentionCommand = defineCommand({ meta: { name: 'retention', description: 'Inspect retained installation references, logical file sizes and active process leases; deletes nothing' },
-  async run() {
+function artifactRetentionCommand(action: 'retain' | 'release') {
+  return defineCommand({ meta: { name: action, description: `${action === 'retain' ? 'Retain a generation for an artifact' : 'Release an artifact reference'} through exact preview approval; deletes no files` },
+    args: {
+      target: { type: 'positional', required: true, description: action === 'retain' ? 'Generation number, or approval plan path' : 'Artifact lease ID, or approval plan path' },
+      owner: { type: 'string', description: 'Artifact owner ID for retain preview' },
+      artifact: { type: 'string', description: 'Opaque artifact ID for retain preview; never opened as a path' },
+      hash: { type: 'string', description: 'Declared artifact SHA-256 hash for retain preview' },
+      approve: { type: 'string', description: 'Exact preview plan hash' },
+    },
+    async run({ args }) {
+      const host = new DurableModHost(paths().hostRoot, { kernelVersion: AGON_RUNTIME_VERSION });
+      if (!args.approve) {
+        const requestId = randomUUID();
+        let unsigned: Omit<Extract<ArtifactRetentionPreview, { action: 'retain' }>, 'planHash'> | Omit<Extract<ArtifactRetentionPreview, { action: 'release' }>, 'planHash'>;
+        if (action === 'retain') {
+          const generation = Number(args.target);
+          if (!Number.isSafeInteger(generation) || generation < 1) throw new TypeError('retention target must be a positive generation number');
+          const artifact = parseArtifactLeaseIdentity({ ownerId: args.owner ?? '', artifactId: args.artifact ?? '', artifactHash: args.hash ?? '' });
+          const manifest = await host.validateGeneration(generation);
+          unsigned = { action, generation, generationContentHash: manifest.contentHash, artifact, requestId };
+        } else {
+          if (args.owner || args.artifact || args.hash) throw new TypeError('release uses the exact stored artifact identity, not replacement flags');
+          unsigned = { action, lease: await host.readArtifactGenerationLease(String(args.target)), requestId };
+        }
+        const preview = { ...unsigned, planHash: sha256Canonical(unsigned) };
+        const planPath = await writePlan({ schemaVersion: 2, kind: 'artifact-retention', preview }, preview.planHash);
+        console.log(JSON.stringify({ ...preview, action: `artifact-${action}-preview`, planPath,
+          warning: action === 'retain' ? 'Artifact identity is declared, not independently verified. No artifact file is read.' : 'This releases retention protection only. No artifact, installation or generation is deleted.',
+          next: `agon mod retention ${action} ${JSON.stringify(planPath)} --approve ${JSON.stringify(preview.planHash)}` }, null, 2));
+        return;
+      }
+      if (args.owner || args.artifact || args.hash) throw new TypeError('approval uses the exact saved preview, not replacement flags');
+      const document = await readPlan(String(args.target));
+      if (document.kind !== 'artifact-retention') throw new TypeError('artifact retention approval requires an artifact-retention plan');
+      const { planHash, ...preview } = document.preview;
+      if (preview.action !== action || planHash !== sha256Canonical(preview) || String(args.approve) !== planHash) {
+        throw new TypeError('artifact retention approval does not match the exact plan');
+      }
+      let lease: ArtifactGenerationLease;
+      if (preview.action === 'retain') {
+        const manifest = await host.validateGeneration(preview.generation);
+        if (manifest.contentHash !== preview.generationContentHash) throw new TypeError('retained generation changed after preview');
+        lease = await host.leaseArtifactGeneration(preview.generation, preview.artifact, undefined, preview.requestId);
+      } else {
+        const current = await host.readArtifactGenerationLease(preview.lease.leaseId);
+        if (sha256Canonical({ ...current, releasedAt: preview.lease.releasedAt }) !== sha256Canonical(preview.lease)
+          || (preview.lease.releasedAt !== null && current.releasedAt !== preview.lease.releasedAt)) {
+          throw new TypeError('artifact lease changed after preview');
+        }
+        lease = await host.releaseArtifactGenerationLease(current.leaseId,
+          { ownerId: current.ownerId, artifactId: current.artifactId, artifactHash: current.artifactHash });
+      }
+      console.log(JSON.stringify({ action: `artifact-${action}`, planHash, lease,
+        status: lease.releasedAt ? 'released' : 'retained', deletedFiles: false }, null, 2));
+    } });
+}
+
+const retentionCommand = defineCommand({ meta: { name: 'retention', description: 'Inspect retained references, sizes and leases; manage artifact protection without deleting files' },
+  subCommands: { retain: artifactRetentionCommand('retain'), release: artifactRetentionCommand('release') },
+  async run({ rawArgs }) {
+    if (rawArgs.some(arg => !arg.startsWith('-'))) return;
     const host = new DurableModHost(paths().hostRoot, { kernelVersion: AGON_RUNTIME_VERSION });
     console.log(JSON.stringify(await new ManagedRetentionInspector(host).inspect(), null, 2));
   } });

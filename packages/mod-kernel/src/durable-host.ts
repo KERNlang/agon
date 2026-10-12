@@ -710,12 +710,16 @@ export class DurableModHost {
     return this.#generationLeaseStore().active();
   }
 
-  async leaseArtifactGeneration(generation: number, artifact: ArtifactLeaseIdentity, signal?: AbortSignal): Promise<ArtifactGenerationLease> {
-    return this.#generationLeaseStore().acquireArtifact(generation, artifact, signal);
+  async leaseArtifactGeneration(generation: number, artifact: ArtifactLeaseIdentity, signal?: AbortSignal, leaseId?: string): Promise<ArtifactGenerationLease> {
+    return this.#generationLeaseStore().acquireArtifact(generation, artifact, signal, leaseId);
   }
 
   async activeArtifactGenerationLeases(): Promise<readonly ArtifactGenerationLease[]> {
     return this.#generationLeaseStore().activeArtifacts();
+  }
+
+  async readArtifactGenerationLease(leaseId: string): Promise<ArtifactGenerationLease> {
+    return this.#generationLeaseStore().readArtifact(leaseId);
   }
 
   async releaseArtifactGenerationLease(leaseId: string, artifact: ArtifactLeaseIdentity): Promise<ArtifactGenerationLease> {

@@ -1,4 +1,5 @@
 export { validatePersistedEnvelope } from '@kernlang/agon-mod-api';
+export { parseArtifactLeaseIdentity } from './host-contracts.js';
 export type { Json, PersistedEnvelope } from '@kernlang/agon-mod-api';
 export { createScopedConfigStore } from './scoped-config-store.js';
 export type { ConfigMemoEntry, ScopedConfigStoreOptions } from './scoped-config-store.js';

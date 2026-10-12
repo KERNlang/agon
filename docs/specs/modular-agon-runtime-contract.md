@@ -531,6 +531,10 @@ reject artifact records; existing version-1 process records remain supported.
 Older readers reject version-2 records rather than silently ignoring protection.
 
 `leaseArtifactGeneration` validates the generation before durable publication.
+An optional UUID request ID makes acquisition idempotent under the writer fence.
+Reusing that ID with a different reference fails. Reusing it after release returns
+the released record; it cannot restore protection. Calls without an ID create
+independent references, preserving the original API behavior.
 `releaseArtifactGenerationLease` requires the same owner, artifact ID and hash,
 including on an idempotent retry. Creation and release retain their timestamps in
 the atomic record. Failed acquisition cleanup never automatically releases an
@@ -544,6 +548,16 @@ Malformed records and missing referenced generations fail inspection and purge.
 Caller owns approval and artifact verification; identity matching is not a sandbox.
 Automatic workflow-artifact attachment, rollback-window policy and collection are
 still unimplemented. No active/global installation is migrated by these APIs.
+
+Operators use `agon mod retention retain <generation> --owner <id> --artifact <id>
+--hash sha256:<digest>` to preview an artifact reference. `agon mod retention
+release <lease-id>` previews release. Each command prints a saved plan path and
+an exact `--approve <plan-hash>` command. Preview changes no lease. Approval binds
+the operation, request ID and identity; retain also binds the generation content
+hash. Release rejects a changed record. Retrying an approved request does not
+create another reference. These commands never open the artifact ID as a path or
+delete artifact, generation or installation files. `agon mod retention` without
+a subcommand remains the read-only report.
 
 ### Approved purge replay
 

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { basename, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { DurableHostError } from './host-errors.js';
-import { atomicWrite, nodeHostIo, readJson, type HostIo } from './host-io.js';
+import { atomicWrite, nodeHostIo, pathExists, readJson, type HostIo } from './host-io.js';
 import { canonicalJson } from './lock.js';
 import type { ArtifactGenerationLease, ArtifactLeaseIdentity, GenerationLease } from './durable-host.js';
 import { parseArtifactGenerationLease, parseArtifactLeaseIdentity, parseGenerationLease } from './host-contracts.js';
@@ -134,6 +134,17 @@ export class GenerationLeaseStore {
     }
   }
 
+  async #syncArtifact(lease: ArtifactGenerationLease): Promise<void> {
+    try {
+      await this.#io.syncFile(leaseFile(this.#options.directory, lease.leaseId));
+      await this.#io.syncDirectory(this.#options.directory);
+      this.#pendingArtifactWrites.delete(lease.leaseId);
+    } catch (error) {
+      this.#pendingArtifactWrites.set(lease.leaseId, lease);
+      throw error;
+    }
+  }
+
   async #mutate<T>(action: () => Promise<T>, signal?: AbortSignal): Promise<T> {
     const deadline = performance.now() + (this.#options.writerWaitMs ?? 5_000);
     let fence: WriterFence;
@@ -248,11 +259,22 @@ export class GenerationLeaseStore {
     });
   }
 
-  async acquireArtifact(generation: number, artifact: ArtifactLeaseIdentity, signal?: AbortSignal): Promise<ArtifactGenerationLease> {
-    const lease = parseArtifactGenerationLease({ schemaVersion: 2, kind: 'artifact', leaseId: randomUUID(),
+  async acquireArtifact(generation: number, artifact: ArtifactLeaseIdentity, signal?: AbortSignal, leaseId: string = randomUUID()): Promise<ArtifactGenerationLease> {
+    const lease = parseArtifactGenerationLease({ schemaVersion: 2, kind: 'artifact', leaseId,
       generation, ...parseArtifactLeaseIdentity(artifact), createdAt: this.#now().toISOString(), releasedAt: null });
     return this.#mutate(async () => {
       await this.#options.validateGeneration(generation);
+      signal?.throwIfAborted();
+      if (await pathExists(this.#io, leaseFile(this.#options.directory, leaseId))) {
+        const existing = await this.readArtifact(leaseId);
+        if (existing.generation !== generation || existing.ownerId !== lease.ownerId
+          || existing.artifactId !== lease.artifactId || existing.artifactHash !== lease.artifactHash) {
+          throw new DurableHostError('MOD_FENCE_LOST', 'artifact retention request ID belongs to another reference');
+        }
+        signal?.throwIfAborted();
+        await this.#syncArtifact(existing);
+        return existing;
+      }
       signal?.throwIfAborted();
       await this.#writeArtifact(lease);
       return lease;
@@ -269,20 +291,19 @@ export class GenerationLeaseStore {
       }
       if (lease.releasedAt) {
         // A prior rename can succeed before directory sync fails.
-        try {
-          await this.#io.syncFile(path);
-          await this.#io.syncDirectory(this.#options.directory);
-          this.#pendingArtifactWrites.delete(leaseId);
-        } catch (error) {
-          this.#pendingArtifactWrites.set(leaseId, lease);
-          throw error;
-        }
+        await this.#syncArtifact(lease);
         return lease;
       }
       const released: ArtifactGenerationLease = Object.freeze({ ...lease, releasedAt: this.#now().toISOString() });
       await this.#writeArtifact(released);
       return released;
     });
+  }
+
+  async readArtifact(leaseId: string): Promise<ArtifactGenerationLease> {
+    const lease = await this.#readRecord(leaseFile(this.#options.directory, leaseId));
+    if (lease.schemaVersion !== 2) throw new DurableHostError('MOD_FENCE_LOST', 'lease is not an artifact reference');
+    return lease;
   }
 
   async active(generation?: number): Promise<readonly GenerationLease[]> {

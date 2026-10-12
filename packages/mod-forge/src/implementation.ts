@@ -155,8 +155,9 @@ export async function runForgeCompetition(
   const mode = text(input.mode) || "implement";
   if (!["implement", "improve", "validate"].includes(mode))
     return { exitCode: 1, stderr: `Unknown Forge mode: ${mode}\n` };
-  const fitnessProvided = Boolean(text(input.test));
-  const fitness = text(input.test) || "true";
+  const requestedFitness = text(input.test) || text(input.fitnessCmd);
+  const fitnessProvided = Boolean(requestedFitness);
+  const fitness = requestedFitness || "true";
   const cwd = text(input.cwd)
     ? resolve(context.cwd, text(input.cwd))
     : context.cwd;

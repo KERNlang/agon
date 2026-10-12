@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import type { CommandContribution, InvocationContext, ModServices } from '../../packages/mod-api/src/index.js';
+import type { CommandContribution, IntentContribution, InvocationContext, ModServices } from '../../packages/mod-api/src/index.js';
 import { ModRegistry } from '../../packages/mod-kernel/src/index.js';
 import { resolveRegisteredModSettings } from '../../packages/mod-kernel/src/mod-settings.js';
 import { createMod, MANIFEST } from '../../packages/mod-forge/src/index.js';
@@ -12,6 +12,91 @@ import { DEFAULT_FIRST_PARTY_SETTINGS } from '../../packages/core/src/models/fir
 import { DEFAULT_AGON_CONFIG } from '../../packages/core/src/models/types.js';
 
 describe('Forge configuration ownership', () => {
+  it.each(['npm test', 'false', 'node check.mjs'])('preserves the intent fitness command through physical execution: %s', async fitness => {
+    const owner = { id: MANIFEST.id, version: MANIFEST.version, contentHash: `sha256:${'a'.repeat(64)}` as const };
+    const registry = new ModRegistry({ generation: 'forge-input-parity', activeOwners: [owner] });
+    const session = registry.beginRegistration(MANIFEST);
+    const mod = await createMod({ engines: {
+      listActive: async () => ['fixture'],
+      dispatch: async () => { throw new Error('dry-run must not dispatch'); },
+    } } as unknown as ModServices);
+    await mod.activate(session.registrar);
+    session.commit();
+    try {
+      const intent = registry.resolve('intent', 'intentVariants:0032')!.payload as IntentContribution;
+      const parsed = await intent.parse(`/forge fix the defect test with ${fitness}`);
+      expect(parsed).toMatchObject({ fitnessCmd: fitness });
+      const context: InvocationContext = { invocationId: 'forge-input-parity', cwd: '/fixture', platform: 'darwin-arm64',
+        signal: new AbortController().signal, config: {} };
+      const result = await intent.run({ ...(parsed as object), dryRun: true, noHealthCheck: true }, context);
+      expect(result).toMatchObject({ exitCode: 0, result: { fitness, fitnessProvided: true } });
+      const command = registry.project('cli').entries[0]!.payload as CommandContribution;
+      expect(await command.run({ task: 'fixture', test: fitness, dryRun: true, noHealthCheck: true }, context))
+        .toMatchObject({ exitCode: 0, result: { fitness, fitnessProvided: true } });
+      expect(await command.run({ task: 'fixture', test: fitness, fitnessCmd: 'ignored compatibility value', dryRun: true, noHealthCheck: true }, context))
+        .toMatchObject({ exitCode: 0, result: { fitness, fitnessProvided: true } });
+    } finally { await registry.disposeOwner(owner.id); }
+  });
+
+  it.each(['false', 'true'])('executes the parsed fitness command in real worktrees: %s', async fitness => {
+    const root = mkdtempSync(join(tmpdir(), 'agon-forge-fitness-'));
+    const git = (...args: string[]) => {
+      const result = spawnSync('git', args, { cwd: root, encoding: 'utf8' });
+      expect(result.status, result.stderr).toBe(0);
+      return result.stdout;
+    };
+    const owner = { id: MANIFEST.id, version: MANIFEST.version, contentHash: `sha256:${'a'.repeat(64)}` as const };
+    const registry = new ModRegistry({ generation: 'forge-fitness-runtime', activeOwners: [owner] });
+    const contexts: string[] = [];
+    const cleanups: Array<{ rootPath: string; cleanupComplete: boolean }> = [];
+    try {
+      git('init', '--quiet');
+      writeFileSync(join(root, 'fixture.txt'), 'before\n');
+      git('add', 'fixture.txt');
+      git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', '-c', 'core.hooksPath=/dev/null', 'commit', '--quiet', '-m', 'fixture');
+      const session = registry.beginRegistration(MANIFEST);
+      const mod = await createMod({
+        engines: {
+          listActive: async () => ['fixture'],
+          dispatch: async (_engine: string, prompt: string, context: InvocationContext) => {
+            expect(prompt).toContain(`FITNESS COMMAND: ${fitness}\n`);
+            contexts.push(context.cwd);
+            expect(context.cwd).not.toBe(root);
+            writeFileSync(join(context.cwd, 'fixture.txt'), 'after\n');
+            return { exitCode: 0, stdout: 'fixture implementation', stderr: '' };
+          },
+        },
+        receipts: { record: async () => 'fixture-receipt' },
+        logger: { debug: async (_message: string, fields: { rootPath: string; cleanupComplete: boolean }) => { cleanups.push(fields); } },
+      } as unknown as ModServices);
+      await mod.activate(session.registrar);
+      session.commit();
+      const intent = registry.resolve('intent', 'intentVariants:0032')!.payload as IntentContribution;
+      const parsed = await intent.parse(`/forge change fixture test with ${fitness}`);
+      const result = await intent.run({ ...(parsed as object), noHealthCheck: true }, {
+        invocationId: 'forge-fitness-runtime', cwd: root, platform: 'darwin-arm64',
+        signal: new AbortController().signal, config: {},
+      });
+      const passes = fitness === 'true';
+      expect(result).toMatchObject({ exitCode: passes ? 0 : 1, result: {
+        fitness, fitnessProvided: true, winner: passes ? 'fixture' : null,
+        status: passes ? 'winner' : 'no_passing_candidate',
+        baseline: { command: fitness, exitCode: passes ? 0 : 1 },
+        candidates: [{ fitnessPassed: passes, pass: passes, filesChanged: 1 }],
+      } });
+      expect(contexts).toHaveLength(1);
+      expect(cleanups).toHaveLength(1);
+      expect(cleanups[0].cleanupComplete).toBe(true);
+      expect(existsSync(cleanups[0].rootPath)).toBe(false);
+      expect(readFileSync(join(root, 'fixture.txt'), 'utf8')).toBe('before\n');
+      expect(git('status', '--porcelain')).toBe('');
+      expect(git('worktree', 'list', '--porcelain').match(/^worktree /gm)).toHaveLength(1);
+    } finally {
+      await registry.disposeOwner(owner.id);
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('validates migration metadata without allowing unknown value-schema keywords', () => {
     const base = { type: 'object', properties: { enabled: { type: 'boolean', default: true } } };
     const resolve = (schema: object) => resolveRegisteredModSettings('example.settings', {}, [schema]);

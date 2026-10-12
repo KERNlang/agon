@@ -19,7 +19,8 @@ export interface BoundedPackageFile {
   readonly path: string; readonly bytes: number; readonly device: number; readonly inode: number;
 }
 
-/** Reject links in every currently resolved component. Used before and after opens to close path-swap races. */
+/** Reject links observed in path components. This is not atomic traversal;
+ * callers must also control concurrent writers and validate opened files. */
 export async function assertNoSymlinkComponents(root: string, relativePath: string): Promise<void> {
   const rootStat = await lstat(root);
   if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) throw new StaticDiscoveryError('folder mod root changed during inspection');

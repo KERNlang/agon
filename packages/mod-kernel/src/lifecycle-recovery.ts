@@ -341,13 +341,20 @@ export interface ManagedRetentionReport {
     /** Regular-file bytes per path, not allocated or reclaimable disk space. */
     readonly logicalBytes: number;
   }[];
+  /** Total for generation-referenced installations only. */
   readonly totalInstallationLogicalBytes: number;
+  /** No generation reference was found. This is not permission to remove data. */
+  readonly unreferencedInstallations: readonly {
+    readonly installationId: string;
+    readonly logicalBytes: number;
+  }[];
+  readonly totalUnreferencedInstallationLogicalBytes: number;
   readonly activeLeases: readonly GenerationLease[];
   readonly artifactLeases: readonly ArtifactGenerationLease[];
 }
 
-/** Count one retained prefix without following links or reading file contents. */
-async function retainedInstallationBytes(host: DurableModHost, installationId: string): Promise<number> {
+/** Count one installation prefix without following links or reading contents. */
+async function installationLogicalBytes(host: DurableModHost, installationId: string): Promise<number> {
   const prefix = join(host.root, 'installations', installationId);
   const pending = [prefix];
   let total = 0;
@@ -423,7 +430,7 @@ export class ManagedRetentionInspector {
       const installations: ManagedRetentionReport['installations'][number][] = [];
       let totalInstallationLogicalBytes = 0;
       for (const [installationId, reference] of [...references].sort(([a], [b]) => a.localeCompare(b))) {
-        const logicalBytes = await retainedInstallationBytes(host, installationId);
+        const logicalBytes = await installationLogicalBytes(host, installationId);
         totalInstallationLogicalBytes += logicalBytes;
         if (!Number.isSafeInteger(totalInstallationLogicalBytes)) {
           throw new DurableHostError('MOD_GENERATION_CORRUPT', 'retained installation total exceeds safe integer bounds');
@@ -431,8 +438,38 @@ export class ManagedRetentionInspector {
         installations.push(Object.freeze({ installationId, generations: reference.generations,
           hasCommittedGeneration: reference.committed, logicalBytes }));
       }
+      const unreferencedInstallations: ManagedRetentionReport['unreferencedInstallations'][number][] = [];
+      let totalUnreferencedInstallationLogicalBytes = 0;
+      try {
+        // Missing is normal on a new host. A failed scan is not an empty inventory.
+        const present = await assertNoSymlinkComponents(host.root, 'installations').then(() => true, error => {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
+          throw error;
+        });
+        if (present) {
+          const entries = await host.hostIo.readdir(join(host.root, 'installations'), { withFileTypes: true });
+          for (const entry of [...entries].sort((a, b) => a.name.localeCompare(b.name))) {
+            if (!/^[a-f0-9]{32}$/.test(entry.name) || !entry.isDirectory()) {
+              throw new TypeError('installation inventory contains an invalid prefix');
+            }
+            if (references.has(entry.name)) continue;
+            const logicalBytes = await installationLogicalBytes(host, entry.name);
+            totalUnreferencedInstallationLogicalBytes += logicalBytes;
+            if (!Number.isSafeInteger(totalUnreferencedInstallationLogicalBytes)) {
+              throw new TypeError('unreferenced installation total exceeds safe integer bounds');
+            }
+            unreferencedInstallations.push(Object.freeze({ installationId: entry.name, logicalBytes }));
+          }
+          await assertNoSymlinkComponents(host.root, 'installations');
+        }
+      } catch (error) {
+        throw new DurableHostError('MOD_GENERATION_CORRUPT', 'cannot inspect unreferenced installations', {
+          cause: error instanceof Error ? error.message : String(error),
+        });
+      }
       report = Object.freeze({ schemaVersion: 1, selectedGeneration: pointer?.generation ?? null,
         installations: Object.freeze(installations), totalInstallationLogicalBytes,
+        unreferencedInstallations: Object.freeze(unreferencedInstallations), totalUnreferencedInstallationLogicalBytes,
         activeLeases: await host.activeGenerationLeases(),
         artifactLeases: await host.activeArtifactGenerationLeases(),
       });

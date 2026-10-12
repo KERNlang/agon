@@ -519,8 +519,19 @@ values count regular-file bytes per path, including installation metadata, witho
 reading file contents. They are not allocated or reclaimable disk space; hard-linked
 paths count separately. Missing, unreadable, linked or special entries and unsafe
 integer totals fail the report. The existing writer fences cover the inspection.
-This does not count caches, staging directories, unreferenced installations or
-generation metadata, and does not authorize removal or implement quota policy.
+`unreferencedInstallations` separately lists prefixes with no generation reference,
+with `totalUnreferencedInstallationLogicalBytes` as their sum. The original
+`installations` and `totalInstallationLogicalBytes` fields remain retained-only.
+The inspector rejects malformed prefix names, links, non-directory prefixes and
+incomplete inventory reads. Both groups use the same size walker and writer fences.
+An unreferenced prefix is not necessarily qualified or safe to delete; pending
+lifecycle records or other retention policy can still matter. Reporting reads no
+payload contents and removes nothing. This does not count caches, staging
+directories or generation metadata, or implement quota policy.
+The size report assumes all concurrent writers obey the managed fences. Path
+checks reject observed links and read failures; they are not atomic traversal
+against an external actor swapping filesystem entries between checks. A byte
+report is not a destructive authorization or a filesystem sandbox.
 
 `artifactLeases` lists explicit reproducible-artifact references. Version-2 lease
 records bind one generation to an owner, opaque artifact ID and SHA-256 content

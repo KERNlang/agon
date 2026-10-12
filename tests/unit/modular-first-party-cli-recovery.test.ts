@@ -114,6 +114,9 @@ describe('first-party safe-mode CLI recovery', () => {
     expect(publisher.signal, publisher.stderr).toBe('SIGKILL');
     const artifactLease = JSON.parse(publisher.stdout);
     const before = await readFile(host.paths.current);
+    const unreferencedId = 'f'.repeat(32);
+    await mkdir(join(host.root, 'installations', unreferencedId));
+    await writeFile(join(host.root, 'installations', unreferencedId, 'payload'), 'unreferenced');
     const cli = fileURLToPath(new URL('../../packages/cli/dist/index.js', import.meta.url));
     const result = spawnSync(process.execPath, [cli, 'mod', 'retention'], {
       env: { ...process.env, HOME: root, AGON_HOME: root, AGON_MODULAR_HOST_ROOT: host.root, AGON_MOD_SAFE_MODE: '1' },
@@ -126,7 +129,10 @@ describe('first-party safe-mode CLI recovery', () => {
       + Buffer.byteLength(JSON.stringify({ name: '@test/app', version: '1.0.0' }));
     expect(JSON.parse(result.stdout)).toMatchObject({ selectedGeneration: installed.pointer.generation,
       installations: [{ installationId: installed.installation.installationId, generations: [installed.pointer.generation], logicalBytes }],
-      totalInstallationLogicalBytes: logicalBytes, activeLeases: [lease], artifactLeases: [artifactLease] });
+      totalInstallationLogicalBytes: logicalBytes, activeLeases: [lease], artifactLeases: [artifactLease],
+      unreferencedInstallations: [{ installationId: unreferencedId, logicalBytes: 12 }],
+      totalUnreferencedInstallationLogicalBytes: 12 });
+    expect(await readFile(join(host.root, 'installations', unreferencedId, 'payload'), 'utf8')).toBe('unreferenced');
     expect(await readFile(host.paths.current)).toEqual(before);
     expect(await host.activeGenerationLeases()).toEqual([lease]);
     expect(await host.activeArtifactGenerationLeases()).toEqual([artifactLease]);

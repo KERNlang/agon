@@ -11,12 +11,109 @@ import { artifact, installer, lifecycleLock, request, verifier } from '../helper
 import { hostLock } from '../helpers/modular-host.js';
 
 describe('managed purge generation retention', () => {
+  it('reports unreferenced prefixes separately without reading or deleting their contents', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-retention-unreferenced-'));
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
+    const installed = await new ManagedLifecycleService(host).apply(
+      await createManagedLifecyclePlan(host, request([artifact('@test/app')])), installer, verifier);
+    const before = await readFile(host.paths.current);
+    for (const [id, bytes] of [['f'.repeat(32), 'older'], ['0'.repeat(32), 'x']] as const) {
+      await mkdir(join(root, 'installations', id, 'nested'), { recursive: true });
+      await writeFile(join(root, 'installations', id, 'nested', 'payload'), bytes);
+    }
+    const reader = new DurableModHost(root, { kernelVersion: '1.0.0', io: { ...nodeHostIo,
+      readFile: async path => {
+        if (path.startsWith(join(root, 'installations') + '/')) throw new Error('must not read payloads');
+        return nodeHostIo.readFile(path);
+      },
+    } });
+    const report = await new ManagedRetentionInspector(reader).inspect();
+    expect(report.unreferencedInstallations).toEqual([
+      { installationId: '0'.repeat(32), logicalBytes: 1 },
+      { installationId: 'f'.repeat(32), logicalBytes: 5 },
+    ]);
+    expect(report.totalUnreferencedInstallationLogicalBytes).toBe(6);
+    expect(report.installations.map(item => item.installationId)).toEqual([installed.installation.installationId]);
+    expect(report.totalInstallationLogicalBytes).toBe(report.installations[0]!.logicalBytes);
+    expect(await readFile(host.paths.current)).toEqual(before);
+    expect(await readFile(join(root, 'installations', 'f'.repeat(32), 'nested', 'payload'), 'utf8')).toBe('older');
+  });
+
+  it.each(['invalid-id', 'linked-prefix', 'file-prefix', 'denied-inventory'] as const)
+    ('refuses an incomplete unreferenced inventory: %s', async failure => {
+      const root = await mkdtemp(join(tmpdir(), 'agon-retention-unreferenced-invalid-'));
+      const directory = join(root, 'installations');
+      await mkdir(directory);
+      const prefix = join(directory, failure === 'invalid-id' ? 'unexpected' : 'a'.repeat(32));
+      if (failure === 'linked-prefix') await symlink(root, prefix);
+      else if (failure === 'file-prefix') await writeFile(prefix, 'not a prefix');
+      else await mkdir(prefix);
+      const host = new DurableModHost(root, { kernelVersion: '1.0.0', io: { ...nodeHostIo,
+        readdir: async (path, options) => {
+          if (path === directory && failure === 'denied-inventory') throw Object.assign(new Error('denied'), { code: 'EACCES' });
+          return nodeHostIo.readdir(path, options);
+        },
+      } });
+      await expect(new ManagedRetentionInspector(host).inspect()).rejects.toMatchObject({ code: 'MOD_GENERATION_CORRUPT' });
+      await expect(stat(host.paths.writerLock)).rejects.toMatchObject({ code: 'ENOENT' });
+      await expect(stat(join(root, 'locks', 'lifecycle-writer.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+    });
+
   it('reports zero bytes for an empty host', async () => {
     const root = await mkdtemp(join(tmpdir(), 'agon-retention-empty-'));
     const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
     expect(await new ManagedRetentionInspector(host).inspect()).toEqual({
       schemaVersion: 1, selectedGeneration: null, installations: [], activeLeases: [], artifactLeases: [], totalInstallationLogicalBytes: 0,
+      unreferencedInstallations: [], totalUnreferencedInstallationLogicalBytes: 0,
     });
+  });
+
+  it.each(['inventory', 'prefix', 'payload'] as const)('refuses disappearance during an established inventory: %s', async failure => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-retention-disappearing-'));
+    const directory = join(root, 'installations');
+    const prefix = join(directory, 'a'.repeat(32));
+    const payload = join(prefix, 'payload');
+    await mkdir(prefix, { recursive: true });
+    await writeFile(payload, 'unchanged');
+    const missing = () => Object.assign(new Error('disappeared after enumeration'), { code: 'ENOENT' });
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0', io: { ...nodeHostIo,
+      readdir: async (path, options) => {
+        if (failure === 'inventory' && path === directory) throw missing();
+        return nodeHostIo.readdir(path, options);
+      },
+      stat: async path => {
+        if ((failure === 'prefix' && path === prefix) || (failure === 'payload' && path === payload)) throw missing();
+        return nodeHostIo.stat(path);
+      },
+    } });
+    await expect(new ManagedRetentionInspector(host).inspect()).rejects.toMatchObject({ code: 'MOD_GENERATION_CORRUPT' });
+    await expect(stat(host.paths.writerLock)).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(stat(join(root, 'locks', 'lifecycle-writer.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(await readFile(payload, 'utf8')).toBe('unchanged');
+  });
+
+  it.each([false, true])('refuses a linked installation root, including a dangling link: %s', async dangling => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-retention-linked-root-'));
+    await symlink(dangling ? join(root, 'absent') : root, join(root, 'installations'));
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
+    await expect(new ManagedRetentionInspector(host).inspect()).rejects.toMatchObject({ code: 'MOD_GENERATION_CORRUPT' });
+    await expect(stat(host.paths.writerLock)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('refuses overflow across individually measurable unreferenced prefixes', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-retention-unreferenced-overflow-'));
+    for (const id of ['a', 'b']) {
+      const prefix = join(root, 'installations', id.repeat(32));
+      await mkdir(prefix, { recursive: true });
+      await writeFile(join(prefix, 'payload'), 'x');
+    }
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0', io: { ...nodeHostIo,
+      stat: async path => path.endsWith('/payload')
+        ? { size: Number.MAX_SAFE_INTEGER, isFile: () => true, isDirectory: () => false }
+        : nodeHostIo.stat(path),
+    } });
+    await expect(new ManagedRetentionInspector(host).inspect()).rejects.toMatchObject({ code: 'MOD_GENERATION_CORRUPT',
+      details: { cause: 'unreferenced installation total exceeds safe integer bounds' } });
   });
 
   it.each([false, true])('sums distinct installations and rejects total overflow: %s', async overflow => {
@@ -122,6 +219,7 @@ describe('managed purge generation retention', () => {
     expect(report).toEqual({ schemaVersion: 1, selectedGeneration: second.pointer.generation,
       installations: [{ installationId: first.installation.installationId, generations: [1, 2], hasCommittedGeneration: true, logicalBytes }],
       totalInstallationLogicalBytes: logicalBytes,
+      unreferencedInstallations: [], totalUnreferencedInstallationLogicalBytes: 0,
       activeLeases: [active], artifactLeases: [] });
     expect(await readFile(host.paths.current)).toEqual(before);
     expect(await host.activeGenerationLeases()).toEqual([active]);

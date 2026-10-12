@@ -246,6 +246,20 @@ have additional approvals, but not a separate mutation mechanism.
    from this payload hash. Its resolution and package identities require separate
    verification; a passing payload hash alone does not qualify activation.
 
+   The launcher is separate from the toggleable package graph. Setup binds its
+   version, locator and full payload hash into the lifecycle plan and retained
+   installation record. The expected hash comes from the operator-trusted
+   bootstrap's packed file inventory, recorded in its bundled release channel.
+   The generator checks that inventory against the final packed launcher. Setup
+   snapshots those bootstrap files, including both channel copies, with bounded
+   reads and no symbolic-link aliases. It does not derive expected identity from
+   downloaded candidate files or embed a circular self-hash.
+   Candidate verification checks the complete launcher payload before execution,
+   after activation and after smoke; shortcut qualification checks it again.
+   Missing identity requires qualification, not grandfathered approval. Trust in
+   the initial bootstrap is assumed; these checks do not establish publisher
+   provenance or independently qualify nested npm dependencies.
+
 3. Run declarative data/config migrations against staged copies.
 4. Build a complete immutable candidate generation, including desired config,
    canonical lock, packages, static assets, and migration outputs.
@@ -445,6 +459,91 @@ Repository/private project config can narrow settings for an already-enabled mod
 but cannot request or change activation, installation, trust, or permissions.
 Unknown settings are retained. Opening a project never downloads or executes mod
 code.
+
+## Explicit transaction recovery
+
+`AGON_MOD_SAFE_MODE=1 agon mod recover transactions` replays existing transaction
+journals. It does not install packages or approve a new generation. Recovery
+holds the lifecycle writer fence, refuses live writers, reclaims a confirmed dead
+generation writer, then completes host journal recovery before installation
+cleanup. Installation cleanup rechecks selected and retained generations under
+the generation writer fence. A competing writer causes refusal, not forced unlock.
+
+Kernel-only safe mode keeps management commands reachable when a writer lock
+blocks host boot. It does not reclaim that lock during bootstrap or activate mods.
+In this case it reports no selected generation; explicit recovery must establish
+the durable state. Existing verified-generation selection remains the two-step
+`agon mod recover <generation>` preview and exact `--approve` flow. Transaction
+recovery rejects `--approve` rather than interpreting a generation approval.
+
+Recovery markers use unique `.reclaim.<pid>.<uuid>` paths. A partial marker write
+still identifies its process. Admission and recovery remove only uniquely named
+markers whose PID no longer exists. A live PID, unreadable inventory, or unknown
+marker blocks admission; age never proves that a writer is dead. Legacy shared
+`.reclaim` files require operator inspection and are not deleted automatically.
+Both synchronous and asynchronous writers inspect recovery markers after lock
+publication, then recheck ownership before returning. A recovering process
+removes only its own marker. A new process can resume after the reclaimer dies
+before or after removing the old writer lock. This protocol does not qualify
+mixed old/new candidate processes or hostile same-user filesystem mutation.
+Overlapping asynchronous releases share one operation. Synchronous release
+refuses while asynchronous release is in flight. A cleanup failure preserves
+the primary recovery failure as part of an aggregate error.
+
+Recovery receipts are retryable without repeating cleanup. Malformed receipts
+fail closed. This command recovers writer ownership, not purge authorization.
+New receipts are published atomically, so a partial write cannot publish a broken
+receipt. Retry syncs the terminal lifecycle journal and its directory before
+completing its receipt. Rollback syncs removal parents before its terminal marker.
+Verified generations that never declared `installation.json` remain recoverable;
+a missing declared artifact is corruption, not an unmanaged generation.
+Lease-aware retention and a production purge command remain unfinished.
+
+`agon mod retention` reports retained installation IDs, every generation that
+references each installation, and unreleased process leases. It acquires the
+lifecycle then generation writer fences to keep the report consistent. It does
+not delete data, expire leases, or authorize collection. A lease for a missing
+generation blocks reference inspection and purge. Corrupt leases and generation
+references fail closed. Released leases are omitted. This report does not yet
+include rollback-window leases, reproducible-artifact leases, cache sizes, or
+quota policy. All retained generation references still protect installations.
+`hasCommittedGeneration` means at least one listed generation has a committed
+transaction; it does not label every listed generation committed. The kernel
+inspection object retains failed lock releases and retries only its own fences
+on the next call. It refuses a replacement owner's lock. Scan and cleanup errors
+are preserved together; an incomplete cleanup is not reported as success.
+
+### Approved purge replay
+
+The kernel purge API issues version-2 plans. Each preview includes a fresh
+`transactionId`, selected generation, exact installation/data paths and a hash
+over those fields. Version-1 approval plans require a new preview. Reusing an
+approval does not authorize removing replacement data at a previously purged path.
+Targets must be distinct and non-overlapping after path normalization.
+
+Under lifecycle then host writer fences, apply atomically publishes
+`purge-transactions/<transactionId>.json`. Its strict version-1 record
+contains `schemaVersion`, the approved `planHash`, and one phase per target:
+`pending`, `staged`, `removed` or `absent`. Targets move first to
+`purge-staging/<transactionId>/<target-index>`. Both rename parents are synced
+before the staged phase is persisted. Only that quarantined target is removed.
+
+Before selecting any pending original path, apply checks the approved generation
+and retained installation references. Reference inspection validates generation
+files, the matching transaction identity and the installation bytes it reads.
+Missing declared records, linked generations and mismatched journals refuse
+deletion. Completed or already-quarantined targets do not select original paths
+again. An entirely quarantined transaction can finish after a generation change;
+a mixed transaction with pending original paths still requires its original
+generation and reference checks before any further removal.
+
+Retry with the original plan resumes staged removal and returns prior completed
+results without selecting the original paths again. A new preview is required
+to purge newly created data. Malformed journals refuse further effects. Journals
+and quarantine storage are protected from ordinary data-path purge. Removal is
+irreversible; quarantine is a recovery mechanism, not a backup. This API protocol
+does not establish CLI availability, a complete quota/reference report, or release
+acceptance.
 
 ## Registry invariants
 

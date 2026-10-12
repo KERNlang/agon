@@ -117,7 +117,15 @@ async function assertPersistedThirdPartyAuthority(
 }
 
 
+/** Expected launcher bytes, separate from the toggleable package graph. */
+export interface ManagedLauncherIdentity {
+  readonly version: string;
+  readonly sourceLocator: string;
+  readonly payloadHash: `sha256:${string}`;
+}
+
 export interface ManagedLifecycleRequest {
+  readonly launcher?: ManagedLauncherIdentity;
   readonly configSource?: MigrationSourceRevision;
   readonly operation: ManagedLifecycleOperation;
   readonly networkPolicy: ManagedNetworkPolicy;
@@ -150,6 +158,7 @@ export interface ManagedLifecyclePackagePlan {
 }
 
 export interface ManagedLifecyclePlan {
+  readonly launcher?: ManagedLauncherIdentity;
   readonly configSource?: MigrationSourceRevision;
   readonly schemaVersion: 1;
   readonly planId: string;
@@ -210,6 +219,7 @@ export interface ManagedLifecycleOptions {
 }
 
 export interface ManagedInstallationRecord {
+  readonly launcher?: ManagedLauncherIdentity;
   readonly schemaVersion: 1;
   readonly installationId: string;
   readonly planHash: `sha256:${string}`;
@@ -324,6 +334,14 @@ export async function createManagedLifecyclePlan(
   _now = new Date().toISOString(),
 ): Promise<ManagedLifecyclePlan> {
   if (!validSemver(request.kernelVersion) || !validSemver(request.apiVersion)) throw new TypeError('kernel and API versions must be valid semver');
+  const launcher = request.launcher === undefined ? undefined : { ...request.launcher };
+  if (launcher) {
+    if (Object.keys(launcher).sort().join(',') !== 'payloadHash,sourceLocator,version'
+      || launcher.version !== request.kernelVersion || !SHA256.test(launcher.payloadHash)) {
+      throw new TypeError('launcher identity is malformed or incompatible');
+    }
+    safeLocator(launcher.sourceLocator);
+  }
   if (request.lock.kernelVersion !== request.kernelVersion || request.lock.apiVersion !== request.apiVersion) {
     throw new DurableHostError('MOD_TRANSACTION_FAILED', 'candidate lock is incompatible with the requested kernel or API version');
   }
@@ -422,6 +440,7 @@ export async function createManagedLifecyclePlan(
     desiredState: request.desiredState,
     lock: request.lock,
     ...(configSource ? { configSource } : {}),
+    ...(launcher ? { launcher } : {}),
   });
   return freeze({ ...unsigned, planHash: planSubject(unsigned) });
 }
@@ -578,6 +597,7 @@ export class ManagedLifecycleService {
         kernelVersion: plan.kernelVersion,
         apiVersion: plan.apiVersion,
         packages: plan.packages,
+        ...(plan.launcher ? { launcher: plan.launcher } : {}),
         createdAt: startedAt,
         qualifiedAt,
         verification,
@@ -607,6 +627,7 @@ export class ManagedLifecycleService {
           installationId,
           installationPrefix: installation.prefix,
           packages: plan.packages,
+          ...(plan.launcher ? { launcher: plan.launcher } : {}),
           planHash: plan.planHash,
         },
         files: { ...configurationFiles, 'installation.json': `${canonicalJson(installation)}\n` },

@@ -23,10 +23,17 @@ The moved implementation is removed from the CLI, not copied alongside it.
 
 ## Compatibility seam and removal condition
 
+Current candidate update (2026-10-11): the two CLI re-exports below are removed.
+Consumer tracing found no production caller; the characterization test now
+imports the public Plan package directly. A negative regression rejects their
+return through CLI queries. Public Plan exports and policy behavior are unchanged.
+This retires A05-RESUME-POLICY only, not the global KL-011 entry. The sections
+below retain the original extraction's historical subject and evidence.
+
 Owner: `agon.plan` / existing A05/A11 Plan extraction under KL-011.
 Seam ID: **A05-RESUME-POLICY**.
 
-`packages/cli/src/signals/dispatch/plan-queries.ts` retains two re-exports so the
+At the original extraction, `packages/cli/src/signals/dispatch/plan-queries.ts` retained two re-exports so the
 existing `signals/dispatch.ts` barrel and its consumers do not break. The tests
 assert these are the exact package functions, not a second implementation.
 

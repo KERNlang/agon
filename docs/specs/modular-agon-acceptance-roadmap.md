@@ -1,7 +1,7 @@
 # Modular Agon acceptance roadmap
 
 **Status:** implementation in progress; release acceptance remains unproven
-**Date:** 2026-10-11 (status reconciled against `f11c6602`)
+**Date:** 2026-10-12 (source observations at `8b5def8c` plus uncommitted qualification work; historical diagnostics below retain their original subjects)
 
 The original plan was frozen on 2026-08-23. Raphael subsequently authorized
 implementation in an isolated worktree. This status update does not authorize
@@ -25,6 +25,7 @@ claims.
 | Physical extraction beyond API/kernel | partial: physical packages exist; remaining ownership and host adapters are not retired |
 | Runtime-generated CLI/TUI/MCP/Cesar/docs | partial: executable generated activation exists; complete legacy-owner retirement is not proven |
 | Installer/update/rollback/safe mode | implementation exists; fresh-install and release qualification remain incomplete |
+| Managed lifecycle recovery and purge | partial: explicit `mod recover transactions` calls kernel recovery; nine real SIGKILL boundaries pass through the built safe-mode CLI on local macOS arm64. The purge API now journals quarantine/removal and passes three real process-kill replay cases. Purge still has no production caller; lease-aware retention, full purge reporting and release qualification remain unfinished. This dirty-tree evidence is not clean release qualification |
 | Trust/grants/third-party folder mods | implementation exists; complete security/release acceptance remains unproven |
 | npm/npx release | candidate machinery exists; not a qualified or promoted release |
 | Native release/signing/publish evidence | externally blocked |
@@ -105,7 +106,10 @@ duplicate-edge, and dirty-index findings remain historical evidence in the
 supersession record; they are not the diagnostic observed at `f11c6602`.
 
 Adding `--run-clean` performs a clean dependency installation and qualification.
-It requires installation authority; the current remediation goal forbids installs.
+It requires installation authority. The current staged goal permits frozen
+lockfile installs only in disposable candidate prefixes with isolated homes and
+caches, with lifecycle scripts disabled. It does not authorize global installs,
+new dependencies, or promotion of the active installation.
 Neither a read-only diagnostic nor a previous subject's passing tests replaces
 that gate. `node scripts/spec/assess-modular-agon-slices.mjs` separately checks
 availability of each slice's commands and exact clean-HEAD receipt requirements.

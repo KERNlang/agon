@@ -2892,7 +2892,7 @@
       "id": "C07",
       "claim": "Installer, updater, rollback and safe mode are implemented.",
       "state": "partially-implemented",
-      "limitations": "Lifecycle and safe-mode code exists. This is not fresh-install, platform, rollback or current-subject release acceptance. The remediation goal does not authorize installations.",
+      "limitations": "Lifecycle and safe-mode code exists, including explicit transaction recovery and journaled purge API replay. This is not fresh-install, platform, rollback or current-subject release acceptance. The current goal permits frozen installs only in disposable isolated candidate prefixes; it forbids global installation or promotion. Lease-aware retention, production purge integration and full purge reporting remain unfinished.",
       "evidence": [
         "packages/mod-kernel/src/managed-lifecycle.ts",
         "packages/mod-kernel/src/lifecycle-recovery.ts",

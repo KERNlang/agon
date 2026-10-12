@@ -29,10 +29,6 @@ export function shouldApprovePendingCesarPlanInput(input: string, ctx: HandlerCo
   return shouldApproveSelection(input, snapshot(ctx));
 }
 
-// A05-RESUME-POLICY compatibility exports: the Plan package owns the only
-// implementation. Remove this seam when dispatch.ts callers use its public API.
-export { buildResumePromptContext, skipCompletedSteps } from '@kernlang/agon-mod-plan';
-
 /**
  * Ask a keyboard-choice question in the composer instead of falling back to a blank free-text field.
  */

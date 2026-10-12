@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, readdir, mkdir } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -6,8 +6,38 @@ import { DurableModHost } from '../../packages/mod-kernel/src/durable-host.js';
 import { rollbackGeneration } from '../../packages/mod-kernel/src/host-rollback.js';
 import { nodeHostIo } from '../../packages/mod-kernel/src/host-io.js';
 import { hostLock } from '../helpers/modular-host.js';
+import { makeTreeRemovable } from '../../packages/mod-kernel/src/removable-tree.js';
 
 describe('durable generation rollback', () => {
+  it('does not reuse a journaled generation after its directory is retired', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-generation-retired-'));
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
+    await host.commitGeneration({ operation: 'install', lock: hostLock('a'), desiredState: {}, installedIndex: {} });
+    const second = await host.commitGeneration({ operation: 'update', lock: hostLock('b'), desiredState: {}, installedIndex: {} });
+    await rollbackGeneration(host, 1);
+    const retiredJournal = await readFile(host.journalPath(second.journal.transactionId));
+    // Model future GC only inside this owned fixture. Keep durable evidence.
+    await makeTreeRemovable(nodeHostIo, host.generationPath(2));
+    await rm(host.generationPath(2), { recursive: true });
+    const next = await host.commitGeneration({ operation: 'update', lock: hostLock('c'), desiredState: {}, installedIndex: {} });
+    expect(next.pointer.generation).toBe(3);
+    expect(await readFile(host.journalPath(second.journal.transactionId))).toEqual(retiredJournal);
+    expect((await host.boot()).pointer?.generation).toBe(3);
+  });
+
+  it('refuses allocation when a retained journal cannot establish historical identity', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-generation-corrupt-history-'));
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
+    const first = await host.commitGeneration({ operation: 'install', lock: hostLock('a'), desiredState: {}, installedIndex: {} });
+    const pointer = await readFile(host.paths.current);
+    await writeFile(host.journalPath(first.journal.transactionId), '{broken');
+    await expect(host.commitGeneration({ operation: 'update', lock: hostLock('b'), desiredState: {}, installedIndex: {} }))
+      .rejects.toMatchObject({ code: 'MOD_GENERATION_CORRUPT' });
+    expect(await readFile(host.paths.current)).toEqual(pointer);
+    expect(await readdir(host.paths.generations)).toEqual(['0000000000000001']);
+    expect(await readFile(host.journalPath(first.journal.transactionId), 'utf8')).toBe('{broken');
+  });
+
   it.each(['9007199254740991', '9007199254740992'])('refuses generation exhaustion at %s without changing selection', async number => {
     const root = await mkdtemp(join(tmpdir(), 'agon-generation-limit-'));
     const host = new DurableModHost(root, { kernelVersion: '1.0.0' });

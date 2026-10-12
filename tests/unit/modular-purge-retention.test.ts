@@ -1,13 +1,250 @@
-import { mkdtemp } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, rename, stat, symlink, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { DurableModHost } from '../../packages/mod-kernel/src/durable-host.js';
-import { previewManagedPurge } from '../../packages/mod-kernel/src/lifecycle-recovery.js';
+import { applyManagedPurge, ManagedRetentionInspector, previewManagedPurge, referencedInstallations } from '../../packages/mod-kernel/src/lifecycle-recovery.js';
+import { WriterFence } from '../../packages/mod-kernel/src/writer-lock.js';
 import { ManagedLifecycleService, createManagedLifecyclePlan } from '../../packages/mod-kernel/src/managed-lifecycle.js';
+import { nodeHostIo } from '../../packages/mod-kernel/src/host-io.js';
 import { artifact, installer, lifecycleLock, request, verifier } from '../helpers/modular-lifecycle.js';
+import { hostLock } from '../helpers/modular-host.js';
 
 describe('managed purge generation retention', () => {
+  it('reports every shared generation and active lease without changing state', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-retention-report-'));
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
+    const first = await new ManagedLifecycleService(host).apply(await createManagedLifecyclePlan(host, request([artifact('@test/app')])), installer, verifier);
+    const installation = await readFile(join(host.generationPath(1), 'installation.json'), 'utf8');
+    const second = await host.commitGeneration({ operation: 'enable', lock: lifecycleLock([artifact('@test/app')]),
+      desiredState: {}, installedIndex: {}, files: { 'installation.json': installation } });
+    const active = await host.leaseGeneration(1, 'job:running');
+    const released = await host.leaseGeneration(2, 'job:finished');
+    await host.releaseGenerationLease(released.leaseId);
+    const before = await readFile(host.paths.current);
+    const report = await new ManagedRetentionInspector(host).inspect();
+    expect(report).toEqual({ schemaVersion: 1, selectedGeneration: second.pointer.generation,
+      installations: [{ installationId: first.installation.installationId, generations: [1, 2], hasCommittedGeneration: true }],
+      activeLeases: [active] });
+    expect(await readFile(host.paths.current)).toEqual(before);
+    expect(await host.activeGenerationLeases()).toEqual([active]);
+    expect(await readFile(join(host.generationPath(1), 'installation.json'), 'utf8')).toBe(installation);
+    await expect(stat(host.paths.writerLock)).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(stat(join(root, 'locks', 'lifecycle-writer.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('refuses a missing leased generation in reports and purge', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-retention-orphan-'));
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
+    await host.commitGeneration({ operation: 'install', lock: hostLock(), desiredState: {}, installedIndex: {} });
+    const lease = await host.leaseGeneration(1, 'job:running');
+    await host.commitGeneration({ operation: 'enable', lock: hostLock(), desiredState: {}, installedIndex: {} });
+    await chmod(host.generationPath(1), 0o700);
+    await rename(host.generationPath(1), join(root, 'moved-generation'));
+    const inspector = new ManagedRetentionInspector(host);
+    await expect(inspector.inspect()).rejects.toMatchObject({ code: 'MOD_GENERATION_CORRUPT', details: { leaseId: lease.leaseId, generation: 1 } });
+    await expect(previewManagedPurge(host)).rejects.toMatchObject({ code: 'MOD_GENERATION_CORRUPT' });
+    await expect(stat(host.paths.writerLock)).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(stat(join(root, 'locks', 'lifecycle-writer.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+    await host.releaseGenerationLease(lease.leaseId);
+    expect((await inspector.inspect()).activeLeases).toEqual([]);
+  });
+
+  it.each([false, true])('retries only its own failed lock cleanup; replacement owner: %s', async replaced => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-retention-cleanup-'));
+    const writerPath = join(root, 'locks', 'writer.json');
+    let fail = true;
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0', io: { ...nodeHostIo,
+      rm: async (path, options) => {
+        if (path === writerPath && fail) { fail = false; throw Object.assign(new Error('denied fixture cleanup'), { code: 'EACCES' }); }
+        await nodeHostIo.rm(path, options);
+      },
+    } });
+    const inspector = new ManagedRetentionInspector(host);
+    await expect(inspector.inspect()).rejects.toMatchObject({ code: 'EACCES' });
+    if (replaced) {
+      await unlink(writerPath);
+      const successor = await WriterFence.acquire(writerPath, 'replacement-owner');
+      const before = await readFile(writerPath);
+      try {
+        const error = await inspector.inspect().catch(error => error);
+        expect(error).toBeInstanceOf(AggregateError);
+        expect(error.errors).toEqual([expect.objectContaining({ code: 'MOD_FENCE_LOST' })]);
+        expect(await readFile(writerPath)).toEqual(before);
+      } finally { await successor.release(); }
+      return;
+    }
+    await expect(inspector.inspect()).resolves.toMatchObject({ selectedGeneration: null, installations: [], activeLeases: [] });
+    await expect(stat(writerPath)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it.each(['writer.json', 'lifecycle-writer.json'])('refuses concurrent %s without reclaiming it', async name => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-retention-busy-'));
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
+    await host.initialize();
+    const path = join(root, 'locks', name);
+    const writer = await WriterFence.acquire(path, 'competing-writer');
+    const before = await readFile(path);
+    try {
+      await expect(new ManagedRetentionInspector(host).inspect()).rejects.toMatchObject({ code: 'MOD_HOST_BUSY' });
+      expect(await readFile(path)).toEqual(before);
+    } finally { await writer.release(); }
+    await expect(stat(join(root, 'locks', 'lifecycle-writer.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it.each([false, true])('preserves mixed-state representative selection with reversed inventory %s', async reverse => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-retention-order-'));
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
+    const first = await new ManagedLifecycleService(host).apply(await createManagedLifecyclePlan(host, request([artifact('@test/app')])), installer, verifier);
+    const second = await host.commitGeneration({ operation: 'enable', lock: lifecycleLock([artifact('@test/app')]),
+      desiredState: {}, installedIndex: {}, files: { 'installation.json': await readFile(join(host.generationPath(1), 'installation.json'), 'utf8') } });
+    const journalPath = host.journalPath(second.pointer.transactionId);
+    const journal = JSON.parse(await readFile(journalPath, 'utf8'));
+    await writeFile(journalPath, JSON.stringify({ ...journal, state: 'verified' }));
+    const reader = new DurableModHost(root, { kernelVersion: '1.0.0', io: { ...nodeHostIo,
+      readdir: async (path, options) => {
+        const entries = await nodeHostIo.readdir(path, options);
+        return reverse ? [...entries].reverse() : entries;
+      },
+    } });
+    expect((await referencedInstallations(reader)).get(first.installation.installationId))
+      .toEqual({ generation: 1, committed: true, generations: [1, 2] });
+    expect((await new ManagedRetentionInspector(reader).inspect()).installations)
+      .toEqual([{ installationId: first.installation.installationId, hasCommittedGeneration: true, generations: [1, 2] }]);
+  });
+
+  it.each(['ENOENT', 'EACCES'])('fails closed for an unreadable enumerated lease: %s', async code => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-retention-unreadable-'));
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
+    expect(await host.activeGenerationLeases()).toEqual([]);
+    await host.commitGeneration({ operation: 'install', lock: hostLock(), desiredState: {}, installedIndex: {} });
+    const lease = await host.leaseGeneration(1, 'job:live');
+    const reader = new DurableModHost(root, { kernelVersion: '1.0.0', io: { ...nodeHostIo,
+      readFile: async path => {
+        if (path === join(host.paths.leases, `${lease.leaseId}.json`)) throw Object.assign(new Error('unreadable fixture'), { code });
+        return nodeHostIo.readFile(path);
+      },
+    } });
+    await expect(new ManagedRetentionInspector(reader).inspect()).rejects.toMatchObject({ code: 'MOD_GENERATION_CORRUPT' });
+    await expect(stat(host.paths.writerLock)).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(stat(join(root, 'locks', 'lifecycle-writer.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('does not expire an unreleased lease by its timestamp', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-retention-old-'));
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0', now: () => new Date('2000-01-01T00:00:00Z') });
+    await host.commitGeneration({ operation: 'install', lock: hostLock(), desiredState: {}, installedIndex: {} });
+    const lease = await host.leaseGeneration(1, 'job:old');
+    expect((await new ManagedRetentionInspector(host).inspect()).activeLeases).toEqual([lease]);
+  });
+
+  it('preserves scan and cleanup errors, attempts both releases, and permits retry', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-retention-errors-'));
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
+    await host.commitGeneration({ operation: 'install', lock: hostLock(), desiredState: {}, installedIndex: {} });
+    const releases: string[] = [];
+    let failRead = true;
+    let failRelease = true;
+    const reader = new DurableModHost(root, { kernelVersion: '1.0.0', io: { ...nodeHostIo,
+      readFile: async path => {
+        if (path === host.paths.current && failRead) { failRead = false; throw new Error('fixture pointer read failed'); }
+        return nodeHostIo.readFile(path);
+      },
+      rm: async (path, options) => {
+        releases.push(path);
+        if (path === host.paths.writerLock && failRelease) { failRelease = false; throw new Error('fixture cleanup failed'); }
+        await nodeHostIo.rm(path, options);
+      },
+    } });
+    const inspector = new ManagedRetentionInspector(reader);
+    const error = await inspector.inspect().catch(error => error);
+    expect(error).toBeInstanceOf(AggregateError);
+    expect(error.errors).toHaveLength(2);
+    expect(error.errors[0]).toMatchObject({ code: 'MOD_POINTER_CORRUPT' });
+    expect(error.errors[1].message).toBe('fixture cleanup failed');
+    expect(releases).toEqual([host.paths.writerLock, join(root, 'locks', 'lifecycle-writer.json')]);
+    expect((await inspector.inspect()).selectedGeneration).toBe(1);
+  });
+
+  it.each(['missing-installation', 'linked-generation', 'wrong-journal-generation', 'wrong-journal-id', 'wrong-journal-lock'] as const)
+    ('refuses purge when a retained reference is unreadable: %s', async corruption => {
+      const root = await mkdtemp(join(tmpdir(), 'agon-purge-corrupt-reference-'));
+      const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
+      const service = new ManagedLifecycleService(host);
+      const v1 = artifact('@test/app');
+      const first = await service.apply(await createManagedLifecyclePlan(host, request([v1])), installer, verifier);
+      const v2 = artifact('@test/app', [], {
+        version: '2.0.0', sourceLocator: 'cache:@test/app@2.0.0',
+        contentHash: `sha256:${'2'.repeat(64)}`, manifestHash: `sha256:${'3'.repeat(64)}`,
+      });
+      await service.apply(await createManagedLifecyclePlan(host, request([v2], {
+        operation: 'update', lock: lifecycleLock([v2], '9'),
+      })), installer, verifier);
+      const target = join(root, 'old-data');
+      await mkdir(target);
+      await writeFile(join(target, 'keep'), 'unchanged');
+      const approved = await previewManagedPurge(host, { dataPaths: [target] });
+      const generationRoot = host.generationPath(first.pointer.generation);
+      if (corruption === 'missing-installation') {
+        await chmod(generationRoot, 0o700);
+        await unlink(join(generationRoot, 'installation.json'));
+      } else if (corruption === 'linked-generation') {
+        const moved = join(root, 'retained-generation');
+        await chmod(generationRoot, 0o700);
+        await rename(generationRoot, moved);
+        await symlink(moved, generationRoot);
+      } else {
+        const path = host.journalPath(first.pointer.transactionId);
+        const journal = JSON.parse(await readFile(path, 'utf8'));
+        const changed = corruption === 'wrong-journal-generation' ? { ...journal, candidateGeneration: first.pointer.generation + 10 }
+          : corruption === 'wrong-journal-id' ? { ...journal, transactionId: '11111111-1111-4111-8111-111111111111' }
+          : { ...journal, candidateLockHash: `sha256:${'0'.repeat(64)}` };
+        await writeFile(path, JSON.stringify(changed));
+      }
+      await expect(applyManagedPurge(host, approved, approved.planHash))
+        .rejects.toMatchObject({ code: 'MOD_GENERATION_CORRUPT' });
+      await expect(previewManagedPurge(host, { installationIds: [first.installation.installationId] }))
+        .rejects.toMatchObject({ code: 'MOD_GENERATION_CORRUPT' });
+      expect(await readFile(join(target, 'keep'), 'utf8')).toBe('unchanged');
+      expect((await stat(join(root, 'installations', first.installation.installationId))).isDirectory()).toBe(true);
+    });
+
+  it('permits purge with a valid generation that never declared an installation', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-purge-no-installation-'));
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
+    const selected = await host.commitGeneration({ operation: 'install', lock: hostLock(), desiredState: {}, installedIndex: {} });
+    const target = join(root, 'old-data');
+    await mkdir(target);
+    const plan = await previewManagedPurge(host, { dataPaths: [target] });
+    expect(await applyManagedPurge(host, plan, plan.planHash)).toEqual([target]);
+    await expect(stat(target)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(await host.readCurrentPointer()).toEqual(selected.pointer);
+    expect((await host.boot()).mode).toBe('normal');
+  });
+
+  it('rejects installation bytes that change after generation validation', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-purge-reference-read-'));
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
+    const service = new ManagedLifecycleService(host);
+    const installed = await service.apply(await createManagedLifecyclePlan(host, request([artifact('@test/app')])), installer, verifier);
+    const path = join(host.generationPath(installed.pointer.generation), 'installation.json');
+    const original = await readFile(path);
+    let reads = 0;
+    const observing = new DurableModHost(root, { kernelVersion: '1.0.0', io: { ...nodeHostIo,
+      readFile: async candidate => {
+        if (candidate === path && ++reads === 2) {
+          return Buffer.from(JSON.stringify({ ...JSON.parse(original.toString()), installationId: 'f'.repeat(32) }));
+        }
+        return nodeHostIo.readFile(candidate);
+      },
+    } });
+    await expect(referencedInstallations(observing)).rejects.toMatchObject({
+      code: 'MOD_GENERATION_CORRUPT', details: { cause: 'retained installation changed after generation validation' },
+    });
+    expect(reads).toBe(2);
+    expect(await readFile(path)).toEqual(original);
+  });
+
   it('cannot purge a non-selected installation while any retained generation references it', async () => {
     const root = await mkdtemp(join(tmpdir(), 'agon-purge-retained-'));
     const host = new DurableModHost(root, { kernelVersion: '1.0.0' });

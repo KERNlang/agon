@@ -60,7 +60,7 @@ export { absorbReviewResultIntoCesar, continueCesarAfterResult, runDelegatedJobT
 
 export { slashCommandForOrchestrationAction, announceCesarAutoOrchestration, withThreadOutcome, buildDelegatedContinuationPrompt, buildBrainstormContinuationMessage, collectRecentEngineContext, shouldAutoContinueDelegatedResult, extractExecutionSpec, ORCHESTRATION_ACTIONS } from './dispatch/delegation.js';
 
-export { isCesarPlanApprovalInput, isStrongCesarPlanApprovalInput, findPendingCesarPlan, findResumableCesarPlan, shouldApprovePendingCesarPlanInput, isCesarPlanResumeInput, isCesarPlanStatusInput, formatCesarPlanRuntimeStatus, buildResumePromptContext, skipCompletedSteps, askChoiceQuestion } from './dispatch/plan-queries.js';
+export { isCesarPlanApprovalInput, isStrongCesarPlanApprovalInput, findPendingCesarPlan, findResumableCesarPlan, shouldApprovePendingCesarPlanInput, isCesarPlanResumeInput, isCesarPlanStatusInput, formatCesarPlanRuntimeStatus, askChoiceQuestion } from './dispatch/plan-queries.js';
 
 export { resumeCesarPlan, approvePendingCesarPlan, cancelPendingCesarPlan, handleProposedCesarPlan, buildPlanCallbacks, failedPlanStepIsFallbackRetryable, preparePlanFallbackRetry, executeApprovedPlan, finalizePlanWithReviewGate } from './dispatch/plan-execution.js';
 

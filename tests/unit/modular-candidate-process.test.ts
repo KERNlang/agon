@@ -1,6 +1,6 @@
 import { constants } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { cp, lstat, mkdir, mkdtemp, open, readFile, rm, stat, symlink, unlink, writeFile } from 'node:fs/promises';
+import { cp, lstat, mkdir, mkdtemp, open, readFile, readdir, rm, stat, symlink, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -143,6 +143,64 @@ describe('candidate process boundary', () => {
     expect((await walkBoundedPackage(root)).map(file => file.path)).toContain('node_modules/dependency/index.js');
     await symlink(join(root, 'package.json'), join(root, 'alias.json'));
     await expect(hashInstalledPackagePayload(root)).rejects.toThrow('symbolic links');
+  });
+
+  it.each(['dist/node_modules/@kernlang/agon-kernel', 'lib/internal/node_modules/@kernlang/agon-mod-api',
+    'dist/node_modules/@KERNlang/agon-kernel'])('rejects a package-owned singleton copy at %s', async path => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-payload-singleton-'));
+    await writeFile(join(root, 'package.json'), '{}');
+    await mkdir(join(root, path), { recursive: true });
+    await writeFile(join(root, path, 'package.json'), '{"version":"1.0.0"}');
+    await expect(hashInstalledPackagePayload(root)).rejects.toThrow('duplicate singleton');
+  });
+
+  it('retains ordinary package-owned nested library bytes in payload identity', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-payload-owned-library-'));
+    const directory = join(root, 'dist/node_modules/library');
+    await mkdir(directory, { recursive: true });
+    await writeFile(join(directory, 'index.js'), 'export const value = 1;');
+    const before = await hashInstalledPackagePayload(root);
+    await writeFile(join(directory, 'index.js'), 'export const value = 2;');
+    expect(await hashInstalledPackagePayload(root)).not.toBe(before);
+  });
+
+  it('hashes large installed npm payloads while retaining folder-mod limits', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-npm-payload-count-'));
+    try {
+      for (let index = 0; index < 4079; index += 32) {
+        const writes = await Promise.allSettled(Array.from({ length: Math.min(32, 4079 - index) },
+          (_, offset) => writeFile(join(root, `file-${index + offset}.js`), 'export {};')));
+        for (const write of writes) if (write.status === 'rejected') throw write.reason;
+      }
+      expect(await readdir(root)).toHaveLength(4079);
+      await expect(walkBoundedPackage(root)).rejects.toThrow('file-count limit');
+      const before = await hashInstalledPackagePayload(root);
+      await writeFile(join(root, 'file-0.js'), 'export default 1;');
+      expect(await hashInstalledPackagePayload(root)).not.toBe(before);
+      await writeFile(join(root, 'file-0.js'), 'export {};');
+      expect(await hashInstalledPackagePayload(root)).toBe(before);
+      await writeFile(join(root, 'added.js'), 'export {};');
+      expect(await hashInstalledPackagePayload(root)).not.toBe(before);
+      await symlink(join(root, 'file-0.js'), join(root, 'linked.js'));
+      await expect(hashInstalledPackagePayload(root)).rejects.toThrow('symbolic links');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('retains a finite installed npm payload file bound', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-npm-payload-overflow-'));
+    try {
+      for (let index = 0; index < 8193; index += 32) {
+        const writes = await Promise.allSettled(Array.from({ length: Math.min(32, 8193 - index) },
+          (_, offset) => writeFile(join(root, `file-${index + offset}.js`), '')));
+        for (const write of writes) if (write.status === 'rejected') throw write.reason;
+      }
+      expect(await readdir(root)).toHaveLength(8193);
+      await expect(hashInstalledPackagePayload(root)).rejects.toThrow('file-count limit');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it('bounds descendants that retain output pipes after the direct child exits', async () => {

@@ -1,10 +1,11 @@
-import { mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { WriterFence, withSynchronousWriterFence } from '../../packages/mod-kernel/src/writer-lock.js';
-import { fsyncSync, writeFileSync } from 'node:fs';
+import { fsyncSync, readFileSync, writeFileSync } from 'node:fs';
 import { nodeHostIo } from '../../packages/mod-kernel/src/host-io.js';
+import { randomUUID } from 'node:crypto';
 
 vi.mock('node:fs', async importOriginal => {
   const actual = await importOriginal<typeof import('node:fs')>();
@@ -12,6 +13,258 @@ vi.mock('node:fs', async importOriginal => {
 });
 
 describe('writer liveness fails closed', () => {
+  it.each(['relative', 'redundant'] as const)('recovers a stale writer with a %s path', async kind => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-reclaim-path-'));
+    const path = kind === 'relative' ? `./${relative(process.cwd(), root)}/writer.json` : `${root}/./writer.json`;
+    await WriterFence.acquire(path, 'old', { pid: 999999 });
+    const recovered = await WriterFence.recoverStale(path, 'next', { isProcessAlive: async () => false });
+    await recovered.assertOwned();
+    await recovered.release();
+    expect(await readdir(root)).toEqual([]);
+  });
+
+  it('retains the primary refusal when recovery cleanup also fails', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-reclaim-error-chain-'));
+    const path = join(root, 'writer.json');
+    const owner = await WriterFence.acquire(path, 'live');
+    const before = await readFile(path, 'utf8');
+    const failure = Object.assign(new Error('fixture fsync failed'), { code: 'EIO' });
+    const io = { ...nodeHostIo, async syncDirectory() { throw failure; } };
+    try {
+      const result = await WriterFence.recoverStale(path, 'next', { io }).catch(error => error);
+      expect(result).toBeInstanceOf(AggregateError);
+      expect(result.errors[0]).toMatchObject({ code: 'MOD_HOST_BUSY' });
+      expect(result.errors[1]).toBe(failure);
+      expect(await readFile(path, 'utf8')).toBe(before);
+      expect(await readdir(root)).toEqual(['writer.json']);
+    } finally { await owner.release(); }
+  });
+
+  it('shares overlapping releases instead of deleting a successor', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-release-overlap-'));
+    const path = join(root, 'writer.json');
+    let successor: WriterFence | undefined;
+    let successorReady!: () => void;
+    const ready = new Promise<void>(resolve => { successorReady = resolve; });
+    let removals = 0;
+    const io = { ...nodeHostIo,
+      async readFile(target: string) { return readFileSync(target); },
+      async rm(...args: Parameters<typeof nodeHostIo.rm>) {
+        if (++removals === 1) {
+          await nodeHostIo.rm(...args);
+          successor = await WriterFence.acquire(path, 'successor');
+          successorReady();
+        } else {
+          await ready;
+          await nodeHostIo.rm(...args);
+        }
+      },
+    };
+    const owner = await WriterFence.acquire(path, 'old', { io });
+    try {
+      await Promise.all([owner.release(), owner.release()]);
+      expect(successor).toBeDefined();
+      await successor!.assertOwned();
+      expect(removals).toBe(1);
+    } finally { await successor?.release().catch(() => undefined); }
+  });
+
+  it('refuses synchronous release while asynchronous removal is in flight', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-release-mixed-'));
+    const path = join(root, 'writer.json');
+    let entered!: () => void;
+    let resume!: () => void;
+    const removing = new Promise<void>(resolve => { entered = resolve; });
+    const hold = new Promise<void>(resolve => { resume = resolve; });
+    const io = { ...nodeHostIo, async rm(...args: Parameters<typeof nodeHostIo.rm>) {
+      entered();
+      await hold;
+      await nodeHostIo.rm(...args);
+    } };
+    const owner = await WriterFence.acquire(path, 'owner', { io });
+    const pending = owner.release();
+    await removing;
+    try {
+      expect(() => owner.releaseSync()).toThrow(expect.objectContaining({ code: 'MOD_HOST_BUSY' }));
+      await owner.assertOwned();
+    } finally {
+      resume();
+      await pending;
+    }
+  });
+
+  it('removes its own partial recovery marker when publication fails', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-reclaim-partial-'));
+    const path = join(root, 'writer.json');
+    const owner = await WriterFence.acquire(path, 'old', { pid: 999999 });
+    const before = await readFile(path, 'utf8');
+    const failure = Object.assign(new Error('fixture disk full'), { code: 'ENOSPC' });
+    const io = { ...nodeHostIo, async writeFile(target: string, data: string | Uint8Array, options?: { flag?: string; mode?: number }) {
+      if (target.startsWith(`${path}.reclaim`)) {
+        await nodeHostIo.writeFile(target, '{partial', options);
+        throw failure;
+      }
+      await nodeHostIo.writeFile(target, data, options);
+    } };
+    await expect(WriterFence.recoverStale(path, 'next', { io })).rejects.toBe(failure);
+    expect(await readdir(root)).toEqual(['writer.json']);
+    expect(await readFile(path, 'utf8')).toBe(before);
+    await owner.release();
+  });
+
+  it.each(['async', 'sync'] as const)('refuses %s admission under a live or unknown recovery marker', async mode => {
+    for (const suffix of ['', `.${process.pid}.${randomUUID()}`, '.malformed']) {
+      const root = await mkdtemp(join(tmpdir(), 'agon-live-reclaim-'));
+      const path = join(root, 'writer.json');
+      const marker = `${path}.reclaim${suffix}`;
+      await writeFile(marker, '');
+      await expect(Promise.resolve().then(() => mode === 'async'
+        ? WriterFence.acquire(path, 'next') : WriterFence.acquireSync(path, 'next'))).rejects.toMatchObject({ code: 'MOD_HOST_BUSY' });
+      expect(await readFile(marker, 'utf8')).toBe('');
+      await expect(stat(path)).rejects.toMatchObject({ code: 'ENOENT' });
+    }
+  });
+
+  it.each(['async', 'sync'] as const)('removes only dead unique markers on %s admission', async mode => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-dead-reclaim-'));
+    const path = join(root, 'writer.json');
+    const marker = `${path}.reclaim.999999.${randomUUID()}`;
+    await writeFile(marker, '{partial');
+    const fence = mode === 'async' ? await WriterFence.acquire(path, 'next') : WriterFence.acquireSync(path, 'next');
+    try {
+      await expect(stat(marker)).rejects.toMatchObject({ code: 'ENOENT' });
+      await fence.assertOwned();
+    } finally { await fence.release(); }
+  });
+
+  it('backs out when recovery starts after its lock write but before admission', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-reclaim-admission-race-'));
+    const path = join(root, 'writer.json');
+    const marker = `${path}.reclaim.${process.pid}.${randomUUID()}`;
+    const io = { ...nodeHostIo, async syncFile(target: string) {
+      await nodeHostIo.syncFile(target);
+      if (target === path) await writeFile(marker, '');
+    } };
+    await expect(WriterFence.acquire(path, 'next', { io })).rejects.toMatchObject({ code: 'MOD_HOST_BUSY' });
+    await expect(stat(path)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(await readdir(root)).toEqual([marker.slice(root.length + 1)]);
+  });
+
+  it('fails closed when the recovery marker inventory cannot be read', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-reclaim-inventory-'));
+    const path = join(root, 'writer.json');
+    const failure = Object.assign(new Error('fixture permission denied'), { code: 'EACCES' });
+    const io = { ...nodeHostIo, async readdir() { throw failure; } };
+    await expect(WriterFence.acquire(path, 'next', { io })).rejects.toBe(failure);
+    await expect(stat(path)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('rechecks ownership after the last recovery marker disappears', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-reclaim-admission-identity-'));
+    const path = join(root, 'writer.json');
+    let replacement = '';
+    const io = { ...nodeHostIo, async readdir() {
+      replacement = JSON.stringify({ ...JSON.parse(await readFile(path, 'utf8')), fenceToken: randomUUID() });
+      await writeFile(path, replacement);
+      return [];
+    } };
+    await expect(WriterFence.acquire(path, 'next', { io })).rejects.toBeInstanceOf(AggregateError);
+    expect(await readFile(path, 'utf8')).toBe(replacement);
+  });
+
+  it('refuses stale recovery while a live unique reclaimer exists', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-reclaim-contention-'));
+    const path = join(root, 'writer.json');
+    const owner = await WriterFence.acquire(path, 'old', { pid: 999999 });
+    const before = await readFile(path, 'utf8');
+    const marker = `${path}.reclaim.${process.pid}.${randomUUID()}`;
+    await writeFile(marker, '');
+    const isProcessAlive = vi.fn(async () => false);
+    await expect(WriterFence.recoverStale(path, 'next', { isProcessAlive })).rejects.toMatchObject({ code: 'MOD_HOST_BUSY' });
+    expect(isProcessAlive).not.toHaveBeenCalled();
+    expect(await readFile(path, 'utf8')).toBe(before);
+    expect(await readdir(root)).toHaveLength(2);
+    await owner.release();
+  });
+
+  it.each(['async', 'sync', 'recovery'].flatMap(mode => [
+    { name: 'empty owner', ownerId: '', options: {} },
+    { name: 'empty process identity', ownerId: 'next', options: { processIdentity: '' } },
+    { name: 'zero PID', ownerId: 'next', options: { pid: 0 } },
+    { name: 'negative PID', ownerId: 'next', options: { pid: -1 } },
+    { name: 'fractional PID', ownerId: 'next', options: { pid: 1.5 } },
+  ].map(value => ({ mode, ...value }))))('refuses $mode acquisition with $name before changing a lock', async ({ mode, ownerId, options }) => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-writer-invalid-identity-'));
+    const path = join(root, 'writer.json');
+    const prior = mode === 'recovery' ? await WriterFence.acquire(path, 'original', { pid: 999_999 }) : undefined;
+    const before = prior ? await readFile(path, 'utf8') : undefined;
+    const isProcessAlive = vi.fn(async () => false);
+    await expect(Promise.resolve().then(() => mode === 'async' ? WriterFence.acquire(path, ownerId, options)
+      : mode === 'sync' ? WriterFence.acquireSync(path, ownerId, options)
+      : WriterFence.recoverStale(path, ownerId, { ...options, isProcessAlive }))).rejects.toBeInstanceOf(TypeError);
+    expect(isProcessAlive).not.toHaveBeenCalled();
+    if (prior) {
+      expect(await readFile(path, 'utf8')).toBe(before);
+      await prior.release();
+    } else await expect(stat(path)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect((await readdir(root)).filter(name => name.startsWith('writer.json.reclaim'))).toEqual([]);
+  });
+
+  it.each(['{broken', 'null', '[]', '{}', '{"pid":999999}'])('preserves malformed recovery lock %s without probing its PID', async bytes => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-recovery-lock-shape-'));
+    const path = join(root, 'writer.json');
+    await writeFile(path, bytes);
+    const isProcessAlive = vi.fn(async () => false);
+    await expect(WriterFence.recoverStale(path, 'recovery', { isProcessAlive })).rejects.toMatchObject({ code: 'MOD_HOST_BUSY' });
+    expect(isProcessAlive).not.toHaveBeenCalled();
+    expect(await readFile(path, 'utf8')).toBe(bytes);
+    expect((await readdir(root)).filter(name => name.startsWith('writer.json.reclaim'))).toEqual([]);
+  });
+
+  it('preserves the lock if the second liveness observation is alive', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-recovery-lock-reprobe-'));
+    const path = join(root, 'writer.json');
+    const owner = await WriterFence.acquire(path, 'owner');
+    const bytes = await readFile(path, 'utf8');
+    const isProcessAlive = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    await expect(WriterFence.recoverStale(path, 'recovery', { isProcessAlive })).rejects.toMatchObject({ code: 'MOD_HOST_BUSY' });
+    expect(isProcessAlive).toHaveBeenCalledTimes(2);
+    expect(await readFile(path, 'utf8')).toBe(bytes);
+    await owner.release();
+  });
+
+  it.each([
+    ['schemaVersion', 2], ['pid', 0], ['pid', -1], ['pid', 1.5], ['pid', '999999'],
+    ['ownerId', ''], ['processIdentity', null], ['fenceToken', false],
+    ['createdAt', 'invalid'], ['heartbeatAt', 42], ['unknown', true],
+  ])('refuses invalid recovery field %s=%s before liveness checks', async (field, value) => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-recovery-lock-field-'));
+    const path = join(root, 'writer.json');
+    const owner = await WriterFence.acquire(path, 'owner');
+    const bytes = JSON.stringify({ ...owner.record, [field as string]: value });
+    await writeFile(path, bytes);
+    const isProcessAlive = vi.fn(async () => false);
+    await expect(WriterFence.recoverStale(path, 'recovery', { isProcessAlive })).rejects.toMatchObject({ code: 'MOD_HOST_BUSY' });
+    expect(isProcessAlive).not.toHaveBeenCalled();
+    expect(await readFile(path, 'utf8')).toBe(bytes);
+    expect((await readdir(root)).filter(name => name.startsWith('writer.json.reclaim'))).toEqual([]);
+  });
+
+  it.each([1, 2])('preserves a replacement record written during liveness probe %s', async replacedAt => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-recovery-lock-replaced-'));
+    const path = join(root, 'writer.json');
+    const owner = await WriterFence.acquire(path, 'owner');
+    const replacement = JSON.stringify({ ...owner.record, fenceToken: randomUUID() });
+    let calls = 0;
+    const isProcessAlive = async () => {
+      if (++calls === replacedAt) await writeFile(path, replacement);
+      return false;
+    };
+    await expect(WriterFence.recoverStale(path, 'recovery', { isProcessAlive })).rejects.toMatchObject({ code: 'MOD_HOST_BUSY' });
+    expect(calls).toBe(replacedAt);
+    expect(await readFile(path, 'utf8')).toBe(replacement);
+  });
+
   it('retries synchronous release durability without removing a successor lock', async () => {
     const root = await mkdtemp(join(tmpdir(), 'agon-writer-release-sync-retry-'));
     const path = join(root, 'writer.json');

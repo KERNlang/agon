@@ -5,6 +5,7 @@ import { spawnSync } from 'node:child_process';
 import { verifyPackedMcp } from './verify-packed-mcp.mjs';
 import { verifyPackedBrainstorm } from './verify-packed-brainstorm.mjs';
 import { verifyPackedBrainstormTui } from './verify-packed-brainstorm-tui.mjs';
+import { createFrozenNpmInstall, DurableModHost, ManagedLifecycleService, hashInstalledPackagePayload } from '../../packages/mod-kernel/dist/index.js';
 
 const root = resolve(import.meta.dirname, '../..');
 const output = join(root, 'docs/specs/evidence/modular-agon-npx-qualification.json');
@@ -42,19 +43,35 @@ const makeRemovable = (path) => {
 mkdirSync(packRoot, { recursive: true });
 try {
   const tarballs = {};
-  for (const pkg of release.packages) {
+  const artifacts = {};
+  for (const pkg of [...release.packages, ...release.compatibilityArtifacts]) {
     const result = requireOk(`pack:${pkg.id}`, run('npm', ['pack', '--json', '--ignore-scripts', '--pack-destination', packRoot], { cwd: join(root, pkg.directory) }));
     const packed = JSON.parse(result.stdout)[0];
     tarballs[pkg.id] = join(packRoot, packed.filename);
+    artifacts[pkg.id] = { version: pkg.version, resolved: `file:${tarballs[pkg.id]}`, integrity: packed.integrity };
   }
   const cliPack = requireOk('pack:@kernlang/agon', run('npm', ['pack', '--json', '--ignore-scripts', '--pack-destination', packRoot], { cwd: join(root, 'packages/cli') }));
   const launcherTarball = join(packRoot, JSON.parse(cliPack.stdout)[0].filename);
+  artifacts['@kernlang/agon'] = { version: release.version, resolved: `file:${launcherTarball}`, integrity: JSON.parse(cliPack.stdout)[0].integrity };
   mkdirSync(ephemeral, { recursive: true });
-  requireOk('ephemeral-npx-hydration', run('npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund', '--save=false', '--omit=optional', '--offline', '--prefix', ephemeral, launcherTarball, ...Object.values(tarballs)], { cwd: ephemeral }));
-  checks.push(await verifyPackedMcp(ephemeral, scratch, { ...process.env, npm_config_cache: npmCache }));
-  checks.push(await verifyPackedBrainstorm(ephemeral, scratch, { ...process.env, npm_config_cache: npmCache }));
-  checks.push(await verifyPackedBrainstormTui(ephemeral, scratch, { ...process.env, npm_config_cache: npmCache }));
-  checks.push(await verifyPackedBrainstormTui(ephemeral, scratch, { ...process.env, npm_config_cache: npmCache }, { activeExit: true }));
+  const channel = JSON.parse(readFileSync(join(root, 'packages/cli/release-channel.json'), 'utf8'));
+  const frozen = createFrozenNpmInstall(channel.npmCatalog, Object.keys(artifacts), artifacts);
+  writeFileSync(join(ephemeral, 'package.json'), JSON.stringify(frozen.manifest, null, 2));
+  const lockBytes = JSON.stringify(frozen.lock, null, 2);
+  writeFileSync(join(ephemeral, 'package-lock.json'), lockBytes);
+  requireOk('ephemeral-npx-hydration', run('npm', ['ci', '--ignore-scripts', '--no-audit', '--no-fund', '--omit=optional', '--offline'], { cwd: ephemeral }));
+  if (readFileSync(join(ephemeral, 'package-lock.json'), 'utf8') !== lockBytes) throw new Error('packed hydration changed the frozen dependency lock');
+  // Independent probes must not hide later installer failures. Retain every
+  // failed check and reject the whole qualification before emitting success.
+  for (const [id, verify] of [
+    ['packed-mcp', () => verifyPackedMcp(ephemeral, scratch, { ...process.env, npm_config_cache: npmCache })],
+    ['packed-brainstorm', () => verifyPackedBrainstorm(ephemeral, scratch, { ...process.env, npm_config_cache: npmCache })],
+    ['packed-brainstorm-tui', () => verifyPackedBrainstormTui(ephemeral, scratch, { ...process.env, npm_config_cache: npmCache })],
+    ['packed-brainstorm-tui-active-exit', () => verifyPackedBrainstormTui(ephemeral, scratch, { ...process.env, npm_config_cache: npmCache }, { activeExit: true })],
+  ]) {
+    try { checks.push(await verify()); }
+    catch (error) { checks.push({ id, passed: false, detail: String(error) }); }
+  }
   const overrideFile = join(scratch, 'package-specs.json');
   writeFileSync(overrideFile, JSON.stringify(tarballs, null, 2));
   const cli = join(ephemeral, 'node_modules', '@kernlang', 'agon', 'dist', 'index.js');
@@ -96,6 +113,47 @@ try {
   const afterActivation = JSON.parse(requireOk('setup-after-activation', run(stable,
     ['setup', '--profile', 'minimal', '--with', 'think,review', '--offline', '--cache', npmCache, '--json'], { cwd: scratch, env: setupEnv })).stdout);
   if (afterActivation.status !== 'already-qualified') throw new Error('activation lost its qualified installation lineage');
+  const host = new DurableModHost(join(home, 'modular-host'), { kernelVersion: release.version });
+  const lifecycle = new ManagedLifecycleService(host);
+  const previous = await lifecycle.readSelectedInstallation();
+  const previousPointer = await host.readCurrentPointer();
+  if (!previous || !previousPointer) throw new Error('installed dependency control has no selected installation');
+  const dependencyLocation = 'node_modules/semver';
+  const dependency = join(host.root, previous.prefix, dependencyLocation, 'package.json');
+  // This is an owned disposable installation. Change only JSON whitespace.
+  chmodSync(dependency, 0o600);
+  writeFileSync(dependency, readFileSync(dependency, 'utf8') + '\n');
+  const repaired = JSON.parse(requireOk('setup-rejects-modified-dependency', run(stable,
+    ['setup', '--profile', 'minimal', '--with', 'think,review', '--offline', '--cache', npmCache, '--json'], { cwd: scratch, env: setupEnv })).stdout);
+  const selected = await lifecycle.readSelectedInstallation();
+  if (repaired.status !== 'installed' || repaired.generation !== previousPointer.generation + 1
+    || !selected || selected.prefix === previous.prefix
+    || await hashInstalledPackagePayload(join(host.root, selected.prefix, dependencyLocation)) !== channel.npmPayloads[dependencyLocation]) {
+    throw new Error('modified dependency was reused or replacement was not verified');
+  }
+  checks.push({ id: 'modified-dependency-requalified', passed: true,
+    detail: 'changed retained semver payload forces fresh prefix; new selected payload matches frozen archive identity' });
+  const repairedReuse = JSON.parse(requireOk('repaired-installation-reuse', run(stable,
+    ['setup', '--profile', 'minimal', '--with', 'think,review', '--offline', '--cache', npmCache, '--json'], { cwd: scratch, env: setupEnv })).stdout);
+  if (repairedReuse.status !== 'already-qualified') throw new Error('repaired installation was not reusable');
+  // Full compatibility includes 36 mods and 48 packages. The 49th release
+  // package is disabled SaaS support, not a default profile dependency.
+  for (const [id, profile, withMods, expectedStatus, packageCount] of [
+    ['full-profile-install', 'full-compat', null, 'installed', 48],
+    ['full-profile-reuse', 'full-compat', null, 'already-qualified', 48],
+    ['small-profile-return', 'minimal', 'think,review', 'installed', 15],
+    ['small-profile-reuse', 'minimal', 'think,review', 'already-qualified', 15],
+  ]) {
+    const response = JSON.parse(requireOk(id, run(stable,
+      ['setup', '--profile', profile, ...(withMods ? ['--with', withMods] : []), '--offline', '--cache', npmCache, '--json'],
+      { cwd: scratch, env: setupEnv })).stdout);
+    if (response.status !== expectedStatus || response.packageCount !== packageCount) throw new Error(`${id}: incorrect installation/reuse result`);
+    const pointer = await host.readCurrentPointer();
+    const desired = pointer && await host.readGenerationDesiredState(pointer);
+    if (!desired || desired.selected.length !== (profile === 'full-compat' ? 36 : 3)) throw new Error(`${id}: incorrect selected mod set`);
+    checks.push({ id: `${id}-result`, passed: true, detail: `${expectedStatus}; ${packageCount} packages; ${desired.selected.length} selected mods` });
+  }
+  if (checks.some(check => !check.passed)) throw new Error(`packed workflow qualification failed: ${checks.filter(check => !check.passed).map(check => check.id).join(', ')}`);
   const result = { schemaVersion: 1, slice: 'S9', passed: checks.every(({ passed }) => passed), platform: `${process.platform}-${process.arch}`, node: process.version,
     profile: 'minimal+think+review', installedPackageCount: firstJson.packageCount, cacheDeletionSurvived: true, idempotent: true, checks };
   // Scratch cleanup is part of successful qualification. Retry transient
@@ -105,7 +163,10 @@ try {
   if (!process.argv.includes('--no-write')) writeFileSync(output, `${JSON.stringify(result, null, 2)}\n`);
   console.log(JSON.stringify({ status: 'passed', checks: checks.length, installedPackageCount: firstJson.packageCount, cacheDeletionSurvived: true, idempotent: true }, null, 2));
 } catch (error) {
-  if (!process.argv.includes('--no-write')) writeFileSync(output, `${JSON.stringify({ schemaVersion: 1, slice: 'S9', passed: false, platform: `${process.platform}-${process.arch}`, node: process.version, error: String(error), checks }, null, 2)}\n`);
+  const failure = { schemaVersion: 1, slice: 'S9', passed: false, platform: `${process.platform}-${process.arch}`, node: process.version,
+    scratch, error: String(error), checks };
+  if (!process.argv.includes('--no-write')) writeFileSync(output, `${JSON.stringify(failure, null, 2)}\n`);
+  console.error(JSON.stringify(failure, null, 2));
   console.error(error);
   process.exitCode = 1;
 }

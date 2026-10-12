@@ -1,11 +1,16 @@
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, stat, writeFile } from 'node:fs/promises';
+import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { modCommand } from '../../packages/cli/src/commands/mod.js';
 import { DurableModHost, createFirstPartyModCatalog, createFullCompatDesiredState, parseDesiredState, resolveDesiredState } from '../../packages/mod-kernel/src/index.js';
 import { assertSelectedLockPackageClosure, assertSelectedLockIntegrity } from '../../packages/mod-kernel/src/selected-lock-integrity.js';
 import { surfaceLockFor } from '../helpers/modular-surface-lock.js';
+import { WriterFence } from '../../packages/mod-kernel/src/writer-lock.js';
+import { ManagedLifecycleService, createManagedLifecyclePlan } from '../../packages/mod-kernel/src/managed-lifecycle.js';
+import { artifact, installer, request, verifier } from '../helpers/modular-lifecycle.js';
 
 afterEach(() => { delete process.env.AGON_MODULAR_HOST_ROOT; vi.restoreAllMocks(); });
 
@@ -25,6 +30,144 @@ async function previewAndApprove(command: any, target: string) {
 }
 
 describe('first-party safe-mode CLI recovery', () => {
+  it('reports retention through the built safe-mode CLI without releasing a lease', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-cli-retention-'));
+    const host = new DurableModHost(join(root, 'host'), { kernelVersion: '1.0.0' });
+    const desiredState = createFullCompatDesiredState(createFirstPartyModCatalog(), '2026-09-04T00:00:00.000Z');
+    const installed = await new ManagedLifecycleService(host).apply(
+      await createManagedLifecyclePlan(host, request([artifact('@test/app')], { desiredState })), installer, verifier);
+    const lease = await host.leaseGeneration(installed.pointer.generation, 'job:live');
+    const before = await readFile(host.paths.current);
+    const cli = fileURLToPath(new URL('../../packages/cli/dist/index.js', import.meta.url));
+    const result = spawnSync(process.execPath, [cli, 'mod', 'retention'], {
+      env: { ...process.env, HOME: root, AGON_HOME: root, AGON_MODULAR_HOST_ROOT: host.root, AGON_MOD_SAFE_MODE: '1' },
+      cwd: root, encoding: 'utf8', timeout: 10_000,
+    });
+    expect(result.error).toBeUndefined();
+    expect(result.status, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject({ selectedGeneration: installed.pointer.generation,
+      installations: [{ installationId: installed.installation.installationId, generations: [installed.pointer.generation] }], activeLeases: [lease] });
+    expect(await readFile(host.paths.current)).toEqual(before);
+    expect(await host.activeGenerationLeases()).toEqual([lease]);
+  });
+
+  it.each(['marker-published', 'writer-removed'])('recovers after SIGKILL of the recovery process at %s', async point => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-reclaimer-crash-'));
+    const host = new DurableModHost(join(root, 'host'), { kernelVersion: '1.0.0' });
+    await host.initialize();
+    await WriterFence.acquire(host.paths.writerLock, 'dead-fixture', { pid: 999999 });
+    const env = { ...process.env, HOME: root, AGON_HOME: root, AGON_MODULAR_HOST_ROOT: host.root, AGON_MOD_SAFE_MODE: '1' };
+    const code = `import * as fs from 'node:fs/promises';
+      import { DurableModHost } from ${JSON.stringify(new URL('../../packages/mod-kernel/dist/index.js', import.meta.url).href)};
+      const point = ${JSON.stringify(point)};
+      const lock = ${JSON.stringify(host.paths.writerLock)};
+      const sync = async path => { const fd = await fs.open(path, 'r'); try { await fd.sync(); } finally { await fd.close(); } };
+      const io = { ...fs, syncFile: sync, syncDirectory: sync,
+        async writeFile(path, ...args) {
+          await fs.writeFile(path, ...args);
+          if (point === 'marker-published' && path.startsWith(lock + '.reclaim')) process.kill(process.pid, 'SIGKILL');
+        },
+        async rm(path, options) {
+          await fs.rm(path, options);
+          if (point === 'writer-removed' && path === lock) process.kill(process.pid, 'SIGKILL');
+        }
+      };
+      await new DurableModHost(${JSON.stringify(host.root)}, { kernelVersion: '1.0.0', io }).recoverStaleWriter(async () => false);`;
+    const killed = spawnSync(process.execPath, ['--input-type=module', '-e', code], { env, cwd: root, encoding: 'utf8', timeout: 10_000 });
+    expect(killed.error).toBeUndefined();
+    expect(killed.signal, killed.stderr).toBe('SIGKILL');
+    const cli = fileURLToPath(new URL('../../packages/cli/dist/index.js', import.meta.url));
+    const recovered = spawnSync(process.execPath, [cli, 'mod', 'recover', 'transactions'], { env, cwd: root, encoding: 'utf8', timeout: 10_000 });
+    expect(recovered.error).toBeUndefined();
+    expect(recovered.status, recovered.stderr).toBe(0);
+    expect(JSON.parse(recovered.stdout)).toMatchObject({ action: 'transaction-recovery', selectedGeneration: null });
+    expect((await readdir(join(host.root, 'locks'))).filter(name => name.includes('.reclaim'))).toEqual([]);
+    expect((await host.boot()).pointer).toBeNull();
+  });
+
+  it.each([
+    ['after-lock', 1], ['after-journal-preparing', 1], ['after-staging', 1],
+    ['after-journal-verified', 1], ['after-generation-rename', 1],
+    ['after-pointer-switch', 2], ['after-journal-committed', 2],
+    ['after-installed-index', 2], ['after-final-journal', 2],
+  ] as const)('recovers through the built safe-mode CLI after SIGKILL at %s', async (point, generation) => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-cli-real-crash-'));
+    const host = new DurableModHost(join(root, 'host'), { kernelVersion: '1.0.0' });
+    const desiredState = createFullCompatDesiredState(createFirstPartyModCatalog(), '2026-09-04T00:00:00.000Z');
+    const plan = await createManagedLifecyclePlan(host, request([artifact('@test/app')], { desiredState }));
+    await new ManagedLifecycleService(host).apply(plan, installer, verifier);
+    const input = { operation: 'update', lock: plan.lock, desiredState,
+      installedIndex: JSON.parse(await readFile(host.paths.installedIndex, 'utf8')),
+      files: { 'installation.json': await readFile(join(host.generationPath(1), 'installation.json'), 'utf8') },
+    };
+    const env = { ...process.env, HOME: root, AGON_HOME: root, AGON_MODULAR_HOST_ROOT: host.root, AGON_MOD_SAFE_MODE: '1' };
+    const code = `import { DurableModHost } from ${JSON.stringify(new URL('../../packages/mod-kernel/dist/index.js', import.meta.url).href)};
+      const host = new DurableModHost(${JSON.stringify(host.root)}, { kernelVersion: '1.0.0',
+        fault(point) { if (point === ${JSON.stringify(point)}) process.kill(process.pid, 'SIGKILL'); } });
+      await host.commitGeneration(${JSON.stringify(input)});`;
+    const killed = spawnSync(process.execPath, ['--input-type=module', '-e', code], { env, cwd: root, encoding: 'utf8', timeout: 10_000 });
+    expect(killed.error).toBeUndefined();
+    expect(killed.signal, killed.stderr).toBe('SIGKILL');
+    const cli = fileURLToPath(new URL('../../packages/cli/dist/index.js', import.meta.url));
+    const recovered = spawnSync(process.execPath, [cli, 'mod', 'recover', 'transactions'], { env, cwd: root, encoding: 'utf8', timeout: 10_000 });
+    expect(recovered.error).toBeUndefined();
+    expect(recovered.status, recovered.stderr).toBe(0);
+    expect(JSON.parse(recovered.stdout)).toMatchObject({ action: 'transaction-recovery', selectedGeneration: generation });
+    expect((await host.boot()).pointer?.generation).toBe(generation);
+    await expect(stat(host.paths.writerLock)).rejects.toMatchObject({ code: 'ENOENT' });
+    const retried = spawnSync(process.execPath, [cli, 'mod', 'recover', 'transactions'], { env, cwd: root, encoding: 'utf8', timeout: 10_000 });
+    expect(retried.status, retried.stderr).toBe(0);
+    expect(JSON.parse(retried.stdout)).toMatchObject({ recoveredCommitted: [], recoveredRolledBack: [], selectedGeneration: generation });
+  });
+
+  it('recovers abandoned installation transactions and retains the receipt on retry', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-cli-transaction-recovery-'));
+    process.env.AGON_MODULAR_HOST_ROOT = root;
+    const transactionId = '11111111-1111-4111-8111-111111111111';
+    const installationId = 'a'.repeat(32);
+    const staged = join(root, 'installation-staging', transactionId);
+    await mkdir(staged, { recursive: true });
+    await writeFile(join(staged, 'partial'), 'unfinished candidate');
+    await mkdir(join(root, 'installation-transactions'), { recursive: true });
+    await writeFile(join(root, 'installation-transactions', `${transactionId}.json`), JSON.stringify({
+      schemaVersion: 1, transactionId, installationId, state: 'preparing',
+      planHash: `sha256:${'b'.repeat(64)}`, baseGeneration: 0, selectedGeneration: null,
+      startedAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
+      fenceToken: 'fixture-fence', steps: [],
+    }));
+    const output = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await modCommand.subCommands.recover.run({ args: { target: 'transactions' } });
+    expect(JSON.parse(String(output.mock.calls.at(-1)![0]))).toMatchObject({
+      action: 'transaction-recovery', recoveredRolledBack: [transactionId], selectedGeneration: null,
+    });
+    await expect(stat(staged)).rejects.toMatchObject({ code: 'ENOENT' });
+    const receipt = join(root, 'installation-receipts', `${transactionId}.recovered-rolled-back.json`);
+    const bytes = await readFile(receipt, 'utf8');
+    await modCommand.subCommands.recover.run({ args: { target: 'transactions' } });
+    expect(await readFile(receipt, 'utf8')).toBe(bytes);
+    expect(JSON.parse(String(output.mock.calls.at(-1)![0])).recoveredRolledBack).toEqual([]);
+  });
+
+  it('refuses transaction recovery while a live host writer owns the state', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-cli-recovery-busy-'));
+    process.env.AGON_MODULAR_HOST_ROOT = root;
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
+    const fence = await WriterFence.acquire(host.paths.writerLock, 'test.live-writer');
+    const before = await readFile(host.paths.writerLock, 'utf8');
+    try {
+      await expect(modCommand.subCommands.recover.run({ args: { target: 'transactions' } })).rejects.toMatchObject({ code: 'MOD_HOST_BUSY' });
+      expect(await readFile(host.paths.writerLock, 'utf8')).toBe(before);
+    } finally { await fence.release(); }
+  });
+
+  it('does not interpret a generation approval as transaction recovery', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-cli-recovery-approval-'));
+    process.env.AGON_MODULAR_HOST_ROOT = root;
+    await expect(modCommand.subCommands.recover.run({ args: { target: 'transactions', approve: 'wrong-plan' } }))
+      .rejects.toThrow('transaction recovery does not accept a generation approval');
+    await expect(stat(join(root, 'installation-transactions'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
   it('retains a bootable closure and exact package identities across disable and re-enable', async () => {
     const { host, desired } = await hostFixture();
     const original = await surfaceLockFor(desired);

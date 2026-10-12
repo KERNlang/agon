@@ -12,6 +12,8 @@ import {
   createModManagementView,
   parseDesiredState,
   renderModManagementText,
+  recoverManagedLifecycle,
+  ManagedRetentionInspector,
   rollbackGeneration,
   sha256Canonical,
   type FolderModActivationPreview,
@@ -273,9 +275,16 @@ function activationCommand(enabled: boolean) {
   });
 }
 
-const recoverCommand = defineCommand({ meta: { name: 'recover', description: 'Preview or apply selection of an exact verified generation from kernel-only safe mode' },
-  args: { target: { type: 'positional', required: true }, approve: { type: 'string' } }, async run({ args }) {
+const recoverCommand = defineCommand({ meta: { name: 'recover', description: 'Recover interrupted transactions, or preview and approve an exact verified generation' },
+  args: { target: { type: 'positional', required: true, description: 'transactions to replay interrupted work; generation number to preview recovery; plan path with --approve' }, approve: { type: 'string' } }, async run({ args }) {
     const hostRoot = paths().hostRoot;
+    if (args.target === 'transactions') {
+      if (args.approve !== undefined) throw new TypeError('transaction recovery does not accept a generation approval');
+      const host = new DurableModHost(hostRoot, { kernelVersion: AGON_RUNTIME_VERSION });
+      const result = await recoverManagedLifecycle(host);
+      console.log(JSON.stringify({ action: 'transaction-recovery', ...result, restartRequired: true }, null, 2));
+      return;
+    }
     if (!args.approve) {
       const targetGeneration = Number(args.target);
       if (!Number.isSafeInteger(targetGeneration) || targetGeneration < 1) throw new TypeError('recovery target must be a positive generation number');
@@ -305,6 +314,12 @@ export async function runTuiModAction(input: string): Promise<string> {
   return 'Use: /mod list | /mod inspect <id>. Trust, grant, enable, and disable require the reviewable two-step `agon mod` CLI flow.';
 }
 
+const retentionCommand = defineCommand({ meta: { name: 'retention', description: 'Inspect retained installation generations and active process leases; deletes nothing' },
+  async run() {
+    const host = new DurableModHost(paths().hostRoot, { kernelVersion: AGON_RUNTIME_VERSION });
+    console.log(JSON.stringify(await new ManagedRetentionInspector(host).inspect(), null, 2));
+  } });
+
 export const modCommand: any = defineCommand({ meta: { name: 'mod', description: 'Inspect, trust, grant, and activate modular Agon packages' },
   subCommands: { list: listCommand, inspect: inspectCommand, trust: trustCommand, untrust: untrustCommand, approve: approveCommand, revoke: revokeCommand,
-    enable: activationCommand(true), disable: activationCommand(false), recover: recoverCommand } });
+    enable: activationCommand(true), disable: activationCommand(false), recover: recoverCommand, retention: retentionCommand } });

@@ -9,6 +9,9 @@ import { FOLDER_MOD_LIMITS } from './folder-mod-limits.js';
 import { sha256Canonical } from './lock.js';
 
 const ARCHIVE_FILE = /(?:\.zip|\.tar|\.tgz|\.tar\.gz|\.tar\.bz2|\.tar\.xz|\.7z|\.rar)$/i;
+// Locked npm payloads can contain more files than drop-in folder mods.
+// Keep byte, depth and no-follow limits shared; bound both inventories.
+const INSTALLED_PACKAGE_COUNTS = Object.freeze({ maxFiles: 8_192, maxEntries: 16_384 });
 
 export { FOLDER_MOD_LIMITS } from './folder-mod-limits.js';
 
@@ -30,6 +33,11 @@ export async function assertNoSymlinkComponents(root: string, relativePath: stri
 
 /** Iteratively enumerate a package without following links or allowing resource exhaustion. */
 export async function walkBoundedPackage(root: string, options: { readonly omitRootNodeModules?: boolean } = {}): Promise<readonly BoundedPackageFile[]> {
+  return walkPackage(root, options, FOLDER_MOD_LIMITS);
+}
+
+async function walkPackage(root: string, options: { readonly omitRootNodeModules?: boolean },
+  counts: { readonly maxFiles: number; readonly maxEntries: number }): Promise<readonly BoundedPackageFile[]> {
   const pending: Array<{ readonly prefix: string; readonly depth: number }> = [{ prefix: '', depth: 0 }];
   const files: BoundedPackageFile[] = [];
   let totalBytes = 0;
@@ -44,8 +52,8 @@ export async function walkBoundedPackage(root: string, options: { readonly omitR
     for await (const entry of entries) {
       await assertNoSymlinkComponents(root, prefix);
       totalEntries++;
-      if (totalEntries > FOLDER_MOD_LIMITS.maxEntries) {
-        throw new StaticDiscoveryError('folder mod exceeds the entry-count limit', { maxEntries: FOLDER_MOD_LIMITS.maxEntries });
+      if (totalEntries > counts.maxEntries) {
+        throw new StaticDiscoveryError('package exceeds the entry-count limit', { maxEntries: counts.maxEntries });
       }
       const path = prefix ? `${prefix}/${entry.name}` : entry.name;
       const stat = await lstat(join(root, path));
@@ -53,6 +61,9 @@ export async function walkBoundedPackage(root: string, options: { readonly omitR
       if (stat.isDirectory()) {
         // npm dependencies have separate package identities, not payload identity.
         if (options.omitRootNodeModules && path === 'node_modules') continue;
+        if (options.omitRootNodeModules && /(?:^|\/)node_modules\/@kernlang\/agon-(?:kernel|mod-api)$/i.test(path)) {
+          throw new StaticDiscoveryError('package-owned directory contains a duplicate singleton', { path });
+        }
         pending.push({ prefix: path, depth: depth + 1 });
         continue;
       }
@@ -63,8 +74,8 @@ export async function walkBoundedPackage(root: string, options: { readonly omitR
       }
       files.push(Object.freeze({ path, bytes: stat.size, device: stat.dev, inode: stat.ino }));
       totalBytes += stat.size;
-      if (files.length > FOLDER_MOD_LIMITS.maxFiles) {
-        throw new StaticDiscoveryError('folder mod exceeds the file-count limit', { maxFiles: FOLDER_MOD_LIMITS.maxFiles });
+      if (files.length > counts.maxFiles) {
+        throw new StaticDiscoveryError('package exceeds the file-count limit', { maxFiles: counts.maxFiles });
       }
       if (totalBytes > FOLDER_MOD_LIMITS.maxTotalBytes) {
         throw new StaticDiscoveryError('folder mod exceeds the total-byte limit', { totalBytes, maxBytes: FOLDER_MOD_LIMITS.maxTotalBytes });
@@ -77,7 +88,7 @@ export async function walkBoundedPackage(root: string, options: { readonly omitR
 
 /** Hash package-owned files. Dependency resolution needs separate verification. */
 export async function hashInstalledPackagePayload(root: string): Promise<`sha256:${string}`> {
-  const files = await walkBoundedPackage(root, { omitRootNodeModules: true });
+  const files = await walkPackage(root, { omitRootNodeModules: true }, INSTALLED_PACKAGE_COUNTS);
   const byPath = new Map(files.map(file => [file.path, file]));
   const inventory: Array<{ path: string; size: number; contentHash: string }> = [];
   for (const path of [...byPath.keys()].sort()) {

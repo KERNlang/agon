@@ -149,7 +149,7 @@ export type {
   CandidateInstaller, CandidateVerificationResult, CandidateVerifier, ManagedInstallationRecord,
   ManagedLifecycleApplyResult, ManagedLifecycleFaultPoint, ManagedLifecycleOperation, ManagedLifecycleOptions, ManagedThirdPartyAuthority,
   ManagedLifecyclePackagePlan, ManagedLifecyclePlan, ManagedLifecycleReceipt, ManagedLifecycleRequest,
-  ManagedNetworkPolicy, ManagedPackageArtifact, ManagedPackageSourceKind,
+  ManagedNetworkPolicy, ManagedPackageArtifact, ManagedPackageSourceKind, ManagedLauncherIdentity,
 } from './managed-lifecycle.js';
 
 export { NpmCandidateInstaller, SubprocessCandidateVerifier, runBoundedCandidateProcess, runIsolatedNpmCandidateProcess } from './candidate-process.js';
@@ -159,8 +159,8 @@ export type {
   NpmCandidateInstallerOptions, SubprocessCandidateVerifierOptions,
 } from './candidate-process.js';
 
-export { applyManagedPurge, previewManagedPurge, recoverManagedLifecycle } from './lifecycle-recovery.js';
-export type { LifecycleRecoveryOptions, LifecycleRecoveryResult, ManagedPurgePlan } from './lifecycle-recovery.js';
+export { applyManagedPurge, ManagedRetentionInspector, previewManagedPurge, recoverManagedLifecycle } from './lifecycle-recovery.js';
+export type { LifecycleRecoveryOptions, LifecycleRecoveryResult, ManagedPurgePlan, ManagedRetentionReport } from './lifecycle-recovery.js';
 
 export { createSetupActionPlan, executeSetupAction } from './setup-actions.js';
 export type { SetupActionDefinition, SetupActionKind, SetupActionPlan, SetupActionReceipt } from './setup-actions.js';
@@ -178,3 +178,5 @@ export type { BuiltInProfileId, ReleaseSetupRequest, ReleaseSetupSelection } fro
 export { AGON_RUNTIME_VERSION } from './runtime-version.js';
 export { createSidechainLogger } from './sidechain-logger.js';
 export type { SidechainEvent, SidechainLogger } from './sidechain-logger.js';
+export { createNpmReleaseCatalog, createFrozenNpmInstall } from './npm-lock.js';
+export type { FrozenNpmArtifact, FrozenNpmCatalog, NpmLockRecord } from './npm-lock.js';

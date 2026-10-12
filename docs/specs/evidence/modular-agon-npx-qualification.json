@@ -1,13 +1,11 @@
 {
   "schemaVersion": 1,
   "slice": "S9",
-  "passed": true,
+  "passed": false,
   "platform": "darwin-arm64",
   "node": "v26.3.0",
-  "profile": "minimal+think+review",
-  "installedPackageCount": 15,
-  "cacheDeletionSurvived": true,
-  "idempotent": true,
+  "scratch": "/tmp/amr-runtime/tmp/agon-s9-npx-bioC1e",
+  "error": "Error: packed workflow qualification failed: packed-brainstorm-tui, packed-brainstorm-tui-active-exit",
   "checks": [
     {
       "id": "pack:@kernlang/agon-kernel",
@@ -255,6 +253,11 @@
       "detail": "exit=0"
     },
     {
+      "id": "pack:@kernlang/agon-dedup",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
       "id": "pack:@kernlang/agon",
       "passed": true,
       "detail": "exit=0"
@@ -263,6 +266,26 @@
       "id": "ephemeral-npx-hydration",
       "passed": true,
       "detail": "exit=0"
+    },
+    {
+      "id": "packed-mcp-failure-contract",
+      "passed": true,
+      "detail": "installed server and Jobs daemon: success, blocked-provider failure, missing job via installed CLI, cyclic plan, unknown tool"
+    },
+    {
+      "id": "packed-brainstorm-cli",
+      "passed": true,
+      "detail": "installed npm bin: invalid style before run creation, human, --quiet, environment quiet, failed seat/retry; early stdout handshake with buffered-output negative control and persisted status; fixture engine only"
+    },
+    {
+      "id": "packed-brainstorm-tui",
+      "passed": false,
+      "detail": "AssertionError [ERR_ASSERTION]: Traceback (most recent call last):\n  File \"/Users/ra/dev/agon-audit-qualification/scripts/perf/pty-drive.py\", line 128, in <module>\n    sys.exit(main())\n             ~~~~^^\n  File \"/Users/ra/dev/agon-audit-qualification/scripts/perf/pty-drive.py\", line 109, in main\n    os.write(fd, step[\"send\"].encode(\"utf-8\"))\n    ~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nOSError: [Errno 5] Input/output error\n\n\n1 !== 0\n"
+    },
+    {
+      "id": "packed-brainstorm-tui-active-exit",
+      "passed": false,
+      "detail": "AssertionError [ERR_ASSERTION]: Traceback (most recent call last):\n  File \"/Users/ra/dev/agon-audit-qualification/scripts/perf/pty-drive.py\", line 128, in <module>\n    sys.exit(main())\n             ~~~~^^\n  File \"/Users/ra/dev/agon-audit-qualification/scripts/perf/pty-drive.py\", line 109, in main\n    os.write(fd, step[\"send\"].encode(\"utf-8\"))\n    ~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nOSError: [Errno 5] Input/output error\n\n\n1 !== 0\n"
     },
     {
       "id": "npx-setup-first-run",
@@ -303,6 +326,106 @@
       "id": "managed-mod-list",
       "passed": true,
       "detail": "exit=0"
+    },
+    {
+      "id": "installed-disable-preview",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "installed-disable-apply",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "installed-disable-fresh-start",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "disabled-think-unreachable",
+      "passed": true,
+      "detail": "[error] Unknown command `think`\n[log] Any AI can join. They compete. You ship. (agon v1.0.0)\n\nUSAGE `agon engine|doctor|models|provider|config|call|attach|login|update|upgrade|mod|setup|ask|review`\n\nCOMMANDS\n\n    `engine`    Manage AI engines                                                                                                                               \n    `doctor`    Diagnose Agon engine and worktree health                                                                                                        \n    `models`    Manage engine→model mappings                                                                                                                    \n  `provider`    Add, remove, or list API providers; connect/disconnect and manage API keys                                                                      \n    `config`    View and modify Agon configuration                                                                                                              \n      `call`    Live bridge for external CLIs to run Agon modes                                                                                                 \n    `attach`    Attach (r"
+    },
+    {
+      "id": "installed-enable-preview",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "installed-enable-apply",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "installed-enable-fresh-start",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "re-enabled-think-help",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "setup-after-activation",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "setup-rejects-modified-dependency",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "modified-dependency-requalified",
+      "passed": true,
+      "detail": "changed retained semver payload forces fresh prefix; new selected payload matches frozen archive identity"
+    },
+    {
+      "id": "repaired-installation-reuse",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "full-profile-install",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "full-profile-install-result",
+      "passed": true,
+      "detail": "installed; 48 packages; 36 selected mods"
+    },
+    {
+      "id": "full-profile-reuse",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "full-profile-reuse-result",
+      "passed": true,
+      "detail": "already-qualified; 48 packages; 36 selected mods"
+    },
+    {
+      "id": "small-profile-return",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "small-profile-return-result",
+      "passed": true,
+      "detail": "installed; 15 packages; 3 selected mods"
+    },
+    {
+      "id": "small-profile-reuse",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "small-profile-reuse-result",
+      "passed": true,
+      "detail": "already-qualified; 15 packages; 3 selected mods"
     }
   ]
 }

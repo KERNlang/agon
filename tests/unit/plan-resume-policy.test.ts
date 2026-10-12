@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import * as owner from '@kernlang/agon-mod-plan';
+import { buildResumePromptContext, skipCompletedSteps } from '@kernlang/agon-mod-plan';
 import type { CesarPlan, CesarPlanStep } from '@kernlang/agon-mod-plan';
-import { buildResumePromptContext, skipCompletedSteps } from '../../packages/cli/src/signals/dispatch/plan-queries.js';
+import * as cliQueries from '../../packages/cli/src/signals/dispatch/plan-queries.js';
 
 function fixture(cycles = 0): CesarPlan {
   const states = ['done', 'skipped', 'failed', 'failed', 'blocked', 'running', 'pending', 'cancelled'] as const;
@@ -65,8 +66,11 @@ describe('physical Plan resume ownership', () => {
     expect(owner).toHaveProperty('buildResumePromptContext', expect.any(Function));
     expect(owner).toHaveProperty('skipCompletedSteps', expect.any(Function));
     expect(owner).toHaveProperty('prepareCesarPlanResume', expect.any(Function));
-    expect(buildResumePromptContext).toBe(owner.buildResumePromptContext);
-    expect(skipCompletedSteps).toBe(owner.skipCompletedSteps);
+  });
+
+  it('does not expose retired resume-policy aliases through CLI queries', () => {
+    expect(cliQueries).not.toHaveProperty('buildResumePromptContext');
+    expect(cliQueries).not.toHaveProperty('skipCompletedSteps');
   });
 
   it('prepares a resume without resetting cost or completed work', () => {

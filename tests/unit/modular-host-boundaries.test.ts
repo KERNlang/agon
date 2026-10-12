@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, writeFile, unlink } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, writeFile, unlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -25,8 +25,16 @@ describe('durable host boundary invariants', () => {
     expect(await readFile(stable.paths.current)).toEqual(pointerBefore);
     expect(await readFile(source, 'utf8')).toBe('{"value":2}\n');
     await expect(stable.validateGeneration(1)).resolves.toMatchObject({ generation: 1 });
+    const journalBytes = await Promise.all((await readdir(stable.paths.transactions)).map(async name => ({
+      path: join(stable.paths.transactions, name), bytes: await readFile(join(stable.paths.transactions, name), 'utf8'),
+    })));
+    const interrupted = journalBytes.find(({ bytes }) => JSON.parse(bytes).candidateGeneration === 2);
+    if (boundary === 'after-lock') expect(interrupted).toBeUndefined();
+    else expect(JSON.parse(interrupted!.bytes)).toMatchObject({ state: 'rolled-back', baseGeneration: 1, candidateGeneration: 2 });
+    // A journaled attempt retains its identity even when no generation commits.
     await expect(stable.commitGeneration({ operation: 'update', lock: hostLock('b'), desiredState: {}, installedIndex: {},
-      configSource: await readMigrationSourceRevision(source) })).resolves.toMatchObject({ pointer: { generation: 2 } });
+      configSource: await readMigrationSourceRevision(source) })).resolves.toMatchObject({ pointer: { generation: boundary === 'after-lock' ? 2 : 3 } });
+    for (const journal of journalBytes) expect(await readFile(journal.path, 'utf8')).toBe(journal.bytes);
   });
 
   it.each(['create', 'delete'] as const)('refuses source %s after preview', async action => {

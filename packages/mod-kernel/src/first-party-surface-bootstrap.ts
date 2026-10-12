@@ -8,6 +8,7 @@ import type { ActivatedSurfaceGeneration, FirstPartySurfacePackage } from './act
 import { createFirstPartyModCatalog, createFullCompatDesiredState, parseDesiredState, resolveDesiredState } from './desired-state.js';
 import type { DesiredModState } from './desired-state.js';
 import { DurableModHost } from './durable-host.js';
+import { DurableHostError } from './host-errors.js';
 import { canonicalJson, sha256Canonical } from './lock.js';
 import type { CanonicalModLock } from './lock.js';
 import { assertFirstPartyPackagesMatchLock } from './first-party-lock-validation.js';
@@ -191,7 +192,11 @@ export async function bootstrapFirstPartySurfaceGeneration(options: {
   if (options.safeMode) {
     const safeCatalog = createFirstPartyModCatalog();
     const safeHost = new DurableModHost(options.hostRoot, { kernelVersion: AGON_RUNTIME_VERSION });
-    const safeSelection = await safeHost.boot();
+    const safeSelection = await safeHost.boot().catch(error => {
+      // Keep kernel recovery reachable. Only explicit recovery can reclaim a lock.
+      if (error instanceof DurableHostError && error.code === 'MOD_HOST_BUSY') return { pointer: null };
+      throw error;
+    });
     let safeDesired = createFullCompatDesiredState(safeCatalog, '1970-01-01T00:00:00.000Z');
     if (safeSelection.pointer) {
       const input = await readJsonIfPresent(join(safeHost.generationPath(safeSelection.pointer.generation), 'desired-state.json'));

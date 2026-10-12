@@ -46,7 +46,9 @@ export class GenerationLeaseStore {
 
   async #readLease(path: string): Promise<GenerationLease> {
     try {
-      return parseGenerationLease(await readJson<unknown>(this.#io, path));
+      const lease = parseGenerationLease(await readJson<unknown>(this.#io, path));
+      if (path !== leaseFile(this.#options.directory, lease.leaseId)) throw new TypeError('generation lease filename does not match its identity');
+      return lease;
     } catch (error) {
       throw new DurableHostError('MOD_GENERATION_CORRUPT', 'generation lease is malformed', {
         path, cause: error instanceof Error ? error.message : String(error),
@@ -206,10 +208,14 @@ export class GenerationLeaseStore {
   }
 
   async active(generation?: number): Promise<readonly GenerationLease[]> {
-    const entries = await this.#io.readdir(this.#options.directory, { withFileTypes: true });
+    const entries = await this.#io.readdir(this.#options.directory, { withFileTypes: true }).catch(error => {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+      throw error;
+    });
     const leases: GenerationLease[] = [];
     for (const entry of entries) {
-      if (!entry.isFile() || !entry.name.endsWith('.json')) continue;
+      if (!entry.name.endsWith('.json')) continue;
+      if (!entry.isFile()) throw new DurableHostError('MOD_GENERATION_CORRUPT', 'generation lease must be a regular file', { path: join(this.#options.directory, entry.name) });
       const lease = await this.#readLease(join(this.#options.directory, entry.name));
       if (!lease.releasedAt && (generation === undefined || lease.generation === generation)) leases.push(lease);
     }

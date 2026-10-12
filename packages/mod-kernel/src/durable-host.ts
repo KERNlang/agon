@@ -364,6 +364,20 @@ export class DurableModHost {
         if (!Number.isSafeInteger(generation)) throw new DurableHostError('MOD_GENERATION_CORRUPT', 'retained generation number is outside the supported range');
         latestGeneration = Math.max(latestGeneration, generation);
       }
+      // Retiring a directory must not make its historical identity reusable.
+      for (const entry of await this.#io.readdir(this.paths.transactions, { withFileTypes: true })) {
+        if (!entry.name.endsWith('.json')) continue;
+        try {
+          if (!entry.isFile()) throw new TypeError('transaction journal must be a regular file');
+          const retained = parseHostTransactionJournal(await readJson<unknown>(this.#io, join(this.paths.transactions, entry.name)));
+          if (entry.name !== `${retained.transactionId}.json`) throw new TypeError('transaction journal filename does not match its identity');
+          latestGeneration = Math.max(latestGeneration, retained.baseGeneration, retained.candidateGeneration);
+        } catch (error) {
+          throw new DurableHostError('MOD_GENERATION_CORRUPT', 'cannot allocate a generation from invalid transaction history', {
+            journal: entry.name, cause: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
       const candidateGeneration = latestGeneration + 1;
       const transactionId = randomUUID();
       staging = join(this.paths.staging, transactionId);
@@ -675,6 +689,10 @@ export class DurableModHost {
 
   async heartbeatGenerationLease(leaseId: string): Promise<GenerationLease> {
     return this.#generationLeaseStore().heartbeat(leaseId);
+  }
+
+  async activeGenerationLeases(): Promise<readonly GenerationLease[]> {
+    return this.#generationLeaseStore().active();
   }
 
   async releaseGenerationLease(leaseId: string): Promise<GenerationLease> {

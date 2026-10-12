@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, readFile, readdir, rename, stat, symlink, writeFile } from 'node:fs/promises';
+import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { DurableModHost } from '../../packages/mod-kernel/src/durable-host.js';
 import { applyManagedPurge, previewManagedPurge, recoverManagedLifecycle } from '../../packages/mod-kernel/src/lifecycle-recovery.js';
@@ -45,6 +46,144 @@ async function writeJournal(root: string, state: 'preparing' | 'verified'): Prom
 }
 
 describe('managed lifecycle crash recovery', () => {
+  it('reclaims a dead host writer and finishes the selected host journal before installation recovery', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-recovery-host-first-'));
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
+    const service = new ManagedLifecycleService(host);
+    const installed = await service.apply(await createManagedLifecyclePlan(host, request([artifact('@test/app')])), installer, verifier);
+    const hostJournalPath = host.journalPath(installed.pointer.transactionId);
+    const hostJournal = JSON.parse(await readFile(hostJournalPath, 'utf8'));
+    await writeFile(hostJournalPath, JSON.stringify({ ...hostJournal, state: 'verified',
+      steps: hostJournal.steps.map((step: { id: string; state: string }) => step.id === 'cleanup' ? { ...step, state: 'pending' } : step),
+    }));
+    const lifecycleJournalPath = join(service.journalsRoot, `${installed.receipt.transactionId}.json`);
+    const journal = JSON.parse(await readFile(lifecycleJournalPath, 'utf8'));
+    await writeFile(lifecycleJournalPath, JSON.stringify({ ...journal, state: 'verified', selectedGeneration: null }));
+    await WriterFence.acquire(host.paths.writerLock, 'test.dead-host-writer', { pid: 999_999 });
+    const result = await recoverManagedLifecycle(host, { isProcessAlive: async () => false });
+    expect(result.recoveredCommitted).toEqual([installed.receipt.transactionId]);
+    expect(JSON.parse(await readFile(hostJournalPath, 'utf8')).state).toBe('committed');
+    expect((await host.boot()).mode).toBe('normal');
+    expect(await host.readCurrentPointer()).toEqual(installed.pointer);
+    await expect(stat(host.paths.writerLock)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it.each(['committed', 'rolled-back'].flatMap(outcome => ['write', 'partial-write', 'sync-file', 'sync-directory', 'journal-sync'].map(fault => ({ outcome, fault }))))
+    ('repairs a missing or unsynced $outcome recovery receipt after $fault failure without repeating effects', async ({ outcome, fault }) => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-recovery-receipt-'));
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
+    await host.initialize();
+    let transactionId = tx;
+    const service = new ManagedLifecycleService(host);
+    const installed = await service.apply(await createManagedLifecyclePlan(host, request([artifact('@test/app')])), installer, verifier);
+    if (outcome === 'committed') {
+      transactionId = installed.receipt.transactionId;
+      const path = join(service.journalsRoot, `${transactionId}.json`);
+      const journal = JSON.parse(await readFile(path, 'utf8'));
+      await writeFile(path, JSON.stringify({ ...journal, state: 'verified', selectedGeneration: null }));
+    } else {
+      await writeJournal(root, 'verified');
+      await mkdir(join(root, 'installations', installationId), { recursive: true });
+    }
+    const receipt = join(root, 'installation-receipts', `${transactionId}.recovered-${outcome}.json`);
+    const isReceiptWrite = (path: string) => path === receipt || path.startsWith(join(dirname(receipt), `.${basename(receipt)}.`));
+    const fail = () => { throw Object.assign(new Error('disk full writing receipt'), { code: 'ENOSPC' }); };
+    await expect(recoverManagedLifecycle(host, { io: { ...nodeHostIo, writeFile: async (path, data, options) => {
+      if ((fault === 'write' || fault === 'partial-write') && isReceiptWrite(path)) {
+        if (fault === 'partial-write') await nodeHostIo.writeFile(path, '{', options);
+        fail();
+      }
+      return nodeHostIo.writeFile(path, data, options);
+    }, syncFile: async path => {
+      if (fault === 'sync-file' && isReceiptWrite(path)) fail();
+      return nodeHostIo.syncFile(path);
+    }, syncDirectory: async path => {
+      if (fault === 'sync-directory' && path === join(root, 'installation-receipts')) fail();
+      if (fault === 'journal-sync' && path === join(root, 'installation-transactions')) fail();
+      return nodeHostIo.syncDirectory(path);
+    } } })).rejects.toMatchObject({ code: 'ENOSPC' });
+    const journalBefore = await readFile(join(root, 'installation-transactions', `${transactionId}.json`), 'utf8');
+    const sentinel = join(root, 'installations', installationId, 'new-data');
+    if (outcome === 'rolled-back') {
+      await mkdir(join(root, 'installations', installationId), { recursive: true });
+      await writeFile(sentinel, 'do not delete again');
+      await service.apply(await createManagedLifecyclePlan(host, request([artifact('@test/app')])), installer, verifier);
+    }
+    const pointerBefore = await host.readCurrentPointer();
+    const synced: string[] = [];
+    await recoverManagedLifecycle(host, { io: { ...nodeHostIo,
+      syncFile: async path => { synced.push(path); return nodeHostIo.syncFile(path); },
+      syncDirectory: async path => { synced.push(path); return nodeHostIo.syncDirectory(path); },
+    } });
+    expect(synced.some(isReceiptWrite)).toBe(true);
+    const journalPath = join(root, 'installation-transactions', `${transactionId}.json`);
+    expect(synced).toContain(journalPath);
+    expect(synced).toContain(dirname(journalPath));
+    expect(synced.indexOf(journalPath)).toBeLessThan(synced.findIndex(isReceiptWrite));
+    expect(synced.indexOf(dirname(journalPath))).toBeLessThan(synced.findIndex(isReceiptWrite));
+    expect(synced).toContain(join(root, 'installation-receipts'));
+    expect(JSON.parse(await readFile(receipt, 'utf8'))).toMatchObject({ transactionId,
+      outcome: `recovered-${outcome}`, selectedGeneration: installed.pointer.generation });
+    expect(await readFile(join(root, 'installation-transactions', `${transactionId}.json`), 'utf8')).toBe(journalBefore);
+    expect(await host.readCurrentPointer()).toEqual(pointerBefore);
+    if (outcome === 'rolled-back') expect(await readFile(sentinel, 'utf8')).toBe('do not delete again');
+    const receiptBefore = await readFile(receipt, 'utf8');
+    expect(await recoverManagedLifecycle(host)).toMatchObject({ recoveredCommitted: [], recoveredRolledBack: [] });
+    expect(await readFile(receipt, 'utf8')).toBe(receiptBefore);
+  });
+
+  it.each([false, true])('syncs rollback removal parents before its terminal journal (targets exist=%s)', async exists => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-recovery-removal-sync-'));
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
+    await host.initialize();
+    await writeJournal(root, 'verified');
+    const parents = [join(root, 'installation-staging'), join(root, 'installations')];
+    if (exists) {
+      await mkdir(join(parents[0], tx), { recursive: true });
+      await mkdir(join(parents[1], installationId), { recursive: true });
+    }
+    const events: string[] = [];
+    const journalPath = join(root, 'installation-transactions', `${tx}.json`);
+    await recoverManagedLifecycle(host, { io: { ...nodeHostIo,
+      syncDirectory: async path => { events.push(`sync:${path}`); await nodeHostIo.syncDirectory(path); },
+      rename: async (from, to) => { if (to === journalPath) events.push('terminal-journal'); await nodeHostIo.rename(from, to); },
+    } });
+    const terminal = events.indexOf('terminal-journal');
+    expect(terminal).toBeGreaterThanOrEqual(0);
+    for (const parent of parents) {
+      const synced = events.indexOf(`sync:${parent}`);
+      expect(synced).toBeGreaterThanOrEqual(0);
+      expect(synced).toBeLessThan(terminal);
+    }
+  });
+
+  it.each(['partial JSON', 'transactionId', 'outcome', 'installationId', 'selectedGeneration'])
+    ('refuses an existing recovery receipt with invalid %s without replacing it', async field => {
+      const root = await mkdtemp(join(tmpdir(), 'agon-recovery-receipt-corrupt-'));
+      const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
+      const service = new ManagedLifecycleService(host);
+      const installed = await service.apply(await createManagedLifecyclePlan(host, request([artifact('@test/app')])), installer, verifier);
+      const journalPath = join(service.journalsRoot, `${installed.receipt.transactionId}.json`);
+      const journal = JSON.parse(await readFile(journalPath, 'utf8'));
+      await writeFile(journalPath, JSON.stringify({ ...journal, state: 'verified', selectedGeneration: null }));
+      await recoverManagedLifecycle(host);
+      const receiptPath = join(root, 'installation-receipts', `${installed.receipt.transactionId}.recovered-committed.json`);
+      const bytes = await readFile(receiptPath, 'utf8');
+      const bad = { ...JSON.parse(bytes), [field]: field === 'selectedGeneration' ? 999 : 'different' };
+      const observed = field === 'partial JSON' ? '{' : JSON.stringify(bad);
+      let writes = 0;
+      await expect(recoverManagedLifecycle(host, { io: { ...nodeHostIo,
+        readFile: async path => path === receiptPath ? Buffer.from(observed) : nodeHostIo.readFile(path),
+        writeFile: async (path, data, options) => {
+          if (path === receiptPath) writes++;
+          return nodeHostIo.writeFile(path, data, options);
+        },
+      } })).rejects.toMatchObject({ code: 'MOD_SAFE_MODE' });
+      expect(writes).toBe(0);
+      expect(await readFile(receiptPath, 'utf8')).toBe(bytes);
+      expect(await host.readCurrentPointer()).toEqual(installed.pointer);
+    });
+
   it.each([false, true])('keeps prefixes referenced by retained generations (concurrent rollback=%s)', async concurrent => {
     const root = await mkdtemp(join(tmpdir(), 'agon-lifecycle-retained-'));
     const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
@@ -122,6 +261,231 @@ describe('managed lifecycle crash recovery', () => {
 });
 
 describe('managed purge preview and apply', () => {
+  it.each([1, 2, 3].flatMap(failedWrite => [false, true].map(partial => ({ failedWrite, partial }))))
+    ('retries a purge journal ENOSPC at write $failedWrite (partial=$partial) without repeating target selection', async ({ failedWrite, partial }) => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-purge-enospc-'));
+    const target = join(root, 'data');
+    let writes = 0;
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0', io: {
+      ...nodeHostIo,
+      writeFile: async (path, data, options) => {
+        if (path.startsWith(join(root, 'purge-transactions') + '/') && ++writes === failedWrite) {
+          if (partial) await nodeHostIo.writeFile(path, '{', options);
+          throw Object.assign(new Error('fixture purge journal full'), { code: 'ENOSPC' });
+        }
+        await nodeHostIo.writeFile(path, data, options);
+      },
+    } });
+    await host.initialize();
+    await mkdir(target);
+    await writeFile(join(target, 'value'), 'original');
+    const plan = await previewManagedPurge(host, { dataPaths: [target] });
+    await expect(applyManagedPurge(host, plan, plan.planHash)).rejects.toMatchObject({ code: 'ENOSPC' });
+    if (failedWrite === 1) expect(await readFile(join(target, 'value'), 'utf8')).toBe('original');
+    else {
+      await mkdir(target);
+      await writeFile(join(target, 'value'), 'replacement');
+    }
+    expect(await applyManagedPurge(host, plan, plan.planHash)).toEqual([target]);
+    if (failedWrite === 1) await expect(stat(target)).rejects.toMatchObject({ code: 'ENOENT' });
+    else expect(await readFile(join(target, 'value'), 'utf8')).toBe('replacement');
+  });
+
+  it.each(['duplicate', 'parent-child'])('rejects %s targets before purge effects', async kind => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-purge-overlap-'));
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
+    await host.initialize();
+    const parent = join(root, 'data');
+    const child = join(parent, 'child');
+    await mkdir(child, { recursive: true });
+    const paths = kind === 'duplicate' ? [parent, `${parent}/../data`] : [parent, child];
+    await expect(previewManagedPurge(host, { dataPaths: paths })).rejects.toThrow('distinct and non-overlapping');
+    const { planHash: _hash, ...empty } = await previewManagedPurge(host);
+    const unsigned = { ...empty, dataPaths: paths };
+    const plan = { ...unsigned, planHash: sha256Canonical(unsigned) };
+    await expect(applyManagedPurge(host, plan, plan.planHash)).rejects.toThrow('distinct and non-overlapping');
+    expect((await stat(child)).isDirectory()).toBe(true);
+  });
+
+  it.each(['after-move', 'before-remove', 'after-remove'].flatMap(boundary => [false, true].map(selected => ({ boundary, selected }))))
+    ('recovers a real process kill at purge $boundary (selected generation=$selected)', async ({ boundary, selected }) => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-purge-kill-'));
+    const target = join(root, 'data');
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
+    await host.initialize();
+    if (selected) await host.commitGeneration({ operation: 'install', lock: lifecycleLock([]), desiredState: {}, installedIndex: {} });
+    await mkdir(target);
+    await writeFile(join(target, 'old'), 'original');
+    const plan = await previewManagedPurge(host, { dataPaths: [target] });
+    const entry = new URL('../../packages/mod-kernel/dist/index.js', import.meta.url).href;
+    const child = spawnSync(process.execPath, ['--input-type=module', '-e', `
+      import { DurableModHost, applyManagedPurge } from ${JSON.stringify(entry)};
+      const root = ${JSON.stringify(root)}, target = ${JSON.stringify(target)}, boundary = ${JSON.stringify(boundary)};
+      const base = new DurableModHost(root, { kernelVersion: '1.0.0' });
+      const io = base.hostIo;
+      const host = new DurableModHost(root, { kernelVersion: '1.0.0', io: { ...io,
+        rename: async (from, to) => {
+          await io.rename(from, to);
+          if (boundary === 'after-move' && from === target) process.kill(process.pid, 'SIGKILL');
+        },
+        rm: async (path, options) => {
+          const staged = path.startsWith(root + '/purge-staging/') && path.endsWith('/0');
+          if (staged && boundary === 'before-remove') process.kill(process.pid, 'SIGKILL');
+          await io.rm(path, options);
+          if (staged && boundary === 'after-remove') process.kill(process.pid, 'SIGKILL');
+        },
+      } });
+      const plan = ${JSON.stringify(plan)};
+      await applyManagedPurge(host, plan, plan.planHash);
+    `], { encoding: 'utf8', timeout: 10_000 });
+    expect(child.error).toBeUndefined();
+    expect(child.signal, child.stderr).toBe('SIGKILL');
+    await mkdir(target);
+    await writeFile(join(target, 'new'), 'replacement');
+    await recoverManagedLifecycle(host);
+    expect(await applyManagedPurge(host, plan, plan.planHash)).toEqual([target]);
+    expect(await readFile(join(target, 'new'), 'utf8')).toBe('replacement');
+    const journal = JSON.parse(await readFile(join(root, 'purge-transactions', `${plan.transactionId}.json`), 'utf8'));
+    expect(journal).toEqual({ schemaVersion: 1, planHash: plan.planHash, phases: ['removed'] });
+    await expect(stat(host.paths.writerLock)).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(stat(join(root, 'locks', 'lifecycle-writer.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('requires a fresh preview for a legacy purge approval', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-purge-legacy-'));
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
+    await host.initialize();
+    const target = join(root, 'data');
+    await mkdir(target);
+    const plan = { ...await previewManagedPurge(host, { dataPaths: [target] }) };
+    Reflect.set(plan, 'schemaVersion', 1);
+    Reflect.deleteProperty(plan, 'transactionId');
+    await expect(applyManagedPurge(host, plan, plan.planHash)).rejects.toThrow('fresh version-2 approval');
+    expect((await stat(target)).isDirectory()).toBe(true);
+  });
+
+  it('checks every pending target before removing the first target', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-purge-preflight-'));
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
+    await host.initialize();
+    const first = join(root, 'a-data');
+    const last = join(root, 'z-data');
+    await mkdir(first);
+    await mkdir(last);
+    await writeFile(join(first, 'keep'), 'unchanged');
+    const plan = await previewManagedPurge(host, { dataPaths: [first, last] });
+    await rename(last, join(root, 'original-z-data'));
+    await symlink(host.paths.generations, last);
+    await expect(applyManagedPurge(host, plan, plan.planHash)).rejects.toThrow(/symbolic|symlink/);
+    expect(await readFile(join(first, 'keep'), 'utf8')).toBe('unchanged');
+  });
+
+  it.each(['json', 'shape', 'phase', 'hash'])('refuses a corrupt purge journal: %s', async corruption => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-purge-journal-'));
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
+    await host.initialize();
+    const target = join(root, 'data');
+    await mkdir(target);
+    const plan = await previewManagedPurge(host, { dataPaths: [target] });
+    const record = { schemaVersion: 1, planHash: plan.planHash, phases: ['pending'] };
+    const bytes = corruption === 'json' ? '{broken' : JSON.stringify(corruption === 'shape' ? { ...record, injected: true }
+      : corruption === 'phase' ? { ...record, phases: ['unknown'] } : { ...record, planHash: `sha256:${'0'.repeat(64)}` });
+    const path = join(root, 'purge-transactions', `${plan.transactionId}.json`);
+    await mkdir(dirname(path));
+    await writeFile(path, bytes);
+    await expect(applyManagedPurge(host, plan, plan.planHash)).rejects.toMatchObject({ code: 'MOD_TRANSACTION_FAILED' });
+    expect((await stat(target)).isDirectory()).toBe(true);
+    expect(await readFile(path, 'utf8')).toBe(bytes);
+  });
+
+  it.each(['after-move', 'before-remove', 'after-remove'] as const)('resumes purge after %s without deleting replacement data', async boundary => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-purge-resume-'));
+    const target = join(root, 'old-data');
+    let interrupted = false;
+    const failure = new Error(`fixture ${boundary}`);
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0', io: {
+      ...nodeHostIo,
+      rename: async (from, to) => {
+        await nodeHostIo.rename(from, to);
+        if (!interrupted && boundary === 'after-move' && from === target) { interrupted = true; throw failure; }
+      },
+      rm: async (path, options) => {
+        if (!interrupted && path.startsWith(join(root, 'purge-staging') + '/') && path.endsWith('/0')) {
+          if (boundary === 'before-remove') { interrupted = true; throw failure; }
+          if (boundary === 'after-remove') { await nodeHostIo.rm(path, options); interrupted = true; throw failure; }
+        }
+        await nodeHostIo.rm(path, options);
+      },
+    } });
+    await host.initialize();
+    await mkdir(target);
+    await writeFile(join(target, 'original'), 'old');
+    const plan = await previewManagedPurge(host, { dataPaths: [target] });
+    await expect(applyManagedPurge(host, plan, plan.planHash)).rejects.toThrow(failure.message);
+    expect(interrupted).toBe(true);
+    await mkdir(target);
+    await writeFile(join(target, 'replacement'), 'keep');
+    expect(await applyManagedPurge(host, plan, plan.planHash)).toEqual([target]);
+    expect(await readFile(join(target, 'replacement'), 'utf8')).toBe('keep');
+    expect(await applyManagedPurge(host, plan, plan.planHash)).toEqual([target]);
+    expect(await readFile(join(target, 'replacement'), 'utf8')).toBe('keep');
+    const next = await previewManagedPurge(host, { dataPaths: [target] });
+    expect(next.planHash).not.toBe(plan.planHash);
+    expect(await applyManagedPurge(host, next, next.planHash)).toEqual([target]);
+    await expect(stat(target)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('does not reuse a completed approval for recreated data', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-purge-repeat-'));
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
+    await host.initialize();
+    const target = join(root, 'data');
+    await mkdir(target);
+    const plan = await previewManagedPurge(host, { dataPaths: [target] });
+    expect(await applyManagedPurge(host, plan, plan.planHash)).toEqual([target]);
+    await mkdir(target);
+    await writeFile(join(target, 'new'), 'keep');
+    expect(await applyManagedPurge(host, plan, plan.planHash)).toEqual([target]);
+    expect(await readFile(join(target, 'new'), 'utf8')).toBe('keep');
+  });
+
+  it.each([false, true])('handles a generation change after quarantine (pending targets=%s)', async pending => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-purge-generation-retry-'));
+    const target = join(root, 'a-data');
+    const later = join(root, 'z-data');
+    let interrupted = false;
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0', io: { ...nodeHostIo,
+      rm: async (path, options) => {
+        if (!interrupted && path.startsWith(join(root, 'purge-staging') + '/') && path.endsWith('/0')) {
+          interrupted = true;
+          throw new Error('fixture interrupted after quarantine');
+        }
+        await nodeHostIo.rm(path, options);
+      },
+    } });
+    await host.initialize();
+    await mkdir(target);
+    await writeFile(join(target, 'old'), 'original');
+    if (pending) await mkdir(later);
+    const plan = await previewManagedPurge(host, { dataPaths: pending ? [target, later] : [target] });
+    await expect(applyManagedPurge(host, plan, plan.planHash)).rejects.toThrow('interrupted after quarantine');
+    await mkdir(target);
+    await writeFile(join(target, 'new'), 'replacement');
+    const selected = await host.commitGeneration({ operation: 'install', lock: lifecycleLock([]), desiredState: {}, installedIndex: {} });
+    const staged = join(root, 'purge-staging', plan.transactionId, '0');
+    if (pending) {
+      await expect(applyManagedPurge(host, plan, plan.planHash)).rejects.toMatchObject({ code: 'MOD_TRANSACTION_CONFLICT' });
+      expect((await stat(later)).isDirectory()).toBe(true);
+      expect(await readFile(join(staged, 'old'), 'utf8')).toBe('original');
+    } else {
+      expect(await applyManagedPurge(host, plan, plan.planHash)).toEqual([target]);
+      await expect(stat(staged)).rejects.toMatchObject({ code: 'ENOENT' });
+      expect(await applyManagedPurge(host, plan, plan.planHash)).toEqual([target]);
+    }
+    expect(await readFile(join(target, 'new'), 'utf8')).toBe('replacement');
+    expect(await host.readCurrentPointer()).toEqual(selected.pointer);
+  });
+
   it('blocks purge during a host write and permits retry after the writer releases', async () => {
     const root = await mkdtemp(join(tmpdir(), 'agon-purge-writer-'));
     const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
@@ -171,7 +535,7 @@ describe('managed purge preview and apply', () => {
   it.each(['generations', 'generations/0000000000000001', 'leases', 'receipts', 'transactions',
     'staging', 'current-generation.json', 'installed-index.json', 'desired-state.json', 'locks',
     'locks/writer.json', 'installations', 'installations/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-    'installation-staging', 'installation-transactions', 'installation-receipts',
+    'installation-staging', 'installation-transactions', 'installation-receipts', 'purge-transactions', 'purge-staging',
     'trust', 'trust/record.json', 'grants', 'grants/record.json', 'authority-owned-by-local-user'])
     ('refuses kernel-managed data target %s during preview and apply', async target => {
       const root = await mkdtemp(join(tmpdir(), 'agon-purge-protected-'));

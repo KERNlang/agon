@@ -1,15 +1,48 @@
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { once } from 'node:events';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 
 /** Exercise installed bytes, not source imports. Caller owns the scratch tree. */
 export async function verifyPackedMcp(prefix, scratch, env) {
-  const child = spawn(process.execPath, ['--import', join(import.meta.dirname, 'fixtures/block-mcp-provider-effects.mjs'),
+  const guard = join(import.meta.dirname, 'fixtures/block-mcp-provider-effects.mjs');
+  const cli = join(prefix, 'node_modules/@kernlang/agon/dist/index.js');
+  const home = join(scratch, 'mcp-home');
+  const isolated = { ...env, AGON_HOME: home,
+    AGON_MODULAR_HOST_ROOT: join(home, 'modular-host'), AGON_CLI_NODE_SCRIPT: cli };
+  const guardCheck = spawnSync(process.execPath, ['--import', guard, '--input-type=module', '--eval', `
+    import assert from 'node:assert/strict';
+    import cp from 'node:child_process';
+    const cli = process.env.AGON_PACKED_JOB_CLI;
+    const expected = /PACKED_MCP_EFFECT_BLOCKED/;
+    for (const args of [[cli, 'job', 'submit'], [cli, 'daemon', 'run'], ['-e', 'process.exit(0)']]) {
+      assert.throws(() => cp.spawn(process.execPath, args), expected);
+    }
+    const allowed = [cli, 'job', 'status', 'absent-fixture', '--json'];
+    assert.throws(() => cp.spawn(process.execPath, allowed, { shell: true }), expected);
+    assert.throws(() => cp.spawn('codex', allowed), expected);
+    for (const method of ['spawnSync', 'exec', 'execSync', 'execFile', 'execFileSync', 'fork']) {
+      assert.throws(() => cp[method](process.execPath, allowed), expected);
+    }
+    assert.throws(() => fetch('https://invalid.example'), expected);
+    console.log('PACKED_MCP_GUARD_OK');
+  `], { cwd: scratch, env: { ...isolated, AGON_PACKED_JOB_CLI: cli }, encoding: 'utf8', timeout: 20_000 });
+  assert.equal(guardCheck.status, 0, guardCheck.stderr || String(guardCheck.error));
+  assert.match(guardCheck.stdout, /PACKED_MCP_GUARD_OK/);
+  // Own a foreground daemon. The guarded client must never auto-start one.
+  const daemon = spawn(process.execPath, ['--import', guard, cli, 'daemon', 'run', '--foreground'], {
+    cwd: scratch, env: isolated, stdio: ['ignore', 'ignore', 'pipe'],
+  });
+  let daemonError;
+  let daemonStderr = '';
+  daemon.on('error', error => { daemonError = error; });
+  daemon.stderr.on('data', bytes => { daemonStderr = (daemonStderr + bytes.toString()).slice(-8192); });
+  const daemonClosed = new Promise(resolve => daemon.once('close', resolve));
+  const child = spawn(process.execPath, ['--import', guard,
     join(prefix, 'node_modules/@kernlang/agon/dist/mcp/index.js')], {
-    cwd: scratch, env: { ...env, AGON_HOME: join(scratch, 'mcp-home'),
-      AGON_MODULAR_HOST_ROOT: join(scratch, 'mcp-home/modular-host') }, stdio: ['pipe', 'pipe', 'pipe'],
+    cwd: scratch, env: { ...isolated, AGON_PACKED_JOB_CLI: cli }, stdio: ['pipe', 'pipe', 'pipe'],
   });
   const pending = new Map();
   let nextId = 0;
@@ -42,6 +75,18 @@ export async function verifyPackedMcp(prefix, scratch, env) {
   };
   const call = (name, args) => request('tools/call', { name, arguments: args });
   try {
+    const deadline = Date.now() + 10_000;
+    while (true) {
+      if (daemonError || daemon.exitCode !== null || daemon.signalCode !== null) {
+        throw new Error(`packed Jobs daemon exited: ${daemonError ?? daemonStderr}`);
+      }
+      let identity;
+      try { identity = JSON.parse(readFileSync(join(home, 'daemon/agond.pid'), 'utf8')); }
+      catch { /* Wait for the daemon's atomic readiness publication. */ }
+      if (identity?.pid === daemon.pid && identity.ready === true) break;
+      if (Date.now() >= deadline) throw new Error(`packed Jobs daemon readiness timeout: ${daemonStderr}`);
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
     assert.equal((await request('initialize', {})).result.serverInfo.name, 'agon-orchestration');
     const tools = (await request('tools/list', {})).result.tools;
     assert.ok(tools.some(tool => tool.name === 'Brainstorm'));
@@ -59,7 +104,7 @@ export async function verifyPackedMcp(prefix, scratch, env) {
     assert.equal(missing.result.isError, true);
     assert.match(missing.result.content[0].text, /Job not found/);
     const cyclic = await call('ProposePlan', { intent: 'fixture', steps: [
-      { id: 'a', type: 'think', description: 'fixture', dependsOn: ['a'] },
+      { id: 'a', type: 'self', description: 'fixture', dependsOn: ['a'] },
     ] });
     assert.equal(cyclic.error, undefined, JSON.stringify(cyclic));
     assert.equal(cyclic.result.isError, true);
@@ -67,10 +112,16 @@ export async function verifyPackedMcp(prefix, scratch, env) {
     const unknown = await call('NoSuchFixtureTool', {});
     assert.equal(unknown.error.code, -32602);
     return { id: 'packed-mcp-failure-contract', passed: true,
-      detail: 'installed server: success, blocked-provider failure, missing job, cyclic plan, unknown tool' };
+      detail: 'installed server and Jobs daemon: success, blocked-provider failure, missing job via installed CLI, cyclic plan, unknown tool' };
   } finally {
     child.stdin.end();
     const kill = setTimeout(() => child.kill('SIGKILL'), 3000);
-    try { await closed; } finally { clearTimeout(kill); lines.close(); }
+    try { await closed; } finally {
+      clearTimeout(kill);
+      lines.close();
+      daemon.kill('SIGTERM');
+      const daemonKill = setTimeout(() => daemon.kill('SIGKILL'), 3000);
+      try { await daemonClosed; } finally { clearTimeout(daemonKill); }
+    }
   }
 }

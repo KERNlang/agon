@@ -17,6 +17,7 @@ import { SurfaceGenerationError, type GeneratedSurfaceCatalogEntry } from '../..
 import { activatePreparedThirdPartyMod, type PreparedThirdPartyMod } from '../../packages/mod-kernel/src/third-party-activation.js';
 import { bootstrapFirstPartySurfaceGeneration } from '../../packages/mod-kernel/src/first-party-surface-bootstrap.js';
 import { DurableModHost } from '../../packages/mod-kernel/src/durable-host.js';
+import { WriterFence } from '../../packages/mod-kernel/src/writer-lock.js';
 import { createFirstPartyModCatalog, createFullCompatDesiredState } from '../../packages/mod-kernel/src/desired-state.js';
 import { surfaceLockFor } from '../helpers/modular-surface-lock.js';
 import { manifest } from '../helpers/modular-agon.js';
@@ -182,6 +183,23 @@ describe('S8 independent review acceptance controls', () => {
       expect(boot.activated.generation.catalog().every(({ owner }) => owner.id === 'agon.kernel')).toBe(true);
       await boot.activated.dispose();
     }
+  });
+
+  it('keeps kernel recovery callable without reclaiming a live writer during safe-mode bootstrap', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-safe-busy-writer-'));
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
+    const fence = await WriterFence.acquire(host.paths.writerLock, 'test.live-writer');
+    const bytes = await readFile(host.paths.writerLock, 'utf8');
+    try {
+      const boot = await bootstrapFirstPartySurfaceGeneration({ hostRoot: root, safeMode: true, runtime });
+      try {
+        expect(boot.pointerCanonical).toBeNull();
+        expect(boot.activePackageIds).toEqual([]);
+        expect(boot.activated.generation.assertAvailable('cli', 'mod')).toBeDefined();
+        expect(boot.activated.generation.catalog().every(({ owner }) => owner.id === 'agon.kernel')).toBe(true);
+        expect(await readFile(host.paths.writerLock, 'utf8')).toBe(bytes);
+      } finally { await boot.activated.dispose(); }
+    } finally { await fence.release(); }
   });
 
   it('boots kernel-only safe mode despite corrupt desired, trust, activation, and folder-mod state', async () => {

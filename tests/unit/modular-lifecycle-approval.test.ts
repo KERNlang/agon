@@ -7,6 +7,39 @@ import { ManagedLifecycleService, createManagedLifecyclePlan } from '../../packa
 import { artifact, installer, request, verifier } from '../helpers/modular-lifecycle.js';
 
 describe('managed lifecycle approval binding', () => {
+  it.each([
+    { payloadHash: 'sha256:bad' as const },
+    { version: '2.0.0' },
+    { sourceLocator: '' },
+    { unexpected: true },
+  ])('rejects malformed launcher identity: %j', async change => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-lifecycle-launcher-'));
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
+    const launcher = { version: '1.0.0', sourceLocator: '@kernlang/agon@1.0.0',
+      payloadHash: `sha256:${'1'.repeat(64)}` as const, ...change };
+    await expect(createManagedLifecyclePlan(host, { ...request([artifact('@test/app')]), launcher }))
+      .rejects.toThrow(/launcher identity|source locator/);
+  });
+
+  it('binds launcher bytes to approval and retained installation state', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-lifecycle-launcher-'));
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
+    const launcher = { version: '1.0.0', sourceLocator: '@kernlang/agon@1.0.0',
+      payloadHash: `sha256:${'1'.repeat(64)}` as const };
+    const input = { ...request([artifact('@test/app')]), launcher };
+    const first = await createManagedLifecyclePlan(host, input);
+    const second = await createManagedLifecyclePlan(host, { ...input,
+      launcher: { ...launcher, payloadHash: `sha256:${'2'.repeat(64)}` as const } });
+    expect(first).toHaveProperty('launcher', launcher);
+    expect(first.planHash).not.toBe(second.planHash);
+    const service = new ManagedLifecycleService(host);
+    await expect(service.apply({ ...first, launcher: second.launcher }, installer, verifier))
+      .rejects.toThrow('plan hash mismatch');
+    const result = await service.apply(first, installer, verifier);
+    expect(result.installation).toHaveProperty('launcher', launcher);
+    expect(await service.readSelectedInstallation()).toHaveProperty('launcher', launcher);
+  });
+
   it('binds installed payload identity to the approved plan', async () => {
     const root = await mkdtemp(join(tmpdir(), 'agon-lifecycle-payload-'));
     const host = new DurableModHost(root, { kernelVersion: '1.0.0' });

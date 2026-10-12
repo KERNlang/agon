@@ -7,7 +7,7 @@ import { inspectWorkingTree } from '@kernlang/agon-support-worktree';
 import { approveCesarPlan, saveCesarPlan, executePlan, formatCesarPlanMarkdown, planCostEstimator, appendMessage } from '@kernlang/agon-core';
 import { rejectPlanProposal, activatePlanProposal } from '@kernlang/agon-mod-plan';
 
-import type { CesarPlan, StepExecutor } from '@kernlang/agon-core';
+import type { CesarPlan } from '@kernlang/agon-core';
 
 import { buildStepExecutors } from '../../handlers/plan-mode.js';
 
@@ -172,9 +172,3 @@ async function executePlanInvocation(approved: CesarPlan, cb: DispatchCallbacks)
 export async function executeApprovedPlan(approved: CesarPlan, cb: DispatchCallbacks): Promise<void> {
   await executePlanInvocation(approved, cb);
 }
-
-export async function finalizePlanWithReviewGate(finalPlan: CesarPlan, executors: Record<string, StepExecutor>, abortSignal: AbortSignal, cb: DispatchCallbacks): Promise<CesarPlan> {
-  return planCoordinator(cb).finalizePlanWithReviewGate(finalPlan, executors, abortSignal);
-}
-
-export { failedPlanStepIsFallbackRetryable, preparePlanFallbackRetry } from '@kernlang/agon-mod-plan';

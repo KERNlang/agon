@@ -39,6 +39,12 @@ Tests also cover stable disabled controls, generation changes, autonomous-mode
 restoration on success/job/error, and dynamic skills. These checks do not close
 the remaining ownership or installed-product acceptance requirements.
 
+The unused CLI `finalizePlanWithReviewGate` wrapper and fallback-policy reexports
+are also retired. Production callers already use the physical coordinator.
+Tests now import fallback policy from the public Plan package; behavior checks
+remain, and a removal guard rejects these old CLI exports. The public Plan API
+and CLI commands are unchanged. The coordinator's live host binding remains.
+
 Candidate worktree: `/Users/ra/dev/agon-plan-resume`.
 Branch: `refactor/modular-plan-resume`, based on `90fa66d7`.
 

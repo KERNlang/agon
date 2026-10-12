@@ -231,16 +231,16 @@
         "range": "^19.2.0"
       }
     ],
-    "packedBytes": 1343765,
+    "packedBytes": 1343775,
     "unpackedBytes": 6037391,
     "fileCount": 107,
     "files": [
       {
-        "path": "dist/app-SFE5HH6F.js",
+        "path": "dist/app-UPV42XWV.js",
         "size": 410974
       },
       {
-        "path": "dist/app-SFE5HH6F.js.map",
+        "path": "dist/app-UPV42XWV.js.map",
         "size": 276511
       },
       {
@@ -372,11 +372,11 @@
         "size": 4785
       },
       {
-        "path": "dist/chunk-CUVWDECA.js",
+        "path": "dist/chunk-CSD25XVK.js",
         "size": 310786
       },
       {
-        "path": "dist/chunk-CUVWDECA.js.map",
+        "path": "dist/chunk-CSD25XVK.js.map",
         "size": 200783
       },
       {
@@ -548,11 +548,11 @@
         "size": 10244
       },
       {
-        "path": "dist/intent-skills-4UD3LT4P.js",
+        "path": "dist/intent-skills-IG4YVDKE.js",
         "size": 741
       },
       {
-        "path": "dist/intent-skills-4UD3LT4P.js.map",
+        "path": "dist/intent-skills-IG4YVDKE.js.map",
         "size": 51
       },
       {
@@ -664,10 +664,10 @@
         "size": 122876
       }
     ],
-    "payloadHash": "sha256:8af9f686fb5428cde2cdfcecdce1853eb28875a6d00b5894b3cad9221f94e14f",
-    "integrity": "sha512-8kgx5vIn1M8B9TCi9SupI5e0sus1g+UAm7CTSVj8hee+Y3J1YiaPf68cyLyLYG013G0x6RynUF5cry/GEt8guA==",
-    "shasum": "e5680d58b5fa402aec29840b1780eea9eb7ffb2d",
-    "tarballHash": "sha256:fc75999a4fec64e4f71c21da173041ec14b551ec71b9c7b99ebf7609f47747ea",
+    "payloadHash": "sha256:091ae8a54af755dcea8daf6d8447729a40da4e01bd2aeababbeb88af491bb049",
+    "integrity": "sha512-mqM+8PRMEzqYKKt9AspXBOwLOtRDEKifRBM6mna30xP2k26dq8zIQBwkY6iFvKP3a4KwcRSxTbko/jI8rV9qGw==",
+    "shasum": "166c2751e577ddc6b8cf13243797a987126b731d",
+    "tarballHash": "sha256:5d57fb9ca3c17174f381458d90948a17cb127bcfa21d743d007d85a1a56d0c82",
     "packageJsonHash": "sha256:8905f40d1f1eef07d64063cd9ce8f783f828292654a2731fb52bab3328959ac2"
   },
   "packages": [

@@ -455,12 +455,16 @@ describe('physical Plan execution coordinator', () => {
     expect(physical.prepareCesarPlanResume(value, 'restart').steps[0]).toMatchObject({ state: 'pending', result: undefined });
     expect(value).toEqual(before);
   });
-  it('owns fallback policies instead of importing the CLI owner', async () => {
-    const legacy = await import('../../packages/cli/src/signals/dispatch/plan-execution.js');
-    expect(physical).toHaveProperty('preparePlanFallbackRetry', legacy.preparePlanFallbackRetry);
-    expect(physical).toHaveProperty('failedPlanStepIsFallbackRetryable', legacy.failedPlanStepIsFallbackRetryable);
+  it('owns fallback policies without unused CLI compatibility exports', () => {
+    expect(physical).toHaveProperty('preparePlanFallbackRetry', expect.any(Function));
+    expect(physical).toHaveProperty('failedPlanStepIsFallbackRetryable', expect.any(Function));
     const legacySource = readFileSync(new URL('../../packages/cli/src/signals/dispatch/plan-execution.ts', import.meta.url), 'utf8');
     expect(legacySource).not.toMatch(/function preparePlanFallbackRetry|function failedPlanStepIsFallbackRetryable|const MUTATING\s*=|await executePlan\(/);
+    const barrel = readFileSync(new URL('../../packages/cli/src/signals/dispatch.ts', import.meta.url), 'utf8');
+    for (const name of ['preparePlanFallbackRetry', 'failedPlanStepIsFallbackRetryable', 'finalizePlanWithReviewGate']) {
+      expect(legacySource).not.toContain(name);
+      expect(barrel).not.toContain(name);
+    }
   });
   it.each(['disabled', 'budget', 'read-only', 'paused', 'clean'])('does not append review when %s', async reason => {
     const { coordinator, host } = fixture(reason === 'clean' ? [] : ['file.txt']);

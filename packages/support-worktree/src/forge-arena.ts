@@ -1,7 +1,8 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join, resolve, sep } from 'node:path';
+import { linkWorktreeNodeModules, hydrateWorktreeBuildArtifacts } from './dependency-overlay.js';
 
 export interface ForgeCandidateWorktree {
   readonly engineId: string;
@@ -34,8 +35,9 @@ function isInside(parent: string, child: string): boolean {
 }
 
 /**
- * Creates detached candidates from one immutable HEAD. Ambient source-checkout
- * changes are deliberately excluded, reported to the caller, and never stashed.
+ * Create detached candidates with tracked files from one immutable HEAD.
+ * Share external dependencies and copy existing build artifacts from the source.
+ * Rebuild candidate artifacts after source edits. Do not stash checkout changes.
  */
 export function createForgeArena(cwd: string): ForgeArena {
   const repoRoot = git(cwd, ['rev-parse', '--show-toplevel']);
@@ -61,13 +63,10 @@ export function createForgeArena(cwd: string): ForgeArena {
       const ordinal = candidates.length + 1;
       const path = join(rootPath, `${String(ordinal).padStart(2, '0')}-${safeLeaf(engineId)}`);
       git(repoRoot, ['worktree', 'add', '--detach', path, baseSha]);
-      const rootModules = join(repoRoot, 'node_modules');
-      const candidateModules = join(path, 'node_modules');
-      if (existsSync(rootModules) && !existsSync(candidateModules)) {
-        try { symlinkSync(rootModules, candidateModules, 'dir'); } catch { /* fitness may install or use another toolchain */ }
-      }
       const candidate = Object.freeze({ engineId, path });
       candidates.push(candidate);
+      linkWorktreeNodeModules(repoRoot, path);
+      hydrateWorktreeBuildArtifacts(repoRoot, path);
       return candidate;
     },
     diff(candidatePath: string): string {

@@ -22,7 +22,8 @@
         "@kernlang/agon-mod-api",
         "@kernlang/agon-support-engine-runtime",
         "@kernlang/agon-support-persistence",
-        "@kernlang/agon-support-verification"
+        "@kernlang/agon-support-verification",
+        "@kernlang/agon-support-worktree"
       ],
       "assignments": 30,
       "assignmentHash": "sha256:5002ec6e60a9d1ae274e6f4f26e0a3968230cd09f9c683154fecb35e46ec0370",

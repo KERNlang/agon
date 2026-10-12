@@ -35,6 +35,10 @@
       {
         "id": "agon.verification",
         "range": ">=0.0.0-0"
+      },
+      {
+        "id": "agon.worktree",
+        "range": ">=0.0.0-0"
       }
     ],
     "optional": [],
@@ -240,6 +244,7 @@
       "dist/session-workflow.d.ts",
       "dist/session.d.ts",
       "dist/step-validation.d.ts",
+      "dist/worktree-workflow.d.ts",
       "ownership.json",
       "schemas/config.schema.json"
     ],

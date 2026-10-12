@@ -6,6 +6,8 @@ export const MANIFEST = validateManifest(manifest);
 export const SOURCE_OCCURRENCES = Object.freeze(ownership.assignments);
 
 export const IMPLEMENTATION_KIND = 'physical' as const;
+export { showWorktreePlan, listWorktreePlans, approveWorktreePlan, retryWorktreePlan, cancelWorktreePlan } from './worktree-workflow.js';
+export type { WorktreePlanHost, WorktreePlanEvent } from './worktree-workflow.js';
 export { createMod } from './implementation.js';
 export { createMod as default } from './implementation.js';
 export { createPersistenceEnvelope, unwrapPersistenceEnvelope } from './implementation.js';

@@ -9,3 +9,4 @@ export * from './review-target.js';
 export * from './review-engines.js';
 export * from './fitness-command.js';
 export * from './tui-probe-assets.js';
+export * from './explicit-approval.js';

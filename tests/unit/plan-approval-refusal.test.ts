@@ -3,12 +3,14 @@ import type { HandlerContext } from '../../packages/cli/src/handlers/types.js';
 import type { DispatchCallbacks } from '../../packages/cli/src/signals/dispatch.js';
 import type { CesarPlan } from '@kernlang/agon-core';
 import { createCesarPlan } from '@kernlang/agon-mod-plan';
+import { createPlan } from '@kernlang/agon-support-worktree';
 
 const effects = vi.hoisted(() => ({
   approve: vi.fn((plan) => ({ ...plan, state: 'approved' })),
   cancel: vi.fn((plan) => ({ ...plan, state: 'cancelled' })),
   save: vi.fn(), saveCesar: vi.fn(),
   load: vi.fn(),
+  forge: vi.fn(async (..._args: unknown[]) => {}),
   execute: vi.fn(async (plan) => ({ ...plan, state: 'paused' })),
 }));
 vi.mock('@kernlang/agon-core', async importOriginal => ({
@@ -19,10 +21,36 @@ vi.mock('@kernlang/agon-core', async importOriginal => ({
   loadConfig: () => ({}), resolveWorkingDir: () => '/fixture', gitChangedFiles: () => [],
 }));
 vi.mock('../../packages/cli/src/handlers/plan-mode.js', () => ({ buildStepExecutors: () => ({}) }));
-import { handlePlanShow, handleApprove } from '../../packages/cli/src/handlers/plan.js';
+vi.mock('../../packages/cli/src/handlers/forge.js', () => ({ handleForge: effects.forge }));
+vi.mock('@kernlang/agon-support-worktree', async importOriginal => ({
+  ...await importOriginal<Record<string, unknown>>(),
+  approvePlan: (plan: unknown) => effects.approve(plan),
+  cancelPlan: (plan: unknown) => effects.cancel(plan),
+}));
+import { handlePlanShow, handleApprove, handleRetry } from '../../packages/cli/src/handlers/plan.js';
 import { resumeCesarPlan } from '../../packages/cli/src/signals/dispatch/plan-execution.js';
 
 beforeEach(() => vi.clearAllMocks());
+
+it.each([
+  [undefined, true], ['', false], ['npm test', true],
+] as const)('forwards worktree Plan Forge arguments unchanged: fitness=%j hardened=%s', async (fitnessCmd, hardened) => {
+  for (const handle of [handlePlanShow, handleApprove, handleRetry]) {
+    effects.forge.mockClear();
+    const plan = createPlan({ type: 'forge', task: 'fixture', fitnessCmd, hardened },
+      { id: 'fixture', path: '/fixture', headSha: 'abc', branch: 'fixture', dirty: false },
+      [{ id: 'build', kind: 'dispatch', label: 'Build', effects: ['write'] }]);
+    if (handle === handleRetry) {
+      plan.state = 'paused';
+      plan.steps[0].result.state = 'failed';
+    }
+    const ctx = { currentPlan: plan, askQuestion: async () => 'yes',
+      setCurrentPlan: (next: typeof plan) => { ctx.currentPlan = next; } };
+    const dispatch = vi.fn();
+    await handle(dispatch, ctx as unknown as HandlerContext);
+    expect(effects.forge).toHaveBeenCalledExactlyOnceWith('fixture', fitnessCmd ?? null, dispatch, ctx, ctx.currentPlan, hardened);
+  }
+});
 
 describe('plan approval refuses unrecognized answers', () => {
   it('keeps /approve bound to the disk draft shown before dismissal', async () => {

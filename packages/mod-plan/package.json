@@ -41,6 +41,7 @@
     "dist/session-workflow.d.ts",
     "dist/session.d.ts",
     "dist/step-validation.d.ts",
+    "dist/worktree-workflow.d.ts",
     "schemas",
     "agon.mod.json",
     "ownership.json",
@@ -58,6 +59,7 @@
     "@kernlang/agon-mod-api": "1.0.0",
     "@kernlang/agon-support-engine-runtime": "1.0.0",
     "@kernlang/agon-support-persistence": "1.0.0",
-    "@kernlang/agon-support-verification": "1.0.0"
+    "@kernlang/agon-support-verification": "1.0.0",
+    "@kernlang/agon-support-worktree": "1.0.0"
   }
 }

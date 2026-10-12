@@ -231,17 +231,17 @@
         "range": "^19.2.0"
       }
     ],
-    "packedBytes": 1345902,
-    "unpackedBytes": 6045743,
+    "packedBytes": 1343336,
+    "unpackedBytes": 6030584,
     "fileCount": 107,
     "files": [
       {
-        "path": "dist/app-Q443PQW3.js",
-        "size": 411041
+        "path": "dist/app-BKKDGK3K.js",
+        "size": 411121
       },
       {
-        "path": "dist/app-Q443PQW3.js.map",
-        "size": 276581
+        "path": "dist/app-BKKDGK3K.js.map",
+        "size": 276616
       },
       {
         "path": "dist/attach-273S4OVC.js",
@@ -290,6 +290,14 @@
       {
         "path": "dist/chunk-4IUJRXQJ.js.map",
         "size": 6121
+      },
+      {
+        "path": "dist/chunk-4NPYUME5.js",
+        "size": 301725
+      },
+      {
+        "path": "dist/chunk-4NPYUME5.js.map",
+        "size": 194570
       },
       {
         "path": "dist/chunk-7GXJUZRY.js",
@@ -420,14 +428,6 @@
         "size": 15022
       },
       {
-        "path": "dist/chunk-MVYNTYC5.js",
-        "size": 310786
-      },
-      {
-        "path": "dist/chunk-MVYNTYC5.js.map",
-        "size": 200783
-      },
-      {
         "path": "dist/chunk-NITMA4MQ.js",
         "size": 24269
       },
@@ -548,11 +548,11 @@
         "size": 10244
       },
       {
-        "path": "dist/intent-skills-KXVUU4IT.js",
+        "path": "dist/intent-skills-V2OXZLGK.js",
         "size": 741
       },
       {
-        "path": "dist/intent-skills-KXVUU4IT.js.map",
+        "path": "dist/intent-skills-V2OXZLGK.js.map",
         "size": 51
       },
       {
@@ -664,10 +664,10 @@
         "size": 122876
       }
     ],
-    "payloadHash": "sha256:8c07f17cf45c606a47218d775cdb08173174fec9e8ebf2e47f7ff33fd0e423d5",
-    "integrity": "sha512-BIt3ZSTiYwK9pBTEY29mxMS9tKL+bm7HiGDeVFf0sjkjdDYJWaRLoRLxb8dZJN0lOMLg66ueZpt6yZLHfayZOA==",
-    "shasum": "aec9e34a653a8e085ed97d7a4a0c7173ed4dedc8",
-    "tarballHash": "sha256:9c3f7629664325e76e84eac8f4f1944f6d3ae246199e50874e82b7dd54698df1",
+    "payloadHash": "sha256:ec95263a22f076d5da5f9db3efc763d1353e6c8440c96a71adced543e14c99ab",
+    "integrity": "sha512-ALvGGalYEWTI0V+6emU7L8UsxIYh/vhCx9XClhikykIt7A3OOMJLRj0+h7E8fmEaWUs7wllYdpq1/aM/AxEgTg==",
+    "shasum": "88dc0f69aab3a6f811c8805f3d31e2f00a85ad89",
+    "tarballHash": "sha256:64e2b03d97ffad706f0e6bcd8f349fae45fd091be396d01b37e4e00069fd84b6",
     "packageJsonHash": "sha256:8905f40d1f1eef07d64063cd9ce8f783f828292654a2731fb52bab3328959ac2"
   },
   "packages": [

@@ -7,7 +7,7 @@ import { persistencePath } from '@kernlang/agon-support-persistence';
 
 import { icons } from '../icons.js';
 
-import { handleForge, handleChat, handleBrainstorm, handleTribunal } from '../../handlers/index.js';
+import { handleForge, handleChat, handleTribunal } from '../../handlers/index.js';
 
 import type { DispatchCallbacks, DispatchResult } from '../dispatch.js';
 
@@ -15,7 +15,7 @@ import { countTrackedUserTurns } from './utils.js';
 
 import { withThreadOutcome, buildBrainstormContinuationMessage } from './delegation.js';
 
-import { continueCesarAfterResult } from './cesar-router.js';
+import { continueCesarAfterResult, runPhysicalCesarWorkflow } from './cesar-router.js';
 
 import { emitPostDispatch } from './utils.js';
 import { isExplicitApproval } from '../../lib/explicit-approval.js';
@@ -147,14 +147,14 @@ export async function dispatchMetaIntent(intent: any, input: string, cb: Dispatc
         const continuationUserTurns = countTrackedUserTurns(cb.ctx);
         const question = si.question ?? si.input;
         const _sCwd = resolveWorkingDir();
-        cb.runAsJob('brainstorm', si.question?.slice(0, 40) ?? 'brainstorm', withThreadOutcome(_sCwd, 'brainstorm', si.question?.slice(0, 40) ?? 'brainstorm', async () => {
-          const bsResult = await handleBrainstorm(question, cb.dispatch, cb.ctx);
+        cb.runAsJob('brainstorm', si.question?.slice(0, 40) ?? 'brainstorm', signal => withThreadOutcome(_sCwd, 'brainstorm', si.question?.slice(0, 40) ?? 'brainstorm', async () => {
+          const bsResult = await runPhysicalCesarWorkflow('brainstorm', { question }, cb, signal);
           if (bsResult) {
             cb.dispatch({ type: 'info', message: 'Cesar absorbing brainstorm results…' });
             await continueCesarAfterResult(buildBrainstormContinuationMessage('Brainstorm complete', question, bsResult), cb, continuationEpoch, continuationUserTurns);
           }
           return bsResult;
-        }, cb.ctx));
+        }, cb.ctx)());
         return { handled: true, ranAsJob: true };
       }
       await handleChat(si.input, cb.dispatch, cb.ctx, cb.allImages);

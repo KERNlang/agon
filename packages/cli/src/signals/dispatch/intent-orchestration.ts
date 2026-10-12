@@ -3,7 +3,7 @@ import { resolveWorkingDir, spawnWithTimeout } from '@kernlang/agon-core';
 
 import { ENGINE_COLORS } from '../../blocks/output-format.js';
 
-import { handleForge, handleBrainstorm, handleCampfire, handleTribunal, handleThink, handleCouncil, handleSynthesis, handleNeroChallenge, handleResearch, handleChrome, handleConquer, handleBuild, handleReviewMany, handleSanitize, handleNaturalize, handleMutate, runAgentMode, runAgentTeam } from '../../handlers/index.js';
+import { handleForge, handleCampfire, handleTribunal, handleThink, handleCouncil, handleSynthesis, handleNeroChallenge, handleResearch, handleChrome, handleConquer, handleBuild, handleReviewMany, handleSanitize, handleNaturalize, handleMutate, runAgentMode, runAgentTeam } from '../../handlers/index.js';
 
 import { handleTeamTribunal } from '../../handlers/team-tribunal.js';
 
@@ -25,7 +25,7 @@ import { countTrackedUserTurns } from './utils.js';
 
 import { withThreadOutcome, buildBrainstormContinuationMessage, collectRecentEngineContext } from './delegation.js';
 
-import { absorbReviewResultIntoCesar, continueCesarAfterResult, runAgentJobWithAutoResume } from './cesar-router.js';
+import { absorbReviewResultIntoCesar, continueCesarAfterResult, runAgentJobWithAutoResume, runPhysicalCesarWorkflow } from './cesar-router.js';
 
 import { emitPostDispatch } from './utils.js';
 
@@ -51,16 +51,16 @@ export async function dispatchOrchestrationIntent(intent: any, input: string, cb
       const _bLabel = intent.question?.slice(0, 40) ?? 'brainstorm';
       const continuationEpoch = cb.ctx.inputEpoch ?? 0;
       const continuationUserTurns = countTrackedUserTurns(cb.ctx);
-      cb.runAsJob('brainstorm', _bLabel, withThreadOutcome(_bCwd, 'brainstorm', _bLabel, async () => {
+      cb.runAsJob('brainstorm', _bLabel, signal => withThreadOutcome(_bCwd, 'brainstorm', _bLabel, async () => {
         if (cb.eventBus) await cb.eventBus.emit('pre:brainstorm', { question: intent.question, cwd: _bCwd });
-        const bsR = await handleBrainstorm(intent.question, cb.dispatch, cb.ctx);
+        const bsR = await runPhysicalCesarWorkflow('brainstorm', { question: intent.question }, cb, signal);
         if (cb.eventBus) cb.eventBus.emit('post:brainstorm', { question: intent.question, cwd: _bCwd }).catch(() => {});
         if (bsR) {
           cb.dispatch({ type: 'info', message: 'Cesar absorbing brainstorm results…' });
           await continueCesarAfterResult(buildBrainstormContinuationMessage('Brainstorm complete', intent.question, bsR), cb, continuationEpoch, continuationUserTurns);
         }
         return bsR;
-      }, cb.ctx));
+      }, cb.ctx)());
       return { handled: true, ranAsJob: true };
     }
     case 'tribunal': {

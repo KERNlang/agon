@@ -5,6 +5,13 @@ import { describe, expect, it } from 'vitest';
 const root = resolve(import.meta.dirname, '../..');
 
 describe('modular orchestration ownership guard', () => {
+  it('retires the duplicate Brainstorm session handler', () => {
+    expect(existsSync(resolve(root, 'packages/cli/src/handlers/brainstorm.ts'))).toBe(false);
+    for (const path of ['handlers/index.ts', 'signals/dispatch/intent-meta.ts', 'signals/dispatch/intent-orchestration.ts']) {
+      expect(readFileSync(resolve(root, 'packages/cli/src', path), 'utf8'), path).not.toContain('handleBrainstorm');
+    }
+  });
+
   it('keeps physical mods as the only orchestration-tool implementation owner', () => {
     expect(existsSync(resolve(root, 'packages/core/src/blocks/tool-orchestration.ts'))).toBe(false);
 

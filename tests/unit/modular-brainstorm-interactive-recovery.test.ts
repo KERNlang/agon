@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { BrainstormResult } from '@kernlang/agon-mod-brainstorm';
+import type { DispatchCallbacks } from '../../packages/cli/src/signals/dispatch.js';
 
 const mocks = vi.hoisted(() => ({ execute: vi.fn(), complete: vi.fn(), fail: vi.fn() }));
 vi.mock('../../packages/cli/src/surface-authority-runtime.js', async importOriginal => ({
@@ -9,7 +10,12 @@ vi.mock('@kernlang/agon-mod-brainstorm', async original => ({
   ...await original<object>(),
   createBrainstormSessionRecord: () => ({ complete: mocks.complete, fail: mocks.fail }),
 }));
+vi.mock('@kernlang/agon-forge', async original => ({
+  ...await original<object>(), runBrainstorm: () => { throw new Error('legacy brainstorm bypass'); },
+}));
 import { runPhysicalCesarWorkflow } from '../../packages/cli/src/signals/dispatch/cesar-router.js';
+import { dispatchOrchestrationIntent } from '../../packages/cli/src/signals/dispatch/intent-orchestration.js';
+import { dispatchMetaIntent } from '../../packages/cli/src/signals/dispatch/intent-meta.js';
 
 beforeEach(() => { vi.resetAllMocks(); vi.useFakeTimers(); });
 afterEach(() => { vi.useRealTimers(); });
@@ -17,6 +23,50 @@ const result: BrainstormResult = { question: 'second', winner: 'codex', response
   { engineId: 'codex', approach: 'fixture approach', reasoning: 'fixture reasoning', score: 71, confidence: 80 },
 ] };
 const callbacks = () => ({ dispatch: vi.fn(), ctx: { activeEngines: () => ['codex'], chatSession: { id: 'fixture' } } });
+
+it.each(['brainstorm', 'suggest-brainstorm'])('%s preserves the generated authority and job cancellation boundary', async type => {
+  const controller = new AbortController();
+  const jobs: Array<(signal: AbortSignal) => Promise<unknown>> = [];
+  const base = callbacks();
+  const cb = { ...base, ctx: { ...base.ctx, config: {}, setActiveAbort: vi.fn() }, askQuestion: async () => 'yes',
+    runAsJob: (_kind: string, _label: string, run: (signal: AbortSignal) => Promise<unknown>) => jobs.push(run),
+  } as unknown as DispatchCallbacks;
+  mocks.execute.mockRejectedValue(new Error('brainstorm disabled in selected generation'));
+  const route = type === 'brainstorm' ? dispatchOrchestrationIntent : dispatchMetaIntent;
+  await route({ type, question: 'fixture question', input: 'fixture question' }, 'fixture question', cb);
+  expect(jobs).toHaveLength(1);
+  await expect(jobs[0]!(controller.signal)).rejects.toThrow('brainstorm disabled in selected generation');
+  expect(mocks.execute).toHaveBeenCalledExactlyOnceWith('brainstorm', expect.objectContaining({ question: 'fixture question' }),
+    expect.objectContaining({ signal: controller.signal }));
+  expect(mocks.complete).not.toHaveBeenCalled();
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it.each(['brainstorm', 'suggest-brainstorm'])('%s records success through the mod and refuses a cancelled queued job', async type => {
+  const jobs: Array<(signal: AbortSignal) => Promise<unknown>> = [];
+  const base = callbacks();
+  const cb = { ...base, ctx: { ...base.ctx, inputEpoch: 0 }, askQuestion: async () => 'yes',
+    runAsJob: (_kind: string, _label: string, run: (signal: AbortSignal) => Promise<unknown>) => jobs.push(run),
+  } as unknown as DispatchCallbacks;
+  const route = type === 'brainstorm' ? dispatchOrchestrationIntent : dispatchMetaIntent;
+  mocks.execute.mockImplementation(() => {
+    cb.ctx.inputEpoch = 1;
+    return { exitCode: 0, result };
+  });
+  await route({ type, question: 'second', input: 'second' }, 'second', cb);
+  await jobs[0]!(new AbortController().signal);
+  expect(mocks.complete).toHaveBeenCalledExactlyOnceWith(result);
+  expect(cb.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'engine-block', content: result.response }));
+  expect(vi.getTimerCount()).toBe(0);
+
+  const cancelled = new AbortController();
+  cancelled.abort(new Error('queued job cancelled'));
+  await route({ type, question: 'third', input: 'third' }, 'third', cb);
+  await expect(jobs[1]!(cancelled.signal)).rejects.toThrow('queued job cancelled');
+  expect(mocks.execute).toHaveBeenCalledTimes(1);
+  expect(mocks.complete).toHaveBeenCalledTimes(1);
+  expect(vi.getTimerCount()).toBe(0);
+});
 
 it('clears real presenter state after a failed command and accepts the next invocation', async () => {
   const cb = callbacks();

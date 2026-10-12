@@ -24,6 +24,23 @@ on the strength of that receipt.
 
 ## Reproduction and positive evidence
 
+### Remaining Brainstorm intent routes (2026-10-12)
+
+The direct orchestration intent and approved `suggest-brainstorm` intent still
+called a duplicate CLI session handler. Both now use the existing physical Cesar
+route and forward the job's cancellation signal. Their thread capture, approval,
+workflow hooks and continuation guards remain. The unused 255-line internal
+handler and its barrel export are removed; an ownership guard prevents return.
+
+Both routes failed the new regression before the change by reaching the legacy
+execution sentinel. The repaired routes propagate generated-authority refusal,
+record successful results through the mod, and reject cancelled queued jobs.
+These focused tests mock the authority boundary, not proof of all disable paths.
+The full run passed 9,124 tests with six skipped, plus build, release-set,
+supply-chain, typecheck, lint and re-export checks. No provider launched.
+Isolated source review found no concrete defect. A06/A11 remain open for their
+other ownership and installed-product requirements; this is not release approval.
+
 ### Running interactive follow-up result refusal (2026-10-08)
 
 Deferred follow-up tests reproduced late answer persistence and ordinary

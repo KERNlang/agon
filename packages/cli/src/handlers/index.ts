@@ -1,7 +1,6 @@
 export type { OutputEvent, Dispatch, HandlerContext, EngineProgress } from './types.js';
 export { handleForge } from './forge.js';
 export { handleChat } from './chat.js';
-export { handleBrainstorm } from './brainstorm.js';
 export { handleCampfire } from './campfire.js';
 export { handleTribunal } from './tribunal.js';
 export {

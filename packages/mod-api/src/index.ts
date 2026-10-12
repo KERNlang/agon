@@ -188,7 +188,7 @@ export interface WorkspaceHostServices {
   setSessionRoot(path: string, context: InvocationContext): Awaitable<void>;
 }
 
-/** Typed interactive requests; the host retains session and approval policy. */
+/** Typed interactive requests; Plan owns policy and the host supplies UI effects. */
 export type PlanSessionRequest =
   | { readonly type: 'plan-task'; readonly task: string }
   | { readonly type: 'plan' | 'plan-resume'; readonly planId?: string }

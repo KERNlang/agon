@@ -8,6 +8,15 @@ const source = (path: string) => readFileSync(fileURLToPath(new URL(`../../${pat
 it('exports the session scope from the physical Plan package', () => {
   expect(plan).toHaveProperty('withPlanSession', expect.any(Function));
   expect(plan).toHaveProperty('planSessionHost.run', expect.any(Function));
+  expect(plan).toHaveProperty('dispatchPlanSession', expect.any(Function));
+});
+
+it('binds physical and legacy-shaped requests to one Plan dispatcher', () => {
+  const content = source('packages/cli/src/signals/dispatch/intent-session.ts');
+  expect(content).not.toMatch(/dispatchSessionInfoIntent\(request,/);
+  expect(content).toContain('dispatchPlanSession(request,');
+  expect(content).toContain('return runInteractivePlanRequest(intent, input, cb)');
+  expect(content).toContain('await runInteractivePlanRequest(request,');
 });
 
 it('removes the CLI-owned session scope instead of retaining a second owner', () => {

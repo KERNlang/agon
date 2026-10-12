@@ -1,5 +1,23 @@
 # A05/A11: Plan resume-policy extraction
 
+## Session routing update (2026-10-12)
+
+The Plan package's existing `session.ts` now owns session-action selection and
+pending-before-legacy approval/cancellation ordering through `dispatchPlanSession`.
+The CLI binds terminal effects once. Generated contributions no longer re-enter
+`dispatchSessionInfoIntent`; legacy-shaped requests use the same Plan dispatcher.
+Task/resume policy, persistence formats, job flags and post-dispatch events stay
+unchanged. Auto keeps its existing skills dispatcher and event ownership.
+
+Behavior checks cover both routes, pending/fallback failures, Auto outcomes,
+task job flags, invocation expiry, and disabled physical approval markers.
+Reversing the approval fallback condition makes its regression test fail.
+The source guard rejects a return of the recursive legacy callback.
+
+This retires the A05 legacy session-routing callback, not every Plan host adapter
+or KL-011. CLI terminal effects and the execution-coordinator binding remain.
+The original extraction subject and evidence below remain historical.
+
 ## Scope and ownership
 
 Candidate worktree: `/Users/ra/dev/agon-plan-resume`.

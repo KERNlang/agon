@@ -2,7 +2,7 @@ import { dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { createPatchApplicationUi, withPatchApplication } from '../../patch-application-host.js';
 import { escapeLiteralText } from '../../blocks/literal-text.js';
-import { withPlanSession, startPlanTaskSession, resumePlanSession, loadCesarPlan } from '@kernlang/agon-mod-plan';
+import { withPlanSession, dispatchPlanSession, startPlanTaskSession, resumePlanSession, loadCesarPlan } from '@kernlang/agon-mod-plan';
 import type { SessionJobsInvocationContext } from '@kernlang/agon-mod-jobs';
 import { runBrainstormSession } from '../../blocks/brainstorm-session.js';
 
@@ -11,7 +11,7 @@ import { resolveWorkingDir, buildImageAttachment, sessionContext, visionSupportN
 import { invalidateCwdCache } from '../../handlers/chat.js';
 
 import type { ImageAttachment } from '@kernlang/agon-core';
-import type { CommandResult, IntentContribution, Json, ModPlatform } from '@kernlang/agon-mod-api';
+import type { CommandResult, IntentContribution, Json, ModPlatform, PlanSessionRequest } from '@kernlang/agon-mod-api';
 
 import { assertContributionInput, selectModSettings } from '@kernlang/agon-kernel';
 import { assertProcessSurfaceAvailable, modularHostRoot, processSurfaceCatalog, processSurfaceClient } from '../../surface-authority-runtime.js';
@@ -39,6 +39,45 @@ import { resumeCesarPlan, approvePendingCesarPlan, cancelPendingCesarPlan, handl
 import { routeWithCesar } from './cesar-router.js';
 
 import { emitPostDispatch } from './utils.js';
+
+/** Bind terminal effects without re-entering the legacy session dispatcher. */
+async function runInteractivePlanRequest(request: PlanSessionRequest, input: string, cb: DispatchCallbacks) {
+  const result = await dispatchPlanSession(request, {
+    show: planId => handlePlanShow(cb.dispatch, cb.ctx, planId),
+    task: task => startPlanTaskSession(task, {
+      setActive: plan => cb.setActivePlan(plan),
+      prepare: () => {
+        if (!cb.ctx.cesar) cb.ctx.cesar = {
+          busy: false, busySince: null, queue: null,
+          toolRegistry: null, hasNativeTools: false, lastDispatch: null,
+          pendingDelegation: null, reportedConfidence: undefined, reportedConfidenceReasoning: undefined, confidenceSatisfied: false, blockedOnConfidence: null,
+          autoNero: false, advisorPending: false, lastEscalation: null,
+          mcpFingerprint: undefined, mcpSignalPath: undefined, planDispatch: null, proposedPlan: undefined, sessionMcpServers: [],
+        };
+        cb.ctx.cesar.planDispatch = cb.dispatch;
+      },
+      route: value => routeWithCesar(value, [], cb),
+      proposed: () => cb.ctx.cesar?.proposedPlan,
+      acceptProposal: plan => handleProposedCesarPlan(plan, cb),
+    }),
+    resume: planId => resumePlanSession(planId, {
+      load: loadCesarPlan,
+      current: () => findResumableCesarPlan(cb.ctx),
+      resume: plan => resumeCesarPlan(plan, cb),
+      notify: (type, message) => cb.dispatch({ type, message }),
+    }),
+    list: () => handlePlansList(cb.dispatch),
+    approvePending: () => approvePendingCesarPlan(cb),
+    approveLegacy: () => handleApprove(cb.dispatch, cb.ctx),
+    retry: () => handleRetry(cb.dispatch, cb.ctx),
+    cancelPending: () => cancelPendingCesarPlan(cb),
+    cancelLegacy: () => handleCancel(cb.dispatch, cb.ctx),
+    auto: async intent => (await import('./intent-skills.js')).dispatchSkillsUiIntent(intent, '', cb),
+  });
+  // Auto owns its post-dispatch event. Background task dispatch has no tail event.
+  if (request.type !== 'auto' && result?.handled && !result.ranAsJob) emitPostDispatch(request, input, cb);
+  return result;
+}
 
 export async function dispatchSessionInfoIntent(intent: any, input: string, cb: DispatchCallbacks): Promise<DispatchResult | null> {
   switch (intent.type) {
@@ -292,51 +331,9 @@ export async function dispatchSessionInfoIntent(intent: any, input: string, cb: 
     case 'chats': handleChats(cb.dispatch, intent.sessionId); break;
   
     // ── Plan commands ──
-    case 'plan': await handlePlanShow(cb.dispatch, cb.ctx, intent.planId); break;
-    case 'plan-task': {
-      const result = await startPlanTaskSession(intent.task, {
-        setActive: plan => cb.setActivePlan(plan),
-        prepare: () => {
-          if (!cb.ctx.cesar) cb.ctx.cesar = {
-            busy: false, busySince: null, queue: null,
-            toolRegistry: null, hasNativeTools: false, lastDispatch: null,
-            pendingDelegation: null, reportedConfidence: undefined, reportedConfidenceReasoning: undefined, confidenceSatisfied: false, blockedOnConfidence: null,
-            autoNero: false, advisorPending: false, lastEscalation: null,
-            mcpFingerprint: undefined, mcpSignalPath: undefined, planDispatch: null, proposedPlan: undefined, sessionMcpServers: [],
-          };
-          cb.ctx.cesar.planDispatch = cb.dispatch;
-        },
-        route: input => routeWithCesar(input, [], cb),
-        proposed: () => cb.ctx.cesar?.proposedPlan,
-        acceptProposal: plan => handleProposedCesarPlan(plan, cb),
-      });
-      if (result.ranAsJob) return { handled: true, ranAsJob: true };
-      break;
-    }
-    case 'plan-resume': {
-      await resumePlanSession(intent.planId, {
-        load: loadCesarPlan,
-        current: () => findResumableCesarPlan(cb.ctx),
-        resume: plan => resumeCesarPlan(plan, cb),
-        notify: (type, message) => cb.dispatch({ type, message }),
-      });
-      break;
-    }
-    case 'plans': handlePlansList(cb.dispatch); break;
-    case 'approve': {
-      if (await approvePendingCesarPlan(cb)) break;
-      await handleApprove(cb.dispatch, cb.ctx);
-      break;
-    }
-    case 'retry': await handleRetry(cb.dispatch, cb.ctx); break;
-    case 'cancel': {
-      // Cesar proposals first, legacy plan runner second — the exact mirror of
-      // 'approve' above. Both reject routes (typing /cancel, and the pinned
-      // approval prompt's '3. Reject', which submits /cancel) come through here.
-      if (cancelPendingCesarPlan(cb)) break;
-      handleCancel(cb.dispatch, cb.ctx);
-      break;
-    }
+    case 'plan': case 'plan-task': case 'plan-resume': case 'plans':
+    case 'approve': case 'retry': case 'cancel':
+      return runInteractivePlanRequest(intent, input, cb);
     case 'apply': {
       // Legacy-shaped intents still execute the selected physical owner. There
       // is no second Apply workflow and no fallback around mod enablement.
@@ -412,11 +409,7 @@ export async function runPhysicalTuiContribution(
   }
   const run = () => withPlanSession(invocation.invocationId, async (request, context) => {
       context.signal.throwIfAborted();
-      // A05 adapter: preserve session selection and approval semantics; never
-      // recurse through the generated marker or substitute a disk-only controller.
-      const result = request.type === 'auto'
-        ? await (await import('./intent-skills.js')).dispatchSkillsUiIntent(request, '', cb)
-        : await dispatchSessionInfoIntent(request, '', cb);
+      const result = await runInteractivePlanRequest(request, '', cb);
       return result?.handled ? { exitCode: 0 } : { exitCode: 2, stderr: 'Unsupported Plan session action.\n' };
     }, async () => contribution.run(normalized, invocation));
   const output = record.owner?.id === 'agon.forge' && commandName === 'apply'

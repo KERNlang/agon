@@ -12,6 +12,8 @@ export { createPersistenceEnvelope, unwrapPersistenceEnvelope } from './implemen
 export { PlanCostEstimator } from './cost-estimator.js';
 export { createPlanRuntime } from './runtime.js';
 export { planSessionHost, withPlanSession } from './session-scope.js';
+export { dispatchPlanSession } from './session.js';
+export type { PlanSessionActions, PlanSessionDispatchResult } from './session.js';
 export { selectPendingPlan, selectResumablePlan, shouldApprovePendingCesarPlanInput, isCesarPlanApprovalInput, isStrongCesarPlanApprovalInput, isCesarPlanResumeInput, isCesarPlanStatusInput, formatCesarPlanRuntimeStatus } from './session-selection.js';
 export type { PlanSessionSnapshot } from './session-selection.js';
 export { startPlanTaskSession, resumePlanSession, exitPlanSession } from './session-workflow.js';

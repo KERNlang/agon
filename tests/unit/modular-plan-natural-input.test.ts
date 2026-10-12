@@ -38,6 +38,22 @@ describe.each([true, false])('natural Plan input with disabled=%s', disabled => 
   });
   beforeEach(() => vi.clearAllMocks());
 
+  it('checks the selected owner before dispatching a physical approval marker', async () => {
+    const dispatch = vi.fn();
+    let job: Promise<void> | undefined;
+    const runAsJob = vi.fn((_type: string, _label: string, run: (signal: AbortSignal) => Promise<void>) => {
+      job = run(new AbortController().signal);
+    });
+    const cb = { dispatch, runAsJob, ctx: { config: {}, cesar: {} } } as unknown as DispatchCallbacks;
+    await dispatchIntent({ type: 'approve', _modSurface: {
+      publicId: 'approve', registryId: 'tuiSlashCommands:0003', kind: 'tui-action', value: {},
+    } }, '/approve', cb);
+    await job;
+    expect(runAsJob).toHaveBeenCalledTimes(disabled ? 0 : 1);
+    expect(effects.approve).toHaveBeenCalledTimes(disabled ? 0 : 1);
+    if (disabled) expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'error', message: expect.stringContaining('unavailable') }));
+  });
+
   it.each([
     ['awaiting_approval', 'go', 'approve'],
     ['paused', 'continue', 'resume'],

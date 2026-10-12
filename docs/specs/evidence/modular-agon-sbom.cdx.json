@@ -1,7 +1,7 @@
 {
   "bomFormat": "CycloneDX",
   "specVersion": "1.6",
-  "serialNumber": "urn:uuid:fcfac9a7-db5f-57bc-bbab-0732ee823340",
+  "serialNumber": "urn:uuid:7010afa6-07b6-586d-80b7-a057e7e061f5",
   "version": 1,
   "metadata": {
     "component": {
@@ -38,7 +38,7 @@
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "659b4f31ad09a19e8d46c77b788fba7bb440b844d4572bd3e04d778351e83dea"
+          "content": "4a9b7d9bc4381b41012dcb449cd1dbeef7c0c97d3ec57bbf40c3486a2b13315d"
         }
       ],
       "licenses": [
@@ -51,7 +51,7 @@
       "properties": [
         {
           "name": "npm:integrity",
-          "value": "sha512-xQAe0NWspvDa505Zi+QQfh1WSs8m9mVyU28BOFZr5kElMGxBWnKJQsI2p8CuAEVV2/difz2nm8tyn0SC2cQ5aQ=="
+          "value": "sha512-HQUfrNTQBfR7gi9dKHoisOfH36NUsLFijWSfVS0HbAEomoysGfuBJM5c5FVadQ/VDe/uq0WtkHOQItpWHWMpeA=="
         },
         {
           "name": "agon:class",
@@ -2228,6 +2228,47 @@
     },
     {
       "type": "library",
+      "bom-ref": "npm:node_modules/ansi-styles@4.3.0",
+      "name": "ansi-styles",
+      "version": "4.3.0",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "cdb07dac22404f5adb8e25436f686a2851cd60bc60b64f0d511c59dc86700f717a36dc5b5d94029e74a2d4b931f880e885d3e5169db6db05402c885e64941212"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/ansi-styles"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-zbB9rCJAT1rbjiVDb2hqKFHNYLxgtk8NURxZ3IZwD3F6NtxbXZQCnnSi1Lkx+IDohdPlFp222wVALIheZJQSEg=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:7ae441e1faf6d43d6a1d6b1fe2d7bc117e0fa138a54314221b2918282450b1ee"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/ansi-styles/-/ansi-styles-4.3.0.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "bom-ref": "npm:node_modules/auto-bind@5.0.1",
       "name": "auto-bind",
       "version": "5.0.1",
@@ -2264,6 +2305,47 @@
         {
           "type": "distribution",
           "url": "https://registry.npmjs.org/auto-bind/-/auto-bind-5.0.1.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/chalk@4.1.2",
+      "name": "chalk",
+      "version": "4.1.2",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "a0a9db845c91217a54b9ecfc881326c846b89db8f820e432ba173fc32f6463bfd654f73020ef5503aebc3eef1190eefed06efa48b44e7b2c3d0a9434eb58b898"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/chalk"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-oKnbhFyRIXpUuez8iBMmyEa4nbj4IOQyuhc/wy9kY7/WVPcwIO9VA668Pu8RkO7+0G76SLROeyw9CpQ061i4mA=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:120a889cf0d3011ad3d2632ab3a73a04d508c4d6cfe7bcfb32f3207543d85482"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/chalk/-/chalk-4.1.2.tgz"
         }
       ]
     },
@@ -2556,6 +2638,88 @@
     },
     {
       "type": "library",
+      "bom-ref": "npm:node_modules/color-convert@2.0.1",
+      "name": "color-convert",
+      "version": "2.0.1",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "4511023ec8fb8aeff16f9a0a61cb051d2a6914d9ec8ffe763954d129be333f9a275f0545df3566993a0d70e7c60be0910e97cafd4e7ce1f320dfc64709a12529"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/color-convert"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-RRECPsj7iu/xb5oKYcsFHSppFNnsj/52OVTRKb4zP5onXwVF3zVmmToNcOfGC+CRDpfK/U584fMg38ZHCaElKQ=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:a16afe0c1799e612a6b92339896302b76e0a3533de790bbaa8bebf3e4ee78ccf"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/color-convert/-/color-convert-2.0.1.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/color-name@1.1.4",
+      "name": "color-name",
+      "version": "1.1.4",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "74ecbedc0b96ddadb035b64722e319a537208c6b8b53fb812ffb9b71917d3976c3a3c7dfe0ef32569e417f479f4bcb84a18a39ab8171edd63d3a04065e002c40"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/color-name"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-dOy+3AuW3a2wNbZHIuMZpTcgjGuLU/uBL/ubcZF9OXbDo8ff4O8yVp5Bf0efS8uEoYo5q4Fx7dY9OgQGXgAsQA=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:3da71e5a1d7710a0eee167083e272ae92d669876c6f5bb50209cc01fe630576b"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/color-name/-/color-name-1.1.4.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "bom-ref": "npm:node_modules/consola@3.4.2",
       "name": "consola",
       "version": "3.4.2",
@@ -2797,6 +2961,47 @@
         {
           "type": "distribution",
           "url": "https://registry.npmjs.org/get-east-asian-width/-/get-east-asian-width-1.6.0.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/has-flag@4.0.0",
+      "name": "has-flag",
+      "version": "4.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "1329094ff4352a34d672da698080207d23b4b4a56e6548e180caf5ee4a93ba6325e807efdc421295e53ba99533a170c54c01d30c2e0d3a81bf67153712f94c3d"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/has-flag"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-EykJT/Q1KjTWctppgIAgfSO0tKVuZUjhgMr17kqTumMl6Afv3EISleU7qZUzoXDFTAHTDC4NOoG/ZxU3EvlMPQ=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:fda39bb4ca784c471eafdc5a4d7bb3f6e7228249ca661b55e9eed461ace1771d"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/has-flag/-/has-flag-4.0.0.tgz"
         }
       ]
     },
@@ -4032,6 +4237,47 @@
     },
     {
       "type": "library",
+      "bom-ref": "npm:node_modules/supports-color@7.2.0",
+      "name": "supports-color",
+      "version": "7.2.0",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "aa9080bd197db2db8e1ef78ab27ec79dc251befe74d6a21a70acd094effe2f0c5cf7ed2adb02f2bf80dfbedf34fc33e7da9a8e06c25d0e2a205c647df8ebf047"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/supports-color"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-qpCAvRl9stuOHveKsn7HncJRvv501qIacKzQlO/+Lwxc9+0q2wLyv4Dfvt80/DPn2pqOBsJdDiogXGR9+OvwRw=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:d31aeae14c16d00524e09dfbce0f276bef5f11fe08fcf70d4ed6d18344852cc0"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/supports-color/-/supports-color-7.2.0.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "bom-ref": "npm:node_modules/tagged-tag@1.0.0",
       "name": "tagged-tag",
       "version": "1.0.0",
@@ -4900,6 +5146,7 @@
         "npm:node_modules/@kernlang/agon-engines@0.1.3",
         "npm:node_modules/@kernlang/protocol@4.5.0",
         "npm:node_modules/ai@6.0.264",
+        "npm:node_modules/chalk@4.1.2",
         "npm:node_modules/citty@0.1.6",
         "npm:node_modules/ink-spinner@5.0.0",
         "npm:node_modules/ink-text-input@6.0.0",
@@ -5007,8 +5254,21 @@
       "dependsOn": []
     },
     {
+      "ref": "npm:node_modules/ansi-styles@4.3.0",
+      "dependsOn": [
+        "npm:node_modules/color-convert@2.0.1"
+      ]
+    },
+    {
       "ref": "npm:node_modules/auto-bind@5.0.1",
       "dependsOn": []
+    },
+    {
+      "ref": "npm:node_modules/chalk@4.1.2",
+      "dependsOn": [
+        "npm:node_modules/ansi-styles@4.3.0",
+        "npm:node_modules/supports-color@7.2.0"
+      ]
     },
     {
       "ref": "npm:node_modules/citty@0.1.6",
@@ -5051,6 +5311,16 @@
       ]
     },
     {
+      "ref": "npm:node_modules/color-convert@2.0.1",
+      "dependsOn": [
+        "npm:node_modules/color-name@1.1.4"
+      ]
+    },
+    {
+      "ref": "npm:node_modules/color-name@1.1.4",
+      "dependsOn": []
+    },
+    {
       "ref": "npm:node_modules/consola@3.4.2",
       "dependsOn": []
     },
@@ -5072,6 +5342,10 @@
     },
     {
       "ref": "npm:node_modules/get-east-asian-width@1.6.0",
+      "dependsOn": []
+    },
+    {
+      "ref": "npm:node_modules/has-flag@4.0.0",
       "dependsOn": []
     },
     {
@@ -5253,6 +5527,12 @@
       "ref": "npm:node_modules/strip-ansi@7.2.0",
       "dependsOn": [
         "npm:node_modules/ansi-regex@6.3.0"
+      ]
+    },
+    {
+      "ref": "npm:node_modules/supports-color@7.2.0",
+      "dependsOn": [
+        "npm:node_modules/has-flag@4.0.0"
       ]
     },
     {

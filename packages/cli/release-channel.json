@@ -1184,6 +1184,7 @@
           "@kernlang/agon-support-worktree": "1.0.0",
           "@kernlang/protocol": "~4.5.0",
           "ai": "^6.0.149",
+          "chalk": "4.1.2",
           "citty": "^0.1.6",
           "ink": "^7.0.1",
           "ink-spinner": "^5.0.0",
@@ -2052,6 +2053,21 @@
           "url": "https://github.com/chalk/ansi-regex?sponsor=1"
         }
       },
+      "node_modules/ansi-styles": {
+        "version": "4.3.0",
+        "resolved": "https://registry.npmjs.org/ansi-styles/-/ansi-styles-4.3.0.tgz",
+        "integrity": "sha512-zbB9rCJAT1rbjiVDb2hqKFHNYLxgtk8NURxZ3IZwD3F6NtxbXZQCnnSi1Lkx+IDohdPlFp222wVALIheZJQSEg==",
+        "license": "MIT",
+        "dependencies": {
+          "color-convert": "^2.0.1"
+        },
+        "engines": {
+          "node": ">=8"
+        },
+        "funding": {
+          "url": "https://github.com/chalk/ansi-styles?sponsor=1"
+        }
+      },
       "node_modules/auto-bind": {
         "version": "5.0.1",
         "resolved": "https://registry.npmjs.org/auto-bind/-/auto-bind-5.0.1.tgz",
@@ -2062,6 +2078,22 @@
         },
         "funding": {
           "url": "https://github.com/sponsors/sindresorhus"
+        }
+      },
+      "node_modules/chalk": {
+        "version": "4.1.2",
+        "resolved": "https://registry.npmjs.org/chalk/-/chalk-4.1.2.tgz",
+        "integrity": "sha512-oKnbhFyRIXpUuez8iBMmyEa4nbj4IOQyuhc/wy9kY7/WVPcwIO9VA668Pu8RkO7+0G76SLROeyw9CpQ061i4mA==",
+        "license": "MIT",
+        "dependencies": {
+          "ansi-styles": "^4.1.0",
+          "supports-color": "^7.1.0"
+        },
+        "engines": {
+          "node": ">=10"
+        },
+        "funding": {
+          "url": "https://github.com/chalk/chalk?sponsor=1"
         }
       },
       "node_modules/citty": {
@@ -2156,6 +2188,24 @@
           "node": "^12.20.0 || ^14.13.1 || >=16.0.0"
         }
       },
+      "node_modules/color-convert": {
+        "version": "2.0.1",
+        "resolved": "https://registry.npmjs.org/color-convert/-/color-convert-2.0.1.tgz",
+        "integrity": "sha512-RRECPsj7iu/xb5oKYcsFHSppFNnsj/52OVTRKb4zP5onXwVF3zVmmToNcOfGC+CRDpfK/U584fMg38ZHCaElKQ==",
+        "license": "MIT",
+        "dependencies": {
+          "color-name": "~1.1.4"
+        },
+        "engines": {
+          "node": ">=7.0.0"
+        }
+      },
+      "node_modules/color-name": {
+        "version": "1.1.4",
+        "resolved": "https://registry.npmjs.org/color-name/-/color-name-1.1.4.tgz",
+        "integrity": "sha512-dOy+3AuW3a2wNbZHIuMZpTcgjGuLU/uBL/ubcZF9OXbDo8ff4O8yVp5Bf0efS8uEoYo5q4Fx7dY9OgQGXgAsQA==",
+        "license": "MIT"
+      },
       "node_modules/consola": {
         "version": "3.4.2",
         "resolved": "https://registry.npmjs.org/consola/-/consola-3.4.2.tgz",
@@ -2211,6 +2261,15 @@
         },
         "funding": {
           "url": "https://github.com/sponsors/sindresorhus"
+        }
+      },
+      "node_modules/has-flag": {
+        "version": "4.0.0",
+        "resolved": "https://registry.npmjs.org/has-flag/-/has-flag-4.0.0.tgz",
+        "integrity": "sha512-EykJT/Q1KjTWctppgIAgfSO0tKVuZUjhgMr17kqTumMl6Afv3EISleU7qZUzoXDFTAHTDC4NOoG/ZxU3EvlMPQ==",
+        "license": "MIT",
+        "engines": {
+          "node": ">=8"
         }
       },
       "node_modules/indent-string": {
@@ -2622,6 +2681,18 @@
           "url": "https://github.com/chalk/strip-ansi?sponsor=1"
         }
       },
+      "node_modules/supports-color": {
+        "version": "7.2.0",
+        "resolved": "https://registry.npmjs.org/supports-color/-/supports-color-7.2.0.tgz",
+        "integrity": "sha512-qpCAvRl9stuOHveKsn7HncJRvv501qIacKzQlO/+Lwxc9+0q2wLyv4Dfvt80/DPn2pqOBsJdDiogXGR9+OvwRw==",
+        "license": "MIT",
+        "dependencies": {
+          "has-flag": "^4.0.0"
+        },
+        "engines": {
+          "node": ">=8"
+        }
+      },
       "node_modules/tagged-tag": {
         "version": "1.0.0",
         "resolved": "https://registry.npmjs.org/tagged-tag/-/tagged-tag-1.0.0.tgz",
@@ -2756,7 +2827,9 @@
     "node_modules/ai": "sha256:74ca2cbf68cdf191f4335c5260393fe41eba22e29e3891277cc1e66a68d4a8e4",
     "node_modules/ansi-escapes": "sha256:44b472d3edbf897194b48509e17719f93c12a2f8ad41fcb07fbe3e9514cde449",
     "node_modules/ansi-regex": "sha256:03274831cd05282e788b58b092e932a6069ad3342a160caec6378db4bd9e8f5b",
+    "node_modules/ansi-styles": "sha256:7ae441e1faf6d43d6a1d6b1fe2d7bc117e0fa138a54314221b2918282450b1ee",
     "node_modules/auto-bind": "sha256:548aa9f74e31e5d0fe8393f93b562d983f8cbd3c6e46c1c1dc0816a7412bfa9b",
+    "node_modules/chalk": "sha256:120a889cf0d3011ad3d2632ab3a73a04d508c4d6cfe7bcfb32f3207543d85482",
     "node_modules/citty": "sha256:b18d8d17b718f801ed121f9ca3a99329b98034390d8c35b3e3b90d734cc26131",
     "node_modules/cli-boxes": "sha256:d509a31674b62f70c8c976b792411d4e16b1bd80d4bf79f3e1155deb804b7638",
     "node_modules/cli-cursor": "sha256:97a0c15b1fce60d821be58a1267e4e57b012289540de92947181c55fecb42fc1",
@@ -2764,12 +2837,15 @@
     "node_modules/cli-truncate": "sha256:902f7512b190c4504bb7c74d0ab871eb839232836f0e1555d0166487d576a226",
     "node_modules/cli-truncate/node_modules/string-width": "sha256:bff5a452a9e630d41d95099fa3c891387eb948a22ca681328bd27b17ecd525be",
     "node_modules/code-excerpt": "sha256:9ab5852a5fd74af252e0180e528d2f0ecf26a4d434a66d81cb00917d665cea8e",
+    "node_modules/color-convert": "sha256:a16afe0c1799e612a6b92339896302b76e0a3533de790bbaa8bebf3e4ee78ccf",
+    "node_modules/color-name": "sha256:3da71e5a1d7710a0eee167083e272ae92d669876c6f5bb50209cc01fe630576b",
     "node_modules/consola": "sha256:cbee9cb7b7dceb7f624bc5a0ab5fca5de4ae816ab0b0eecc09391e36de0ffc98",
     "node_modules/convert-to-spaces": "sha256:77b81c2404b1c6072d3589d1627d481973f476d7c9763d33115aa54d182b7858",
     "node_modules/environment": "sha256:f567a76cba08f89cf56d993e1daf122bb10fac0972b3e759b2785f5f0c81c8a7",
     "node_modules/es-toolkit": "sha256:a61e2ee9baae9ce70128a2ed07f387f953a8cf68bfceeab479558fbffeab5f68",
     "node_modules/eventsource-parser": "sha256:03083c07068a76c5b66f317a05a004f486df078d93ef0846b8b8450b0e6ee890",
     "node_modules/get-east-asian-width": "sha256:f8bb084cb62d82d50b575e36bf5b6addedf3318f61f03cbf3596f75d4c4b4188",
+    "node_modules/has-flag": "sha256:fda39bb4ca784c471eafdc5a4d7bb3f6e7228249ca661b55e9eed461ace1771d",
     "node_modules/indent-string": "sha256:edc9bc5eb2e2d0ca12fee22f6a8194d4e71d6abdac1312568296a10c76bd20ce",
     "node_modules/ink": "sha256:45e7232a6e4e9a9b76d52af27809a3dd0b254dbc90af4f6bc19ee8762952a03f",
     "node_modules/ink-spinner": "sha256:adf64ac174f9cea07e1eea3a2752cdad9f279b4774864a6920b72ff5f31f1f34",
@@ -2800,6 +2876,7 @@
     "node_modules/stack-utils": "sha256:207c09ac6c88651bea5f3287a8a90d478a936d022bcbd19d57127da57a742676",
     "node_modules/stack-utils/node_modules/escape-string-regexp": "sha256:88bb25547db5d5d2d64352514c884719a499a45b09feba7d0af989a0bce4c288",
     "node_modules/strip-ansi": "sha256:523d5ddbd58878c0137e6e44b0cce1b728d98eae7bcf14a0464d7b11f300e473",
+    "node_modules/supports-color": "sha256:d31aeae14c16d00524e09dfbce0f276bef5f11fe08fcf70d4ed6d18344852cc0",
     "node_modules/tagged-tag": "sha256:b7ebaaabb026caba51f0799a324e9f08d4a428cbfecb8db1821c6dd4f83a810d",
     "node_modules/terminal-size": "sha256:2f67c7489a72cc4b72585e3e4009c169ac3bf098ca11051b8b7a3ab5daf54f16",
     "node_modules/type-fest": "sha256:53b7429390fc2fd408bf5b41a018baf870da6e16796fad2efabc684fe3af4f77",

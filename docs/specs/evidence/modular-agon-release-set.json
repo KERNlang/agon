@@ -207,6 +207,10 @@
         "range": "^6.0.149"
       },
       {
+        "id": "chalk",
+        "range": "4.1.2"
+      },
+      {
         "id": "citty",
         "range": "^0.1.6"
       },
@@ -231,8 +235,8 @@
         "range": "^19.2.0"
       }
     ],
-    "packedBytes": 1341523,
-    "unpackedBytes": 6023067,
+    "packedBytes": 1343613,
+    "unpackedBytes": 6029627,
     "fileCount": 107,
     "files": [
       {
@@ -613,7 +617,7 @@
       },
       {
         "path": "dist/release-channel.json",
-        "size": 122876
+        "size": 126145
       },
       {
         "path": "dist/setup-RV26LPKS.js",
@@ -645,7 +649,7 @@
       },
       {
         "path": "package.json",
-        "size": 3712
+        "size": 3734
       },
       {
         "path": "py/agon-model-probe-wrapper.py",
@@ -661,14 +665,14 @@
       },
       {
         "path": "release-channel.json",
-        "size": 122876
+        "size": 126145
       }
     ],
-    "payloadHash": "sha256:93325f4eb69d06c19c3285b24042eb65c168295ba81a74ce2e0b40c8a61c35a4",
-    "integrity": "sha512-xQAe0NWspvDa505Zi+QQfh1WSs8m9mVyU28BOFZr5kElMGxBWnKJQsI2p8CuAEVV2/difz2nm8tyn0SC2cQ5aQ==",
-    "shasum": "3dce87d3231c2961ee5b705d0fb044709d237d72",
-    "tarballHash": "sha256:659b4f31ad09a19e8d46c77b788fba7bb440b844d4572bd3e04d778351e83dea",
-    "packageJsonHash": "sha256:8905f40d1f1eef07d64063cd9ce8f783f828292654a2731fb52bab3328959ac2"
+    "payloadHash": "sha256:70c12dd048410f07a47c6f2b204e9881203e7e8da72098c820438c10eb957510",
+    "integrity": "sha512-HQUfrNTQBfR7gi9dKHoisOfH36NUsLFijWSfVS0HbAEomoysGfuBJM5c5FVadQ/VDe/uq0WtkHOQItpWHWMpeA==",
+    "shasum": "936b8cec6a13643f2ba499d8dc34105862ee8ab3",
+    "tarballHash": "sha256:4a9b7d9bc4381b41012dcb449cd1dbeef7c0c97d3ec57bbf40c3486a2b13315d",
+    "packageJsonHash": "sha256:55b7df375710144ec9ebf42dd9cbf38f9ab48d154f03f55e551ea8281af64a51"
   },
   "packages": [
     {

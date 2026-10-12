@@ -13,6 +13,7 @@ import { clearPersistedSessionContext } from './utils.js';
 import { routeWithCesar } from './cesar-router.js';
 
 import { emitPostDispatch } from './utils.js';
+import { assertProcessSurfaceAvailable } from '../../surface-authority-runtime.js';
 
 export async function dispatchSkillsUiIntent(intent: any, input: string, cb: DispatchCallbacks): Promise<DispatchResult | null> {
   switch (intent.type) {
@@ -314,6 +315,15 @@ export async function dispatchSkillsUiIntent(intent: any, input: string, cb: Dis
     // ── Cesar-routed intents ──
     case 'auto':
     case 'unknown': {
+      // Legacy requests must check the selected owner before any host effect.
+      if (intent.autoMode === true) {
+        try {
+          assertProcessSurfaceAvailable('tui', '/auto');
+        } catch (error) {
+          cb.dispatch({ type: 'error', message: error instanceof Error ? error.message : String(error) });
+          break;
+        }
+      }
       // Check dynamic skills for unknown slash commands
       const trimmed = (intent.input ?? '').trim();
       if (intent.type === 'unknown' && trimmed.startsWith('/')) {

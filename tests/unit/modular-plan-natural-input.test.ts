@@ -7,7 +7,8 @@ import { surfaceLockFor } from '../helpers/modular-surface-lock.js';
 import { disposeProcessSurfaceAuthority, initializeProcessSurfaceAuthority } from '../../packages/cli/src/surface-authority-runtime.js';
 import type { DispatchCallbacks } from '../../packages/cli/src/signals/dispatch.js';
 
-const effects = vi.hoisted(() => ({ approve: vi.fn(async () => true), resume: vi.fn(async () => {}) }));
+const effects = vi.hoisted(() => ({ approve: vi.fn(async () => true), resume: vi.fn(async () => {}), taskRoute: vi.fn(async () => false) }));
+vi.mock('../../packages/cli/src/signals/dispatch/cesar-router.js', () => ({ routeWithCesar: effects.taskRoute }));
 vi.mock('../../packages/cli/src/signals/dispatch/plan-execution.js', async original => ({
   ...await original<Record<string, unknown>>(),
   approvePendingCesarPlan: effects.approve,
@@ -36,7 +37,21 @@ describe.each([true, false])('natural Plan input with disabled=%s', disabled => 
     await chmod(join(root, 'generations', '0000000000000001'), 0o755);
     await rm(root, { recursive: true, force: true });
   });
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    effects.taskRoute.mockReset().mockResolvedValue(false);
+  });
+
+  it('checks the selected owner before starting a legacy-shaped Plan task', async () => {
+    const dispatch = vi.fn();
+    const setActivePlan = vi.fn();
+    const cb = { dispatch, setActivePlan, ctx: { config: {}, cesar: {} } } as unknown as DispatchCallbacks;
+    await dispatchIntent({ type: 'plan-task', task: 'build parser' }, '/plan build parser', cb);
+    expect(effects.taskRoute).toHaveBeenCalledTimes(disabled ? 0 : 1);
+    expect(setActivePlan).toHaveBeenCalledTimes(disabled ? 0 : 2);
+    if (disabled) expect(cb.ctx.cesar).toEqual({});
+    if (disabled) expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'error', message: expect.stringContaining('unavailable') }));
+  });
 
   it('checks the selected owner before dispatching a physical approval marker', async () => {
     const dispatch = vi.fn();
@@ -52,6 +67,114 @@ describe.each([true, false])('natural Plan input with disabled=%s', disabled => 
     expect(runAsJob).toHaveBeenCalledTimes(disabled ? 0 : 1);
     expect(effects.approve).toHaveBeenCalledTimes(disabled ? 0 : 1);
     if (disabled) expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'error', message: expect.stringContaining('unavailable') }));
+  });
+
+  it.each(['auto', 'unknown'])('checks Plan ownership before legacy %s enters autonomous mode', async type => {
+    const dispatch = vi.fn();
+    const cb = { dispatch, allImages: [], ctx: { config: {}, cesar: {}, autoModeQueued: false } } as unknown as DispatchCallbacks;
+    await dispatchIntent({ type, input: 'build parser', autoMode: true }, '/auto build parser', cb);
+    expect(effects.taskRoute).toHaveBeenCalledTimes(disabled ? 0 : 1);
+    expect(cb.ctx.autoModeQueued).toBe(false);
+    if (disabled) expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'error', message: expect.stringContaining('unavailable') }));
+  });
+
+  it.each(['before lookup', 'after scheduling'])('reports stale physical authority %s without executing approval', async timing => {
+    const pointer = join(root, 'current-generation.json');
+    const original = await readFile(pointer);
+    let runJob: ((signal: AbortSignal) => Promise<void>) | undefined;
+    const dispatch = vi.fn();
+    const emit = vi.fn<(event: string, payload: unknown) => Promise<void>>(async () => {});
+    const cb = { dispatch, eventBus: { emit }, ctx: { config: {}, cesar: {} },
+      runAsJob: vi.fn((_type: string, _label: string, run: (signal: AbortSignal) => Promise<void>) => { runJob = run; }),
+    } as unknown as DispatchCallbacks;
+    try {
+      if (timing === 'before lookup') await writeFile(pointer, '{}\n');
+      await dispatchIntent({ type: 'approve', _modSurface: {
+        publicId: 'approve', registryId: 'tuiSlashCommands:0003', kind: 'tui-action', value: {},
+      } }, '/approve', cb);
+      if (timing === 'after scheduling' && !disabled) {
+        expect(runJob).toBeTypeOf('function');
+        await writeFile(pointer, '{}\n');
+        await runJob!(new AbortController().signal);
+      }
+      expect(effects.approve).not.toHaveBeenCalled();
+      expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'error', message: expect.stringContaining(
+        disabled && timing === 'after scheduling' ? 'unavailable' : 'restart Agon',
+      ) }));
+      expect(emit.mock.calls.filter(([event]) => event === 'post:dispatch')).toHaveLength(1);
+    } finally {
+      await writeFile(pointer, original);
+    }
+  });
+
+  it.each(['unknown', 'auto'])('keeps ordinary %s input available without Plan', async type => {
+    const cb = { dispatch: vi.fn(), allImages: [], ctx: { config: {}, cesar: {} } } as unknown as DispatchCallbacks;
+    await dispatchIntent({ type, input: 'hello' }, 'hello', cb);
+    expect(effects.taskRoute).toHaveBeenCalledOnce();
+    expect(cb.ctx.autoModeQueued).toBeUndefined();
+  });
+
+  if (disabled) it.each(['plan', 'plan-resume', 'plans', 'approve', 'retry', 'cancel'])('refuses disabled legacy %s without changing session state', async type => {
+    const dispatch = vi.fn();
+    const emit = vi.fn<(event: string, payload: unknown) => Promise<void>>(async () => {});
+    const ctx = { config: {}, cesar: {} };
+    const cb = { dispatch, eventBus: { emit }, ctx } as unknown as DispatchCallbacks;
+    expect(await dispatchIntent({ type }, `/${type}`, cb)).toEqual({ handled: true, ranAsJob: false });
+    expect(dispatch).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ type: 'error', message: expect.stringContaining('unavailable') }));
+    expect(ctx).toEqual({ config: {}, cesar: {} });
+    expect(effects.approve).not.toHaveBeenCalled();
+    expect(effects.resume).not.toHaveBeenCalled();
+    expect(effects.taskRoute).not.toHaveBeenCalled();
+    expect(emit.mock.calls.filter(([event]) => event === 'post:dispatch')).toHaveLength(1);
+  });
+
+  it.each([false, true, undefined])('restores prior Auto state %s for every route outcome', async prior => {
+    for (const outcome of [false, true, 'reject'] as const) {
+      effects.taskRoute.mockClear();
+      const cb = { dispatch: vi.fn(), allImages: [], ctx: { config: {}, cesar: {}, autoModeQueued: prior } } as unknown as DispatchCallbacks;
+      const failure = new Error('route failed');
+      effects.taskRoute.mockImplementationOnce(async () => {
+        expect(cb.ctx.autoModeQueued).toBe(true);
+        if (outcome === 'reject') throw failure;
+        return outcome;
+      });
+      const operation = dispatchIntent({ type: 'auto', input: 'build parser', autoMode: true }, '/auto build parser', cb);
+      if (!disabled && outcome === 'reject') await expect(operation).rejects.toBe(failure);
+      else await expect(operation).resolves.toEqual({ handled: true, ranAsJob: !disabled && outcome === true });
+      expect(cb.ctx.autoModeQueued).toBe(prior);
+      expect(effects.taskRoute).toHaveBeenCalledTimes(disabled ? 0 : 1);
+      effects.taskRoute.mockReset().mockResolvedValue(false);
+    }
+  });
+
+  it.each([false, true])('guards dynamic skill effects only for explicit Auto=%s', async autoMode => {
+    const handler = vi.fn(async () => ({ handled: true }));
+    const cb = { dispatch: vi.fn(), dynamicSkills: [{ trigger: '/fixture', handler }],
+      ctx: { config: {}, cesar: {} },
+    } as unknown as DispatchCallbacks;
+    await dispatchIntent({ type: 'unknown', input: '/fixture task', autoMode }, '/fixture task', cb);
+    expect(handler).toHaveBeenCalledTimes(disabled && autoMode ? 0 : 1);
+    expect(effects.taskRoute).not.toHaveBeenCalled();
+  });
+
+  it.each(['plan', 'plan-resume', 'plans', 'approve', 'retry', 'cancel', 'plan-task', 'auto', 'unknown'])('refuses legacy %s after a generation change', async type => {
+    const pointer = join(root, 'current-generation.json');
+    const original = await readFile(pointer);
+    try {
+      await writeFile(pointer, '{}\n');
+      const dispatch = vi.fn();
+      const setActivePlan = vi.fn();
+      const cb = { dispatch, setActivePlan, ctx: { config: {}, cesar: {} } } as unknown as DispatchCallbacks;
+      const result = await dispatchIntent({ type, input: 'build parser', task: 'build parser', autoMode: type === 'auto' || type === 'unknown' }, `/${type}`, cb);
+      expect(result).toEqual({ handled: true, ranAsJob: false });
+      expect(dispatch).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ type: 'error', message: expect.stringContaining('restart Agon') }));
+      expect(effects.taskRoute).not.toHaveBeenCalled();
+      expect(effects.approve).not.toHaveBeenCalled();
+      expect(effects.resume).not.toHaveBeenCalled();
+      expect(setActivePlan).not.toHaveBeenCalled();
+    } finally {
+      await writeFile(pointer, original);
+    }
   });
 
   it.each([

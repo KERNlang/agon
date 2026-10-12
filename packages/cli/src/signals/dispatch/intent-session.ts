@@ -333,6 +333,13 @@ export async function dispatchSessionInfoIntent(intent: any, input: string, cb: 
     // ── Plan commands ──
     case 'plan': case 'plan-task': case 'plan-resume': case 'plans':
     case 'approve': case 'retry': case 'cancel':
+      try {
+        const command = intent.type === 'plan-task' || intent.type === 'plan-resume' ? 'plan' : intent.type;
+        assertProcessSurfaceAvailable('tui', `/${command}`);
+      } catch (error) {
+        cb.dispatch({ type: 'error', message: error instanceof Error ? error.message : String(error) });
+        break;
+      }
       return runInteractivePlanRequest(intent, input, cb);
     case 'apply': {
       // Legacy-shaped intents still execute the selected physical owner. There

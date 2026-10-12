@@ -20,6 +20,25 @@ The original extraction subject and evidence below remain historical.
 
 ## Scope and ownership
 
+### Legacy request authority update (2026-10-12)
+
+Legacy-shaped Plan requests now check the selected TUI contribution before
+session effects. Explicit Auto checks `/auto` before skill handlers, routing or
+queued-mode mutation. Ordinary chat also uses an `auto` intent internally, so
+the guard checks `autoMode: true`, not the intent name. Historical natural
+status remains readable when Plan is disabled.
+
+Generated TUI dispatch captures the selected host before lookup and rechecks it
+when a queued job starts. A changed generation cannot execute a cached approval.
+Stale lookup errors produce one handled error and one post-dispatch event.
+
+Regression evidence includes failing-before-fix disabled task/Auto requests,
+stale generated lookup and deferred approval, plus a negative control proving
+that checking every `auto` intent would incorrectly disable normal chat.
+Tests also cover stable disabled controls, generation changes, autonomous-mode
+restoration on success/job/error, and dynamic skills. These checks do not close
+the remaining ownership or installed-product acceptance requirements.
+
 Candidate worktree: `/Users/ra/dev/agon-plan-resume`.
 Branch: `refactor/modular-plan-resume`, based on `90fa66d7`.
 

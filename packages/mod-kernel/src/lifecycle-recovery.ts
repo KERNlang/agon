@@ -430,8 +430,26 @@ export class ManagedRetentionInspector {
       const pointer = await host.readCurrentPointer();
       if (pointer) {
         const manifest = await host.validateGeneration(pointer.generation);
-        if (manifest.transactionId !== pointer.transactionId || manifest.lockHash !== pointer.lockHash || manifest.graphHash !== pointer.graphHash) {
+        if (manifest.lockHash !== pointer.lockHash || manifest.graphHash !== pointer.graphHash) {
           throw new DurableHostError('MOD_POINTER_CORRUPT', 'selected pointer does not match its generation');
+        }
+        if (manifest.transactionId !== pointer.transactionId) {
+          // Rollback selects an existing generation through a new transaction.
+          try {
+            const journalPath = host.journalPath(pointer.transactionId);
+            await assertNoSymlinkComponents(host.root, relative(host.root, journalPath));
+            const selection = parseHostTransactionJournal(await readJson<unknown>(host.hostIo, journalPath));
+            if (selection.transactionId !== pointer.transactionId || selection.operation !== 'rollback'
+              || selection.candidateGeneration !== pointer.generation || selection.candidateLockHash !== pointer.lockHash
+              || (selection.state !== 'verified' && selection.state !== 'committed')) {
+              throw new TypeError('rollback selection journal does not bind the selected generation');
+            }
+          } catch (error) {
+            throw new DurableHostError('MOD_POINTER_CORRUPT', 'selected rollback pointer has no valid selection journal', {
+              generation: pointer.generation, transactionId: pointer.transactionId,
+              cause: error instanceof Error ? error.message : String(error),
+            }, { cause: error });
+          }
         }
       }
       const references = await referencedInstallations(host);

@@ -505,7 +505,13 @@ references each installation, and unreleased process leases. It acquires the
 lifecycle then generation writer fences to keep the report consistent. It does
 not delete data, expire leases, or authorize collection. A lease for a missing
 generation blocks reference inspection and purge. Corrupt leases and generation
-references fail closed. Released leases are omitted. This report does not yet
+references fail closed. Released leases are omitted. Inspection does not
+reject a valid rollback merely because its selection transaction differs from the
+generation's creation transaction. A different transaction must have a verified
+or committed rollback journal bound to the same generation and lock hash. Graph
+and lock hashes must still match the immutable manifest. Missing, malformed,
+linked or unrelated selection journals fail closed. Inspection never performs
+snapshot recovery or changes the selected pointer. This report does not yet
 include rollback-window leases, cache sizes, or
 quota policy. All retained generation references still protect installations.
 `hasCommittedGeneration` means at least one listed generation has a committed

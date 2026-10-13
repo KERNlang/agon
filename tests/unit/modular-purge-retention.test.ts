@@ -1,8 +1,10 @@
 import { chmod, mkdir, mkdtemp, readFile, rename, stat, symlink, unlink, writeFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { DurableModHost } from '../../packages/mod-kernel/src/durable-host.js';
+import { rollbackGeneration } from '../../packages/mod-kernel/src/host-rollback.js';
 import { applyManagedPurge, ManagedRetentionInspector, previewManagedPurge, referencedInstallations } from '../../packages/mod-kernel/src/lifecycle-recovery.js';
 import { WriterFence } from '../../packages/mod-kernel/src/writer-lock.js';
 import { ManagedLifecycleService, createManagedLifecyclePlan } from '../../packages/mod-kernel/src/managed-lifecycle.js';
@@ -11,6 +13,75 @@ import { artifact, installer, lifecycleLock, request, verifier } from '../helper
 import { hostLock } from '../helpers/modular-host.js';
 
 describe('managed purge generation retention', () => {
+  it('reports retained installations after rollback and re-entry without changing selection', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-retention-rollback-'));
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
+    const service = new ManagedLifecycleService(host);
+    const first = await service.apply(await createManagedLifecyclePlan(host, request([artifact('@test/app')])), installer, verifier);
+    const next = artifact('@test/app', [], { version: '2.0.0', sourceLocator: 'cache:@test/app@2.0.0', contentHash: `sha256:${'2'.repeat(64)}` });
+    const second = await service.apply(await createManagedLifecyclePlan(host, request([next], { operation: 'update' })), installer, verifier);
+    const inspector = new ManagedRetentionInspector(host);
+    for (const generation of [1, 2]) {
+      const selected = await service.rollback(generation);
+      expect(selected.pointer.transactionId).not.toBe((await host.validateGeneration(generation)).transactionId);
+      const before = await readFile(host.paths.current);
+      const report = await inspector.inspect();
+      expect(report.selectedGeneration).toBe(generation);
+      expect(report.installations.map(item => item.installationId).sort()).toEqual([
+        first.installation.installationId, second.installation.installationId,
+      ].sort());
+      expect(report.unreferencedInstallations).toEqual([]);
+      expect(report.totalInstallationLogicalBytes).toBeGreaterThan(0);
+      expect(await readFile(host.paths.current)).toEqual(before);
+      expect((await service.readSelectedInstallation())?.packages[0]?.version).toBe(generation === 1 ? '1.0.0' : '2.0.0');
+    }
+  });
+
+  it.each(['transaction', 'operation', 'generation', 'lock', 'rolled-back', 'preparing', 'missing', 'malformed', 'linked', 'graph'] as const)
+    ('refuses an invalid rollback selection in retention: %s', async defect => {
+      const root = await mkdtemp(join(tmpdir(), 'agon-retention-selection-'));
+      const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
+      await host.commitGeneration({ operation: 'install', lock: hostLock('a'), desiredState: {}, installedIndex: {} });
+      await host.commitGeneration({ operation: 'update', lock: hostLock('b'), desiredState: {}, installedIndex: {} });
+      const selected = await rollbackGeneration(host, 1);
+      const path = host.journalPath(selected.pointer.transactionId);
+      const journal = { ...selected.journal };
+      if (defect === 'transaction') journal.transactionId = randomUUID();
+      if (defect === 'operation') journal.operation = 'update';
+      if (defect === 'generation') journal.candidateGeneration = 2;
+      if (defect === 'lock') journal.candidateLockHash = `sha256:${'0'.repeat(64)}`;
+      if (defect === 'rolled-back' || defect === 'preparing') journal.state = defect;
+      await writeFile(path, JSON.stringify(journal));
+      if (defect === 'missing') await unlink(path);
+      if (defect === 'malformed') await writeFile(path, '{broken');
+      if (defect === 'linked') {
+        const alternate = join(root, 'journal-copy.json');
+        await writeFile(alternate, await readFile(path));
+        await unlink(path);
+        await symlink(alternate, path);
+      }
+      if (defect === 'graph') await writeFile(host.paths.current, JSON.stringify({ ...selected.pointer, graphHash: `sha256:${'0'.repeat(64)}` }));
+      const before = await readFile(host.paths.current);
+      await expect(new ManagedRetentionInspector(host).inspect()).rejects.toMatchObject({ code: 'MOD_POINTER_CORRUPT' });
+      expect(await readFile(host.paths.current)).toEqual(before);
+      await expect(stat(host.paths.writerLock)).rejects.toMatchObject({ code: 'ENOENT' });
+      await expect(stat(join(root, 'locks', 'lifecycle-writer.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+    });
+
+  it('reports an interrupted rollback selection without applying recovery itself', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-retention-interrupted-'));
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
+    await host.commitGeneration({ operation: 'install', lock: hostLock('a'), desiredState: { profile: 'old' }, installedIndex: {} });
+    await host.commitGeneration({ operation: 'update', lock: hostLock('b'), desiredState: { profile: 'new' }, installedIndex: {} });
+    await expect(rollbackGeneration(host, 1, { faultAfterPointer: () => { throw new Error('fixture interrupted'); } }))
+      .rejects.toMatchObject({ code: 'MOD_RESTART_REQUIRED' });
+    const before = await readFile(host.paths.desiredState);
+    expect((await new ManagedRetentionInspector(host).inspect()).selectedGeneration).toBe(1);
+    expect(await readFile(host.paths.desiredState)).toEqual(before);
+    expect((await host.boot()).pointer?.generation).toBe(1);
+    expect(JSON.parse(await readFile(host.paths.desiredState, 'utf8'))).toEqual({ profile: 'old' });
+  });
+
   it('reports unreferenced prefixes separately without reading or deleting their contents', async () => {
     const root = await mkdtemp(join(tmpdir(), 'agon-retention-unreferenced-'));
     const host = new DurableModHost(root, { kernelVersion: '1.0.0' });

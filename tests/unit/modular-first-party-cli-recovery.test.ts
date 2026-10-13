@@ -30,6 +30,33 @@ async function previewAndApprove(command: any, target: string) {
 }
 
 describe('first-party safe-mode CLI recovery', () => {
+  it('reports both retained installations through the built CLI after rollback', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-cli-retention-rollback-'));
+    const host = new DurableModHost(join(root, 'host'), { kernelVersion: '1.0.0' });
+    const service = new ManagedLifecycleService(host);
+    const desiredState = createFullCompatDesiredState(createFirstPartyModCatalog(), '2026-09-04T00:00:00.000Z');
+    const first = await service.apply(await createManagedLifecyclePlan(host, request([artifact('@test/app')], { desiredState })), installer, verifier);
+    const next = artifact('@test/app', [], { version: '2.0.0', sourceLocator: 'cache:@test/app@2.0.0', contentHash: `sha256:${'2'.repeat(64)}` });
+    const second = await service.apply(await createManagedLifecyclePlan(host, request([next], { desiredState, operation: 'update' })), installer, verifier);
+    const lease = await host.leaseGeneration(2, 'job:still-on-new-version');
+    await service.rollback(1);
+    const before = await readFile(host.paths.current);
+    const cli = fileURLToPath(new URL('../../packages/cli/dist/index.js', import.meta.url));
+    const result = spawnSync(process.execPath, [cli, 'mod', 'retention'], {
+      env: { ...process.env, HOME: root, AGON_HOME: root, AGON_MODULAR_HOST_ROOT: host.root, AGON_MOD_SAFE_MODE: '1' },
+      cwd: root, encoding: 'utf8', timeout: 10_000,
+    });
+    expect(result.error).toBeUndefined();
+    expect(result.status, result.stderr).toBe(0);
+    const report = JSON.parse(result.stdout);
+    expect(report.selectedGeneration).toBe(1);
+    expect(report.installations.map((item: { installationId: string }) => item.installationId).sort())
+      .toEqual([first.installation.installationId, second.installation.installationId].sort());
+    expect(report.activeLeases).toEqual([lease]);
+    expect(await readFile(host.paths.current)).toEqual(before);
+    expect(await host.activeGenerationLeases()).toEqual([lease]);
+  });
+
   it('previews exact purge targets through the built CLI and never replays deletion against replacement data', async () => {
     const root = await mkdtemp(join(tmpdir(), 'agon-cli-purge '));
     const host = new DurableModHost(join(root, 'host'), { kernelVersion: '1.0.0' });

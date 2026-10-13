@@ -625,6 +625,13 @@ plan store itself is protected from purge. Protected namespace comparisons use
 Unicode compatibility normalization and lowercase on every supported platform,
 so a case alias cannot bypass the protection on a case-insensitive filesystem.
 
+Purge and lifecycle recovery attempt both writer releases in reverse acquisition
+order. A release or directory-sync failure rejects the operation instead of
+reporting success. If the operation also failed, the aggregate error preserves
+both causes. This does not undo completed effects or reclaim a live owner's lock.
+After the owning process exits, explicit transaction recovery can reclaim stale
+locks; purge retries must retain the original saved plan to preserve replay safety.
+
 `agon mod purge <saved-plan> --approve <hash>` applies only that saved preview.
 Replacement selection flags and other plan kinds are rejected. Saved plans also
 require at least one target and absolute string paths before apply. Apply uses the

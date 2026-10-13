@@ -10,10 +10,10 @@
         "@kernlang/agon-mod-api"
       ],
       "sourceLocator": "@kernlang/agon-kernel@1.0.0",
-      "integrity": "sha512-QMPnmfEIcfzLQTVmFlLp8GuBrKQfMZ0dJlrDWoAjZzqGs27ysuosGcmYSgYZpSytq0sQ0f80l6uMEGhe6yqyRA==",
-      "contentHash": "sha256:d83ac8fc660a5957a13f83a7fa2c6bba362aad4f54d6707fb5ea26953a4d4b36",
+      "integrity": "sha512-J55jpVWE2tBKU2Q788v9zHyli8CNovnf8W9S9zxn9LniTjcZapafqHBjzHPb59/T0LI1Y33O8K49+2rbvhXXkQ==",
+      "contentHash": "sha256:2ba0301ceac7b46577ecb5034cffc356bf1fb4596e4c211a360bc82acab560e1",
       "manifestHash": "sha256:583381b00786c2729a1e32eb2d42f6324cb58df263378f0d0ad57a1401970f17",
-      "payloadHash": "sha256:b23762fdf84bf473f4dd75e23b7cf2816d196be23d362728581c596ee759932b"
+      "payloadHash": "sha256:96988b81e8ed3a004366137362c4db3fe03803e27fdc1294f8d5d4ea3f293489"
     },
     {
       "id": "@kernlang/agon-mod-api",
@@ -1261,7 +1261,7 @@
           "@kernlang/agon-mod-api": "1.0.0",
           "semver": "^7.7.4"
         },
-        "integrity": "sha512-QMPnmfEIcfzLQTVmFlLp8GuBrKQfMZ0dJlrDWoAjZzqGs27ysuosGcmYSgYZpSytq0sQ0f80l6uMEGhe6yqyRA==",
+        "integrity": "sha512-J55jpVWE2tBKU2Q788v9zHyli8CNovnf8W9S9zxn9LniTjcZapafqHBjzHPb59/T0LI1Y33O8K49+2rbvhXXkQ==",
         "resolved": "https://registry.npmjs.org/@kernlang/agon-kernel/-/agon-kernel-1.0.0.tgz"
       },
       "node_modules/@kernlang/agon-mod-agent": {

@@ -109,6 +109,18 @@ async function ensureRecoveryReceipt(io: HostIo, receipts: string, journal: Reco
   return true;
 }
 
+async function releaseLifecycleWriters(fences: readonly (WriterFence | undefined)[], operationErrors: readonly unknown[]): Promise<void> {
+  const cleanupErrors: unknown[] = [];
+  for (const fence of fences) {
+    try { await fence?.release(); }
+    catch (error) { cleanupErrors.push(error); }
+  }
+  if (!cleanupErrors.length) return;
+  const failures = [...operationErrors, ...cleanupErrors];
+  if (failures.length === 1) throw failures[0];
+  throw new AggregateError(failures, 'lifecycle operation or writer cleanup failed');
+}
+
 export async function recoverManagedLifecycle(
   host: DurableModHost,
   options: LifecycleRecoveryOptions = {},
@@ -133,6 +145,7 @@ export async function recoverManagedLifecycle(
   const recoveredCommitted: string[] = [];
   const recoveredRolledBack: string[] = [];
   let hostFence: WriterFence | undefined;
+  const operationErrors: unknown[] = [];
   try {
     // A dead generation writer must not block explicit transaction recovery.
     if (await pathExists(io, host.paths.writerLock)) {
@@ -215,9 +228,11 @@ export async function recoverManagedLifecycle(
       recoveredRolledBack: Object.freeze(recoveredRolledBack.sort()),
       selectedGeneration: selected.generation,
     });
+  } catch (error) {
+    operationErrors.push(error);
+    throw error;
   } finally {
-    await hostFence?.release().catch(() => undefined);
-    await fence.release().catch(() => undefined);
+    await releaseLifecycleWriters([hostFence, fence], operationErrors);
   }
 }
 
@@ -534,6 +549,7 @@ export async function applyManagedPurge(host: DurableModHost, input: ManagedPurg
   assertDistinctPurgeTargets([...installationPaths, ...dataPaths]);
   const fence = await WriterFence.acquire(join(host.root, 'locks', 'lifecycle-writer.json'), 'agon.kernel.lifecycle.purge', { io: host.hostIo });
   let hostFence: WriterFence | undefined;
+  const operationErrors: unknown[] = [];
   try {
     // Match lifecycle apply and recovery lock order.
     hostFence = await WriterFence.acquire(host.paths.writerLock, 'agon.kernel.lifecycle.purge', { io: host.hostIo });
@@ -623,8 +639,10 @@ export async function applyManagedPurge(host: DurableModHost, input: ManagedPurg
       }
     }
     return Object.freeze(targets.filter((_, index) => phases[index] === 'removed'));
+  } catch (error) {
+    operationErrors.push(error);
+    throw error;
   } finally {
-    await hostFence?.release().catch(() => undefined);
-    await fence.release().catch(() => undefined);
+    await releaseLifecycleWriters([hostFence, fence], operationErrors);
   }
 }

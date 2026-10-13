@@ -13,6 +13,99 @@ import { artifact, installer, lifecycleLock, request, verifier } from '../helper
 
 const tx = '11111111-1111-4111-8111-111111111111';
 const installationId = 'a'.repeat(32);
+
+describe('lifecycle lock cleanup failures', () => {
+  it.each(['purge', 'recovery'] as const)('%s preserves operation and cleanup failures and attempts both lock releases', async operation => {
+    for (const lock of ['host', 'lifecycle', 'both'] as const) {
+      for (const phase of ['remove', 'sync'] as const) {
+        for (const operationFails of [false, true]) {
+          const root = await mkdtemp(join(tmpdir(), 'agon-lifecycle-release-'));
+          const hostLockPath = join(root, 'locks', 'writer.json');
+          const lifecycleLockPath = join(root, 'locks', 'lifecycle-writer.json');
+          const failingLocks = lock === 'both' ? [hostLockPath, lifecycleLockPath] : [lock === 'host' ? hostLockPath : lifecycleLockPath];
+          const data = join(root, 'data');
+          const cleanupFailures = new Map(failingLocks.map(path => [path, new Error(`${basename(path)} ${phase} failed`)]));
+          const operationFailure = new Error('operation failed');
+          const releases: string[] = [];
+          let removedLock: string | undefined;
+          let cleanupArmed = operation === 'purge';
+          const host = new DurableModHost(root, { kernelVersion: '1.0.0', io: { ...nodeHostIo,
+            rm: async (path, options) => {
+              if (cleanupArmed && [hostLockPath, lifecycleLockPath].includes(path)) {
+                releases.push(path);
+                if (failingLocks.includes(path) && phase === 'remove') throw cleanupFailures.get(path);
+                await nodeHostIo.rm(path, options);
+                removedLock = path;
+                return;
+              }
+              return nodeHostIo.rm(path, options);
+            },
+            syncDirectory: async path => {
+              if (path === dirname(hostLockPath) && removedLock && failingLocks.includes(removedLock) && phase === 'sync') throw cleanupFailures.get(removedLock);
+              return nodeHostIo.syncDirectory(path);
+            },
+            rename: async (from, to) => {
+              if (operation === 'purge' && operationFails && from === data) throw operationFailure;
+              return nodeHostIo.rename(from, to);
+            },
+            readdir: async (path, options) => {
+              if (operation === 'recovery' && path === join(root, 'installation-transactions')) {
+                cleanupArmed = true;
+                if (operationFails) throw operationFailure;
+              }
+              return nodeHostIo.readdir(path, options);
+            },
+          } });
+          await host.initialize();
+          await writeFile(data, 'fixture');
+          const plan = await previewManagedPurge(host, { dataPaths: [data] });
+          const result = operation === 'purge'
+            ? applyManagedPurge(host, plan, plan.planHash)
+            : recoverManagedLifecycle(host);
+          const failure = await result.then(() => undefined, error => error);
+          expect(failure, `${operation}/${lock}/${phase}/${operationFails}`).toBeDefined();
+          const expectedErrors = [...(operationFails ? [operationFailure] : []), ...failingLocks.map(path => cleanupFailures.get(path))];
+          if (expectedErrors.length > 1) expect(failure).toBeInstanceOf(AggregateError);
+          const errors = failure instanceof AggregateError ? failure.errors : [failure];
+          expect(errors).toHaveLength(expectedErrors.length);
+          expectedErrors.forEach((error, index) => expect(errors[index]).toBe(error));
+          expect(releases).toEqual([hostLockPath, lifecycleLockPath]);
+          for (const path of [hostLockPath, lifecycleLockPath]) {
+            if (phase === 'remove' && failingLocks.includes(path)) expect((await stat(path)).isFile()).toBe(true);
+            else await expect(stat(path)).rejects.toMatchObject({ code: 'ENOENT' });
+          }
+          if (operation === 'purge' && !operationFails) await expect(stat(data)).rejects.toMatchObject({ code: 'ENOENT' });
+          else expect(await readFile(data, 'utf8')).toBe('fixture');
+        }
+      }
+    }
+  });
+
+  it.each(['purge', 'recovery'] as const)('%s preserves a competing host writer when lifecycle release also fails', async operation => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-lifecycle-partial-'));
+    const lifecyclePath = join(root, 'locks', 'lifecycle-writer.json');
+    const cleanupFailure = new Error('lifecycle release failed');
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0', io: { ...nodeHostIo,
+      rm: async (path, options) => {
+        if (path === lifecyclePath) throw cleanupFailure;
+        return nodeHostIo.rm(path, options);
+      },
+    } });
+    await host.initialize();
+    const plan = await previewManagedPurge(host);
+    const other = await WriterFence.acquire(host.paths.writerLock, 'other.writer');
+    const before = await readFile(host.paths.writerLock);
+    try {
+      const result = operation === 'purge' ? applyManagedPurge(host, plan, plan.planHash) : recoverManagedLifecycle(host);
+      const failure = await result.then(() => undefined, error => error);
+      expect(failure).toBeInstanceOf(AggregateError);
+      expect(failure.errors).toHaveLength(2);
+      expect(failure.errors[0]).toMatchObject({ code: 'MOD_HOST_BUSY' });
+      expect(failure.errors[1]).toBe(cleanupFailure);
+      expect(await readFile(host.paths.writerLock)).toEqual(before);
+    } finally { await other.release(); }
+  });
+});
 const hash = `sha256:${'b'.repeat(64)}`;
 
 async function writeStaleLock(root: string): Promise<void> {

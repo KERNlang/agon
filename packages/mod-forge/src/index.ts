@@ -9,4 +9,6 @@ export const IMPLEMENTATION_KIND = 'physical' as const;
 export { createMod } from './implementation.js';
 export { createMod as default } from './implementation.js';
 export { runForgeCompetition } from './implementation.js';
+export { planSynthesis } from './synth-plan.js';
+export type { SynthCandidate, SynthPlanOpts, SynthPlan } from './synth-plan.js';
 export { resolveForgeMode, resolveForgeRequireDiff, resolveForgeAcceptReviewOutput, classifyNoDiffForgeResult } from './result-policy.js';

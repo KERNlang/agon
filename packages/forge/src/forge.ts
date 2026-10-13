@@ -14,7 +14,7 @@ import { determineWinner } from '@kernlang/agon-core';
 
 import { runSynthesis } from './synthesis.js';
 
-import { planSynthesis } from './synth-plan.js';
+import { planSynthesis } from '@kernlang/agon-mod-forge';
 
 import { runGauntlet } from './gauntlet.js';
 

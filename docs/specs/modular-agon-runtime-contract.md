@@ -677,6 +677,20 @@ paths and never selects replacement data at those paths. This command is
 available in kernel-only safe mode. It does not implement automatic collection,
 quota policy, generation expiry, a complete retention report, or release acceptance.
 
+## Forge synthesis decision ownership
+
+`@kernlang/agon-mod-forge` owns `planSynthesis` and its three public input/result
+types. The legacy Forge runner imports this public owner directly. The old
+`packages/forge/src/synth-plan.ts` path only re-exports the same function and types
+to preserve imports; it contains no second implementation or local workflow logic.
+Importing it still evaluates the physical package's normal module graph.
+The existing selection, tie order, test-bearing base choice and reasons stay
+unchanged. The compatibility path can retire with the legacy Forge public package
+after its remaining consumers migrate; it must not grow new policy. The identity
+regression rejects a second implementation behind that path.
+This move does not complete competition, synthesis execution, gauntlet or corpus
+ownership. Those remain separate migration requirements.
+
 ## Registry invariants
 
 The kernel refuses activation unless all hold:

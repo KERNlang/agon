@@ -30,7 +30,10 @@ function updateRequest() {
 
 describe('managed lifecycle fault injection', () => {
   it.each([false, true])('retains nested host failure diagnostics (lifecycle cleanup also fails=%s)', async lifecycleFails => {
-    for (const operationFails of [false, true]) {
+    for (const failurePhase of ['none', 'before', 'after'] as const) {
+      const operationFails = failurePhase !== 'none';
+      const selectedGeneration = failurePhase === 'before' ? 1 : 2;
+      const lifecycleCode = failurePhase === 'before' ? 'MOD_TRANSACTION_FAILED' : 'MOD_RESTART_REQUIRED';
       const root = await mkdtemp(join(tmpdir(), 'agon-nested-release-'));
       await base(root);
       const operationFailure = new Error('fixture post-commit operation failed');
@@ -42,7 +45,7 @@ describe('managed lifecycle fault injection', () => {
         return nodeHostIo.rm(path, options);
       } };
       const host = new DurableModHost(root, { kernelVersion: '1.0.0', io,
-        fault: point => { if (operationFails && point === 'after-pointer-switch') throw operationFailure; },
+        fault: point => { if (operationFails && point === (failurePhase === 'before' ? 'after-staging' : 'after-pointer-switch')) throw operationFailure; },
       });
       const service = new ManagedLifecycleService(host, { io });
       const failure = await service.apply(await createManagedLifecyclePlan(host, updateRequest()), installer, verifier)
@@ -52,9 +55,11 @@ describe('managed lifecycle fault injection', () => {
         expect(failure).toBeInstanceOf(AggregateError);
         expect(failure.errors).toHaveLength(2);
         expect(failure.errors[1]).toBe(lifecycleCleanup);
-        hostFailure = failure.errors[0];
+        expect(failure.errors[0]).toMatchObject({ code: lifecycleCode,
+          details: { selectedGeneration: failurePhase === 'before' ? null : 2, transactionId: expect.any(String) } });
+        hostFailure = failure.errors[0].cause;
       } else {
-        expect(failure).toMatchObject({ code: 'MOD_RESTART_REQUIRED' });
+        expect(failure).toMatchObject({ code: lifecycleCode });
         expect(Object.prototype.propertyIsEnumerable.call(failure, 'cause')).toBe(false);
         expect(JSON.parse(JSON.stringify(failure))).not.toHaveProperty('cause');
         hostFailure = failure.cause;
@@ -63,12 +68,14 @@ describe('managed lifecycle fault injection', () => {
         expect(hostFailure).toBeInstanceOf(AggregateError);
         const errors = (hostFailure as AggregateError).errors;
         expect(errors).toHaveLength(2);
-        expect(errors[0]).toBe(operationFailure);
+        expect(errors[0]).toMatchObject({ code: lifecycleCode });
+        expect(errors[0].cause).toBe(operationFailure);
+        if (failurePhase === 'after') expect(errors[0].details).toMatchObject({ generation: 2, transactionId: expect.any(String) });
         expect(errors[1]).toBe(hostCleanup);
       } else expect(hostFailure).toBe(hostCleanup);
-      expect((await host.readCurrentPointer())?.generation).toBe(2);
-      expect((await service.readSelectedInstallation())?.packages[0]?.version).toBe('2.0.0');
-      expect(await readdir(service.installationsRoot)).toHaveLength(2);
+      expect((await host.readCurrentPointer())?.generation).toBe(selectedGeneration);
+      expect((await service.readSelectedInstallation())?.packages[0]?.version).toBe(failurePhase === 'before' ? '1.0.0' : '2.0.0');
+      expect(await readdir(service.installationsRoot)).toHaveLength(failurePhase === 'before' ? 1 : 2);
     }
   });
 
@@ -102,7 +109,15 @@ describe('managed lifecycle fault injection', () => {
         const failure = await result.then(() => undefined, error => error);
         if (operationFails) {
           expect(failure).toBeInstanceOf(AggregateError);
-          expect(failure.errors).toEqual([operationFailure, cleanupFailure]);
+          expect(failure.errors).toHaveLength(2);
+          expect(failure.errors[0]).toMatchObject({
+            code: failurePhase === 'after' ? 'MOD_RESTART_REQUIRED' : 'MOD_TRANSACTION_FAILED',
+            cause: operationFailure,
+            details: { transactionId: expect.any(String), selectedGeneration: failurePhase === 'after' ? 2 : null },
+          });
+          expect(Object.getOwnPropertyDescriptor(failure.errors[0], 'cause')?.enumerable).toBe(false);
+          expect(failure.errors[0].cause).toBe(operationFailure);
+          expect(failure.errors[1]).toBe(cleanupFailure);
         } else expect(failure).toBe(cleanupFailure);
         if (phase === 'remove') expect((await stat(writer)).isFile()).toBe(true);
         else await expect(stat(writer)).rejects.toMatchObject({ code: 'ENOENT' });
@@ -156,29 +171,63 @@ describe('managed lifecycle fault injection', () => {
     expect(await readdir(service.installationsRoot)).toHaveLength(1);
   });
 
-  it.each([false, true])('recovers an unreadable pointer outcome without guessing (renamed=%s)', async renamed => {
+  it.each([
+    { renamed: false, cleanupFails: false }, { renamed: true, cleanupFails: false },
+    { renamed: false, cleanupFails: true }, { renamed: true, cleanupFails: true },
+  ])('recovers an unreadable pointer outcome without guessing ($renamed, cleanup=$cleanupFails)', async ({ renamed, cleanupFails }) => {
     const root = await mkdtemp(join(tmpdir(), 'agon-lifecycle-unknown-commit-'));
     await base(root);
     let unreadable = false;
     const current = join(root, 'current-generation.json');
+    const pointerFailure = Object.assign(new Error('fixture ambiguous rename'), { code: 'EIO' });
+    const hostCleanup = new Error('fixture host release sync');
+    const lifecycleCleanup = new Error('fixture lifecycle release sync');
+    let released = '';
     const io: HostIo = { ...nodeHostIo,
       rename: async (from, to) => {
         if (to !== current) return nodeHostIo.rename(from, to);
         if (renamed) await nodeHostIo.rename(from, to);
         unreadable = true;
-        throw Object.assign(new Error('fixture ambiguous rename'), { code: 'EIO' });
+        throw pointerFailure;
       },
       readFile: async path => {
         if (unreadable && path === current) throw Object.assign(new Error('fixture unreadable pointer'), { code: 'EACCES' });
         return nodeHostIo.readFile(path);
       },
+      rm: async (path, options) => {
+        await nodeHostIo.rm(path, options);
+        if (cleanupFails && (path === join(root, 'locks', 'writer.json') || path === join(root, 'locks', 'lifecycle-writer.json'))) released = path;
+      },
+      syncDirectory: async path => {
+        if (released && path === join(root, 'locks')) throw released.endsWith('/lifecycle-writer.json') ? lifecycleCleanup : hostCleanup;
+        await nodeHostIo.syncDirectory(path);
+      },
     };
     const host = new DurableModHost(root, { kernelVersion: '1.0.0', io });
     const service = new ManagedLifecycleService(host, { io });
-    await expect(service.apply(await createManagedLifecyclePlan(host, updateRequest()), installer, verifier))
-      .rejects.toMatchObject({ code: 'MOD_RESTART_REQUIRED' });
+    const failure = await service.apply(await createManagedLifecyclePlan(host, updateRequest()), installer, verifier)
+      .then(() => undefined, error => error);
+    let hostFailure;
+    if (cleanupFails) {
+      expect(failure).toBeInstanceOf(AggregateError);
+      expect(failure.errors).toHaveLength(2);
+      expect(failure.errors[1]).toBe(lifecycleCleanup);
+      const lifecycleFailure = failure.errors[0];
+      expect(lifecycleFailure).toMatchObject({ code: 'MOD_RESTART_REQUIRED', details: { transactionId: expect.any(String), selectedGeneration: null } });
+      expect(lifecycleFailure.cause).toBeInstanceOf(AggregateError);
+      expect(lifecycleFailure.cause.errors).toHaveLength(2);
+      expect(lifecycleFailure.cause.errors[1]).toBe(hostCleanup);
+      hostFailure = lifecycleFailure.cause.errors[0];
+    } else {
+      expect(failure).toMatchObject({ code: 'MOD_RESTART_REQUIRED' });
+      hostFailure = failure.cause;
+    }
+    expect(hostFailure).toMatchObject({ code: 'MOD_RESTART_REQUIRED', cause: pointerFailure,
+      details: { generation: 2, transactionId: expect.any(String), outcome: 'unknown' } });
+    expect(Object.getOwnPropertyDescriptor(hostFailure, 'cause')?.enumerable).toBe(false);
+    expect(hostFailure.cause).toBe(pointerFailure);
     expect(await readdir(service.installationsRoot)).toHaveLength(2);
-    expect((await host.boot()).mode).not.toBe('normal');
+    if (!cleanupFails) expect((await host.boot()).mode).not.toBe('normal');
     expect(await readdir(host.paths.generations)).toHaveLength(2);
     const recoveredHost = new DurableModHost(root, { kernelVersion: '1.0.0' });
     expect((await recoveredHost.boot()).pointer?.generation).toBe(renamed ? 2 : 1);

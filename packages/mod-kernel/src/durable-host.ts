@@ -473,11 +473,13 @@ export class DurableModHost {
           committed = current !== null && canonicalJson(current) === canonicalJson(selectedPointer);
         } catch {
           // Keep the verified generation when the commit outcome is unknown.
-          throw new DurableHostError('MOD_RESTART_REQUIRED', 'generation selection requires recovery before cleanup', {
+          const failure = new DurableHostError('MOD_RESTART_REQUIRED', 'generation selection requires recovery before cleanup', {
             transactionId: selectedPointer.transactionId,
             generation: selectedPointer.generation,
             outcome: 'unknown',
-          });
+          }, { cause: error });
+          operationErrors[0] = failure;
+          throw failure;
         }
       }
       if (journal && !committed) {
@@ -499,14 +501,18 @@ export class DurableModHost {
           schemaVersion: 1, transactionId: journal.transactionId, ownerId, outcome: 'restart-required',
           pointer: selectedPointer, journal, events: Object.freeze(this.#events.slice(eventOffset)),
         })).catch(() => undefined);
-        throw new DurableHostError('MOD_RESTART_REQUIRED', 'generation committed but host cleanup or reload did not finish', {
+        const failure = new DurableHostError('MOD_RESTART_REQUIRED', 'generation committed but host cleanup or reload did not finish', {
           transactionId: journal.transactionId,
           generation: journal.candidateGeneration,
           cause: error instanceof Error ? error.message : String(error),
-        });
+        }, { cause: error });
+        operationErrors[0] = failure;
+        throw failure;
       }
       if (error instanceof DurableHostError) throw error;
-      throw new DurableHostError('MOD_TRANSACTION_FAILED', 'generation transaction failed before commit', { cause: error instanceof Error ? error.message : String(error) });
+      const failure = new DurableHostError('MOD_TRANSACTION_FAILED', 'generation transaction failed before commit', { cause: error instanceof Error ? error.message : String(error) }, { cause: error });
+      operationErrors[0] = failure;
+      throw failure;
     } finally {
       if (!simulatedCrash) await releaseLifecycleWriters([fence], operationErrors);
     }

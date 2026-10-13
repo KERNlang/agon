@@ -698,15 +698,21 @@ export class ManagedLifecycleService {
         error: error instanceof Error ? error.message : String(error),
       });
       await this.#writeReceipt(receipt).catch(() => undefined);
-      if (!canDiscard) throw new DurableHostError('MOD_RESTART_REQUIRED', 'managed installation retained; restart to finish transaction recovery', {
-        transactionId, selectedGeneration, cause: error instanceof Error ? error.message : String(error),
-      }, { cause: error });
+      if (!canDiscard) {
+        const failure = new DurableHostError('MOD_RESTART_REQUIRED', 'managed installation retained; restart to finish transaction recovery', {
+          transactionId, selectedGeneration, cause: error instanceof Error ? error.message : String(error),
+        }, { cause: error });
+        operationErrors[0] = failure;
+        throw failure;
+      }
       if (error instanceof DurableHostError) throw error;
-      throw new DurableHostError(selectedGeneration === null ? 'MOD_TRANSACTION_FAILED' : 'MOD_RESTART_REQUIRED', 'managed lifecycle transaction failed', {
+      const failure = new DurableHostError(selectedGeneration === null ? 'MOD_TRANSACTION_FAILED' : 'MOD_RESTART_REQUIRED', 'managed lifecycle transaction failed', {
         transactionId,
         selectedGeneration,
         cause: error instanceof Error ? error.message : String(error),
       }, { cause: error });
+      operationErrors[0] = failure;
+      throw failure;
     } finally {
       await releaseLifecycleWriters([fence], operationErrors);
     }

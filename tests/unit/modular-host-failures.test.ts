@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { DurableModHost } from '../../packages/mod-kernel/src/durable-host.js';
+import { DurableHostError, SimulatedHostCrash } from '../../packages/mod-kernel/src/host-errors.js';
 import { nodeHostIo, type HostIo } from '../../packages/mod-kernel/src/host-io.js';
 import { hostLock } from '../helpers/modular-host.js';
 
@@ -46,7 +47,17 @@ describe('durable host hostile filesystem and concurrency controls', () => {
         const failure = await result.then(() => undefined, error => error);
         if (operationFails) {
           expect(failure).toBeInstanceOf(AggregateError);
-          expect(failure.errors).toEqual([operationFailure, cleanupFailure]);
+          expect(failure.errors).toHaveLength(2);
+          expect(failure.errors[1]).toBe(cleanupFailure);
+          if (operation === 'commit') {
+            expect(failure.errors[0]).toMatchObject({
+              code: failurePhase === 'after' ? 'MOD_RESTART_REQUIRED' : 'MOD_TRANSACTION_FAILED',
+              cause: operationFailure,
+            });
+            expect(failure.errors[0].cause).toBe(operationFailure);
+            if (failurePhase === 'after') expect(failure.errors[0].details).toMatchObject({ generation: 1, transactionId: expect.any(String) });
+            expect(Object.getOwnPropertyDescriptor(failure.errors[0], 'cause')?.enumerable).toBe(false);
+          } else expect(failure.errors[0]).toBe(operationFailure);
         } else expect(failure).toBe(cleanupFailure);
         if (phase === 'remove') expect((await stat(writer)).isFile()).toBe(true);
         else await expect(stat(writer)).rejects.toMatchObject({ code: 'ENOENT' });
@@ -57,6 +68,34 @@ describe('durable host hostile filesystem and concurrency controls', () => {
         } else expect(pointer).toBeNull();
       }
     }
+  });
+
+  it.each(['typed', 'crash'] as const)('preserves the %s exception contract when release would fail', async kind => {
+    const root = await fixture();
+    const operationFailure = kind === 'crash' ? new SimulatedHostCrash('after-lock')
+      : new DurableHostError('MOD_TRANSACTION_CONFLICT', 'fixture conflict');
+    const cleanupFailure = new Error('fixture release');
+    let releaseAttempts = 0;
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0',
+      fault: point => { if (point === 'after-lock') throw operationFailure; },
+      io: { ...nodeHostIo, rm: async (path, options) => {
+        if (path === join(root, 'locks', 'writer.json')) { releaseAttempts++; throw cleanupFailure; }
+        await nodeHostIo.rm(path, options);
+      } },
+    });
+    const failure = await host.commitGeneration({ operation: 'install', lock: hostLock(), desiredState: {}, installedIndex: {} })
+      .then(() => undefined, error => error);
+    if (kind === 'crash') {
+      expect(failure).toBe(operationFailure);
+      expect(releaseAttempts).toBe(0);
+    } else {
+      expect(failure).toBeInstanceOf(AggregateError);
+      expect(failure.errors[0]).toBe(operationFailure);
+      expect(failure.errors[1]).toBe(cleanupFailure);
+      expect(releaseAttempts).toBe(1);
+    }
+    expect((await stat(host.paths.writerLock)).isFile()).toBe(true);
+    expect(await host.readCurrentPointer()).toBeNull();
   });
 
   it('rejects reserved generation-file overrides before selecting anything', async () => {

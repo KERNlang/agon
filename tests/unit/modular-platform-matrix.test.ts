@@ -70,7 +70,7 @@ it.each([
     isSourceBearingPath: () => false,
     hashGitSubject: () => 'sha256:fixture',
     validateStoredSubjectBoundReview: () => ({ passed: true }),
-    validateDependencyGraph: () => ({ duplicateEdges: [], uniqueEdges: 151 }),
+    validateDependencyGraph: () => ({ duplicateEdges: [], uniqueEdges: 152 }),
     loadEvidencePasses,
     readFileSync: (path: string) => {
       if (path.endsWith('package-map.json')) return JSON.stringify({ packages: Array.from({ length: 49 }, (_, i) => ({ class: i < 36 ? 'user-toggleable-mod-package' : 'support' })) });

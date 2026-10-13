@@ -15,6 +15,9 @@ import {
   renderModManagementText,
   recoverManagedLifecycle,
   ManagedRetentionInspector,
+  previewManagedPurge,
+  applyManagedPurge,
+  type ManagedPurgePlan,
   parseArtifactLeaseIdentity,
   type ArtifactGenerationLease,
   type ArtifactLeaseIdentity,
@@ -82,6 +85,7 @@ type ArtifactRetentionPreview = ({ readonly action: 'retain'; readonly generatio
   | { readonly action: 'release'; readonly lease: ArtifactGenerationLease }) & { readonly requestId: string; readonly planHash: string };
 
 type PendingPlan =
+  | { readonly schemaVersion: 2; readonly kind: 'purge'; readonly preview: ManagedPurgePlan }
   | { readonly schemaVersion: 2; readonly kind: 'artifact-retention'; readonly preview: ArtifactRetentionPreview }
   | { readonly schemaVersion: 2; readonly kind: 'authority'; readonly modId: string; readonly contentHash: string; readonly manifestHash: string; readonly preview: FolderModApprovalPreview }
   | { readonly schemaVersion: 2; readonly kind: 'activation'; readonly modId: string; readonly contentHash: string; readonly manifestHash: string; readonly preview: FolderModActivationPreview }
@@ -105,6 +109,15 @@ async function readPlan(pathInput: string): Promise<PendingPlan> {
   const metadata = await lstat(candidate);
   if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.size > PLAN_LIMIT) throw new TypeError('approval plan must be a real JSON file no larger than 256 KiB');
   const value = JSON.parse(await readFile(candidate, 'utf8')) as PendingPlan;
+  if (value.kind === 'purge') {
+    if (value.schemaVersion !== 2 || !value.preview || value.preview.schemaVersion !== 2
+      || !Array.isArray(value.preview.installationPaths) || !Array.isArray(value.preview.dataPaths)
+      || value.preview.installationPaths.length + value.preview.dataPaths.length === 0
+      || [...value.preview.installationPaths, ...value.preview.dataPaths].some(path => typeof path !== 'string' || !isAbsolute(path))) {
+      throw new TypeError('purge approval plan is malformed');
+    }
+    return value;
+  }
   if (value.kind === 'artifact-retention') {
     if (value.schemaVersion !== 2 || !value.preview || typeof value.preview.requestId !== 'string' || !value.preview.requestId) {
       throw new TypeError('artifact retention plan requires a request ID');
@@ -393,6 +406,40 @@ const retentionCommand = defineCommand({ meta: { name: 'retention', description:
     console.log(JSON.stringify(await new ManagedRetentionInspector(host).inspect(), null, 2));
   } });
 
+const purgeCommand = defineCommand({ meta: { name: 'purge', description: 'Preview irreversible removal; apply only an exactly approved saved plan' },
+  args: {
+    plan: { type: 'positional', required: false, description: 'Saved preview path, required with --approve' },
+    installation: { type: 'string', description: 'Exact installation ID to preview; repeat for multiple IDs' },
+    data: { type: 'string', description: 'Absolute managed data path to preview; repeat for multiple paths' },
+    approve: { type: 'string', description: 'Exact saved preview hash; removal is irreversible' },
+  },
+  async run({ args }) {
+    const host = new DurableModHost(paths().hostRoot, { kernelVersion: AGON_RUNTIME_VERSION });
+    const warning = 'Removal is irreversible. Purge quarantine is not a backup.';
+    if (args.plan !== undefined || args.approve !== undefined) {
+      if (!args.plan || !args.approve) throw new TypeError('purge requires both a saved plan and --approve with its exact hash');
+      if (args.installation !== undefined || args.data !== undefined) throw new TypeError('purge approval uses the saved preview, not replacement flags');
+      const document = await readPlan(String(args.plan));
+      if (document.kind !== 'purge') throw new TypeError('purge approval requires a purge plan');
+      const deletedPaths = await applyManagedPurge(host, document.preview, String(args.approve));
+      console.log(JSON.stringify({ action: 'purge', planHash: document.preview.planHash, deletedPaths, warning }, null, 2));
+      return;
+    }
+    const targets = (value: unknown): string[] => {
+      const values = value === undefined ? [] : Array.isArray(value) ? value : [value];
+      if (values.some(item => typeof item !== 'string' || !item.trim())) throw new TypeError('purge targets must be non-empty strings');
+      return values as string[];
+    };
+    const installationIds = targets(args.installation);
+    const dataPaths = targets(args.data);
+    if (!installationIds.length && !dataPaths.length) throw new TypeError('purge preview requires --installation or --data; no automatic targets are selected');
+    if (dataPaths.some(path => !isAbsolute(path))) throw new TypeError('purge data paths must be absolute');
+    const preview = await previewManagedPurge(host, { installationIds, dataPaths });
+    const planPath = await writePlan({ schemaVersion: 2, kind: 'purge', preview }, preview.planHash);
+    console.log(JSON.stringify({ ...preview, action: 'purge-preview', planPath, warning,
+      next: `agon mod purge '${planPath.replace(/'/g, "'\\''")}' --approve ${preview.planHash}` }, null, 2));
+  } });
+
 export const modCommand: any = defineCommand({ meta: { name: 'mod', description: 'Inspect, trust, grant, and activate modular Agon packages' },
   subCommands: { list: listCommand, inspect: inspectCommand, trust: trustCommand, untrust: untrustCommand, approve: approveCommand, revoke: revokeCommand,
-    enable: activationCommand(true), disable: activationCommand(false), recover: recoverCommand, retention: retentionCommand } });
+    enable: activationCommand(true), disable: activationCommand(false), recover: recoverCommand, retention: retentionCommand, purge: purgeCommand } });

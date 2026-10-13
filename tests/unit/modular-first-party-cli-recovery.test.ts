@@ -30,6 +30,74 @@ async function previewAndApprove(command: any, target: string) {
 }
 
 describe('first-party safe-mode CLI recovery', () => {
+  it('previews exact purge targets through the built CLI and never replays deletion against replacement data', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-cli-purge '));
+    const host = new DurableModHost(join(root, 'host'), { kernelVersion: '1.0.0' });
+    const desiredState = createFullCompatDesiredState(createFirstPartyModCatalog(), '2026-09-04T00:00:00.000Z');
+    const installed = await new ManagedLifecycleService(host).apply(
+      await createManagedLifecyclePlan(host, request([artifact('@test/app')], { desiredState })), installer, verifier);
+    const before = await readFile(host.paths.current);
+    const data = join(host.root, 'example-data, with spaces');
+    const otherData = join(host.root, 'other-data');
+    const installationId = 'f'.repeat(32);
+    const prefix = join(host.root, 'installations', installationId);
+    await mkdir(prefix);
+    await writeFile(join(prefix, 'payload'), 'orphan');
+    await writeFile(data, 'approved data');
+    await writeFile(otherData, 'other approved data');
+    const cli = fileURLToPath(new URL('../../packages/cli/dist/index.js', import.meta.url));
+    const run = (...args: string[]) => spawnSync(process.execPath, [cli, 'mod', 'purge', ...args], {
+      env: { ...process.env, HOME: root, AGON_HOME: root, AGON_MODULAR_HOST_ROOT: host.root, AGON_MOD_SAFE_MODE: '1' },
+      cwd: root, encoding: 'utf8', timeout: 10_000,
+    });
+    for (const args of [[], ['--data', 'relative'], ['--data', host.root],
+      ['--installation', installed.installation.installationId]]) {
+      const denied = run(...args);
+      expect(denied.error).toBeUndefined();
+      expect(denied.status, denied.stdout).not.toBe(0);
+    }
+    const result = run('--installation', installationId, '--data', data, '--data', otherData);
+    expect(result.error).toBeUndefined();
+    expect(result.status, result.stderr).toBe(0);
+    const preview = JSON.parse(result.stdout);
+    expect(preview).toMatchObject({ action: 'purge-preview', installationPaths: [prefix], dataPaths: [data, otherData] });
+    expect(preview.warning).toContain('irreversible');
+    expect(await readFile(data, 'utf8')).toBe('approved data');
+    expect(await readFile(join(prefix, 'payload'), 'utf8')).toBe('orphan');
+    for (const args of [[preview.planPath], [preview.planPath, '--approve', 'wrong'],
+      [preview.planPath, '--approve', preview.planHash, '--data', otherData]]) {
+      const denied = run(...args);
+      expect(denied.status, denied.stdout).not.toBe(0);
+      expect(await readFile(data, 'utf8')).toBe('approved data');
+    }
+    const planBytes = await readFile(preview.planPath);
+    const document = JSON.parse(planBytes.toString());
+    for (const targets of [
+      { installationPaths: [], dataPaths: ['host/example-data, with spaces'] },
+      { installationPaths: [], dataPaths: [] },
+    ]) {
+      const { planHash: _hash, ...unsigned } = document.preview;
+      const changed = { ...unsigned, ...targets };
+      const hash = sha256Canonical(changed);
+      await writeFile(preview.planPath, JSON.stringify({ ...document, preview: { ...changed, planHash: hash } }));
+      const denied = run(preview.planPath, '--approve', hash);
+      expect(denied.status, denied.stdout).not.toBe(0);
+      expect(await readFile(data, 'utf8')).toBe('approved data');
+    }
+    await writeFile(preview.planPath, JSON.stringify({ ...document, kind: 'artifact-retention' }));
+    expect(run(preview.planPath, '--approve', preview.planHash).status).not.toBe(0);
+    await writeFile(preview.planPath, planBytes);
+    const applied = run(preview.planPath, '--approve', preview.planHash);
+    expect(applied.status, applied.stderr).toBe(0);
+    expect(JSON.parse(applied.stdout).deletedPaths).toEqual([prefix, data, otherData]);
+    for (const path of [prefix, data, otherData]) await expect(stat(path)).rejects.toMatchObject({ code: 'ENOENT' });
+    await writeFile(data, 'replacement must survive');
+    const replay = run(preview.planPath, '--approve', preview.planHash);
+    expect(replay.status, replay.stderr).toBe(0);
+    expect(await readFile(data, 'utf8')).toBe('replacement must survive');
+    expect(await readFile(host.paths.current)).toEqual(before);
+  });
+
   it('previews and exactly approves artifact retention and release without deleting data', async () => {
     const root = await mkdtemp(join(tmpdir(), 'agon-artifact-cli-'));
     const host = new DurableModHost(join(root, 'host'), { kernelVersion: '1.0.0' });

@@ -497,7 +497,8 @@ receipt. Retry syncs the terminal lifecycle journal and its directory before
 completing its receipt. Rollback syncs removal parents before its terminal marker.
 Verified generations that never declared `installation.json` remain recoverable;
 a missing declared artifact is corruption, not an unmanaged generation.
-Lease-aware retention and a production purge command remain unfinished.
+Complete lease-aware retention remains unfinished. The explicit purge CLI is
+described under Approved purge replay below.
 
 `agon mod retention` reports retained installation IDs, every generation that
 references each installation, and unreleased process leases. It acquires the
@@ -613,9 +614,25 @@ Retry with the original plan resumes staged removal and returns prior completed
 results without selecting the original paths again. A new preview is required
 to purge newly created data. Malformed journals refuse further effects. Journals
 and quarantine storage are protected from ordinary data-path purge. Removal is
-irreversible; quarantine is a recovery mechanism, not a backup. This API protocol
-does not establish CLI availability, a complete quota/reference report, or release
-acceptance.
+irreversible; quarantine is a recovery mechanism, not a backup.
+
+`agon mod purge --installation <id> --data <absolute-path>` saves an exact preview
+under `pending-authority` and prints its paths, hash and irreversible-removal
+warning. Either flag can repeat; neither selects targets automatically. With no
+targets the command refuses. Relative data paths are rejected. Installation IDs,
+protected state, references and links are checked by the kernel API. The approval
+plan store itself is protected from purge. Protected namespace comparisons use
+Unicode compatibility normalization and lowercase on every supported platform,
+so a case alias cannot bypass the protection on a case-insensitive filesystem.
+
+`agon mod purge <saved-plan> --approve <hash>` applies only that saved preview.
+Replacement selection flags and other plan kinds are rejected. Saved plans also
+require at least one target and absolute string paths before apply. Apply uses the
+same kernel generation checks, writer fences and replay journal; it does not
+duplicate removal logic in the CLI. Retrying reports the original completed
+paths and never selects replacement data at those paths. This command is
+available in kernel-only safe mode. It does not implement automatic collection,
+quota policy, generation expiry, a complete retention report, or release acceptance.
 
 ## Registry invariants
 

@@ -25,7 +25,7 @@ claims.
 | Physical extraction beyond API/kernel | partial: physical packages exist; remaining ownership and host adapters are not retired |
 | Runtime-generated CLI/TUI/MCP/Cesar/docs | partial: executable generated activation exists; complete legacy-owner retirement is not proven |
 | Installer/update/rollback/safe mode | implementation exists; fresh-install and release qualification remain incomplete |
-| Managed lifecycle recovery and purge | partial: explicit `mod recover transactions` calls kernel recovery; nine real SIGKILL boundaries pass through the built safe-mode CLI on local macOS arm64. The purge API now journals quarantine/removal and passes three real process-kill replay cases. Purge still has no production caller; lease-aware retention, full purge reporting and release qualification remain unfinished. This dirty-tree evidence is not clean release qualification |
+| Managed lifecycle recovery and purge | partial: explicit `mod recover transactions` calls kernel recovery; nine real SIGKILL boundaries pass through the built safe-mode CLI on local macOS arm64. The purge API journals quarantine/removal and passes three real process-kill replay cases. `mod purge` now previews exact targets and requires a saved-plan hash; built safe-mode CLI tests cover refusal, removal and replay without deleting replacement data. Lease-aware retention, full purge reporting and release qualification remain unfinished. This development evidence is not clean release qualification |
 | Trust/grants/third-party folder mods | implementation exists; complete security/release acceptance remains unproven |
 | npm/npx release | candidate machinery exists; not a qualified or promoted release |
 | Native release/signing/publish evidence | externally blocked |

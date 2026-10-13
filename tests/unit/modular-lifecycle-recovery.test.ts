@@ -535,8 +535,9 @@ describe('managed purge preview and apply', () => {
   it.each(['generations', 'generations/0000000000000001', 'leases', 'receipts', 'transactions',
     'staging', 'current-generation.json', 'installed-index.json', 'desired-state.json', 'locks',
     'locks/writer.json', 'installations', 'installations/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-    'installation-staging', 'installation-transactions', 'installation-receipts', 'purge-transactions', 'purge-staging',
-    'trust', 'trust/record.json', 'grants', 'grants/record.json', 'authority-owned-by-local-user'])
+    'installation-staging', 'installation-transactions', 'installation-receipts', 'purge-transactions', 'purge-staging', 'pending-authority',
+    'trust', 'trust/record.json', 'grants', 'grants/record.json', 'authority-owned-by-local-user',
+    'PENDING-AUTHORITY', 'PURGE-TRANSACTIONS', 'Generations', 'LOCKS/writer.json'])
     ('refuses kernel-managed data target %s during preview and apply', async target => {
       const root = await mkdtemp(join(tmpdir(), 'agon-purge-protected-'));
       const host = new DurableModHost(root, { kernelVersion: '1.0.0' });

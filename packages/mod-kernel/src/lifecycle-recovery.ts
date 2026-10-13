@@ -241,10 +241,15 @@ function assertPurgeDataPath(host: DurableModHost, path: string): string {
   const absolute = assertManagedPath(host.root, path);
   const protectedPaths = [...Object.values(host.paths),
     ...Object.values(new TrustGrantStore(host.root, host.hostIo).paths), dirname(host.paths.writerLock),
-    ...['installations', 'installation-staging', 'installation-transactions', 'installation-receipts', 'purge-transactions', 'purge-staging']
+    ...['installations', 'installation-staging', 'installation-transactions', 'installation-receipts', 'purge-transactions', 'purge-staging', 'pending-authority']
       .map(name => join(host.root, name))];
-  if (protectedPaths.some(protectedPath => absolute === protectedPath
-    || absolute.startsWith(protectedPath + sep) || protectedPath.startsWith(absolute + sep))) {
+  // Reserve the same namespaces on case-sensitive and case-insensitive hosts.
+  const normalized = absolute.normalize('NFKC').toLowerCase();
+  if (protectedPaths.some(path => {
+    const protectedPath = path.normalize('NFKC').toLowerCase();
+    return normalized === protectedPath || normalized.startsWith(protectedPath + sep)
+      || protectedPath.startsWith(normalized + sep);
+  })) {
     throw new DurableHostError('MOD_TRANSACTION_FAILED', `purge cannot target kernel-managed state: ${path}`);
   }
   return absolute;

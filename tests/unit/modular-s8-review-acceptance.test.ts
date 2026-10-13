@@ -1,6 +1,6 @@
-import { mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
 import { validateManifest, type ModManifest, type ModServices } from '../../packages/mod-api/src/index.js';
@@ -8,6 +8,7 @@ import { activateFirstPartySurfaceGeneration, type FirstPartySurfacePackage } fr
 import { readExactBounded, type PositionalReadable } from '../../packages/mod-kernel/src/bounded-file-read.js';
 import { mapSettledBounded } from '../../packages/mod-kernel/src/bounded-work.js';
 import { ExternalActivationStore, type ExternalActivationIdentity } from '../../packages/mod-kernel/src/external-activation-state.js';
+import { nodeHostIo } from '../../packages/mod-kernel/src/host-io.js';
 import { createSafeExternalModServices } from '../../packages/mod-kernel/src/external-mod-services-safe.js';
 import { resolveExternalFolderMods, resolveExternalFolderModsIsolated } from '../../packages/mod-kernel/src/external-resolution.js';
 import { createExternalSurfaceCatalog } from '../../packages/mod-kernel/src/external-surface-catalog.js';
@@ -48,6 +49,161 @@ function surfaceEntry(shape: ModManifest, id: string): GeneratedSurfaceCatalogEn
 }
 
 describe('S8 independent review acceptance controls', () => {
+  it.each(['apply', 'recover', 'failure', 'success'] as const)('%s preserves external activation effects and reports cleanup failures', async operation => {
+    for (const operationFails of [false, true]) {
+      for (const cleanupPhase of ['none', 'remove', 'sync'] as const) {
+        const root = await mkdtemp(join(tmpdir(), 'agon-external-cleanup-'));
+        try {
+          const base = new ExternalActivationStore(root);
+          const identity: ExternalActivationIdentity = { modId: 'example.cleanup', version: '1.0.0', source: 'user-folder', sourceLocator: '/mods/cleanup',
+            contentHash: hash('a'), manifestHash: hash('b'), publisherHash: hash('c') };
+          if (operation === 'recover') {
+            const interrupted = new ExternalActivationStore(root, undefined, { faultAt: 'after-record-write' });
+            const plan = interrupted.preview(identity, true, 'test');
+            await expect(interrupted.apply(plan, plan.planHash)).rejects.toThrow('injected');
+          }
+          const operationError = new Error('fixture activation operation');
+          const cleanupError = new Error('fixture activation cleanup');
+          let removed = false;
+          const store = new ExternalActivationStore(root, { ...nodeHostIo,
+            mkdir: async (path, options) => {
+              const target = operation === 'apply' ? base.directory : base.failures;
+              if (operationFails && operation !== 'recover' && path === target) throw operationError;
+              await nodeHostIo.mkdir(path, options);
+            },
+            readdir: async (path, options) => {
+              if (operationFails && operation === 'recover' && path === base.transactions) throw operationError;
+              return nodeHostIo.readdir(path, options);
+            },
+            rm: async (path, options) => {
+              if (path === base.writerLock && cleanupPhase === 'remove') throw cleanupError;
+              await nodeHostIo.rm(path, options);
+              if (path === base.writerLock) removed = true;
+            },
+            syncDirectory: async path => {
+              if (removed && cleanupPhase === 'sync' && path === dirname(base.writerLock)) throw cleanupError;
+              await nodeHostIo.syncDirectory(path);
+            },
+          });
+          const plan = store.preview(identity, true, 'test');
+          const attempt = operation === 'apply' ? store.apply(plan, plan.planHash)
+            : operation === 'recover' ? store.recover()
+              : operation === 'failure' ? store.recordFailure(identity, 'activation', new Error('fixture module failed'))
+                : store.recordSuccess(identity);
+          const failure = await attempt.then(() => undefined, error => error);
+          if (cleanupPhase !== 'none' && operationFails) {
+            expect(failure).toBeInstanceOf(AggregateError);
+            expect(failure.errors).toEqual([operationError, cleanupError]);
+          } else expect(failure).toBe(cleanupPhase !== 'none' ? cleanupError : operationFails ? operationError : undefined);
+          if (cleanupPhase === 'remove') await expect(readFile(base.writerLock)).resolves.toBeDefined();
+          else await expect(readFile(base.writerLock)).rejects.toMatchObject({ code: 'ENOENT' });
+          if (operation === 'apply' || operation === 'recover') {
+            expect(await base.enabled(identity)).toBe(operation === 'recover' || !operationFails);
+            const names = await readdir(base.transactions).catch(() => []);
+            expect(names).toHaveLength(operation === 'apply' && operationFails ? 0 : 1);
+            if (names.length) {
+              const journal = JSON.parse(await readFile(join(base.transactions, names[0]!), 'utf8'));
+              expect(journal.state).toBe(operation === 'recover' && operationFails ? 'preparing' : 'committed');
+            }
+          } else {
+            const outcomes = await base.readOutcomes();
+            expect(outcomes).toHaveLength(operationFails ? 0 : 1);
+            if (!operationFails) expect(outcomes[0]?.code).toBe(operation === 'failure' ? 'EXTERNAL_ACTIVATION_FAILED' : 'EXTERNAL_ACTIVATION_PASSED');
+          }
+        } finally { await rm(root, { recursive: true, force: true }); }
+      }
+    }
+  });
+
+  it.each(['after-preparing-journal', 'after-record-write'] as const)('retains recoverable activation evidence after %s and release failure', async faultAt => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-external-partial-'));
+    try {
+      const base = new ExternalActivationStore(root);
+      const identity: ExternalActivationIdentity = { modId: 'example.partial', version: '1.0.0', source: 'user-folder', sourceLocator: '/mods/partial',
+        contentHash: hash('a'), manifestHash: hash('b'), publisherHash: hash('c') };
+      let removed = false;
+      const cleanupError = new Error('fixture release sync');
+      const store = new ExternalActivationStore(root, { ...nodeHostIo,
+        rm: async (path, options) => { await nodeHostIo.rm(path, options); if (path === base.writerLock) removed = true; },
+        syncDirectory: async path => {
+          if (removed && path === dirname(base.writerLock)) throw cleanupError;
+          await nodeHostIo.syncDirectory(path);
+        },
+      }, { faultAt });
+      const plan = store.preview(identity, true, 'test');
+      const failure = await store.apply(plan, plan.planHash).then(() => undefined, error => error);
+      expect(failure).toBeInstanceOf(AggregateError);
+      expect(failure.errors).toHaveLength(2);
+      expect(failure.errors[0].message).toMatch(/injected external activation fault/);
+      expect(failure.errors[1]).toBe(cleanupError);
+      const journalPath = join(base.transactions, (await readdir(base.transactions))[0]!);
+      expect(JSON.parse(await readFile(journalPath, 'utf8')).state).toBe('preparing');
+      await base.recover();
+      const committed = faultAt === 'after-record-write';
+      expect(JSON.parse(await readFile(journalPath, 'utf8')).state).toBe(committed ? 'committed' : 'rolled-back');
+      expect(await base.enabled(identity)).toBe(committed);
+      await expect(readFile(base.writerLock)).rejects.toMatchObject({ code: 'ENOENT' });
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it('reports release failure even when successful activation outcome is already recorded', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-external-existing-'));
+    try {
+      const base = new ExternalActivationStore(root);
+      const identity: ExternalActivationIdentity = { modId: 'example.existing', version: '1.0.0', source: 'user-folder', sourceLocator: '/mods/existing',
+        contentHash: hash('a'), manifestHash: hash('b'), publisherHash: hash('c') };
+      const existing = await base.recordSuccess(identity);
+      const cleanupError = new Error('fixture release remove');
+      const store = new ExternalActivationStore(root, { ...nodeHostIo,
+        rm: async (path, options) => {
+          if (path === base.writerLock) throw cleanupError;
+          await nodeHostIo.rm(path, options);
+        },
+      });
+      await expect(store.recordSuccess(identity)).rejects.toBe(cleanupError);
+      expect(await base.readOutcomes()).toEqual([existing]);
+      await expect(readFile(base.writerLock)).resolves.toBeDefined();
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it('preserves completed recovery journals when a later journal and cleanup fail', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-external-recovery-partial-'));
+    try {
+      const base = new ExternalActivationStore(root);
+      const interrupted = new ExternalActivationStore(root, undefined, { faultAt: 'after-record-write' });
+      const identity: ExternalActivationIdentity = { modId: 'example.recovery', version: '1.0.0', source: 'user-folder', sourceLocator: '/mods/recovery',
+        contentHash: hash('a'), manifestHash: hash('b'), publisherHash: hash('c') };
+      for (let index = 0; index < 2; index++) {
+        const plan = interrupted.preview(identity, true, 'test');
+        await expect(interrupted.apply(plan, plan.planHash)).rejects.toThrow('injected');
+      }
+      const journals = (await readdir(base.transactions)).sort().map(name => join(base.transactions, name));
+      const operationError = new Error('fixture second journal');
+      const cleanupError = new Error('fixture release sync');
+      let removed = false;
+      const store = new ExternalActivationStore(root, { ...nodeHostIo,
+        rename: async (from, to) => {
+          if (to === journals[1]) throw operationError;
+          await nodeHostIo.rename(from, to);
+        },
+        rm: async (path, options) => { await nodeHostIo.rm(path, options); if (path === base.writerLock) removed = true; },
+        syncDirectory: async path => {
+          if (removed && path === dirname(base.writerLock)) throw cleanupError;
+          await nodeHostIo.syncDirectory(path);
+        },
+      });
+      const failure = await store.recover().then(() => undefined, error => error);
+      expect(failure).toBeInstanceOf(AggregateError);
+      expect(failure.errors).toEqual([operationError, cleanupError]);
+      expect(JSON.parse(await readFile(journals[0]!, 'utf8')).state).toBe('committed');
+      expect(JSON.parse(await readFile(journals[1]!, 'utf8')).state).toBe('preparing');
+      await base.recover();
+      expect(JSON.parse(await readFile(journals[1]!, 'utf8')).state).toBe('committed');
+      expect(await base.read()).toHaveLength(2);
+      expect(await base.enabled(identity)).toBe(true);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
   it('bounds parallel inspection work while preserving deterministic result order', async () => {
     let active = 0; let peak = 0;
     const results = await mapSettledBounded([0, 1, 2, 3, 4], 2, async (value) => {

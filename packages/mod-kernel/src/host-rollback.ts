@@ -4,7 +4,7 @@ import { DurableModHost, type GenerationPointer, type HostTransactionJournal } f
 import { DurableHostError } from './host-errors.js';
 import { atomicWrite, writeNewImmutableFile } from './host-io.js';
 import { canonicalJson } from './lock.js';
-import { WriterFence } from './writer-lock.js';
+import { WriterFence, releaseLifecycleWriters } from './writer-lock.js';
 
 export interface RollbackGenerationOptions {
   readonly ownerId?: string;
@@ -27,41 +27,39 @@ export async function rollbackGeneration(
     io: host.hostIo,
     now,
   });
-  const rollbackState = await (async () => {
+  const operationErrors: unknown[] = [];
+  let transactionId: string | undefined;
+  let committed = false;
+  let proposedPointer: GenerationPointer | null = null;
+  try {
     const manifest = await host.validateGeneration(targetGeneration);
     let current: GenerationPointer | null = null;
     try { current = await host.readCurrentPointer(); }
     catch (error) { if (!options.allowInvalidCurrent) throw error; }
     if (!current && !options.allowInvalidCurrent) throw new DurableHostError('MOD_TRANSACTION_FAILED', 'rollback requires a selected base generation');
     if (current?.generation === targetGeneration) throw new DurableHostError('MOD_TRANSACTION_FAILED', 'rollback target is already selected');
-    return { manifest, current };
-  })().catch(async (error) => { await fence.release().catch(() => undefined); throw error; });
-  const { manifest, current } = rollbackState;
-  const transactionId = randomUUID();
-  const startedAt = now().toISOString();
-  let committed = false;
-  let proposedPointer: GenerationPointer | null = null;
-  let journal: HostTransactionJournal = Object.freeze({
-    schemaVersion: 1,
-    transactionId,
-    operation: 'rollback',
-    state: 'verified',
-    startedAt,
-    updatedAt: startedAt,
-    baseGeneration: current?.generation ?? 0,
-    candidateGeneration: targetGeneration,
-    fenceToken: fence.record.fenceToken,
-    previousLockHash: current?.lockHash ?? null,
-    candidateLockHash: manifest.lockHash,
-    steps: Object.freeze([
-      { id: 'verify-generation', state: 'passed' as const },
-      { id: 'select-generation', state: 'pending' as const },
-      { id: 'restore-snapshots', state: 'pending' as const },
-    ]),
-    rollback: Object.freeze({ attempted: true, completed: false }),
-  });
-  const journalPath = host.journalPath(transactionId);
-  try {
+    transactionId = randomUUID();
+    const startedAt = now().toISOString();
+    let journal: HostTransactionJournal = Object.freeze({
+      schemaVersion: 1,
+      transactionId,
+      operation: 'rollback',
+      state: 'verified',
+      startedAt,
+      updatedAt: startedAt,
+      baseGeneration: current?.generation ?? 0,
+      candidateGeneration: targetGeneration,
+      fenceToken: fence.record.fenceToken,
+      previousLockHash: current?.lockHash ?? null,
+      candidateLockHash: manifest.lockHash,
+      steps: Object.freeze([
+        { id: 'verify-generation', state: 'passed' as const },
+        { id: 'select-generation', state: 'pending' as const },
+        { id: 'restore-snapshots', state: 'pending' as const },
+      ]),
+      rollback: Object.freeze({ attempted: true, completed: false }),
+    });
+    const journalPath = host.journalPath(transactionId);
     await atomicWrite(host.hostIo, journalPath, JSON.stringify(journal, null, 2) + String.fromCharCode(10));
     await fence.assertOwned();
     const pointer: GenerationPointer = Object.freeze({
@@ -97,23 +95,25 @@ export async function rollbackGeneration(
     }, null, 2) + String.fromCharCode(10));
     return Object.freeze({ pointer, journal });
   } catch (error) {
+    let failure = error;
     if (proposedPointer && !committed) {
       try {
         const selected = await host.readCurrentPointer();
         committed = selected !== null && canonicalJson(selected) === canonicalJson(proposedPointer);
       } catch {
-        throw new DurableHostError('MOD_RESTART_REQUIRED', 'rollback selection requires recovery before snapshot restoration', {
+        failure = new DurableHostError('MOD_RESTART_REQUIRED', 'rollback selection requires recovery before snapshot restoration', {
           transactionId, targetGeneration, outcome: 'unknown',
-        });
+        }, { cause: error });
       }
     }
-    if (committed) throw new DurableHostError('MOD_RESTART_REQUIRED', 'rollback pointer committed but snapshot restoration did not finish', {
+    if (committed) failure = new DurableHostError('MOD_RESTART_REQUIRED', 'rollback pointer committed but snapshot restoration did not finish', {
       transactionId,
       targetGeneration,
       cause: error instanceof Error ? error.message : String(error),
-    });
-    throw error;
+    }, { cause: error });
+    operationErrors.push(failure);
+    throw failure;
   } finally {
-    await fence.release().catch(() => undefined);
+    await releaseLifecycleWriters([fence], operationErrors);
   }
 }

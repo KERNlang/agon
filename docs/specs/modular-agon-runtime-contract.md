@@ -637,6 +637,14 @@ Trust/grant transactions protect sequence reads and plan validation with the
 same writer cleanup boundary as record publication. Rejected approval or invalid
 plan data leaves no new authority record and releases the writer. Apply and
 recovery report release failures and retain any operation error alongside them.
+Generation rollback uses the same boundary for target validation, journal setup
+and pointer publication. Setup failure releases its writer. Failed release never
+reports success or reverses an already selected pointer. Snapshot failures retain
+their restart-required code and original cause when release succeeds; combined
+operation/release failures preserve both errors for inspection.
+External activation apply, recovery and outcome recording use this same release
+contract. Completed records remain intact. Bootstrap callers retain their existing
+diagnostics and fail-closed authority behavior; cleanup failure creates no grant.
 
 Purge and lifecycle recovery attempt both writer releases in reverse acquisition
 order. A release or directory-sync failure rejects the operation instead of

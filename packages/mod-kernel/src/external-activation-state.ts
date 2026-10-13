@@ -6,7 +6,7 @@ import { valid as validVersion } from 'semver';
 import { atomicWrite, nodeHostIo, pathExists, readJson, writeNewImmutableFile, type HostIo } from './host-io.js';
 import { sha256Canonical } from './lock.js';
 import { redactExternalDiagnostic } from './external-mod-services-safe.js';
-import { WriterFence } from './writer-lock.js';
+import { WriterFence, releaseLifecycleWriters } from './writer-lock.js';
 
 const HASH = /^sha256:[a-f0-9]{64}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -119,6 +119,7 @@ export class ExternalActivationStore {
     const { planHash, ...unsigned } = plan;
     if (planHash !== sha256Canonical(unsigned) || approvedPlanHash !== planHash) throw new TypeError('external activation approval does not match the exact plan');
     const fence = await WriterFence.acquire(this.writerLock, 'agon.kernel.external-activation', { io: this.io });
+    const operationErrors: unknown[] = [];
     try {
       await this.io.mkdir(this.directory, { recursive: true, mode: 0o700 });
       await this.io.mkdir(this.transactions, { recursive: true, mode: 0o700 });
@@ -135,14 +136,18 @@ export class ExternalActivationStore {
       await fence.assertOwned();
       await atomicWrite(this.io, journalPath, `${JSON.stringify({ ...journal, state: 'committed' })}\n`);
       return record;
+    } catch (error) {
+      operationErrors.push(error);
+      throw error;
     } finally {
-      await fence.release().catch(() => undefined);
+      await releaseLifecycleWriters([fence], operationErrors);
     }
   }
 
   async recover(): Promise<void> {
     if (!await pathExists(this.io, this.transactions)) return;
     const fence = await WriterFence.acquire(this.writerLock, 'agon.kernel.external-activation-recovery', { io: this.io });
+    const operationErrors: unknown[] = [];
     try {
       for (const name of (await this.io.readdir(this.transactions)).map(String).filter((entry) => entry.endsWith('.json')).sort()) {
         const path = join(this.transactions, name);
@@ -153,8 +158,11 @@ export class ExternalActivationStore {
         if (exists && sha256Canonical(await readJson(this.io, recordPath)) !== journal.recordHash) throw new TypeError('activation recovery found a mismatched record');
         await atomicWrite(this.io, path, `${JSON.stringify({ ...journal, state: exists ? 'committed' : 'rolled-back' })}\n`);
       }
+    } catch (error) {
+      operationErrors.push(error);
+      throw error;
     } finally {
-      await fence.release().catch(() => undefined);
+      await releaseLifecycleWriters([fence], operationErrors);
     }
   }
 
@@ -174,6 +182,7 @@ export class ExternalActivationStore {
 
   async #recordOutcome(identity: ExternalActivationIdentity, phase: ExternalActivationFailure['phase'], code: ExternalActivationFailure['code'], message: string): Promise<ExternalActivationFailure> {
     const fence = await WriterFence.acquire(this.writerLock, 'agon.kernel.external-activation-failure', { io: this.io });
+    const operationErrors: unknown[] = [];
     try {
       await this.io.mkdir(this.failures, { recursive: true, mode: 0o700 });
       const outcomes = await this.readOutcomes();
@@ -184,7 +193,10 @@ export class ExternalActivationStore {
         code, message: redactExternalDiagnostic(message), recordedAt: new Date().toISOString() });
       await writeNewImmutableFile(this.io, join(this.failures, `${failure.failureId}.json`), `${JSON.stringify(failure)}\n`);
       return failure;
-    } finally { await fence.release().catch(() => undefined); }
+    } catch (error) {
+      operationErrors.push(error);
+      throw error;
+    } finally { await releaseLifecycleWriters([fence], operationErrors); }
   }
 
   async readFailures(): Promise<readonly ExternalActivationFailure[]> {

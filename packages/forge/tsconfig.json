@@ -7,6 +7,7 @@
   },
   "include": ["src"],
   "references": [
+    { "path": "../mod-forge" },
     { "path": "../mod-brainstorm" },
     { "path": "../core" },
     { "path": "../support-persistence" }

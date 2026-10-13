@@ -88,15 +88,20 @@ describe('physical Forge mod', () => {
     expect(h.finish).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ ok: false }), expect.anything());
   });
 
-  it('accepts substantive validation output when explicitly allowed and preserves quiet/provenance output', async () => {
+  it.each([
+    ['A grounded validation report with useful findings.', false],
+    ['A grounded validation report: the request boundary rejects malformed input; retry failures preserve the original state and a regression test covers that transition.', true],
+  ] as const)('preserves validation report output under the legacy acceptance policy (accepted=%s)', async (report, accepted) => {
     const h = await harness(repo());
     h.dispatch.mockImplementation(async (engineId: string, prompt: string) => prompt.includes('AGON_FORGE_HEALTHY')
       ? { engineId, exitCode: 0, stdout: 'AGON_FORGE_HEALTHY', stderr: '', timedOut: false }
-      : { engineId, exitCode: 0, stdout: 'A grounded validation report with useful findings.', stderr: '', timedOut: false });
+      : { engineId, exitCode: 0, stdout: report, stderr: '', timedOut: false });
     const out = await h.command.run({ task: 'validate behavior', mode: 'validate', requireDiff: true, acceptReviewOutput: true, engines: 'alpha', quiet: true, provenance: true }, h.context) as any;
-    expect(out.exitCode).toBe(0);
+    expect(out.exitCode).toBe(accepted ? 0 : 1);
+    expect(out.result.candidates[0].dispatchStdout).toBe(report);
+    expect(h.writeArtifact).toHaveBeenCalledWith(expect.anything(), 'manifest.json', expect.stringContaining(report), expect.anything());
     expect(out.stdout).toContain('/tmp/forge-run');
-    expect(out.result).toMatchObject({ winner: 'alpha', acceptReviewOutput: true, provenance: { kind: 'forge' } });
+    expect(out.result).toMatchObject({ winner: accepted ? 'alpha' : null, acceptReviewOutput: true, provenance: { kind: 'forge' } });
     expect(h.writeArtifact).toHaveBeenCalledWith(expect.anything(), 'provenance.json', expect.any(String), expect.anything());
   });
 

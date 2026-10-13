@@ -1,5 +1,6 @@
 import { commandResultToToolResult } from '@kernlang/agon-mod-api';
 import { applyInputSchema, parseApply, runApply } from './apply.js';
+import { classifyNoDiffForgeResult, resolveForgeMode, resolveForgeRequireDiff, resolveForgeAcceptReviewOutput } from './result-policy.js';
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import type {
@@ -30,6 +31,7 @@ type Candidate = {
   filesChanged: number;
   durationMs: number;
   stdout: string;
+  dispatchStdout: string;
   stderr: string;
   timedOut: boolean;
 };
@@ -152,17 +154,18 @@ export async function runForgeCompetition(
         retryable: false,
       },
     };
-  const mode = text(input.mode) || "implement";
-  if (!["implement", "improve", "validate"].includes(mode))
-    return { exitCode: 1, stderr: `Unknown Forge mode: ${mode}\n` };
+  const requestedMode = text(input.mode) || "implement";
+  if (!["implement", "improve", "validate"].includes(requestedMode))
+    return { exitCode: 1, stderr: `Unknown Forge mode: ${requestedMode}\n` };
+  const mode = resolveForgeMode(requestedMode);
   const requestedFitness = text(input.test) || text(input.fitnessCmd);
   const fitnessProvided = Boolean(requestedFitness);
   const fitness = requestedFitness || "true";
   const cwd = text(input.cwd)
     ? resolve(context.cwd, text(input.cwd))
     : context.cwd;
-  const requireDiff = bool(input.requireDiff, mode === "implement");
-  const acceptReviewOutput = bool(input.acceptReviewOutput, mode === "validate");
+  const requireDiff = bool(input.requireDiff, resolveForgeRequireDiff(mode));
+  const acceptReviewOutput = bool(input.acceptReviewOutput, resolveForgeAcceptReviewOutput(mode));
   const timeoutSeconds = Math.max(
     1,
     Number.parseInt(text(input.timeout) || "600", 10) || 600,
@@ -345,6 +348,7 @@ export async function runForgeCompetition(
       timeoutSeconds,
       context.signal,
     );
+    const baselinePasses = baseline.exitCode === 0 && !baseline.timedOut && !baseline.aborted;
     const worktrees = order.map((engineId) => ({
       engineId,
       worktree: arena.create(engineId),
@@ -413,12 +417,13 @@ export async function runForgeCompetition(
               };
           const fitnessPassed =
             measured.exitCode === 0 && !measured.timedOut && !measured.aborted;
-          const usefulReview =
-            acceptReviewOutput &&
-            mode === "validate" &&
-            text(dispatched.stdout).length >= 16;
-          const pass = dispatchOk && fitnessPassed &&
-            (!requireDiff || diffLines > 0 || usefulReview);
+          const noDiff = diffLines === 0 ? classifyNoDiffForgeResult({
+            stdout: text(dispatched.stdout), timedOut: dispatched.timedOut === true,
+            exitCode: Number(dispatched.exitCode ?? 1), fitnessPassed,
+            baselinePasses,
+            mode, requireDiff, acceptReviewOutput,
+          }) : undefined;
+          const pass = noDiff ? noDiff.pass : dispatchOk && fitnessPassed;
           const candidate: Candidate = {
             engineId,
             rank,
@@ -437,10 +442,12 @@ export async function runForgeCompetition(
             filesChanged,
             durationMs: measured.durationMs,
             stdout: measured.stdout,
+            dispatchStdout: typeof dispatched.stdout === 'string' ? dispatched.stdout.slice(0, 5000) : '',
             stderr: [text(dispatched.stderr), measured.stderr]
               .filter(Boolean)
               .join("\n"),
             timedOut: measured.timedOut,
+            ...noDiff,
           };
           if (candidate.pass && !finalized) {
             passingCount += 1;

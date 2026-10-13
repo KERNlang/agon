@@ -8,10 +8,80 @@ import type { CommandContribution, IntentContribution, InvocationContext, ModSer
 import { ModRegistry } from '../../packages/mod-kernel/src/index.js';
 import { resolveRegisteredModSettings } from '../../packages/mod-kernel/src/mod-settings.js';
 import { createMod, MANIFEST } from '../../packages/mod-forge/src/index.js';
+import { classifyNoDiffForgeResult as ownedNoDiffPolicy } from '@kernlang/agon-mod-forge';
 import { DEFAULT_FIRST_PARTY_SETTINGS } from '../../packages/core/src/models/first-party-settings.generated.js';
 import { DEFAULT_AGON_CONFIG } from '../../packages/core/src/models/types.js';
+import { classifyNoDiffForgeResult } from '../../packages/forge/src/stages.js';
 
 describe('Forge configuration ownership', () => {
+  it('keeps the legacy classifier as the physical owner export', () => {
+    expect(classifyNoDiffForgeResult).toBe(ownedNoDiffPolicy);
+  });
+  it.each(([
+    { name: 'tool-loop exhaustion', mode: 'improve', requireDiff: false, acceptReviewOutput: true,
+      stdout: 'API engine reached the 40-step tool loop limit after 40 tool calls; evaluating any candidate worktree changes with fitness.', pass: false },
+    { name: 'short report with required diff', mode: 'validate', requireDiff: true, acceptReviewOutput: true,
+      stdout: 'I reviewed the code.', pass: false },
+    { name: 'explicitly accepted implementation report', mode: 'implement', requireDiff: true, acceptReviewOutput: true,
+      stdout: 'The review covers module exports, use-from semantics, external boundaries, and test gaps; it recommends retaining the implementation because all checked behaviors pass.', pass: true },
+    { name: 'baseline no-op without required diff', mode: 'improve', requireDiff: false, acceptReviewOutput: true,
+      stdout: 'No changes needed.', pass: true },
+    { name: 'baseline no-op with required diff', mode: 'validate', requireDiff: true, acceptReviewOutput: true,
+      stdout: 'No changes needed.', pass: false },
+    { name: 'failing fitness', mode: 'validate', requireDiff: false, acceptReviewOutput: true,
+      stdout: 'I reviewed the code.', fitness: 'false', pass: false },
+    { name: 'dispatch timeout', mode: 'validate', requireDiff: false, acceptReviewOutput: true,
+      stdout: 'I reviewed the code.', exitCode: 124, timedOut: true, pass: false },
+    { name: 'dispatch cancellation', mode: 'validate', requireDiff: false, acceptReviewOutput: true,
+      stdout: 'I reviewed the code.', exitCode: 130, pass: false },
+    { name: 'explicitly rejected implementation report', mode: 'implement', requireDiff: true, acceptReviewOutput: false,
+      stdout: 'The review covers module exports, use-from semantics, external boundaries, and test gaps; it recommends retaining the implementation because all checked behaviors pass.', pass: false },
+  ] as const).map(fixture => ({ fitness: 'true', exitCode: 0, timedOut: false, ...fixture })))('preserves legacy no-diff verdict: $name', async fixture => {
+    const root = mkdtempSync(join(tmpdir(), 'agon-forge-no-diff-'));
+    const git = (...args: string[]) => {
+      const result = spawnSync('git', args, { cwd: root, encoding: 'utf8' });
+      expect(result.status, result.stderr).toBe(0);
+      return result.stdout;
+    };
+    const owner = { id: MANIFEST.id, version: MANIFEST.version, contentHash: `sha256:${'a'.repeat(64)}` as const };
+    const registry = new ModRegistry({ generation: 'forge-no-diff-parity', activeOwners: [owner] });
+    let dispatchCount = 0;
+    try {
+      git('init', '--quiet');
+      writeFileSync(join(root, 'fixture.txt'), 'unchanged\n');
+      git('add', 'fixture.txt');
+      git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', '-c', 'core.hooksPath=/dev/null', 'commit', '--quiet', '-m', 'fixture');
+      const session = registry.beginRegistration(MANIFEST);
+      const mod = await createMod({
+        engines: {
+          listActive: async () => ['fixture'],
+          dispatch: async () => { dispatchCount += 1; return { exitCode: fixture.exitCode, timedOut: fixture.timedOut, stdout: fixture.stdout, stderr: '' }; },
+        },
+        receipts: { record: async () => 'fixture-receipt' },
+        logger: { debug: async () => {} },
+      } as unknown as ModServices);
+      await mod.activate(session.registrar);
+      session.commit();
+      const legacy = classifyNoDiffForgeResult({ ...fixture,
+        fitnessPassed: fixture.fitness === 'true', baselinePasses: fixture.fitness === 'true' });
+      expect(legacy.pass).toBe(fixture.pass);
+      const command = registry.project('cli').entries[0]!.payload as CommandContribution;
+      const result = await command.run({ task: 'inspect fixture', test: fixture.fitness, noHealthCheck: true,
+        mode: fixture.mode, requireDiff: fixture.requireDiff, acceptReviewOutput: fixture.acceptReviewOutput }, {
+        invocationId: 'forge-no-diff-parity', cwd: root, platform: 'darwin-arm64', signal: new AbortController().signal, config: {},
+      });
+      expect(dispatchCount).toBe(1);
+      expect(result).toMatchObject({ exitCode: fixture.pass ? 0 : 1, result: {
+        winner: fixture.pass ? 'fixture' : null, candidates: [{ ...legacy, diffLines: 0 }],
+      } });
+      expect(git('status', '--porcelain')).toBe('');
+      expect(git('worktree', 'list', '--porcelain').match(/^worktree /gm)).toHaveLength(1);
+    } finally {
+      await registry.disposeOwner(owner.id);
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it.each(['npm test', 'false', 'node check.mjs'])('preserves the intent fitness command through physical execution: %s', async fitness => {
     const owner = { id: MANIFEST.id, version: MANIFEST.version, contentHash: `sha256:${'a'.repeat(64)}` as const };
     const registry = new ModRegistry({ generation: 'forge-input-parity', activeOwners: [owner] });

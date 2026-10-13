@@ -1,9 +1,57 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { FIRST_PARTY_PACKAGE_GRAPH } from '../../packages/mod-kernel/src/generated/first-party-package-graph.js';
 
 describe('frozen first-party package graph', () => {
+  it.each(['checked-in', 'valid', 'permuted', 'missing', 'extra', 'swapped', 'duplicate', 'wrong-order'] as const)(
+    'roadmap verification checks exact dependencies and migration order: %s', variant => {
+      const script = new URL('../../scripts/spec/verify-modular-agon-roadmap.mjs', import.meta.url);
+      const roadmap = JSON.parse(readFileSync(new URL('../../docs/specs/evidence/modular-agon-implementation-roadmap.json', import.meta.url), 'utf8'));
+      const graph = FIRST_PARTY_PACKAGE_GRAPH;
+      const order: string[] = [];
+      const visit = (id: string): void => {
+        if (order.includes(id)) return;
+        for (const dependency of graph.packages.find(entry => entry.id === id)!.dependencies) visit(dependency);
+        order.push(id);
+      };
+      for (const entry of graph.packages) visit(entry.id);
+      for (const entry of roadmap.packages) {
+        if (variant === 'checked-in') continue;
+        entry.dependencies = [...graph.packages.find(pkg => pkg.id === entry.id)!.dependencies];
+        entry.migrationOrder = order.indexOf(entry.id) + 1;
+      }
+      const plan = roadmap.packages.find((entry: { id: string }) => entry.id === '@kernlang/agon-mod-plan');
+      if (variant === 'permuted') for (const entry of roadmap.packages) entry.dependencies.reverse();
+      if (variant === 'missing' || variant === 'swapped') plan.dependencies = plan.dependencies.filter((id: string) => id !== '@kernlang/agon-support-worktree');
+      if (variant === 'extra' || variant === 'swapped') plan.dependencies.push('@kernlang/agon-kernel');
+      if (variant === 'duplicate') plan.dependencies.push(plan.dependencies[0]);
+      if (variant === 'wrong-order') plan.migrationOrder = 1;
+      const migration = JSON.parse(readFileSync(new URL('../../docs/specs/evidence/modular-agon-slice5-migration-ledger.json', import.meta.url), 'utf8'));
+      const errors: string[] = [];
+      const source = readFileSync(script, 'utf8').replace(/^import .*;\n/gm, '')
+        .replace('import.meta.url', JSON.stringify(script.href));
+      const run = () => runInNewContext(source, {
+        URL, existsSync,
+        readFileSync: (path: string, encoding: BufferEncoding) => path.endsWith('/modular-agon-implementation-roadmap.json')
+          ? JSON.stringify(roadmap) : readFileSync(path, encoding),
+        // Relocation verification is independent of this dependency-drift control.
+        collectPlanSourceRelocations: () => migration.sourceRelocations,
+        console: { log: () => undefined, error: (message: string) => errors.push(message) },
+        process: { exit: (code: number) => { throw new Error(`exit ${code}`); } },
+      });
+      if (variant === 'checked-in' || variant === 'valid' || variant === 'permuted') expect(run).not.toThrow();
+      else {
+        expect(run).toThrow('exit 1');
+        expect(errors.join('\n')).toContain('@kernlang/agon-mod-plan');
+        if (variant === 'duplicate') {
+          expect(errors.join('\n')).toContain('@kernlang/agon-mod-plan has duplicate dependencies');
+          expect(errors.join('\n')).toContain('duplicate global edge @kernlang/agon-mod-plan->');
+        }
+      }
+    },
+  );
+
   it.each(['clean-checkout', 'slice2', 'slice3', 'slice4', 'slice5', 'slice6', 'slice7', 'slice8', 'slice9'])(
     '%s qualifies the approved graph and rejects missing, extra or duplicate edges', name => {
       const source = readFileSync(new URL(`../../scripts/spec/qualify-modular-agon-${name}.mjs`, import.meta.url), 'utf8');

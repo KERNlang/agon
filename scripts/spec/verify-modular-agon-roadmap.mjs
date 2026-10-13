@@ -33,6 +33,8 @@ for (const pkg of roadmap.packages) {
   for (const field of ['extractionSources', 'killList', 'acceptanceEvidence']) check(Array.isArray(pkg[field]) && pkg[field].length > 0, `${pkg.id} misses ${field}`);
   check(Array.isArray(pkg.dependencies), `${pkg.id} misses dependencies`);
   check(new Set(pkg.dependencies).size === pkg.dependencies.length, `${pkg.id} has duplicate dependencies`);
+  const declaredDependencies = packageMap.packages.find(({ id }) => id === pkg.id)?.dependencies;
+  check(declaredDependencies && JSON.stringify([...pkg.dependencies].sort()) === JSON.stringify([...declaredDependencies].sort()), `${pkg.id} dependencies differ from the authoritative package map`);
   for (const dependency of pkg.dependencies) {
     const edge = `${pkg.id}->${dependency}`;
     check(!globalEdges.has(edge), `duplicate global edge ${edge}`); globalEdges.add(edge);

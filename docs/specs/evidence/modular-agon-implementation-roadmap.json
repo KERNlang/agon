@@ -1598,7 +1598,8 @@
         "@kernlang/agon-mod-api",
         "@kernlang/agon-support-engine-runtime",
         "@kernlang/agon-support-persistence",
-        "@kernlang/agon-support-verification"
+        "@kernlang/agon-support-verification",
+        "@kernlang/agon-support-worktree"
       ],
       "publicBoundary": "manifest-declared contributions and lifecycle hooks through @kernlang/agon-mod-api",
       "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
@@ -1627,7 +1628,7 @@
         "packages/core/src/blocks/builtin-commands.ts:41",
         "packages/mcp/src/agon-orchestration.ts:24"
       ],
-      "migrationOrder": 29,
+      "migrationOrder": 30,
       "migrationSlice": "S5",
       "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
       "killList": [
@@ -1668,7 +1669,7 @@
         "packages/support-agent-runtime/src/agent-session.ts:83",
         "packages/support-agent-runtime/src/agent-session.ts:94"
       ],
-      "migrationOrder": 30,
+      "migrationOrder": 31,
       "migrationSlice": "S4",
       "compatibilityAdapter": "legacy callers receive the same capability through a kernel-owned adapter until all dependants move",
       "killList": [
@@ -1698,7 +1699,7 @@
         "packages/support-judge/src/contracts.ts:38",
         "packages/support-judge/src/contracts.ts:43"
       ],
-      "migrationOrder": 31,
+      "migrationOrder": 32,
       "migrationSlice": "S4",
       "compatibilityAdapter": "legacy callers receive the same capability through a kernel-owned adapter until all dependants move",
       "killList": [
@@ -1738,7 +1739,7 @@
         "packages/support-worktree/src/worktree-lock.ts:31",
         "packages/support-worktree/src/worktree-session.ts"
       ],
-      "migrationOrder": 32,
+      "migrationOrder": 29,
       "migrationSlice": "S4",
       "compatibilityAdapter": "legacy callers receive the same capability through a kernel-owned adapter until all dependants move",
       "killList": [

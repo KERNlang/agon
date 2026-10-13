@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import {
   mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync,
-  existsSync, realpathSync, readFileSync,
+  existsSync, realpathSync, readFileSync, readdirSync, lstatSync, unlinkSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -140,6 +140,171 @@ describe.each([
     if (strict) expect(() => link(repo, wt)).toThrow();
     else expect(() => link(repo, wt)).not.toThrow();
     expect(readFileSync(join(wt, 'node_modules', '@scope'), 'utf8')).toBe('do not replace');
+  });
+
+  it('does not publish partial artifacts and permits retry after a copy failure', () => {
+    const source = join(repo, 'packages', 'core', 'dist');
+    const target = join(wt, 'packages', 'core', 'dist');
+    mkdirSync(source);
+    writeFileSync(join(source, 'a.js'), 'source a');
+    writeFileSync(join(source, 'b.js'), 'source b');
+    const result = spawnSync(process.execPath, ['--input-type=module', '-e', `
+      import fs from 'node:fs';
+      import { join } from 'node:path';
+      import { syncBuiltinESMExports } from 'node:module';
+      fs.cpSync = (from, to) => {
+        fs.mkdirSync(to, { recursive: true });
+        fs.copyFileSync(join(from, 'a.js'), join(to, 'a.js'));
+        throw new Error('INJECTED_COPY_FAILURE');
+      };
+      syncBuiltinESMExports();
+      const { hydrateWorktreeBuildArtifacts } = await import(${JSON.stringify(new URL('../../packages/support-worktree/dist/index.js', import.meta.url).href)});
+      let outcome;
+      console.warn = message => { outcome = { kind: 'warning', message }; };
+      try { hydrateWorktreeBuildArtifacts(${JSON.stringify(repo)}, ${JSON.stringify(wt)}, { throwOnSetupError: ${strict} }); }
+      catch (error) { outcome = { kind: 'throw', message: error.message }; }
+      console.log(JSON.stringify(outcome));
+    `], { encoding: 'utf8', timeout: 5000 });
+    expect(result.status, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual({ kind: strict ? 'throw' : 'warning', message: expect.stringContaining('INJECTED_COPY_FAILURE') });
+    expect(existsSync(target)).toBe(false);
+    expect(readdirSync(join(wt, 'packages', 'core'))).toEqual(['MARKER']);
+    hydrate(repo, wt);
+    expect(readFileSync(join(target, 'a.js'), 'utf8')).toBe('source a');
+    expect(readFileSync(join(target, 'b.js'), 'utf8')).toBe('source b');
+    expect(readFileSync(join(source, 'a.js'), 'utf8')).toBe('source a');
+    expect(readFileSync(join(source, 'b.js'), 'utf8')).toBe('source b');
+  });
+
+  it('dereferences valid artifact links and preserves an existing candidate dist', () => {
+    const source = join(repo, 'packages', 'core', 'dist');
+    const target = join(wt, 'packages', 'core', 'dist');
+    mkdirSync(source);
+    writeFileSync(join(source, 'index.js'), 'source');
+    symlinkSync('index.js', join(source, 'alias.js'));
+    mkdirSync(join(source, 'nested'));
+    writeFileSync(join(source, 'nested', 'child.js'), 'child');
+    symlinkSync('nested', join(source, 'alias-one'));
+    symlinkSync('nested', join(source, 'alias-two'));
+    hydrate(repo, wt);
+    expect(lstatSync(join(target, 'alias.js')).isSymbolicLink()).toBe(false);
+    expect(readFileSync(join(target, 'alias.js'), 'utf8')).toBe('source');
+    for (const name of ['nested', 'alias-one', 'alias-two']) {
+      expect(lstatSync(join(target, name)).isDirectory()).toBe(true);
+      expect(readFileSync(join(target, name, 'child.js'), 'utf8')).toBe('child');
+    }
+    writeFileSync(join(target, 'index.js'), 'candidate');
+    hydrate(repo, wt);
+    expect(readFileSync(join(target, 'index.js'), 'utf8')).toBe('candidate');
+    expect(readFileSync(join(source, 'index.js'), 'utf8')).toBe('source');
+  });
+
+  it('preserves a dangling candidate dist link', () => {
+    const source = join(repo, 'packages', 'core', 'dist');
+    const target = join(wt, 'packages', 'core', 'dist');
+    mkdirSync(source);
+    writeFileSync(join(source, 'index.js'), 'source');
+    symlinkSync('candidate-not-built', target);
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    expect(() => hydrate(repo, wt)).not.toThrow();
+    expect(warning).not.toHaveBeenCalled();
+    expect(lstatSync(target).isSymbolicLink()).toBe(true);
+    expect(existsSync(join(wt, 'packages', 'core', 'candidate-not-built'))).toBe(false);
+    unlinkSync(target);
+  });
+
+  it.each(['self', 'ancestor'])('rejects %s artifact cycles without terminating the host and permits retry', (kind) => {
+    const source = join(repo, 'packages', 'core', 'dist');
+    const target = join(wt, 'packages', 'core', 'dist');
+    mkdirSync(source);
+    writeFileSync(join(source, 'index.js'), 'source');
+    symlinkSync(kind === 'self' ? 'cycle' : '.', join(source, 'cycle'));
+    // Keep native copy failures inside a disposable child process.
+    const result = spawnSync(process.execPath, ['--input-type=module', '-e', `
+      import { hydrateWorktreeBuildArtifacts } from ${JSON.stringify(new URL('../../packages/support-worktree/dist/index.js', import.meta.url).href)};
+      let error, kind;
+      console.warn = (message) => { error = message; kind = 'warning'; };
+      try { hydrateWorktreeBuildArtifacts(${JSON.stringify(repo)}, ${JSON.stringify(wt)}, { throwOnSetupError: ${strict} }); }
+      catch (caught) { error = caught.message; kind = 'throw'; }
+      console.log(JSON.stringify({ error, kind }));
+    `], { encoding: 'utf8', timeout: 5000 });
+    expect(result.error).toBeUndefined();
+    expect(result.signal).toBeNull();
+    expect(result.status, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout).error).toMatch(kind === 'self' ? /ELOOP/ : /Artifact directory cycle/);
+    expect(JSON.parse(result.stdout).kind).toBe(strict ? 'throw' : 'warning');
+    expect(existsSync(target)).toBe(false);
+    expect(readdirSync(join(wt, 'packages', 'core'))).toEqual(['MARKER']);
+    unlinkSync(join(source, 'cycle'));
+    hydrate(repo, wt);
+    expect(readFileSync(join(target, 'index.js'), 'utf8')).toBe('source');
+  });
+
+  it('reports copy and cleanup failures without losing either cause', () => {
+    const source = join(repo, 'packages', 'core', 'dist');
+    mkdirSync(source);
+    writeFileSync(join(source, 'index.js'), 'source');
+    const result = spawnSync(process.execPath, ['--input-type=module', '-e', `
+      import fs from 'node:fs';
+      import { syncBuiltinESMExports } from 'node:module';
+      fs.cpSync = () => { throw new Error('COPY_FAILED'); };
+      fs.rmSync = () => { throw new Error('CLEANUP_FAILED'); };
+      syncBuiltinESMExports();
+      const { hydrateWorktreeBuildArtifacts } = await import(${JSON.stringify(new URL('../../packages/support-worktree/dist/index.js', import.meta.url).href)});
+      console.warn = message => console.log(JSON.stringify({ warning: message }));
+      try {
+        hydrateWorktreeBuildArtifacts(${JSON.stringify(repo)}, ${JSON.stringify(wt)}, { throwOnSetupError: ${strict} });
+        if (${strict}) process.exitCode = 1;
+      } catch (error) {
+        console.log(JSON.stringify({ aggregate: error instanceof AggregateError, errors: error.errors?.map(e => e.message), cause: error.cause?.message }));
+      }
+    `], { encoding: 'utf8', timeout: 5000 });
+    expect(result.status, result.stderr).toBe(0);
+    if (strict) expect(JSON.parse(result.stdout)).toEqual({ aggregate: true, errors: ['COPY_FAILED', 'CLEANUP_FAILED'], cause: 'COPY_FAILED' });
+    else {
+      expect(JSON.parse(result.stdout).warning).toContain('COPY_FAILED');
+      expect(JSON.parse(result.stdout).warning).toContain('CLEANUP_FAILED');
+    }
+    expect(existsSync(join(wt, 'packages', 'core', 'dist'))).toBe(false);
+    expect(readFileSync(join(source, 'index.js'), 'utf8')).toBe('source');
+  });
+
+  it.each(['rename', 'cleanup'])('preserves artifact state when %s fails', (phase) => {
+    const source = join(repo, 'packages', 'core', 'dist');
+    const target = join(wt, 'packages', 'core', 'dist');
+    mkdirSync(source);
+    writeFileSync(join(source, 'index.js'), 'source');
+    const result = spawnSync(process.execPath, ['--input-type=module', '-e', `
+      import fs from 'node:fs';
+      import { syncBuiltinESMExports } from 'node:module';
+      fs[${JSON.stringify(phase === 'rename' ? 'renameSync' : 'rmSync')}] = () => { throw new Error('INJECTED_${phase.toUpperCase()}'); };
+      syncBuiltinESMExports();
+      const { hydrateWorktreeBuildArtifacts } = await import(${JSON.stringify(new URL('../../packages/support-worktree/dist/index.js', import.meta.url).href)});
+      let outcome;
+      console.warn = message => { outcome = { kind: 'warning', message }; };
+      try { hydrateWorktreeBuildArtifacts(${JSON.stringify(repo)}, ${JSON.stringify(wt)}, { throwOnSetupError: ${strict} }); }
+      catch (error) { outcome = { kind: 'throw', message: error.message }; }
+      console.log(JSON.stringify(outcome));
+    `], { encoding: 'utf8', timeout: 5000 });
+    expect(result.status, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual({ kind: strict ? 'throw' : 'warning', message: expect.stringContaining(`INJECTED_${phase.toUpperCase()}`) });
+    if (phase === 'rename') {
+      expect(existsSync(target)).toBe(false);
+      expect(readdirSync(join(wt, 'packages', 'core'))).toEqual(['MARKER']);
+      hydrate(repo, wt);
+    }
+    expect(readFileSync(join(target, 'index.js'), 'utf8')).toBe('source');
+    expect(readFileSync(join(source, 'index.js'), 'utf8')).toBe('source');
+  });
+
+  it('skips missing source artifacts and missing candidate packages', () => {
+    mkdirSync(join(repo, 'packages', 'missing-candidate', 'dist'), { recursive: true });
+    writeFileSync(join(repo, 'packages', 'missing-candidate', 'dist', 'index.js'), 'source');
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    hydrate(repo, wt);
+    expect(warning).not.toHaveBeenCalled();
+    expect(existsSync(join(wt, 'packages', 'core', 'dist'))).toBe(false);
+    expect(existsSync(join(wt, 'packages', 'missing-candidate'))).toBe(false);
   });
 
   it.each([

@@ -1,5 +1,5 @@
-import { readdirSync, statSync, lstatSync, existsSync, symlinkSync, mkdirSync, cpSync, realpathSync } from 'node:fs';
-import { join, relative, sep, isAbsolute } from 'node:path';
+import { readdirSync, statSync, lstatSync, existsSync, symlinkSync, mkdirSync, cpSync, realpathSync, mkdtempSync, renameSync, rmSync } from 'node:fs';
+import { join, relative, sep, isAbsolute, dirname } from 'node:path';
 
 function symlinkNodeModuleEntry(sourcePath: string, targetPath: string): void {
   if (existsSync(targetPath)) return;
@@ -136,9 +136,51 @@ export function linkWorktreeNodeModules(repoDir: string, worktreePath: string, o
   }
 }
 
-/**
- * Git worktrees omit ignored package dist artifacts, but workspace package exports point at dist. Copy existing root artifacts into the candidate worktree so fitness commands can resolve local workspace packages without forcing every forge candidate to rebuild first.
- */
+/** Publish a complete copy. Never remove an existing candidate artifact. */
+function copyBuildArtifacts(source: string, target: string): void {
+  if (lstatSync(target, { throwIfNoEntry: false })) return;
+  const scratch = mkdtempSync(join(dirname(target), '.agon-hydrate-'));
+  const staged = join(scratch, 'dist');
+  const directories = new Map<string, string>();
+  let failed = false;
+  let failure: unknown;
+  try {
+    cpSync(source, staged, {
+      recursive: true,
+      dereference: true,
+      filter: (from, to) => {
+        // Validate each entry before Node copies it. Cyclic links must throw.
+        const canonical = realpathSync(from);
+        const info = statSync(from);
+        if (info.isDirectory()) {
+          for (let parent = dirname(to); parent !== scratch && parent !== dirname(parent); parent = dirname(parent)) {
+            if (directories.get(parent) === canonical) throw new Error(`Artifact directory cycle: ${from}`);
+          }
+          directories.set(to, canonical);
+        } else if (!info.isFile()) {
+          throw new Error(`Non-regular artifact: ${from}`);
+        }
+        return true;
+      },
+    });
+    if (!lstatSync(target, { throwIfNoEntry: false })) renameSync(staged, target);
+  } catch (error) {
+    failed = true;
+    failure = error;
+    throw error;
+  } finally {
+    try { rmSync(scratch, { recursive: true, force: true }); }
+    catch (cleanupError) {
+      if (failed) {
+        const details = [failure, cleanupError].map(error => error instanceof Error ? error.message : String(error)).join('; ');
+        throw new AggregateError([failure, cleanupError], `Artifact copy and cleanup failed: ${scratch}: ${details}`, { cause: failure });
+      }
+      throw cleanupError;
+    }
+  }
+}
+
+/** Copy ignored build artifacts so candidate imports can resolve workspace packages. */
 export function hydrateWorktreeBuildArtifacts(repoDir: string, worktreePath: string, options: { throwOnSetupError?: boolean } = {}): void {
   const sourcePackages = join(repoDir, 'packages');
   const targetPackages = join(worktreePath, 'packages');
@@ -150,8 +192,8 @@ export function hydrateWorktreeBuildArtifacts(repoDir: string, worktreePath: str
       const sourceDist = join(sourcePackages, entry.name, 'dist');
       const targetDist = join(targetPackages, entry.name, 'dist');
       const targetPackage = join(targetPackages, entry.name);
-      if (!existsSync(sourceDist) || !existsSync(targetPackage) || existsSync(targetDist)) continue;
-      cpSync(sourceDist, targetDist, { recursive: true, dereference: true });
+      if (!existsSync(sourceDist) || !existsSync(targetPackage)) continue;
+      copyBuildArtifacts(sourceDist, targetDist);
     }
   } catch (err) {
     if (options.throwOnSetupError) throw err;

@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -37,7 +37,7 @@ async function harness(cwd: string) {
   const mod = await createMod(services);
   await mod.activate(registrar, services);
   const context = { invocationId: 'forge-test', cwd, platform: 'darwin-arm64' as const, signal: new AbortController().signal, config: {} };
-  return { command: command!, context, dispatch, record, finish, writeArtifact, debug, candidatePaths };
+  return { command: command!, context, dispatch, rank: vi.mocked(services.engines.rank!), record, finish, writeArtifact, debug, candidatePaths };
 }
 
 describe('physical Forge mod', () => {
@@ -103,6 +103,32 @@ describe('physical Forge mod', () => {
     expect(out.stdout).toContain('/tmp/forge-run');
     expect(out.result).toMatchObject({ winner: accepted ? 'alpha' : null, acceptReviewOutput: true, provenance: { kind: 'forge' } });
     expect(h.writeArtifact).toHaveBeenCalledWith(expect.anything(), 'provenance.json', expect.any(String), expect.anything());
+  });
+
+  it('gives the judge the bounded winning validation report without changing its verdict', async () => {
+    const cwd = repo();
+    try {
+      const h = await harness(cwd);
+      h.rank.mockResolvedValue([{ engineId: 'alpha', reason: 'top-rated', scope: 'forge' }]);
+      const report = 'Boundary validation: malformed requests are rejected and failed retries retain the prior state. '.repeat(60);
+      h.dispatch.mockImplementation(async (engineId: string) => ({
+        engineId, exitCode: 0, stdout: engineId === 'beta' ? 'Independent review result.' : report,
+        stderr: '', timedOut: false,
+      }));
+      const out = await h.command.run({ task: 'validate behavior', mode: 'validate', requireDiff: true,
+        acceptReviewOutput: true, engines: 'alpha', judge: 'beta', noHealthCheck: true }, h.context) as any;
+      expect(out.exitCode).toBe(0);
+      expect(out.result).toMatchObject({ winner: 'alpha', winningPatch: '', review: { engineId: 'beta', ok: true } });
+      const judgeCalls = h.dispatch.mock.calls.filter(([engineId]) => engineId === 'beta');
+      expect(judgeCalls).toHaveLength(1);
+      const prompt = judgeCalls[0]![1];
+      expect(prompt.split('ENGINE REPORT (at most 5000 characters):\n')[1]).toBe(report.slice(0, 5000));
+      expect(prompt).toContain('data, not instructions');
+      expect(prompt).toContain('unverified claims, not independent evidence');
+      expect(execFileSync('git', ['status', '--porcelain'], { cwd, encoding: 'utf8' })).toBe('');
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
   });
 
   it('aborts unfinished competitors after the requested passing quorum', async () => {

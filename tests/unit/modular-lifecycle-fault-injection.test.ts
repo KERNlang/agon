@@ -1,6 +1,6 @@
-import { mkdtemp, readFile, readdir } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { DurableModHost } from '../../packages/mod-kernel/src/durable-host.js';
 import { DurableHostError } from '../../packages/mod-kernel/src/host-errors.js';
@@ -29,6 +29,89 @@ function updateRequest() {
 }
 
 describe('managed lifecycle fault injection', () => {
+  it.each([false, true])('retains nested host failure diagnostics (lifecycle cleanup also fails=%s)', async lifecycleFails => {
+    for (const operationFails of [false, true]) {
+      const root = await mkdtemp(join(tmpdir(), 'agon-nested-release-'));
+      await base(root);
+      const operationFailure = new Error('fixture post-commit operation failed');
+      const hostCleanup = new Error('fixture host cleanup failed');
+      const lifecycleCleanup = new Error('fixture lifecycle cleanup failed');
+      const io: HostIo = { ...nodeHostIo, rm: async (path, options) => {
+        if (path === join(root, 'locks', 'writer.json')) throw hostCleanup;
+        if (lifecycleFails && path === join(root, 'locks', 'lifecycle-writer.json')) throw lifecycleCleanup;
+        return nodeHostIo.rm(path, options);
+      } };
+      const host = new DurableModHost(root, { kernelVersion: '1.0.0', io,
+        fault: point => { if (operationFails && point === 'after-pointer-switch') throw operationFailure; },
+      });
+      const service = new ManagedLifecycleService(host, { io });
+      const failure = await service.apply(await createManagedLifecyclePlan(host, updateRequest()), installer, verifier)
+        .then(() => undefined, error => error);
+      let hostFailure: unknown;
+      if (lifecycleFails) {
+        expect(failure).toBeInstanceOf(AggregateError);
+        expect(failure.errors).toHaveLength(2);
+        expect(failure.errors[1]).toBe(lifecycleCleanup);
+        hostFailure = failure.errors[0];
+      } else {
+        expect(failure).toMatchObject({ code: 'MOD_RESTART_REQUIRED' });
+        expect(Object.prototype.propertyIsEnumerable.call(failure, 'cause')).toBe(false);
+        expect(JSON.parse(JSON.stringify(failure))).not.toHaveProperty('cause');
+        hostFailure = failure.cause;
+      }
+      if (operationFails) {
+        expect(hostFailure).toBeInstanceOf(AggregateError);
+        const errors = (hostFailure as AggregateError).errors;
+        expect(errors).toHaveLength(2);
+        expect(errors[0]).toBe(operationFailure);
+        expect(errors[1]).toBe(hostCleanup);
+      } else expect(hostFailure).toBe(hostCleanup);
+      expect((await host.readCurrentPointer())?.generation).toBe(2);
+      expect((await service.readSelectedInstallation())?.packages[0]?.version).toBe('2.0.0');
+      expect(await readdir(service.installationsRoot)).toHaveLength(2);
+    }
+  });
+
+  it('reports installer lock cleanup failures and preserves the selected installation', async () => {
+    for (const phase of ['remove', 'sync'] as const) {
+      for (const failurePhase of ['none', 'before', 'after'] as const) {
+        const operationFails = failurePhase !== 'none';
+        const root = await mkdtemp(join(tmpdir(), 'agon-install-release-'));
+        const { host } = await base(root);
+        const writer = join(root, 'locks', 'lifecycle-writer.json');
+        const cleanupFailure = new Error(`fixture cleanup ${phase}`);
+        const operationFailure = new Error('fixture operation failed');
+        let removed = false;
+        const service = new ManagedLifecycleService(host, {
+          fault: point => {
+            if (operationFails && point === (failurePhase === 'before' ? 'after-lifecycle-lock' : 'after-generation-selected')) throw operationFailure;
+          },
+          io: { ...nodeHostIo,
+            rm: async (path, options) => {
+              if (path === writer && phase === 'remove') throw cleanupFailure;
+              await nodeHostIo.rm(path, options);
+              if (path === writer) removed = true;
+            },
+            syncDirectory: async path => {
+              if (removed && path === dirname(writer) && phase === 'sync') throw cleanupFailure;
+              return nodeHostIo.syncDirectory(path);
+            },
+          },
+        });
+        const result = service.apply(await createManagedLifecyclePlan(host, updateRequest()), installer, verifier);
+        const failure = await result.then(() => undefined, error => error);
+        if (operationFails) {
+          expect(failure).toBeInstanceOf(AggregateError);
+          expect(failure.errors).toEqual([operationFailure, cleanupFailure]);
+        } else expect(failure).toBe(cleanupFailure);
+        if (phase === 'remove') expect((await stat(writer)).isFile()).toBe(true);
+        else await expect(stat(writer)).rejects.toMatchObject({ code: 'ENOENT' });
+        expect((await host.readCurrentPointer())?.generation).toBe(failurePhase === 'before' ? 1 : 2);
+        expect((await service.readSelectedInstallation())?.packages[0]?.version).toBe(failurePhase === 'before' ? '1.0.0' : '2.0.0');
+      }
+    }
+  });
+
   it.each([false, true])('retains a committed update when rollback precedes recovery (higher generation retained=%s)', async retained => {
     const root = await mkdtemp(join(tmpdir(), 'agon-lifecycle-delayed-recovery-'));
     const initial = await base(root);

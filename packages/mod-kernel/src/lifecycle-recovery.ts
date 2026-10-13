@@ -6,7 +6,7 @@ import { atomicWrite, pathExists, readJson, type HostIo } from './host-io.js';
 import { canonicalJson, sha256Canonical } from './lock.js';
 import type { ManagedInstallationRecord } from './managed-lifecycle.js';
 import { makeTreeRemovable } from './removable-tree.js';
-import { WriterFence } from './writer-lock.js';
+import { releaseLifecycleWriters, WriterFence } from './writer-lock.js';
 import { parseHostTransactionJournal } from './host-contracts.js';
 import { assertNoSymlinkComponents } from './folder-mod-bounds.js';
 import { TrustGrantStore } from './trust-authority.js';
@@ -107,18 +107,6 @@ async function ensureRecoveryReceipt(io: HostIo, receipts: string, journal: Reco
   }
   await atomicWrite(io, path, `${canonicalJson(receipt)}\n`, 0o400);
   return true;
-}
-
-async function releaseLifecycleWriters(fences: readonly (WriterFence | undefined)[], operationErrors: readonly unknown[]): Promise<void> {
-  const cleanupErrors: unknown[] = [];
-  for (const fence of fences) {
-    try { await fence?.release(); }
-    catch (error) { cleanupErrors.push(error); }
-  }
-  if (!cleanupErrors.length) return;
-  const failures = [...operationErrors, ...cleanupErrors];
-  if (failures.length === 1) throw failures[0];
-  throw new AggregateError(failures, 'lifecycle operation or writer cleanup failed');
 }
 
 export async function recoverManagedLifecycle(

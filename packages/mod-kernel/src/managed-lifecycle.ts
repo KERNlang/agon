@@ -10,7 +10,7 @@ import { atomicWrite, nodeHostIo, pathExists, readJson, writeNewImmutableFile, t
 import { rollbackGeneration } from './host-rollback.js';
 import { referencedInstallations } from './lifecycle-recovery.js';
 import { makeTreeRemovable } from './removable-tree.js';
-import { WriterFence, type WriterLockOptions } from './writer-lock.js';
+import { releaseLifecycleWriters, WriterFence, type WriterLockOptions } from './writer-lock.js';
 import { assertMigrationSourceRevision, type MigrationSourceRevision } from './migration-engine.js';
 import { stageConfigurationMigration } from './configuration-migration.js';
 import { evaluateThirdPartyAuthority, TrustGrantStore, type TrustPublisher } from './trust-authority.js';
@@ -568,6 +568,7 @@ export class ManagedLifecycleService {
       selectedGeneration: null,
     });
     const steps: Array<{ id: string; state: 'passed' | 'failed'; detail?: string }> = [];
+    const operationErrors: unknown[] = [];
     try {
       await this.#fault('after-lifecycle-lock');
       await this.#writeJournal(journal);
@@ -655,6 +656,7 @@ export class ManagedLifecycleService {
       await this.#fault('after-lifecycle-receipt');
       return freeze({ pointer: result.pointer, installation, receipt, restartRequired: true });
     } catch (error) {
+      operationErrors.push(error);
       steps.push({ id: 'transaction', state: 'failed', detail: error instanceof Error ? error.message : String(error) });
       let canDiscard = selectedGeneration === null;
       if (promoted && generationAttempted && selectedGeneration === null) {
@@ -698,15 +700,15 @@ export class ManagedLifecycleService {
       await this.#writeReceipt(receipt).catch(() => undefined);
       if (!canDiscard) throw new DurableHostError('MOD_RESTART_REQUIRED', 'managed installation retained; restart to finish transaction recovery', {
         transactionId, selectedGeneration, cause: error instanceof Error ? error.message : String(error),
-      });
+      }, { cause: error });
       if (error instanceof DurableHostError) throw error;
       throw new DurableHostError(selectedGeneration === null ? 'MOD_TRANSACTION_FAILED' : 'MOD_RESTART_REQUIRED', 'managed lifecycle transaction failed', {
         transactionId,
         selectedGeneration,
         cause: error instanceof Error ? error.message : String(error),
-      });
+      }, { cause: error });
     } finally {
-      await fence.release().catch(() => undefined);
+      await releaseLifecycleWriters([fence], operationErrors);
     }
   }
 

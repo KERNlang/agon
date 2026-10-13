@@ -4,7 +4,7 @@ import { canonicalJson, sha256Canonical, type CanonicalModLock } from './lock.js
 import { DurableHostError, SimulatedHostCrash } from './host-errors.js';
 import { atomicWrite, nodeHostIo, pathExists, readJson, writeNewImmutableFile, type HostIo } from './host-io.js';
 import { createDoctorReport, createHostEvent, redactHostValue, type HostBlockedReason, type HostDoctorReport, type HostEvent } from './host-observability.js';
-import { WriterFence, type WriterLockOptions } from './writer-lock.js';
+import { releaseLifecycleWriters, WriterFence, type WriterLockOptions } from './writer-lock.js';
 import { validateGenerationContents, parseGenerationPointer, parseHostTransactionJournal } from './host-contracts.js';
 import { makeTreeRemovable } from './removable-tree.js';
 import { GenerationLeaseStore } from './generation-leases.js';
@@ -356,6 +356,7 @@ export class DurableModHost {
     let candidatePath = '';
     let committed = false;
     let simulatedCrash = false;
+    const operationErrors: unknown[] = [];
     let selectedPointer: GenerationPointer | null = null;
     const eventOffset = this.#events.length;
     try {
@@ -465,6 +466,7 @@ export class DurableModHost {
       return Object.freeze({ pointer, journal, events });
     } catch (error) {
       if (error instanceof SimulatedHostCrash) { simulatedCrash = true; throw error; }
+      operationErrors.push(error);
       if (selectedPointer && !committed) {
         try {
           const current = await this.readCurrentPointer();
@@ -506,7 +508,7 @@ export class DurableModHost {
       if (error instanceof DurableHostError) throw error;
       throw new DurableHostError('MOD_TRANSACTION_FAILED', 'generation transaction failed before commit', { cause: error instanceof Error ? error.message : String(error) });
     } finally {
-      if (!simulatedCrash) await fence.release().catch(() => undefined);
+      if (!simulatedCrash) await releaseLifecycleWriters([fence], operationErrors);
     }
   }
 
@@ -542,10 +544,14 @@ export class DurableModHost {
     const fence = await WriterFence.acquire(this.paths.writerLock, (this.#options.ownerId ?? 'agon.kernel') + '.recovery', {
       ...this.#options.writerLock, io: this.#io, now: this.#now, processIdentity: this.#processIdentity,
     });
+    const operationErrors: unknown[] = [];
     try {
       return await this.#recoverTransactionsUnderFence();
+    } catch (error) {
+      operationErrors.push(error);
+      throw error;
     } finally {
-      await fence.release().catch(() => undefined);
+      await releaseLifecycleWriters([fence], operationErrors);
     }
   }
 

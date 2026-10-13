@@ -293,6 +293,18 @@ export class WriterFence {
   }
 }
 
+export async function releaseLifecycleWriters(fences: readonly (WriterFence | undefined)[], operationErrors: readonly unknown[]): Promise<void> {
+  const cleanupErrors: unknown[] = [];
+  for (const fence of fences) {
+    try { await fence?.release(); }
+    catch (error) { cleanupErrors.push(error); }
+  }
+  if (!cleanupErrors.length) return;
+  const failures = [...operationErrors, ...cleanupErrors];
+  if (failures.length === 1) throw failures[0];
+  throw new AggregateError(failures, 'lifecycle operation or writer cleanup failed');
+}
+
 /** Run synchronous config writes under the host publication fence. */
 export function withSynchronousWriterFence(path: string, ownerId: string, action: () => undefined): void {
   if (Object.prototype.toString.call(action) === '[object AsyncFunction]') {

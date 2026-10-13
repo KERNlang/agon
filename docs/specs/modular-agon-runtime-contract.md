@@ -625,6 +625,15 @@ plan store itself is protected from purge. Protected namespace comparisons use
 Unicode compatibility normalization and lowercase on every supported platform,
 so a case alias cannot bypass the protection on a case-insensitive filesystem.
 
+Generation commit, generation recovery and managed installation also report
+writer-release failures. If transaction processing also fails, the aggregate
+retains the original operation error and the release error. A committed pointer
+or qualified prefix remains selected; cleanup failure does not imply rollback.
+Simulated host crashes still retain their fence for crash-recovery tests.
+Managed installation preserves nested host failures through the standard Error
+cause field while keeping its existing lifecycle error code. Causes remain
+non-enumerable; persisted receipt fields retain their existing representation.
+
 Purge and lifecycle recovery attempt both writer releases in reverse acquisition
 order. A release or directory-sync failure rejects the operation instead of
 reporting success. If the operation also failed, the aggregate error preserves

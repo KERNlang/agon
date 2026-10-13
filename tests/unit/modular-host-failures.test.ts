@@ -1,6 +1,6 @@
 import { chmod, mkdtemp, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { DurableModHost } from '../../packages/mod-kernel/src/durable-host.js';
 import { nodeHostIo, type HostIo } from '../../packages/mod-kernel/src/host-io.js';
@@ -10,6 +10,55 @@ async function fixture(): Promise<string> { return mkdtemp(join(tmpdir(), 'agon-
 function errno(code: string): NodeJS.ErrnoException { return Object.assign(new Error(code), { code }); }
 
 describe('durable host hostile filesystem and concurrency controls', () => {
+  it.each(['commit', 'recovery'] as const)('%s reports writer cleanup failures without undoing completed effects', async operation => {
+    for (const phase of ['remove', 'sync'] as const) {
+      for (const failurePhase of ['none', 'before', 'after'] as const) {
+        if (operation === 'recovery' && failurePhase === 'after') continue;
+        const operationFails = failurePhase !== 'none';
+        const root = await fixture();
+        const writer = join(root, 'locks', 'writer.json');
+        const cleanupFailure = new Error(`fixture cleanup ${phase}`);
+        const operationFailure = new Error('fixture operation failed');
+        let removed = false;
+        const host = new DurableModHost(root, { kernelVersion: '1.0.0',
+          fault: point => {
+            if (operationFails && operation === 'commit' && point === (failurePhase === 'before' ? 'after-lock' : 'after-pointer-switch')) throw operationFailure;
+          },
+          io: { ...nodeHostIo,
+            rm: async (path, options) => {
+              if (path === writer && phase === 'remove') throw cleanupFailure;
+              await nodeHostIo.rm(path, options);
+              if (path === writer) removed = true;
+            },
+            syncDirectory: async path => {
+              if (removed && path === dirname(writer) && phase === 'sync') throw cleanupFailure;
+              return nodeHostIo.syncDirectory(path);
+            },
+            readdir: async (path, options) => {
+              if (operationFails && operation === 'recovery' && path === join(root, 'transactions')) throw operationFailure;
+              return nodeHostIo.readdir(path, options);
+            },
+          },
+        });
+        const result = operation === 'commit'
+          ? host.commitGeneration({ operation: 'install', lock: hostLock(), desiredState: {}, installedIndex: {} })
+          : host.recoverTransactions();
+        const failure = await result.then(() => undefined, error => error);
+        if (operationFails) {
+          expect(failure).toBeInstanceOf(AggregateError);
+          expect(failure.errors).toEqual([operationFailure, cleanupFailure]);
+        } else expect(failure).toBe(cleanupFailure);
+        if (phase === 'remove') expect((await stat(writer)).isFile()).toBe(true);
+        else await expect(stat(writer)).rejects.toMatchObject({ code: 'ENOENT' });
+        const pointer = await host.readCurrentPointer();
+        if (operation === 'commit' && failurePhase !== 'before') {
+          expect(pointer?.generation).toBe(1);
+          expect((await host.validateGeneration(1)).generation).toBe(1);
+        } else expect(pointer).toBeNull();
+      }
+    }
+  });
+
   it('rejects reserved generation-file overrides before selecting anything', async () => {
     const root = await fixture();
     const host = new DurableModHost(root, { kernelVersion: '1.0.0' });

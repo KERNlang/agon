@@ -13,8 +13,8 @@ export class DurableHostError extends Error {
   readonly code: DurableHostErrorCode;
   readonly details: Readonly<Record<string, unknown>>;
 
-  constructor(code: DurableHostErrorCode, message: string, details: Readonly<Record<string, unknown>> = {}) {
-    super(message);
+  constructor(code: DurableHostErrorCode, message: string, details: Readonly<Record<string, unknown>> = {}, options?: ErrorOptions) {
+    super(message, options);
     this.name = 'DurableHostError';
     this.code = code;
     this.details = Object.freeze({ ...details });

@@ -633,6 +633,10 @@ Simulated host crashes still retain their fence for crash-recovery tests.
 Managed installation preserves nested host failures through the standard Error
 cause field while keeping its existing lifecycle error code. Causes remain
 non-enumerable; persisted receipt fields retain their existing representation.
+Trust/grant transactions protect sequence reads and plan validation with the
+same writer cleanup boundary as record publication. Rejected approval or invalid
+plan data leaves no new authority record and releases the writer. Apply and
+recovery report release failures and retain any operation error alongside them.
 
 Purge and lifecycle recovery attempt both writer releases in reverse acquisition
 order. A release or directory-sync failure rejects the operation instead of

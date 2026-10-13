@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { atomicWrite, nodeHostIo, pathExists, readJson, writeNewImmutableFile, type HostIo } from './host-io.js';
 import { sha256Canonical } from './lock.js';
 import { TrustGrantStore, type AuthorityMutationPlan, type GrantRecord, type TrustRecord } from './trust-authority.js';
-import { WriterFence, type WriterLockOptions } from './writer-lock.js';
+import { releaseLifecycleWriters, WriterFence, type WriterLockOptions } from './writer-lock.js';
 
 export type AuthorityOperation = 'trust' | 'untrust' | 'grant' | 'revoke';
 export type AuthorityFaultPoint = 'after-authority-journal' | 'after-authority-record' | 'after-authority-commit';
@@ -88,16 +88,17 @@ export class TransactionalTrustGrantService {
     await this.#io.mkdir(this.paths.transactions, { recursive: true, mode: 0o700 });
     await this.#io.mkdir(this.paths.receipts, { recursive: true, mode: 0o700 });
     const fence = await WriterFence.acquire(this.paths.writerLock, 'agon.kernel.authority', { ...this.#options.writerLock, io: this.#io, now: this.#now, processIdentity: this.#options.processIdentity });
-    const transactionId = randomUUID();
-    const assignedSequence = await this.store.nextSequence();
-    const appliedRecord = this.store.materialize(plan, approval, assignedSequence);
-    const recordId = appliedRecord.recordId;
-    const recordHash = sha256Canonical(appliedRecord);
-    const recordPath = join(plan.kind === 'trust' ? this.store.paths.trust : this.store.paths.grants, `${recordId}.json`);
-    const journalPath = join(this.paths.transactions, `${transactionId}.authority.json`);
-    const startedAt = this.#now().toISOString();
-    let journal: AuthorityTransactionJournal = Object.freeze({ schemaVersion: 1, kind: 'authority', transactionId, operation: operation(plan), state: 'preparing', planHash: plan.planHash, recordId, recordHash, recordPath, fenceToken: fence.record.fenceToken, startedAt, updatedAt: startedAt });
+    const operationErrors: unknown[] = [];
     try {
+      const transactionId = randomUUID();
+      const assignedSequence = await this.store.nextSequence();
+      const appliedRecord = this.store.materialize(plan, approval, assignedSequence);
+      const recordId = appliedRecord.recordId;
+      const recordHash = sha256Canonical(appliedRecord);
+      const recordPath = join(plan.kind === 'trust' ? this.store.paths.trust : this.store.paths.grants, `${recordId}.json`);
+      const journalPath = join(this.paths.transactions, `${transactionId}.authority.json`);
+      const startedAt = this.#now().toISOString();
+      let journal: AuthorityTransactionJournal = Object.freeze({ schemaVersion: 1, kind: 'authority', transactionId, operation: operation(plan), state: 'preparing', planHash: plan.planHash, recordId, recordHash, recordPath, fenceToken: fence.record.fenceToken, startedAt, updatedAt: startedAt });
       await atomicWrite(this.#io, journalPath, `${JSON.stringify(journal, null, 2)}\n`);
       await this.#options.fault?.('after-authority-journal');
       await this.store.apply(plan, approval, assignedSequence);
@@ -109,8 +110,11 @@ export class TransactionalTrustGrantService {
       await writeNewImmutableFile(this.#io, join(this.paths.receipts, `${transactionId}.authority.committed.json`), `${JSON.stringify(receipt, null, 2)}\n`);
       await this.#options.fault?.('after-authority-commit');
       return receipt;
+    } catch (error) {
+      operationErrors.push(error);
+      throw error;
     } finally {
-      await fence.release().catch(() => undefined);
+      await releaseLifecycleWriters([fence], operationErrors);
     }
   }
 
@@ -137,6 +141,7 @@ export class TransactionalTrustGrantService {
     if (!await pathExists(this.#io, this.paths.transactions)) return Object.freeze([]);
     const fence = await WriterFence.acquire(this.paths.writerLock, 'agon.kernel.authority-recovery', { ...this.#options.writerLock, io: this.#io, now: this.#now, processIdentity: this.#options.processIdentity });
     const receipts: AuthorityTransactionReceipt[] = [];
+    const operationErrors: unknown[] = [];
     try {
       const names = (await this.#io.readdir(this.paths.transactions)).map(String).filter((name) => name.endsWith('.authority.json')).sort();
       for (const name of names) {
@@ -156,8 +161,11 @@ export class TransactionalTrustGrantService {
         receipts.push(receipt);
       }
       return Object.freeze(receipts);
+    } catch (error) {
+      operationErrors.push(error);
+      throw error;
     } finally {
-      await fence.release().catch(() => undefined);
+      await releaseLifecycleWriters([fence], operationErrors);
     }
   }
 

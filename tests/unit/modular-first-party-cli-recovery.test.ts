@@ -212,6 +212,8 @@ describe('first-party safe-mode CLI recovery', () => {
     const unreferencedId = 'f'.repeat(32);
     await mkdir(join(host.root, 'installations', unreferencedId));
     await writeFile(join(host.root, 'installations', unreferencedId, 'payload'), 'unreferenced');
+    await mkdir(join(host.root, 'purge-staging'), { recursive: true });
+    await writeFile(join(host.root, 'purge-staging', 'pending'), 'pending');
     const cli = fileURLToPath(new URL('../../packages/cli/dist/index.js', import.meta.url));
     const result = spawnSync(process.execPath, [cli, 'mod', 'retention'], {
       env: { ...process.env, HOME: root, AGON_HOME: root, AGON_MODULAR_HOST_ROOT: host.root, AGON_MOD_SAFE_MODE: '1' },
@@ -223,10 +225,15 @@ describe('first-party safe-mode CLI recovery', () => {
     const logicalBytes = (await readFile(join(prefix, 'agon-installation.json'))).byteLength
       + Buffer.byteLength(JSON.stringify({ name: '@test/app', version: '1.0.0' }));
     expect(JSON.parse(result.stdout)).toMatchObject({ selectedGeneration: installed.pointer.generation,
+      storage: [{ path: 'generations', logicalBytes: expect.any(Number) },
+        { path: 'staging', logicalBytes: 0 }, { path: 'installation-staging', logicalBytes: 0 },
+        { path: 'purge-staging', logicalBytes: 7 }],
       installations: [{ installationId: installed.installation.installationId, generations: [installed.pointer.generation], logicalBytes }],
       totalInstallationLogicalBytes: logicalBytes, activeLeases: [lease], artifactLeases: [artifactLease],
       unreferencedInstallations: [{ installationId: unreferencedId, logicalBytes: 12 }],
       totalUnreferencedInstallationLogicalBytes: 12 });
+    expect(JSON.parse(result.stdout).totalStorageLogicalBytes).toBeGreaterThan(7);
+    expect(await readFile(join(host.root, 'purge-staging', 'pending'), 'utf8')).toBe('pending');
     expect(await readFile(join(host.root, 'installations', unreferencedId, 'payload'), 'utf8')).toBe('unreferenced');
     expect(await readFile(host.paths.current)).toEqual(before);
     expect(await host.activeGenerationLeases()).toEqual([lease]);

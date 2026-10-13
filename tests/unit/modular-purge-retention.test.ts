@@ -1,4 +1,4 @@
-import { chmod, mkdir, mkdtemp, readFile, rename, stat, symlink, unlink, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readdir, readFile, rename, stat, symlink, unlink, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -13,6 +13,51 @@ import { artifact, installer, lifecycleLock, request, verifier } from '../helper
 import { hostLock } from '../helpers/modular-host.js';
 
 describe('managed purge generation retention', () => {
+  it('accounts for owned staging and generation metadata without deleting payloads', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-retention-storage-'));
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
+    await host.initialize();
+    for (const directory of ['staging', 'installation-staging', 'purge-staging']) {
+      await mkdir(join(root, directory, 'pending'), { recursive: true });
+      await writeFile(join(root, directory, 'pending', 'payload'), directory);
+    }
+    const report = await new ManagedRetentionInspector(host).inspect();
+    expect(report).toMatchObject({ storage: [
+      { path: 'generations', logicalBytes: 0 },
+      { path: 'staging', logicalBytes: 7 },
+      { path: 'installation-staging', logicalBytes: 20 },
+      { path: 'purge-staging', logicalBytes: 13 },
+    ], totalStorageLogicalBytes: 40 });
+    for (const directory of ['staging', 'installation-staging', 'purge-staging']) {
+      expect(await readFile(join(root, directory, 'pending', 'payload'), 'utf8')).toBe(directory);
+    }
+  });
+
+  it.each(['linked', 'unreadable', 'disappeared', 'overflow', 'special'] as const)
+    ('refuses unsafe owned storage accounting: %s', async defect => {
+      const root = await mkdtemp(join(tmpdir(), 'agon-retention-storage-invalid-'));
+      const target = join(root, 'purge-staging', 'payload');
+      await mkdir(join(root, 'purge-staging'));
+      await writeFile(join(root, 'outside'), 'retained');
+      if (defect === 'linked') await symlink(join(root, 'outside'), target);
+      else await writeFile(target, 'retained');
+      const host = new DurableModHost(root, { kernelVersion: '1.0.0', io: { ...nodeHostIo,
+        stat: async path => {
+          if (path !== target) return nodeHostIo.stat(path);
+          if (defect === 'unreadable' || defect === 'disappeared') {
+            throw Object.assign(new Error(defect), { code: defect === 'unreadable' ? 'EACCES' : 'ENOENT' });
+          }
+          if (defect === 'overflow') return { size: Number.MAX_SAFE_INTEGER + 1, isFile: () => true, isDirectory: () => false };
+          if (defect === 'special') return { size: 0, isFile: () => false, isDirectory: () => false };
+          return nodeHostIo.stat(path);
+        },
+      } });
+      await expect(new ManagedRetentionInspector(host).inspect()).rejects.toMatchObject({ code: 'MOD_GENERATION_CORRUPT' });
+      expect(await readFile(join(root, 'outside'), 'utf8')).toBe('retained');
+      await expect(stat(host.paths.writerLock)).rejects.toMatchObject({ code: 'ENOENT' });
+      await expect(stat(join(root, 'locks', 'lifecycle-writer.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+    });
+
   it('reports retained installations after rollback and re-entry without changing selection', async () => {
     const root = await mkdtemp(join(tmpdir(), 'agon-retention-rollback-'));
     const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
@@ -136,6 +181,8 @@ describe('managed purge generation retention', () => {
     expect(await new ManagedRetentionInspector(host).inspect()).toEqual({
       schemaVersion: 1, selectedGeneration: null, installations: [], activeLeases: [], artifactLeases: [], totalInstallationLogicalBytes: 0,
       unreferencedInstallations: [], totalUnreferencedInstallationLogicalBytes: 0,
+      storage: ['generations', 'staging', 'installation-staging', 'purge-staging'].map(path => ({ path, logicalBytes: 0 })),
+      totalStorageLogicalBytes: 0,
     });
   });
 
@@ -287,7 +334,17 @@ describe('managed purge generation retention', () => {
       },
     } });
     const report = await new ManagedRetentionInspector(reader).inspect();
+    const generationEntries = await readdir(host.paths.generations, { recursive: true });
+    const generationSizes = await Promise.all(generationEntries.map(async path => {
+      const info = await stat(join(host.paths.generations, path));
+      return info.isFile() ? info.size : 0;
+    }));
+    const generationBytes = generationSizes.reduce((sum, size) => sum + size, 0);
+    expect(generationBytes).toBeGreaterThan(0);
     expect(report).toEqual({ schemaVersion: 1, selectedGeneration: second.pointer.generation,
+      storage: [{ path: 'generations', logicalBytes: generationBytes },
+        ...['staging', 'installation-staging', 'purge-staging'].map(path => ({ path, logicalBytes: 0 }))],
+      totalStorageLogicalBytes: generationBytes,
       installations: [{ installationId: first.installation.installationId, generations: [1, 2], hasCommittedGeneration: true, logicalBytes }],
       totalInstallationLogicalBytes: logicalBytes,
       unreferencedInstallations: [], totalUnreferencedInstallationLogicalBytes: 0,

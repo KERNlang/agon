@@ -533,8 +533,13 @@ The inspector rejects malformed prefix names, links, non-directory prefixes and
 incomplete inventory reads. Both groups use the same size walker and writer fences.
 An unreferenced prefix is not necessarily qualified or safe to delete; pending
 lifecycle records or other retention policy can still matter. Reporting reads no
-payload contents and removes nothing. This does not count caches, staging
-directories or generation metadata, or implement quota policy.
+payload contents and removes nothing. Separate `storage` entries count regular-file
+bytes in `generations`, `staging`, `installation-staging`, and `purge-staging`, in
+that order. `totalStorageLogicalBytes` sums only these entries, not installations.
+Missing roots count zero; failed reads, links, non-regular entries and unsafe size
+totals fail closed. These sizes are neither allocated disk space nor permission
+to collect files. The default npm cache lives in temporary candidate staging;
+caller-selected external caches are not scanned. Quota policy is not implemented.
 The size report assumes all concurrent writers obey the managed fences. Path
 checks reject observed links and read failures; they are not atomic traversal
 against an external actor swapping filesystem entries between checks. A byte

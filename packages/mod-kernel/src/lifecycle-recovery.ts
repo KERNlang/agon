@@ -357,6 +357,9 @@ export interface ManagedRetentionReport {
     readonly logicalBytes: number;
   }[];
   readonly totalUnreferencedInstallationLogicalBytes: number;
+  /** Owned metadata and staging only. These entries are not collection grants. */
+  readonly storage: readonly { readonly path: string; readonly logicalBytes: number }[];
+  readonly totalStorageLogicalBytes: number;
   readonly activeLeases: readonly GenerationLease[];
   readonly artifactLeases: readonly ArtifactGenerationLease[];
 }
@@ -364,30 +367,35 @@ export interface ManagedRetentionReport {
 /** Count one installation prefix without following links or reading contents. */
 async function installationLogicalBytes(host: DurableModHost, installationId: string): Promise<number> {
   const prefix = join(host.root, 'installations', installationId);
-  const pending = [prefix];
-  let total = 0;
   try {
-    while (pending.length) {
-      const path = pending.pop()!;
-      await assertNoSymlinkComponents(host.root, relative(host.root, path));
-      const info = await host.hostIo.stat(path);
-      if (info.isDirectory()) {
-        const entries = await host.hostIo.readdir(path, { withFileTypes: true });
-        for (const entry of entries) pending.push(join(path, entry.name));
-      } else if (path !== prefix && info.isFile()) {
-        if (!Number.isSafeInteger(info.size) || info.size < 0 || !Number.isSafeInteger(total + info.size)) {
-          throw new TypeError('retained file sizes exceed safe integer bounds');
-        }
-        total += info.size;
-      } else throw new TypeError('retained installation contains a non-regular entry');
-      await assertNoSymlinkComponents(host.root, relative(host.root, path));
-    }
-    return total;
+    return await directoryLogicalBytes(host, prefix);
   } catch (error) {
     throw new DurableHostError('MOD_GENERATION_CORRUPT', 'cannot measure retained installation', {
       installationId, cause: error instanceof Error ? error.message : String(error),
     });
   }
+}
+
+/** Count regular-file bytes without following links or reading contents. */
+async function directoryLogicalBytes(host: DurableModHost, prefix: string): Promise<number> {
+  const pending = [prefix];
+  let total = 0;
+  while (pending.length) {
+    const path = pending.pop()!;
+    await assertNoSymlinkComponents(host.root, relative(host.root, path));
+    const info = await host.hostIo.stat(path);
+    if (info.isDirectory()) {
+      const entries = await host.hostIo.readdir(path, { withFileTypes: true });
+      for (const entry of entries) pending.push(join(path, entry.name));
+    } else if (path !== prefix && info.isFile()) {
+      if (!Number.isSafeInteger(info.size) || info.size < 0 || !Number.isSafeInteger(total + info.size)) {
+        throw new TypeError('retained file sizes exceed safe integer bounds');
+      }
+      total += info.size;
+    } else throw new TypeError('retained directory contains a non-regular entry');
+    await assertNoSymlinkComponents(host.root, relative(host.root, path));
+  }
+  return total;
 }
 
 /** Own inspection locks and retain failed cleanup for the next inspection. */
@@ -493,7 +501,26 @@ export class ManagedRetentionInspector {
           cause: error instanceof Error ? error.message : String(error),
         });
       }
+      const storage: ManagedRetentionReport['storage'][number][] = [];
+      let totalStorageLogicalBytes = 0;
+      for (const path of ['generations', 'staging', 'installation-staging', 'purge-staging']) {
+        try {
+          const present = await assertNoSymlinkComponents(host.root, path).then(() => true, error => {
+            if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
+            throw error;
+          });
+          const logicalBytes = present ? await directoryLogicalBytes(host, join(host.root, path)) : 0;
+          totalStorageLogicalBytes += logicalBytes;
+          if (!Number.isSafeInteger(totalStorageLogicalBytes)) throw new TypeError('storage total exceeds safe integer bounds');
+          storage.push(Object.freeze({ path, logicalBytes }));
+        } catch (error) {
+          throw new DurableHostError('MOD_GENERATION_CORRUPT', 'cannot measure retained storage', {
+            path, cause: error instanceof Error ? error.message : String(error),
+          }, { cause: error });
+        }
+      }
       report = Object.freeze({ schemaVersion: 1, selectedGeneration: pointer?.generation ?? null,
+        storage: Object.freeze(storage), totalStorageLogicalBytes,
         installations: Object.freeze(installations), totalInstallationLogicalBytes,
         unreferencedInstallations: Object.freeze(unreferencedInstallations), totalUnreferencedInstallationLogicalBytes,
         activeLeases: await host.activeGenerationLeases(),

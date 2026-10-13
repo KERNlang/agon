@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach, afterEach } from 'vitest';
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import {
   mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync,
   existsSync, realpathSync, readFileSync,
@@ -9,6 +9,8 @@ import { spawnSync } from 'node:child_process';
 
 import { linkWorktreeNodeModules } from '../../packages/core/src/blocks/git.js';
 import { createForgeArena } from '../../packages/support-worktree/src/forge-arena.js';
+import { linkDependencies, hydrateArtifacts, sessionRuntime } from '../../packages/mod-worktrees/src/runtime.js';
+import { hydrateWorktreeBuildArtifacts } from '../../packages/support-worktree/src/dependency-overlay.js';
 
 // ── pnpm-workspace worktree node_modules linking ─────────────────────────
 // Regression contract: worktreeCreate -> linkWorktreeNodeModules must make a
@@ -26,7 +28,10 @@ import { createForgeArena } from '../../packages/support-worktree/src/forge-aren
 // created in the worktree -> @scope/<dep> unresolvable -> tsc/build exits non-zero
 // at base -> the goal pre-flight false-reds and the whole queue false-parks.
 
-describe('linkWorktreeNodeModules — pnpm per-package layout', () => {
+describe.each([
+  { name: 'legacy/shared', link: linkWorktreeNodeModules, hydrate: hydrateWorktreeBuildArtifacts, strict: false },
+  { name: 'physical mod', link: linkDependencies, hydrate: hydrateArtifacts, strict: true },
+])('$name worktree dependency overlay', ({ link, hydrate, strict }) => {
   let repo: string;
   let wt: string;
 
@@ -61,22 +66,23 @@ describe('linkWorktreeNodeModules — pnpm per-package layout', () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     try { rmSync(join(repo, '..'), { recursive: true, force: true }); } catch { /* best-effort */ }
   });
 
   it('links root external deps into the worktree (no regression)', () => {
-    linkWorktreeNodeModules(repo, wt);
+    link(repo, wt);
     expect(existsSync(join(wt, 'node_modules', 'typescript', 'index.js'))).toBe(true);
   });
 
   it('recreates per-package node_modules so a workspace dep resolves in the worktree', () => {
-    linkWorktreeNodeModules(repo, wt);
+    link(repo, wt);
     const dep = join(wt, 'packages', 'cli', 'node_modules', '@scope', 'core');
     expect(existsSync(dep)).toBe(true);
   });
 
   it('re-points a workspace dep at the WORKTREE package, not the source repo (candidate edits visible)', () => {
-    linkWorktreeNodeModules(repo, wt);
+    link(repo, wt);
     const marker = join(wt, 'packages', 'cli', 'node_modules', '@scope', 'core', 'MARKER');
     expect(existsSync(marker)).toBe(true);
     // Must resolve to the worktree's core (candidate), not the source repo's core.
@@ -86,14 +92,60 @@ describe('linkWorktreeNodeModules — pnpm per-package layout', () => {
   });
 
   it('resolves an external dep referenced from a per-package node_modules', () => {
-    linkWorktreeNodeModules(repo, wt);
+    link(repo, wt);
     expect(existsSync(join(wt, 'packages', 'cli', 'node_modules', 'typescript', 'index.js'))).toBe(true);
+  });
+
+  it('links healthy scoped siblings after a broken optional dependency', () => {
+    const scope = join(repo, 'node_modules', '@mixed');
+    mkdirSync(scope);
+    symlinkSync(join(repo, 'missing'), join(scope, 'a-broken'));
+    mkdirSync(join(scope, 'b-healthy'));
+    writeFileSync(join(scope, 'b-healthy', 'index.js'), 'healthy');
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    link(repo, wt);
+    expect(readFileSync(join(wt, 'node_modules', '@mixed', 'b-healthy', 'index.js'), 'utf8')).toBe('healthy');
+  });
+
+  it('preserves caller policy when the target dependency root is a file', () => {
+    writeFileSync(join(wt, 'node_modules'), 'do not replace');
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    if (strict) expect(() => link(repo, wt)).toThrow();
+    else {
+      expect(() => link(repo, wt)).not.toThrow();
+      expect(warning).toHaveBeenCalled();
+    }
+    expect(readFileSync(join(wt, 'node_modules'), 'utf8')).toBe('do not replace');
+  });
+
+  it('preserves caller policy when artifact hydration cannot create its target', () => {
+    mkdirSync(join(repo, 'packages', 'cli', 'dist'));
+    writeFileSync(join(repo, 'packages', 'cli', 'dist', 'index.js'), 'source');
+    rmSync(join(wt, 'packages', 'cli'), { recursive: true });
+    writeFileSync(join(wt, 'packages', 'cli'), 'do not replace');
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    if (strict) expect(() => hydrate(repo, wt)).toThrow();
+    else {
+      expect(() => hydrate(repo, wt)).not.toThrow();
+      expect(warning).toHaveBeenCalled();
+    }
+    expect(readFileSync(join(wt, 'packages', 'cli'), 'utf8')).toBe('do not replace');
+  });
+
+  it('preserves caller policy when a scope directory cannot be created', () => {
+    mkdirSync(join(repo, 'node_modules', '@scope'));
+    mkdirSync(join(wt, 'node_modules'));
+    writeFileSync(join(wt, 'node_modules', '@scope'), 'do not replace');
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    if (strict) expect(() => link(repo, wt)).toThrow();
+    else expect(() => link(repo, wt)).not.toThrow();
+    expect(readFileSync(join(wt, 'node_modules', '@scope'), 'utf8')).toBe('do not replace');
   });
 
   it.each([
     ['npm-hoisted', 'index.js'], ['pnpm', 'index.js'],
     ['npm-hoisted', 'dist/index.js'], ['pnpm', 'dist/index.js'],
-  ])('Forge fitness imports candidate workspace edits with %s dependencies and %s exports', (layout, entrypoint) => {
+  ])('fitness imports candidate workspace edits with %s dependencies and %s exports', (layout, entrypoint) => {
     writeFileSync(join(repo, '.gitignore'), 'node_modules/\ndist/\n');
     writeFileSync(join(repo, 'packages', 'core', 'package.json'), JSON.stringify({ name: '@scope/core', type: 'module', exports: `./${entrypoint}` }));
     mkdirSync(join(repo, 'packages', 'core', 'dist'), { recursive: true });
@@ -112,8 +164,11 @@ describe('linkWorktreeNodeModules — pnpm per-package layout', () => {
       expect(result.status, result.stderr).toBe(0);
     }
     const arena = createForgeArena(repo);
+    const modCandidate = join(wt, 'candidate');
     try {
-      const candidate = arena.create('fixture');
+      const candidate = strict
+        ? { path: sessionRuntime.worktreeAddOnBranch(repo, modCandidate, 'fixture-branch') }
+        : arena.create('fixture');
       const candidateExport = join(candidate.path, 'packages', 'core', entrypoint);
       expect(readFileSync(candidateExport, 'utf8')).toContain('SOURCE');
       writeFileSync(candidateExport, 'export const marker = "CANDIDATE";\n');
@@ -121,7 +176,11 @@ describe('linkWorktreeNodeModules — pnpm per-package layout', () => {
       expect(result.status, result.stderr).toBe(0);
       expect(result.stdout.trim()).toBe('CANDIDATE');
       expect(readFileSync(join(repo, 'packages', 'core', entrypoint), 'utf8')).toContain('SOURCE');
-    } finally { arena.cleanup(); }
+    } finally {
+      if (strict) sessionRuntime.worktreeRemoveBestEffort(repo, modCandidate);
+      arena.cleanup();
+    }
+    expect(existsSync(modCandidate)).toBe(false);
     expect(existsSync(arena.rootPath)).toBe(false);
   });
 });

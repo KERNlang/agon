@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { cp, lstat, mkdir, mkdtemp, open, readFile, readdir, rm, stat, symlink, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
   NpmCandidateInstaller,
   SubprocessCandidateVerifier,
@@ -188,19 +188,33 @@ describe('candidate process boundary', () => {
     }
   });
 
-  it('retains a finite installed npm payload file bound', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'agon-npm-payload-overflow-'));
-    try {
+  describe('installed payload file limit', () => {
+    let root: string | undefined;
+    let setup: Promise<void> | undefined;
+    let closing = false;
+    beforeAll(() => setup = (async () => {
+      root = await mkdtemp(join(tmpdir(), 'agon-npm-payload-overflow-'));
       for (let index = 0; index < 8193; index += 32) {
+        if (closing) return;
         const writes = await Promise.allSettled(Array.from({ length: Math.min(32, 8193 - index) },
-          (_, offset) => writeFile(join(root, `file-${index + offset}.js`), '')));
+          (_, offset) => writeFile(join(root!, `file-${index + offset}.js`), '')));
         for (const write of writes) if (write.status === 'rejected') throw write.reason;
       }
+    })());
+    afterAll(async () => {
+      closing = true;
+      // Drain setup before removal. The setup hook reports its own failure.
+      await setup?.catch(() => undefined);
+      if (root) await rm(root, { recursive: true, force: true });
+    });
+    it('retains a finite installed npm payload file bound', async () => {
+      if (!root) throw new Error('payload fixture was not created');
       expect(await readdir(root)).toHaveLength(8193);
       await expect(hashInstalledPackagePayload(root)).rejects.toThrow('file-count limit');
-    } finally {
-      await rm(root, { recursive: true, force: true });
-    }
+      await unlink(join(root, 'file-8192.js'));
+      expect(await readdir(root)).toHaveLength(8192);
+      await expect(hashInstalledPackagePayload(root)).resolves.toMatch(/^sha256:[a-f0-9]{64}$/);
+    });
   });
 
   it('bounds descendants that retain output pipes after the direct child exits', async () => {

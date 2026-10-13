@@ -82,10 +82,10 @@
         "@kernlang/agon-support-verification"
       ],
       "sourceLocator": "@kernlang/agon-support-worktree@1.0.0",
-      "integrity": "sha512-K5W5tUkHWPnqM3gGOOK0pgXvdqRcuhejRRH3Lkl9BHts0jVgNnfZBfVtITaga+A884RRsbbcxaBbZjzV76UEHw==",
-      "contentHash": "sha256:4cfe81dc1ee0c5b585353ba22c1d68ec5a1963be88219460f27a03a06664be18",
+      "integrity": "sha512-v8LjXqEVVHdGIpOuUcboWC4bYflpW6dR/FBJNr4q/KqJMso1KyfR1IielEmeGijS+u2K7/pmPS4FILY9PwmTWg==",
+      "contentHash": "sha256:aa9ec037bb3fce7c5dc9a1506d5d73fe5fbcc87c4cd9e9771853111fef744749",
       "manifestHash": "sha256:63fc703f5f437db4ad438a6d09faa6b8e0cb3262460a51ff01c6ac49658bd434",
-      "payloadHash": "sha256:bba018017975f4364748f366c7ba3be7bc692138016375fb341e360899fed2e1"
+      "payloadHash": "sha256:c7bed4a63c3142354b899ddb274e55f78bf153d610f9d80e74f64415882c38f8"
     },
     {
       "id": "@kernlang/agon-support-panel",
@@ -871,10 +871,10 @@
         "agon.worktree"
       ],
       "sourceLocator": "@kernlang/agon-mod-worktrees@1.0.0",
-      "integrity": "sha512-Zrczi2DOfuer5ZGjCm00qpyOTQZ8hJG0Pcsxahff5mLallJtB17amwpbD+s0RoCve0nRavEcutV3+4AMH8vpIg==",
-      "contentHash": "sha256:4c0a58c30dde7c7706bc2f195e5a4742d085fd9d33be7f79dff9d4f9049e5dde",
+      "integrity": "sha512-mKt7XvB/3qCxkhqW3wSF0I+/+DrzzoDBRyOz2PWFnYNfIE0Kz8nEPA9EKQGqTNhbp6BPPiD5deIRDaHE5MX5HA==",
+      "contentHash": "sha256:01630bb59355ee9bea8360cfb5a38878964bab6b2ceb0024a62e2c17bd2a56c8",
       "manifestHash": "sha256:a0785a7392c4ef0fae2ca1403ce756a293f44b6dd28c786d400e9cd8a1c60660",
-      "payloadHash": "sha256:b0cb2f2fc5337e067dd3bd160eef4c7c26332bf4e99a61bcf06fe513a53539aa"
+      "payloadHash": "sha256:840d90b7b4c6c1fa5571647dab3a7522b51b9a4ecd09230eb9a48cfbb76bbc2e"
     },
     {
       "id": "@kernlang/agon-mod-skill-authoring",
@@ -1840,7 +1840,7 @@
         "peerDependencies": {
           "@kernlang/agon-kernel": ">=0.0.0-0 <2"
         },
-        "integrity": "sha512-Zrczi2DOfuer5ZGjCm00qpyOTQZ8hJG0Pcsxahff5mLallJtB17amwpbD+s0RoCve0nRavEcutV3+4AMH8vpIg==",
+        "integrity": "sha512-mKt7XvB/3qCxkhqW3wSF0I+/+DrzzoDBRyOz2PWFnYNfIE0Kz8nEPA9EKQGqTNhbp6BPPiD5deIRDaHE5MX5HA==",
         "resolved": "https://registry.npmjs.org/@kernlang/agon-mod-worktrees/-/agon-mod-worktrees-1.0.0.tgz"
       },
       "node_modules/@kernlang/agon-support-agent-runtime": {
@@ -1978,7 +1978,7 @@
         "peerDependencies": {
           "@kernlang/agon-kernel": ">=0.0.0-0 <2"
         },
-        "integrity": "sha512-K5W5tUkHWPnqM3gGOOK0pgXvdqRcuhejRRH3Lkl9BHts0jVgNnfZBfVtITaga+A884RRsbbcxaBbZjzV76UEHw==",
+        "integrity": "sha512-v8LjXqEVVHdGIpOuUcboWC4bYflpW6dR/FBJNr4q/KqJMso1KyfR1IielEmeGijS+u2K7/pmPS4FILY9PwmTWg==",
         "resolved": "https://registry.npmjs.org/@kernlang/agon-support-worktree/-/agon-support-worktree-1.0.0.tgz"
       },
       "node_modules/@kernlang/protocol": {

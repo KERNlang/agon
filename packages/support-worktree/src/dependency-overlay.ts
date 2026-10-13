@@ -13,7 +13,7 @@ function symlinkNodeModuleEntry(sourcePath: string, targetPath: string): void {
 /**
  * External git worktrees live outside the repo, so Node cannot walk up to the root install. Create a shallow node_modules overlay: external deps link to the source install, while workspace packages (any scope) link back into the candidate worktree so runtime tests see candidate edits. Handles both npm-hoisted (root node_modules/@scope) and pnpm non-hoisted (per-package node_modules) layouts.
  */
-export function linkWorktreeNodeModules(repoDir: string, worktreePath: string): void {
+export function linkWorktreeNodeModules(repoDir: string, worktreePath: string, options: { throwOnSetupError?: boolean } = {}): void {
   const repoPackages = join(repoDir, 'packages');
   const worktreePackages = join(worktreePath, 'packages');
   // Workspace symlinks resolve through realpathSync, which canonicalizes the
@@ -70,7 +70,8 @@ export function linkWorktreeNodeModules(repoDir: string, worktreePath: string): 
       mkdirSync(targetPath, { recursive: true });
       const scopedEntries = readdirSync(sourcePath, { withFileTypes: true });
       for (const scopedEntry of scopedEntries) {
-        linkNodeModuleEntry(sourcePath, targetPath, scopedEntry.name, false);
+        try { linkNodeModuleEntry(sourcePath, targetPath, scopedEntry.name, false); }
+        catch (err) { warn(err); }
       }
       return;
     }
@@ -85,6 +86,7 @@ export function linkWorktreeNodeModules(repoDir: string, worktreePath: string): 
       try {
         linkNodeModuleEntry(sourceDir, targetDir, entry.name, true);
       } catch (err) {
+        if (options.throwOnSetupError && entry.name.startsWith('@') && entry.isDirectory()) throw err;
         warn(err);
       }
     }
@@ -129,6 +131,7 @@ export function linkWorktreeNodeModules(repoDir: string, worktreePath: string): 
       }
     }
   } catch (err) {
+    if (options.throwOnSetupError) throw err;
     warn(err);
   }
 }
@@ -136,7 +139,7 @@ export function linkWorktreeNodeModules(repoDir: string, worktreePath: string): 
 /**
  * Git worktrees omit ignored package dist artifacts, but workspace package exports point at dist. Copy existing root artifacts into the candidate worktree so fitness commands can resolve local workspace packages without forcing every forge candidate to rebuild first.
  */
-export function hydrateWorktreeBuildArtifacts(repoDir: string, worktreePath: string): void {
+export function hydrateWorktreeBuildArtifacts(repoDir: string, worktreePath: string, options: { throwOnSetupError?: boolean } = {}): void {
   const sourcePackages = join(repoDir, 'packages');
   const targetPackages = join(worktreePath, 'packages');
   if (!existsSync(sourcePackages) || !existsSync(targetPackages)) return;
@@ -151,6 +154,7 @@ export function hydrateWorktreeBuildArtifacts(repoDir: string, worktreePath: str
       cpSync(sourceDist, targetDist, { recursive: true, dereference: true });
     }
   } catch (err) {
+    if (options.throwOnSetupError) throw err;
     console.warn(`[agon] worktree artifact hydration failed for ${worktreePath}: ${err instanceof Error ? err.message : String(err)}`);
   }
 }

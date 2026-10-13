@@ -1,8 +1,9 @@
 import { execFileSync } from 'node:child_process';
-import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync } from 'node:fs';
-import { isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 
 import type { WorktreeSessionRuntime } from '@kernlang/agon-support-worktree';
+import { linkWorktreeNodeModules, hydrateWorktreeBuildArtifacts } from '@kernlang/agon-support-worktree';
 
 function git(cwd: string, args: readonly string[]): string {
   return execFileSync('git', [...args], {
@@ -22,65 +23,13 @@ export function agonHome(): string {
   return resolve(process.env.AGON_HOME?.trim() || resolve(process.env.HOME || '.', '.agon'));
 }
 
-function linkEntry(source: string, target: string): void {
-  if (existsSync(target)) return;
-  const stat = statSync(source);
-  symlinkSync(source, target, stat.isDirectory() ? (process.platform === 'win32' ? 'junction' : 'dir') : 'file');
-}
-
-/** Build a shallow dependency overlay while repointing workspace-package links
- * into the candidate checkout. This is intentionally data-only: no package
- * lifecycle scripts execute in link mode. */
+/** Keep setup failures visible to the worktrees command. */
 export function linkDependencies(repoRoot: string, worktreePath: string): void {
-  const sourcePackages = join(repoRoot, 'packages');
-  const targetPackages = join(worktreePath, 'packages');
-  const canonicalPackages = existsSync(sourcePackages) ? realpathSync(sourcePackages) : sourcePackages;
-  const workspaceTarget = (source: string): string => {
-    if (!lstatSync(source).isSymbolicLink()) return source;
-    const resolved = realpathSync(source);
-    const rel = relative(canonicalPackages, resolved);
-    if (!rel || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return resolved;
-    const packageName = rel.split(sep)[0];
-    const candidate = join(targetPackages, packageName);
-    return existsSync(candidate) ? candidate : resolved;
-  };
-  const linkDirectory = (source: string, target: string): void => {
-    mkdirSync(target, { recursive: true });
-    for (const entry of readdirSync(source, { withFileTypes: true })) {
-      const from = join(source, entry.name);
-      const to = join(target, entry.name);
-      if (entry.name.startsWith('@') && entry.isDirectory()) {
-        mkdirSync(to, { recursive: true });
-        for (const scoped of readdirSync(from, { withFileTypes: true })) {
-          try { linkEntry(workspaceTarget(join(from, scoped.name)), join(to, scoped.name)); } catch { /* a single optional dependency must not poison the overlay */ }
-        }
-      } else {
-        try { linkEntry(workspaceTarget(from), to); } catch { /* best effort; install mode remains available */ }
-      }
-    }
-  };
-  const sourceModules = join(repoRoot, 'node_modules');
-  if (existsSync(sourceModules)) linkDirectory(sourceModules, join(worktreePath, 'node_modules'));
-  if (existsSync(sourcePackages)) {
-    for (const entry of readdirSync(sourcePackages, { withFileTypes: true })) {
-      if (!entry.isDirectory()) continue;
-      const packageModules = join(sourcePackages, entry.name, 'node_modules');
-      if (existsSync(packageModules)) linkDirectory(packageModules, join(targetPackages, entry.name, 'node_modules'));
-    }
-  }
+  linkWorktreeNodeModules(repoRoot, worktreePath, { throwOnSetupError: true });
 }
 
 export function hydrateArtifacts(repoRoot: string, worktreePath: string): void {
-  const sourcePackages = join(repoRoot, 'packages');
-  const targetPackages = join(worktreePath, 'packages');
-  if (!existsSync(sourcePackages) || !existsSync(targetPackages)) return;
-  for (const entry of readdirSync(sourcePackages, { withFileTypes: true })) {
-    if (!entry.isDirectory()) continue;
-    const source = join(sourcePackages, entry.name, 'dist');
-    const targetPackage = join(targetPackages, entry.name);
-    const target = join(targetPackage, 'dist');
-    if (existsSync(source) && existsSync(targetPackage) && !existsSync(target)) cpSync(source, target, { recursive: true, dereference: true });
-  }
+  hydrateWorktreeBuildArtifacts(repoRoot, worktreePath, { throwOnSetupError: true });
 }
 
 export const sessionRuntime: WorktreeSessionRuntime = Object.freeze({

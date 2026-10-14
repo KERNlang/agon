@@ -6,6 +6,11 @@ export const MANIFEST = validateManifest(manifest);
 export const SOURCE_OCCURRENCES = Object.freeze(ownership.assignments);
 
 export const IMPLEMENTATION_KIND = 'physical' as const;
+export type {
+  ForgeOptions, EngineResult, SkippedEngine, DispatchMetric, ForgeManifest,
+  ConvergenceEntry, ForgeJudgment, ForgeEventType, ForgeEvent, ForgeEventMap,
+  ForgeEventCallback, BreakerArtifact, GauntletResult, CorpusEntry, GapPattern,
+} from './types.js';
 export { createMod } from './implementation.js';
 export { createMod as default } from './implementation.js';
 export { runForgeCompetition } from './implementation.js';

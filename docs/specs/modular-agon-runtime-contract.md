@@ -691,6 +691,23 @@ regression rejects a second implementation behind that path.
 This move does not complete competition, synthesis execution, gauntlet or corpus
 ownership. Those remain separate migration requirements.
 
+## Forge public type ownership
+
+`mod-forge/src/types.ts` owns the Forge options, scored results, manifests,
+events, judgments, gauntlet artifacts and corpus types. Core re-exports these
+types for existing consumers. These are type-only exports; disabling Forge does
+not remove historical type declarations or activate its workflow.
+The Core dependency on mod-forge is explicit and acyclic. The compatibility
+exports retire only when Core's public compatibility surface retires.
+The compile-only boundary test checks declaration identity through both public
+packages and rejects invalid events, modes and incomplete persisted records.
+
+The frozen inventory classifies `EngineResult` as engine-runtime by name. Its
+fields describe a scored Forge candidate, not an engine dispatch response.
+This migration puts that declaration beside `ForgeManifest`, its owner, without
+changing fields. The frozen baseline remains intact; final ownership reconciliation
+must record this correction. Runtime Forge extraction remains incomplete.
+
 ## Registry invariants
 
 The kernel refuses activation unless all hold:

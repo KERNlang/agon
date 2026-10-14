@@ -28,6 +28,7 @@
     "@kernlang/agon-mod-jobs": "1.0.0",
     "@kernlang/agon-mod-plan": "1.0.0",
     "@kernlang/agon-mod-brainstorm": "1.0.0",
+    "@kernlang/agon-mod-forge": "1.0.0",
     "@kernlang/agon-support-panel": "1.0.0",
     "@kernlang/protocol": "~4.5.0",
     "@kernlang/agon-support-agent-runtime": "1.0.0",

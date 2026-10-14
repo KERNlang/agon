@@ -708,6 +708,23 @@ This migration puts that declaration beside `ForgeManifest`, its owner, without
 changing fields. The frozen baseline remains intact; final ownership reconciliation
 must record this correction. Runtime Forge extraction remains incomplete.
 
+## Fitness process ownership
+
+Fitness commands use support-engine-runtime's shared process runner. A pre-aborted
+signal does not start a command. Cancellation and timeout terminate the owned
+process group, including descendants with open pipes, and escalate to SIGKILL.
+Support-verification owns fitness validation and its public result envelope.
+The approved verification-to-engine-runtime dependency makes the target DAG
+49 packages and 153 unique edges. The frozen legacy assignment count is unchanged.
+
+Fitness retains at most 1 MiB of decoded UTF-8 bytes per output stream. Capture truncation
+does not fail or terminate a successful command. UTF-8 decoding spans chunks;
+an incomplete character cut by truncation is omitted. The shared runner's existing
+combined output overflow guard still terminates when selected. Bounded capture is
+opt-in; existing callers retain their default result fields and overflow behavior.
+Spawn failures still reject the fitness promise. Process tests use real local
+children, not providers. This does not establish complete Forge runtime parity.
+
 ## Registry invariants
 
 The kernel refuses activation unless all hold:

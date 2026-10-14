@@ -92,7 +92,7 @@ const packageMap = JSON.parse(readFileSync(join(root, 'docs/specs/evidence/modul
 const graph = validateDependencyGraph(packageMap.packages);
 const steps = process.argv.includes('--run-clean') ? cleanSteps(subjectKind) : [];
 const receipt = { schemaVersion: 1, qualification: 'modular-agon-slice8-clean-checkout', subject: { kind: subjectKind, hash: expectedHash, indexHash, commitHash, indexEqualsCommit: indexHash === commitHash }, contamination, graph, coverage: { behavioralSecuritySuites: ['trust-and-grants', 'third-party-lifecycle', 'bounded-discovery', 'canonical-resolution', 'dynamic-mcp-cesar', 'transaction-recovery'], structuralDriftVerifier: 'spec:modular-slice8:self-test', cliEndToEndVerifier: 'spec:modular-slice8:e2e', verifierCountsAreRuntimeDerived: true, trustModel: 'full-code-not-sandboxed', externalExampleDriftChecked: true, trustAndActivationSeparate: true, transactionalAuthority: true, immutableActivationSnapshot: true, measuredPerformance: true }, reviewEvidence, cleanCheckoutSteps: steps };
-receipt.passed = Object.values(contamination).every((paths) => paths.length === 0) && (subjectKind === 'index' || indexHash === commitHash) && reviewEvidence.passed && graph.duplicateEdges.length === 0 && graph.uniqueEdges === 152 && steps.length > 0 && steps.every(({ passed }) => passed);
+receipt.passed = Object.values(contamination).every((paths) => paths.length === 0) && (subjectKind === 'index' || indexHash === commitHash) && reviewEvidence.passed && graph.duplicateEdges.length === 0 && graph.uniqueEdges === 153 && steps.length > 0 && steps.every(({ passed }) => passed);
 console.log(JSON.stringify(receipt, null, 2));
 rmSync(runtimeRoot, { recursive: true, force: true });
 if (!receipt.passed) process.exitCode = 1;

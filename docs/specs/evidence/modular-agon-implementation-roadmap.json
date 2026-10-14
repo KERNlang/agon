@@ -1385,7 +1385,8 @@
       "owner": "@kernlang/agon-support-verification",
       "dependencies": [
         "@kernlang/agon-kernel",
-        "@kernlang/agon-support-persistence"
+        "@kernlang/agon-support-persistence",
+        "@kernlang/agon-support-engine-runtime"
       ],
       "publicBoundary": "kernel-injected capability interface; no direct third-party import",
       "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",

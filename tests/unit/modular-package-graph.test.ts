@@ -81,9 +81,9 @@ describe('frozen first-party package graph', () => {
     },
   );
 
-  it('contains the complete 49-package/152-edge target map without dangling dependencies', () => {
+  it('contains the complete 49-package/153-edge target map without dangling dependencies', () => {
     expect(FIRST_PARTY_PACKAGE_GRAPH.packages).toHaveLength(49);
-    expect(FIRST_PARTY_PACKAGE_GRAPH.dependencyEdges).toHaveLength(152);
+    expect(FIRST_PARTY_PACKAGE_GRAPH.dependencyEdges).toHaveLength(153);
     expect(FIRST_PARTY_PACKAGE_GRAPH.dependencyEdges.filter(({ from, to }) =>
       from === '@kernlang/agon-mod-plan' && to === '@kernlang/agon-support-worktree',
     )).toEqual([{ from: '@kernlang/agon-mod-plan', to: '@kernlang/agon-support-worktree', kind: 'hard' }]);

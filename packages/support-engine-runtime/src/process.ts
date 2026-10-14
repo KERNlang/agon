@@ -47,12 +47,27 @@ export interface SpawnOptions {
   onSpawn?: (pid:number)=>void;
 }
 
-export async function spawnWithTimeout(opts: SpawnOptions & { maxOutputBytes?: number }): Promise<DispatchResult> {
+export interface CapturedProcessResult extends DispatchResult {
+  aborted?: boolean;
+  outputTruncated?: boolean;
+  spawnError?: Error;
+}
+
+export async function spawnWithTimeout(opts: SpawnOptions & {
+  maxOutputBytes?: number;
+  /** Limit each captured stream without terminating the process. */
+  maxCapturedBytesPerStream?: number;
+}): Promise<CapturedProcessResult> {
   if (opts.maxOutputBytes !== undefined && (!Number.isSafeInteger(opts.maxOutputBytes) || opts.maxOutputBytes < 1)) {
     throw new Error('maxOutputBytes must be a positive safe integer');
   }
+  const captureLimit = opts.maxCapturedBytesPerStream;
+  if (captureLimit !== undefined && (!Number.isSafeInteger(captureLimit) || captureLimit < 1)) {
+    throw new Error('maxCapturedBytesPerStream must be a positive safe integer');
+  }
   if (opts.signal?.aborted) {
-    return { exitCode: 130, stdout: '', stderr: 'Aborted', durationMs: 0, timedOut: false };
+    return { exitCode: 130, stdout: '', stderr: 'Aborted', durationMs: 0, timedOut: false,
+      ...(captureLimit === undefined ? {} : { aborted: true, outputTruncated: false }) };
   }
 
   return new Promise((resolve) => {
@@ -61,6 +76,10 @@ export async function spawnWithTimeout(opts: SpawnOptions & { maxOutputBytes?: n
     let aborted = false;
     let outputExceeded = false;
     let outputBytes = 0;
+    let stdoutBytes = 0;
+    let stderrBytes = 0;
+    let stdoutTruncated = false;
+    let stderrTruncated = false;
     const stdoutDecoder = new StringDecoder('utf8');
     const stderrDecoder = new StringDecoder('utf8');
     let stdout = '';
@@ -69,14 +88,17 @@ export async function spawnWithTimeout(opts: SpawnOptions & { maxOutputBytes?: n
     let forceKillTimer: ReturnType<typeof setTimeout> | null = null;
     let forceFinishTimer: ReturnType<typeof setTimeout> | null = null;
 
-    function finish(result: DispatchResult): void {
+    function finish(result: CapturedProcessResult): void {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
       if (forceKillTimer) clearTimeout(forceKillTimer);
       if (forceFinishTimer) clearTimeout(forceFinishTimer);
       if (opts.signal) opts.signal.removeEventListener('abort', onAbort);
-      resolve(outputExceeded ? { ...result, exitCode: 1, stderr: `Process output exceeded ${opts.maxOutputBytes} bytes` } : result);
+      const captured = captureLimit === undefined ? result : {
+        ...result, aborted, outputTruncated: stdoutTruncated || stderrTruncated,
+      };
+      resolve(outputExceeded ? { ...captured, exitCode: 1, stderr: `Process output exceeded ${opts.maxOutputBytes} bytes` } : captured);
     }
 
     const child = spawn(opts.command, opts.args, {
@@ -99,6 +121,7 @@ export async function spawnWithTimeout(opts: SpawnOptions & { maxOutputBytes?: n
     }
     if (opts.signal) {
       opts.signal.addEventListener('abort', onAbort, { once: true });
+      if (opts.signal.aborted) onAbort();
     }
 
     function killChild(): void {
@@ -141,6 +164,30 @@ export async function spawnWithTimeout(opts: SpawnOptions & { maxOutputBytes?: n
       }
     }
 
+    function appendCaptured(text: string, isError: boolean): void {
+      if (captureLimit === undefined) {
+        if (isError) stderr += text;
+        else stdout += text;
+        return;
+      }
+      if (isError ? stderrTruncated : stdoutTruncated) return;
+      const used = isError ? stderrBytes : stdoutBytes;
+      const bytes = Buffer.from(text, 'utf8');
+      const remaining = Math.max(0, captureLimit - used);
+      const truncated = bytes.length > remaining;
+      // Decode only complete characters from the valid UTF-8 prefix.
+      const accepted = truncated ? new StringDecoder('utf8').write(bytes.subarray(0, remaining)) : text;
+      if (isError) {
+        stderrBytes += Buffer.byteLength(accepted);
+        stderrTruncated = truncated;
+        stderr += accepted;
+      } else {
+        stdoutBytes += Buffer.byteLength(accepted);
+        stdoutTruncated = truncated;
+        stdout += accepted;
+      }
+    }
+
     function collect(data: Buffer, isError: boolean): void {
       if (outputExceeded) return;
       outputBytes += data.length;
@@ -149,15 +196,14 @@ export async function spawnWithTimeout(opts: SpawnOptions & { maxOutputBytes?: n
         killChild();
         return;
       }
-      if (isError) stderr += stderrDecoder.write(data);
-      else stdout += stdoutDecoder.write(data);
+      appendCaptured(isError ? stderrDecoder.write(data) : stdoutDecoder.write(data), isError);
     }
     child.stdout?.on('data', (data: Buffer) => collect(data, false));
     child.stderr?.on('data', (data: Buffer) => collect(data, true));
 
     child.on('close', (code: number | null) => {
-      stdout += stdoutDecoder.end();
-      stderr += stderrDecoder.end();
+      appendCaptured(stdoutDecoder.end(), false);
+      appendCaptured(stderrDecoder.end(), true);
       if (aborted || timedOut || outputExceeded) terminateRemainingGroup(child.pid);
       releaseOwnership();
       finish({
@@ -177,6 +223,7 @@ export async function spawnWithTimeout(opts: SpawnOptions & { maxOutputBytes?: n
         durationMs: Date.now() - startTime,
         timedOut: false,
         pid: child.pid ?? null,
+        ...(captureLimit === undefined ? {} : { spawnError: err }),
       });
     });
   });

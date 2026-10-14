@@ -144,7 +144,7 @@ receipt.passed = noContamination
   && exactCommit
   && reviewEvidence.passed
   && graph.duplicateEdges.length === 0
-  && graph.uniqueEdges === 152
+  && graph.uniqueEdges === 153
   && performance.passed === true
   && inventoryAssignments === 872
   && steps.length > 0

@@ -150,7 +150,7 @@ receipt.passed = noContamination
   && exactCommit
   && reviewEvidence.passed
   && graph.duplicateEdges.length === 0
-  && graph.uniqueEdges === 152
+  && graph.uniqueEdges === 153
   && performance.passed === true
   && migration.counts.packages === 36 && migration.counts.assignments === 344
   && behaviorAudit.status === 'green'

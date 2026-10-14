@@ -35,7 +35,7 @@ const packages = [
 
 const mods = {
   ask: [],
-  plan: ['@kernlang/agon-support-persistence', '@kernlang/agon-support-verification'],
+  plan: ['@kernlang/agon-support-persistence', '@kernlang/agon-support-verification', '@kernlang/agon-support-worktree'],
   think: ['@kernlang/agon-support-engine-runtime'],
   brainstorm: ['@kernlang/agon-support-panel', '@kernlang/agon-support-dedup'],
   'team-brainstorm': ['@kernlang/agon-mod-brainstorm', '@kernlang/agon-support-panel'],

@@ -1,9 +1,27 @@
 import { describe, expect, it } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { FIRST_PARTY_PACKAGE_GRAPH } from '../../packages/mod-kernel/src/generated/first-party-package-graph.js';
 
 describe('frozen first-party package graph', () => {
+  it('regenerates the complete authoritative package map without losing approved dependencies', () => {
+    const generator = new URL('../../scripts/spec/generate-modular-agon-ownership.mjs', import.meta.url);
+    const outputs = new Map<string, string>();
+    const source = readFileSync(generator, 'utf8')
+      .replace(/^import .*;\n/gm, '')
+      .replaceAll('import.meta.dirname', JSON.stringify(dirname(fileURLToPath(generator))));
+    runInNewContext(source, {
+      readFileSync, join, resolve, process: { env: {} },
+      mkdirSync: () => {}, console: { log: () => {} },
+      writeFileSync: (path: string, contents: string) => outputs.set(path, contents),
+    });
+    const mapPath = fileURLToPath(new URL('../../docs/specs/evidence/modular-agon-package-map.json', import.meta.url));
+    expect(outputs.has(mapPath)).toBe(true);
+    expect(JSON.parse(outputs.get(mapPath)!)).toEqual(JSON.parse(readFileSync(mapPath, 'utf8')));
+  });
+
   it.each(['checked-in', 'valid', 'permuted', 'missing', 'extra', 'swapped', 'duplicate', 'wrong-order'] as const)(
     'roadmap verification checks exact dependencies and migration order: %s', variant => {
       const script = new URL('../../scripts/spec/verify-modular-agon-roadmap.mjs', import.meta.url);

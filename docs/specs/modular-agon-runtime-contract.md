@@ -742,6 +742,29 @@ opt-in; existing callers retain their default result fields and overflow behavio
 Spawn failures still reject the fitness promise. Process tests use real local
 children, not providers. This does not establish complete Forge runtime parity.
 
+## Forge gauntlet ownership
+
+`mod-forge/src/gauntlet.ts` owns breaker prompts, artifact validation, breaker
+dispatch, repair decisions, events and the gauntlet result. Its runtime argument
+supplies existing Git worktree operations, fitness scoring and sidechain logging.
+Runtime functions must be free functions or bound functions; the workflow calls
+them without a receiver. The legacy facade supplies free functions.
+The owner imports engine contracts and subprocess execution from the public
+engine-runtime package. It imports no Core or legacy Forge implementation.
+
+The legacy gauntlet module binds those effects and preserves its exports. That
+adapter retires when the legacy Forge caller retires. The standalone generated
+Forge competition still needs gauntlet integration; moving the workflow is not
+proof that its hardened option works through every surface.
+
+Artifact validation requires two completed failures on patched code and a
+completed success on clean code. Timeouts, cancellation, reported spawn errors
+and thrown process errors are not attack evidence. UUID filenames keep engine
+IDs out of shell syntax. Validation forwards cancellation and bounds captured
+output to 1 MiB per stream through the existing process runner. Arbitrary shell
+command failures remain indistinguishable from test failures. Full-workflow
+cancellation and legacy fitness ownership remain separate work.
+
 ## Registry invariants
 
 The kernel refuses activation unless all hold:

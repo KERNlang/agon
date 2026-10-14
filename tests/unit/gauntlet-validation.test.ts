@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import * as core from '@kernlang/agon-core';
+import * as core from '@kernlang/agon-support-engine-runtime';
 import { validateBreakerArtifact } from '../../packages/forge/src/gauntlet.js';
 
 let root: string;

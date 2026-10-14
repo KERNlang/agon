@@ -17,5 +17,7 @@ export { runForgeCompetition } from './implementation.js';
 export { planSynthesis } from './synth-plan.js';
 export { createForgeCorpus } from './corpus.js';
 export type { CorpusRecord } from './corpus.js';
+export { runGauntlet, validateBreakerArtifact, buildBreakerPrompt, buildRepairPrompt } from './gauntlet.js';
+export type { GauntletRuntime } from './gauntlet.js';
 export type { SynthCandidate, SynthPlanOpts, SynthPlan } from './synth-plan.js';
 export { resolveForgeMode, resolveForgeRequireDiff, resolveForgeAcceptReviewOutput, classifyNoDiffForgeResult } from './result-policy.js';

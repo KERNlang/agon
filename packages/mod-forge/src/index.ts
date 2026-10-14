@@ -19,5 +19,7 @@ export { createForgeCorpus } from './corpus.js';
 export type { CorpusRecord } from './corpus.js';
 export { runGauntlet, validateBreakerArtifact, buildBreakerPrompt, buildRepairPrompt } from './gauntlet.js';
 export type { GauntletRuntime } from './gauntlet.js';
+export { computeScore, tiebreak, DEFAULT_WEIGHTS } from './scoring.js';
+export type { FitnessResult, ScoreWeights, ScoreComponents } from './scoring.js';
 export type { SynthCandidate, SynthPlanOpts, SynthPlan } from './synth-plan.js';
 export { resolveForgeMode, resolveForgeRequireDiff, resolveForgeAcceptReviewOutput, classifyNoDiffForgeResult } from './result-policy.js';

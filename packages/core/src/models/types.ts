@@ -17,34 +17,7 @@ export type { BrainstormResult } from '@kernlang/agon-mod-brainstorm';
 export type { BrainstormGroup, BrainstormDedupStatus } from '@kernlang/agon-support-dedup';
 
 
-export interface FitnessResult {
-  pass: boolean;
-  diffLines: number;
-  filesChanged: number;
-  durationSec: number;
-  lintWarnings: number;
-  styleScore: number;
-  compositeScore: number;
-  syntaxErrors?: number;
-  syntaxInvalidFiles?: string[];
-}
-
-export interface ScoreWeights {
-  pass: number;
-  quality: number;
-  diff: number;
-  files: number;
-  duration: number;
-}
-
-export interface ScoreComponents {
-  passScore: number;
-  qualityScore: number;
-  diffScore: number;
-  filesScore: number;
-  durationScore: number;
-  composite: number;
-}
+export type { FitnessResult, ScoreWeights, ScoreComponents } from '@kernlang/agon-mod-forge';
 
 export type { GlickoRating, EngineMeta, RatingRecord } from '@kernlang/agon-mod-ratings';
 

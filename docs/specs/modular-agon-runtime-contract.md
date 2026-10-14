@@ -765,6 +765,16 @@ output to 1 MiB per stream through the existing process runner. Arbitrary shell
 command failures remain indistinguishable from test failures. Full-workflow
 cancellation and legacy fitness ownership remain separate work.
 
+## Forge fitness scoring ownership
+
+`mod-forge/src/scoring.ts` owns `FitnessResult`, its score contracts, default
+weights, composite scoring and tie-breaking. Core retains compatibility exports
+for existing callers. The formulas and ordering remain unchanged. These exports
+retire with their legacy callers; no second scoring implementation is introduced.
+Legacy fitness orchestration and quality checks still need extraction. The
+physical competition's simpler candidate scoring is not yet equivalent to this
+full fitness path and must not silently replace it.
+
 ## Registry invariants
 
 The kernel refuses activation unless all hold:

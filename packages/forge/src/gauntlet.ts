@@ -18,11 +18,12 @@ export function buildRepairPrompt(task: string, breakerTests: string): string {
   return [`## REPAIR MODE`, `Your patch was attacked by breaker engines. The following tests expose real bugs in your code.`, `Fix your implementation so ALL breaker tests pass while keeping the original fitness test passing.`, ``, `## ORIGINAL TASK`, task, ``, `## BREAKER TESTS THAT BREAK YOUR CODE`, breakerTests, ``, `Fix the bugs. Be minimal — only change what's needed to pass the breaker tests.`].join('\n');
 }
 
-export async function validateBreakerArtifact(opts: {artifact:BreakerArtifact, winnerWorktree:string, cleanWorktree:string, fitnessTimeout:number, fitnessCmd?:string}): Promise<BreakerArtifact> {
+export async function validateBreakerArtifact(opts: {artifact:BreakerArtifact, winnerWorktree:string, cleanWorktree:string, fitnessTimeout:number, fitnessCmd?:string, signal?:AbortSignal}): Promise<BreakerArtifact> {
   const { artifact, winnerWorktree, cleanWorktree, fitnessTimeout, fitnessCmd } = opts;
+  if (opts.signal?.aborted) return { ...artifact, validated: false, deterministic: false };
   const testRunner = fitnessCmd ?? 'npx vitest run';
   // Write test script to both worktrees
-  const testFileName = `breaker-${artifact.engineId}-${Date.now()}.test.ts`;
+  const testFileName = `breaker-${randomUUID()}.test.ts`;
   const winnerTestPath = join(winnerWorktree, testFileName);
   const cleanTestPath = join(cleanWorktree, testFileName);
   writeFileSync(winnerTestPath, artifact.testScript);
@@ -31,10 +32,10 @@ export async function validateBreakerArtifact(opts: {artifact:BreakerArtifact, w
   const runCmd = `${testRunner} ${testFileName} 2>&1 || exit 1`;
   let failsOnWinner = false;
   try {
-    const result1 = await spawnWithTimeout({ command: '/bin/sh', args: ['-c', runCmd], cwd: winnerWorktree, timeout: fitnessTimeout * 1000 });
-    failsOnWinner = result1.exitCode !== 0;
+    const result1 = await spawnWithTimeout({ command: '/bin/sh', args: ['-c', runCmd], cwd: winnerWorktree, timeout: fitnessTimeout * 1000, signal: opts.signal, maxCapturedBytesPerStream: 1024 * 1024 });
+    failsOnWinner = result1.exitCode !== 0 && !result1.timedOut && !result1.aborted && !result1.spawnError && !opts.signal?.aborted;
   } catch (e) {
-    failsOnWinner = true;
+    failsOnWinner = false;
   }
   if (!failsOnWinner) {
     return { ...artifact, validated: false, deterministic: false };
@@ -42,10 +43,10 @@ export async function validateBreakerArtifact(opts: {artifact:BreakerArtifact, w
   // Run 2: Determinism check — run again, must fail again
   let failsAgain = false;
   try {
-    const result2 = await spawnWithTimeout({ command: '/bin/sh', args: ['-c', runCmd], cwd: winnerWorktree, timeout: fitnessTimeout * 1000 });
-    failsAgain = result2.exitCode !== 0;
+    const result2 = await spawnWithTimeout({ command: '/bin/sh', args: ['-c', runCmd], cwd: winnerWorktree, timeout: fitnessTimeout * 1000, signal: opts.signal, maxCapturedBytesPerStream: 1024 * 1024 });
+    failsAgain = result2.exitCode !== 0 && !result2.timedOut && !result2.aborted && !result2.spawnError && !opts.signal?.aborted;
   } catch (e) {
-    failsAgain = true;
+    failsAgain = false;
   }
   if (!failsAgain) {
     return { ...artifact, validated: false, deterministic: false };
@@ -53,8 +54,8 @@ export async function validateBreakerArtifact(opts: {artifact:BreakerArtifact, w
   // Run 3: Must PASS on clean (unpatched) code — proves the test targets the patch, not a pre-existing issue
   let passesOnClean = false;
   try {
-    const result3 = await spawnWithTimeout({ command: '/bin/sh', args: ['-c', runCmd], cwd: cleanWorktree, timeout: fitnessTimeout * 1000 });
-    passesOnClean = result3.exitCode === 0;
+    const result3 = await spawnWithTimeout({ command: '/bin/sh', args: ['-c', runCmd], cwd: cleanWorktree, timeout: fitnessTimeout * 1000, signal: opts.signal, maxCapturedBytesPerStream: 1024 * 1024 });
+    passesOnClean = result3.exitCode === 0 && !result3.timedOut && !result3.aborted && !result3.spawnError && !opts.signal?.aborted;
   } catch (e) {
     passesOnClean = false;
   }
@@ -144,6 +145,7 @@ export async function runGauntlet(opts: {winnerId:string, losers:string[], task:
         cleanWorktree: cleanWtPath,
         fitnessTimeout,
         fitnessCmd,
+        signal: opts.signal,
       });
 
       opts.onEvent?.({ type: 'gauntlet:breaker-done' as any, data: { engineId: artifact.engineId, validated: validated.validated } });

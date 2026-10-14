@@ -708,6 +708,23 @@ This migration puts that declaration beside `ForgeManifest`, its owner, without
 changing fields. The frozen baseline remains intact; final ownership reconciliation
 must record this correction. Runtime Forge extraction remains incomplete.
 
+## Forge corpus ownership
+
+`@kernlang/agon-mod-forge` owns the corpus persistence and selection functions in
+`createForgeCorpus(path)`. The storage path is explicit. Creating an instance does
+not read or write state. Instances supplied distinct storage paths operate on
+distinct files. Instances supplied the same path share that file and its temporary
+write path.
+The legacy Forge corpus module supplies the existing `CORPUS_PATH` and exposes
+the same synchronous functions. It has no storage or selection implementation.
+That adapter retires with the remaining legacy Forge consumers, not before.
+
+The existing JSON format, validated-artifact filter, 200-entry retention, pattern
+history, replay counts and historical readers remain unchanged. This preserves
+existing behavior, including its file-level read/modify/write concurrency limits;
+it does not add transactional corpus writes or claim new corruption protection.
+Connecting gauntlet execution to physical Forge remains a separate requirement.
+
 ## Fitness process ownership
 
 Fitness commands use support-engine-runtime's shared process runner. A pre-aborted

@@ -116,12 +116,9 @@ export function createForgeCorpus(corpusPath: string) {
       .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
       .slice(0, limit);
 
-    // Increment replay counts
+    // Update the selected records. Run and engine IDs are not unique.
     for (const entry of matching) {
-      const original = record.entries.find(
-        (e) => e.forgeId === entry.forgeId && e.artifact.engineId === entry.artifact.engineId,
-      );
-      if (original) original.replayCount++;
+      entry.replayCount++;
     }
 
     if (matching.length > 0) saveCorpus(record);

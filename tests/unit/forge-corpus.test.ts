@@ -77,6 +77,25 @@ it('keeps pattern precedence and excludes already proposed skills', () => {
   expect(corpus.getGapPatterns()).toEqual([]);
 });
 
+it.each([1, 2])('counts each selected replay once when run and engine IDs repeat (limit %s)', (limit) => {
+  corpus.addToCorpus('shared-run', 'docs', [artifact()]);
+  corpus.addToCorpus('shared-run', 'feature', [artifact(), artifact()]);
+  const record = corpus.loadCorpus();
+  record.entries.forEach((entry, index) => {
+    entry.timestamp = `2026-01-0${index + 1}T00:00:00.000Z`;
+  });
+  corpus.saveCorpus(record);
+
+  const replayed = corpus.getCorpusForReplay('feature', limit);
+  expect(replayed.map(entry => entry.timestamp)).toEqual(
+    ['2026-01-03T00:00:00.000Z', '2026-01-02T00:00:00.000Z'].slice(0, limit),
+  );
+  expect(replayed.map(entry => entry.replayCount)).toEqual(Array(limit).fill(1));
+  expect(corpus.loadCorpus().entries.map(entry => entry.replayCount)).toEqual(
+    limit === 1 ? [0, 0, 1] : [0, 1, 1],
+  );
+});
+
 it('uses the injected storage location without sharing state between owner instances', async () => {
   const { createForgeCorpus } = await import('@kernlang/agon-mod-forge');
   const first = createForgeCorpus(join(root, 'first', 'corpus.json'));

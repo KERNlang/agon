@@ -385,16 +385,6 @@ export async function runForgeCompetition(
               stderr: error instanceof Error ? error.message : String(error),
             };
           }
-          const diff = arena.diff(worktree.path);
-          const diffLines = diff
-            ? diff
-                .split("\n")
-                .filter((line) => line.startsWith("+") || line.startsWith("-"))
-                .filter(
-                  (line) => !line.startsWith("+++") && !line.startsWith("---"),
-                ).length
-            : 0;
-          const filesChanged = changedFiles(diff);
           const dispatchOk =
             Number(dispatched.exitCode ?? 1) === 0 &&
             dispatched.timedOut !== true;
@@ -415,6 +405,17 @@ export async function runForgeCompetition(
                 durationMs: Number(dispatched.durationMs ?? 0),
                 outputTruncated: false,
               };
+          // Fitness commands can generate files that belong in the patch.
+          const diff = arena.diff(worktree.path);
+          const diffLines = diff
+            ? diff
+                .split("\n")
+                .filter((line) => line.startsWith("+") || line.startsWith("-"))
+                .filter(
+                  (line) => !line.startsWith("+++") && !line.startsWith("---"),
+                ).length
+            : 0;
+          const filesChanged = changedFiles(diff);
           const fitnessPassed =
             measured.exitCode === 0 && !measured.timedOut && !measured.aborted;
           const noDiff = diffLines === 0 ? classifyNoDiffForgeResult({

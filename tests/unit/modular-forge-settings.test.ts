@@ -108,7 +108,7 @@ describe('Forge configuration ownership', () => {
     } finally { await registry.disposeOwner(owner.id); }
   });
 
-  it.each(['false', 'true'])('executes the parsed fitness command in real worktrees: %s', async fitness => {
+  it.each(['false', 'true', 'printf generated > generated.txt'])('executes the parsed fitness command in real worktrees: %s', async fitness => {
     const root = mkdtempSync(join(tmpdir(), 'agon-forge-fitness-'));
     const git = (...args: string[]) => {
       const result = spawnSync('git', args, { cwd: root, encoding: 'utf8' });
@@ -147,13 +147,17 @@ describe('Forge configuration ownership', () => {
         invocationId: 'forge-fitness-runtime', cwd: root, platform: 'darwin-arm64',
         signal: new AbortController().signal, config: {},
       });
-      const passes = fitness === 'true';
+      const passes = fitness !== 'false';
+      const generatesFile = fitness.includes('generated.txt');
       expect(result).toMatchObject({ exitCode: passes ? 0 : 1, result: {
         fitness, fitnessProvided: true, winner: passes ? 'fixture' : null,
         status: passes ? 'winner' : 'no_passing_candidate',
         baseline: { command: fitness, exitCode: passes ? 0 : 1 },
-        candidates: [{ fitnessPassed: passes, pass: passes, filesChanged: 1 }],
+        candidates: [{ fitnessPassed: passes, pass: passes, filesChanged: generatesFile ? 2 : 1 }],
       } });
+      if (generatesFile) {
+        expect(result.result).toMatchObject({ winningPatch: expect.stringContaining('+generated') });
+      }
       expect(contexts).toHaveLength(1);
       expect(cleanups).toHaveLength(1);
       expect(cleanups[0].cleanupComplete).toBe(true);

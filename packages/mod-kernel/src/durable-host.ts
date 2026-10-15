@@ -126,6 +126,8 @@ export interface HostTransactionReceipt {
   readonly ownerId: string;
   readonly outcome: 'committed' | 'rolled-back' | 'restart-required' | 'recovered-committed' | 'recovered-rolled-back';
   readonly pointer: GenerationPointer | null;
+  /** Absent on legacy or reconstructed receipts when selection history is unknown. */
+  readonly previousSelection?: GenerationPointer | null;
   readonly journal: HostTransactionJournal;
   readonly events: readonly HostEvent[];
 }
@@ -462,7 +464,7 @@ export class DurableModHost {
       await this.#fault('after-final-journal');
       this.#event('transaction.committed', 'info', ownerId, candidateGeneration, transactionId, { graphHash: pointer.graphHash });
       const events = Object.freeze(this.#events.slice(eventOffset));
-      await this.#writeReceipt(Object.freeze({ schemaVersion: 1, transactionId, ownerId, outcome: 'committed', pointer, journal, events }));
+      await this.#writeReceipt(Object.freeze({ schemaVersion: 1, transactionId, ownerId, outcome: 'committed', pointer, previousSelection: previous, journal, events }));
       return Object.freeze({ pointer, journal, events });
     } catch (error) {
       if (error instanceof SimulatedHostCrash) { simulatedCrash = true; throw error; }

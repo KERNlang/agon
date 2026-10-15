@@ -512,8 +512,8 @@ or committed rollback journal bound to the same generation and lock hash. Graph
 and lock hashes must still match the immutable manifest. Missing, malformed,
 linked or unrelated selection journals fail closed. Inspection never performs
 snapshot recovery or changes the selected pointer. This report does not yet
-include rollback-window leases, cache sizes, or
-quota policy. All retained generation references still protect installations.
+include rollback-window leases, cache sizes, or quota policy. Explicit window
+inspection is described below. All retained generation references still protect installations.
 `hasCommittedGeneration` means at least one listed generation has a committed
 transaction; it does not label every listed generation committed. The kernel
 inspection object retains failed lock releases and retries only its own fences
@@ -529,7 +529,24 @@ under the existing writer fences. Generation bytes are a breakdown of the
 `generations` storage entry, not additional bytes to add to storage totals.
 Shared installation payload bytes remain counted once in `installations`.
 Selection and lease fields describe current references, not collection permission;
-rollback-window policy and automatic collection remain unfinished.
+persisted rollback-window policy and automatic collection remain unfinished.
+
+`agon mod retention inspect --rollback-window-ms <duration>` adds a read-only
+`rollbackWindow` report for an explicit non-negative integer duration. No duration
+is assumed. Each generation reports selected, window, elapsed or unknown-history
+protection. Expiry is not deletion permission: process leases, artifact references
+and other lifecycle constraints still apply. Inspection does not release leases,
+save policy or remove files. Bare `agon mod retention` keeps its existing output.
+
+New committed generation and rollback receipts carry `previousSelection`, the
+exact prior pointer. This additive receipt field leaves the journal schema and
+old readers unchanged. Window inspection walks links backward from the current
+pointer and uses the latest proven departure from each generation. It validates
+receipt/journal identity, base generation and lock, pointer identity and generation
+manifest. Missing, legacy or reconstructed receipts without predecessor links
+stop the chain. Older departures remain unknown, not expired. Incomplete
+transactions and uncertain clock ordering also preserve protection. Recovered
+receipt timestamps are not presented as exact historical selection times.
 
 Each listed installation includes `logicalBytes`. `totalInstallationLogicalBytes`
 sums each installation once, even when multiple generations reference it. These

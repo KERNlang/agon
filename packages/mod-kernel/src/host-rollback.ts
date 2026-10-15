@@ -90,6 +90,7 @@ export async function rollbackGeneration(
       outcome: 'committed',
       ownerId: options.ownerId ?? 'agon.kernel.rollback',
       pointer,
+      previousSelection: current,
       journal,
       events: [],
     }, null, 2) + String.fromCharCode(10));

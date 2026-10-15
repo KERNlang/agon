@@ -398,12 +398,24 @@ function artifactRetentionCommand(action: 'retain' | 'release') {
     } });
 }
 
+async function printRetentionReport(duration?: unknown): Promise<void> {
+  if (duration !== undefined && (typeof duration !== 'string' || !/^\d+$/.test(duration))) throw new TypeError('rollback window must be a non-negative integer in milliseconds');
+  const host = new DurableModHost(paths().hostRoot, { kernelVersion: AGON_RUNTIME_VERSION });
+  console.log(JSON.stringify(await new ManagedRetentionInspector(host,
+    duration === undefined ? undefined : { durationMs: Number(duration) }).inspect(), null, 2));
+}
+
 const retentionCommand = defineCommand({ meta: { name: 'retention', description: 'Inspect retained references, sizes and leases; manage artifact protection without deleting files' },
-  subCommands: { retain: artifactRetentionCommand('retain'), release: artifactRetentionCommand('release') },
+  subCommands: {
+    retain: artifactRetentionCommand('retain'), release: artifactRetentionCommand('release'),
+    inspect: defineCommand({
+      args: { 'rollback-window-ms': { type: 'string', description: 'Inspect rollback protection for this explicit duration; does not authorize deletion' } },
+      async run({ args }) { await printRetentionReport(args['rollback-window-ms']); },
+    }),
+  },
   async run({ rawArgs }) {
     if (rawArgs.some(arg => !arg.startsWith('-'))) return;
-    const host = new DurableModHost(paths().hostRoot, { kernelVersion: AGON_RUNTIME_VERSION });
-    console.log(JSON.stringify(await new ManagedRetentionInspector(host).inspect(), null, 2));
+    await printRetentionReport();
   } });
 
 const purgeCommand = defineCommand({ meta: { name: 'purge', description: 'Preview irreversible removal; apply only an exactly approved saved plan' },

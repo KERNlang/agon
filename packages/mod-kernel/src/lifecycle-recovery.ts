@@ -1,13 +1,13 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
-import { DurableModHost, type ArtifactGenerationLease, type GenerationLease } from './durable-host.js';
+import { DurableModHost, type ArtifactGenerationLease, type GenerationLease, type GenerationPointer } from './durable-host.js';
 import { DurableHostError } from './host-errors.js';
 import { atomicWrite, pathExists, readJson, type HostIo } from './host-io.js';
 import { canonicalJson, sha256Canonical } from './lock.js';
 import type { ManagedInstallationRecord } from './managed-lifecycle.js';
 import { makeTreeRemovable } from './removable-tree.js';
 import { releaseLifecycleWriters, WriterFence } from './writer-lock.js';
-import { parseHostTransactionJournal } from './host-contracts.js';
+import { parseGenerationPointer, parseHostTransactionJournal } from './host-contracts.js';
 import { assertNoSymlinkComponents } from './folder-mod-bounds.js';
 import { TrustGrantStore } from './trust-authority.js';
 
@@ -352,6 +352,17 @@ export async function referencedInstallations(host: DurableModHost, io: HostIo =
 
 export interface ManagedRetentionReport {
   readonly schemaVersion: 1;
+  readonly rollbackWindow?: {
+    readonly durationMs: number;
+    readonly observedAt: string;
+    /** Window expiry alone does not authorize collection. Other references still apply. */
+    readonly generations: readonly {
+      readonly generation: number;
+      readonly protected: boolean;
+      readonly reason: 'selected' | 'window' | 'elapsed' | 'unknown-history';
+      readonly protectedUntil: string | null;
+    }[];
+  };
   readonly selectedGeneration: number | null;
   /** Metadata bytes only. Installation payloads are counted in installations. */
   readonly generations: readonly {
@@ -383,6 +394,92 @@ export interface ManagedRetentionReport {
   readonly totalStorageLogicalBytes: number;
   readonly activeLeases: readonly GenerationLease[];
   readonly artifactLeases: readonly ArtifactGenerationLease[];
+}
+
+async function inspectRollbackWindow(host: DurableModHost, pointer: GenerationPointer | null,
+  generations: readonly { readonly generation: number }[], durationMs: number, observedAt: Date,
+): Promise<NonNullable<ManagedRetentionReport['rollbackWindow']>> {
+  const observedMs = observedAt.getTime();
+  const selectionLinks = new Map<string, { readonly pointer: GenerationPointer; readonly previous: GenerationPointer | null | undefined; readonly baseGeneration: number }>();
+  const unknown = new Set<number>();
+  const entries = await host.hostIo.readdir(host.paths.transactions, { withFileTypes: true });
+  for (const entry of entries) {
+    if (!entry.name.endsWith('.json')) continue;
+    const path = join(host.paths.transactions, entry.name);
+    await assertNoSymlinkComponents(host.root, relative(host.root, path));
+    if (!entry.isFile()) throw new TypeError('rollback history must contain regular journals');
+    const journal = parseHostTransactionJournal(await readJson<unknown>(host.hostIo, path));
+    if (host.journalPath(journal.transactionId) !== path) throw new TypeError('rollback journal filename does not bind its transaction');
+    if (journal.state === 'failed' || journal.state === 'rolled-back') continue;
+    const terminal = journal.steps.find(step => step.id === 'cleanup') ?? journal.steps.find(step => step.id === 'restore-snapshots');
+    if (journal.state !== 'committed' || terminal?.state !== 'passed') {
+      unknown.add(journal.baseGeneration);
+      unknown.add(journal.candidateGeneration);
+      continue;
+    }
+    if (journal.baseGeneration === 0) continue;
+    let selection: GenerationPointer | undefined;
+    let previousSelection: GenerationPointer | null | undefined;
+    if (pointer?.transactionId === journal.transactionId) selection = pointer;
+    {
+      // Recovered receipts can contain a synthesized time. Use original evidence only.
+      for (const outcome of ['committed', 'restart-required']) {
+        const receiptPath = join(host.paths.receipts, `${journal.transactionId}.${outcome}.json`);
+        try {
+          await assertNoSymlinkComponents(host.root, relative(host.root, receiptPath));
+          const receipt = await readJson<Record<string, unknown>>(host.hostIo, receiptPath);
+          if (receipt.schemaVersion !== 1 || receipt.transactionId !== journal.transactionId
+            || receipt.outcome !== outcome || canonicalJson(parseHostTransactionJournal(receipt.journal)) !== canonicalJson(journal)) continue;
+          const candidate = parseGenerationPointer(receipt.pointer);
+          if (selection && canonicalJson(selection) !== canonicalJson(candidate)) throw new TypeError('selection receipts disagree');
+          selection = candidate;
+          if (Object.hasOwn(receipt, 'previousSelection')) {
+            const previous = receipt.previousSelection === null ? null : parseGenerationPointer(receipt.previousSelection);
+            if ((previous?.generation ?? 0) !== journal.baseGeneration || (previous?.lockHash ?? null) !== journal.previousLockHash
+              || previous?.transactionId === journal.transactionId) throw new TypeError('receipt predecessor does not bind its base');
+            if (previousSelection !== undefined && canonicalJson(previousSelection) !== canonicalJson(previous)) throw new TypeError('receipt predecessor links disagree');
+            previousSelection = previous;
+          }
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+        }
+      }
+    }
+    if (!selection) continue;
+    const manifest = await host.validateGeneration(journal.candidateGeneration);
+    if (selection.transactionId !== journal.transactionId || selection.generation !== journal.candidateGeneration
+      || selection.lockHash !== journal.candidateLockHash || selection.lockHash !== manifest.lockHash
+      || selection.graphHash !== manifest.graphHash) throw new TypeError('selection evidence does not bind its generation');
+    const selectedMs = Date.parse(selection.selectedAt);
+    if (selectedMs > observedMs || selectedMs < Date.parse(journal.startedAt)
+      || selectedMs > Date.parse(journal.updatedAt)) continue;
+    selectionLinks.set(journal.transactionId, { pointer: selection, previous: previousSelection, baseGeneration: journal.baseGeneration });
+  }
+  // Walk from the selected head. A missing predecessor cannot hide a newer departure.
+  const linkedDepartures = new Map<number, number>();
+  const visited = new Set<string>();
+  let cursor = pointer;
+  while (cursor) {
+    if (visited.has(cursor.transactionId)) throw new TypeError('selection history contains a cycle');
+    visited.add(cursor.transactionId);
+    const link = selectionLinks.get(cursor.transactionId);
+    if (!link || canonicalJson(link.pointer) !== canonicalJson(cursor)) break;
+    if (link.previous && Date.parse(link.previous.selectedAt) > Date.parse(cursor.selectedAt)) {
+      if (!linkedDepartures.has(link.baseGeneration)) unknown.add(link.baseGeneration);
+      break;
+    }
+    if (!linkedDepartures.has(link.baseGeneration)) linkedDepartures.set(link.baseGeneration, Date.parse(cursor.selectedAt));
+    cursor = link.previous ?? null;
+  }
+  return Object.freeze({ durationMs, observedAt: observedAt.toISOString(), generations: Object.freeze(generations.map(({ generation }) => {
+    const selectedAt = linkedDepartures.get(generation);
+    const until = selectedAt === undefined ? NaN : selectedAt + durationMs;
+    const uncertain = unknown.has(generation) || !Number.isSafeInteger(until) || !Number.isFinite(new Date(until).getTime());
+    const reason = generation === pointer?.generation ? 'selected' as const : uncertain ? 'unknown-history' as const
+      : observedMs < until ? 'window' as const : 'elapsed' as const;
+    return Object.freeze({ generation, protected: reason !== 'elapsed', reason,
+      protectedUntil: uncertain ? null : new Date(until).toISOString() });
+  })) });
 }
 
 /** Count one installation prefix without following links or reading contents. */
@@ -422,10 +519,17 @@ async function directoryLogicalBytes(host: DurableModHost, prefix: string): Prom
 /** Own inspection locks and retain failed cleanup for the next inspection. */
 export class ManagedRetentionInspector {
   readonly #host: DurableModHost;
+  readonly #window?: { readonly durationMs: number; readonly now: () => Date };
   readonly #pending = new Set<WriterFence>();
   #inspection: Promise<ManagedRetentionReport> | undefined;
 
-  constructor(host: DurableModHost) { this.#host = host; }
+  constructor(host: DurableModHost, rollbackWindow?: { readonly durationMs: number; readonly now?: () => Date }) {
+    this.#host = host;
+    if (rollbackWindow) {
+      if (!Number.isSafeInteger(rollbackWindow.durationMs) || rollbackWindow.durationMs < 0) throw new RangeError('rollback window must be a non-negative safe integer');
+      this.#window = Object.freeze({ durationMs: rollbackWindow.durationMs, now: rollbackWindow.now ?? (() => new Date()) });
+    }
+  }
 
   inspect(): Promise<ManagedRetentionReport> {
     return this.#inspection ??= this.#inspect().finally(() => { this.#inspection = undefined; });
@@ -557,7 +661,18 @@ export class ManagedRetentionInspector {
           }, { cause: error });
         }
       }
+      let rollbackWindow: ManagedRetentionReport['rollbackWindow'];
+      if (this.#window) {
+        try {
+          rollbackWindow = await inspectRollbackWindow(host, pointer, inventory.generations, this.#window.durationMs, this.#window.now());
+        } catch (error) {
+          throw new DurableHostError('MOD_GENERATION_CORRUPT', 'cannot verify rollback protection history', {
+            cause: error instanceof Error ? error.message : String(error),
+          }, { cause: error });
+        }
+      }
       report = Object.freeze({ schemaVersion: 1, selectedGeneration: pointer?.generation ?? null,
+        ...(rollbackWindow ? { rollbackWindow } : {}),
         generations: Object.freeze(generations),
         storage: Object.freeze(storage), totalStorageLogicalBytes,
         installations: Object.freeze(installations), totalInstallationLogicalBytes,

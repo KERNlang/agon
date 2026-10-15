@@ -55,6 +55,24 @@ describe('first-party safe-mode CLI recovery', () => {
     expect(report.activeLeases).toEqual([lease]);
     expect(await readFile(host.paths.current)).toEqual(before);
     expect(await host.activeGenerationLeases()).toEqual([lease]);
+    const windowResult = spawnSync(process.execPath, [cli, 'mod', 'retention', 'inspect', '--rollback-window-ms', '3600000'], {
+      env: { ...process.env, HOME: root, AGON_HOME: root, AGON_MODULAR_HOST_ROOT: host.root, AGON_MOD_SAFE_MODE: '1' },
+      cwd: root, encoding: 'utf8', timeout: 10_000,
+    });
+    expect(windowResult.status, windowResult.stderr).toBe(0);
+    expect(JSON.parse(windowResult.stdout).rollbackWindow.generations).toMatchObject([
+      { generation: 1, protected: true, reason: 'selected' },
+      { generation: 2, protected: true, reason: 'window' },
+    ]);
+    for (const invalid of ['retain', 'release', '-1', '0.5']) {
+      const rejected = spawnSync(process.execPath, [cli, 'mod', 'retention', 'inspect', `--rollback-window-ms=${invalid}`], {
+        env: { ...process.env, HOME: root, AGON_HOME: root, AGON_MODULAR_HOST_ROOT: host.root, AGON_MOD_SAFE_MODE: '1' },
+        cwd: root, encoding: 'utf8', timeout: 10_000,
+      });
+      expect(rejected.status, rejected.stderr).not.toBe(0);
+      expect(rejected.stdout).toBe('');
+    }
+    expect(await readFile(host.paths.current)).toEqual(before);
   });
 
   it('previews exact purge targets through the built CLI and never replays deletion against replacement data', async () => {

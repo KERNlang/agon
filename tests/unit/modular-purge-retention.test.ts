@@ -13,6 +13,164 @@ import { artifact, installer, lifecycleLock, request, verifier } from '../helper
 import { hostLock } from '../helpers/modular-host.js';
 
 describe('managed purge generation retention', () => {
+  it('protects the generation left by each selection until its explicit window closes', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-retention-window-'));
+    let time = Date.parse('2026-01-01T00:00:00Z');
+    const now = () => new Date(time);
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0', now });
+    await host.commitGeneration({ operation: 'install', lock: hostLock(), desiredState: {}, installedIndex: {} });
+    time += 10_000;
+    await host.commitGeneration({ operation: 'update', lock: hostLock(), desiredState: {}, installedIndex: {} });
+    const inspector = new ManagedRetentionInspector(host, { durationMs: 1000, now });
+    expect((await inspector.inspect()).rollbackWindow?.generations).toMatchObject([
+      { generation: 1, protected: true, reason: 'window', protectedUntil: '2026-01-01T00:00:11.000Z' },
+      { generation: 2, protected: true, reason: 'selected' },
+    ]);
+    time += 1000;
+    expect((await inspector.inspect()).rollbackWindow?.generations[0]).toMatchObject({ protected: false, reason: 'elapsed' });
+    await rollbackGeneration(host, 1, { now });
+    expect((await inspector.inspect()).rollbackWindow?.generations).toMatchObject([
+      { generation: 1, protected: true, reason: 'selected' },
+      { generation: 2, protected: true, reason: 'window' },
+    ]);
+    time += 1000;
+    expect((await inspector.inspect()).rollbackWindow?.generations[1]).toMatchObject({ protected: false, reason: 'elapsed' });
+    expect(await host.validateGeneration(2)).toMatchObject({ generation: 2 });
+  });
+
+  it('retains unknown historical selection timing instead of using recovered receipt time', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-retention-window-unknown-'));
+    const now = () => new Date('2026-01-01T00:00:00Z');
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0', now });
+    await host.commitGeneration({ operation: 'install', lock: hostLock(), desiredState: {}, installedIndex: {} });
+    const second = await host.commitGeneration({ operation: 'update', lock: hostLock(), desiredState: {}, installedIndex: {} });
+    await host.commitGeneration({ operation: 'enable', lock: hostLock(), desiredState: {}, installedIndex: {} });
+    await unlink(join(host.paths.receipts, `${second.journal.transactionId}.committed.json`));
+    await host.recoverTransactions();
+    const report = await new ManagedRetentionInspector(host, { durationMs: 0, now }).inspect();
+    expect(report.rollbackWindow?.generations).toMatchObject([
+      { generation: 1, protected: true, reason: 'unknown-history' },
+      { generation: 2, protected: false, reason: 'elapsed' },
+      { generation: 3, protected: true, reason: 'selected' },
+    ]);
+  });
+
+  it('does not expire a rollback window when the observed clock moves backward', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-retention-window-clock-'));
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0', now: () => new Date('2026-01-02T00:00:00Z') });
+    await host.commitGeneration({ operation: 'install', lock: hostLock(), desiredState: {}, installedIndex: {} });
+    await host.commitGeneration({ operation: 'update', lock: hostLock(), desiredState: {}, installedIndex: {} });
+    const report = await new ManagedRetentionInspector(host, { durationMs: 0, now: () => new Date('2026-01-01T00:00:00Z') }).inspect();
+    expect(report.rollbackWindow?.generations[0]).toMatchObject({ protected: true, reason: 'unknown-history' });
+  });
+
+  it('does not infer elapsed protection across missing historical rollback selections', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-retention-window-gap-'));
+    let time = Date.parse('2026-01-01T00:00:00Z');
+    const now = () => new Date(time);
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0', now });
+    for (const operation of ['install', 'update', 'update'] as const) {
+      await host.commitGeneration({ operation, lock: hostLock(), desiredState: {}, installedIndex: {} });
+    }
+    time += 10_000;
+    await rollbackGeneration(host, 2, { now });
+    const missing = await rollbackGeneration(host, 1, { now });
+    await host.commitGeneration({ operation: 'update', lock: hostLock(), desiredState: {}, installedIndex: {} });
+    const inspector = new ManagedRetentionInspector(host, { durationMs: 1000, now });
+    expect((await inspector.inspect()).rollbackWindow?.generations.find(entry => entry.generation === 2))
+      .toMatchObject({ protected: true, reason: 'window', protectedUntil: '2026-01-01T00:00:11.000Z' });
+    time += 1000;
+    expect((await inspector.inspect()).rollbackWindow?.generations.find(entry => entry.generation === 2))
+      .toMatchObject({ protected: false, reason: 'elapsed' });
+    await unlink(host.journalPath(missing.journal.transactionId));
+    await unlink(join(host.paths.receipts, `${missing.journal.transactionId}.committed.json`));
+    const report = await new ManagedRetentionInspector(host, { durationMs: 1000, now }).inspect();
+    expect(report.rollbackWindow?.generations.find(entry => entry.generation === 2))
+      .toMatchObject({ protected: true, reason: 'unknown-history' });
+  });
+
+  it('expires older windows only through an unbroken chain of selection receipts', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-retention-window-chain-'));
+    let time = Date.parse('2026-01-01T00:00:00Z');
+    const now = () => new Date(time);
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0', now });
+    await host.commitGeneration({ operation: 'install', lock: hostLock(), desiredState: {}, installedIndex: {} });
+    time += 1000;
+    await host.commitGeneration({ operation: 'update', lock: hostLock(), desiredState: {}, installedIndex: {} });
+    time += 1000;
+    const third = await host.commitGeneration({ operation: 'update', lock: hostLock(), desiredState: {}, installedIndex: {} });
+    time += 1000;
+    const inspector = new ManagedRetentionInspector(host, { durationMs: 1000, now });
+    expect((await inspector.inspect()).rollbackWindow?.generations).toMatchObject([
+      { generation: 1, protected: false, reason: 'elapsed' },
+      { generation: 2, protected: false, reason: 'elapsed' },
+      { generation: 3, protected: true, reason: 'selected' },
+    ]);
+    const path = join(host.paths.receipts, `${third.journal.transactionId}.committed.json`);
+    const legacy = JSON.parse(await readFile(path, 'utf8'));
+    delete legacy.previousSelection;
+    await chmod(path, 0o600);
+    await writeFile(path, JSON.stringify(legacy));
+    expect((await inspector.inspect()).rollbackWindow?.generations).toMatchObject([
+      { generation: 1, protected: true, reason: 'unknown-history' },
+      { generation: 2, protected: false, reason: 'elapsed' },
+      { generation: 3, protected: true, reason: 'selected' },
+    ]);
+  });
+
+  it('keeps a window protected when the clock moved backward between selections', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-retention-selection-clock-'));
+    let time = Date.parse('2026-01-01T12:00:00Z');
+    const now = () => new Date(time);
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0', now });
+    await host.commitGeneration({ operation: 'install', lock: hostLock(), desiredState: {}, installedIndex: {} });
+    await host.commitGeneration({ operation: 'update', lock: hostLock(), desiredState: {}, installedIndex: {} });
+    time = Date.parse('2026-01-01T11:00:00Z');
+    await rollbackGeneration(host, 1, { now });
+    time += 120_000;
+    expect((await new ManagedRetentionInspector(host, { durationMs: 60_000, now }).inspect()).rollbackWindow?.generations[1])
+      .toMatchObject({ protected: true, reason: 'unknown-history' });
+  });
+
+  it('does not let older missing receipts override a proven latest departure', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-retention-latest-departure-'));
+    let time = Date.parse('2026-01-01T00:00:00Z');
+    const now = () => new Date(time);
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0', now });
+    await host.commitGeneration({ operation: 'install', lock: hostLock(), desiredState: {}, installedIndex: {} });
+    const second = await host.commitGeneration({ operation: 'update', lock: hostLock(), desiredState: {}, installedIndex: {} });
+    await unlink(join(host.paths.receipts, `${second.journal.transactionId}.committed.json`));
+    time += 1000;
+    await rollbackGeneration(host, 1, { now });
+    time += 1000;
+    await host.commitGeneration({ operation: 'update', lock: hostLock(), desiredState: {}, installedIndex: {} });
+    time += 1000;
+    expect((await new ManagedRetentionInspector(host, { durationMs: 1000, now }).inspect()).rollbackWindow?.generations[0])
+      .toMatchObject({ protected: false, reason: 'elapsed' });
+  });
+
+  it('refuses corrupt selection history and releases both inspection fences', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-retention-window-corrupt-'));
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
+    await host.commitGeneration({ operation: 'install', lock: hostLock(), desiredState: {}, installedIndex: {} });
+    const second = await host.commitGeneration({ operation: 'update', lock: hostLock(), desiredState: {}, installedIndex: {} });
+    await host.commitGeneration({ operation: 'enable', lock: hostLock(), desiredState: {}, installedIndex: {} });
+    const path = join(host.paths.receipts, `${second.journal.transactionId}.committed.json`);
+    await chmod(path, 0o600);
+    await writeFile(path, '{broken');
+    const before = await readFile(host.paths.current);
+    await expect(new ManagedRetentionInspector(host, { durationMs: 0 }).inspect())
+      .rejects.toMatchObject({ code: 'MOD_GENERATION_CORRUPT' });
+    expect(await readFile(host.paths.current)).toEqual(before);
+    await expect(stat(host.paths.writerLock)).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(stat(join(root, 'locks', 'lifecycle-writer.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it.each([-1, NaN, Infinity, 0.5, Number.MAX_SAFE_INTEGER + 1])('rejects invalid rollback duration %s', durationMs => {
+    const host = new DurableModHost('/not-opened', { kernelVersion: '1.0.0' });
+    expect(() => new ManagedRetentionInspector(host, { durationMs })).toThrow(RangeError);
+  });
+
   it('preserves domain errors and releases fences when generation measurement fails', async () => {
     const root = await mkdtemp(join(tmpdir(), 'agon-retention-generation-size-'));
     const host = new DurableModHost(root, { kernelVersion: '1.0.0' });

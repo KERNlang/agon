@@ -79,6 +79,7 @@ export async function validateBreakerArtifact(opts: {artifact:BreakerArtifact, w
 }
 
 export async function runGauntlet(opts: {winnerId:string, losers:string[], task:string, winnerWorktree:string, fitnessCmd:string, taskClass:TaskClass, forgeDir:string, registry:{ get(engineId: string): EngineDefinition }, adapter:EngineAdapter, timeout:number, fitnessTimeout:number, maxBreakers:number, repairTimeout:number, cwd:string, baseSha:string, onEvent?:(event:ForgeEvent)=>void, signal?: AbortSignal}, runtime: GauntletRuntime): Promise<GauntletResult> {
+  opts.signal?.throwIfAborted();
   const { repoRoot, worktreeDiff, worktreeCreate, worktreeRemoveBestEffort, createSidechainLogger, runFitness } = runtime;
   const { winnerId, losers, task, winnerWorktree, fitnessCmd, taskClass, forgeDir, registry, adapter, timeout, fitnessTimeout, maxBreakers, repairTimeout, cwd } = opts;
 
@@ -89,6 +90,7 @@ export async function runGauntlet(opts: {winnerId:string, losers:string[], task:
   });
 
   opts.onEvent?.({ type: 'gauntlet:start' as any });
+  opts.signal?.throwIfAborted();
   sidechain.log('gauntlet:start', winnerId, { losers, taskClass });
 
   // Get winner's diff for breaker prompt
@@ -104,9 +106,11 @@ export async function runGauntlet(opts: {winnerId:string, losers:string[], task:
   const breakerPrompt = buildBreakerPrompt(task, winnerDiff, winnerId);
 
   const breakerPromises = breakerEngines.map(async (engineId: string) => {
+    if (opts.signal?.aborted) return null;
     opts.onEvent?.({ type: 'gauntlet:breaker-dispatch' as any, data: { engineId } });
 
     try {
+      opts.signal?.throwIfAborted();
       const engine = registry.get(engineId);
       const result = await adapter.dispatch({
         engine,
@@ -134,12 +138,14 @@ export async function runGauntlet(opts: {winnerId:string, losers:string[], task:
 
       return artifact;
     } catch (err) {
+      if (opts.signal?.aborted) return null;
       console.warn(`[agon] gauntlet breaker dispatch (${engineId}) failed: ${err instanceof Error ? err.message : String(err)}`);
       return null;
     }
   });
 
   const rawArtifacts = (await Promise.all(breakerPromises)).filter((a): a is BreakerArtifact => a !== null);
+  opts.signal?.throwIfAborted();
 
   // --- Validate each breaker artifact ---
   const root = repoRoot(cwd);
@@ -151,6 +157,7 @@ export async function runGauntlet(opts: {winnerId:string, losers:string[], task:
   const validatedArtifacts: BreakerArtifact[] = [];
   try {
     for (const artifact of rawArtifacts) {
+      opts.signal?.throwIfAborted();
       const validated = await validateBreakerArtifact({
         artifact,
         winnerWorktree,
@@ -159,8 +166,10 @@ export async function runGauntlet(opts: {winnerId:string, losers:string[], task:
         fitnessCmd,
         signal: opts.signal,
       });
+      opts.signal?.throwIfAborted();
 
       opts.onEvent?.({ type: 'gauntlet:breaker-done' as any, data: { engineId: artifact.engineId, validated: validated.validated } });
+      opts.signal?.throwIfAborted();
       sidechain.log('breaker:validated', artifact.engineId, { validated: validated.validated, deterministic: validated.deterministic });
 
       if (validated.validated) {
@@ -181,12 +190,15 @@ export async function runGauntlet(opts: {winnerId:string, losers:string[], task:
   let repairAttempted = false;
 
   // Get pre-repair score
+  opts.signal?.throwIfAborted();
   const preRepair = await runFitness({ engineId: winnerId, worktreePath: winnerWorktree, fitnessCmd, timeout: fitnessTimeout, forgeDir, signal: opts.signal });
+  opts.signal?.throwIfAborted();
   preRepairScore = preRepair.score;
 
   if (attacksLanded > 0) {
     repairAttempted = true;
     opts.onEvent?.({ type: 'gauntlet:repair-start' as any });
+    opts.signal?.throwIfAborted();
 
     // Build repair prompt with all validated breaker tests
     const breakerTestsText = validatedArtifacts
@@ -227,17 +239,21 @@ export async function runGauntlet(opts: {winnerId:string, losers:string[], task:
         });
       }
     } catch (repairErr) {
+      opts.signal?.throwIfAborted();
       repairDispatchError = repairErr instanceof Error ? repairErr.message : String(repairErr);
       console.warn(`[agon] gauntlet repair dispatch (${winnerId}) failed: ${repairDispatchError}`);
       sidechain.log('repair:dispatch-failed', winnerId, { error: repairDispatchError });
     }
 
     // Re-score after repair (or after failed repair attempt)
+    opts.signal?.throwIfAborted();
     const postRepair = await runFitness({ engineId: winnerId, worktreePath: winnerWorktree, fitnessCmd, timeout: fitnessTimeout, forgeDir, signal: opts.signal });
+    opts.signal?.throwIfAborted();
     postRepairScore = postRepair.score;
     repairPass = postRepair.pass && !repairDispatchError;
 
     opts.onEvent?.({ type: 'gauntlet:repair-done' as any, data: { pass: repairPass, score: postRepairScore } });
+    opts.signal?.throwIfAborted();
     sidechain.log('repair:done', winnerId, { pass: repairPass, preScore: preRepairScore, postScore: postRepairScore });
   } else {
     postRepairScore = preRepairScore;

@@ -3,11 +3,11 @@ import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { CommandContribution, IntentContribution, InvocationContext, ModServices } from '../../packages/mod-api/src/index.js';
 import { ModRegistry } from '../../packages/mod-kernel/src/index.js';
 import { resolveRegisteredModSettings } from '../../packages/mod-kernel/src/mod-settings.js';
-import { createMod, MANIFEST } from '../../packages/mod-forge/src/index.js';
+import { createMod, MANIFEST, runForgeCompetition } from '../../packages/mod-forge/src/index.js';
 import { classifyNoDiffForgeResult as ownedNoDiffPolicy } from '@kernlang/agon-mod-forge';
 import { DEFAULT_FIRST_PARTY_SETTINGS } from '../../packages/core/src/models/first-party-settings.generated.js';
 import { DEFAULT_AGON_CONFIG } from '../../packages/core/src/models/types.js';
@@ -170,6 +170,84 @@ describe('Forge configuration ownership', () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  it.each(['before-start', 'baseline', 'candidate', 'internal-finalization', 'dry-finish'] as const)(
+    'separates caller cancellation from Forge early finalization: %s', async phase => {
+      const root = mkdtempSync(join(tmpdir(), 'agon-forge-phase-'));
+      const git = (...args: string[]) => {
+        const result = spawnSync('git', args, { cwd: root, encoding: 'utf8' });
+        expect(result.status, result.stderr).toBe(0);
+        return result.stdout;
+      };
+      const controller = new AbortController();
+      const reason = new Error('cancel physical Forge');
+      const started = join(root, 'baseline.started');
+      const scriptPath = join(root, 'wait.mjs');
+      let settled: Promise<{ result?: unknown; error?: unknown }> | undefined;
+      const cleanups: Array<{ rootPath: string; cleanupComplete: boolean }> = [];
+      let loserAborted = false;
+      const record = vi.fn(async () => 'fixture-receipt');
+      const dispatch = vi.fn(async (engine: string, _prompt: string, context: InvocationContext) => {
+        if (engine === 'slow') return await new Promise(resolve => {
+          const timer = setTimeout(() => resolve({ exitCode: 1, stdout: '' }), 3000);
+          const abort = () => { loserAborted = true; clearTimeout(timer); resolve({ exitCode: 130, stdout: '' }); };
+          if (context.signal.aborted) abort();
+          else context.signal.addEventListener('abort', abort, { once: true });
+        });
+        writeFileSync(join(context.cwd, 'fixture.txt'), 'after\n');
+        if (phase === 'candidate') controller.abort(reason);
+        return { exitCode: 0, stdout: 'fixture implementation', stderr: '' };
+      });
+      try {
+        git('init', '--quiet');
+        writeFileSync(join(root, 'fixture.txt'), 'before\n');
+        git('add', 'fixture.txt');
+        git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '--quiet', '-m', 'fixture');
+        writeFileSync(scriptPath, `import { writeFileSync } from 'node:fs';
+          writeFileSync(${JSON.stringify(started)}, String(process.pid)); setTimeout(() => {}, 4000);`);
+        if (phase === 'before-start') controller.abort(reason);
+        const services = { engines: { listActive: async () => ['fixture', 'slow', 'judge'], dispatch },
+          receipts: { record }, logger: { debug: async (_message: string, fields: { rootPath: string; cleanupComplete: boolean }) => { cleanups.push(fields); } },
+          ...(phase === 'dry-finish' ? { runs: {
+            start: async () => ({ path: 'fixture-run', startedAt: new Date().toISOString() }),
+            finish: async () => { controller.abort(reason); },
+          } } : {}),
+        } as unknown as ModServices;
+        settled = runForgeCompetition({ task: 'fixture', engines: phase === 'internal-finalization' ? 'fixture,slow' : 'fixture',
+          dryRun: phase === 'dry-finish',
+          test: phase === 'baseline' ? `${JSON.stringify(process.execPath)} ${JSON.stringify(scriptPath)}` : 'true',
+          judge: phase === 'candidate' ? 'judge' : '', noHealthCheck: true, earlyFinalizeCount: '1' }, {
+          invocationId: 'forge-phase', cwd: root, platform: 'darwin-arm64', signal: controller.signal, config: {},
+        }, services).then(result => ({ result }), error => ({ error }));
+        if (phase === 'baseline') {
+          await expect.poll(() => existsSync(started), { timeout: 3000 }).toBe(true);
+          controller.abort(reason);
+        }
+        const outcome = await settled;
+        if (phase === 'internal-finalization') {
+          expect(outcome).toMatchObject({ result: { exitCode: 0, result: { winner: 'fixture', earlyFinalized: true } } });
+          expect(controller.signal.aborted).toBe(false);
+          expect(loserAborted).toBe(true);
+          expect(record).toHaveBeenCalledOnce();
+        } else {
+          expect(outcome.error).toBe(reason);
+          expect(record).not.toHaveBeenCalled();
+          expect(dispatch).toHaveBeenCalledTimes(phase === 'candidate' ? 1 : 0);
+        }
+        expect(cleanups).toHaveLength(phase === 'before-start' || phase === 'dry-finish' ? 0 : 1);
+        for (const cleanup of cleanups) {
+          expect(cleanup.cleanupComplete).toBe(true);
+          expect(existsSync(cleanup.rootPath)).toBe(false);
+        }
+        expect(git('worktree', 'list', '--porcelain').match(/^worktree /gm)).toHaveLength(1);
+        expect(readFileSync(join(root, 'fixture.txt'), 'utf8')).toBe('before\n');
+      } finally {
+        controller.abort(reason);
+        await settled;
+        rmSync(root, { recursive: true, force: true });
+      }
+    }, 10000,
+  );
 
   it('validates migration metadata without allowing unknown value-schema keywords', () => {
     const base = { type: 'object', properties: { enabled: { type: 'boolean', default: true } } };

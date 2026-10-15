@@ -799,6 +799,19 @@ prove that every orchestration phase stops dispatching or that synchronous
 syntax validation can be interrupted; those broader cancellation checks remain
 separate requirements.
 
+Physical Forge checks caller cancellation between discovery, preflight, baseline,
+candidate collection, review and result publication. Caller cancellation is checked
+after candidate collection; arena cleanup remains in `finally`. Internal early-finalization signals cancel
+losers without cancelling the caller or discarding the passing winner. Gauntlet
+checks cancellation before starting and between breaker collection, validation,
+pre-repair fitness, repair and post-repair fitness. Its clean comparison worktree
+is still disposed when validation stops. No completed result is published after
+these guards observe caller cancellation. These checks do not replace the remaining
+legacy orchestration and synchronous-validator cancellation qualification.
+Cancellation inside the terminal `gauntlet:done` notification does not retract
+the completed result. Cancellation inside `gauntlet:repair-done` still stops
+workflow completion; that event ends only the repair phase.
+
 ## Registry invariants
 
 The kernel refuses activation unless all hold:

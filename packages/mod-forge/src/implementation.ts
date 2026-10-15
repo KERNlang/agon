@@ -142,6 +142,7 @@ export async function runForgeCompetition(
   context: InvocationContext,
   services: ModServices,
 ): Promise<CommandResult> {
+  context.signal.throwIfAborted();
   const input = raw as Record<string, Json>;
   const task = taskFrom(input);
   if (!task)
@@ -173,6 +174,7 @@ export async function runForgeCompetition(
   const active = services.engines.listActive
     ? [...(await services.engines.listActive(context))]
     : [];
+  context.signal.throwIfAborted();
   let engines = list(input.engines);
   if (!engines.length) engines = active;
   const unknown = engines.filter(
@@ -234,6 +236,7 @@ export async function runForgeCompetition(
         }
       }),
     );
+    context.signal.throwIfAborted();
     skippedEngines.push(
       ...checks
         .filter((entry) => !entry.ok)
@@ -254,6 +257,7 @@ export async function runForgeCompetition(
         reason: "none" as const,
         scope: null,
       }));
+  context.signal.throwIfAborted();
   let order = [
     ...ranked.map((entry) => entry.engineId),
     ...engines.filter((id) => !ranked.some((entry) => entry.engineId === id)),
@@ -289,6 +293,7 @@ export async function runForgeCompetition(
     text(input.label) || undefined,
     { ...context, cwd },
   );
+  context.signal.throwIfAborted();
   if (input.dryRun === true) {
     const result = {
       status: "dry_run",
@@ -316,6 +321,7 @@ export async function runForgeCompetition(
         },
         { ...context, cwd },
       );
+    context.signal.throwIfAborted();
     return {
       exitCode: 0,
       stdout: `${JSON.stringify(result, null, 2)}\n`,
@@ -348,6 +354,7 @@ export async function runForgeCompetition(
       timeoutSeconds,
       context.signal,
     );
+    context.signal.throwIfAborted();
     const baselinePasses = baseline.exitCode === 0 && !baseline.timedOut && !baseline.aborted;
     const worktrees = order.map((engineId) => ({
       engineId,
@@ -368,6 +375,7 @@ export async function runForgeCompetition(
           const prompt = `You are a Forge competitor working in an isolated Git worktree.\n\nTASK:\n${task}\n\nMODE: ${mode}\nFITNESS COMMAND: ${fitness}\nDIFF REQUIRED: ${requireDiff}\n\nInspect the repository, implement the task directly in the current worktree, and run relevant checks. Do not merely describe a patch. Do not commit, push, or touch paths outside this worktree.`;
           let dispatched: Record<string, Json> = {};
           try {
+            candidateSignal.throwIfAborted();
             dispatched = (await services.engines.dispatch(
               engineId,
               prompt,
@@ -467,6 +475,7 @@ export async function runForgeCompetition(
         },
       ),
     );
+    context.signal.throwIfAborted();
     candidates.push(...outputs);
     const passing = candidates
       .filter((candidate) => candidate.pass)
@@ -505,6 +514,7 @@ export async function runForgeCompetition(
         };
       }
     }
+    context.signal.throwIfAborted();
     const result = {
       status: winner ? "winner" : "no_passing_candidate",
       task,
@@ -546,6 +556,7 @@ export async function runForgeCompetition(
         { ...context, cwd },
       );
       for (const candidate of candidates) {
+        context.signal.throwIfAborted();
         if (!candidate.diff) continue;
         const leaf = candidate.engineId.replace(/[^A-Za-z0-9._-]+/g, "-") || "candidate";
         await services.runs?.writeArtifact(
@@ -555,6 +566,7 @@ export async function runForgeCompetition(
           { ...context, cwd },
         );
       }
+      context.signal.throwIfAborted();
       if (input.provenance === true) {
         await services.runs?.writeArtifact(
           run,
@@ -562,6 +574,7 @@ export async function runForgeCompetition(
           `${JSON.stringify(result.provenance, null, 2)}\n`,
           { ...context, cwd },
         );
+        context.signal.throwIfAborted();
         await services.runs?.writeArtifact(
           run,
           "provenance.md",
@@ -570,10 +583,12 @@ export async function runForgeCompetition(
         );
       }
     }
+    context.signal.throwIfAborted();
     const receiptId = await services.receipts.record(
       "forge",
       result as unknown as Json,
     );
+    context.signal.throwIfAborted();
     const statusOk = Boolean(winner) && skippedEngines.length === 0;
     if (run)
       await services.runs?.finish(
@@ -602,6 +617,7 @@ export async function runForgeCompetition(
         },
         { ...context, cwd },
       );
+    context.signal.throwIfAborted();
     const payload = { ...result, receiptId } as unknown as Json;
     return {
       exitCode: winner ? 0 : 1,

@@ -225,6 +225,9 @@ describe('first-party safe-mode CLI recovery', () => {
     const logicalBytes = (await readFile(join(prefix, 'agon-installation.json'))).byteLength
       + Buffer.byteLength(JSON.stringify({ name: '@test/app', version: '1.0.0' }));
     expect(JSON.parse(result.stdout)).toMatchObject({ selectedGeneration: installed.pointer.generation,
+      generations: [{ generation: installed.pointer.generation,
+        installationId: installed.installation.installationId, committed: true, selected: true,
+        logicalBytes: expect.any(Number), processLeaseIds: [lease.leaseId], artifactLeaseIds: [artifactLease.leaseId] }],
       storage: [{ path: 'generations', logicalBytes: expect.any(Number) },
         { path: 'staging', logicalBytes: 0 }, { path: 'installation-staging', logicalBytes: 0 },
         { path: 'purge-staging', logicalBytes: 7 }],

@@ -287,9 +287,10 @@ async function assertPurgeNoLinks(host: DurableModHost, path: string): Promise<v
   }
 }
 
-export async function referencedInstallations(host: DurableModHost, io: HostIo = host.hostIo): Promise<Map<string, { generation: number; committed: boolean; generations: readonly number[] }>> {
+async function retainedGenerationInventory(host: DurableModHost, io: HostIo) {
   const result = new Map<string, { generation: number; committed: boolean; generations: readonly number[] }>();
   const validatedGenerations = new Set<number>();
+  const retainedGenerations: { generation: number; installationId: string | null; committed: boolean }[] = [];
   const entries = await io.readdir(host.paths.generations, { withFileTypes: true }).catch(error => {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
     throw error;
@@ -311,7 +312,10 @@ export async function referencedInstallations(host: DurableModHost, io: HostIo =
         || transaction.candidateLockHash !== manifest.lockHash) throw new TypeError('retained generation journal identity does not match');
       committed = transaction.state === 'committed';
       validatedGenerations.add(generation);
-      if (!Object.hasOwn(manifest.files, 'installation.json')) continue;
+      if (!Object.hasOwn(manifest.files, 'installation.json')) {
+        retainedGenerations.push({ generation, installationId: null, committed });
+        continue;
+      }
       const installationPath = join(host.generationPath(generation), 'installation.json');
       await assertNoSymlinkComponents(host.root, relative(host.root, installationPath));
       const bytes = await io.readFile(installationPath);
@@ -320,6 +324,7 @@ export async function referencedInstallations(host: DurableModHost, io: HostIo =
       }
       record = JSON.parse(new TextDecoder().decode(bytes)) as ManagedInstallationRecord;
       if (!record || !/^[a-f0-9]{32}$/.test(record.installationId)) throw new TypeError('retained installation identity is invalid');
+      retainedGenerations.push({ generation, installationId: record.installationId, committed });
     } catch (error) {
       throw new DurableHostError('MOD_GENERATION_CORRUPT', 'cannot determine retained installation ownership', {
         generation, cause: error instanceof Error ? error.message : String(error),
@@ -331,17 +336,33 @@ export async function referencedInstallations(host: DurableModHost, io: HostIo =
       result.set(record.installationId, { generation, committed, generations });
     } else result.set(record.installationId, { ...previous, generations });
   }
-  for (const lease of [...await host.activeGenerationLeases(), ...await host.activeArtifactGenerationLeases()]) {
+  const activeLeases = await host.activeGenerationLeases();
+  const artifactLeases = await host.activeArtifactGenerationLeases();
+  for (const lease of [...activeLeases, ...artifactLeases]) {
     if (!validatedGenerations.has(lease.generation)) throw new DurableHostError('MOD_GENERATION_CORRUPT', 'active lease refers to a missing generation', {
       leaseId: lease.leaseId, generation: lease.generation,
     });
   }
-  return result;
+  return { installations: result, generations: retainedGenerations.sort((a, b) => a.generation - b.generation), activeLeases, artifactLeases };
+}
+
+export async function referencedInstallations(host: DurableModHost, io: HostIo = host.hostIo): Promise<Map<string, { generation: number; committed: boolean; generations: readonly number[] }>> {
+  return (await retainedGenerationInventory(host, io)).installations;
 }
 
 export interface ManagedRetentionReport {
   readonly schemaVersion: 1;
   readonly selectedGeneration: number | null;
+  /** Metadata bytes only. Installation payloads are counted in installations. */
+  readonly generations: readonly {
+    readonly generation: number;
+    readonly installationId: string | null;
+    readonly committed: boolean;
+    readonly selected: boolean;
+    readonly logicalBytes: number;
+    readonly processLeaseIds: readonly string[];
+    readonly artifactLeaseIds: readonly string[];
+  }[];
   readonly installations: readonly {
     readonly installationId: string;
     readonly generations: readonly number[];
@@ -460,7 +481,24 @@ export class ManagedRetentionInspector {
           }
         }
       }
-      const references = await referencedInstallations(host);
+      const inventory = await retainedGenerationInventory(host, host.hostIo);
+      const references = inventory.installations;
+      const generations: ManagedRetentionReport['generations'][number][] = [];
+      for (const entry of inventory.generations) {
+        let logicalBytes: number;
+        try {
+          logicalBytes = await directoryLogicalBytes(host, host.generationPath(entry.generation));
+        } catch (error) {
+          throw new DurableHostError('MOD_GENERATION_CORRUPT', 'cannot measure retained generation', {
+            generation: entry.generation, cause: error instanceof Error ? error.message : String(error),
+          }, { cause: error });
+        }
+        generations.push(Object.freeze({ ...entry, selected: entry.generation === pointer?.generation,
+          logicalBytes,
+          processLeaseIds: Object.freeze(inventory.activeLeases.filter(lease => lease.generation === entry.generation).map(lease => lease.leaseId)),
+          artifactLeaseIds: Object.freeze(inventory.artifactLeases.filter(lease => lease.generation === entry.generation).map(lease => lease.leaseId)),
+        }));
+      }
       const installations: ManagedRetentionReport['installations'][number][] = [];
       let totalInstallationLogicalBytes = 0;
       for (const [installationId, reference] of [...references].sort(([a], [b]) => a.localeCompare(b))) {
@@ -520,11 +558,12 @@ export class ManagedRetentionInspector {
         }
       }
       report = Object.freeze({ schemaVersion: 1, selectedGeneration: pointer?.generation ?? null,
+        generations: Object.freeze(generations),
         storage: Object.freeze(storage), totalStorageLogicalBytes,
         installations: Object.freeze(installations), totalInstallationLogicalBytes,
         unreferencedInstallations: Object.freeze(unreferencedInstallations), totalUnreferencedInstallationLogicalBytes,
-        activeLeases: await host.activeGenerationLeases(),
-        artifactLeases: await host.activeArtifactGenerationLeases(),
+        activeLeases: inventory.activeLeases,
+        artifactLeases: inventory.artifactLeases,
       });
     } catch (error) { failures.push(error); }
     for (const fence of fences.reverse()) {

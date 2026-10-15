@@ -520,6 +520,17 @@ inspection object retains failed lock releases and retries only its own fences
 on the next call. It refuses a replacement owner's lock. Scan and cleanup errors
 are preserved together; an incomplete cleanup is not reported as success.
 
+The `generations` inventory lists each validated generation in numeric order,
+including generations with no installation record. Each entry reports its nullable
+installation ID, creation transaction's committed state, current selection,
+metadata logical bytes and active process/artifact lease IDs. Released references
+are omitted. The inventory and installation references use one validated scan
+under the existing writer fences. Generation bytes are a breakdown of the
+`generations` storage entry, not additional bytes to add to storage totals.
+Shared installation payload bytes remain counted once in `installations`.
+Selection and lease fields describe current references, not collection permission;
+rollback-window policy and automatic collection remain unfinished.
+
 Each listed installation includes `logicalBytes`. `totalInstallationLogicalBytes`
 sums each installation once, even when multiple generations reference it. These
 values count regular-file bytes per path, including installation metadata, without

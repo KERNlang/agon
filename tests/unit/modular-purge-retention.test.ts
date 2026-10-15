@@ -13,6 +13,63 @@ import { artifact, installer, lifecycleLock, request, verifier } from '../helper
 import { hostLock } from '../helpers/modular-host.js';
 
 describe('managed purge generation retention', () => {
+  it('preserves domain errors and releases fences when generation measurement fails', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-retention-generation-size-'));
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
+    await host.commitGeneration({ operation: 'install', lock: hostLock(), desiredState: {}, installedIndex: {} });
+    const failure = Object.assign(new Error('fixture measurement denied'), { code: 'EACCES' });
+    const reader = new DurableModHost(root, { kernelVersion: '1.0.0', io: { ...nodeHostIo,
+      stat: async path => {
+        if (path === host.generationPath(1)) throw failure;
+        return nodeHostIo.stat(path);
+      },
+    } });
+    const before = await readFile(host.paths.current);
+    await expect(new ManagedRetentionInspector(reader).inspect()).rejects.toMatchObject({
+      code: 'MOD_GENERATION_CORRUPT', details: { generation: 1 }, cause: failure,
+    });
+    expect(await readFile(host.paths.current)).toEqual(before);
+    await expect(stat(host.paths.writerLock)).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(stat(join(root, 'locks', 'lifecycle-writer.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('reports generations without installations and their exact active references', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-retention-generations-'));
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
+    await host.commitGeneration({ operation: 'install', lock: hostLock(), desiredState: {}, installedIndex: {} });
+    await host.commitGeneration({ operation: 'enable', lock: hostLock(), desiredState: {}, installedIndex: {} });
+    const process = await host.leaseGeneration(1, 'job:running');
+    const identity = { ownerId: 'agon.plan', artifactId: 'result:retained', artifactHash: `sha256:${'a'.repeat(64)}` as const };
+    const artifactLease = await host.leaseArtifactGeneration(1, identity);
+    const released = await host.leaseGeneration(2, 'job:finished');
+    await host.releaseGenerationLease(released.leaseId);
+    const before = await readFile(host.paths.current);
+    const expected = [];
+    for (const generation of [1, 2]) {
+      const directory = host.generationPath(generation);
+      let logicalBytes = 0;
+      for (const path of await readdir(directory, { recursive: true })) {
+        const entry = await stat(join(directory, path));
+        if (entry.isFile()) logicalBytes += entry.size;
+      }
+      expected.push({ generation, installationId: null, committed: true,
+        selected: generation === 2, logicalBytes,
+        processLeaseIds: generation === 1 ? [process.leaseId] : [],
+        artifactLeaseIds: generation === 1 ? [artifactLease.leaseId] : [] });
+    }
+    const report = await new ManagedRetentionInspector(host).inspect();
+    expect(report.generations).toEqual(expected);
+    expect(report.installations).toEqual([]);
+    expect(report.totalInstallationLogicalBytes).toBe(0);
+    expect(report.storage.find(entry => entry.path === 'generations')?.logicalBytes)
+      .toBe(expected.reduce((sum, entry) => sum + entry.logicalBytes, 0));
+    expect(await readFile(host.paths.current)).toEqual(before);
+    await host.releaseGenerationLease(process.leaseId);
+    await host.releaseArtifactGenerationLease(artifactLease.leaseId, identity);
+    expect((await new ManagedRetentionInspector(host).inspect()).generations)
+      .toEqual(expected.map(entry => ({ ...entry, processLeaseIds: [], artifactLeaseIds: [] })));
+  });
+
   it('accounts for owned staging and generation metadata without deleting payloads', async () => {
     const root = await mkdtemp(join(tmpdir(), 'agon-retention-storage-'));
     const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
@@ -72,6 +129,8 @@ describe('managed purge generation retention', () => {
       const before = await readFile(host.paths.current);
       const report = await inspector.inspect();
       expect(report.selectedGeneration).toBe(generation);
+      expect(report.generations.map(entry => ({ generation: entry.generation, selected: entry.selected, committed: entry.committed })))
+        .toEqual([1, 2].map(id => ({ generation: id, selected: id === generation, committed: true })));
       expect(report.installations.map(item => item.installationId).sort()).toEqual([
         first.installation.installationId, second.installation.installationId,
       ].sort());
@@ -121,7 +180,10 @@ describe('managed purge generation retention', () => {
     await expect(rollbackGeneration(host, 1, { faultAfterPointer: () => { throw new Error('fixture interrupted'); } }))
       .rejects.toMatchObject({ code: 'MOD_RESTART_REQUIRED' });
     const before = await readFile(host.paths.desiredState);
-    expect((await new ManagedRetentionInspector(host).inspect()).selectedGeneration).toBe(1);
+    const report = await new ManagedRetentionInspector(host).inspect();
+    expect(report.selectedGeneration).toBe(1);
+    expect(report.generations.map(entry => ({ generation: entry.generation, selected: entry.selected, committed: entry.committed })))
+      .toEqual([{ generation: 1, selected: true, committed: true }, { generation: 2, selected: false, committed: true }]);
     expect(await readFile(host.paths.desiredState)).toEqual(before);
     expect((await host.boot()).pointer?.generation).toBe(1);
     expect(JSON.parse(await readFile(host.paths.desiredState, 'utf8'))).toEqual({ profile: 'old' });
@@ -179,7 +241,7 @@ describe('managed purge generation retention', () => {
     const root = await mkdtemp(join(tmpdir(), 'agon-retention-empty-'));
     const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
     expect(await new ManagedRetentionInspector(host).inspect()).toEqual({
-      schemaVersion: 1, selectedGeneration: null, installations: [], activeLeases: [], artifactLeases: [], totalInstallationLogicalBytes: 0,
+      schemaVersion: 1, selectedGeneration: null, generations: [], installations: [], activeLeases: [], artifactLeases: [], totalInstallationLogicalBytes: 0,
       unreferencedInstallations: [], totalUnreferencedInstallationLogicalBytes: 0,
       storage: ['generations', 'staging', 'installation-staging', 'purge-staging'].map(path => ({ path, logicalBytes: 0 })),
       totalStorageLogicalBytes: 0,
@@ -342,6 +404,11 @@ describe('managed purge generation retention', () => {
     const generationBytes = generationSizes.reduce((sum, size) => sum + size, 0);
     expect(generationBytes).toBeGreaterThan(0);
     expect(report).toEqual({ schemaVersion: 1, selectedGeneration: second.pointer.generation,
+      generations: [1, 2].map(generation => ({ generation, installationId: first.installation.installationId,
+        committed: true, selected: generation === 2,
+        logicalBytes: generationEntries.reduce((sum, path, index) =>
+          sum + (path.startsWith(`${String(generation).padStart(16, '0')}/`) ? generationSizes[index]! : 0), 0),
+        processLeaseIds: generation === 1 ? [active.leaseId] : [], artifactLeaseIds: [] })),
       storage: [{ path: 'generations', logicalBytes: generationBytes },
         ...['staging', 'installation-staging', 'purge-staging'].map(path => ({ path, logicalBytes: 0 }))],
       totalStorageLogicalBytes: generationBytes,
@@ -438,7 +505,10 @@ describe('managed purge generation retention', () => {
     const prefix = join(root, 'installations', first.installation.installationId);
     const logicalBytes = (await readFile(join(prefix, 'agon-installation.json'))).byteLength
       + Buffer.byteLength(JSON.stringify({ name: '@test/app', version: '1.0.0' }));
-    expect((await new ManagedRetentionInspector(reader).inspect()).installations)
+    const report = await new ManagedRetentionInspector(reader).inspect();
+    expect(report.generations.map(entry => ({ generation: entry.generation, committed: entry.committed })))
+      .toEqual([{ generation: 1, committed: true }, { generation: 2, committed: false }]);
+    expect(report.installations)
       .toEqual([{ installationId: first.installation.installationId, hasCommittedGeneration: true, generations: [1, 2], logicalBytes }]);
   });
 

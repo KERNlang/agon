@@ -371,116 +371,122 @@ export async function runForgeCompetition(
       );
       let passingCount = 0;
       let finalized = false;
-      const outputs = await Promise.all(
-        worktrees.map(
-          async ({ engineId, worktree }, rank): Promise<Candidate> => {
-            const candidateSignal = AbortSignal.any([
-              context.signal,
-              candidateControllers.get(engineId)!.signal,
-            ]);
-            const prompt = `You are a Forge competitor working in an isolated Git worktree.\n\nTASK:\n${task}\n\nMODE: ${mode}\nFITNESS COMMAND: ${fitness}\nDIFF REQUIRED: ${requireDiff}\n\nInspect the repository, implement the task directly in the current worktree, and run relevant checks. Do not merely describe a patch. Do not commit, push, or touch paths outside this worktree.`;
-            let dispatched: Record<string, Json> = {};
-            try {
-              candidateSignal.throwIfAborted();
-              dispatched = (await services.engines.dispatch(
-                engineId,
-                prompt,
-                { ...context, cwd: worktree.path, signal: candidateSignal },
-                {
-                  timeoutSeconds,
-                  mode: "agent",
-                  systemPrompt:
-                    "Act as an autonomous implementation worker inside only the supplied worktree. Modify files and verify the result.",
-                },
-              )) as Record<string, Json>;
-            } catch (error) {
-              dispatched = {
-                exitCode: 1,
-                stderr: error instanceof Error ? error.message : String(error),
-              };
-            }
-            const dispatchOk =
-              Number(dispatched.exitCode ?? 1) === 0 &&
-              dispatched.timedOut !== true;
-            const measured = dispatchOk
-              ? await runFitnessCommand(
-                  fitness,
-                  worktree.path,
-                  timeoutSeconds,
-                  candidateSignal,
-                )
-              : {
-                  command: fitness,
-                  exitCode: 1,
-                  stdout: "",
-                  stderr: text(dispatched.stderr),
-                  timedOut: dispatched.timedOut === true,
-                  aborted: candidateSignal.aborted,
-                  durationMs: Number(dispatched.durationMs ?? 0),
-                  outputTruncated: false,
-                };
-            // Fitness commands can generate files that belong in the patch.
-            const diff = arena.diff(worktree.path);
-            const diffLines = diff
-              ? diff
-                  .split("\n")
-                  .filter((line) => line.startsWith("+") || line.startsWith("-"))
-                  .filter(
-                    (line) => !line.startsWith("+++") && !line.startsWith("---"),
-                  ).length
-              : 0;
-            const filesChanged = changedFiles(diff);
-            const fitnessPassed =
-              measured.exitCode === 0 && !measured.timedOut && !measured.aborted;
-            const noDiff = diffLines === 0 ? classifyNoDiffForgeResult({
-              stdout: text(dispatched.stdout), timedOut: dispatched.timedOut === true,
-              exitCode: Number(dispatched.exitCode ?? 1), fitnessPassed,
-              baselinePasses,
-              mode, requireDiff, acceptReviewOutput,
-            }) : undefined;
-            const pass = noDiff ? noDiff.pass : dispatchOk && fitnessPassed;
-            const candidate: Candidate = {
+      const attempts = worktrees.map(
+        async ({ engineId, worktree }, rank): Promise<Candidate> => {
+          const candidateSignal = AbortSignal.any([
+            context.signal,
+            candidateControllers.get(engineId)!.signal,
+          ]);
+          const prompt = `You are a Forge competitor working in an isolated Git worktree.\n\nTASK:\n${task}\n\nMODE: ${mode}\nFITNESS COMMAND: ${fitness}\nDIFF REQUIRED: ${requireDiff}\n\nInspect the repository, implement the task directly in the current worktree, and run relevant checks. Do not merely describe a patch. Do not commit, push, or touch paths outside this worktree.`;
+          let dispatched: Record<string, Json> = {};
+          try {
+            candidateSignal.throwIfAborted();
+            dispatched = (await services.engines.dispatch(
               engineId,
-              rank,
-              dispatchOk,
-              fitnessPassed,
+              prompt,
+              { ...context, cwd: worktree.path, signal: candidateSignal },
+              {
+                timeoutSeconds,
+                mode: "agent",
+                systemPrompt:
+                  "Act as an autonomous implementation worker inside only the supplied worktree. Modify files and verify the result.",
+              },
+            )) as Record<string, Json>;
+          } catch (error) {
+            dispatched = {
+              exitCode: 1,
+              stderr: error instanceof Error ? error.message : String(error),
+            };
+          }
+          const dispatchOk =
+            Number(dispatched.exitCode ?? 1) === 0 &&
+            dispatched.timedOut !== true;
+          const measured = dispatchOk
+            ? await runFitnessCommand(
+                fitness,
+                worktree.path,
+                timeoutSeconds,
+                candidateSignal,
+              )
+            : {
+                command: fitness,
+                exitCode: 1,
+                stdout: "",
+                stderr: text(dispatched.stderr),
+                timedOut: dispatched.timedOut === true,
+                aborted: candidateSignal.aborted,
+                durationMs: Number(dispatched.durationMs ?? 0),
+                outputTruncated: false,
+              };
+          // Fitness commands can generate files that belong in the patch.
+          const diff = arena.diff(worktree.path);
+          const diffLines = diff
+            ? diff
+                .split("\n")
+                .filter((line) => line.startsWith("+") || line.startsWith("-"))
+                .filter(
+                  (line) => !line.startsWith("+++") && !line.startsWith("---"),
+                ).length
+            : 0;
+          const filesChanged = changedFiles(diff);
+          const fitnessPassed =
+            measured.exitCode === 0 && !measured.timedOut && !measured.aborted;
+          const noDiff = diffLines === 0 ? classifyNoDiffForgeResult({
+            stdout: text(dispatched.stdout), timedOut: dispatched.timedOut === true,
+            exitCode: Number(dispatched.exitCode ?? 1), fitnessPassed,
+            baselinePasses,
+            mode, requireDiff, acceptReviewOutput,
+          }) : undefined;
+          const pass = noDiff ? noDiff.pass : dispatchOk && fitnessPassed;
+          const candidate: Candidate = {
+            engineId,
+            rank,
+            dispatchOk,
+            fitnessPassed,
+            pass,
+            score: scoreCandidate(
               pass,
-              score: scoreCandidate(
-                pass,
-                diffLines,
-                filesChanged,
-                measured.durationMs,
-                requireDiff,
-              ),
-              diff,
               diffLines,
               filesChanged,
-              durationMs: measured.durationMs,
-              stdout: measured.stdout,
-              dispatchStdout: typeof dispatched.stdout === 'string' ? dispatched.stdout.slice(0, 5000) : '',
-              stderr: [text(dispatched.stderr), measured.stderr]
-                .filter(Boolean)
-                .join("\n"),
-              timedOut: measured.timedOut,
-              ...noDiff,
-            };
-            if (candidate.pass && !finalized) {
-              passingCount += 1;
-              const quorumReached =
-                earlyFinalizeCount > 0 && passingCount >= earlyFinalizeCount;
-              const scoreReached =
-                finalizeOnScore !== undefined &&
-                candidate.score >= finalizeOnScore;
-              if (quorumReached || scoreReached) {
-                finalized = true;
-                for (const [other, controller] of candidateControllers)
-                  if (other !== engineId) controller.abort();
-              }
+              measured.durationMs,
+              requireDiff,
+            ),
+            diff,
+            diffLines,
+            filesChanged,
+            durationMs: measured.durationMs,
+            stdout: measured.stdout,
+            dispatchStdout: typeof dispatched.stdout === 'string' ? dispatched.stdout.slice(0, 5000) : '',
+            stderr: [text(dispatched.stderr), measured.stderr]
+              .filter(Boolean)
+              .join("\n"),
+            timedOut: measured.timedOut,
+            ...noDiff,
+          };
+          if (candidate.pass && !finalized) {
+            passingCount += 1;
+            const quorumReached =
+              earlyFinalizeCount > 0 && passingCount >= earlyFinalizeCount;
+            const scoreReached =
+              finalizeOnScore !== undefined &&
+              candidate.score >= finalizeOnScore;
+            if (quorumReached || scoreReached) {
+              finalized = true;
+              for (const [other, controller] of candidateControllers)
+                if (other !== engineId) controller.abort();
             }
-            return candidate;
-          },
-        ),
+          }
+          return candidate;
+        },
       );
+      let outputs: Candidate[];
+      try {
+        outputs = await Promise.all(attempts);
+      } catch (error) {
+        // Keep worktrees alive until every candidate has stopped using them.
+        await Promise.allSettled(attempts);
+        throw error;
+      }
       context.signal.throwIfAborted();
       candidates.push(...outputs);
       const passing = candidates

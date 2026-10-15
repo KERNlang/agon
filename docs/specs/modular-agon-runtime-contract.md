@@ -818,6 +818,10 @@ repositories. This happens before control returns to a long-lived host, after
 arena cleanup. Partial artifacts remain available. A previously submitted
 outcome is not replaced by later cancellation; the existing run host retains
 responsibility for failed status-write retries.
+If one candidate throws outside dispatch handling, Forge drains all candidate
+attempts before cleanup and then propagates the original error. It does not
+remove a worktree while a sibling attempt still uses it. Existing dispatch and
+fitness timeouts, caller cancellation and quorum signals remain unchanged.
 
 ## Registry invariants
 

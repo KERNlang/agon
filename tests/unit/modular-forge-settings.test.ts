@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -14,6 +14,67 @@ import { DEFAULT_AGON_CONFIG } from '../../packages/core/src/models/types.js';
 import { classifyNoDiffForgeResult } from '../../packages/forge/src/stages.js';
 
 describe('Forge configuration ownership', () => {
+  it('settles every candidate before cleaning an arena after one candidate fails', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'agon-forge-drain-'));
+    let releaseSlow!: () => void;
+    const slowRelease = new Promise<void>(resolve => { releaseSlow = resolve; });
+    let announceSlow!: () => void;
+    const slowStarted = new Promise<void>(resolve => { announceSlow = resolve; });
+    let finishSlow!: () => void;
+    const slowFinished = new Promise<void>(resolve => { finishSlow = resolve; });
+    let settledEarly = false;
+    let slowHadWorktree = false;
+    let cleanupBeforeSlowFinished = false;
+    let slowDone = false;
+    let invocation: Promise<{ error?: unknown }> | undefined;
+    try {
+      for (const args of [['init', '--quiet'], ['-c', 'user.name=Fixture', '-c',
+        'user.email=fixture@example.invalid', 'commit', '--quiet', '--allow-empty', '-m', 'fixture']]) {
+        const result = spawnSync('git', args, { cwd: root, encoding: 'utf8' });
+        expect(result.status, result.stderr).toBe(0);
+      }
+      const services = {
+        engines: { listActive: async () => ['broken', 'slow'],
+          dispatch: async (engine: string, _prompt: string, context: InvocationContext) => {
+            if (engine === 'broken') {
+              await slowStarted;
+              // Break only this disposable candidate's Git link.
+              unlinkSync(join(context.cwd, '.git'));
+              return { exitCode: 1, stderr: 'fixture candidate failed' };
+            }
+            announceSlow();
+            try {
+              await slowRelease;
+              slowHadWorktree = existsSync(context.cwd);
+              if (slowHadWorktree) writeFileSync(join(context.cwd, 'result.txt'), 'completed\n');
+              return { exitCode: 0, stdout: 'implemented', stderr: '' };
+            } finally { slowDone = true; finishSlow(); }
+          },
+        },
+        logger: { debug: async () => { cleanupBeforeSlowFinished = !slowDone; } },
+        receipts: { record: async () => 'fixture' },
+      } as unknown as ModServices;
+      invocation = runForgeCompetition({ task: 'fixture', noHealthCheck: true, test: 'true' }, {
+        invocationId: 'forge-drain', cwd: root, platform: 'darwin-arm64', signal: new AbortController().signal, config: {},
+      }, services).then(() => ({}), error => ({ error })).then(result => { settledEarly = !slowDone; return result; });
+      await slowStarted;
+      // Drain promise reactions before releasing the still-running sibling.
+      await new Promise<void>(resolve => setImmediate(resolve));
+      const returnedBeforeRelease = settledEarly;
+      releaseSlow();
+      await slowFinished;
+      const outcome = await invocation;
+      expect(outcome.error).toBeInstanceOf(Error);
+      expect(returnedBeforeRelease).toBe(false);
+      expect(cleanupBeforeSlowFinished).toBe(false);
+      expect(slowHadWorktree).toBe(true);
+    } finally {
+      releaseSlow();
+      await invocation;
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('keeps the legacy classifier as the physical owner export', () => {
     expect(classifyNoDiffForgeResult).toBe(ownedNoDiffPolicy);
   });

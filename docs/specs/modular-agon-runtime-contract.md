@@ -854,6 +854,22 @@ Forge API; historical data readers must remain available. Owner-identity tests,
 existing context tests and real-worktree Forge E2E cover this transition. This
 move does not establish complete physical Forge runtime parity.
 
+## Forge refinement ownership
+
+`mod-forge/src/synthesis.ts` owns winner refinement through
+`createForgeSynthesis`. The factory binds Git create/remove/apply effects and the
+existing fitness effects. It does not start work at construction. Critique
+parsing, refinement dispatch, scoring and cleanup remain in the Forge owner.
+`SynthesisResult` and `FitnessError` have that same owner. Core re-exports the
+error class without creating a second class identity.
+
+The legacy Forge synthesis module is a temporary effect binding. It retires when
+the top-level Forge workflow and its public callers use the mod runtime. The
+standalone Synthesis mode is distinct and is not changed here. Real-worktree
+tests cover agent/exec refinement, passing/failing fitness, patch persistence,
+event order and cleanup; the existing fallback test remains. The original
+algorithm is preserved. Full generated Forge parity remains unfinished.
+
 ## Registry invariants
 
 The kernel refuses activation unless all hold:

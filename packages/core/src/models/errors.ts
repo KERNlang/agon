@@ -1,15 +1,7 @@
 import { AgonError } from '@kernlang/agon-support-engine-runtime';
 export { AGON_MODE_NAMES, AgonError, EngineNotFoundError, EngineTimeoutError } from '@kernlang/agon-support-engine-runtime';
 
-export class FitnessError extends AgonError {
-  constructor(
-    message: string,
-    public readonly exitCode?: number,
-  ) {
-    super(message);
-    this.name = 'FitnessError';
-  }
-}
+export { FitnessError } from '@kernlang/agon-mod-forge';
 
 export class ConfigError extends AgonError {
   constructor(message: string) {

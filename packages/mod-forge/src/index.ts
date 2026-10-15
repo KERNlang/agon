@@ -10,7 +10,7 @@ export type {
   ForgeOptions, EngineResult, SkippedEngine, DispatchMetric, ForgeManifest,
   ConvergenceEntry, ForgeJudgment, ForgeEventType, ForgeEvent, ForgeEventMap,
   ForgeEventCallback, BreakerArtifact, GauntletResult, CorpusEntry, GapPattern,
-  StageResult, WorktreeEntry, Critique,
+  StageResult, WorktreeEntry, Critique, SynthesisResult,
 } from './types.js';
 export { createMod } from './implementation.js';
 export { createMod as default } from './implementation.js';
@@ -31,5 +31,8 @@ export type { ForgeStageConfig, ForgeStageRegistry, ForgeStageRuntime } from './
 export { buildForgePrompt, buildCritiquePrompt, buildSynthesisPrompt, buildForgePromptWithContext } from './prompts.js';
 export { buildStageContext, renderStageContext } from './stage-context.js';
 export type { StageContext, StageDecision, ToolResultRef } from './stage-context.js';
+export { createForgeSynthesis, parseCritiques } from './synthesis.js';
+export type { ForgeSynthesisRuntime } from './synthesis.js';
+export { FitnessError } from './errors.js';
 export type { SynthCandidate, SynthPlanOpts, SynthPlan } from './synth-plan.js';
 export { resolveForgeMode, resolveForgeRequireDiff, resolveForgeAcceptReviewOutput, classifyNoDiffForgeResult } from './result-policy.js';

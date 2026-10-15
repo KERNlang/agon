@@ -7,6 +7,16 @@ export interface Critique {
   minimalFix: string;
 }
 
+export interface SynthesisResult {
+  pass: boolean;
+  score: number;
+  wins: boolean;
+  patchPath: string;
+  originalWinnerScore: number;
+  critiques: Critique[];
+  reason?: string;
+}
+
 export interface StageResult {
   engineResults: Map<string, EngineResult>;
   accepted: boolean;

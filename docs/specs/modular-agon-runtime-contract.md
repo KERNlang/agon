@@ -840,6 +840,20 @@ cancellation, timeout/harvesting tests and owner-export identity. This extractio
 does not yet retire legacy top-level orchestration or complete physical Forge
 synthesis, hardened-mode or result-bundle parity.
 
+## Forge prompt and context ownership
+
+`mod-forge/src/prompts.ts` owns Forge candidate, critique and refinement prompts.
+`mod-forge/src/stage-context.ts` owns the context types, builder and renderer used
+between Forge stages. `Critique` belongs to the Forge public types. These pure
+functions perform no host effects. Their strings and type shapes remain unchanged.
+
+Core retains compatibility re-exports, not duplicate implementations. Generic
+message parts and other workflows' prompt builders remain outside this move.
+The compatibility exports retire when legacy consumers migrate to the public
+Forge API; historical data readers must remain available. Owner-identity tests,
+existing context tests and real-worktree Forge E2E cover this transition. This
+move does not establish complete physical Forge runtime parity.
+
 ## Registry invariants
 
 The kernel refuses activation unless all hold:

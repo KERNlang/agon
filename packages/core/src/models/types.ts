@@ -202,11 +202,6 @@ export interface PanelHealth {
 }
 
 
-export interface Critique {
-  file: string;
-  lines: string;
-  problem: string;
-  minimalFix: string;
-}
+export type { Critique } from '@kernlang/agon-mod-forge';
 
 export const DEFAULT_CONFIG: Required<AgonConfig> = DEFAULT_AGON_CONFIG;

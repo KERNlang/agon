@@ -1,5 +1,12 @@
 import type { TaskClass } from '@kernlang/agon-support-engine-runtime';
 
+export interface Critique {
+  file: string;
+  lines: string;
+  problem: string;
+  minimalFix: string;
+}
+
 export interface StageResult {
   engineResults: Map<string, EngineResult>;
   accepted: boolean;

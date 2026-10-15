@@ -34,5 +34,7 @@ export type { StageContext, StageDecision, ToolResultRef } from './stage-context
 export { createForgeSynthesis, parseCritiques } from './synthesis.js';
 export type { ForgeSynthesisRuntime } from './synthesis.js';
 export { FitnessError } from './errors.js';
+export { createForgeManifestStore, readManifest } from './manifest.js';
+export type { ForgeManifestRuntime } from './manifest.js';
 export type { SynthCandidate, SynthPlanOpts, SynthPlan } from './synth-plan.js';
 export { resolveForgeMode, resolveForgeRequireDiff, resolveForgeAcceptReviewOutput, classifyNoDiffForgeResult } from './result-policy.js';

@@ -1,12 +1,11 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, rmSync, readdirSync, renameSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, rmSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import type { ModServices } from '@kernlang/agon-mod-api';
 import { runRatings } from '../../packages/mod-ratings/src/implementation.js';
 import { purgeRatingsStore } from '../../packages/mod-ratings/src/maintenance.js';
-import { runInNewContext } from 'node:vm';
-import { transpileModule, ModuleKind } from 'typescript';
+import * as forgeOwner from '@kernlang/agon-mod-forge';
 
 const previous = process.env.AGON_HOME;
 const homes: string[] = [];
@@ -196,22 +195,34 @@ it('publishes Forge history only inside the same per-manifest lock used by purge
   mkdirSync(forgeDir);
   const history = join(home, 'runs', 'fake.json');
   const before = readFileSync(history, 'utf8');
-  const source = readFileSync(new URL('../../packages/forge/src/manifest.ts', import.meta.url), 'utf8');
-  const compiled = transpileModule(source, { compilerOptions: { module: ModuleKind.CommonJS } }).outputText;
   let writeHistory: (() => void) | undefined;
-  const exported: { writeManifest?: (manifest: object) => void } = {};
-  runInNewContext(compiled, { exports: exported, require: (name: string) => {
-    if (name === 'node:fs') return { readFileSync, writeFileSync, mkdirSync, renameSync };
-    if (name === 'node:path') return { join };
-    if (name === '@kernlang/agon-core') return { RUNS_DIR: join(home, 'runs'),
-      withFileLock: (path: string, write: () => void) => { expect(path).toBe(history + '.lock'); writeHistory = write; } };
-    throw new Error(`Unexpected dependency ${name}`);
-  } });
-  exported.writeManifest!({ forgeId: 'fake', forgeDir, engines: ['active'] });
+  const store = forgeOwner.createForgeManifestStore({
+    runsDir: join(home, 'runs'),
+    withFileLock: (path: string, write: () => void) => {
+      expect(path).toBe(history + '.lock');
+      writeHistory = write;
+    },
+  });
+  expect(writeHistory).toBeUndefined();
+  const manifest: forgeOwner.ForgeManifest = {
+    forgeId: 'fake', forgeDir, engines: ['active'], task: 'protect history',
+    fitnessCmd: 'true', timestamp: '2026-01-01T00:00:00.000Z',
+    results: {}, patches: {}, winner: null, closeCall: false,
+    stage1Accepted: false, baselinePasses: false, starter: 'active', enginesDispatched: 0,
+  };
+  expect(store.writeManifest(manifest)).toBe(join(forgeDir, 'manifest.json'));
+  expect(forgeOwner.readManifest(forgeDir)).toEqual(manifest);
   expect(readFileSync(history, 'utf8')).toBe(before);
   expect(writeHistory).toBeTypeOf('function');
   writeHistory!();
   expect(JSON.parse(readFileSync(history, 'utf8')).engines).toEqual(['active']);
+  const published = readFileSync(history, 'utf8');
+  expect(store.updateManifest(forgeDir, { status: 'completed' })).toEqual({ ...manifest, status: 'completed' });
+  expect(readFileSync(history, 'utf8')).toBe(published);
+  writeHistory!();
+  expect(JSON.parse(readFileSync(history, 'utf8')).status).toBe('completed');
+  expect(existsSync(history + '.tmp')).toBe(false);
+  expect(existsSync(join(forgeDir, 'manifest.json.tmp'))).toBe(false);
 });
 
 it('retains the first moved run and original ratings if a later run move fails', () => {

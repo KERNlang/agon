@@ -870,6 +870,21 @@ tests cover agent/exec refinement, passing/failing fitness, patch persistence,
 event order and cleanup; the existing fallback test remains. The original
 algorithm is preserved. Full generated Forge parity remains unfinished.
 
+## Forge manifest ownership
+
+`mod-forge/src/manifest.ts` owns manifest read, write and update behavior.
+`createForgeManifestStore` receives an explicit history directory and the existing
+file-lock effect. Construction does not touch stored runs. The legacy manifest
+module binds the existing history directory and lock implementation; it retires
+with the remaining top-level Forge runtime callers.
+
+Local manifest replacement keeps its temporary-file/rename sequence. History
+replacement remains inside the same per-manifest lock used by ratings cleanup.
+The deferred-write test proves history cannot change before that callback runs;
+a lock-bypass mutation fails it. Read/update roundtrip and real-worktree Forge
+tests preserve historical-reader and incremental-publication behavior. Reading
+an existing manifest does not require activating the Forge mod.
+
 ## Registry invariants
 
 The kernel refuses activation unless all hold:

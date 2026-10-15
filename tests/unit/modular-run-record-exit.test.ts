@@ -4,6 +4,9 @@ import { join } from 'node:path';
 import { expect, it, vi } from 'vitest';
 import { cliRunRecordHost as runs } from '../../packages/cli/src/run-record-host.js';
 import { createRunDir } from '@kernlang/agon-support-persistence';
+import { spawnSync } from 'node:child_process';
+import type { InvocationContext, Json, ModServices, RunRecordHandle } from '../../packages/mod-api/src/index.js';
+import { runForgeCompetition } from '../../packages/mod-forge/src/implementation.js';
 
 async function isolated(check: (exit: () => void) => Promise<void>) {
   const home = mkdtempSync(join(tmpdir(), 'agon-run-exit-'));
@@ -22,6 +25,104 @@ async function isolated(check: (exit: () => void) => Promise<void>) {
     rmSync(home, { recursive: true, force: true });
   }
 }
+
+it.each(['start', 'candidate', 'artifact', 'receipt', 'finish', 'invalid-repository', 'success',
+  'artifact-error', 'receipt-error', 'cleanup-error', 'failed-finish', 'dry-finish',
+  'blocked-finish', 'blocked-cancel', 'cleanup-after-finish'] as const)(
+  'finalizes physical Forge before host exit: %s', async phase => {
+    await isolated(async exit => {
+      const root = mkdtempSync(join(tmpdir(), 'agon-forge-status-'));
+      const controller = new AbortController();
+      const reason = new Error('cancel Forge status fixture');
+      const before = process.listenerCount('exit');
+      let handle: RunRecordHandle | undefined;
+      const submitted: Json[] = [];
+      const cleanups: string[] = [];
+      const blocked = phase === 'blocked-finish' || phase === 'blocked-cancel';
+      const warning = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const context: InvocationContext = { invocationId: 'forge-status', cwd: root,
+        platform: 'darwin-arm64', signal: controller.signal, config: {} };
+      try {
+        if (phase !== 'invalid-repository') {
+          for (const args of [['init', '--quiet'], ['-c', 'user.name=Fixture', '-c',
+            'user.email=fixture@example.invalid', 'commit', '--quiet', '--allow-empty', '-m', 'fixture']]) {
+            const result = spawnSync('git', args, { cwd: root, encoding: 'utf8' });
+            expect(result.status, result.stderr).toBe(0);
+          }
+        }
+        const services = {
+          engines: { listActive: async () => ['fixture'], dispatch: async (_engine: string, _prompt: string, invocation: InvocationContext) => {
+            writeFileSync(join(invocation.cwd, 'result.txt'), 'candidate\n');
+            if (phase === 'candidate' || phase === 'blocked-cancel') controller.abort(reason);
+            return { exitCode: phase === 'failed-finish' ? 1 : 0, stdout: 'implemented', stderr: '' };
+          } },
+          logger: { debug: async (_message: string, fields: { rootPath: string }) => {
+            expect(existsSync(fields.rootPath)).toBe(false);
+            cleanups.push(fields.rootPath);
+            if (phase === 'cleanup-error' || phase === 'cleanup-after-finish') throw reason;
+          } },
+          receipts: { record: async () => {
+            if (phase === 'receipt-error') throw reason;
+            if (phase === 'receipt') controller.abort(reason);
+            return 'fixture';
+          } },
+          runs: {
+            start: async (...args: Parameters<typeof runs.start>) => {
+              handle = await runs.start(...args);
+              if (phase === 'start') controller.abort(reason);
+              return handle;
+            },
+            writeArtifact: async (...args: Parameters<typeof runs.writeArtifact>) => {
+              await runs.writeArtifact(...args);
+              if (phase === 'artifact') controller.abort(reason);
+              if (phase === 'artifact-error' || phase === 'cleanup-error') throw reason;
+            },
+            finish: async (...args: Parameters<typeof runs.finish>) => {
+              submitted.push(structuredClone(args[1]));
+              if (['candidate', 'artifact', 'receipt', 'artifact-error', 'receipt-error', 'cleanup-error', 'blocked-cancel'].includes(phase)) {
+                expect(cleanups).toHaveLength(1);
+              }
+              if (blocked) mkdirSync(join(args[0].path, '.status.json.tmp'));
+              await runs.finish(...args);
+              if (['finish', 'failed-finish', 'dry-finish', 'blocked-finish'].includes(phase)) controller.abort(reason);
+            },
+          },
+        } as unknown as ModServices;
+        const outcome = await runForgeCompetition({ task: 'fixture', noHealthCheck: true, test: 'true', dryRun: phase === 'dry-finish' }, context, services)
+          .then(result => ({ result, error: undefined }), error => ({ result: undefined, error }));
+        if (phase === 'success') expect(outcome.result?.exitCode).toBe(0);
+        else if (phase === 'invalid-repository') expect(outcome.result?.failure?.code).toBe('NOT_A_GIT_REPOSITORY');
+        else expect(outcome.error).toBe(reason);
+        expect(handle).toBeDefined();
+        expect(submitted).toHaveLength(1);
+        const path = join(handle!.path, 'status.json');
+        if (blocked) {
+          expect(existsSync(path)).toBe(false);
+          expect(warning).toHaveBeenCalledWith(expect.stringContaining('failed to write status.json'));
+          expect(process.listenerCount('exit')).toBe(before + 1);
+          rmSync(join(handle!.path, '.status.json.tmp'), { recursive: true });
+          exit();
+        }
+        expect(existsSync(path)).toBe(true);
+        const bytes = readFileSync(path, 'utf8');
+        const status = JSON.parse(bytes);
+        expect(status).toEqual(submitted[0]);
+        expect(status).toMatchObject({ mode: 'forge', ok: ['success', 'finish', 'dry-finish', 'blocked-finish', 'cleanup-after-finish'].includes(phase) });
+        if (phase === 'failed-finish') {
+          expect(status.summary).toContain('no winner');
+          expect(status.engines).toMatchObject([{ id: 'fixture', status: 'error' }]);
+        }
+        if (['artifact-error', 'receipt-error', 'cleanup-error'].includes(phase)) {
+          expect(status).toMatchObject({ summary: reason.message, engines: [] });
+        }
+        expect(process.listenerCount('exit')).toBe(before);
+        if (phase === 'artifact' || phase === 'artifact-error') expect(existsSync(join(handle!.path, 'manifest.json'))).toBe(true);
+        exit();
+        expect(readFileSync(path, 'utf8')).toBe(bytes);
+      } finally { warning.mockRestore(); rmSync(root, { recursive: true, force: true }); }
+    });
+  },
+);
 
 it('persists an unsuccessful interrupted record without inventing engine outcomes or touching foreign runs', async () => {
   await isolated(async exit => {

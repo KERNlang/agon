@@ -812,6 +812,13 @@ Cancellation inside the terminal `gauntlet:done` notification does not retract
 the completed result. Cancellation inside `gauntlet:repair-done` still stops
 workflow completion; that event ends only the repair phase.
 
+Physical Forge submits an unsuccessful terminal run status when a started run
+stops before publishing its outcome, including cancellation and invalid Git
+repositories. This happens before control returns to a long-lived host, after
+arena cleanup. Partial artifacts remain available. A previously submitted
+outcome is not replaced by later cancellation; the existing run host retains
+responsibility for failed status-write retries.
+
 ## Registry invariants
 
 The kernel refuses activation unless all hold:

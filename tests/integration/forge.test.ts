@@ -1,4 +1,9 @@
 import { describe, it, expect } from 'vitest';
+import { dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { createProgram, readConfigFile, parseJsonConfigFileContent, sys } from 'typescript';
+import * as judgeOwner from '@kernlang/agon-support-judge';
+import { determineWinner as coreDetermineWinner } from '@kernlang/agon-core';
 import {
   classifyNoDiffForgeResult,
   determineWinner,
@@ -26,6 +31,52 @@ function makeResult(overrides: Partial<EngineResult> = {}): EngineResult {
 
 describe('Forge Integration', () => {
   describe('determineWinner', () => {
+    it('preserves the legacy Core candidate type for declaration consumers', () => {
+      const configPath = fileURLToPath(new URL('../../packages/core/tsconfig.json', import.meta.url));
+      const config = readConfigFile(configPath, sys.readFile);
+      const parsed = parseJsonConfigFileContent(config.config, sys, dirname(configPath));
+      const program = createProgram(parsed.fileNames, parsed.options);
+      const checker = program.getTypeChecker();
+      const source = program.getSourceFile(fileURLToPath(new URL('../../packages/core/src/index.ts', import.meta.url)))!;
+      const module = checker.getSymbolAtLocation(source)!;
+      const symbol = checker.getExportsOfModule(module).find(symbol => symbol.name === 'determineWinner')!;
+      const signature = checker.getTypeOfSymbolAtLocation(symbol, source).getCallSignatures()[0];
+      const mapType = checker.getTypeOfSymbolAtLocation(signature.parameters[0], source);
+      const candidate = checker.getTypeArguments(mapType as import('typescript').TypeReference)[1];
+      expect(checker.typeToString(candidate)).toBe('EngineResult');
+      expect(candidate.getProperty('engineId')).toBeDefined();
+      expect(candidate.getProperty('patchPath')).toBeDefined();
+    });
+
+    it('uses one shared owner for Core and Forge ranking', () => {
+      expect(judgeOwner).toHaveProperty('determineWinner', coreDetermineWinner);
+    });
+
+    it.each([
+      ['score', 90, 80],
+      ['lintWarnings', 0, 1],
+      ['styleScore', 100, 80],
+      ['diffLines', 10, 20],
+      ['filesChanged', 1, 2],
+      ['durationSec', 10, 20],
+    ] as const)('ranks by %s without changing the input', (field, better, worse) => {
+      const results = new Map([
+        ['worse', makeResult({ [field]: worse })],
+        ['better', makeResult({ [field]: better })],
+      ]);
+      const before = [...results.entries()].map(([id, value]) => [id, { ...value }]);
+      expect(determineWinner(results).winner).toBe('better');
+      expect([...results.entries()]).toEqual(before);
+    });
+
+    it('excludes passing zero scores and treats the exact spread as not close', () => {
+      expect(determineWinner(new Map([['zero', makeResult({ score: 0 })]])))
+        .toEqual({ winner: null, closeCall: false, bestScore: 0, secondScore: 0 });
+      expect(determineWinner(new Map([
+        ['best', makeResult({ score: 88 })], ['second', makeResult({ score: 80 })],
+      ]), 8)).toEqual({ winner: 'best', closeCall: false, bestScore: 88, secondScore: 80 });
+    });
+
     it('picks the highest scoring passing engine', () => {
       const results = new Map<string, EngineResult>();
       results.set('claude', makeResult({ engineId: 'claude', score: 95 }));

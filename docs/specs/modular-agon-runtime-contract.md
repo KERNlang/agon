@@ -899,6 +899,21 @@ and public function identity. This move does not alter the compatibility
 runtime identity supplied by `createPersistenceEnvelope`; final generated-runtime
 qualification must still establish the required generation-bound receipts.
 
+## Shared deterministic winner selection
+
+`support-judge/src/deterministic-ranking.ts` owns `determineWinner`, shared by
+Forge and AgentTeam. Its input contains only the scalar fields it compares;
+the support package imports no Core or Forge result type. Core exposes the
+same function through a typed alias that preserves its public `EngineResult`
+parameter. A TypeScript checker test rejects loss of that legacy declaration.
+The legacy Forge wrapper retains its default spread of eight.
+
+The move preserves passing/positive-score filtering, score order, all five
+secondary tie-break fields, stable ties and strict close-call comparison.
+Tests cover each comparison field, input preservation, zero-score exclusion,
+the exact spread boundary and public owner identity. AgentTeam result conversion
+remains a separate concern and is not duplicated in this shared comparator.
+
 ## Registry invariants
 
 The kernel refuses activation unless all hold:

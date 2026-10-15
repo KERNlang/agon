@@ -1,6 +1,23 @@
 import { describe, expect, it } from 'vitest';
 import { resolveForgeDispatchTimeout, shouldHarvestFailedDispatch } from '../../packages/forge/src/stages-impl.js';
 import { resolveForgeRunTimeout, resolveForgeSynthesisTimeout } from '../../packages/forge/src/forge.js';
+import * as forgeOwner from '@kernlang/agon-mod-forge';
+
+it('binds legacy stage policy to the physical Forge owner', () => {
+  expect(forgeOwner).toHaveProperty('createForgeStages', expect.any(Function));
+  expect(forgeOwner).toHaveProperty('resolveForgeDispatchTimeout', resolveForgeDispatchTimeout);
+  expect(forgeOwner).toHaveProperty('shouldHarvestFailedDispatch', shouldHarvestFailedDispatch);
+});
+
+it('constructs Forge stages without running host effects', () => {
+  const unexpected = (): never => { throw new Error('construction must not run host effects'); };
+  const stages = forgeOwner.createForgeStages({
+    repoRoot: unexpected, worktreeCreate: unexpected, worktreeRemoveBestEffort: unexpected,
+    estimateTokens: unexpected, estimateCost: unexpected,
+    fitness: { worktreeDiff: unexpected, diffLineCount: unexpected, diffFileCount: unexpected, runSyntaxCheck: unexpected },
+  });
+  expect(Object.keys(stages)).toEqual(['runForgeEngineAttempt', 'runBaseline', 'runStage1', 'runStage2']);
+});
 
 describe('forge dispatch timeout selection', () => {
   const config = { forgeTimeout: 600, forgeDispatchTimeout: 480 } as any;

@@ -10,6 +10,7 @@ export type {
   ForgeOptions, EngineResult, SkippedEngine, DispatchMetric, ForgeManifest,
   ConvergenceEntry, ForgeJudgment, ForgeEventType, ForgeEvent, ForgeEventMap,
   ForgeEventCallback, BreakerArtifact, GauntletResult, CorpusEntry, GapPattern,
+  StageResult, WorktreeEntry,
 } from './types.js';
 export { createMod } from './implementation.js';
 export { createMod as default } from './implementation.js';
@@ -25,5 +26,7 @@ export { runLint, runStyleCheck, runSyntaxCheck, changedFilesIncludingUntracked,
 export type { SyntaxCheckResult, ForgeSyntaxRuntime } from './quality.js';
 export { runFitness, normalizeFitnessCommandForShell } from './fitness.js';
 export type { ForgeFitnessRuntime } from './fitness.js';
+export { createForgeStages, resolveForgeDispatchTimeout, shouldHarvestFailedDispatch } from './stages.js';
+export type { ForgeStageConfig, ForgeStageRegistry, ForgeStageRuntime } from './stages.js';
 export type { SynthCandidate, SynthPlanOpts, SynthPlan } from './synth-plan.js';
 export { resolveForgeMode, resolveForgeRequireDiff, resolveForgeAcceptReviewOutput, classifyNoDiffForgeResult } from './result-policy.js';

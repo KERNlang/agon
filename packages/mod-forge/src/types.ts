@@ -1,5 +1,18 @@
 import type { TaskClass } from '@kernlang/agon-support-engine-runtime';
 
+export interface StageResult {
+  engineResults: Map<string, EngineResult>;
+  accepted: boolean;
+  winner: string|null;
+  metrics?: DispatchMetric[];
+}
+
+export interface WorktreeEntry {
+  engineId: string;
+  path: string;
+  repoRoot: string;
+}
+
 export interface ForgeOptions {
   task: string;
   fitnessCmd: string;

@@ -823,6 +823,23 @@ attempts before cleanup and then propagates the original error. It does not
 remove a worktree while a sibling attempt still uses it. Existing dispatch and
 fitness timeouts, caller cancellation and quorum signals remain unchanged.
 
+## Forge stage ownership
+
+`@kernlang/agon-mod-forge` owns attempt execution, baseline evaluation and both
+competition stages through `createForgeStages`. Construction performs no host
+effects. Its host interface supplies Git worktree operations, token/cost estimates
+and the existing fitness validation effects. Stage selection, dispatch harvesting,
+quorum handling, timeout policy and result collection remain in the mod.
+
+`packages/forge/src/stages-impl.ts` is a temporary effect binding for legacy
+callers, not another stage implementation. The Forge mod owns `StageResult` and
+`WorktreeEntry`; legacy type exports retain their shapes. Remove this binding
+when the legacy Forge entrypoint and all direct stage consumers use the canonical
+mod runtime. Its parity gates include the real-worktree Forge E2E suite, baseline
+cancellation, timeout/harvesting tests and owner-export identity. This extraction
+does not yet retire legacy top-level orchestration or complete physical Forge
+synthesis, hardened-mode or result-bundle parity.
+
 ## Registry invariants
 
 The kernel refuses activation unless all hold:

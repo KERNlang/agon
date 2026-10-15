@@ -1,11 +1,5 @@
-import type { EngineResult, Critique, DispatchMetric } from '@kernlang/agon-core';
-
-export interface StageResult {
-  engineResults: Map<string, EngineResult>;
-  accepted: boolean;
-  winner: string|null;
-  metrics?: DispatchMetric[];
-}
+import type { Critique } from '@kernlang/agon-core';
+export type { StageResult, WorktreeEntry } from '@kernlang/agon-mod-forge';
 
 export interface SynthesisResult {
   pass: boolean;
@@ -15,10 +9,4 @@ export interface SynthesisResult {
   originalWinnerScore: number;
   critiques: Critique[];
   reason?: string;
-}
-
-export interface WorktreeEntry {
-  engineId: string;
-  path: string;
-  repoRoot: string;
 }

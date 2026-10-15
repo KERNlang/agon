@@ -21,5 +21,9 @@ export { runGauntlet, validateBreakerArtifact, buildBreakerPrompt, buildRepairPr
 export type { GauntletRuntime } from './gauntlet.js';
 export { computeScore, tiebreak, DEFAULT_WEIGHTS } from './scoring.js';
 export type { FitnessResult, ScoreWeights, ScoreComponents } from './scoring.js';
+export { runLint, runStyleCheck, runSyntaxCheck, changedFilesIncludingUntracked, MAX_SYNTAX_FILE_BYTES } from './quality.js';
+export type { SyntaxCheckResult, ForgeSyntaxRuntime } from './quality.js';
+export { runFitness, normalizeFitnessCommandForShell } from './fitness.js';
+export type { ForgeFitnessRuntime } from './fitness.js';
 export type { SynthCandidate, SynthPlanOpts, SynthPlan } from './synth-plan.js';
 export { resolveForgeMode, resolveForgeRequireDiff, resolveForgeAcceptReviewOutput, classifyNoDiffForgeResult } from './result-policy.js';

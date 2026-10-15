@@ -763,7 +763,7 @@ and thrown process errors are not attack evidence. UUID filenames keep engine
 IDs out of shell syntax. Validation forwards cancellation and bounds captured
 output to 1 MiB per stream through the existing process runner. Arbitrary shell
 command failures remain indistinguishable from test failures. Full-workflow
-cancellation and legacy fitness ownership remain separate work.
+cancellation and physical fitness integration remain separate work.
 
 ## Forge fitness scoring ownership
 
@@ -771,9 +771,23 @@ cancellation and legacy fitness ownership remain separate work.
 weights, composite scoring and tie-breaking. Core retains compatibility exports
 for existing callers. The formulas and ordering remain unchanged. These exports
 retire with their legacy callers; no second scoring implementation is introduced.
-Legacy fitness orchestration and quality checks still need extraction. The
-physical competition's simpler candidate scoring is not yet equivalent to this
+The physical competition's simpler candidate scoring is not yet equivalent to this
 full fitness path and must not silently replace it.
+
+## Forge fitness and quality ownership
+
+`mod-forge/src/fitness.ts` owns shell normalization, fitness execution, post-test
+patch capture, diff gating, quality checks, syntax penalties, scoring and the
+fitness log/result envelope. `mod-forge/src/quality.ts` owns lint/style checks,
+changed-file selection and syntax result aggregation. Neither imports Core.
+
+The host supplies existing Git diff operations and the syntax validator through
+typed capability arguments. The legacy facades bind these at each call and keep
+their existing public signatures. These adapters retire with their legacy
+callers. No new package dependency or second validator implementation is needed.
+Missing-sidecar and unavailable-tool fallbacks retain their legacy behavior;
+they are not evidence that validation actually ran. Full-workflow cancellation,
+physical competition integration and legacy caller retirement remain open.
 
 ## Registry invariants
 

@@ -20,5 +20,6 @@ export * from './run-owner.js';
 export * from './staged-run-status.js';
 export * from './team-elo-types.js';
 export * from './persisted-envelope.js';
+export { writeVersionedResultEnvelope } from './result-envelope.js';
 export { DEFAULT_PERSISTENCE_SETTINGS } from './settings.js';
 export type { PersistenceSettings } from './settings.js';

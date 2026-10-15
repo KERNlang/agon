@@ -885,6 +885,20 @@ a lock-bypass mutation fails it. Read/update roundtrip and real-worktree Forge
 tests preserve historical-reader and incremental-publication behavior. Reading
 an existing manifest does not require activating the Forge mod.
 
+## Shared result-envelope writer
+
+`support-persistence/src/result-envelope.ts` owns the versioned result writer
+used by Forge, Team Forge and Goal. The legacy Forge path re-exports that same
+function until its callers migrate. It is shared persistence machinery, not a
+Forge-specific workflow or an activation requirement.
+
+The move preserves JSON normalization, owner/contribution fields, status,
+version, sibling filename and temporary-file/rename behavior. Existing raw
+`result.json` files remain unchanged. Tests cover all three consumer owner IDs
+and public function identity. This move does not alter the compatibility
+runtime identity supplied by `createPersistenceEnvelope`; final generated-runtime
+qualification must still establish the required generation-bound receipts.
+
 ## Registry invariants
 
 The kernel refuses activation unless all hold:

@@ -25,8 +25,13 @@ export function evaluateKillList(files) {
   const envelopeProducers = [
     'packages/support-persistence/src/plan-store.ts', 'packages/support-persistence/src/session-store.ts',
     'packages/support-persistence/src/chat-store.ts', 'packages/mod-jobs/src/persisted-job-service.ts',
-    'packages/mod-goal/src/implementation.ts', 'packages/forge/src/result-envelope.ts',
+    'packages/mod-goal/src/implementation.ts', 'packages/support-persistence/src/result-envelope.ts',
   ].map((path) => files[path]).join('\n');
+  const resultProducer = files['packages/support-persistence/src/result-envelope.ts'];
+  const resultPersistenceOwned = present(resultProducer, [/export function writeVersionedResultEnvelope\(/,
+    /createPersistenceEnvelope\(/, /kind:\s*['"]result['"]/, /writeFileSync\(temporary,/, /renameSync\(temporary, path\)/])
+    && present(files['packages/support-persistence/src/index.ts'], [/export\s*\{\s*writeVersionedResultEnvelope\s*\}\s*from\s*['"]\.\/result-envelope\.js['"]/])
+    && present(files['packages/forge/src/result-envelope.ts'], [/export\s*\{\s*writeVersionedResultEnvelope\s*\}\s*from\s*['"]@kernlang\/agon-support-persistence['"]/]);
   // Check the public persistence API, not restart persistence for daemon jobs.
   const jobProducer = files['packages/mod-jobs/src/persisted-job-service.ts'];
   const jobExports = files['packages/mod-jobs/src/index.ts'];
@@ -54,7 +59,7 @@ export function evaluateKillList(files) {
     ['KL-010', present(desired, [/REPOSITORY_ACTIVATION_FORBIDDEN/, /cannot come from repository configuration/])],
     ['KL-011', absent(lazy + intent + cesar + mcp, [/legacyLazyCommandImplementations/, /switch\s*\(cmd\)/, /CESAR_SURFACE_IDS/, /ORCHESTRATION_TOOLS/])],
     ['KL-012', present(pipelineOrchestration, [/agon\.workflow\.pipeline-orchestration\.v1/, /mcp:Pipeline/, /brainstorm/, /forge/, /tribunal/]) && present(pipelineDelivery, [/agon\.workflow\.pipeline-delivery\.v1/, /tui:\/pipeline/, /cesar:pipeline/, /build/, /review/, /fix/])],
-    ['KL-013', jobPersistenceOwned && present(envelopes, [/PlanEnvelopeSchema/, /ResultEnvelopeSchema/, /SessionEnvelopeSchema/, /JobEnvelopeSchema/, /\.strict\(\)/]) && present(envelopeCodec, [/createPersistenceEnvelope/, /unwrapPersistenceEnvelope/, /validatePersistedEnvelope/]) && present(envelopeProducers, [/kind:\s*['"]plan['"]/, /kind:\s*['"]session['"]/, /kind:\s*['"]job['"]/, /kind:\s*['"]result['"]/]) && present(envelopeTests, [/legacy/i, /validatePersistedEnvelope|wrong envelope kind|reject/i])],
+    ['KL-013', resultPersistenceOwned && jobPersistenceOwned && present(envelopes, [/PlanEnvelopeSchema/, /ResultEnvelopeSchema/, /SessionEnvelopeSchema/, /JobEnvelopeSchema/, /\.strict\(\)/]) && present(envelopeCodec, [/createPersistenceEnvelope/, /unwrapPersistenceEnvelope/, /validatePersistedEnvelope/]) && present(envelopeProducers, [/kind:\s*['"]plan['"]/, /kind:\s*['"]session['"]/, /kind:\s*['"]job['"]/, /kind:\s*['"]result['"]/]) && present(envelopeTests, [/legacy/i, /validatePersistedEnvelope|wrong envelope kind|reject/i])],
     ['KL-014', present(bootstrap, [/TrustGrantStore/, /evaluateThirdPartyAuthority/, /createSafeExternalModServices/]) && absent(extension, [/fail.open|catch\s*\{\s*return\s*\[/i])],
     ['KL-015', docsAdapter.adapters.every((adapter) => adapter.id !== 's6-mode-docs-renderer') && legacyDocsSource.length === 0 && present(docsRenderer, [/renderModeDocsProjection/, /BEGIN HANDWRITTEN/, /surface === 'docs'/]) && present(docsEntrypoint, [/renderModeDocsProjection/, /first-party-surface-catalog/, /existing/])],
   ].map(([id, removed]) => ({ id, removed: Boolean(removed) }));
@@ -69,6 +74,7 @@ const paths = [
   'packages/mod-api/src/envelopes.ts', 'packages/support-persistence/src/persisted-envelope.ts',
   'packages/support-persistence/src/plan-store.ts', 'packages/support-persistence/src/session-store.ts', 'packages/support-persistence/src/chat-store.ts',
   'packages/mod-jobs/src/implementation.ts', 'packages/mod-goal/src/implementation.ts', 'packages/forge/src/result-envelope.ts',
+  'packages/support-persistence/src/result-envelope.ts', 'packages/support-persistence/src/index.ts',
   'packages/mod-jobs/src/persisted-job-service.ts', 'packages/mod-jobs/src/index.ts',
   'tests/unit/modular-envelope-contract.test.ts', 'tests/unit/modular-release-state-migrations.test.ts',
   'packages/mod-routing-docs/src/guide-content.ts', 'scripts/generate-mode-docs.mjs', 'packages/cli/src/commands/agent-guide-text.ts',
@@ -94,6 +100,10 @@ if (process.argv.includes('--self-test')) {
     ['KL-010', 'packages/mod-kernel/src/desired-state.ts', 'repository activation is allowed'],
     ['KL-012', 'packages/mod-pipeline-delivery/src/implementation.ts', 'const pipeline = ["build", "review", "fix"];'],
     ['KL-013', 'packages/forge/src/result-envelope.ts', 'export const legacyResult = {};'],
+    ['KL-013', 'packages/support-persistence/src/result-envelope.ts', 'export const legacyResult = {};'],
+    ['KL-013', 'packages/support-persistence/src/index.ts', 'export {};'],
+    ...['createPersistenceEnvelope(', "kind: 'result'", 'writeFileSync(temporary,', 'renameSync(temporary, path)'].map((marker) =>
+      ['KL-013', 'packages/support-persistence/src/result-envelope.ts', files['packages/support-persistence/src/result-envelope.ts'].replace(marker, 'discarded')]),
     ['KL-013', 'packages/mod-jobs/src/persisted-job-service.ts', 'export class ModularJobService {}'],
     ['KL-013', 'packages/mod-jobs/src/index.ts', 'export {};'],
     ['KL-013', 'packages/mod-jobs/src/implementation.ts', 'export {};'],

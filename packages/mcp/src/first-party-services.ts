@@ -4,10 +4,11 @@ import { resolveEngineDefinitionsDir } from '@kernlang/agon-support-engine-runti
 import { resolveExplicitReviewEngines } from '@kernlang/agon-support-verification';
 
 import { createCliAdapter } from '@kernlang/agon-adapter-cli';
-import { createBrainstormHostServices } from '@kernlang/agon-core';
+import { createBrainstormHostServices, createForgeHostServices } from '@kernlang/agon-core';
 import { EngineRegistry, createRunDir, getRatings, loadConfig, pickTopRatedEngine, writeRunStatus } from '@kernlang/agon-core';
 import type { Json, ModManifest, ModServices } from '@kernlang/agon-mod-api';
 import { handleJobToolCall } from './job-tools.js';
+import { captureMcpSurfaceAuthority } from './surface-authority.js';
 
 const excludedExact = new Set(['kimi', 'minimax', 'mistral']);
 const excludedPrefixes = ['qwen', 'ollama', 'opencode', 'open-code'];
@@ -22,6 +23,9 @@ function orchestrationEngines(ids: readonly string[]): string[] {
 export function decorateMcpFirstPartyServices(manifest: ModManifest, base: ModServices): ModServices {
   return Object.freeze({
     ...base,
+    ...(['agon.forge', 'agon.team-forge', 'agon.pipeline-orchestration'].includes(manifest.id) ? { forge: createForgeHostServices(() => {
+      const registry = new EngineRegistry(); registry.load(resolveEngineDefinitionsDir()); return registry;
+    }, createCliAdapter, () => captureMcpSurfaceAuthority('Forge')) } : {}),
     ...(manifest.id === 'agon.ratings' ? { ratings: {
       protectedEngineIds(context: Parameters<ModServices['engines']['dispatch']>[2]): readonly string[] {
         const registry = new EngineRegistry(); registry.load(resolveEngineDefinitionsDir());

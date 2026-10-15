@@ -170,6 +170,54 @@ describe('forge validate dispatch routing', () => {
 });
 
 describe('caller-driven forge finalize', () => {
+  it('drains a cancelled candidate before reporting stage2 complete', async () => {
+    process.env.AGON_FINALIZE_TEST_KEY = 'test';
+    const repoDir = makeRepo();
+    const forgeDir = join(tmpdir(), `agon-forge-drain-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    tempDirs.push(forgeDir);
+    let releaseSlow!: () => void;
+    const slowGate = new Promise<void>(resolve => { releaseSlow = resolve; });
+    let announceSlow!: () => void;
+    const slowStarted = new Promise<void>(resolve => { announceSlow = resolve; });
+    let announceAbort!: () => void;
+    const slowAborted = new Promise<void>(resolve => { announceAbort = resolve; });
+    let stageDone = false;
+    let slowFinished = false;
+    const invocation = runForge({
+      task: 'write fast.txt', fitnessCmd: 'test -f fast.txt', cwd: repoDir, forgeDir,
+      engines: ['fast', 'slow'], healthCheckEnabled: false,
+      onResult: engineId => engineId === 'fast' ? 'finalize' : 'continue',
+    }, makeRegistry(), {
+      isAvailable: async () => true, getVersion: async () => 'fixture',
+      dispatch: async ({ engine, cwd, signal }) => {
+        if (engine.id === 'slow') {
+          signal!.addEventListener('abort', announceAbort, { once: true });
+          announceSlow();
+          await slowGate;
+          slowFinished = true;
+          return { exitCode: 130, stdout: '', stderr: 'cancelled', timedOut: false, durationMs: 1 };
+        }
+        await slowStarted;
+        writeFileSync(join(cwd, 'fast.txt'), 'winner\n');
+        return { exitCode: 0, stdout: 'done', stderr: '', timedOut: false, durationMs: 1 };
+      },
+    }, event => { if (event.type === 'stage2:done') stageDone = true; });
+    try {
+      await slowAborted;
+      await new Promise<void>(resolve => setImmediate(resolve));
+      expect(slowFinished).toBe(false);
+      expect(stageDone).toBe(false);
+      releaseSlow();
+      const result = await invocation;
+      expect(slowFinished).toBe(true);
+      expect(stageDone).toBe(true);
+      expect(result.winner).toBe('fast');
+    } finally {
+      releaseSlow();
+      await invocation;
+    }
+  });
+
   it('aborts in-flight stage2 engines when onResult requests finalize', async () => {
     process.env.AGON_FINALIZE_TEST_KEY = 'test';
     const repoDir = makeRepo();

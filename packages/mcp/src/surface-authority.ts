@@ -63,6 +63,19 @@ export function mcpSurfacePublicIds(): ReadonlySet<string> {
   return new Set(boot!.activated.generation.catalog('mcp').flatMap(({ publicId, aliases }) => [publicId, ...aliases]));
 }
 
+/** Pin deferred provider work to the host that admitted this invocation. */
+export function captureMcpSurfaceAuthority(name: string): () => void {
+  assertMcpSurfaceSelectionCurrent();
+  const selected = boot;
+  return () => {
+    if (boot !== selected) {
+      throw new SurfaceGenerationError('MOD_GENERATION_MISMATCH', 'captured MCP host was disposed or replaced; restart the invocation', true);
+    }
+    assertMcpSurfaceSelectionCurrent();
+    selected!.activated.generation.assertAvailable('mcp', name);
+  };
+}
+
 export interface ActiveMcpSurfaceTool {
   readonly name: string;
   readonly description: string;

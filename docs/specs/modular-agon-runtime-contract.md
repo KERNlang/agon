@@ -914,6 +914,36 @@ Tests cover each comparison field, input preservation, zero-score exclusion,
 the exact spread boundary and public owner identity. AgentTeam result conversion
 remains a separate concern and is not duplicated in this shared comparator.
 
+## Forge workflow cutover
+
+`mod-forge/src/workflow.ts` owns the complete Forge stage sequence. The generated
+competition entry translates its input and output; it does not implement a second
+competition. The legacy Forge entry binds the same factory to existing shared
+effects. That compatibility binding remains until its callers are retired.
+
+The CLI and MCP hosts provide typed Forge effects to Forge, Team Forge and the
+orchestration pipeline. They do not provide a workflow callback. Transport opens
+per invocation and checks the captured surface authority before provider entry.
+This does not change the generation-pinning policy for existing invocations.
+
+Candidate and synthesis workers retain their worktrees until they settle. A
+synthesis timeout aborts refinement, drains its worker and retains the original
+winner. Caller cancellation is different: it preserves the caller's reason,
+stops later phases and records a failed raw manifest. Caller abort listeners are
+removed on success, preflight failure and setup exceptions. Health probes receive
+the same cancellation signal. A starter cannot bypass the eligible-engine list.
+
+Raw legacy manifests and versioned result envelopes remain separate from the
+generated `competition.json` report. A workflow error fails that report even if a
+provisional winner exists. An isolated failed candidate does not fail a winning
+sibling. Failed dispatch may still yield an accepted patch under the established
+harvest policy. Candidate duration measures the full attempt; fitness-command
+duration is recorded separately. Source fitness observers remain composed.
+
+These implementation checks do not establish final release acceptance. The latest
+clean committed qualification must include the full ownership and migration ledger,
+historical readers, disabled surfaces and installed-candidate checks.
+
 ## Registry invariants
 
 The kernel refuses activation unless all hold:

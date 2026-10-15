@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import type { EngineAdapter, EngineDefinition } from '@kernlang/agon-support-engine-runtime';
+import type { DispatchResult, EngineAdapter, EngineDefinition } from '@kernlang/agon-support-engine-runtime';
 import type { EngineResult, DispatchMetric, ForgeEventCallback, StageResult, WorktreeEntry } from './types.js';
 import { runFitness as runOwnedFitness } from './fitness.js';
 import type { ForgeFitnessRuntime } from './fitness.js';
@@ -26,6 +26,7 @@ export interface ForgeStageRuntime {
   estimateTokens(text: string): number;
   estimateCost(engineId: string, tokens: number): number;
   fitness: ForgeFitnessRuntime;
+  observeDispatch?(engineId: string, result: Readonly<Pick<DispatchResult, 'exitCode' | 'timedOut'>>): void;
 }
 
 function formatDispatchError(err: unknown): string {
@@ -151,6 +152,9 @@ export function createForgeStages(runtime: ForgeStageRuntime) {
           onSpawn,
         });
       }
+      runtime.observeDispatch?.(opts.engineId, Object.freeze({
+        exitCode: dispatchResult.exitCode, timedOut: dispatchResult.timedOut,
+      }));
       const dispatchExitCode = typeof dispatchResult?.exitCode === 'number' ? dispatchResult.exitCode : 0;
       if (shouldHarvestFailedDispatch(dispatchResult)) {
         const stderr = dispatchResult?.stderr ? `: ${String(dispatchResult.stderr).slice(0, 240).replace(/\s+/g, ' ').trim()}` : '';
@@ -400,9 +404,10 @@ export function createForgeStages(runtime: ForgeStageRuntime) {
       const hardTimeoutMs = Math.max(5, dispatchTimeout + opts.config.forgeFitnessTimeout + 5) * 1000;
       const engineAbort = new AbortController();
       abortControllers.set(engineId, engineAbort);
+      const forwardAbort = () => engineAbort.abort(opts.signal?.reason);
       if (opts.signal) {
-        if (opts.signal.aborted) engineAbort.abort();
-        else opts.signal.addEventListener('abort', () => engineAbort.abort(), { once: true });
+        if (opts.signal.aborted) forwardAbort();
+        else opts.signal.addEventListener('abort', forwardAbort, { once: true });
       }
 
       const attemptPromise = runForgeEngineAttempt({
@@ -450,13 +455,11 @@ export function createForgeStages(runtime: ForgeStageRuntime) {
         const attempt = await Promise.race([attemptPromise, timeoutPromise, finalizePromise]);
         if (timeoutHandle) clearTimeout(timeoutHandle);
         finalizeResolvers.delete(engineId);
-        abortControllers.delete(engineId);
         publishResult(engineId, attempt.result, attempt.metric);
         return attempt.result;
       } catch (err) {
         if (timeoutHandle) clearTimeout(timeoutHandle);
         finalizeResolvers.delete(engineId);
-        abortControllers.delete(engineId);
         const error = formatDispatchError(err);
         console.warn(`[agon] forge stage2: engine ${engineId} failed: ${error}`);
         emitForgeEvent(opts.onEvent, 'engine:failed', engineId, { engineId, phase: 'stage2', error });
@@ -470,6 +473,12 @@ export function createForgeStages(runtime: ForgeStageRuntime) {
         };
         publishResult(engineId, failed, metric);
         return failed;
+      } finally {
+        // A timeout or finalize result does not prove that the worker stopped.
+        // Keep its worktree alive until dispatch and fitness have settled.
+        await Promise.allSettled([attemptPromise]);
+        abortControllers.delete(engineId);
+        opts.signal?.removeEventListener('abort', forwardAbort);
       }
     });
 

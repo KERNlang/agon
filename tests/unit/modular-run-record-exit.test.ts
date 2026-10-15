@@ -6,9 +6,16 @@ import { cliRunRecordHost as runs } from '../../packages/cli/src/run-record-host
 import { createRunDir } from '@kernlang/agon-support-persistence';
 import { spawnSync } from 'node:child_process';
 import type { InvocationContext, Json, ModServices, RunRecordHandle } from '../../packages/mod-api/src/index.js';
-import { runForgeCompetition } from '../../packages/mod-forge/src/implementation.js';
+import { runForgeCompetition as runCompetition } from '../../packages/mod-forge/src/implementation.js';
+import { withForgeHost } from '../helpers/forge-host.js';
+import { registerExitHooks } from '../../packages/core/src/blocks/git.js';
+
+const runForgeCompetition = (raw: Json, context: InvocationContext, services: ModServices) =>
+  runCompetition(raw, context, withForgeHost(services));
 
 async function isolated(check: (exit: () => void) => Promise<void>) {
+  // The Git host owns permanent hooks. Count run-scoped listeners separately.
+  registerExitHooks();
   const home = mkdtempSync(join(tmpdir(), 'agon-run-exit-'));
   const previous = process.env.AGON_HOME;
   const before = new Set(process.listeners('exit'));
@@ -27,7 +34,7 @@ async function isolated(check: (exit: () => void) => Promise<void>) {
 }
 
 it.each(['start', 'candidate', 'artifact', 'receipt', 'finish', 'invalid-repository', 'success',
-  'artifact-error', 'receipt-error', 'cleanup-error', 'failed-finish', 'dry-finish',
+  'artifact-error', 'receipt-error', 'cleanup-error', 'failed-finish', 'harvested-finish', 'dry-finish',
   'blocked-finish', 'blocked-cancel', 'cleanup-after-finish'] as const)(
   'finalizes physical Forge before host exit: %s', async phase => {
     await isolated(async exit => {
@@ -37,7 +44,7 @@ it.each(['start', 'candidate', 'artifact', 'receipt', 'finish', 'invalid-reposit
       const before = process.listenerCount('exit');
       let handle: RunRecordHandle | undefined;
       const submitted: Json[] = [];
-      const cleanups: string[] = [];
+      const cleanups: string[][] = [];
       const blocked = phase === 'blocked-finish' || phase === 'blocked-cancel';
       const warning = vi.spyOn(console, 'error').mockImplementation(() => {});
       const context: InvocationContext = { invocationId: 'forge-status', cwd: root,
@@ -52,13 +59,13 @@ it.each(['start', 'candidate', 'artifact', 'receipt', 'finish', 'invalid-reposit
         }
         const services = {
           engines: { listActive: async () => ['fixture'], dispatch: async (_engine: string, _prompt: string, invocation: InvocationContext) => {
-            writeFileSync(join(invocation.cwd, 'result.txt'), 'candidate\n');
+            if (phase !== 'failed-finish') writeFileSync(join(invocation.cwd, 'result.txt'), 'candidate\n');
             if (phase === 'candidate' || phase === 'blocked-cancel') controller.abort(reason);
-            return { exitCode: phase === 'failed-finish' ? 1 : 0, stdout: 'implemented', stderr: '' };
+            return { exitCode: phase === 'failed-finish' || phase === 'harvested-finish' ? 1 : 0, stdout: 'implemented', stderr: '' };
           } },
-          logger: { debug: async (_message: string, fields: { rootPath: string }) => {
-            expect(existsSync(fields.rootPath)).toBe(false);
-            cleanups.push(fields.rootPath);
+          logger: { debug: async (_message: string, fields: { worktreePaths: string[] }) => {
+            expect(fields.worktreePaths.every(path => !existsSync(path))).toBe(true);
+            cleanups.push(fields.worktreePaths);
             if (phase === 'cleanup-error' || phase === 'cleanup-after-finish') throw reason;
           } },
           receipts: { record: async () => {
@@ -84,7 +91,7 @@ it.each(['start', 'candidate', 'artifact', 'receipt', 'finish', 'invalid-reposit
               }
               if (blocked) mkdirSync(join(args[0].path, '.status.json.tmp'));
               await runs.finish(...args);
-              if (['finish', 'failed-finish', 'dry-finish', 'blocked-finish'].includes(phase)) controller.abort(reason);
+              if (['finish', 'failed-finish', 'harvested-finish', 'dry-finish', 'blocked-finish'].includes(phase)) controller.abort(reason);
             },
           },
         } as unknown as ModServices;
@@ -107,7 +114,17 @@ it.each(['start', 'candidate', 'artifact', 'receipt', 'finish', 'invalid-reposit
         const bytes = readFileSync(path, 'utf8');
         const status = JSON.parse(bytes);
         expect(status).toEqual(submitted[0]);
-        expect(status).toMatchObject({ mode: 'forge', ok: ['success', 'finish', 'dry-finish', 'blocked-finish', 'cleanup-after-finish'].includes(phase) });
+        expect(status).toMatchObject({ mode: 'forge', ok: ['success', 'finish', 'harvested-finish', 'dry-finish', 'blocked-finish', 'cleanup-after-finish'].includes(phase) });
+        if (phase === 'harvested-finish') {
+          expect(status.summary).toContain('winner=fixture');
+          expect(status.engines).toMatchObject([{ id: 'fixture', status: 'ok' }]);
+          expect(readFileSync(join(handle!.path, 'fixture-patch.diff'), 'utf8')).toContain('candidate');
+          const manifest = JSON.parse(readFileSync(join(handle!.path, 'manifest.json'), 'utf8'));
+          expect(manifest.results.fixture.dispatchStdout).toContain('dispatch exited with code 1');
+          const result = JSON.parse(readFileSync(join(handle!.path, 'competition.json'), 'utf8'));
+          expect(result).toMatchObject({ baseSha: expect.stringMatching(/^[a-f0-9]{40}$/),
+            candidates: [{ engineId: 'fixture', pass: true, dispatchOk: false }] });
+        }
         if (phase === 'failed-finish') {
           expect(status.summary).toContain('no winner');
           expect(status.engines).toMatchObject([{ id: 'fixture', status: 'error' }]);

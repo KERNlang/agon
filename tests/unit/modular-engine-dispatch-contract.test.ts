@@ -6,6 +6,7 @@ import type { EngineDispatchOptions, InvocationContext } from '@kernlang/agon-mo
 const fixture = vi.hoisted(() => ({
   dispatch: vi.fn(),
   brainstorm: { open: vi.fn() },
+  forge: { open: vi.fn() },
   loadConfig: vi.fn(() => ({})),
   engine: { id: 'fixture-engine' },
 }));
@@ -18,6 +19,7 @@ vi.mock('@kernlang/agon-core', () => ({
   },
   loadConfig: fixture.loadConfig,
   createBrainstormHostServices: () => fixture.brainstorm,
+  createForgeHostServices: () => fixture.forge,
   createRunDir: () => ({ id: 'fixture-run', path: '/fixture/output' }),
   getRatings: vi.fn(), pickTopRatedEngine: vi.fn(), writeRunStatus: vi.fn(),
   eventLogFlush: vi.fn(), setSessionRoot: vi.fn(),
@@ -56,6 +58,20 @@ describe.each([decorateCliFirstPartyServices, decorateMcpFirstPartyServices])('R
     const services = decorate({ id: 'agon.ratings' } as never, {} as never);
     const context = { invocationId: 'ratings', cwd: '/fixture/project', platform: 'darwin-arm64' as const, signal: new AbortController().signal, config: {} };
     expect(await services.ratings?.protectedEngineIds(context)).toEqual(['fixture-engine', 'disabled-engine', 'filtered-engine']);
+  });
+});
+
+describe.each([decorateCliFirstPartyServices, decorateMcpFirstPartyServices])('Forge host wiring', decorate => {
+  it.each(['agon.forge', 'agon.team-forge', 'agon.pipeline-orchestration'])('provides host effects to the bundled %s consumer', id => {
+    const services = decorate({ id } as never, {} as never);
+    expect(services).toHaveProperty('forge', fixture.forge);
+    expect(fixture.forge.open).not.toHaveBeenCalled();
+    expect(fixture.dispatch).not.toHaveBeenCalled();
+  });
+  it('does not expose Forge or patch application to unrelated mods', () => {
+    const services = decorate({ id: 'custom.example' } as never, {} as never);
+    expect(services).not.toHaveProperty('forge');
+    expect(services).not.toHaveProperty('patchApplication');
   });
 });
 

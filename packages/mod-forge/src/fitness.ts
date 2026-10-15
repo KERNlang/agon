@@ -6,6 +6,7 @@ import type { FitnessResult } from './scoring.js';
 import type { EngineResult } from './types.js';
 
 import { spawnWithTimeout } from '@kernlang/agon-support-engine-runtime';
+import type { CapturedProcessResult } from '@kernlang/agon-support-engine-runtime';
 import { computeScore } from './scoring.js';
 
 import { runLint, runStyleCheck } from './quality.js';
@@ -16,6 +17,7 @@ export interface ForgeFitnessRuntime {
   diffLineCount(diff: string): number;
   diffFileCount(cwd: string): number;
   runSyntaxCheck(cwd: string): SyntaxCheckResult;
+  observeCommand?(engineId: string, command: string, result: Readonly<CapturedProcessResult>): void;
 }
 
 /**
@@ -68,6 +70,7 @@ export async function runFitness(opts: {engineId:string, worktreePath:string, fi
     };
   }
 
+  runtime.observeCommand?.(opts.engineId, opts.fitnessCmd, Object.freeze({ ...fitnessResult }));
   opts.signal?.throwIfAborted();
   const durationSec = Math.round((Date.now() - startTime) / 1000);
   const commandPass = fitnessResult.exitCode === 0 && !fitnessResult.timedOut;

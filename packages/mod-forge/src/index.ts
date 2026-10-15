@@ -15,6 +15,9 @@ export type {
 export { createMod } from './implementation.js';
 export { createMod as default } from './implementation.js';
 export { runForgeCompetition } from './implementation.js';
+export { createForgeWorkflow } from './workflow.js';
+export type { ForgeWorkflowConfig, ForgeWorkflowRegistry, ForgeWorkflowEffects } from './workflow.js';
+export type { ForgeHostServices, ForgeModServices, ForgeInvocationContext } from './host.js';
 export { planSynthesis } from './synth-plan.js';
 export { createForgeCorpus } from './corpus.js';
 export type { CorpusRecord } from './corpus.js';

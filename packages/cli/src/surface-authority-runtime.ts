@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import type { EngineAdapter } from '@kernlang/agon-core';
+import { guardEngineAdapter } from '@kernlang/agon-support-engine-runtime';
 import type { BrainstormWorkflowEvent } from '@kernlang/agon-mod-brainstorm';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -164,26 +165,7 @@ export function guardProcessEngineAdapter(adapter: EngineAdapter, assertAvailabl
     assertSelected();
     assertAvailable();
   };
-  return {
-    dispatch: async options => { check(options.signal); return adapter.dispatch(options); },
-    isAvailable: async engine => { check(); return adapter.isAvailable(engine); },
-    getVersion: async engine => { check(); return adapter.getVersion(engine); },
-    ...(adapter.dispatchAgent ? {
-      dispatchAgent: async (options: Parameters<EngineAdapter['dispatch']>[0]) => {
-        check(options.signal); return adapter.dispatchAgent!(options);
-      },
-    } : {}),
-    ...(adapter.dispatchStream ? {
-      dispatchStream: async function* (options: Parameters<EngineAdapter['dispatch']>[0]) {
-        check(options.signal); return yield* adapter.dispatchStream!(options);
-      },
-    } : {}),
-    ...(adapter.dispatchAgentStream ? {
-      dispatchAgentStream: async function* (options: Parameters<EngineAdapter['dispatch']>[0]) {
-        check(options.signal); return yield* adapter.dispatchAgentStream!(options);
-      },
-    } : {}),
-  };
+  return guardEngineAdapter(adapter, check);
 }
 
 /** Keep a running invocation pinned; request cooperative cancellation if its

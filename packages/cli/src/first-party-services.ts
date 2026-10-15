@@ -4,9 +4,10 @@ import { patchApplicationHost } from './patch-application-host.js';
 import { planSessionHost } from '@kernlang/agon-mod-plan';
 import { EngineRegistry, createRunDir, eventLogFlush, getRatings, loadConfig, pickTopRatedEngine, setSessionRoot } from '@kernlang/agon-core';
 import { createCliAdapter } from '@kernlang/agon-adapter-cli';
-import { createBrainstormHostServices } from '@kernlang/agon-core';
+import { createBrainstormHostServices, createForgeHostServices } from '@kernlang/agon-core';
 import type { Json, ModManifest, ModServices } from '@kernlang/agon-mod-api';
 import { resolveBuiltinEnginesDir } from './lib/engines-dir.js';
+import { captureProcessSurfaceAuthority, assertProcessSurfaceAvailable } from './surface-authority-runtime.js';
 import { filterDefaultOrchestrationEngines } from './handlers/engine-filter.js';
 import { buildServeRuntime, recordServeReady, removeServeConnectionFile, resolveServeEngine, writeServeConnectionFile } from './bridge/serve-runtime.js';
 import { runChrome } from './commands/chrome.js';
@@ -93,6 +94,14 @@ export function decorateCliFirstPartyServices(manifest: ModManifest, base: ModSe
       },
     } } : {}),
     ...(manifest.id === 'agon.forge' ? { patchApplication: patchApplicationHost } : {}),
+    ...(['agon.forge', 'agon.team-forge', 'agon.pipeline-orchestration'].includes(manifest.id) ? {
+      forge: createForgeHostServices(() => {
+        const registry = new EngineRegistry(); registry.load(resolveBuiltinEnginesDir()); return registry;
+      }, createCliAdapter, () => {
+        const assertCurrent = captureProcessSurfaceAuthority();
+        return () => { assertCurrent(); assertProcessSurfaceAvailable('cli', 'forge'); };
+      }),
+    } : {}),
     ...(manifest.id === 'agon.plan' ? { planSession: planSessionHost } : {}), engines: createCliEngineServices() });
 }
 

@@ -345,6 +345,7 @@ export type { EngineRole } from './blocks/role-specialization.js';
 export type { Skill } from './blocks/skill-loader.js';
 export { createSidechainLogger } from '@kernlang/agon-kernel';
 export { createBrainstormHostServices } from './blocks/brainstorm-host.js';
+export { createForgeHostServices, createForgeWorkflowEffects } from './blocks/forge-host.js';
 export type { SidechainEvent, SidechainLogger } from '@kernlang/agon-kernel';
 export {
   buildForgeProvenance,

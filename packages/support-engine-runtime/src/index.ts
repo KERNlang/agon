@@ -1,5 +1,6 @@
 export { SUPPORT_PACKAGE } from './package-metadata.js';
 export * from './types.js';
+export { guardEngineAdapter } from './adapter-guard.js';
 export * from './errors.js';
 export * from './engine-schema.js';
 export * from './engine-discover.js';

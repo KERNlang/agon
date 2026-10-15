@@ -2,12 +2,21 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CommandContribution, InvocationContext, ModServices, Registrar } from '@kernlang/agon-mod-api';
 import { createMod } from './implementation.js';
+import { withForgeHost } from '../../../tests/helpers/forge-host.js';
+import { HEALTH_CHECK_DEFAULT_PROMPT } from '@kernlang/agon-support-panel';
+
+const fixtureDirectories: string[] = [];
+afterEach(() => {
+  vi.unstubAllEnvs();
+  for (const directory of fixtureDirectories.splice(0)) rmSync(directory, { recursive: true, force: true });
+});
 
 function repo(alreadySolved = false): string {
   const cwd = mkdtempSync(join(tmpdir(), 'agon-forge-mod-'));
+  fixtureDirectories.push(cwd);
   execFileSync('git', ['init'], { cwd });
   execFileSync('git', ['config', 'user.email', 'forge@example.invalid'], { cwd });
   execFileSync('git', ['config', 'user.name', 'Forge Test'], { cwd });
@@ -19,9 +28,11 @@ function repo(alreadySolved = false): string {
 }
 
 async function harness(cwd: string) {
+  const runPath = mkdtempSync(join(tmpdir(), 'agon-forge-run-'));
+  fixtureDirectories.push(runPath);
   const candidatePaths: string[] = [];
   const dispatch = vi.fn(async (engineId: string, prompt: string, context: InvocationContext) => {
-    if (prompt.includes('AGON_FORGE_HEALTHY')) return { engineId, exitCode: 0, stdout: 'AGON_FORGE_HEALTHY', stderr: '', timedOut: false };
+    if (prompt === HEALTH_CHECK_DEFAULT_PROMPT) return { engineId, exitCode: 0, stdout: 'ok', stderr: '', timedOut: false };
     candidatePaths.push(context.cwd);
     if (engineId === 'alpha') writeFileSync(join(context.cwd, 'solved.txt'), 'alpha\n');
     else writeFileSync(join(context.cwd, 'attempt.txt'), 'not solved\n');
@@ -34,10 +45,11 @@ async function harness(cwd: string) {
   const services = { identity: { id: 'agon.forge', version: '1', contentHash: `sha256:${'f'.repeat(64)}` }, source: 'bundled', logger: { debug, info: vi.fn(), warn: vi.fn() }, receipts: { record }, permissions: { check: vi.fn() }, state: { read: vi.fn(), write: vi.fn() }, runs: { start: vi.fn(async () => ({ id: 'run', path: '/tmp/forge-run', mode: 'forge', startedAt: '2026-01-01T00:00:00Z' })), finish, writeArtifact }, engines: { listActive: vi.fn(async () => ['alpha', 'beta']), rank: vi.fn(async () => [{ engineId: 'alpha', reason: 'top-rated', scope: 'forge' }, { engineId: 'beta', reason: 'none', scope: null }]), dispatch } } as unknown as ModServices;
   let command: CommandContribution | undefined;
   const registrar = { command: (surface: string, value: CommandContribution) => { if (surface === 'cli') command = value; return () => {}; }, intent: () => () => {}, tool: () => () => {}, planStep: () => () => {}, resultType: () => () => {}, config: () => () => {} } as unknown as Registrar;
-  const mod = await createMod(services);
+  vi.mocked(services.runs!.start).mockResolvedValue({ id: 'run', path: runPath, mode: 'forge', startedAt: '2026-01-01T00:00:00Z' });
+  const mod = await createMod(withForgeHost(services, true));
   await mod.activate(registrar, services);
   const context = { invocationId: 'forge-test', cwd, platform: 'darwin-arm64' as const, signal: new AbortController().signal, config: {} };
-  return { command: command!, context, dispatch, rank: vi.mocked(services.engines.rank!), record, finish, writeArtifact, debug, candidatePaths };
+  return { command: command!, context, dispatch, rank: vi.mocked(services.engines.rank!), record, finish, writeArtifact, debug, candidatePaths, runPath };
 }
 
 describe('physical Forge mod', () => {
@@ -54,7 +66,7 @@ describe('physical Forge mod', () => {
     expect(existsSync(join(cwd, 'solved.txt'))).toBe(false);
     expect(h.candidatePaths.every((path) => !existsSync(path))).toBe(true);
     expect(h.record).toHaveBeenCalledTimes(1);
-    expect(h.debug).toHaveBeenCalledWith('forge arena cleanup', expect.objectContaining({ cleanupComplete: true }));
+    expect(h.debug).toHaveBeenCalledWith('forge worktree cleanup', expect.objectContaining({ cleanupComplete: true }));
   });
 
   it('still runs the requested work when a broad baseline already passes', async () => {
@@ -73,18 +85,21 @@ describe('physical Forge mod', () => {
     expect((await h.command.run({ task: 'x', finalizeOnScore: '101' }, h.context) as any).exitCode).toBe(1);
   });
 
-  it('skips an unhealthy engine visibly instead of silently shrinking the panel', async () => {
+  it.each([undefined, 'beta'])('skips an unhealthy engine even when selected as starter (%s)', async (starter) => {
+    vi.stubEnv('AGON_DISABLE_FORGE_HEALTH_CHECK', '');
     const h = await harness(repo());
     h.dispatch.mockImplementation(async (engineId: string, prompt: string, context: InvocationContext) => {
-      if (prompt.includes('AGON_FORGE_HEALTHY')) return engineId === 'beta'
+      if (prompt === HEALTH_CHECK_DEFAULT_PROMPT) return engineId === 'beta'
         ? { engineId, exitCode: 1, stdout: '', stderr: 'auth failed', timedOut: false }
         : { engineId, exitCode: 0, stdout: 'AGON_FORGE_HEALTHY', stderr: '', timedOut: false };
       writeFileSync(join(context.cwd, 'solved.txt'), 'alpha\n');
       return { engineId, exitCode: 0, stdout: 'done', stderr: '', timedOut: false };
     });
-    const out = await h.command.run({ task: 'create solved.txt', test: 'test -f solved.txt', engines: 'alpha,beta' }, h.context) as any;
+    const out = await h.command.run({ task: 'create solved.txt', test: 'test -f solved.txt', engines: 'alpha,beta', ...(starter ? { starter } : {}) }, h.context) as any;
     expect(out.exitCode).toBe(0);
-    expect(out.result.skippedEngines).toEqual([{ engineId: 'beta', reason: 'auth failed' }]);
+    expect(out.result.winner).toBe('alpha');
+    expect(h.dispatch.mock.calls.filter(([engineId, prompt]) => engineId === 'beta' && prompt !== HEALTH_CHECK_DEFAULT_PROMPT)).toHaveLength(0);
+    expect(out.result.skippedEngines).toEqual([{ engineId: 'beta', status: 'health-check-failed', reason: 'exit-1: auth failed' }]);
     expect(h.finish).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ ok: false }), expect.anything());
   });
 
@@ -93,14 +108,14 @@ describe('physical Forge mod', () => {
     ['A grounded validation report: the request boundary rejects malformed input; retry failures preserve the original state and a regression test covers that transition.', true],
   ] as const)('preserves validation report output under the legacy acceptance policy (accepted=%s)', async (report, accepted) => {
     const h = await harness(repo());
-    h.dispatch.mockImplementation(async (engineId: string, prompt: string) => prompt.includes('AGON_FORGE_HEALTHY')
+    h.dispatch.mockImplementation(async (engineId: string, prompt: string) => prompt === HEALTH_CHECK_DEFAULT_PROMPT
       ? { engineId, exitCode: 0, stdout: 'AGON_FORGE_HEALTHY', stderr: '', timedOut: false }
       : { engineId, exitCode: 0, stdout: report, stderr: '', timedOut: false });
     const out = await h.command.run({ task: 'validate behavior', mode: 'validate', requireDiff: true, acceptReviewOutput: true, engines: 'alpha', quiet: true, provenance: true }, h.context) as any;
     expect(out.exitCode).toBe(accepted ? 0 : 1);
     expect(out.result.candidates[0].dispatchStdout).toBe(report);
-    expect(h.writeArtifact).toHaveBeenCalledWith(expect.anything(), 'manifest.json', expect.stringContaining(report), expect.anything());
-    expect(out.stdout).toContain('/tmp/forge-run');
+    expect(h.writeArtifact).toHaveBeenCalledWith(expect.anything(), 'competition.json', expect.stringContaining(report), expect.anything());
+    expect(out.stdout).toContain(h.runPath);
     expect(out.result).toMatchObject({ winner: accepted ? 'alpha' : null, acceptReviewOutput: true, provenance: { kind: 'forge' } });
     expect(h.writeArtifact).toHaveBeenCalledWith(expect.anything(), 'provenance.json', expect.any(String), expect.anything());
   });
@@ -134,7 +149,7 @@ describe('physical Forge mod', () => {
   it('aborts unfinished competitors after the requested passing quorum', async () => {
     const h = await harness(repo());
     h.dispatch.mockImplementation(async (engineId: string, prompt: string, context: InvocationContext) => {
-      if (prompt.includes('AGON_FORGE_HEALTHY')) return { engineId, exitCode: 0, stdout: 'AGON_FORGE_HEALTHY', stderr: '', timedOut: false };
+      if (prompt === HEALTH_CHECK_DEFAULT_PROMPT) return { engineId, exitCode: 0, stdout: 'ok', stderr: '', timedOut: false };
       if (engineId === 'alpha') {
         writeFileSync(join(context.cwd, 'solved.txt'), 'alpha\n');
         return { engineId, exitCode: 0, stdout: 'done', stderr: '', timedOut: false };

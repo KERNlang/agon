@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import type { CommandContribution, InvocationContext, ModServices, Registrar } from '@kernlang/agon-mod-api';
 import { createMod } from './implementation.js';
+import { withForgeHost } from '../../../tests/helpers/forge-host.js';
 
 function repo(): string { const cwd = mkdtempSync(join(tmpdir(), 'agon-team-forge-')); execFileSync('git', ['init'], { cwd }); execFileSync('git', ['config', 'user.email', 'team@example.invalid'], { cwd }); execFileSync('git', ['config', 'user.name', 'Team Test'], { cwd }); writeFileSync(join(cwd, 'README.md'), 'fixture\n'); execFileSync('git', ['add', '.'], { cwd }); execFileSync('git', ['commit', '-m', 'base'], { cwd }); return cwd; }
 
@@ -21,7 +22,7 @@ describe('physical Team Forge mod', () => {
     const services = { identity: { id: 'agon.team-forge', version: '1', contentHash: `sha256:${'a'.repeat(64)}` }, source: 'bundled', logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn() }, receipts: { record }, permissions: { check: vi.fn() }, state: { read: vi.fn(), write: vi.fn() }, engines: { listActive: vi.fn(async () => ['alpha', 'beta']), rank: vi.fn(async (ids: readonly string[]) => ids.map((engineId) => ({ engineId, reason: 'none', scope: null }))), dispatch } } as unknown as ModServices;
     let command: CommandContribution | undefined;
     const registrar = { command: (surface: string, value: CommandContribution) => { if (surface === 'cli') command = value; return () => {}; }, intent: () => () => {}, tool: () => () => {}, planStep: () => () => {} } as unknown as Registrar;
-    const mod = await createMod(services); await mod.activate(registrar, services);
+    const mod = await createMod(withForgeHost(services)); await mod.activate(registrar, services);
     const context = { invocationId: 'team', cwd, platform: 'darwin-arm64' as const, signal: new AbortController().signal, config: {} };
     const output = await command!.run({ task: 'make solved.txt', test: 'test -f solved.txt', engines: 'alpha,beta', members: '2' }, context) as { exitCode: number; stdout: string };
     const result = JSON.parse(output.stdout);

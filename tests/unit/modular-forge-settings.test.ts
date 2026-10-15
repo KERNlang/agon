@@ -1,19 +1,294 @@
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import { getEventListeners } from 'node:events';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
-import type { CommandContribution, IntentContribution, InvocationContext, ModServices } from '../../packages/mod-api/src/index.js';
+import type { CommandContribution, CommandResult, IntentContribution, InvocationContext, ModServices } from '../../packages/mod-api/src/index.js';
 import { ModRegistry } from '../../packages/mod-kernel/src/index.js';
 import { resolveRegisteredModSettings } from '../../packages/mod-kernel/src/mod-settings.js';
-import { createMod, MANIFEST, runForgeCompetition } from '../../packages/mod-forge/src/index.js';
+import { createMod as createForgeMod, MANIFEST, runForgeCompetition as runCompetition } from '../../packages/mod-forge/src/index.js';
+import { withForgeHost } from '../helpers/forge-host.js';
 import { classifyNoDiffForgeResult as ownedNoDiffPolicy } from '@kernlang/agon-mod-forge';
 import { DEFAULT_FIRST_PARTY_SETTINGS } from '../../packages/core/src/models/first-party-settings.generated.js';
 import { DEFAULT_AGON_CONFIG } from '../../packages/core/src/models/types.js';
 import { classifyNoDiffForgeResult } from '../../packages/forge/src/stages.js';
+import { createForgeHostServices } from '@kernlang/agon-core';
+import type { EngineRegistry, EngineAdapter } from '@kernlang/agon-core';
+
+const createMod = (services: ModServices) => createForgeMod(withForgeHost(services));
+const runForgeCompetition = (raw: Parameters<typeof runCompetition>[0], context: InvocationContext, services: ModServices) =>
+  runCompetition(raw, context, withForgeHost(services));
 
 describe('Forge configuration ownership', () => {
+  it.each(['timeout', 'healthCheckTimeoutSec', 'earlyFinalizeCount', 'finalizeOnScore'] as const)(
+    'rejects non-string %s at the direct export before host effects', async key => {
+      const listActive = vi.fn(async () => ['fixture']);
+      const services = { engines: { listActive } } as unknown as ModServices;
+      for (const value of [30, 0, -1, null, true, [], {}]) {
+        const outcome = await runCompetition({ task: 'fixture', [key]: value }, {
+          invocationId: 'invalid-forge-option', cwd: '/unused', platform: 'darwin-arm64',
+          signal: new AbortController().signal, config: {},
+        }, services);
+        expect(outcome).toMatchObject({ exitCode: 1, stderr: `Forge ${key} must be provided as a string.\n` });
+      }
+      expect(listActive).not.toHaveBeenCalled();
+    },
+  );
+
+  it('forwards caller cancellation and its reason into health probes', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'agon-forge-health-abort-'));
+    const controller = new AbortController();
+    const reason = new Error('fixture cancelled during health probe');
+    let probeSignal: AbortSignal | undefined;
+    const events: string[] = [];
+    vi.stubEnv('AGON_DISABLE_FORGE_HEALTH_CHECK', '');
+    try {
+      for (const args of [['init', '--quiet'], ['-c', 'user.name=Fixture', '-c',
+        'user.email=fixture@example.invalid', 'commit', '--quiet', '--allow-empty', '-m', 'fixture']]) {
+        const result = spawnSync('git', args, { cwd: root, encoding: 'utf8' });
+        expect(result.status, result.stderr).toBe(0);
+      }
+      const services = withForgeHost({ engines: { listActive: async () => ['fixture'] },
+        logger: { debug: async () => {} }, receipts: { record: async () => 'fixture' },
+      } as unknown as ModServices, true);
+      const open = services.forge!.open;
+      const configured = { ...services, forge: { async open(context: InvocationContext) {
+        const opened = await open(context);
+        return { ...opened, adapter: { ...opened.adapter, dispatchAgent: async options => {
+          probeSignal = options.signal;
+          controller.abort(reason);
+          return { exitCode: 130, stdout: '', stderr: 'cancelled', durationMs: 0, timedOut: false,
+            diff: '', diffLines: 0, filesChanged: 0 };
+        } } };
+      } } } satisfies typeof services;
+      await expect(runCompetition({ task: 'fixture', test: 'true' }, {
+        invocationId: 'health-abort', cwd: root, platform: 'darwin-arm64', signal: controller.signal,
+        config: {}, onWorkflowEvent: event => { events.push(event.type); },
+      }, configured)).rejects.toBe(reason);
+      expect(probeSignal?.aborted).toBe(true);
+      expect(probeSignal?.reason).toBe(reason);
+      expect(events).not.toContain('stage1:start');
+      expect(getEventListeners(controller.signal, 'abort')).toHaveLength(0);
+    } finally { vi.unstubAllEnvs(); rmSync(root, { recursive: true, force: true }); }
+  });
+
+  it.each(['completed', 'repository-failure', 'setup-throw'] as const)('releases the caller abort listener after %s', async fault => {
+    const root = mkdtempSync(join(tmpdir(), 'agon-forge-listener-'));
+    try {
+      for (const args of [['init', '--quiet'], ['-c', 'user.name=Fixture', '-c',
+        'user.email=fixture@example.invalid', 'commit', '--quiet', '--allow-empty', '-m', 'fixture']]) {
+        const result = spawnSync('git', args, { cwd: root, encoding: 'utf8' });
+        expect(result.status, result.stderr).toBe(0);
+      }
+      const services = withForgeHost({
+        engines: { listActive: async () => ['fixture'], dispatch: async (_id: string, _prompt: string, context: InvocationContext) => {
+          writeFileSync(join(context.cwd, 'result.txt'), 'candidate\n');
+          return { exitCode: 0, stdout: 'implemented', stderr: '' };
+        } }, logger: { debug: async () => {} }, receipts: { record: async () => 'fixture' },
+      } as unknown as ModServices);
+      const open = services.forge!.open;
+      const configured = { ...services, forge: { async open(context: InvocationContext) {
+        const opened = await open(context);
+        return { ...opened, effects: { ...opened.effects,
+          ...(fault === 'repository-failure' ? { repoRoot: () => { throw new Error('fixture repository failure'); } } : {}),
+          ...(fault === 'setup-throw' ? { buildKernContextSpine: async () => { throw new Error('fixture setup failure'); } } : {}),
+        } };
+      } } };
+      const signal = new AbortController().signal;
+      const outcome = await runCompetition({ task: 'fixture', test: 'true', noHealthCheck: true }, {
+        invocationId: 'listener-cleanup', cwd: root, platform: 'darwin-arm64', signal, config: {},
+      }, configured).catch(error => error);
+      if (fault === 'setup-throw') expect(outcome).toMatchObject({ message: 'fixture setup failure' });
+      else expect(outcome.exitCode).toBe(fault === 'completed' ? 0 : 1);
+      expect(getEventListeners(signal, 'abort')).toHaveLength(0);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
+  it('drains timed-out synthesis before removing its worktree or publishing completion', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'agon-forge-synthesis-drain-'));
+    let workerFinished = false;
+    let synthesisStarted = false;
+    let timedOut = false;
+    let cleanupWhileRunning = false;
+    let worktreeSurvived = false;
+    let finishWorker!: () => void;
+    const workerDone = new Promise<void>(resolve => { finishWorker = resolve; });
+    try {
+      for (const args of [['init', '--quiet'], ['-c', 'user.name=Fixture', '-c',
+        'user.email=fixture@example.invalid', 'commit', '--quiet', '--allow-empty', '-m', 'fixture']]) {
+        const result = spawnSync('git', args, { cwd: root, encoding: 'utf8' });
+        expect(result.status, result.stderr).toBe(0);
+      }
+      const services = withForgeHost({
+        engines: { listActive: async () => ['alpha', 'beta'],
+          dispatch: async (_id: string, _prompt: string, context: InvocationContext, options: { mode?: string }) => {
+            if (context.cwd.endsWith('/synth-worktree')) {
+              synthesisStarted = true;
+              try {
+                await new Promise<void>(resolve => {
+                  const drain = () => {
+                    timedOut = true;
+                    // The worker outlives the legacy one-second cleanup grace.
+                    setTimeout(resolve, 1500);
+                  };
+                  if (context.signal.aborted) drain();
+                  else context.signal.addEventListener('abort', drain, { once: true });
+                });
+                worktreeSurvived = existsSync(context.cwd);
+                return { exitCode: 130, stdout: '', stderr: 'cancelled' };
+              } finally { workerFinished = true; finishWorker(); }
+            }
+            if (options.mode === 'review') return { exitCode: 0, stdout: '[{"file":"result.txt","problem":"check boundary","minimalFix":"validate"}]' };
+            writeFileSync(join(context.cwd, 'result.txt'), 'candidate\n');
+            return { exitCode: 0, stdout: 'implemented', stderr: '' };
+          },
+        },
+        logger: { debug: async () => {} }, receipts: { record: async () => 'fixture' },
+      } as unknown as ModServices);
+      const open = services.forge!.open;
+      const configured = { ...services, forge: { async open(context: InvocationContext) {
+        const opened = await open(context);
+        return { ...opened, effects: { ...opened.effects,
+          loadConfig: cwd => ({ ...opened.effects.loadConfig(cwd), forgeEnableSynthesis: true,
+            forgeSynthesisTimeout: 1, forgeClearWinnerSpread: 101 }),
+          worktreeRemoveBestEffort: (repo, path) => {
+            if (path.endsWith('/synth-worktree') && !workerFinished) cleanupWhileRunning = true;
+            opened.effects.worktreeRemoveBestEffort(repo, path);
+          },
+        } };
+      } } } satisfies typeof services;
+      const outcome = await runCompetition({ task: 'fixture', test: 'true', noHealthCheck: true }, {
+        invocationId: 'synthesis-drain', cwd: root, platform: 'darwin-arm64',
+        signal: new AbortController().signal, config: {},
+      }, configured);
+      const completedBeforeWorker = !workerFinished;
+      if (synthesisStarted) await workerDone;
+      expect(synthesisStarted).toBe(true);
+      expect(timedOut).toBe(true);
+      expect(cleanupWhileRunning).toBe(false);
+      expect(completedBeforeWorker).toBe(false);
+      expect(worktreeSurvived).toBe(true);
+      expect(outcome.exitCode).toBe(0);
+      expect(outcome.result).toMatchObject({ status: 'winner', winner: expect.stringMatching(/^(alpha|beta)$/) });
+    } finally {
+      if (synthesisStarted) await workerDone;
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('preserves a provisional winner but fails publication after a workflow error', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'agon-forge-workflow-error-'));
+    const reason = 'fixture publication failed after winner selection';
+    const receipts: unknown[] = [];
+    let injected = false;
+    try {
+      for (const args of [['init', '--quiet'], ['-c', 'user.name=Fixture', '-c',
+        'user.email=fixture@example.invalid', 'commit', '--quiet', '--allow-empty', '-m', 'fixture']]) {
+        const result = spawnSync('git', args, { cwd: root, encoding: 'utf8' });
+        expect(result.status, result.stderr).toBe(0);
+      }
+      const services = withForgeHost({
+        engines: { listActive: async () => ['fixture'], dispatch: async (_id: string, _prompt: string, context: InvocationContext) => {
+          writeFileSync(join(context.cwd, 'result.txt'), 'candidate\n');
+          return { exitCode: 0, stdout: 'implemented', stderr: '' };
+        } },
+        logger: { debug: async () => {} },
+        receipts: { record: async (kind: string, payload: unknown) => { receipts.push({ kind, payload }); return 'fixture'; } },
+      } as unknown as ModServices);
+      const sourceObserver = vi.fn();
+      const open = services.forge!.open;
+      const observedServices = { ...services, forge: { async open(context: InvocationContext) {
+        const opened = await open(context);
+        return { ...opened, effects: { ...opened.effects, stages: { ...opened.effects.stages,
+          fitness: { ...opened.effects.stages.fitness, observeCommand: sourceObserver },
+        } } };
+      } } };
+      const outcome = await runCompetition({ task: 'fixture', test: 'true', noHealthCheck: true }, {
+        invocationId: 'workflow-error', cwd: root, platform: 'darwin-arm64',
+        signal: new AbortController().signal, config: {},
+        onWorkflowEvent: event => {
+          if (event.type === 'forge:done') { injected = true; throw new Error(reason); }
+        },
+      }, observedServices);
+      expect(injected).toBe(true);
+      expect(sourceObserver.mock.calls.map(call => call[0])).toEqual(['baseline', 'fixture']);
+      expect(outcome).toMatchObject({ exitCode: 1, failure: { code: 'FORGE_WORKFLOW_FAILED', message: reason },
+        result: { status: 'failed', error: reason, winner: 'fixture', candidates: [{ engineId: 'fixture', pass: true }] } });
+      expect(receipts).toMatchObject([{ kind: 'forge', payload: { status: 'failed', error: reason } }]);
+      const result = outcome.result as { runDir: string };
+      expect(JSON.parse(readFileSync(join(result.runDir, 'status.json'), 'utf8'))).toMatchObject({ ok: false, summary: reason });
+      const manifest = JSON.parse(readFileSync(join(result.runDir, 'manifest.json'), 'utf8'));
+      expect(manifest).toMatchObject({ status: 'failed', error: reason, winner: 'fixture' });
+      const published = JSON.parse(readFileSync(join(result.runDir, 'competition.json'), 'utf8'));
+      expect(published.candidates[0].durationMs).toBe(manifest.dispatchLog[0].totalDurationMs);
+      expect(published.candidates[0].fitnessDurationMs).toBe(sourceObserver.mock.calls[1][2].durationMs);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
+  it('does not open transport until an invocation and rejects a cancelled open', async () => {
+    const registry = {} as EngineRegistry;
+    const adapter = {} as EngineAdapter;
+    const openRegistry = vi.fn(() => registry);
+    const createAdapter = vi.fn(() => adapter);
+    const host = createForgeHostServices(openRegistry, createAdapter);
+    expect(openRegistry).not.toHaveBeenCalled();
+    expect(createAdapter).not.toHaveBeenCalled();
+    const controller = new AbortController();
+    const reason = new Error('cancel before opening Forge');
+    controller.abort(reason);
+    const context: InvocationContext = {
+      invocationId: 'forge-host-cancel', cwd: '/unused-forge-host-fixture',
+      platform: 'darwin-arm64', signal: controller.signal, config: {},
+    };
+    await expect(Promise.resolve().then(() => host.open(context))).rejects.toBe(reason);
+    expect(openRegistry).not.toHaveBeenCalled();
+    expect(createAdapter).not.toHaveBeenCalled();
+    const opened = await host.open({ ...context, signal: new AbortController().signal });
+    expect(openRegistry).toHaveBeenCalledExactlyOnceWith(context.cwd);
+    expect(createAdapter).toHaveBeenCalledExactlyOnceWith(registry);
+    expect(opened.registry).toBe(registry);
+    expect(opened.adapter).not.toBe(adapter);
+    expect(opened.adapter.dispatch).toBeTypeOf('function');
+    expect(opened.effects).not.toHaveProperty('runForge');
+  });
+
+  it.each(['dispatch', 'dispatchAgent', 'dispatchStream', 'dispatchAgentStream', 'isAvailable', 'getVersion'] as const)(
+    'blocks stale and cancelled Forge transport before %s', async method => {
+      const calls: string[] = [];
+      const raw = {
+        dispatch: async () => { calls.push('dispatch'); return {}; },
+        dispatchAgent: async () => { calls.push('dispatchAgent'); return {}; },
+        dispatchStream: async function* () { calls.push('dispatchStream'); yield 'chunk'; return {}; },
+        dispatchAgentStream: async function* () { calls.push('dispatchAgentStream'); yield 'chunk'; return {}; },
+        isAvailable: async () => { calls.push('isAvailable'); return true; },
+        getVersion: async () => { calls.push('getVersion'); return 'fixture'; },
+      } as EngineAdapter;
+      for (const fault of ['stale', 'cancelled'] as const) {
+        let stale = false;
+        const controller = new AbortController();
+        const reason = new Error(fault);
+        const host = createForgeHostServices(() => ({} as EngineRegistry), () => raw,
+          () => () => { if (stale) throw reason; });
+        const { adapter } = await host.open({ invocationId: 'forge-host-guard',
+          cwd: '/unused-forge-host-fixture', platform: 'darwin-arm64', config: {}, signal: controller.signal });
+        if (fault === 'stale') stale = true;
+        else controller.abort(reason);
+        const invoke = async () => {
+          const options = {} as Parameters<EngineAdapter['dispatch']>[0];
+          if (method === 'dispatchStream' || method === 'dispatchAgentStream') {
+            await adapter[method]!(options).next();
+          } else if (method === 'isAvailable' || method === 'getVersion') {
+            await adapter[method]({} as Parameters<EngineAdapter['isAvailable']>[0]);
+          } else await adapter[method]!(options);
+        };
+        await expect(invoke()).rejects.toBe(reason);
+        expect(calls).toEqual([]);
+      }
+    },
+  );
+
   it('settles every candidate before cleaning an arena after one candidate fails', async () => {
     const root = mkdtempSync(join(tmpdir(), 'agon-forge-drain-'));
     let releaseSlow!: () => void;
@@ -26,7 +301,7 @@ describe('Forge configuration ownership', () => {
     let slowHadWorktree = false;
     let cleanupBeforeSlowFinished = false;
     let slowDone = false;
-    let invocation: Promise<{ error?: unknown }> | undefined;
+    let invocation: Promise<{ result?: CommandResult; error?: unknown }> | undefined;
     try {
       for (const args of [['init', '--quiet'], ['-c', 'user.name=Fixture', '-c',
         'user.email=fixture@example.invalid', 'commit', '--quiet', '--allow-empty', '-m', 'fixture']]) {
@@ -56,7 +331,7 @@ describe('Forge configuration ownership', () => {
       } as unknown as ModServices;
       invocation = runForgeCompetition({ task: 'fixture', noHealthCheck: true, test: 'true' }, {
         invocationId: 'forge-drain', cwd: root, platform: 'darwin-arm64', signal: new AbortController().signal, config: {},
-      }, services).then(() => ({}), error => ({ error })).then(result => { settledEarly = !slowDone; return result; });
+      }, services).then(result => ({ result }), error => ({ error })).then(result => { settledEarly = !slowDone; return result; });
       await slowStarted;
       // Drain promise reactions before releasing the still-running sibling.
       await new Promise<void>(resolve => setImmediate(resolve));
@@ -64,7 +339,13 @@ describe('Forge configuration ownership', () => {
       releaseSlow();
       await slowFinished;
       const outcome = await invocation;
-      expect(outcome.error).toBeInstanceOf(Error);
+      expect(outcome.error).toBeUndefined();
+      expect(outcome.result).toMatchObject({ exitCode: 0, result: {
+        winner: 'slow', candidates: expect.arrayContaining([
+          expect.objectContaining({ engineId: 'broken', pass: false, status: 'dispatch_failed' }),
+          expect.objectContaining({ engineId: 'slow', pass: true, diff: expect.stringContaining('completed') }),
+        ]),
+      } });
       expect(returnedBeforeRelease).toBe(false);
       expect(cleanupBeforeSlowFinished).toBe(false);
       expect(slowHadWorktree).toBe(true);
@@ -132,8 +413,12 @@ describe('Forge configuration ownership', () => {
         invocationId: 'forge-no-diff-parity', cwd: root, platform: 'darwin-arm64', signal: new AbortController().signal, config: {},
       });
       expect(dispatchCount).toBe(1);
+      // Stage dispatch rejection precedes the no-diff classifier.
+      const verdict = fixture.exitCode === 130
+        ? { pass: false, score: 0, engineCompleted: false, status: 'dispatch_failed', reason: 'dispatch exited with code 130' }
+        : legacy;
       expect(result).toMatchObject({ exitCode: fixture.pass ? 0 : 1, result: {
-        winner: fixture.pass ? 'fixture' : null, candidates: [{ ...legacy, diffLines: 0 }],
+        winner: fixture.pass ? 'fixture' : null, candidates: [{ ...verdict, diffLines: 0 }],
       } });
       expect(git('status', '--porcelain')).toBe('');
       expect(git('worktree', 'list', '--porcelain').match(/^worktree /gm)).toHaveLength(1);
@@ -179,7 +464,7 @@ describe('Forge configuration ownership', () => {
     const owner = { id: MANIFEST.id, version: MANIFEST.version, contentHash: `sha256:${'a'.repeat(64)}` as const };
     const registry = new ModRegistry({ generation: 'forge-fitness-runtime', activeOwners: [owner] });
     const contexts: string[] = [];
-    const cleanups: Array<{ rootPath: string; cleanupComplete: boolean }> = [];
+    const cleanups: Array<{ worktreePaths: string[]; cleanupComplete: boolean }> = [];
     try {
       git('init', '--quiet');
       writeFileSync(join(root, 'fixture.txt'), 'before\n');
@@ -190,7 +475,7 @@ describe('Forge configuration ownership', () => {
         engines: {
           listActive: async () => ['fixture'],
           dispatch: async (_engine: string, prompt: string, context: InvocationContext) => {
-            expect(prompt).toContain(`FITNESS COMMAND: ${fitness}\n`);
+            expect(prompt).toContain(`## FITNESS TEST\nRun this command to verify your work passes:\n\`\`\`\n${fitness}\n\`\`\``);
             contexts.push(context.cwd);
             expect(context.cwd).not.toBe(root);
             writeFileSync(join(context.cwd, 'fixture.txt'), 'after\n');
@@ -198,7 +483,7 @@ describe('Forge configuration ownership', () => {
           },
         },
         receipts: { record: async () => 'fixture-receipt' },
-        logger: { debug: async (_message: string, fields: { rootPath: string; cleanupComplete: boolean }) => { cleanups.push(fields); } },
+        logger: { debug: async (_message: string, fields: { worktreePaths: string[]; cleanupComplete: boolean }) => { cleanups.push(fields); } },
       } as unknown as ModServices);
       await mod.activate(session.registrar);
       session.commit();
@@ -222,7 +507,7 @@ describe('Forge configuration ownership', () => {
       expect(contexts).toHaveLength(1);
       expect(cleanups).toHaveLength(1);
       expect(cleanups[0].cleanupComplete).toBe(true);
-      expect(existsSync(cleanups[0].rootPath)).toBe(false);
+      expect(cleanups[0].worktreePaths.every(path => !existsSync(path))).toBe(true);
       expect(readFileSync(join(root, 'fixture.txt'), 'utf8')).toBe('before\n');
       expect(git('status', '--porcelain')).toBe('');
       expect(git('worktree', 'list', '--porcelain').match(/^worktree /gm)).toHaveLength(1);
@@ -245,7 +530,7 @@ describe('Forge configuration ownership', () => {
       const started = join(root, 'baseline.started');
       const scriptPath = join(root, 'wait.mjs');
       let settled: Promise<{ result?: unknown; error?: unknown }> | undefined;
-      const cleanups: Array<{ rootPath: string; cleanupComplete: boolean }> = [];
+      const cleanups: Array<{ worktreePaths: string[]; cleanupComplete: boolean }> = [];
       let loserAborted = false;
       const record = vi.fn(async () => 'fixture-receipt');
       const dispatch = vi.fn(async (engine: string, _prompt: string, context: InvocationContext) => {
@@ -268,7 +553,7 @@ describe('Forge configuration ownership', () => {
           writeFileSync(${JSON.stringify(started)}, String(process.pid)); setTimeout(() => {}, 4000);`);
         if (phase === 'before-start') controller.abort(reason);
         const services = { engines: { listActive: async () => ['fixture', 'slow', 'judge'], dispatch },
-          receipts: { record }, logger: { debug: async (_message: string, fields: { rootPath: string; cleanupComplete: boolean }) => { cleanups.push(fields); } },
+          receipts: { record }, logger: { debug: async (_message: string, fields: { worktreePaths: string[]; cleanupComplete: boolean }) => { cleanups.push(fields); } },
           ...(phase === 'dry-finish' ? { runs: {
             start: async () => ({ path: 'fixture-run', startedAt: new Date().toISOString() }),
             finish: async () => { controller.abort(reason); },
@@ -298,7 +583,13 @@ describe('Forge configuration ownership', () => {
         expect(cleanups).toHaveLength(phase === 'before-start' || phase === 'dry-finish' ? 0 : 1);
         for (const cleanup of cleanups) {
           expect(cleanup.cleanupComplete).toBe(true);
-          expect(existsSync(cleanup.rootPath)).toBe(false);
+          expect(cleanup.worktreePaths.every(path => !existsSync(path))).toBe(true);
+          if (phase === 'baseline' || phase === 'candidate') {
+            const manifestPath = join(dirname(cleanup.worktreePaths[0]), 'manifest.json');
+            expect(JSON.parse(readFileSync(manifestPath, 'utf8'))).toMatchObject({
+              status: 'failed', error: reason.message,
+            });
+          }
         }
         expect(git('worktree', 'list', '--porcelain').match(/^worktree /gm)).toHaveLength(1);
         expect(readFileSync(join(root, 'fixture.txt'), 'utf8')).toBe('before\n');
@@ -402,7 +693,7 @@ describe('Forge configuration ownership', () => {
     const registry = new ModRegistry({ generation: 'forge-settings', activeOwners: [owner] });
     const session = registry.beginRegistration(MANIFEST);
     // Activation must only register contributions, not use host effects.
-    const mod = await createMod(new Proxy({} as ModServices, { get() { throw new Error('unexpected host effect'); } }));
+    const mod = await createForgeMod(new Proxy({} as ModServices, { get() { throw new Error('unexpected host effect'); } }));
     await mod.activate(session.registrar);
     session.commit();
     const schemas = MANIFEST.contributes.configKeys.map(({ id }) => registry.resolve('config', id)!.payload);

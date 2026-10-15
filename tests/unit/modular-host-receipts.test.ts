@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, readdir } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -18,6 +18,30 @@ async function receipts(root: string): Promise<Array<Record<string, unknown>>> {
 }
 
 describe('durable host transaction receipts', () => {
+  it.each(['operation', 'baseGeneration', 'candidateLockHash', 'steps'] as const)(
+    'repairs terminal evidence whose receipt journal has a different %s', async (field) => {
+      const root = await fixture();
+      const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
+      const committed = await host.commitGeneration({ operation: 'install', lock: hostLock('a'), desiredState: {}, installedIndex: {} });
+      const receiptPath = join(host.paths.receipts, `${committed.journal.transactionId}.committed.json`);
+      const original = JSON.parse(await readFile(receiptPath, 'utf8'));
+      const altered = structuredClone(original);
+      if (field === 'operation') altered.journal.operation = 'remove';
+      if (field === 'baseGeneration') altered.journal.baseGeneration = 99;
+      if (field === 'candidateLockHash') altered.journal.candidateLockHash = `sha256:${'0'.repeat(64)}`;
+      if (field === 'steps') altered.journal.steps = [];
+      await chmod(receiptPath, 0o600);
+      await writeFile(receiptPath, JSON.stringify(altered));
+
+      expect(await host.recoverTransactions()).toEqual([committed.journal.transactionId]);
+      const repaired = (await receipts(root)).find(({ outcome }) => outcome === 'recovered-committed');
+      expect(repaired?.journal).toEqual(original.journal);
+      expect(repaired?.pointer).toEqual(original.pointer);
+      expect(await host.readCurrentPointer()).toEqual(committed.pointer);
+      expect(await host.recoverTransactions()).toEqual([]);
+    },
+  );
+
   it('records one redacted, transaction-scoped receipt for every ordinary terminal outcome', async () => {
     const root = await fixture();
     const host = new DurableModHost(root, { kernelVersion: '1.0.0', secrets: ['swordfish'] });

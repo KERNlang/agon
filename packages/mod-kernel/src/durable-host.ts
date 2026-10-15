@@ -527,7 +527,7 @@ export class DurableModHost {
         if (receipt.schemaVersion !== 1 || receipt.transactionId !== journal.transactionId || typeof receipt.ownerId !== 'string' || !Array.isArray(receipt.events)) continue;
         if (!['committed', 'restart-required', 'recovered-committed'].includes(String(receipt.outcome))) continue;
         const persistedJournal = parseHostTransactionJournal(receipt.journal);
-        if (persistedJournal.transactionId !== journal.transactionId || persistedJournal.candidateGeneration !== journal.candidateGeneration || persistedJournal.state !== journal.state) continue;
+        if (canonicalJson(persistedJournal) !== canonicalJson(journal)) continue;
         if (receipt.pointer === null || receipt.pointer === undefined) continue;
         const receiptPointer = parseGenerationPointer(receipt.pointer);
         if (receiptPointer.transactionId !== journal.transactionId || receiptPointer.generation !== journal.candidateGeneration || receiptPointer.lockHash !== journal.candidateLockHash) continue;

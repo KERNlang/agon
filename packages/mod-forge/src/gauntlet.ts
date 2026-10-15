@@ -17,7 +17,7 @@ export interface GauntletRuntime {
     log(type: string, engineId?: string, data?: Record<string, unknown>): void;
   };
   runFitness(options: {
-    engineId: string; worktreePath: string; fitnessCmd: string; timeout: number; forgeDir: string;
+    engineId: string; worktreePath: string; fitnessCmd: string; timeout: number; forgeDir: string; signal?: AbortSignal;
   }): Promise<Pick<EngineResult, 'pass' | 'score'>>;
 }
 
@@ -181,7 +181,7 @@ export async function runGauntlet(opts: {winnerId:string, losers:string[], task:
   let repairAttempted = false;
 
   // Get pre-repair score
-  const preRepair = await runFitness({ engineId: winnerId, worktreePath: winnerWorktree, fitnessCmd, timeout: fitnessTimeout, forgeDir });
+  const preRepair = await runFitness({ engineId: winnerId, worktreePath: winnerWorktree, fitnessCmd, timeout: fitnessTimeout, forgeDir, signal: opts.signal });
   preRepairScore = preRepair.score;
 
   if (attacksLanded > 0) {
@@ -233,7 +233,7 @@ export async function runGauntlet(opts: {winnerId:string, losers:string[], task:
     }
 
     // Re-score after repair (or after failed repair attempt)
-    const postRepair = await runFitness({ engineId: winnerId, worktreePath: winnerWorktree, fitnessCmd, timeout: fitnessTimeout, forgeDir });
+    const postRepair = await runFitness({ engineId: winnerId, worktreePath: winnerWorktree, fitnessCmd, timeout: fitnessTimeout, forgeDir, signal: opts.signal });
     postRepairScore = postRepair.score;
     repairPass = postRepair.pass && !repairDispatchError;
 

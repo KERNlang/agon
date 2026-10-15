@@ -789,6 +789,16 @@ Missing-sidecar and unavailable-tool fallbacks retain their legacy behavior;
 they are not evidence that validation actually ran. Full-workflow cancellation,
 physical competition integration and legacy caller retirement remain open.
 
+The fitness owner accepts the workflow's optional abort signal. It refuses an
+already cancelled invocation, forwards cancellation to fitness, lint and style
+subprocesses, and preserves the abort reason before later validation or result
+publication. Optional-tool fallback does not swallow cancellation. Legacy
+baseline, candidate, synthesis, team and gauntlet callers forward their existing
+signals. Baseline worktree disposal still runs on cancellation. This does not
+prove that every orchestration phase stops dispatching or that synchronous
+syntax validation can be interrupted; those broader cancellation checks remain
+separate requirements.
+
 ## Registry invariants
 
 The kernel refuses activation unless all hold:

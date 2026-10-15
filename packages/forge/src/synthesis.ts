@@ -208,6 +208,7 @@ export async function runSynthesis(opts: {manifest:ForgeManifest, winner:string,
       fitnessCmd: opts.fitnessCmd,
       timeout: opts.fitnessTimeout,
       forgeDir,
+      signal: opts.signal,
     });
 
     const wins = synthResult.pass && synthResult.score > winnerResult.score;

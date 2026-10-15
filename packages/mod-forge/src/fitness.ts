@@ -44,7 +44,8 @@ export function normalizeFitnessCommandForShell(command: string): string {
   return `node <<'${delimiter}'\n${script}\n${delimiter}`;
 }
 
-export async function runFitness(opts: {engineId:string, worktreePath:string, fitnessCmd:string, timeout:number, forgeDir:string, requireDiff?:boolean}, runtime: ForgeFitnessRuntime): Promise<EngineResult> {
+export async function runFitness(opts: {engineId:string, worktreePath:string, fitnessCmd:string, timeout:number, forgeDir:string, requireDiff?:boolean, signal?:AbortSignal}, runtime: ForgeFitnessRuntime): Promise<EngineResult> {
+  opts.signal?.throwIfAborted();
   const startTime = Date.now();
   const fitnessCmd = normalizeFitnessCommandForShell(opts.fitnessCmd);
 
@@ -55,6 +56,7 @@ export async function runFitness(opts: {engineId:string, worktreePath:string, fi
       args: ['-c', fitnessCmd],
       cwd: opts.worktreePath,
       timeout: opts.timeout * 1000,
+      signal: opts.signal,
     });
   } else {
     fitnessResult = {
@@ -66,6 +68,7 @@ export async function runFitness(opts: {engineId:string, worktreePath:string, fi
     };
   }
 
+  opts.signal?.throwIfAborted();
   const durationSec = Math.round((Date.now() - startTime) / 1000);
   const commandPass = fitnessResult.exitCode === 0 && !fitnessResult.timedOut;
 
@@ -89,6 +92,7 @@ export async function runFitness(opts: {engineId:string, worktreePath:string, fi
     filesChanged = 0;
   }
 
+  opts.signal?.throwIfAborted();
   const patchPath = join(opts.forgeDir, `${opts.engineId}-patch.diff`);
   writeFileSync(patchPath, diff);
 
@@ -97,8 +101,10 @@ export async function runFitness(opts: {engineId:string, worktreePath:string, fi
   const pass = commandPass && diffGatePass;
 
   const worktreeExistsForQuality = existsSync(opts.worktreePath);
-  const lintWarnings = worktreeExistsForQuality ? await runLint(opts.worktreePath) : 0;
-  const styleScore = worktreeExistsForQuality ? await runStyleCheck(opts.worktreePath) : 0;
+  const lintWarnings = worktreeExistsForQuality ? await runLint(opts.worktreePath, opts.signal) : 0;
+  opts.signal?.throwIfAborted();
+  const styleScore = worktreeExistsForQuality ? await runStyleCheck(opts.worktreePath, opts.signal) : 0;
+  opts.signal?.throwIfAborted();
 
   // Syntax check the changed files via the tree-sitter Python sidecar.
   // Replaces the old "stdout contains 'validated'" heuristic — engines
@@ -108,6 +114,7 @@ export async function runFitness(opts: {engineId:string, worktreePath:string, fi
   const syntaxCheck = worktreeExistsForQuality
     ? runtime.runSyntaxCheck(opts.worktreePath)
     : { errors: 0, invalidFiles: [] };
+  opts.signal?.throwIfAborted();
 
   // Persist fitness stdout/stderr to disk — followers + synthesis can read WHY tests failed
   let fitnessLogPath: string | undefined;

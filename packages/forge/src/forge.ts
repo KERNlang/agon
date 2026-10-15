@@ -545,6 +545,7 @@ export async function runForge(options: ForgeOptions & { onResult?: (engineId:st
         fitnessTimeout: config.forgeFitnessTimeout,
         forgeDir,
         onEvent,
+        signal: forgeSignal,
       });
       // A passing baseline is a warning, not a stop condition. Content,
       // docs, refactor, and "make it better" tasks often use broad fitness

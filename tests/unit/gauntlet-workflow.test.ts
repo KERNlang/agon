@@ -61,6 +61,7 @@ it.each(['exec-repair', 'agent-repair', 'repair-error', 'invalid-attack', 'break
     expect(create).toHaveBeenCalledWith(root, join(root, 'gauntlet-clean'), 'fixture-sha');
     expect(remove).toHaveBeenCalledOnce();
     expect(runFitness).toHaveBeenCalledTimes(attacked ? 2 : 1);
+    for (const [options] of runFitness.mock.calls) expect(options.signal).toBe(signal);
     expect(dispatch.mock.calls.map(([options]) => options.engine.id))
       .toEqual(attacked && scenario !== 'agent-repair' ? ['breaker', 'winner'] : ['breaker']);
     expect(dispatchAgent).toHaveBeenCalledTimes(scenario === 'agent-repair' ? 1 : 0);

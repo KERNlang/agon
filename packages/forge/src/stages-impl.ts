@@ -176,6 +176,7 @@ export async function runForgeEngineAttempt(opts: {engineId:string,prompt:string
     timeout: opts.config.forgeFitnessTimeout,
     forgeDir: opts.forgeDir,
     requireDiff,
+    signal: opts.signal,
   });
   const fitnessDurationMs = Date.now() - fitnessStart;
   if (result.diffLines === 0) {
@@ -231,7 +232,8 @@ export async function runForgeEngineAttempt(opts: {engineId:string,prompt:string
   return { result, metric, dispatchResult, worktreePath: wtPath };
 }
 
-export async function runBaseline(opts: {cwd:string, baseSha:string, fitnessCmd:string, fitnessTimeout:number, forgeDir:string, onEvent?:ForgeEventCallback}): Promise<boolean> {
+export async function runBaseline(opts: {cwd:string, baseSha:string, fitnessCmd:string, fitnessTimeout:number, forgeDir:string, onEvent?:ForgeEventCallback, signal?:AbortSignal}): Promise<boolean> {
+  opts.signal?.throwIfAborted();
   opts.onEvent?.({ type: 'baseline:start' });
 
   const root = repoRoot(opts.cwd);
@@ -245,6 +247,7 @@ export async function runBaseline(opts: {cwd:string, baseSha:string, fitnessCmd:
       fitnessCmd: opts.fitnessCmd,
       timeout: opts.fitnessTimeout,
       forgeDir: opts.forgeDir,
+      signal: opts.signal,
     });
 
     opts.onEvent?.({ type: 'baseline:done', data: { passes: result.pass } });

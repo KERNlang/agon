@@ -262,7 +262,7 @@ export async function runTeamCoopForge(team: TeamSpec, task: string, fitnessCmd:
     tokenSum += implResult.usage?.totalTokens ?? 0;
 
     // Score this implementation
-    const fitness = await runFitness({ engineId: impl.engineId, worktreePath: wt.path, fitnessCmd, timeout: fitnessTimeout, forgeDir });
+    const fitness = await runFitness({ engineId: impl.engineId, worktreePath: wt.path, fitnessCmd, timeout: fitnessTimeout, forgeDir, signal });
 
     trace.push({ round: implRound, actor: impl.engineId, role: 'implementer', action: 'implemented', artifactSummary: `score=${fitness.score}`, durationMs: implResult.durationMs });
 
@@ -417,7 +417,7 @@ export async function runTeamCoopForge(team: TeamSpec, task: string, fitnessCmd:
     }
 
     // Re-score after revision
-    const revisedFitness = await runFitness({ engineId: bestImpl.engineId, worktreePath: currentWorktree.path, fitnessCmd, timeout: fitnessTimeout, forgeDir });
+    const revisedFitness = await runFitness({ engineId: bestImpl.engineId, worktreePath: currentWorktree.path, fitnessCmd, timeout: fitnessTimeout, forgeDir, signal });
     currentScore = revisedFitness.score;
 
     trace.push({ round, actor: bestImpl.engineId, role: 'implementer', action: 'implemented', artifactSummary: `revised score=${currentScore}`, durationMs: 0 });
@@ -427,7 +427,7 @@ export async function runTeamCoopForge(team: TeamSpec, task: string, fitnessCmd:
   }
 
   // --- Final scoring ---
-  const finalFitness = await runFitness({ engineId: `team:${team.teamId}`, worktreePath: currentWorktree.path, fitnessCmd, timeout: fitnessTimeout, forgeDir });
+  const finalFitness = await runFitness({ engineId: `team:${team.teamId}`, worktreePath: currentWorktree.path, fitnessCmd, timeout: fitnessTimeout, forgeDir, signal });
 
   const finalResult: EngineResult = {
     engineId: `team:${team.teamId}`,

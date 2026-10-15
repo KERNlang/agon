@@ -12,7 +12,8 @@ import { join } from 'node:path';
 
 import { execFileSync } from 'node:child_process';
 
-export async function runLint(cwd: string): Promise<number> {
+export async function runLint(cwd: string, signal?: AbortSignal): Promise<number> {
+  signal?.throwIfAborted();
   const eslintBinary = join(cwd, 'node_modules', '.bin', 'eslint');
   if (!existsSync(eslintBinary)) return 0;
   try {
@@ -21,7 +22,9 @@ export async function runLint(cwd: string): Promise<number> {
       args: [ '.', '--format', 'json', '--quiet'],
       cwd,
       timeout: 30_000,
+      signal,
     });
+    signal?.throwIfAborted();
 
     if (result.stdout) {
       try {
@@ -33,18 +36,22 @@ export async function runLint(cwd: string): Promise<number> {
     }
     return 0;
   } catch (_lintErr) {
+    signal?.throwIfAborted();
     // ESLint not installed or failed — treat as 0 warnings
     return 0;
   }
 }
 
-export async function runStyleCheck(cwd: string): Promise<number> {
+export async function runStyleCheck(cwd: string, signal?: AbortSignal): Promise<number> {
+  signal?.throwIfAborted();
   const prettierBinary = join(cwd, 'node_modules', '.bin', 'prettier');
   if (!existsSync(prettierBinary)) return 100;
   try {
-    const result = await spawnWithTimeout({ command: prettierBinary, args: [ '--check', '.'], cwd: cwd, timeout: 30000 });
+    const result = await spawnWithTimeout({ command: prettierBinary, args: [ '--check', '.'], cwd: cwd, timeout: 30000, signal });
+    signal?.throwIfAborted();
     return (result.exitCode === 0) ? 100 : 80;
   } catch (_prettierErr) {
+    signal?.throwIfAborted();
     // Prettier not installed — assume style is fine
     return 100;
   }

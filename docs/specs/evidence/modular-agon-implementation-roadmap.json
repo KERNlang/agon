@@ -2281,6 +2281,7 @@
         "@kernlang/agon-mod-agent",
         "@kernlang/agon-mod-nero",
         "@kernlang/agon-mod-tribunal",
+        "@kernlang/agon-mod-brainstorm",
         "@kernlang/agon-mod-council",
         "@kernlang/agon-support-worktree",
         "@kernlang/agon-support-verification"

@@ -35,6 +35,7 @@
     "@kernlang/agon-mod-agent": "1.0.0",
     "@kernlang/agon-mod-nero": "1.0.0",
     "@kernlang/agon-mod-tribunal": "1.0.0",
+    "@kernlang/agon-mod-brainstorm": "1.0.0",
     "@kernlang/agon-mod-council": "1.0.0",
     "@kernlang/agon-support-worktree": "1.0.0",
     "@kernlang/agon-support-verification": "1.0.0"

@@ -563,6 +563,72 @@ describe('runDoneOracle — cheap blockers gate the expensive falsifier (orderin
 });
 
 describe('runConquer — supervisory loop', () => {
+  it.each([
+    ['is this approach wrong?', 'nero'], ['choose 1. first or 2. second', 'tribunal'],
+    ['how do I start?', 'brainstorm'], ['is this architecture safe?', 'council'],
+  ])('routes %s through the owner and retains the objective', async (question, mode) => {
+    const prompts: string[] = [];
+    const consulted: string[] = [];
+    let checks = 0;
+    const result = await conquerOwner.runConquerWorkflow({
+      task: 'original objective', builderEngine: 'builder', outputDir: 'fixture',
+      caps: { maxTurns: 3, maxWallClockMs: 0 },
+    }, {
+      contextSpine: async () => 'project context',
+      build: async prompt => {
+        prompts.push(prompt);
+        return { exitCode: 0, stdout: prompts.length === 1 ? `CONQUER_ASK: ${question}` : 'CONQUER_DONE: verified work' };
+      },
+      consult: async (selected, asked) => {
+        consulted.push(selected);
+        expect(asked).toBe(question);
+        return { mode: selected, verdict: 'use the verified approach', confidence: 80, flawed: false };
+      },
+      evaluateDone: async claim => {
+        checks++;
+        expect(claim).toBe('verified work');
+        return { passed: true, reason: 'verified', falsified: false, attackText: '', counterexample: null, observed: null };
+      },
+    });
+    expect(consulted).toEqual([mode]);
+    expect(checks).toBe(1);
+    expect(result).toMatchObject({ done: true, stopReason: 'done', turnsUsed: 2, consultsRun: 1 });
+    expect(prompts).toHaveLength(2);
+    for (const prompt of prompts) expect(prompt).toContain('original objective');
+    expect(prompts[0]).toContain('project context');
+    expect(prompts[1]).not.toContain('project context');
+    expect(prompts[1]).toContain(`[Cesar consulted ${mode}] (confidence 80%) use the verified approach`);
+  });
+
+  it.each(['builder', 'oracle'] as const)('does not accept a late DONE after cancellation in the %s', async phase => {
+    const controller = new AbortController();
+    let checks = 0;
+    const result = await conquerOwner.runConquerWorkflow({
+      task: 'cancelled task', builderEngine: 'builder', outputDir: 'fixture', signal: controller.signal,
+    }, {
+      contextSpine: async () => '',
+      build: async () => {
+        if (phase === 'builder') controller.abort();
+        return { exitCode: 0, stdout: 'CONQUER_DONE: complete' };
+      },
+      consult: async () => { throw new Error('No consultation is authorized'); },
+      evaluateDone: async () => {
+        checks++;
+        controller.abort();
+        return { passed: true, reason: 'late success', falsified: false, attackText: '', counterexample: null, observed: null };
+      },
+    });
+    expect(result).toMatchObject({ done: false, stopReason: 'aborted', turnsUsed: 1 });
+    expect(checks).toBe(phase === 'builder' ? 0 : 1);
+  });
+
+  it('exposes the single supervisory loop from the physical owner', () => {
+    expect(conquerOwner).toHaveProperty('runConquerWorkflow', expect.any(Function));
+    expect(conquerOwner).toHaveProperty('classifyAsk', classifyAsk);
+    expect(conquerOwner).toHaveProperty('buildConquerTurnPrompt', buildConquerTurnPrompt);
+    expect(conquerOwner).toHaveProperty('capBreached', capBreached);
+  });
+
   const registry = { get: (id: string) => ({ id }) } as any;
   const turn = (stdout: string, exitCode = 0) => ({ exitCode, stdout, stderr: '', durationMs: 1, timedOut: false });
   // advisorEngines: [] short-circuits the real nero round in the done-oracle, keeping the loop unit-testable.

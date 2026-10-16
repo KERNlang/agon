@@ -21,6 +21,9 @@
       "@kernlang/agon-mod-tribunal": [
         "../mod-tribunal/src/index.ts"
       ],
+      "@kernlang/agon-mod-brainstorm": [
+        "../mod-brainstorm/src/index.ts"
+      ],
       "@kernlang/agon-mod-council": [
         "../mod-council/src/index.ts"
       ],
@@ -50,6 +53,9 @@
     },
     {
       "path": "../mod-tribunal"
+    },
+    {
+      "path": "../mod-brainstorm"
     },
     {
       "path": "../mod-council"

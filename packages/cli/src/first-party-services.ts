@@ -2,7 +2,7 @@ import { resolveExplicitReviewEngines } from '@kernlang/agon-support-verificatio
 import { cliRunRecordHost } from './run-record-host.js';
 import { patchApplicationHost } from './patch-application-host.js';
 import { planSessionHost } from '@kernlang/agon-mod-plan';
-import { EngineRegistry, createRunDir, eventLogFlush, getRatings, loadConfig, pickTopRatedEngine, setSessionRoot } from '@kernlang/agon-core';
+import { EngineRegistry, buildKernContextSpine, createRunDir, eventLogFlush, getRatings, loadConfig, pickTopRatedEngine, setSessionRoot } from '@kernlang/agon-core';
 import { createCliAdapter } from '@kernlang/agon-adapter-cli';
 import { createForgeHostServices } from '@kernlang/agon-core';
 import { createBrainstormHostServices } from '@kernlang/agon-mod-brainstorm';
@@ -79,7 +79,7 @@ export function decorateCliFirstPartyServices(manifest: ModManifest, base: ModSe
       }
     },
   }) : undefined;
-  const usesBrainstorm = manifest.id === 'agon.brainstorm' || manifest.id === 'agon.pipeline-orchestration';
+  const usesBrainstorm = manifest.id === 'agon.brainstorm' || manifest.id === 'agon.pipeline-orchestration' || manifest.id === 'agon.conquer';
   const brainstorm = usesBrainstorm ? {
     ...createBrainstormHostServices<CatalogEngineRegistry>({
       openRegistry: () => {
@@ -102,6 +102,9 @@ export function decorateCliFirstPartyServices(manifest: ModManifest, base: ModSe
   } : undefined;
   return Object.freeze({ ...base, runs, ...(browser ? { browser } : {}), ...(workspace ? { workspace } : {}),
     ...(brainstorm ? { brainstorm } : {}),
+    ...(manifest.id === 'agon.conquer' ? { conquer: {
+      contextSpine: (context: Parameters<ModServices['engines']['dispatch']>[2]) => buildKernContextSpine(context.cwd),
+    } } : {}),
     ...(manifest.id === 'agon.ratings' ? { ratings: {
       protectedEngineIds(context: Parameters<ModServices['engines']['dispatch']>[2]): readonly string[] {
         const registry = new EngineRegistry(); registry.load(resolveBuiltinEnginesDir());

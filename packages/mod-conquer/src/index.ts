@@ -10,3 +10,5 @@ export { createMod } from './implementation.js';
 export { createMod as default } from './implementation.js';
 export { doneOracleDecision, evaluateDoneEvidence, parseBuilderSignals, buildConquerSystemPrompt } from './completion-policy.js';
 export type { DoneOracleInput, DoneEvidenceInput } from './completion-policy.js';
+export { runConquerWorkflow, ESCAPING_OPS, DONE_SENTINEL, ASK_SENTINEL, DEFAULT_PROTECTED_PUSH_BRANCHES, pickEscalationMode, classifyStuck, shouldEscalate, shouldAutoApprove, summarizeConsultForBuilder, isProtectedPushBranch, capBreached, classifyAsk, buildConquerTurnPrompt } from './workflow.js';
+export type { ConquerWorkflowOptions, ConquerWorkflowEffects, StuckSignals, ConquerCaps, ConquerState, ConquerTurn, ConquerResult } from './workflow.js';

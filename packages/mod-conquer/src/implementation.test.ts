@@ -4,11 +4,139 @@ import * as verification from '@kernlang/agon-support-verification';
 import * as nero from '@kernlang/agon-mod-nero';
 import * as tribunal from '@kernlang/agon-mod-tribunal';
 import * as council from '@kernlang/agon-mod-council';
+import * as brainstorm from '@kernlang/agon-mod-brainstorm';
 import * as worktrees from '@kernlang/agon-support-worktree';
 import { runAgentTask } from '@kernlang/agon-mod-agent';
 import { afterEach } from 'vitest';
 import { unlinkSync } from 'node:fs';
 afterEach(() => vi.restoreAllMocks());
+
+it('cleans allocated worktrees when candidate creation fails', async () => {
+  const cwd = repo();
+  const createArena = worktrees.createForgeArena;
+  let allocated = '';
+  let cleanup: (() => void) | undefined;
+  vi.spyOn(worktrees, 'createForgeArena').mockImplementation(source => {
+    const arena = createArena(source);
+    allocated = arena.rootPath;
+    cleanup = arena.cleanup;
+    return { ...arena, create: engineId => {
+      arena.create(engineId);
+      throw new Error('fixture build-artifact hydration failed');
+    } };
+  });
+  const dispatch = vi.fn();
+  const services = { logger: { debug: vi.fn() }, engines: { listActive: async () => ['builder'], dispatch } } as unknown as ModServices;
+  try {
+    await expect(runConquerTask({ task: 'build', gate: 'true', builder: 'builder' },
+      { invocationId: 'creation-failure', cwd, platform: 'darwin-arm64', signal: new AbortController().signal, config: {} }, services))
+      .rejects.toThrow('fixture build-artifact hydration failed');
+    expect(allocated).not.toBe('');
+    expect(existsSync(allocated)).toBe(false);
+    expect(execFileSync('git', ['worktree', 'list', '--porcelain'], { cwd, encoding: 'utf8' })).not.toContain(allocated);
+    expect(dispatch).not.toHaveBeenCalled();
+  } finally { cleanup?.(); }
+});
+
+it('keeps real host-backed Brainstorm dispatch inside the canonical selected pool', async () => {
+  const cwd = repo();
+  const output = mkdtempSync(join(tmpdir(), 'agon-conquer-brainstorm-'));
+  const registry = { get: (id: string) => ({ schemaVersion: 3 as const, id, displayName: id, isLocal: true,
+    tier: 'user' as const, timeout: 10 }), findBinary: () => null };
+  const advisorDispatch = vi.fn(async (options: { engine: { id: string }; prompt: string }) => ({
+    exitCode: 0, stdout: options.prompt === 'fixture draft' ? JSON.stringify({ approach: 'stream', confidence: 80,
+      reasoning: 'bounded memory', keyFiles: [], steps: [], tradeoffs: [] }) : 'SELECTED ADVISOR RESPONSE',
+    stderr: '', timedOut: false, durationMs: 1,
+  }));
+  const host = brainstorm.createBrainstormHostServices({
+    openRegistry: () => registry,
+    createAdapter: () => ({ dispatch: advisorDispatch, isAvailable: async () => true, getVersion: async () => null }),
+    seedRegistry: () => {}, readRatings: () => ({ byMode: { brainstorm: {} }, global: {} }),
+    loadConfig: () => ({}), classifyTask: () => 'other', updateRanked: () => {},
+    buildPrompt: () => 'fixture draft', parseDraft: raw => JSON.parse(raw),
+  });
+  let builds = 0;
+  const dispatch = vi.fn(async (engineId, _prompt, context) => {
+    writeFileSync(join(context.cwd, 'feature.txt'), 'feature\n');
+    return { engineId, exitCode: 0, stdout: ++builds === 1 ? 'CONQUER_ASK: how do I start?'
+      : 'CONQUER_DONE: implemented', stderr: '', timedOut: false };
+  });
+  const services = { brainstorm: host, logger: { debug: vi.fn() }, receipts: { record: vi.fn(async () => 'fixture') },
+    runs: { start: async () => ({ id: 'fixture', path: output, mode: 'brainstorm', startedAt: 'fixture' }),
+      finish: vi.fn(), writeArtifact: vi.fn() },
+    engines: { listActive: async () => ['builder', 'unselected'], dispatch,
+      resolveRequested: async (ids: readonly string[]) => ids.map(id => id === 'advisor-alias' ? 'selected-advisor' : id) },
+  } as unknown as ModServices;
+  vi.stubEnv('AGON_DISABLE_FORGE_HEALTH_CHECK', '1');
+  try {
+    const out = await runConquerTask({ task: 'implement reader', gate: 'true', builder: 'builder', engines: 'advisor-alias', maxTurns: '2' },
+      { invocationId: 'brainstorm-real-host', cwd, platform: 'darwin-arm64', signal: new AbortController().signal, config: {} }, services);
+    expect(out.exitCode).toBe(0);
+    expect(advisorDispatch).toHaveBeenCalledTimes(2);
+    expect(advisorDispatch.mock.calls.map(([options]) => options.engine.id)).toEqual(['selected-advisor', 'selected-advisor']);
+    expect(dispatch.mock.calls.map(([id]) => id)).toEqual(['builder', 'builder']);
+    expect(dispatch.mock.calls[1][1]).toContain('[Cesar consulted brainstorm] SELECTED ADVISOR RESPONSE');
+  } finally { vi.unstubAllEnvs(); }
+});
+
+it('continues ordinary output without running a gate or unsolicited advice', async () => {
+  const cwd = repo();
+  const fitness = vi.spyOn(verification, 'runFitnessCommand');
+  const dispatch = vi.fn(async (engineId, _prompt, _context, _options) => ({
+    engineId, exitCode: 0, stdout: 'still working', stderr: '', timedOut: false,
+  }));
+  const services = { logger: { debug: vi.fn() }, receipts: { record: vi.fn(async () => 'fixture') },
+    engines: { listActive: async () => ['builder', 'a', 'b'], dispatch } } as unknown as ModServices;
+  const out = await runConquerTask({ task: 'retain this exact objective', gate: 'false', builder: 'builder', maxTurns: '2' },
+    { invocationId: 'ordinary-continuation', cwd, platform: 'darwin-arm64', signal: new AbortController().signal, config: {} }, services);
+  expect(out).toMatchObject({ exitCode: 1, result: { status: 'turn_budget_exceeded' } });
+  expect(dispatch.mock.calls.map(call => call[0])).toEqual(['builder', 'builder']);
+  expect(fitness).not.toHaveBeenCalled();
+  expect(dispatch.mock.calls[1][1]).toContain('still working');
+  for (const call of dispatch.mock.calls) expect(call[1]).toContain('retain this exact objective');
+});
+
+it('uses a single selected Nero advisor when the builder asks about its approach', async () => {
+  const cwd = repo();
+  const dispatch = vi.fn(async (engineId, _prompt, _context, options) => ({
+    engineId, exitCode: 0, stdout: options.mode === 'agent' ? 'CONQUER_ASK: is this approach wrong?'
+      : 'Confidence: 80%\nVERDICT: SOUND', stderr: '', timedOut: false,
+  }));
+  const services = { logger: { debug: vi.fn() }, receipts: { record: vi.fn(async () => 'fixture') },
+    engines: { listActive: async () => ['builder', 'advisor', 'unselected'], dispatch } } as unknown as ModServices;
+  await runConquerTask({ task: 'build feature', gate: 'false', builder: 'builder', engines: 'advisor', maxTurns: '1' },
+    { invocationId: 'single-advisor', cwd, platform: 'darwin-arm64', signal: new AbortController().signal, config: {} }, services);
+  expect(dispatch.mock.calls.map(call => call[0])).toEqual(['builder', 'advisor']);
+});
+
+it('routes ideation to Brainstorm and returns its response, not its JSON envelope', async () => {
+  const cwd = repo();
+  const consult = vi.spyOn(brainstorm, 'runBrainstorm').mockResolvedValue({
+    exitCode: 0, stdout: '{"response":"Use a streaming reader"}', result: { response: 'Use a streaming reader' },
+  });
+  const contextSpine = vi.fn(async (_context: unknown) => 'FIRST_TURN_PROJECT_CONTEXT');
+  let builds = 0;
+  const dispatch = vi.fn(async (engineId, _prompt, context, _options) => {
+    writeFileSync(join(context.cwd, 'feature.txt'), 'streaming reader\n');
+    return { engineId, exitCode: 0, stdout: ++builds === 1 ? 'CONQUER_ASK: how do I start?'
+      : 'CONQUER_DONE: implemented the reader', stderr: '', timedOut: false };
+  });
+  const services = { conquer: { contextSpine }, logger: { debug: vi.fn() },
+    receipts: { record: vi.fn(async () => 'fixture') },
+    engines: { listActive: async () => ['builder', 'advisor'], dispatch } } as unknown as ModServices;
+  const out = await runConquerTask({ task: 'implement reader', gate: 'true', builder: 'builder', engines: 'advisor', maxTurns: '2' },
+    { invocationId: 'brainstorm-branch', cwd, platform: 'darwin-arm64', signal: new AbortController().signal, config: {} }, services);
+  expect(out.exitCode).toBe(0);
+  expect(consult).toHaveBeenCalledExactlyOnceWith({ question: 'how do I start?', engines: 'advisor', timeout: '600' },
+    expect.objectContaining({ cwd: dispatch.mock.calls[0][2].cwd }), services);
+  expect(dispatch.mock.calls[1][1]).toContain('[Cesar consulted brainstorm] Use a streaming reader');
+  expect(dispatch.mock.calls[1][1]).not.toContain('{"response"');
+  expect(contextSpine).toHaveBeenCalledOnce();
+  expect(contextSpine.mock.calls[0][0]).toMatchObject({ cwd: dispatch.mock.calls[0][2].cwd });
+  expect(dispatch.mock.calls[0][2].cwd).not.toBe(cwd);
+  expect(dispatch.mock.calls[0][1]).toContain('FIRST_TURN_PROJECT_CONTEXT');
+  expect(dispatch.mock.calls[1][1]).not.toContain('FIRST_TURN_PROJECT_CONTEXT');
+});
 
 it.each(['--max-turns -2', '--max-turns 0', '--max-turns invalid', '--max-turns', '--max-hours -0.5', '--max-hours invalid', '--max-hours', '--max-hours Infinity', '--max-turns Infinity', '--max-hours --max-turns 2 3', '--max-hours --builder builder 3'])('rejects TUI budget %s before execution', async option => {
   const dispatch = vi.fn();
@@ -80,7 +208,7 @@ it.each(['max-turns', 'timeout', 'gate-timeout'])('preserves large typed TUI --%
   const fitness = vi.spyOn(verification, 'runFitnessCommand').mockResolvedValue({ exitCode: 1, stdout: '', stderr: '', timedOut: false, durationMs: 1 });
   let calls = 0;
   const dispatch = vi.fn(async (engineId, _prompt, _context, _options) => ({ engineId,
-    exitCode: ++calls === 3 ? 1 : 0, stdout: 'working', stderr: '', timedOut: false }));
+    exitCode: ++calls === 3 ? 1 : 0, stdout: 'CONQUER_DONE: verify the feature', stderr: '', timedOut: false }));
   const services = { logger: { debug: vi.fn() }, receipts: { record: vi.fn(async () => 'fixture') },
     engines: { listActive: async () => ['builder'], dispatch } } as unknown as ModServices;
   let contribution: CommandContribution | undefined;
@@ -130,9 +258,13 @@ it.each(['missing-sentinel', 'empty-claim', 'changed-test', 'deleted-test', 'emp
       : scenario === 'red-gate' ? 'L0:'
       : scenario === 'no-diff' ? 'No patch'
       : 'falsifier and oracle-tamper checks not performed';
-    expect(result.result).toMatchObject({ turns: [expect.objectContaining({
-      completion: { passed: accepted, reason: expect.stringContaining(reason) },
-    })] });
+    if (scenario === 'missing-sentinel') {
+      expect(result.result).toMatchObject({ turns: [{ turn: 1, gate: null, done: false, agent: expect.anything() }] });
+    } else {
+      expect(result.result).toMatchObject({ turns: [expect.objectContaining({
+        completion: { passed: accepted, reason: expect.stringContaining(reason) },
+      })] });
+    }
     expect(dispatch).toHaveBeenCalledOnce();
     expect(dispatch.mock.calls[0][3]).toMatchObject({ systemPrompt: expect.stringContaining('CONQUER_DONE') });
   },
@@ -191,7 +323,11 @@ describe('explicit engine resolution across Conquer workflows', () => {
   it('keeps canonical selections through real Agent, Nero, Tribunal and Council calls', async () => {
     const cwd = repo();
     const resolveRequested = vi.fn(async (ids: readonly string[]) => ids.map(id => id.replace('alias-', 'selected-')));
-    const dispatch = vi.fn(async (engineId: string, _prompt: string) => ({ engineId, exitCode: 0, stdout: 'Confidence: 80%\nVERDICT: SOUND', stderr: '', timedOut: false }));
+    const questions = ['is this approach wrong?', 'choose 1. first or 2. second', 'is this architecture safe?'];
+    let builds = 0;
+    const dispatch = vi.fn(async (engineId: string, _prompt: string) => ({ engineId, exitCode: 0,
+      stdout: engineId === 'selected-builder' ? `CONQUER_ASK: ${questions[builds++]}` : 'Confidence: 80%\nVERDICT: SOUND',
+      stderr: '', timedOut: false }));
     const record = vi.fn(async () => 'fixture');
     const services = { logger: { debug: vi.fn() }, receipts: { record },
       engines: { listActive: async () => ['default-a', 'default-b'], resolveRequested, dispatch } } as unknown as ModServices;
@@ -247,7 +383,7 @@ describe('explicit engine resolution across Conquer workflows', () => {
     const result = await runConquerTask({ task: 'build feature', gate: 'false', builder: 'builder-alias', engines: 'builder,builder-alias,advisor,advisor-alias', maxTurns: '1' },
       { invocationId: 'canonical-dedup', cwd, platform: 'darwin-arm64', signal: new AbortController().signal, config: {} }, services);
     expect(result).toMatchObject({ result: { builder: 'builder', advisors: ['advisor'] } });
-    // Duplicate aliases must not satisfy the current two-advisor threshold.
+    // Ordinary output does not request a consultation.
     expect(dispatch.mock.calls.map(([id]) => id)).toEqual(['builder']);
   });
   it.each([
@@ -326,7 +462,7 @@ it.each([
   const started = Date.now();
   const dispatch = vi.fn(async engineId => {
     if (input.maxHours !== undefined) vi.spyOn(Date, 'now').mockReturnValue(started + 3_600_000);
-    return { engineId, exitCode: 0, stdout: 'working', stderr: '', timedOut: false };
+    return { engineId, exitCode: 0, stdout: 'CONQUER_DONE: check current work', stderr: '', timedOut: false };
   });
   const services = { logger: { debug: vi.fn() }, receipts: { record: vi.fn(async () => 'fixture') },
     engines: { listActive: async () => ['builder'], dispatch } } as unknown as ModServices;
@@ -361,7 +497,10 @@ it('forwards fallback timeouts to advisors without changing independent Agent de
   const cwd = repo();
   const consults = [vi.spyOn(nero, 'runNero'), vi.spyOn(tribunal, 'runTribunal'), vi.spyOn(council, 'runCouncil')];
   for (const consult of consults) consult.mockResolvedValue({ exitCode: 0, stdout: 'fixture advice' });
-  const dispatch = vi.fn(async (engineId, _prompt, _context, _options) => ({ engineId, exitCode: 0, stdout: 'working', stderr: '', timedOut: false }));
+  const questions = ['is this approach wrong?', 'choose 1. first or 2. second', 'is this architecture safe?'];
+  let builds = 0;
+  const dispatch = vi.fn(async (engineId, _prompt, _context, _options) => ({ engineId, exitCode: 0,
+    stdout: `CONQUER_ASK: ${questions[builds++]}`, stderr: '', timedOut: false }));
   const services = { logger: { debug: vi.fn() }, receipts: { record: vi.fn(async () => 'fixture') },
     engines: { listActive: async () => ['builder', 'advisor-a', 'advisor-b'], dispatch } } as unknown as ModServices;
   const context = { invocationId: 'advisor-timeout', cwd, platform: 'darwin-arm64', signal: new AbortController().signal, config: {} } as const;
@@ -382,7 +521,7 @@ it('forwards fallback timeouts to advisors without changing independent Agent de
 it('keeps the real Nero consultation inside the explicitly selected advisor pool', async () => {
   const cwd = repo();
   const dispatch = vi.fn(async (engineId, _prompt, _context, options) => ({
-    engineId, exitCode: 0, stdout: options.mode === 'agent' ? 'working' : 'Confidence: 80%\nVERDICT: SOUND',
+    engineId, exitCode: 0, stdout: options.mode === 'agent' ? 'CONQUER_ASK: is this approach wrong?' : 'Confidence: 80%\nVERDICT: SOUND',
     stderr: '', timedOut: false,
   }));
   const services = { logger: { debug: vi.fn() }, receipts: { record: vi.fn(async () => 'fixture') },
@@ -459,7 +598,7 @@ it.each([1, 2, 3])('stops before advisory dispatch when verification is cancelle
   expect(result).toMatchObject({ exitCode: 1, result: { status: 'cancelled', lastPatch: expect.stringContaining(`turn-${cancelTurn}.txt`) } });
   expect(fitness).toHaveBeenCalledTimes(cancelTurn);
   expect(dispatch).toHaveBeenCalledTimes(cancelTurn);
-  for (const [index, consult] of consults.entries()) expect(consult).toHaveBeenCalledTimes(index < cancelTurn - 1 ? 1 : 0);
+  for (const consult of consults) expect(consult).not.toHaveBeenCalled();
   expect(record).toHaveBeenCalledWith('conquer', expect.objectContaining({ status: 'cancelled', turns: expect.arrayContaining([expect.objectContaining({ turn: cancelTurn, done: false })]) }));
   expect(paths.every(path => !existsSync(path))).toBe(true);
 });
@@ -473,7 +612,7 @@ it.each(['failed', 'timed-out'])('preserves prior work when the second builder t
     paths.push(context.cwd);
     writeFileSync(join(context.cwd, `turn-${paths.length}.txt`), 'partial work\n');
     return { engineId, exitCode: paths.length === 2 && scenario === 'failed' ? 1 : 0,
-      stdout: 'partial output', stderr: 'fixture failure', timedOut: paths.length === 2 && scenario === 'timed-out' };
+      stdout: 'CONQUER_DONE: verify partial work', stderr: 'fixture failure', timedOut: paths.length === 2 && scenario === 'timed-out' };
   });
   const record = vi.fn(async () => 'fixture');
   const services = { logger: { debug: vi.fn() }, receipts: { record },
@@ -486,7 +625,7 @@ it.each(['failed', 'timed-out'])('preserves prior work when the second builder t
   expect(result.result).toMatchObject({ lastPatch: expect.stringContaining('turn-2.txt') });
   expect(dispatch).toHaveBeenCalledTimes(2);
   expect(fitness).toHaveBeenCalledOnce();
-  expect(consult).toHaveBeenCalledOnce();
+  expect(consult).not.toHaveBeenCalled();
   expect(record).toHaveBeenCalledWith('conquer', expect.objectContaining({ status: 'builder_failed' }));
   expect(paths.every(path => !existsSync(path))).toBe(true);
 });
@@ -497,7 +636,7 @@ it.each(['tui', 'argument-only', 'direct', 'canonical-precedence', 'deadline'] a
   const started = Date.now();
   const dispatch = vi.fn(async (engineId, _prompt, _context, _options) => {
     if (entry === 'deadline') vi.spyOn(Date, 'now').mockReturnValue(started + 3_600_000);
-    return { engineId, exitCode: 0, stdout: 'still working', stderr: '', timedOut: false };
+    return { engineId, exitCode: 0, stdout: 'CONQUER_DONE: check current work', stderr: '', timedOut: false };
   });
   const services = {
     identity: { id: 'agon.conquer', version: '1.0.0', contentHash: `sha256:${'a'.repeat(64)}` },

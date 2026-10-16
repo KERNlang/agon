@@ -300,6 +300,7 @@ export const FIRST_PARTY_PACKAGE_GRAPH = {
         "@kernlang/agon-mod-agent",
         "@kernlang/agon-mod-nero",
         "@kernlang/agon-mod-tribunal",
+        "@kernlang/agon-mod-brainstorm",
         "@kernlang/agon-mod-council",
         "@kernlang/agon-support-worktree",
         "@kernlang/agon-support-verification"
@@ -952,6 +953,11 @@ export const FIRST_PARTY_PACKAGE_GRAPH = {
     {
       "from": "@kernlang/agon-mod-conquer",
       "to": "@kernlang/agon-mod-tribunal",
+      "kind": "hard"
+    },
+    {
+      "from": "@kernlang/agon-mod-conquer",
+      "to": "@kernlang/agon-mod-brainstorm",
       "kind": "hard"
     },
     {

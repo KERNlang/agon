@@ -41,6 +41,10 @@
         "range": ">=0.0.0-0"
       },
       {
+        "id": "agon.brainstorm",
+        "range": ">=0.0.0-0"
+      },
+      {
         "id": "agon.council",
         "range": ">=0.0.0-0"
       },
@@ -145,6 +149,7 @@
       "dist/index.d.ts",
       "dist/implementation.d.ts",
       "dist/completion-policy.d.ts",
+      "dist/workflow.d.ts",
       "ownership.json",
       "schemas/config.schema.json"
     ],

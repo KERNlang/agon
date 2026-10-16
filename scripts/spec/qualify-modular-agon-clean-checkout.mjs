@@ -78,6 +78,6 @@ const receipt = {
 };
 const noContamination = Object.values(contamination).every((paths) => paths.length === 0);
 const exactCommit = subjectKind === 'index' || indexHash === commitHash;
-receipt.passed = noContamination && exactCommit && reviewEvidence.passed && graph.duplicateEdges.length === 0 && graph.uniqueEdges === 153 && steps.length > 0 && steps.every(({ passed }) => passed);
+receipt.passed = noContamination && exactCommit && reviewEvidence.passed && graph.duplicateEdges.length === 0 && graph.uniqueEdges === 154 && steps.length > 0 && steps.every(({ passed }) => passed);
 console.log(JSON.stringify(receipt, null, 2));
 if (!receipt.passed) process.exitCode = 1;

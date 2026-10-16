@@ -1,5 +1,8 @@
-import { buildConquerSystemPrompt, evaluateDoneEvidence, parseBuilderSignals } from './completion-policy.js';
-import{existsSync}from'node:fs';import type{AgonModFactory,CommandResult,Dispose,InvocationContext,Json,ModServices,Registrar}from'@kernlang/agon-mod-api';import{runAgentTask}from'@kernlang/agon-mod-agent';import{runNero}from'@kernlang/agon-mod-nero';import{runTribunal}from'@kernlang/agon-mod-tribunal';import{runCouncil}from'@kernlang/agon-mod-council';import{createForgeArena}from'@kernlang/agon-support-worktree';import{runFitnessCommand}from'@kernlang/agon-support-verification';
+import { evaluateDoneEvidence } from './completion-policy.js';
+import { runConquerWorkflow } from './workflow.js';
+import { runBrainstorm } from '@kernlang/agon-mod-brainstorm';
+import type { BrainstormModServices } from '@kernlang/agon-mod-brainstorm';
+import{existsSync}from'node:fs';import type{AgonModFactory,CommandResult,Dispose,InvocationContext,Json,Registrar}from'@kernlang/agon-mod-api';import{runAgentTask}from'@kernlang/agon-mod-agent';import{runNero}from'@kernlang/agon-mod-nero';import{runTribunal}from'@kernlang/agon-mod-tribunal';import{runCouncil}from'@kernlang/agon-mod-council';import{createForgeArena}from'@kernlang/agon-support-worktree';import{runFitnessCommand}from'@kernlang/agon-support-verification';
 const schema=Object.freeze({type:'object',additionalProperties:true,properties:{task:{type:'string'},builder:{type:'string'},engines:{type:'string'},gate:{type:'string'},gateTimeout:{type:'string'},maxTurns:{type:'string'},timeout:{type:'string'},maxHours:{type:'string'},push:{type:'boolean'},label:{type:'string'},_:{type:'array',items:{type:'string'}}}})as Readonly<Record<string,Json>>;const cli=Object.freeze({positionals:['task'],aliases:{builder:'b',engines:'e',gate:'g'},descriptions:{task:'Task driven autonomously until the explicit gate passes'}});const text=(v:Json|undefined)=>typeof v==='string'?v.trim():'';
 const cesarSchema=Object.freeze({type:'object',additionalProperties:false,required:['task','gate'],properties:{task:{type:'string',minLength:1},gate:{type:'string',minLength:1},builder:{type:'string'},engines:{type:'array',items:{type:'string',minLength:1}},maxTurns:{type:'number'}}})as Readonly<Record<string,Json>>;
 const tuiSchema = Object.freeze({
@@ -30,7 +33,14 @@ function normalizeConquerInput(raw: Readonly<Record<string, Json | undefined>>):
   }
   return input;
 }
-export async function runConquerTask(raw:Json,context:InvocationContext,services:ModServices):Promise<CommandResult>{const input=normalizeConquerInput(raw as Record<string,Json>);const task=text(input.task)||(Array.isArray(input._)?input._.map(String).join(' ').trim():'');const gate=text(input.gate);if(!task)return{exitCode:1,stderr:'Conquer requires a task.\n'};if(!gate)return{exitCode:1,stderr:'Conquer requires an explicit --gate done oracle.\n'};if(input.push===true)return{exitCode:1,stderr:'Physical Conquer produces a receipted patch; promotion/push requires the Git Actions mod and explicit operator approval.\n'};const active = services.engines.listActive ? [...await services.engines.listActive(context)] : [];
+export interface ConquerModServices extends BrainstormModServices {
+  readonly conquer?: { contextSpine(context: InvocationContext): Promise<string> };
+}
+function objectResult(result: CommandResult): Record<string, Json> {
+  const payload = result.result;
+  return payload !== null && typeof payload === 'object' && !Array.isArray(payload) ? payload : {};
+}
+export async function runConquerTask(raw:Json,context:InvocationContext,services:ConquerModServices):Promise<CommandResult>{const input=normalizeConquerInput(raw as Record<string,Json>);const task=text(input.task)||(Array.isArray(input._)?input._.map(String).join(' ').trim():'');const gate=text(input.gate);if(!task)return{exitCode:1,stderr:'Conquer requires a task.\n'};if(!gate)return{exitCode:1,stderr:'Conquer requires an explicit --gate done oracle.\n'};if(input.push===true)return{exitCode:1,stderr:'Physical Conquer produces a receipted patch; promotion/push requires the Git Actions mod and explicit operator approval.\n'};const active = services.engines.listActive ? [...await services.engines.listActive(context)] : [];
   const explicitBuilder = text(input.builder);
   const explicitAdvisors = text(input.engines);
   let builder = explicitBuilder || (active.includes('codex') ? 'codex' : active[0]);
@@ -52,21 +62,99 @@ export async function runConquerTask(raw:Json,context:InvocationContext,services
   }
   if (!builder) return { exitCode: 1, stderr: 'Builder is not active: (none)\n' };
   advisors = [...new Set(advisors)].filter(id => id !== builder);
-  const maxTurns=Number.parseInt(String(input.maxTurns??'40'),10);if(Number.isNaN(maxTurns)||maxTurns<1)return{exitCode:1,stderr:`Invalid --max-turns: ${input.maxTurns}\n`};let maxHours=0;if(input.maxHours!==undefined&&String(input.maxHours).trim()!==''){maxHours=Number.parseFloat(String(input.maxHours));if(Number.isNaN(maxHours)||maxHours<0)return{exitCode:1,stderr:`Invalid --max-hours: ${input.maxHours}\n`};}const timeoutRaw=Number.parseInt(String(input.timeout??'600'),10);const timeout=Number.isFinite(timeoutRaw)&&timeoutRaw>0?String(input.timeout??'600'):'600';const gateTimeoutRaw=Number.parseInt(String(input.gateTimeout??'1800'),10);const gateTimeout=Number.isFinite(gateTimeoutRaw)&&gateTimeoutRaw>0?gateTimeoutRaw:1800;const deadline=maxHours>0?Date.now()+maxHours*3_600_000:Number.POSITIVE_INFINITY;let arena:ReturnType<typeof createForgeArena>;try{arena=createForgeArena(context.cwd);}catch(error){return{exitCode:1,stderr:`${error instanceof Error?error.message:String(error)}\n`};}const worktree=arena.create(`conquer-${builder}`);const turns:any[]=[];let advice='';let builderFailed=false;let gateAborted=false;try{for(let turn=1;turn<=maxTurns&&Date.now()<deadline&&!context.signal.aborted;turn++){const agent=await runAgentTask({task:`${task}\n\nDONE ORACLE: ${gate}\n${advice?`\nADVISORY FROM THE LAST FAILED CHECK:\n${advice}`:''}`,engine:builder,timeout,systemPrompt:buildConquerSystemPrompt()}, {...context,cwd:worktree.path},services,'agent');if(agent.exitCode!==0||context.signal.aborted){builderFailed=agent.exitCode!==0;turns.push({turn,agent:agent.result??null,gate:null,done:false});break;}const checked=await runFitnessCommand(gate,worktree.path,gateTimeout,context.signal);const diff=arena.diff(worktree.path);const payload = agent.result;
-const output = payload !== null && typeof payload === 'object' && !Array.isArray(payload) && typeof payload.final === 'string' ? payload.final : '';
-const signals = parseBuilderSignals(output);
-const evidence = evaluateDoneEvidence({
-  diff, claim: signals.claimedDone ? signals.claim : '',
-  gateOk: checked.exitCode === 0 && !checked.timedOut && !checked.aborted,
-  oracleTampered: false, neroFalsified: false,
-});
-const hasPatch = diff.trim().length > 0;
-const completion = {
-  passed: evidence.passed && hasPatch,
-  reason: !evidence.passed ? evidence.reason : !hasPatch ? 'No patch was produced'
-    : 'Claim, gate, and existing-test diff checks passed; falsifier and oracle-tamper checks not performed',
-};
-const done = !context.signal.aborted && agent.exitCode === 0 && completion.passed;turns.push({turn,agent:agent.result??null,gate:{exitCode:checked.exitCode,stdout:checked.stdout,stderr:checked.stderr,timedOut:checked.timedOut,durationMs:checked.durationMs},diffLines:diff.split('\n').length,done,completion});if(checked.aborted||context.signal.aborted){gateAborted=true;break;}if(done){const result={status:'completed',task,builder,advisors,gate,baseSha:arena.baseSha,dirtySourceExcluded:arena.dirtySourceExcluded,turns,winningPatch:diff};const receiptId=await services.receipts.record('conquer',result as unknown as Json);return{exitCode:0,stdout:`${JSON.stringify({...result,receiptId},null,2)}\n`,result:{...result,receiptId}as unknown as Json};}const issue=`Turn ${turn} did not satisfy completion requirements. ${completion.reason}. Gate exit ${checked.exitCode}. STDERR: ${checked.stderr.slice(0,4000)} STDOUT: ${checked.stdout.slice(0,4000)}`;if(advisors.length>=2){const consult=turn%3===1?await runNero({decision:`Continue the current implementation approach for: ${task}`,reasoning:issue,engines:advisors.join(','),timeout},context,services):turn%3===2?await runTribunal({question:`Diagnose this failed autonomous build and prescribe the next move. TASK: ${task}\n${issue}`,engines:advisors.join(','),mode:'red-team',rounds:'1',timeout},context,services):await runCouncil({question:`Choose the next corrective action for this failed build. TASK: ${task}\n${issue}`,engines:advisors.join(','),timeout},context,services);advice=consult.stdout||consult.stderr||issue;}else advice=issue;}const diff=arena.diff(worktree.path);const result={status:context.signal.aborted||gateAborted?'cancelled':builderFailed?'builder_failed':Date.now()>=deadline?'time_budget_exceeded':'turn_budget_exceeded',task,builder,advisors,gate,turns,lastPatch:diff};const receiptId=await services.receipts.record('conquer',result as unknown as Json);return{exitCode:1,stderr:`Conquer stopped without satisfying completion requirements. Receipt: ${receiptId}\n`,result:{...result,receiptId}as unknown as Json,failure:{code:'CONQUER_INCOMPLETE',message:builderFailed?'Conquer builder failed before verification':'Conquer stopped without satisfying completion requirements',retryable:true}};}finally{arena.cleanup();await services.logger.debug('conquer arena cleanup',{rootPath:arena.rootPath,cleanupComplete:!existsSync(arena.rootPath)});}}
+  const maxTurns=Number.parseInt(String(input.maxTurns??'40'),10);if(Number.isNaN(maxTurns)||maxTurns<1)return{exitCode:1,stderr:`Invalid --max-turns: ${input.maxTurns}\n`};let maxHours=0;if(input.maxHours!==undefined&&String(input.maxHours).trim()!==''){maxHours=Number.parseFloat(String(input.maxHours));if(Number.isNaN(maxHours)||maxHours<0)return{exitCode:1,stderr:`Invalid --max-hours: ${input.maxHours}\n`};}const timeoutRaw=Number.parseInt(String(input.timeout??'600'),10);const timeout=Number.isFinite(timeoutRaw)&&timeoutRaw>0?String(input.timeout??'600'):'600';const gateTimeoutRaw=Number.parseInt(String(input.gateTimeout??'1800'),10);const gateTimeout=Number.isFinite(gateTimeoutRaw)&&gateTimeoutRaw>0?gateTimeoutRaw:1800;let arena: ReturnType<typeof createForgeArena>;
+  try { arena = createForgeArena(context.cwd); }
+  catch (error) { return { exitCode: 1, stderr: `${error instanceof Error ? error.message : String(error)}\n` }; }
+  const turns: Array<{
+    turn: number; agent: Json; gate: Json; done: boolean; diffLines?: number;
+    completion?: { passed: boolean; reason: string };
+  }> = [];
+  let gateAborted = false;
+  try {
+    const worktree = arena.create(`conquer-${builder}`);
+    const buildContext = { ...context, cwd: worktree.path };
+    const workflow = await runConquerWorkflow({
+      task, builderEngine: builder, outputDir: '', signal: context.signal,
+      caps: { maxTurns, maxWallClockMs: maxHours * 3_600_000 },
+    }, {
+      contextSpine: () => services.conquer?.contextSpine(buildContext) ?? Promise.resolve(''),
+      build: async (prompt, systemPrompt) => {
+        const agent = await runAgentTask({
+          task: `${prompt}\n\nDONE ORACLE: ${gate}`, engine: builder, timeout, systemPrompt,
+        }, buildContext, services, 'agent');
+        const payload = objectResult(agent);
+        turns.push({ turn: turns.length + 1, agent: agent.result ?? null, gate: null, done: false });
+        return { stdout: text(payload.final), stderr: agent.stderr, exitCode: agent.exitCode };
+      },
+      consult: async (mode, question) => {
+        if (!advisors.length) return { mode, verdict: 'No selected advisors are available.', confidence: null, flawed: false };
+        const common = { engines: advisors.join(','), timeout };
+        const consult = mode === 'nero'
+          ? await runNero({ decision: question, ...common }, buildContext, services)
+          : mode === 'tribunal'
+            ? await runTribunal({ question, rounds: '1', ...common }, buildContext, services)
+            : mode === 'brainstorm'
+              ? await runBrainstorm({ question, ...common }, buildContext, services)
+              : await runCouncil({ question, ...common }, buildContext, services);
+        const payload = objectResult(consult);
+        return {
+          mode,
+          verdict: text(mode === 'nero' ? payload.challengeText : payload.verdict ?? payload.response ?? payload.summary ?? payload.recommendation)
+            || consult.stderr?.trim() || consult.stdout?.trim() || 'Consultation produced no usable response.',
+          confidence: typeof payload.challengeConfidence === 'number' ? payload.challengeConfidence
+            : typeof payload.confidence === 'number' ? payload.confidence : null,
+          flawed: mode === 'nero' && payload.verdict === 'flawed',
+        };
+      },
+      evaluateDone: async claim => {
+        const checked = await runFitnessCommand(gate, worktree.path, gateTimeout, context.signal);
+        const diff = arena.diff(worktree.path);
+        gateAborted = checked.aborted === true;
+        const evidence = evaluateDoneEvidence({
+          diff, claim, gateOk: checked.exitCode === 0 && !checked.timedOut && !checked.aborted,
+          oracleTampered: false, neroFalsified: false,
+        });
+        const hasPatch = diff.trim().length > 0;
+        const completion = {
+          passed: !context.signal.aborted && !gateAborted && evidence.passed && hasPatch,
+          reason: !evidence.passed ? evidence.reason : !hasPatch ? 'No patch was produced'
+            : 'Claim, gate, and existing-test diff checks passed; falsifier and oracle-tamper checks not performed',
+        };
+        Object.assign(turns[turns.length - 1], {
+          gate: { exitCode: checked.exitCode, stdout: checked.stdout, stderr: checked.stderr,
+            timedOut: checked.timedOut, durationMs: checked.durationMs },
+          diffLines: diff.split('\n').length, done: completion.passed, completion,
+        });
+        return { ...completion, aborted: gateAborted, falsified: false, attackText: '', counterexample: null, observed: null };
+      },
+    });
+    const diff = arena.diff(worktree.path);
+    const status = context.signal.aborted || gateAborted ? 'cancelled'
+      : workflow.stopReason === 'done' ? 'completed'
+      : workflow.stopReason === 'builder-failed' ? 'builder_failed'
+      : workflow.stopReason === 'cap-time' ? 'time_budget_exceeded' : 'turn_budget_exceeded';
+    const result = {
+      status, task, builder, advisors, gate, turns,
+      ...(status === 'completed' ? { baseSha: arena.baseSha, dirtySourceExcluded: arena.dirtySourceExcluded, winningPatch: diff }
+        : { lastPatch: diff }),
+    };
+    const receiptId = await services.receipts.record('conquer', result as unknown as Json);
+    if (status === 'completed') return {
+      exitCode: 0, stdout: `${JSON.stringify({ ...result, receiptId }, null, 2)}\n`,
+      result: { ...result, receiptId } as unknown as Json,
+    };
+    return {
+      exitCode: 1, stderr: `Conquer stopped without satisfying completion requirements. Receipt: ${receiptId}\n`,
+      result: { ...result, receiptId } as unknown as Json,
+      failure: { code: 'CONQUER_INCOMPLETE', message: status === 'builder_failed'
+        ? 'Conquer builder failed before verification' : 'Conquer stopped without satisfying completion requirements', retryable: true },
+    };
+  } finally {
+    arena.cleanup();
+    await services.logger.debug('conquer arena cleanup', { rootPath: arena.rootPath, cleanupComplete: !existsSync(arena.rootPath) });
+  }
+}
+
 function parseConquer(value: string) {
   const source = value.replace(/^\/conquer\s*/i, '');
   const consumed: Array<{ start: number; end: number }> = [];

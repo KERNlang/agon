@@ -13,6 +13,9 @@ it('provides the terminal writer only to the CLI Brainstorm host and writes noth
     expect(write).toHaveBeenCalledExactlyOnceWith('fixture stream\n');
     const pipeline = decorateCliFirstPartyServices({ id: 'agon.pipeline-orchestration' } as ModManifest, {} as ModServices) as BrainstormModServices;
     expect(pipeline.brainstorm?.writeCliOutput).toBeUndefined();
+    const conquer = decorateCliFirstPartyServices({ id: 'agon.conquer' } as ModManifest, {} as ModServices) as BrainstormModServices;
+    expect(conquer.brainstorm?.open).toBeTypeOf('function');
+    expect(conquer.brainstorm?.writeCliOutput).toBeUndefined();
     const unrelated = decorateCliFirstPartyServices({ id: 'agon.ask' } as ModManifest, {} as ModServices) as BrainstormModServices;
     expect(unrelated.brainstorm).toBeUndefined();
   } finally { write.mockRestore(); }

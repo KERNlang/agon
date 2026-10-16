@@ -20,3 +20,5 @@ export { createConquerIsolation } from './isolation.js';
 export type { ConquerIsolation, ConquerIsolationEffects } from './isolation.js';
 export { publishConquerBranch } from './publication.js';
 export type { ConquerPublicationOptions, ConquerPublicationGit, ConquerPublicationResult } from './publication.js';
+export { prepareConquerPullRequest } from './pull-request.js';
+export type { ConquerPrDraft, ConquerPrEffects, ConquerPullRequest } from './pull-request.js';

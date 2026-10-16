@@ -3,13 +3,54 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { publishConquerBranch } from '@kernlang/agon-mod-conquer';
+import { publishConquerBranch, prepareConquerPullRequest } from '@kernlang/agon-mod-conquer';
 import { spawnWithTimeout } from '@kernlang/agon-support-engine-runtime';
 
 const opts = { cwd: '/isolated/worktree', task: 'build feature', commitBody: () => 'verified claim' };
 const ok = { exitCode: 0, stdout: '', stderr: '' };
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
+
+describe('Conquer pull request handoff', () => {
+  const input = { task: 'build feature', claim: 'feature verified', gate: 'npm test', builder: 'fixture',
+    branch: 'conquer/feature', base: 'main', repoUrl: 'https://github.com/fixture/repo' };
+  it('uses owned draft output, caps context, and creates a human-controlled link', async () => {
+    const git = vi.fn(async (args: string[]) => ({ ...ok,
+      stdout: args[0] === 'log' ? 'abc feature\n' : Array.from({ length: 1202 }, (_, i) => `line${i}`).join('\n') }));
+    const draft = vi.fn(async () => ({ ok: true, title: 'feat: new feature', body: 'Verified body' }));
+    const result = await prepareConquerPullRequest(input, { git, draft, formatBody: body => `${body}\nfooter` });
+    expect(draft).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ engineId: 'fixture', intent: input.task,
+      commits: 'abc feature', context: expect.stringContaining('Acceptance gate (passed): npm test'),
+      diff: expect.stringContaining('line1199\n... (2 more lines)') }));
+    expect(result).toMatchObject({ title: 'feat: new feature', body: 'Verified body\nfooter', usedTemplate: false });
+    expect(new URL(result.url).searchParams.get('body')).toBe(result.body);
+    expect(result.mergeHint).toContain(result.url);
+    expect(git.mock.calls.map(([args]) => args[0])).toEqual(['log', 'diff']);
+  });
+
+  it.each(['missing', 'throws', 'invalid', 'blank-title', 'blank-body', 'git-fails', 'format-fails', 'same-branch'] as const)('keeps a usable handoff when %s', async state => {
+    const git = vi.fn(async () => { if (state === 'git-fails') throw new Error('metadata unavailable'); return ok; });
+    const draft = vi.fn(async () => {
+      if (state === 'throws') throw new Error('disabled');
+      return { ok: state === 'blank-title' || state === 'blank-body',
+        title: state === 'blank-body' ? 'valid title' : '', body: state === 'blank-title' ? 'valid body' : '' };
+    });
+    const formatBody = (body: string) => { if (state === 'format-fails') throw new Error('formatter failed'); return body; };
+    const result = await prepareConquerPullRequest({ ...input, ...(state === 'same-branch' ? { base: input.branch } : {}) },
+      { git, formatBody, ...(state === 'missing' ? {} : { draft }) });
+    expect(result).toMatchObject({ title: 'conquer: build feature', body: input.claim, usedTemplate: true });
+    if (state === 'missing' || state === 'same-branch') { expect(git).not.toHaveBeenCalled(); expect(draft).not.toHaveBeenCalled(); }
+    if (state === 'same-branch') { expect(result.url).toBe(''); expect(result.mergeHint).toContain('merge gate'); }
+    else expect(result.url).toContain('/compare/main...conquer%2Ffeature');
+  });
+  it('keeps a successful draft when optional attribution throws', async () => {
+    const result = await prepareConquerPullRequest(input, { git: async () => ok,
+      draft: async () => ({ ok: true, title: 'feat: retained', body: 'retained body' }),
+      formatBody: () => { throw new Error('format failed'); },
+    });
+    expect(result).toMatchObject({ title: 'feat: retained', body: 'retained body', usedTemplate: false });
+  });
+});
 
 describe('Conquer publication owner', () => {
   it('preserves the guarded Git sequence and timeouts', async () => {

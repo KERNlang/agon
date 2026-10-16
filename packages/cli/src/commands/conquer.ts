@@ -1,9 +1,11 @@
 import { defineCommand } from 'citty';
 
-import { EngineRegistry, ensureAgonHome, loadConfig, createRunDir, spawnWithTimeout, appendAttribution, appendPrAttribution, githubRepoUrl, defaultBaseBranch, prefilledPrUrl } from '@kernlang/agon-core';
+import { EngineRegistry, ensureAgonHome, loadConfig, createRunDir, spawnWithTimeout, appendAttribution, appendPrAttribution, githubRepoUrl, defaultBaseBranch } from '@kernlang/agon-core';
 
 import { runConquer, runPrText, createConquerIsolation } from '@kernlang/agon-forge';
-import { publishConquerBranch } from '@kernlang/agon-mod-conquer';
+import { publishConquerBranch, prepareConquerPullRequest } from '@kernlang/agon-mod-conquer';
+import { guardEngineAdapter } from '@kernlang/agon-support-engine-runtime';
+import { captureProcessSurfaceAuthority, assertProcessSurfaceAvailable } from '../surface-authority-runtime.js';
 
 import type { ConquerResult, ConquerTurn } from '@kernlang/agon-forge';
 
@@ -33,6 +35,7 @@ export const conquerCommand: any = defineCommand({
     label: { type: 'string', description: 'Human-readable suffix baked into the run dir name.' },
   },
   async run({ args }) {
+    const assertInvocationCurrent = captureProcessSurfaceAuthority();
     ensureAgonHome();
     const cwd = process.cwd();
     const config = loadConfig(cwd);
@@ -199,45 +202,29 @@ export const conquerCommand: any = defineCommand({
       } else {
         const headBranch = publication.branch;
         info(`Pushed ${headBranch}.`);
-        // Engine-written PR text + a prefilled compare link — the no-gh PR
-        // path: the human clicks the link (title+body already filled) and
-        // merges. A PR-text miss falls back to the templated title + the
-        // builder's claim; the push already succeeded, so never fail here.
-        const base = defaultBaseBranch(root);
-        let title = `conquer: ${taskStr}`.slice(0, 72);
-        let body = claim;
-        if (headBranch !== base) {
-          const logRes = await git(['log', '--oneline', `origin/${base}..HEAD`], 15_000);
-          const commits = logRes.exitCode === 0 ? String(logRes.stdout ?? '').trim() : '';
-          const diffRes = await git(['diff', `origin/${base}...HEAD`], 30_000);
-          const rawDiff = diffRes.exitCode === 0 ? String(diffRes.stdout ?? '') : '';
-          const diffLines = rawDiff.split('\n');
-          const cappedDiff = diffLines.length > 1200 ? diffLines.slice(0, 1200).join('\n') + `\n... (${diffLines.length - 1200} more lines)` : rawDiff;
-          info(dim(`Writing PR text (${builder})…`));
-          const pr = await runPrText({
-            engineId: builder,
-            intent: taskStr,
-            context: `Builder's verified done-claim: ${claim}\nAcceptance gate (passed): ${gate}`,
-            commits,
-            diff: cappedDiff,
-            registry,
-            adapter,
-            timeout: 300,
-            outputDir,
-            cwd: worktreeCwd,
-          });
-          if (pr.ok) { title = pr.title; body = pr.body; }
-          else info(dim('PR-text engine call failed — using the templated title + claim.'));
-        }
-        body = appendPrAttribution(body, config);
+        const pr = await prepareConquerPullRequest({ task: taskStr, claim, gate, builder,
+          branch: headBranch, base: defaultBaseBranch(root), repoUrl: githubRepoUrl(root) }, {
+          git, formatBody: body => appendPrAttribution(body, config),
+          draft: async input => {
+            const check = (signal?: AbortSignal) => {
+              signal?.throwIfAborted();
+              assertInvocationCurrent();
+              assertProcessSurfaceAvailable('cli', 'conquer');
+              assertProcessSurfaceAvailable('cli', 'forge');
+            };
+            check();
+            info(dim(`Writing PR text (${builder})…`));
+            const drafted = await runPrText({ ...input, registry, adapter: guardEngineAdapter(adapter, check), timeout: 300, outputDir, cwd: worktreeCwd });
+            check();
+            if (!drafted.ok) info(dim('PR-text engine call failed — using the templated title + claim.'));
+            return drafted;
+          },
+        });
         console.log('');
-        info(bold(title));
-        console.log(body);
+        info(bold(pr.title));
+        console.log(pr.body);
         console.log('');
-        const repoUrl = githubRepoUrl(root);
-        const url = headBranch !== base ? prefilledPrUrl({ repoUrl, base, branch: headBranch, title, body }) : '';
-        if (url) info(`Open the PR (form prefilled with the text above): ${url}`);
-        else info(`Open a PR from ${headBranch} to review + merge — this is your merge gate.`);
+        info(pr.mergeHint);
       }
     } else {
       info(dim(`The builder's changes are isolated on ${branch} at ${worktreeCwd}. Review and commit there, then open a PR to merge. Remove it later with: agon worktree rm ${branch}`));

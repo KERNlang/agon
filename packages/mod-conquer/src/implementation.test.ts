@@ -1,6 +1,7 @@
 import{execFileSync}from'node:child_process';import{existsSync,mkdtempSync,writeFileSync}from'node:fs';import{tmpdir}from'node:os';import{join}from'node:path';import{describe,expect,it,vi}from'vitest';import type{ModServices,CommandContribution,Registrar}from'@kernlang/agon-mod-api';import{createMod,runConquerTask as runConquerTaskImpl}from'./implementation.js';
 import { assertContributionInput } from '@kernlang/agon-kernel';
 import * as verification from '@kernlang/agon-support-verification';
+import * as engineRuntime from '@kernlang/agon-support-engine-runtime';
 import * as nero from '@kernlang/agon-mod-nero';
 import * as tribunal from '@kernlang/agon-mod-tribunal';
 import * as council from '@kernlang/agon-mod-council';
@@ -11,6 +12,8 @@ import { afterEach } from 'vitest';
 import { renameSync, unlinkSync, rmSync, readFileSync, readdirSync, mkdirSync } from 'node:fs';
 import type { ConquerModServices } from './implementation.js';
 import { createConquerHostServices } from './host.js';
+import { runPrText } from '@kernlang/agon-mod-forge';
+import { createModObservability } from '../../mod-kernel/src/mod-observability.js';
 import { createConquerIsolation } from './isolation.js';
 import { createSessionWorktree, removeSessionWorktree, findSessionWorktree } from '../../core/src/blocks/worktree-session.js';
 import { basename } from 'node:path';
@@ -109,8 +112,13 @@ it('rejects a missing Conquer host before starting provider work', async () => {
   expect(dispatch).not.toHaveBeenCalled();
 });
 
-it.each(['uncommitted', 'committed', 'no-push', 'denied', 'ask', 'missing-policy', 'incomplete', 'push-failed', 'changed-branch', 'commit-switch'] as const)('physical Conquer publication: %s', async state => {
+it.each(['uncommitted', 'committed', 'drafted', 'draft-failed', 'draft-cancelled', 'draft-retired', 'draft-disabled', 'draft-malformed', 'no-push', 'denied', 'ask', 'missing-policy', 'incomplete', 'push-failed', 'changed-branch', 'commit-switch'] as const)('physical Conquer publication: %s', async state => {
   const cwd = repo();
+  const controller = new AbortController();
+  let current = true;
+  const hasDraft = state === 'drafted' || state.startsWith('draft-');
+  const spawned = vi.spyOn(engineRuntime, 'spawnWithTimeout');
+  let processesAtDraft = 0;
   recordDirectories.push(cwd);
   const remote = mkdtempSync(join(tmpdir(), 'agon-conquer-remote-'));
   recordDirectories.push(remote);
@@ -118,6 +126,9 @@ it.each(['uncommitted', 'committed', 'no-push', 'denied', 'ask', 'missing-policy
     { cwd: path, encoding: 'utf8', timeout: 10_000, stdio: ['ignore', 'pipe', 'pipe'] }).trim();
   git(['init', '--bare'], remote);
   git(['remote', 'add', 'origin', remote]);
+  if (hasDraft) {
+    vi.spyOn(worktrees, 'githubRepoUrl').mockReturnValue('https://github.com/fixture/repo');
+  }
   const hooks = join(remote, 'fixture-hooks');
   mkdirSync(hooks);
   git(['config', 'core.hooksPath', hooks]);
@@ -125,7 +136,15 @@ it.each(['uncommitted', 'committed', 'no-push', 'denied', 'ask', 'missing-policy
   if (state === 'push-failed') git(['remote', 'set-url', 'origin', join(remote, 'missing-repository')]);
   if (state === 'commit-switch') writeFileSync(join(hooks, 'post-commit'), '#!/bin/sh\ngit checkout -b hook-moved >&2\n', { mode: 0o755 });
   const sourceHead = git(['rev-parse', 'HEAD']);
-  const dispatch = vi.fn(async (_id, _prompt, context) => {
+  const dispatch = vi.fn(async (_id, prompt, context, options) => {
+    if (prompt.startsWith('Write the pull-request text')) {
+      processesAtDraft = spawned.mock.calls.length;
+      expect(options).toMatchObject({ textOnly: true, timeoutSeconds: 300 });
+      if (state === 'draft-cancelled') controller.abort(new Error('fixture PR cancelled'));
+      if (state === 'draft-retired') current = false;
+      return { exitCode: state === 'draft-failed' ? 1 : 0,
+        stdout: state === 'draft-malformed' ? 'bad prose' : 'TITLE: feat: fixture\n\nfixture PR body', stderr: '', timedOut: false };
+    }
     writeFileSync(join(context.cwd, 'feature.txt'), 'implemented\n');
     if (state === 'changed-branch') git(['checkout', '-b', 'unrelated-feature'], context.cwd);
     if (state === 'committed') {
@@ -139,15 +158,31 @@ it.each(['uncommitted', 'committed', 'no-push', 'denied', 'ask', 'missing-policy
     engines: { listActive: async () => ['builder'], dispatch },
   } as unknown as ModServices);
   const commitBody = vi.fn((claim: string) => claim);
-  const services = { ...base, conquer: { ...base.conquer!, open: async context => ({
+  const services: ConquerModServices = { ...base, conquer: { ...base.conquer!, open: async context => ({
     ...await base.conquer!.open(context),
     ...(state === 'missing-policy' ? {} : { publication: { protectedPushBranches: [], commitBody } }),
   }) } };
+  if (hasDraft) {
+    Object.assign(services, { receipts: createModObservability({ receiptRoot: join(remote, 'receipts'),
+      owner: 'agon.conquer', contentHash: `sha256:${'a'.repeat(64)}`, secretValues: [] }).receipts,
+    conquer: createConquerHostServices({
+      worktrees: fixtureWorktrees, contextSpine: async () => '',
+      openRegistry: () => ({ get: (id: string) => ({ id, binary: id, agent: {} }) as any }),
+      createAdapter: () => ({ dispatch: vi.fn(), isAvailable: async () => true, getVersion: async () => null }),
+      rankCritics: () => [],
+      captureAuthority: () => () => { if (!current) throw new Error('fixture PR retired'); },
+      publicationPolicy: () => ({ protectedPushBranches: [], commitBody }),
+      draftPullRequest: async (input, send) => {
+        if (state === 'draft-disabled') throw new Error('fixture Forge disabled');
+        return runPrText(input, { dispatch: send });
+      },
+    }) });
+  }
   const finish = vi.spyOn(services.runs!, 'finish');
   const start = vi.spyOn(services.runs!, 'start');
   const result = await runConquerTaskImpl({ task: 'publish feature', gate: 'test -f feature.txt',
     builder: 'builder', maxTurns: '1', ...(state === 'no-push' ? {} : { push: true }) },
-    { invocationId: 'publication', cwd, platform: 'darwin-arm64', signal: new AbortController().signal, config: {} }, services);
+    { invocationId: 'publication', cwd, platform: 'darwin-arm64', signal: controller.signal, config: {} }, services);
   expect(git(['rev-parse', 'HEAD'])).toBe(sourceHead);
   expect(git(['status', '--porcelain'])).toBe('');
   if (state === 'denied' || state === 'ask' || state === 'missing-policy') {
@@ -168,6 +203,7 @@ it.each(['uncommitted', 'committed', 'no-push', 'denied', 'ask', 'missing-policy
     if (state === 'push-failed') expect(git(['show', 'HEAD:feature.txt'], payload.worktree.path)).toBe('implemented');
     if (state === 'changed-branch') {
       expect(git(['diff', '--cached'], payload.worktree.path)).toBe('');
+      expect(payload.pullRequest).toBeUndefined();
       expect(commitBody).not.toHaveBeenCalled();
     }
   } else {
@@ -185,9 +221,22 @@ it.each(['uncommitted', 'committed', 'no-push', 'denied', 'ask', 'missing-policy
       expect(payload.publication).toMatchObject({ ok: true, branch: payload.worktree.branch });
       expect(git(['show', `${payload.worktree.branch}:feature.txt`], remote)).toBe('implemented');
       expect(git(['rev-list', '--count', `${sourceHead}..${payload.worktree.branch}`], remote)).toBe('1');
+      expect(payload.pullRequest).toMatchObject({ usedTemplate: state !== 'drafted',
+        title: state === 'drafted' ? 'feat: fixture' : 'conquer: publish feature' });
+      expect(JSON.parse(readFileSync(join(payload.outputDir, 'result.json'), 'utf8')).pullRequest).toEqual(payload.pullRequest);
+      if (hasDraft) {
+        expect(payload.pullRequest.url).toContain('https://github.com/fixture/repo/compare/');
+        expect(dispatch).toHaveBeenCalledTimes(state === 'draft-disabled' ? 1 : 2);
+        const saved = JSON.parse(readFileSync(join(remote, 'receipts', `${payload.receiptId}.json`), 'utf8'));
+        expect(saved.payload.publication.ok).toBe(true);
+        expect(saved.payload.pullRequest.usedTemplate).toBe(state !== 'drafted');
+        expect(spawned.mock.calls.filter(([options]) => options.command === 'git' && options.args?.[0] === 'push')).toHaveLength(1);
+        if (state === 'draft-cancelled' || state === 'draft-retired') expect(spawned).toHaveBeenCalledTimes(processesAtDraft);
+      }
+      else expect(payload.pullRequest.mergeHint).toContain('merge gate');
     }
   }
-  if (state !== 'uncommitted' && state !== 'committed') {
+  if (state !== 'uncommitted' && state !== 'committed' && !hasDraft) {
     expect(git(['for-each-ref', '--format=%(refname)', 'refs/heads'], remote)).toBe('');
   }
 });

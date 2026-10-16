@@ -4,10 +4,12 @@ import type { EngineAdapter, EngineDefinition } from '@kernlang/agon-support-eng
 import type { FalsifierEffects } from './falsifier.js';
 import { createConquerIsolation } from './isolation.js';
 import type { ConquerIsolation, ConquerIsolationEffects } from './isolation.js';
+import type { ConquerPrDraft } from './pull-request.js';
 
 export interface ConquerPublicationPolicy {
   readonly protectedPushBranches: readonly string[];
   commitBody(claim: string): string;
+  prBody?(body: string): string;
 }
 
 export interface ConquerHostServices {
@@ -16,6 +18,7 @@ export interface ConquerHostServices {
     assertCurrent(): void;
     createIsolation(task: string, runId: string, base: string): ConquerIsolation;
     readonly publication?: ConquerPublicationPolicy;
+    draftPullRequest?(input: ConquerPrDraft, dispatch: (prompt: string) => Promise<string>): Promise<{ ok: boolean; title: string; body: string }>;
   }>;
 }
 
@@ -28,6 +31,7 @@ export function createConquerHostServices<Registry extends { get(id: string): En
   captureAuthority(): () => void;
   worktrees: ConquerIsolationEffects;
   publicationPolicy?(context: InvocationContext): ConquerPublicationPolicy;
+  draftPullRequest?(input: ConquerPrDraft, dispatch: (prompt: string) => Promise<string>): Promise<{ ok: boolean; title: string; body: string }>;
 }): ConquerHostServices {
   return {
     contextSpine: options.contextSpine,
@@ -47,6 +51,18 @@ export function createConquerHostServices<Registry extends { get(id: string): En
         ...(publication ? { publication: {
           protectedPushBranches: Object.freeze([...publication.protectedPushBranches]),
           commitBody: (claim: string) => { check(); return publication.commitBody(claim); },
+          ...(publication.prBody ? { prBody: (body: string) => { check(); return publication.prBody!(body); } } : {}),
+        } } : {}),
+        ...(options.draftPullRequest ? { draftPullRequest: async (input: ConquerPrDraft, dispatch: (prompt: string) => Promise<string>) => {
+          check();
+          const result = await options.draftPullRequest!(input, async prompt => {
+            check();
+            const response = await dispatch(prompt);
+            check();
+            return response;
+          });
+          check();
+          return result;
         } } : {}),
         createIsolation: (task, runId, base) => {
           check();

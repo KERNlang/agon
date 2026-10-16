@@ -1,10 +1,12 @@
 import { runDoneOracle } from './falsifier.js';
 import { publishConquerBranch } from './publication.js';
 import type { ConquerPublicationResult } from './publication.js';
+import { prepareConquerPullRequest } from './pull-request.js';
+import type { ConquerPullRequest } from './pull-request.js';
 import { spawnWithTimeout } from '@kernlang/agon-support-engine-runtime';
 import type { ConquerHostServices } from './host.js';
 import type { ConquerIsolation } from './isolation.js';
-import { readWorktreeSource, readWorktreePatch } from '@kernlang/agon-support-worktree';
+import { readWorktreeSource, readWorktreePatch, defaultBaseBranch, githubRepoUrl } from '@kernlang/agon-support-worktree';
 import type { RunRecordHandle } from '@kernlang/agon-mod-api';
 import { runConquerWorkflow } from './workflow.js';
 import { runBrainstorm } from '@kernlang/agon-mod-brainstorm';
@@ -168,12 +170,10 @@ export async function runConquerTask(raw:Json,context:InvocationContext,services
       : workflow.stopReason === 'builder-failed' ? 'builder_failed'
       : workflow.stopReason === 'cap-time' ? 'time_budget_exceeded' : 'turn_budget_exceeded';
     let publication: ConquerPublicationResult | undefined;
+    let pullRequest: ConquerPullRequest | undefined;
     if (status === 'completed' && input.push === true && capabilities.publication) {
       const policy = capabilities.publication;
-      publication = await publishConquerBranch({
-        cwd: retained.path, task, expectedBranch: retained.branch, protectedPushBranches: policy.protectedPushBranches,
-        commitBody: () => policy.commitBody(workflow.lastClaim || '(no claim captured)'),
-      }, async (args, commandTimeout) => {
+      const git = async (args: string[], commandTimeout: number) => {
         context.signal.throwIfAborted();
         capabilities.assertCurrent();
         const permission = await services.permissions.check('git.write', context.cwd);
@@ -185,16 +185,42 @@ export async function runConquerTask(raw:Json,context:InvocationContext,services
         context.signal.throwIfAborted();
         capabilities.assertCurrent();
         return executed;
-      });
+      };
+      const claim = workflow.lastClaim || '(no claim captured)';
+      publication = await publishConquerBranch({
+        cwd: retained.path, task, expectedBranch: retained.branch, protectedPushBranches: policy.protectedPushBranches,
+        commitBody: () => policy.commitBody(claim),
+      }, git);
+      if (publication.ok) {
+        let base = 'main', repoUrl = '';
+        try {
+          context.signal.throwIfAborted(); capabilities.assertCurrent();
+          base = defaultBaseBranch(retained.repoRoot); repoUrl = githubRepoUrl(retained.repoRoot);
+        } catch { /* Keep a manual merge hint if metadata is unavailable. */ }
+        pullRequest = await prepareConquerPullRequest({ task, claim, gate, builder,
+          branch: publication.branch, base, repoUrl }, {
+          git, formatBody: policy.prBody,
+          ...(capabilities.draftPullRequest ? { draft: draft => capabilities.draftPullRequest!(draft, async prompt => {
+            const response = await services.engines.dispatch(builder, prompt, { ...context, cwd: retained.path },
+              { timeoutSeconds: 300, textOnly: true, mode: 'exec' });
+            if (!response || typeof response !== 'object' || Array.isArray(response)
+              || response.exitCode !== 0 || response.timedOut === true) throw new Error('PR text generation failed');
+            return typeof response.stdout === 'string' ? response.stdout : '';
+          }) } : {}),
+        });
+      }
     }
     const succeeded = status === 'completed' && publication?.ok !== false;
     const result = {
       status, task, builder, advisors, gate, turns, outputDir: run.path, workflow,
       worktree: retained, baseSha: source.baseSha, dirtySourceExcluded: source.dirtySourceExcluded,
       ...(publication ? { publication } : {}),
+      ...(pullRequest ? { pullRequest } : {}),
       ...(status === 'completed' ? { winningPatch: diff }
         : { lastPatch: diff }),
     };
+    // Finalize completed effects even if optional prose lost invocation authority.
+    // This records the existing run; it starts no workflow or provider work.
     const receiptId = await services.receipts.record('conquer', result as unknown as Json);
     await runs.writeArtifact(run, 'result.json', JSON.stringify({ ...result, receiptId }, null, 2), context);
     await runs.writeArtifact(run, 'result.patch', diff, context);

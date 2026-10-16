@@ -1,5 +1,6 @@
 import type { EngineAdapter, EngineRegistry, RatingRecord } from '@kernlang/agon-core';
-import { doneOracleDecision } from '@kernlang/agon-mod-conquer';
+import { evaluateDoneEvidence, parseBuilderSignals, buildConquerSystemPrompt } from '@kernlang/agon-mod-conquer';
+export { parseBuilderSignals, buildConquerSystemPrompt } from '@kernlang/agon-mod-conquer';
 export { doneOracleDecision } from '@kernlang/agon-mod-conquer';
 export type { DoneOracleInput } from '@kernlang/agon-mod-conquer';
 
@@ -13,7 +14,6 @@ import { runBrainstorm } from './brainstorm.js';
 
 import { runCouncil } from './council.js';
 
-import { isTestFile, parseChangedLines, newFilesInDiff } from '@kernlang/agon-support-worktree';
 
 import { join, dirname } from 'node:path';
 
@@ -190,27 +190,6 @@ export function capBreached(state: ConquerState, caps: ConquerCaps, nowMs: numbe
   return '';
 }
 
-/**
- * Parse a builder turn for the conquer sentinels: a line starting CONQUER_DONE claims completion (the rest of that line is the disprovable claim for the done-oracle); a line `CONQUER_ASK: <question>` is a fork to resolve. Pure — exported for testing.
- */
-export function parseBuilderSignals(turnText: string): { claimedDone: boolean; ask: string | null; claim: string } {
-  const lines = turnText.split('\n');
-  let claimedDone = false;
-  let claim = '';
-  let ask: string | null = null;
-  for (const line of lines) {
-    const t = line.trim();
-    if (t.startsWith('CONQUER_DONE')) {
-      claimedDone = true;
-      const rest = t.slice('CONQUER_DONE'.length).replace(/^[:\s-]+/, '').trim();
-      if (rest) claim = rest;
-    } else if (t.startsWith('CONQUER_ASK')) {
-      const idx = t.indexOf(':');
-      ask = idx >= 0 ? t.slice(idx + 1).trim() : '';
-    }
-  }
-  return { claimedDone, ask, claim };
-}
 
 /**
  * Heuristically classify a builder ASK into a fork kind so pickEscalationMode can route it: high-stakes cues (irreversible/schema/security/architecture) -> high-stakes; >=2 enumerated options -> choice; open 'how/where do I' phrasing -> ideation; else approach-doubt. Pure — exported for testing.
@@ -225,20 +204,6 @@ export function classifyAsk(ask: string): { kind: 'approach-doubt' | 'choice' | 
   return { kind: 'approach-doubt', optionCount };
 }
 
-/**
- * The protocol Cesar gives the builder: work autonomously in this repo toward the task; when you hit a genuine fork you cannot resolve, emit a single line `CONQUER_ASK: <question + options>` and STOP for guidance; when finished and the project's tests pass, emit `CONQUER_DONE: <one disprovable claim about what now works>`. Pure — exported for testing.
- */
-export function buildConquerSystemPrompt(): string {
-  return [
-    'You are an autonomous build agent supervised by Cesar (you do NOT talk to a human directly).',
-    'Work toward the task in the current repository, making and running real changes.',
-    'PROTOCOL — use these exact sentinels on their own line:',
-    `- When you hit a genuine fork or are stuck and need a decision, emit "${'CONQUER_ASK'}: <the question, with the concrete options>" and STOP. Cesar will consult a panel and reply.`,
-    `- When the work is complete AND the project's tests pass, emit "${'CONQUER_DONE'}: <one concrete, disprovable claim about the new behavior, e.g. a command + expected output>".`,
-    'Do not weaken, skip, or rewrite existing tests to make them pass. Add new tests in new files.',
-    'Keep going until you emit one of the sentinels.',
-  ].join('\n');
-}
 
 /**
  * Build a bounded supervisor envelope for every builder turn. The original task is repeated verbatim on every dispatch, while only recent state and a capped previous output are carried forward so a long run neither loses its objective nor grows prompt context without bound.
@@ -487,13 +452,10 @@ export async function runDoneFalsifier(opts: { claim:string; gate?:string; cwd:s
  * Run the conquer done-oracle for a completion claim. CHEAP DETERMINISTIC LAYERS FIRST (L0/L1/L2): a tampered oracle, weakened existing tests, a red gate, or an empty claim each block immediately — WITHOUT cloning the repo or dispatching an agent (so a premature CONQUER_DONE never burns a full falsifier run). Only when those pass does the L4/L5 EVIDENCE-BASED falsifier run (a tool-enabled agent critic tries to reproduce a runnable counterexample in a throwaway sandbox; blocks ONLY on a mechanically-verified failure — never on a bare opinion). gateOk + oracleTampered are computed by the caller in the worktree. Returns `falsified` (was the block a verified reproduction?) plus the falsifier's attack text + counterexample for the human merge gate, whether or not they blocked.
  */
 export async function runDoneOracle(opts: { claim: string; diff: string; gate?: string; gateOk: boolean; oracleTampered: boolean; engines: string[]; registry: EngineRegistry; adapter: EngineAdapter; timeout: number; outputDir: string; cwd: string; ratings?: RatingRecord; signal?: AbortSignal; sandbox?: SandboxOps }): Promise<{ passed: boolean; reason: string; falsified: boolean; attackText: string; counterexample: string | null; observed: string | null; critic: string; advisoryOnly: boolean }> {
-  const changed = parseChangedLines(opts.diff);
-  const newSet = new Set(newFilesInDiff(opts.diff));
-  const weakenedTests = Object.keys(changed).some((f) => isTestFile(f) && !newSet.has(f));
 
   // L0/L1/L2 first (cheap, deterministic). If the claim is already doomed, skip the
   // expensive falsifier entirely — its outcome can't change the verdict.
-  const pre = doneOracleDecision({ gateOk: opts.gateOk, oracleTampered: opts.oracleTampered, weakenedTests, claim: opts.claim, neroFalsified: false });
+  const pre = evaluateDoneEvidence({ ...opts, neroFalsified: false });
   if (!pre.passed) {
     return { ...pre, falsified: false, attackText: '', counterexample: null, observed: null, critic: '', advisoryOnly: false };
   }
@@ -507,7 +469,7 @@ export async function runDoneOracle(opts: { claim: string; diff: string; gate?: 
     });
   }
 
-  const decision = doneOracleDecision({ gateOk: opts.gateOk, oracleTampered: opts.oracleTampered, weakenedTests, claim: opts.claim, neroFalsified: falsifier.falsified });
+  const decision = evaluateDoneEvidence({ ...opts, neroFalsified: falsifier.falsified });
   return { ...decision, falsified: falsifier.falsified, attackText: falsifier.attackText, counterexample: falsifier.counterexample, observed: falsifier.observed, critic: falsifier.critic, advisoryOnly: falsifier.advisoryOnly };
 }
 

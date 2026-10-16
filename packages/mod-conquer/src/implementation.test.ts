@@ -9,6 +9,41 @@ import { runAgentTask } from '@kernlang/agon-mod-agent';
 import { afterEach } from 'vitest';
 afterEach(() => vi.restoreAllMocks());
 
+it.each(['missing-sentinel', 'empty-claim', 'changed-test', 'new-test', 'valid-claim', 'red-gate', 'no-diff'] as const)(
+  'checks completion evidence for %s', async scenario => {
+    const cwd = repo();
+    writeFileSync(join(cwd, 'guard.test.ts'), 'throw new Error("must implement feature");\n');
+    execFileSync('git', ['add', 'guard.test.ts'], { cwd });
+    execFileSync('git', ['commit', '-m', 'frozen test fixture'], { cwd });
+    const dispatch = vi.fn(async (engineId, _prompt, context, _options) => {
+      if (scenario === 'changed-test') writeFileSync(join(context.cwd, 'guard.test.ts'), '// skipped\n');
+      else if (scenario === 'new-test') writeFileSync(join(context.cwd, 'new.test.ts'), '// new coverage\n');
+      else if (scenario !== 'no-diff') writeFileSync(join(context.cwd, 'feature.txt'), 'implemented\n');
+      return { engineId, exitCode: 0,
+        stdout: scenario === 'missing-sentinel' ? 'still working' : scenario === 'empty-claim' ? 'CONQUER_DONE' : 'CONQUER_DONE: feature works',
+        stderr: '', timedOut: false };
+    });
+    const services = { logger: { debug: vi.fn() }, receipts: { record: vi.fn(async () => 'fixture') },
+      engines: { listActive: async () => ['builder'], dispatch } } as unknown as ModServices;
+    const result = await runConquerTask({ task: 'implement feature without changing existing tests',
+      gate: scenario === 'red-gate' ? 'false' : 'true', builder: 'builder', maxTurns: '1' },
+    { invocationId: 'completion-evidence', cwd, platform: 'darwin-arm64', signal: new AbortController().signal, config: {} }, services);
+    const accepted = scenario === 'new-test' || scenario === 'valid-claim';
+    expect(result).toMatchObject({ exitCode: accepted ? 0 : 1,
+      result: { status: accepted ? 'completed' : 'turn_budget_exceeded' } });
+    const reason = scenario === 'changed-test' ? 'L1:'
+      : scenario === 'missing-sentinel' || scenario === 'empty-claim' ? 'L2:'
+      : scenario === 'red-gate' ? 'L0:'
+      : scenario === 'no-diff' ? 'No patch'
+      : 'falsifier and oracle-tamper checks not performed';
+    expect(result.result).toMatchObject({ turns: [expect.objectContaining({
+      completion: { passed: accepted, reason: expect.stringContaining(reason) },
+    })] });
+    expect(dispatch).toHaveBeenCalledOnce();
+    expect(dispatch.mock.calls[0][3]).toMatchObject({ systemPrompt: expect.stringContaining('CONQUER_DONE') });
+  },
+);
+
 describe('explicit engine resolution across Conquer workflows', () => {
   const workflows = [
     { name: 'Agent', run: runAgentTask, input: { task: 'inspect', engines: 'alias-a,alias-b' } },
@@ -320,7 +355,7 @@ it.each([1, 2, 3])('stops before advisory dispatch when verification is cancelle
   const dispatch = vi.fn(async (engineId, _prompt, context) => {
     paths.push(context.cwd);
     writeFileSync(join(context.cwd, `turn-${paths.length}.txt`), 'partial work\n');
-    return { engineId, exitCode: 0, stdout: 'working', stderr: '', timedOut: false };
+    return { engineId, exitCode: 0, stdout: 'CONQUER_DONE: the feature works', stderr: '', timedOut: false };
   });
   const record = vi.fn(async () => 'fixture');
   const services = { logger: { debug: vi.fn() }, receipts: { record },
@@ -422,4 +457,4 @@ it.each(['tui', 'argument-only', 'direct', 'canonical-precedence', 'deadline'] a
   expect(dispatch.mock.calls[0][0]).toBe('builder');
   expect(dispatch.mock.calls[0][3]).toMatchObject({ timeoutSeconds: 7 });
 });
-describe('physical conquer mod',()=>{it('iterates in one isolated worktree until the gate, then receipts the patch and cleans up',async()=>{const cwd=repo();let agentTurns=0;const paths:string[]=[];const dispatch=vi.fn(async(id:string,prompt:string,context:any,options:any)=>{if(options.mode==='agent'){agentTurns++;paths.push(context.cwd);if(agentTurns===2)writeFileSync(join(context.cwd,'solved.txt'),'yes\n');return{id,exitCode:0,stdout:'worked',stderr:'',timedOut:false};}return{id,exitCode:0,stdout:'VERDICT: CONTINUE\nCONFIDENCE: 80',stderr:'',timedOut:false};});const services={identity:{id:'agon.conquer',version:'1',contentHash:`sha256:${'a'.repeat(64)}`},source:'bundled',logger:{debug:vi.fn(),info:vi.fn(),warn:vi.fn()},receipts:{record:vi.fn(async()=>'conquer-r')},permissions:{check:vi.fn()},state:{read:vi.fn(),write:vi.fn()},engines:{listActive:vi.fn(async()=>['builder','a','b']),rank:vi.fn(async(ids:readonly string[])=>ids.map(engineId=>({engineId,reason:'none',scope:null}))),dispatch}}as unknown as ModServices;const out=await runConquerTask({task:'solve',gate:'test -f solved.txt',builder:'builder',engines:'a,b',maxTurns:'3'}, {invocationId:'c',cwd,platform:'darwin-arm64',signal:new AbortController().signal,config:{}},services);expect(out.exitCode).toBe(0);expect((out.result as any).turns).toHaveLength(2);expect((out.result as any).winningPatch).toContain('solved.txt');expect(existsSync(join(cwd,'solved.txt'))).toBe(false);expect(paths.every(path=>!existsSync(path))).toBe(true);});});
+describe('physical conquer mod',()=>{it('iterates in one isolated worktree until the gate, then receipts the patch and cleans up',async()=>{const cwd=repo();let agentTurns=0;const paths:string[]=[];const dispatch=vi.fn(async(id:string,prompt:string,context:any,options:any)=>{if(options.mode==='agent'){agentTurns++;paths.push(context.cwd);if(agentTurns===2)writeFileSync(join(context.cwd,'solved.txt'),'yes\n');return{id,exitCode:0,stdout:agentTurns===2?'CONQUER_DONE: solved.txt contains the requested result':'worked',stderr:'',timedOut:false};}return{id,exitCode:0,stdout:'VERDICT: CONTINUE\nCONFIDENCE: 80',stderr:'',timedOut:false};});const services={identity:{id:'agon.conquer',version:'1',contentHash:`sha256:${'a'.repeat(64)}`},source:'bundled',logger:{debug:vi.fn(),info:vi.fn(),warn:vi.fn()},receipts:{record:vi.fn(async()=>'conquer-r')},permissions:{check:vi.fn()},state:{read:vi.fn(),write:vi.fn()},engines:{listActive:vi.fn(async()=>['builder','a','b']),rank:vi.fn(async(ids:readonly string[])=>ids.map(engineId=>({engineId,reason:'none',scope:null}))),dispatch}}as unknown as ModServices;const out=await runConquerTask({task:'solve',gate:'test -f solved.txt',builder:'builder',engines:'a,b',maxTurns:'3'}, {invocationId:'c',cwd,platform:'darwin-arm64',signal:new AbortController().signal,config:{}},services);expect(out.exitCode).toBe(0);expect((out.result as any).turns).toHaveLength(2);expect((out.result as any).winningPatch).toContain('solved.txt');expect(existsSync(join(cwd,'solved.txt'))).toBe(false);expect(paths.every(path=>!existsSync(path))).toBe(true);});});

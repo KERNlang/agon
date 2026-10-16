@@ -131,6 +131,7 @@
       "dist/glicko.d.ts",
       "dist/types.d.ts",
       "dist/storage.d.ts",
+      "dist/role-specialization.d.ts",
       "ownership.json",
       "schemas/config.schema.json"
     ],

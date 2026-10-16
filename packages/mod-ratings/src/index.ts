@@ -13,3 +13,5 @@ export * as glicko from './glicko.js';
 export type { GlickoRating, EngineMeta, RatingRecord } from './types.js';
 export { computeUnknownEngineIds, computeRunManifestPurge, purgeRatingsStore } from './maintenance.js';
 export type { PurgeReport, RatingsMaintenanceStore } from './maintenance.js';
+export { rankByTaskClass, assignForgeRoles, buildSpecializedPrompt } from './role-specialization.js';
+export type { EngineRole } from './role-specialization.js';

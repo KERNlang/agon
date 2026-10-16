@@ -3096,7 +3096,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.ratings",
       "version": "1.0.0",
-      "contentHash": "sha256:60189c32c784a6ee0248c138742325d16034b26ad6cd2dcf74a5bf585a7dda8b"
+      "contentHash": "sha256:bde2c06969b35422bb8d69f1e791880b6ccbb8148ea5fe1fca0ac7f9df0c3c69"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "leaderboard",
@@ -3694,7 +3694,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.ratings",
       "version": "1.0.0",
-      "contentHash": "sha256:60189c32c784a6ee0248c138742325d16034b26ad6cd2dcf74a5bf585a7dda8b"
+      "contentHash": "sha256:bde2c06969b35422bb8d69f1e791880b6ccbb8148ea5fe1fca0ac7f9df0c3c69"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "ratings",
@@ -3717,7 +3717,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.ratings",
       "version": "1.0.0",
-      "contentHash": "sha256:60189c32c784a6ee0248c138742325d16034b26ad6cd2dcf74a5bf585a7dda8b"
+      "contentHash": "sha256:bde2c06969b35422bb8d69f1e791880b6ccbb8148ea5fe1fca0ac7f9df0c3c69"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "ratings purge-unknown",
@@ -5812,7 +5812,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.ratings",
       "version": "1.0.0",
-      "contentHash": "sha256:60189c32c784a6ee0248c138742325d16034b26ad6cd2dcf74a5bf585a7dda8b"
+      "contentHash": "sha256:bde2c06969b35422bb8d69f1e791880b6ccbb8148ea5fe1fca0ac7f9df0c3c69"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "leaderboard",
@@ -7175,7 +7175,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.ratings",
       "version": "1.0.0",
-      "contentHash": "sha256:60189c32c784a6ee0248c138742325d16034b26ad6cd2dcf74a5bf585a7dda8b"
+      "contentHash": "sha256:bde2c06969b35422bb8d69f1e791880b6ccbb8148ea5fe1fca0ac7f9df0c3c69"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "                        — Glicko rankings",
@@ -9664,7 +9664,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.ratings",
       "version": "1.0.0",
-      "contentHash": "sha256:60189c32c784a6ee0248c138742325d16034b26ad6cd2dcf74a5bf585a7dda8b"
+      "contentHash": "sha256:bde2c06969b35422bb8d69f1e791880b6ccbb8148ea5fe1fca0ac7f9df0c3c69"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "                        — Glicko rankings",

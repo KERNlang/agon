@@ -1,5 +1,14 @@
 import { expect, it } from 'vitest';
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import * as verifier from '../../scripts/spec/verify-modular-support-boundaries.mjs';
+
+it('preserves the committed support package contracts during regeneration', () => {
+  const root = fileURLToPath(new URL('../../', import.meta.url));
+  expect(() => execFileSync(process.execPath, [
+    'scripts/spec/generate-modular-support-package-metadata.mjs', '--check',
+  ], { cwd: root, encoding: 'utf8', stdio: 'pipe' })).not.toThrow();
+});
 
 function inspect(source: string, filename = '/fixture/support/src/test.ts') {
   expect(verifier).toHaveProperty('inspectSourceImports');

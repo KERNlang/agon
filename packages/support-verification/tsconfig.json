@@ -15,9 +15,11 @@
     "emitDeclarationOnly": true
   },
   "references": [
-    { "path": "../support-engine-runtime" },
     {
       "path": "../mod-kernel"
+    },
+    {
+      "path": "../support-engine-runtime"
     },
     {
       "path": "../support-persistence"

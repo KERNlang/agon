@@ -11,7 +11,7 @@ const expected = new Map([
   ['browser-bridge', []],
   ['saas-api', []],
   ['engine-catalog', ['engine-runtime']],
-  ['verification', ['persistence']],
+  ['verification', ['engine-runtime', 'persistence']],
   ['panel', ['engine-runtime']],
   ['worktree', ['verification']],
   ['agent-runtime', ['engine-runtime', 'persistence', 'verification']],
@@ -148,11 +148,18 @@ function inspect(definitions = expected) {
 function main() {
   const errors = inspect();
   if (process.argv.includes('--self-test')) {
-    const mutated = new Map(expected);
-    mutated.set('judge', ['panel']);
-    const mutationErrors = inspect(mutated);
-    if (!mutationErrors.some((error) => error.includes('judge: support dependencies'))) {
-      throw new Error('negative control failed: dependency mutation survived');
+    for (const [name, dependencies] of expected) {
+      const variants = [
+        [...dependencies, 'unexpected-support'],
+        ...dependencies.map((dependency) => dependencies.filter((id) => id !== dependency)),
+      ];
+      for (const variant of variants) {
+        const mutated = new Map(expected);
+        mutated.set(name, variant);
+        if (!inspect(mutated).some((error) => error.startsWith(`${name}: support dependencies `))) {
+          throw new Error(`negative control failed: ${name} dependency mutation survived`);
+        }
+      }
     }
     if (!/export\s+function\s+configure[A-Z][A-Za-z0-9]*Runtime\s*\(/.test("export function configureFakeRuntime(runtime: unknown): void {}")) {
       throw new Error("negative control failed: mutable runtime configurator survived");

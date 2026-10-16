@@ -6,15 +6,15 @@ export const MANIFEST = validateManifest(manifest);
 export const SOURCE_OCCURRENCES = Object.freeze(ownership.assignments);
 
 export const IMPLEMENTATION_KIND = 'physical' as const;
+export { createMod } from './implementation.js';
+export { createMod as default } from './implementation.js';
+export { runForgeCompetition } from './implementation.js';
 export type {
   ForgeOptions, EngineResult, SkippedEngine, DispatchMetric, ForgeManifest,
   ConvergenceEntry, ForgeJudgment, ForgeEventType, ForgeEvent, ForgeEventMap,
   ForgeEventCallback, BreakerArtifact, GauntletResult, CorpusEntry, GapPattern,
   StageResult, WorktreeEntry, Critique, SynthesisResult,
 } from './types.js';
-export { createMod } from './implementation.js';
-export { createMod as default } from './implementation.js';
-export { runForgeCompetition } from './implementation.js';
 export { createForgeWorkflow } from './workflow.js';
 export type { ForgeWorkflowConfig, ForgeWorkflowRegistry, ForgeWorkflowEffects } from './workflow.js';
 export type { ForgeHostServices, ForgeModServices, ForgeInvocationContext } from './host.js';

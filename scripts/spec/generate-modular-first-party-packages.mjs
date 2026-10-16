@@ -153,15 +153,15 @@ function expectedFiles(packageRecord) {
   // Composite workflows invoke child mods with the caller's service boundary,
   // so their transitive effects must remain visible in the parent manifest.
   if (['conquer', 'goal', 'pipeline-delivery', 'pipeline-orchestration'].includes(short)) inferredPermissions.add('engine.dispatch');
-  // Brainstorm seats dispatch through host-supplied services, so the source
-  // pattern above cannot see an effect the mod still performs.
-  if (short === 'brainstorm') inferredPermissions.add('engine.dispatch');
+  // Brainstorm and Forge dispatch through host services in separate modules.
+  // The entrypoint scan cannot see these effects.
+  if (['brainstorm', 'forge'].includes(short)) inferredPermissions.add('engine.dispatch');
   // Jobs persists scheduler observations through its separate storage adapter.
   if (short === 'jobs') inferredPermissions.add('state.write');
   const physicalPackFiles = isPhysical ? ['dist/implementation.d.ts', ...(short === 'rag' ? ['dist/store.d.ts', 'dist/types.d.ts', 'dist/grounding.d.ts']
     : short === 'think' ? ['dist/thinking.d.ts']
-    : short === 'forge' ? ['dist/result-policy.d.ts', 'dist/apply.d.ts']
-    : short === 'plan' ? ['dist/agent-review-step-execution.d.ts', 'dist/forge-step-execution.d.ts', 'dist/pipeline-step-execution.d.ts', 'dist/self-step-execution.d.ts', 'dist/approval-policy.d.ts', 'dist/cost-estimator.d.ts', 'dist/execution-callbacks.d.ts', 'dist/execution-coordinator.d.ts', 'dist/execution-model.d.ts', 'dist/execution-state.d.ts', 'dist/execution-store.d.ts', 'dist/executor.d.ts', 'dist/formatter.d.ts', 'dist/panel-step-execution.d.ts', 'dist/proposal-workflow.d.ts', 'dist/resume-policy.d.ts', 'dist/resume-workflow.d.ts', 'dist/runtime.d.ts', 'dist/session-scope.d.ts', 'dist/session-selection.d.ts', 'dist/session-workflow.d.ts', 'dist/session.d.ts', 'dist/step-validation.d.ts']
+    : short === 'forge' ? ['dist/result-policy.d.ts', 'dist/apply.d.ts', ...['competition', 'corpus', 'errors', 'fitness', 'gauntlet', 'host', 'manifest', 'prompts', 'quality', 'scoring', 'stage-context', 'stages', 'synth-plan', 'synthesis', 'types', 'workflow'].map(name => `dist/${name}.d.ts`)]
+    : short === 'plan' ? ['dist/agent-review-step-execution.d.ts', 'dist/forge-step-execution.d.ts', 'dist/pipeline-step-execution.d.ts', 'dist/self-step-execution.d.ts', 'dist/approval-policy.d.ts', 'dist/cost-estimator.d.ts', 'dist/execution-callbacks.d.ts', 'dist/execution-coordinator.d.ts', 'dist/execution-model.d.ts', 'dist/execution-state.d.ts', 'dist/execution-store.d.ts', 'dist/executor.d.ts', 'dist/formatter.d.ts', 'dist/panel-step-execution.d.ts', 'dist/proposal-workflow.d.ts', 'dist/resume-policy.d.ts', 'dist/resume-workflow.d.ts', 'dist/runtime.d.ts', 'dist/session-scope.d.ts', 'dist/session-selection.d.ts', 'dist/session-workflow.d.ts', 'dist/session.d.ts', 'dist/step-validation.d.ts', 'dist/worktree-workflow.d.ts']
     : short === 'brainstorm' ? ['dist/collector.d.ts', 'dist/host.d.ts', 'dist/policy.d.ts', 'dist/presentation.d.ts', 'dist/result.d.ts', 'dist/runtime.d.ts', 'dist/scout.d.ts', 'dist/session-record.d.ts', 'dist/session-workflow.d.ts', 'dist/workflow.d.ts']
     : short === 'jobs' ? ['dist/daemon-controller.d.ts', 'dist/cli-projection.d.ts', 'dist/cli-invocation.d.ts', 'dist/cli-client.d.ts', 'dist/cli-contract.d.ts', 'dist/daemon-contract.d.ts', 'dist/daemon-job-router.d.ts', 'dist/daemon-workflow.d.ts', 'dist/job-service.d.ts', 'dist/mcp-contract.d.ts', 'dist/persisted-job-service.d.ts', 'dist/session-jobs.d.ts', 'dist/workflow-process.d.ts', 'dist/workflow-handshake.d.ts']
     : short === 'ratings' ? ['dist/maintenance.d.ts', 'dist/glicko.d.ts', 'dist/types.d.ts', 'dist/storage.d.ts']
@@ -260,6 +260,10 @@ export { runRag, buildRagIndex, queryRag, collectCorpusFiles, chunkMarkdown } fr
 ` : short === 'sanitize' ? `export { runSanitize, scanText, cleanText } from './implementation.js';
 ` : short === 'goal' ? `export { runGoal } from './implementation.js';
 ` : short === 'plan' ? `export { createPersistenceEnvelope, unwrapPersistenceEnvelope } from './implementation.js';
+export { showWorktreePlan, listWorktreePlans, approveWorktreePlan, retryWorktreePlan, cancelWorktreePlan } from './worktree-workflow.js';
+export type { WorktreePlanHost, WorktreePlanEvent } from './worktree-workflow.js';
+export { dispatchPlanSession } from './session.js';
+export type { PlanSessionActions, PlanSessionDispatchResult } from './session.js';
 export { PlanCostEstimator } from './cost-estimator.js';
 export { createPlanRuntime } from './runtime.js';
 export { planSessionHost, withPlanSession } from './session-scope.js';
@@ -326,6 +330,38 @@ export type { DaemonJobRequest, DaemonJobResponse } from './daemon-contract.js';
 export type { JobState, TerminalJobState, JobSnapshot, JobEvent, JobEventPage, JobOutcome, JobObservation, JobTaskContext, JobExecutor, JobServiceOptions } from './job-service.js';
 ` : short === 'git-actions' ? `export { runGitAction } from './implementation.js';
 ` : short === 'forge' ? `export { runForgeCompetition } from './implementation.js';
+export type {
+  ForgeOptions, EngineResult, SkippedEngine, DispatchMetric, ForgeManifest,
+  ConvergenceEntry, ForgeJudgment, ForgeEventType, ForgeEvent, ForgeEventMap,
+  ForgeEventCallback, BreakerArtifact, GauntletResult, CorpusEntry, GapPattern,
+  StageResult, WorktreeEntry, Critique, SynthesisResult,
+} from './types.js';
+export { createForgeWorkflow } from './workflow.js';
+export type { ForgeWorkflowConfig, ForgeWorkflowRegistry, ForgeWorkflowEffects } from './workflow.js';
+export type { ForgeHostServices, ForgeModServices, ForgeInvocationContext } from './host.js';
+export { planSynthesis } from './synth-plan.js';
+export { createForgeCorpus } from './corpus.js';
+export type { CorpusRecord } from './corpus.js';
+export { runGauntlet, validateBreakerArtifact, buildBreakerPrompt, buildRepairPrompt } from './gauntlet.js';
+export type { GauntletRuntime } from './gauntlet.js';
+export { computeScore, tiebreak, DEFAULT_WEIGHTS } from './scoring.js';
+export type { FitnessResult, ScoreWeights, ScoreComponents } from './scoring.js';
+export { runLint, runStyleCheck, runSyntaxCheck, changedFilesIncludingUntracked, MAX_SYNTAX_FILE_BYTES } from './quality.js';
+export type { SyntaxCheckResult, ForgeSyntaxRuntime } from './quality.js';
+export { runFitness, normalizeFitnessCommandForShell } from './fitness.js';
+export type { ForgeFitnessRuntime } from './fitness.js';
+export { createForgeStages, resolveForgeDispatchTimeout, shouldHarvestFailedDispatch } from './stages.js';
+export type { ForgeStageConfig, ForgeStageRegistry, ForgeStageRuntime } from './stages.js';
+export { buildForgePrompt, buildCritiquePrompt, buildSynthesisPrompt, buildForgePromptWithContext } from './prompts.js';
+export { buildStageContext, renderStageContext } from './stage-context.js';
+export type { StageContext, StageDecision, ToolResultRef } from './stage-context.js';
+export { createForgeSynthesis, parseCritiques } from './synthesis.js';
+export type { ForgeSynthesisRuntime } from './synthesis.js';
+export { FitnessError } from './errors.js';
+export { createForgeManifestStore, readManifest } from './manifest.js';
+export type { ForgeManifestRuntime } from './manifest.js';
+export type { SynthCandidate, SynthPlanOpts, SynthPlan } from './synth-plan.js';
+export { resolveForgeMode, resolveForgeRequireDiff, resolveForgeAcceptReviewOutput, classifyNoDiffForgeResult } from './result-policy.js';
 ` : short === 'brainstorm' ? `export { runBrainstorm } from './implementation.js';
 export { createBrainstormWorkflow } from './workflow.js';
 export { createBrainstormRuntime } from './runtime.js';

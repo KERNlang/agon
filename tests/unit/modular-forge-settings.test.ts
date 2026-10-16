@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
+import ts from 'typescript';
 import type { CommandContribution, CommandResult, IntentContribution, InvocationContext, ModServices } from '../../packages/mod-api/src/index.js';
 import { ModRegistry } from '../../packages/mod-kernel/src/index.js';
 import { resolveRegisteredModSettings } from '../../packages/mod-kernel/src/mod-settings.js';
@@ -712,6 +713,20 @@ describe('Forge configuration ownership', () => {
 
   it('generates from owner inputs, rejects invalid definitions and detects stale output', () => {
     const root = fileURLToPath(new URL('../../', import.meta.url));
+    const reExports = (source: string) => ts.createSourceFile('index.ts', source, ts.ScriptTarget.Latest, true)
+      .statements.flatMap(statement => {
+        if (!ts.isExportDeclaration(statement)) return [];
+        if (!statement.moduleSpecifier || !ts.isStringLiteral(statement.moduleSpecifier)
+          || !statement.exportClause || !ts.isNamedExports(statement.exportClause)) throw new Error('expected named public re-exports');
+        const module = statement.moduleSpecifier.text;
+        return statement.exportClause.elements.map(entry => JSON.stringify([
+          entry.name.text, (entry.propertyName ?? entry.name).text,
+          statement.isTypeOnly || entry.isTypeOnly ? 'type' : 'value', module,
+        ]));
+      }).sort();
+    // Capture the authored contract outside the generator's disposable fixture.
+    const authoredExports = Object.fromEntries(['plan', 'forge'].map(mod => [mod,
+      reExports(readFileSync(join(root, `packages/mod-${mod}/src/index.ts`), 'utf8'))]));
     const fixture = mkdtempSync(join(tmpdir(), 'forge-settings-generator-'));
     try {
       const inputs = ['scripts/spec/generate-modular-first-party-packages.mjs', 'LICENSE', 'package.json', 'tsconfig.json',
@@ -733,6 +748,35 @@ describe('Forge configuration ownership', () => {
       schema.properties.foreignSetting = { type: 'string', default: 'ignored' };
       schema.properties.goalReviewEngines = { type: 'array', items: { type: 'string' }, default: ['not-forge-owned'] };
       writeFileSync(schemaPath, JSON.stringify(schema));
+      expect(run().status).toBe(0);
+      expect(run(true).status).toBe(0);
+      for (const mod of ['plan', 'forge']) {
+        const index = readFileSync(join(fixture, `packages/mod-${mod}/src/index.ts`), 'utf8');
+        expect(reExports(index)).toEqual(authoredExports[mod]);
+        expect(reExports(index + '\n// export { counterfeit } from "./fake.js";')).toEqual(authoredExports[mod]);
+      }
+      const planManifest = JSON.parse(readFileSync(join(fixture, 'packages/mod-plan/agon.mod.json'), 'utf8'));
+      expect(planManifest.pack.include).toContain('dist/worktree-workflow.d.ts');
+      const forgeManifest = JSON.parse(readFileSync(join(fixture, 'packages/mod-forge/agon.mod.json'), 'utf8'));
+      expect(forgeManifest.permissions).toContainEqual({ capability: 'engine.dispatch', resources: [], required: true });
+      for (const name of ['competition', 'corpus', 'errors', 'fitness', 'gauntlet', 'host', 'manifest', 'prompts', 'quality', 'scoring', 'stage-context', 'stages', 'synth-plan', 'synthesis', 'types', 'workflow']) {
+        expect(forgeManifest.pack.include).toContain(`dist/${name}.d.ts`);
+      }
+      const generatorPath = join(fixture, inputs[0]);
+      const generator = readFileSync(generatorPath, 'utf8');
+      for (const [before, after] of [
+        ['listWorktreePlans, ', ''],
+        ['export type { WorktreePlanHost, WorktreePlanEvent }', 'export { WorktreePlanHost, WorktreePlanEvent }'],
+        ["from './worktree-workflow.js'", "from './incorrect.js'"],
+      ]) {
+        const mutant = generator.replace(before, after);
+        expect(mutant).not.toBe(generator);
+        try {
+          writeFileSync(generatorPath, mutant);
+          expect(run().status).toBe(0);
+          expect(reExports(readFileSync(join(fixture, 'packages/mod-plan/src/index.ts'), 'utf8'))).not.toEqual(authoredExports.plan);
+        } finally { writeFileSync(generatorPath, generator); }
+      }
       expect(run().status).toBe(0);
       expect(run(true).status).toBe(0);
       for (const aliases of [[], ['forgeFitnessTimeout'], ['forgeFitnessTimeout', 'forgeFitnessTimeout'], ['foreignSetting']]) {

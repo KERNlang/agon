@@ -364,6 +364,60 @@ describe('parseFalsifierOutput', () => {
 });
 
 describe('runDoneFalsifier — evidence-based, mechanically verified', () => {
+  it.each(['critic-file', 'inline', 'application-file'] as const)('distinguishes reproduction setup from application failure: %s', async kind => {
+    const root = mkdtempSync(join(tmpdir(), 'agon-falsifier-repro-file-'));
+    const source = join(root, 'source');
+    const outputDir = join(root, 'output');
+    mkdirSync(source); mkdirSync(outputDir);
+    writeFileSync(join(source, 'answer.txt'), '42\n');
+    if (kind === 'application-file') writeFileSync(join(source, 'application.cjs'), "require('./required.cjs');\n");
+    try {
+      const result = await conquerOwner.runDoneFalsifier({
+        claim: 'answer is 42', cwd: source, engines: ['critic'], timeout: 5, outputDir,
+      }, {
+        rankCritics: ids => ids.map(engineId => ({ engineId })),
+        getEngine: id => ({ id, binary: id, agent: {} }) as any,
+        adapter: { dispatchAgent: async options => {
+          if (kind === 'critic-file') writeFileSync(join(options.cwd!, 'repro.cjs'),
+            "require('node:assert').strictEqual(require('node:fs').readFileSync('answer.txt', 'utf8'), '42\\n');\n");
+          const command = kind === 'critic-file' ? 'node repro.cjs'
+            : kind === 'application-file' ? 'node application.cjs'
+            : "node -e \"require('node:assert').strictEqual(require('node:fs').readFileSync('answer.txt', 'utf8').trim(), '42')\"";
+          return { exitCode: 0, stderr: '', durationMs: 1, timedOut: false, diff: '', diffLines: 0, filesChanged: 0,
+            stdout: `COUNTEREXAMPLE: ${command}\nVERDICT: FLAWED` };
+        } },
+      });
+      expect(result.falsified, JSON.stringify(result)).toBe(kind === 'application-file');
+      expect(result.advisoryOnly).toBe(kind === 'critic-file');
+      if (kind === 'critic-file') expect(result.note).toContain('setup is not reproducible');
+      expect(readFileSync(join(source, 'answer.txt'), 'utf8')).toBe('42\n');
+      expect(readdirSync(outputDir)).toEqual([]);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+  it.each([['42', false], ['43', true]] as const)('reproduces against source answer %s, not critic edits', async (answer, falsified) => {
+    const root = mkdtempSync(join(tmpdir(), 'agon-falsifier-clean-'));
+    const source = join(root, 'source');
+    const outputDir = join(root, 'output');
+    mkdirSync(source); mkdirSync(outputDir);
+    writeFileSync(join(source, 'answer.txt'), `${answer}\n`);
+    try {
+      const result = await conquerOwner.runDoneFalsifier({
+        claim: 'answer is 42', cwd: source, engines: ['critic'], timeout: 5, outputDir,
+      }, {
+        rankCritics: ids => ids.map(engineId => ({ engineId })),
+        getEngine: id => ({ id, binary: id, agent: {} }) as any,
+        adapter: { dispatchAgent: async options => {
+          writeFileSync(join(options.cwd!, 'answer.txt'), answer === '42' ? '43\n' : '42\n');
+          return { exitCode: 0, stderr: '', durationMs: 1, timedOut: false, diff: '', diffLines: 0, filesChanged: 0,
+            stdout: 'COUNTEREXAMPLE: grep -qx 42 answer.txt\nVERDICT: FLAWED' };
+        } },
+      });
+      expect(result).toMatchObject({ falsified, advisoryOnly: false,
+        verification: { exitCode: falsified ? 1 : 0, timedOut: false } });
+      expect(readFileSync(join(source, 'answer.txt'), 'utf8')).toBe(`${answer}\n`);
+      expect(readdirSync(outputDir)).toEqual([]);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
   it.each([['42', false], ['43', true]] as const)('mechanically verifies a real copied fixture against %s', async (expected, falsified) => {
     const root = mkdtempSync(join(tmpdir(), 'agon-falsifier-owner-'));
     const source = join(root, 'source');
@@ -417,6 +471,32 @@ describe('runDoneFalsifier — evidence-based, mechanically verified', () => {
     ratings: emptyRatings(),
     ...over,
   } as any);
+
+  it.each(['false', 'throw', 'abort'] as const)('does not execute when the clean verification copy returns %s', async failure => {
+    const controller = new AbortController();
+    const copies: string[] = [];
+    const removed: string[] = [];
+    let executions = 0;
+    const result = await runDoneFalsifier(base({ signal: controller.signal,
+      adapter: agentReply('COUNTEREXAMPLE: false\nVERDICT: FLAWED'),
+      sandbox: mkSandbox({
+        clone: async (_source, destination) => {
+          copies.push(destination);
+          if (copies.length === 1) return true;
+          if (failure === 'throw') throw new Error('verification copy failed');
+          if (failure === 'abort') { controller.abort(); return true; }
+          return false;
+        },
+        exec: async () => { executions++; return { exitCode: 1, stdout: '', stderr: '', timedOut: false }; },
+        remove: async destination => { removed.push(destination); },
+      }),
+    }));
+    expect(result).toMatchObject({ falsified: false, advisoryOnly: true });
+    expect(executions).toBe(0);
+    expect(copies).toHaveLength(2);
+    expect(copies[0]).not.toBe(copies[1]);
+    expect(removed.sort()).toEqual([...copies].sort());
+  });
 
   it('FALSIFIES only when FLAWED + counterexample AND the sandbox re-run reproduces (non-zero exit)', async () => {
     let ran = '';

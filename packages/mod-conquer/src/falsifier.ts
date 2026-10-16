@@ -1,4 +1,5 @@
-import { join, dirname } from 'node:path';
+import { join, dirname, relative, resolve, sep } from 'node:path';
+import { existsSync, realpathSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { spawnWithTimeout } from '@kernlang/agon-support-engine-runtime';
 import type { EngineAdapter, EngineDefinition } from '@kernlang/agon-support-engine-runtime';
@@ -76,6 +77,7 @@ export function buildFalsifierPrompt(opts: { claim:string; gate?:string }): stri
   }
   lines.push('');
   lines.push('Your job: try to BREAK the claim. Inspect the ACTUAL code and RUN commands to find a concrete case where behavior is wrong, or where the gate is gameable (passes despite broken behavior). Do NOT speculate — verify every failure by actually running it first.');
+  lines.push('The counterexample must be self-contained. Inline any reproduction script or fixture setup in the command. Files you create while investigating are not copied into the clean verification tree. A missing reproduction input is not proof of the claimed bug.');
   lines.push('');
   lines.push('If — and ONLY if — you reproduce a real failure, end your reply with EXACTLY these three lines:');
   lines.push('COUNTEREXAMPLE: <one shell command that EXITS NON-ZERO if and only if the bug is present — write it as a self-checking assertion (wrap the check in `test`, `grep -q`, a one-line `python -c "assert ..."`, or chain `&&`/`||`). It will be re-run VERBATIM in a clean copy of this repo; if it exits zero, your counterexample is REJECTED and the claim is treated as not-yet-broken.>');
@@ -115,6 +117,21 @@ export function isSafeCounterexample(cmd: string): boolean {
     />>?\s*\/(etc|usr|bin|sbin|var|system|library|opt)\b/,     // write-redirect to abs system dirs
   ];
   return !danger.some((re) => re.test(c));
+}
+
+/** Recognize a reported input that existed only in the critic's copy. */
+function missingCriticInput(stderr: string, criticDir: string, verificationDir: string): string | undefined {
+  if (!existsSync(verificationDir)) return;
+  const root = realpathSync(verificationDir);
+  for (const line of stderr.split('\n')) {
+    if (!/cannot find module|can't open file|no such file or directory|not found/i.test(line)) continue;
+    for (const match of line.matchAll(/(?:^|\s)(['"])([^'"\r\n]+)\1/g)) {
+      const candidate = resolve(root, match[2]);
+      const path = relative(root, candidate);
+      if (!path || path === '..' || path.startsWith(`..${sep}`)) continue;
+      if (!existsSync(candidate) && existsSync(join(criticDir, path))) return path;
+    }
+  }
 }
 
 /**
@@ -162,6 +179,7 @@ export async function runDoneFalsifier(opts: FalsifierOptions, effects: Falsifie
 
   // Unique-per-run sandbox dir (random suffix avoids a same-millisecond collision).
   const sandboxDir = join(opts.outputDir, `sandbox-${Date.now()}-${Math.floor(Math.random() * 1e9).toString(36)}`);
+  let verificationDir: string | undefined;
   let attackText = '';
   let parsed: ReturnType<typeof parseFalsifierOutput> | undefined;
   const evidence = () => ({ critic, attackText, counterexample: parsed?.counterexample ?? null, observed: parsed?.observed ?? null });
@@ -207,9 +225,18 @@ export async function runDoneFalsifier(opts: FalsifierOptions, effects: Falsifie
     // capped at 5 min — separate from the full critic-dispatch budget.
     if (opts.signal?.aborted) return { falsified: false, counterexample: parsed.counterexample, observed: parsed.observed, attackText, critic, advisoryOnly: false, note: 'aborted before mechanical verification — not blocking' };
     effects.assertCurrent?.();
+    // Critic edits must not create or hide the failure under verification.
+    verificationDir = `${sandboxDir}-verify`;
+    const verificationReady = await sandbox.clone(opts.cwd, verificationDir, opts.signal);
+    if (!verificationReady) return advisory({ ...evidence(), note: 'clean verification copy failed — counterexample not run' });
+    if (opts.signal?.aborted) return advisory({ ...evidence(), note: 'aborted while preparing clean verification copy' });
+    effects.assertCurrent?.();
     const rerunTimeoutMs = Math.min(Math.max(opts.timeout, 1), 300) * 1000;
-    const rerun = await sandbox.exec(parsed.counterexample, sandboxDir, rerunTimeoutMs, opts.signal);
+    const rerun = await sandbox.exec(parsed.counterexample, verificationDir, rerunTimeoutMs, opts.signal);
     if (opts.signal?.aborted) return advisory({ ...evidence(), verification: rerun, note: 'aborted during mechanical verification — not blocking' });
+    const missingInput = rerun.exitCode !== 0 ? missingCriticInput(rerun.stderr, sandboxDir, verificationDir) : undefined;
+    if (missingInput) return advisory({ ...evidence(), verification: rerun,
+      note: `reproduction input ${missingInput} exists only in the critic copy — setup is not reproducible; inline its creation in the counterexample` });
     const reproduced = rerun.timedOut !== true && rerun.exitCode !== 0;
     return {
       falsified: reproduced,
@@ -229,8 +256,10 @@ export async function runDoneFalsifier(opts: FalsifierOptions, effects: Falsifie
     if (opts.signal?.aborted || (err as any)?.name === 'AbortError') return advisory({ ...evidence(), note: 'aborted during falsification' });
     return advisory({ ...evidence(), note: `falsifier errored: ${err instanceof Error ? err.message : String(err)} — degraded to advisory (not blocking)` });
   } finally {
-    try { await sandbox.remove(sandboxDir); }
-    catch (error) { console.warn(`[agon] falsifier cleanup failed: ${error instanceof Error ? error.message : String(error)}`); }
+    for (const directory of verificationDir ? [verificationDir, sandboxDir] : [sandboxDir]) {
+      try { await sandbox.remove(directory); }
+      catch (error) { console.warn(`[agon] falsifier cleanup failed: ${error instanceof Error ? error.message : String(error)}`); }
+    }
   }
 }
 

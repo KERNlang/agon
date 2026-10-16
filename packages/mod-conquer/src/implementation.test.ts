@@ -4,9 +4,67 @@ import * as verification from '@kernlang/agon-support-verification';
 import * as nero from '@kernlang/agon-mod-nero';
 import * as tribunal from '@kernlang/agon-mod-tribunal';
 import * as council from '@kernlang/agon-mod-council';
+import * as worktrees from '@kernlang/agon-support-worktree';
 import { afterEach } from 'vitest';
 afterEach(() => vi.restoreAllMocks());
+
+it.each([
+  ['maxTurns', 0], ['maxTurns', -1], ['maxTurns', '0'],
+  ['maxTurns', ''], ['maxTurns', 'invalid'],
+  ['maxTurns', '   '], ['maxTurns', 'Infinity'],
+  ['maxHours', -1], ['maxHours', '-0.5'], ['maxHours', 'invalid'],
+] as const)('rejects invalid %s=%s before creating a worktree or dispatching', async (key, value) => {
+  const cwd = repo();
+  const arena = vi.spyOn(worktrees, 'createForgeArena');
+  const dispatch = vi.fn(async engineId => ({ engineId, exitCode: 1, stdout: '', stderr: 'fixture stop', timedOut: false }));
+  const record = vi.fn(async () => 'fixture');
+  const services = { logger: { debug: vi.fn() }, receipts: { record },
+    engines: { listActive: async () => ['builder'], dispatch } } as unknown as ModServices;
+  const result = await runConquerTask({ task: 'build feature', gate: 'true', builder: 'builder', [key]: value },
+    { invocationId: 'invalid-budget', cwd, platform: 'darwin-arm64', signal: new AbortController().signal, config: {} }, services);
+  expect(result).toMatchObject({ exitCode: 1, stderr: expect.stringContaining(`Invalid --${key === 'maxTurns' ? 'max-turns' : 'max-hours'}`) });
+  expect(arena).not.toHaveBeenCalled();
+  expect(dispatch).not.toHaveBeenCalled();
+  expect(record).not.toHaveBeenCalled();
+});
 function repo(){const cwd=mkdtempSync(join(tmpdir(),'agon-conquer-'));execFileSync('git',['init'],{cwd});execFileSync('git',['config','user.email','c@example.invalid'],{cwd});execFileSync('git',['config','user.name','C'],{cwd});writeFileSync(join(cwd,'README.md'),'x\n');execFileSync('git',['add','.'],{cwd});execFileSync('git',['commit','-m','base'],{cwd});return cwd;}
+
+it.each([
+  { input: {}, turns: 40 },
+  { input: { maxTurns: 201 }, turns: 201 },
+  { input: { maxTurns: '2turns' }, turns: 2 },
+  { input: { maxTurns: '2.9' }, turns: 2 },
+  { input: { maxTurns: '2e2' }, turns: 2 },
+  { input: { maxTurns: '3', maxHours: '' }, turns: 3 },
+  { input: { maxTurns: '3', maxHours: '   ' }, turns: 3 },
+  { input: { maxTurns: '3', maxHours: 0 }, turns: 3 },
+  { input: { maxTurns: '3', maxHours: '0' }, turns: 3 },
+  { input: { maxTurns: '3', maxHours: 'Infinity' }, turns: 3 },
+  { input: { maxTurns: '3', maxHours: '0.5hours' }, turns: 1 },
+])('preserves legacy budget parsing for $input', async ({ input, turns }) => {
+  const cwd = repo();
+  const cleanup = vi.fn();
+  vi.spyOn(worktrees, 'createForgeArena').mockReturnValue({
+    repoRoot: cwd, rootPath: join(cwd, 'unused-arena'), baseSha: 'fixture', dirtySourceExcluded: false,
+    create: engineId => ({ engineId, path: cwd }), diff: () => '', cleanup,
+  });
+  const fitness = vi.spyOn(verification, 'runFitnessCommand').mockResolvedValue({
+    exitCode: 1, stdout: '', stderr: '', timedOut: false, durationMs: 1,
+  });
+  const started = Date.now();
+  const dispatch = vi.fn(async engineId => {
+    if (input.maxHours !== undefined) vi.spyOn(Date, 'now').mockReturnValue(started + 3_600_000);
+    return { engineId, exitCode: 0, stdout: 'working', stderr: '', timedOut: false };
+  });
+  const services = { logger: { debug: vi.fn() }, receipts: { record: vi.fn(async () => 'fixture') },
+    engines: { listActive: async () => ['builder'], dispatch } } as unknown as ModServices;
+  const result = await runConquerTask({ task: 'build feature', gate: 'false', builder: 'builder', ...input },
+    { invocationId: 'legacy-budget', cwd, platform: 'darwin-arm64', signal: new AbortController().signal, config: {} }, services);
+  expect(result).toMatchObject({ exitCode: 1, result: { status: input.maxHours === '0.5hours' ? 'time_budget_exceeded' : 'turn_budget_exceeded' } });
+  expect(dispatch).toHaveBeenCalledTimes(turns);
+  expect(fitness).toHaveBeenCalledTimes(turns);
+  expect(cleanup).toHaveBeenCalledOnce();
+});
 
 it.each(['green-baseline', 'failed', 'timed-out', 'thrown', 'aborted'] as const)('preserves the builder execution boundary when %s', async scenario => {
   const cwd = repo();

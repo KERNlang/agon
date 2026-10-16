@@ -10,6 +10,7 @@ const source = readFileSync(new URL('../../scripts/spec/verify-modular-platform-
 
 const qualificationSource = readFileSync(new URL('../../scripts/spec/qualify-modular-agon-slice9.mjs', import.meta.url), 'utf8')
   .replace(/^import .*;\n/gm, '').replaceAll('import.meta.url', JSON.stringify('file:///fixture/scripts/spec/qualify-modular-agon-slice9.mjs'));
+const releaseArtifactCount = JSON.parse(readFileSync(new URL('../../docs/specs/evidence/modular-agon-release-set.json', import.meta.url), 'utf8')).artifactCount;
 
 it.each([false, true])('requires child PATH node to resolve to the selected override (matching=%s)', (matching) => {
   let receipt: { passed: boolean } | undefined;
@@ -56,7 +57,8 @@ it.each([
   [0, false, true, 'valid'], [1, true, true, 'valid'], [3, false, true, 'valid'],
   [3, true, true, 'valid'], [3, true, false, 'valid'],
   ...['aggregate', 'step', 'child', 'missing', 'reordered', 'malformed', 'contradictory',
-    'load-exit', 'load-missing', 'load-malformed', 'load-false', 'load-short', 'load-control', 'load-identity']
+    'load-exit', 'load-missing', 'load-malformed', 'load-false', 'load-short', 'load-control', 'load-identity',
+    'release-missing', 'release-extra']
     .map(fault => [3, true, true, fault] as const),
 ] as const)('qualifies fresh %i-cell coverage with native attestation=%s and fresh performance=%s (%s)', (passed, native, performancePassed, fault) => {
   let receipt: { passed: boolean; coverage: { platformPassed: number }; cleanCheckoutSteps: Array<{ id: string; evidence?: { steps: Array<{ evidence: { diagnostic?: string } }> } }> } | undefined;
@@ -75,7 +77,8 @@ it.each([
     readFileSync: (path: string) => {
       if (path.endsWith('package-map.json')) return JSON.stringify({ packages: Array.from({ length: 49 }, (_, i) => ({ class: i < 36 ? 'user-toggleable-mod-package' : 'support' })) });
       if (path.endsWith('ownership.json')) return JSON.stringify({ assignments: Array(872).fill(null) });
-      if (path.endsWith('release-set.json')) return JSON.stringify({ artifactCount: 50 });
+      if (path.endsWith('release-set.json')) return JSON.stringify({ artifactCount: releaseArtifactCount
+        + (fault === 'release-missing' ? -1 : fault === 'release-extra' ? 1 : 0) });
       if (path.endsWith('physical-cutover.json')) return JSON.stringify({ counts: { physical: 36 } });
       if (path.endsWith('platform-matrix.json')) return JSON.stringify({ summary: { passed: 3, externallyBlocked: 9, failed: 0 } });
       if (path.endsWith('-performance.json')) return JSON.stringify({ passed: true });

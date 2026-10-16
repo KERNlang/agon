@@ -128,7 +128,8 @@ const coverage = { packages: packageMap.packages.length, firstPartyMods: package
   releaseArtifacts: release.artifactCount, physicalMods: physical.counts.physical, platformPassed: platform.summary.passed, platformExternallyBlocked: platform.summary.externallyBlocked,
   platformFailed: platform.summary.failed, measuredPerformanceSlices: performances.length };
 const coveragePasses = (candidate) => candidate.packages === 49 && candidate.firstPartyMods === 36 && candidate.ownershipAssignments === 872
-  && candidate.releaseArtifacts === 50 && candidate.physicalMods === 36 && candidate.platformPassed === 3 && candidate.platformExternallyBlocked === 9
+  // 49 modular packages, one launcher, and the dedup compatibility sidecars.
+  && candidate.releaseArtifacts === 51 && candidate.physicalMods === 36 && candidate.platformPassed === 3 && candidate.platformExternallyBlocked === 9
   && candidate.platformFailed === 0 && candidate.measuredPerformanceSlices === 8;
 const performancePasses = (evidence) => {
   if (!evidence || typeof evidence !== 'object' || Array.isArray(evidence)) return false;
@@ -138,6 +139,9 @@ const performancePasses = (evidence) => {
 };
 if (process.argv.includes('--self-test')) {
   if (!coveragePasses(coverage)) throw new Error('S9 coverage baseline is not green');
+  for (const releaseArtifacts of [50, 52]) {
+    if (coveragePasses({ ...coverage, releaseArtifacts })) throw new Error('S9 coverage accepted a missing or extra release artifact');
+  }
   if (coveragePasses({ ...coverage, platformPassed: 0, platformExternallyBlocked: 12 })) throw new Error('S9 coverage accepted an all-blocked platform matrix');
   if (!performances.every(performancePasses)) throw new Error('S9 performance baseline is not green');
   if (performancePasses({ budgets: { latencyGreen: true, memoryGreen: false } })) throw new Error('S9 performance accepted a red named budget');

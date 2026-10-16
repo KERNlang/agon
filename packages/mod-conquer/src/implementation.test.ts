@@ -11,9 +11,22 @@ import { afterEach } from 'vitest';
 import { renameSync, unlinkSync, rmSync, readFileSync, readdirSync } from 'node:fs';
 import type { ConquerModServices } from './implementation.js';
 import { createConquerHostServices } from './host.js';
+import { createConquerIsolation } from './isolation.js';
+import { createSessionWorktree, removeSessionWorktree, findSessionWorktree } from '../../core/src/blocks/worktree-session.js';
+import { basename } from 'node:path';
 const recordDirectories: string[] = [];
+const retainedWorktrees: Array<{ repoRoot: string; branch: string; path: string }> = [];
+const fixtureWorktrees = {
+  repoRoot: (cwd: string) => execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd, encoding: 'utf8' }).trim(),
+  createSessionWorktree(options: Parameters<typeof createSessionWorktree>[0]) {
+    const created = createSessionWorktree(options);
+    retainedWorktrees.push(created);
+    return created;
+  },
+};
 afterEach(() => {
   vi.restoreAllMocks();
+  for (const worktree of retainedWorktrees.splice(0)) removeSessionWorktree(worktree.repoRoot, worktree.branch, true);
   for (const directory of recordDirectories.splice(0)) rmSync(directory, { recursive: true, force: true });
 });
 
@@ -26,8 +39,9 @@ function withConquerHost(services: ModServices): ConquerModServices {
     ...services,
     conquer: {
       contextSpine: provided.conquer?.contextSpine ?? (async () => ''),
-      open: provided.conquer?.open ?? (() => ({
+      open: provided.conquer?.open ?? (context => ({
         assertCurrent: () => {},
+        createIsolation: (task, runId, base) => createConquerIsolation(task, context.cwd, fixtureWorktrees, runId, base),
         rankCritics: ids => ids.map(engineId => ({ engineId })),
         getEngine: id => ({ id, binary: id, agent: {} }) as any,
         adapter: { dispatchAgent: async () => ({ exitCode: 0, stdout: 'VERDICT: SOUND', stderr: '',
@@ -35,7 +49,7 @@ function withConquerHost(services: ModServices): ConquerModServices {
       })),
     },
     runs: provided.runs ?? {
-      start: async () => ({ id: 'fixture', path: output, mode: 'conquer', startedAt: new Date().toISOString() }),
+      start: async () => ({ id: basename(output), path: output, mode: 'conquer', startedAt: new Date().toISOString() }),
       finish: async () => {},
       writeArtifact: async (_run, name, content) => { writeFileSync(join(output, name), content); },
     },
@@ -46,6 +60,39 @@ function withConquerHost(services: ModServices): ConquerModServices {
 async function runConquerTask(...[input, context, services]: Parameters<typeof runConquerTaskImpl>) {
   return runConquerTaskImpl(input, context, withConquerHost(services));
 }
+
+it.each(['success', 'failure', 'cancelled', 'committed'] as const)('retains a named review worktree after %s', async outcome => {
+  const cwd = repo();
+  writeFileSync(join(cwd, 'source-wip.txt'), 'keep source work\n');
+  const baseSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd, encoding: 'utf8' }).trim();
+  const controller = new AbortController();
+  let candidate = '';
+  const services = withConquerHost({ logger: { debug: vi.fn() }, receipts: { record: vi.fn(async () => 'fixture') },
+    engines: { listActive: async () => ['builder'], dispatch: async (_id, _prompt, context) => {
+      candidate = context.cwd;
+      expect(existsSync(join(candidate, 'source-wip.txt'))).toBe(false);
+      writeFileSync(join(candidate, 'feature.txt'), 'review this\n');
+      if (outcome === 'committed') {
+        execFileSync('git', ['add', 'feature.txt'], { cwd: candidate });
+        execFileSync('git', ['commit', '-m', 'fixture implementation'], { cwd: candidate });
+      }
+      if (outcome === 'cancelled') controller.abort();
+      return { exitCode: outcome === 'failure' ? 1 : 0, stdout: 'CONQUER_DONE: feature works', stderr: '', timedOut: false };
+    } },
+  } as unknown as ModServices);
+  const result = await runConquerTaskImpl({ task: 'build review feature', gate: 'true', maxTurns: '1' },
+    { invocationId: 'retained', cwd, platform: 'darwin-arm64', signal: controller.signal, config: {} }, services);
+  expect(existsSync(candidate)).toBe(true);
+  const branch = execFileSync('git', ['branch', '--show-current'], { cwd: candidate, encoding: 'utf8' }).trim();
+  expect(branch).toMatch(/^conquer\/build-review-feature-/);
+  expect(result).toMatchObject({ exitCode: outcome === 'success' || outcome === 'committed' ? 0 : 1,
+    result: { worktree: { path: candidate, branch, baseSha }, dirtySourceExcluded: true } });
+  const payload = result.result as { outputDir: string; winningPatch?: string; lastPatch?: string };
+  expect(payload.winningPatch ?? payload.lastPatch).toContain('+review this');
+  expect(JSON.parse(readFileSync(join(payload.outputDir, 'worktree.json'), 'utf8'))).toMatchObject({ path: candidate, branch, baseSha });
+  expect(readFileSync(join(cwd, 'source-wip.txt'), 'utf8')).toBe('keep source work\n');
+  expect(existsSync(join(cwd, 'feature.txt'))).toBe(false);
+});
 
 it('rejects a missing Conquer host before starting provider work', async () => {
   const cwd = repo();
@@ -74,6 +121,7 @@ it.each(['builder', 'critic', 'critic-command'] as const)('rejects completion af
       timedOut: false, diff: '', diffLines: 0, filesChanged: 0 };
   });
   const conquer = createConquerHostServices({
+    worktrees: fixtureWorktrees,
     openRegistry: () => ({ get: (id: string) => ({ id, binary: id, agent: {} }) as any }),
     createAdapter: () => ({ dispatchAgent: critic, dispatch: vi.fn(), isAvailable: async () => true, getVersion: async () => null }),
     rankCritics: (_registry, ids) => ids.map(engineId => ({ engineId })),
@@ -96,8 +144,38 @@ it.each(['builder', 'critic', 'critic-command'] as const)('rejects completion af
   expect(critic).toHaveBeenCalledTimes(phase === 'builder' ? 0 : 1);
   expect(record.mock.calls.some(([mode]) => mode === 'conquer')).toBe(false);
   expect(finish).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ ok: false }), expect.anything());
-  expect(existsSync(candidate)).toBe(false);
+  expect(existsSync(candidate)).toBe(true);
   expect(existsSync(join(cwd, 'retired-effect.txt'))).toBe(false);
+});
+
+it('rejects worktree allocation when authority retires during run creation', async () => {
+  const cwd = repo();
+  let current = true;
+  const allocate = vi.spyOn(fixtureWorktrees, 'createSessionWorktree');
+  const dispatch = vi.fn();
+  const conquer = createConquerHostServices({
+    worktrees: fixtureWorktrees,
+    openRegistry: () => ({ get: (id: string) => ({ id, binary: id, agent: {} }) as any }),
+    createAdapter: () => ({ dispatch, isAvailable: async () => true, getVersion: async () => null }),
+    rankCritics: () => [], contextSpine: async () => '',
+    captureAuthority: () => () => { if (!current) throw new Error('fixture generation retired'); },
+  });
+  const services = withConquerHost({ conquer, logger: { debug: vi.fn() },
+    receipts: { record: vi.fn() }, engines: { listActive: async () => ['builder'], dispatch },
+  } as unknown as ModServices);
+  const originalStart = services.runs!.start;
+  vi.spyOn(services.runs!, 'start').mockImplementation(async (...args) => {
+    const run = await originalStart(...args);
+    current = false;
+    return run;
+  });
+  const finish = vi.spyOn(services.runs!, 'finish');
+  await expect(runConquerTaskImpl({ task: 'implement feature', gate: 'true', maxTurns: '1' },
+    { invocationId: 'retired-before-allocation', cwd, platform: 'darwin-arm64', signal: new AbortController().signal, config: {} }, services))
+    .rejects.toThrow('fixture generation retired');
+  expect(allocate).not.toHaveBeenCalled();
+  expect(dispatch).not.toHaveBeenCalled();
+  expect(finish).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ ok: false }), expect.anything());
 });
 
 it.each(['artifact', 'finish', 'partial-finish'] as const)('preserves the primary %s error without conflicting finalization', async phase => {
@@ -109,6 +187,7 @@ it.each(['artifact', 'finish', 'partial-finish'] as const)('preserves the primar
     } },
   } as unknown as ModServices);
   const primary = new Error(`fixture ${phase} failed`);
+  const dispatch = vi.spyOn(services.engines, 'dispatch');
   const persisted: boolean[] = [];
   const finish = vi.spyOn(services.runs!, 'finish').mockImplementation(async (_run, status) => {
     if (phase === 'partial-finish') persisted.push(status.ok);
@@ -119,6 +198,12 @@ it.each(['artifact', 'finish', 'partial-finish'] as const)('preserves the primar
     { invocationId: 'finalization-failure', cwd, platform: 'darwin-arm64', signal: new AbortController().signal, config: {} }, services))
     .rejects.toBe(primary);
   expect(finish).toHaveBeenCalledTimes(1);
+  if (phase === 'artifact') {
+    expect(dispatch).not.toHaveBeenCalled();
+    const retained = retainedWorktrees.at(-1)!;
+    expect(existsSync(retained.path)).toBe(true);
+    expect(findSessionWorktree(cwd, retained.branch)?.path).toBe(retained.path);
+  }
   if (phase === 'partial-finish') expect(persisted).toEqual([true]);
 });
 
@@ -130,6 +215,7 @@ it.each([false, true])('runs and records the real counterexample command (initia
       stderr: '', durationMs: 1, timedOut: false, diff: '', diffLines: 0, filesChanged: 0 };
   });
   const conquer = createConquerHostServices({
+    worktrees: fixtureWorktrees,
     openRegistry: () => ({ get: (id: string) => ({ id, binary: id, agent: {} }) as any }),
     createAdapter: () => ({ dispatchAgent: critic, dispatch: vi.fn(), isAvailable: async () => true, getVersion: async () => null }),
     rankCritics: (_registry, ids) => ids.map(engineId => ({ engineId })),
@@ -166,29 +252,26 @@ it.each([false, true])('runs and records the real counterexample command (initia
 
 it('cleans allocated worktrees when candidate creation fails', async () => {
   const cwd = repo();
-  const createArena = worktrees.createForgeArena;
+  const createWorktree = worktrees.createSessionWorktree;
   let allocated = '';
-  let cleanup: (() => void) | undefined;
-  vi.spyOn(worktrees, 'createForgeArena').mockImplementation(source => {
-    const arena = createArena(source);
-    allocated = arena.rootPath;
-    cleanup = arena.cleanup;
-    return { ...arena, create: engineId => {
-      arena.create(engineId);
-      throw new Error('fixture build-artifact hydration failed');
-    } };
-  });
+  vi.spyOn(worktrees, 'createSessionWorktree').mockImplementation((options, runtime) =>
+    createWorktree(options, { ...runtime, absoluteGitDir: path => {
+      allocated = path;
+      throw new Error('fixture worktree metadata failed');
+    } }));
   const dispatch = vi.fn();
   const services = { logger: { debug: vi.fn() }, engines: { listActive: async () => ['builder'], dispatch } } as unknown as ModServices;
   try {
     await expect(runConquerTask({ task: 'build', gate: 'true', builder: 'builder' },
       { invocationId: 'creation-failure', cwd, platform: 'darwin-arm64', signal: new AbortController().signal, config: {} }, services))
-      .rejects.toThrow('fixture build-artifact hydration failed');
+      .rejects.toThrow('fixture worktree metadata failed');
     expect(allocated).not.toBe('');
     expect(existsSync(allocated)).toBe(false);
     expect(execFileSync('git', ['worktree', 'list', '--porcelain'], { cwd, encoding: 'utf8' })).not.toContain(allocated);
     expect(dispatch).not.toHaveBeenCalled();
-  } finally { cleanup?.(); }
+  } finally {
+    if (allocated && existsSync(allocated)) execFileSync('git', ['worktree', 'remove', '--force', allocated], { cwd });
+  }
 });
 
 it('keeps real host-backed Brainstorm dispatch inside the canonical selected pool', async () => {
@@ -561,7 +644,7 @@ describe('explicit engine resolution across Conquer workflows', () => {
   });
   it('rejects invalid advisors before creating a worktree or running the builder', async () => {
     const cwd = repo();
-    const arena = vi.spyOn(worktrees, 'createForgeArena');
+    const arena = vi.spyOn(fixtureWorktrees, 'createSessionWorktree');
     const dispatch = vi.fn(async () => ({ exitCode: 1, stdout: '', stderr: 'fixture stop', timedOut: false }));
     const services = { logger: { debug: vi.fn() }, receipts: { record: vi.fn(async () => 'fixture') }, engines: { listActive: async () => ['builder'], dispatch,
       resolveRequested: async (ids: readonly string[]) => { if (ids.includes('bad-advisor')) throw new Error('Invalid advisor'); return ids; } } } as unknown as ModServices;
@@ -580,7 +663,7 @@ it.each([
   ['maxHours', -1], ['maxHours', '-0.5'], ['maxHours', 'invalid'],
 ] as const)('rejects invalid %s=%s before creating a worktree or dispatching', async (key, value) => {
   const cwd = repo();
-  const arena = vi.spyOn(worktrees, 'createForgeArena');
+  const arena = vi.spyOn(fixtureWorktrees, 'createSessionWorktree');
   const dispatch = vi.fn(async engineId => ({ engineId, exitCode: 1, stdout: '', stderr: 'fixture stop', timedOut: false }));
   const record = vi.fn(async () => 'fixture');
   const services = { logger: { debug: vi.fn() }, receipts: { record },
@@ -608,11 +691,7 @@ it.each([
   { input: { maxTurns: '3', maxHours: '0.5hours' }, turns: 1 },
 ])('preserves legacy budget parsing for $input', async ({ input, turns }) => {
   const cwd = repo();
-  const cleanup = vi.fn();
-  vi.spyOn(worktrees, 'createForgeArena').mockReturnValue({
-    repoRoot: cwd, rootPath: join(cwd, 'unused-arena'), baseSha: 'fixture', dirtySourceExcluded: false,
-    create: engineId => ({ engineId, path: cwd }), diff: () => '', cleanup,
-  });
+  vi.spyOn(worktrees, 'readWorktreePatch').mockReturnValue('');
   const fitness = vi.spyOn(verification, 'runFitnessCommand').mockResolvedValue({
     exitCode: 1, stdout: '', stderr: '', timedOut: false, durationMs: 1,
   });
@@ -628,7 +707,7 @@ it.each([
   expect(result).toMatchObject({ exitCode: 1, result: { status: input.maxHours === '0.5hours' ? 'time_budget_exceeded' : 'turn_budget_exceeded' } });
   expect(dispatch).toHaveBeenCalledTimes(turns);
   expect(fitness).toHaveBeenCalledTimes(turns);
-  expect(cleanup).toHaveBeenCalledOnce();
+  expect(existsSync((result.result as any).worktree.path)).toBe(true);
 });
 
 it.each(['timeout', 'gateTimeout'].flatMap(key => ['-2', '0', 'invalid', '7.9', '9'.repeat(400), ...(key === 'timeout' ? ['1000000000000000000000'] : [])].map(value => ({ key, value, label: value.length > 30 ? 'overflow' : value }))))('preserves legacy $key fallback for $label', async ({ key, value }) => {
@@ -715,7 +794,7 @@ it.each(['green-baseline', 'failed', 'timed-out', 'thrown', 'aborted'] as const)
   expect(dispatch.mock.calls[0][0]).toBe('builder');
   expect(existsSync(join(cwd, 'feature.txt'))).toBe(false);
   expect(paths).toHaveLength(1);
-  expect(paths.every(path => !existsSync(path))).toBe(true);
+  expect(paths.every(path => existsSync(path))).toBe(true);
   const expectedStatus = scenario === 'green-baseline' ? 'completed' : scenario === 'aborted' ? 'cancelled' : 'builder_failed';
   expect(result).toMatchObject({ exitCode: scenario === 'green-baseline' ? 0 : 1,
     result: { status: expectedStatus, turns: [expect.objectContaining({ turn: 1, done: scenario === 'green-baseline' })] } });
@@ -757,7 +836,7 @@ it.each([1, 2, 3])('stops before advisory dispatch when verification is cancelle
   expect(dispatch).toHaveBeenCalledTimes(cancelTurn);
   for (const consult of consults) expect(consult).not.toHaveBeenCalled();
   expect(record).toHaveBeenCalledWith('conquer', expect.objectContaining({ status: 'cancelled', turns: expect.arrayContaining([expect.objectContaining({ turn: cancelTurn, done: false })]) }));
-  expect(paths.every(path => !existsSync(path))).toBe(true);
+  expect(paths.every(path => existsSync(path))).toBe(true);
 });
 
 it.each(['failed', 'timed-out'])('preserves prior work when the second builder turn is %s', async scenario => {
@@ -784,7 +863,7 @@ it.each(['failed', 'timed-out'])('preserves prior work when the second builder t
   expect(fitness).toHaveBeenCalledOnce();
   expect(consult).not.toHaveBeenCalled();
   expect(record).toHaveBeenCalledWith('conquer', expect.objectContaining({ status: 'builder_failed' }));
-  expect(paths.every(path => !existsSync(path))).toBe(true);
+  expect(paths.every(path => existsSync(path))).toBe(true);
 });
 
 it.each(['tui', 'argument-only', 'direct', 'canonical-precedence', 'deadline'] as const)('preserves %s turn, timeout and advisor selections', async (entry) => {
@@ -847,4 +926,4 @@ it.each(['tui', 'argument-only', 'direct', 'canonical-precedence', 'deadline'] a
   expect(dispatch.mock.calls[0][0]).toBe('builder');
   expect(dispatch.mock.calls[0][3]).toMatchObject({ timeoutSeconds: 7 });
 });
-describe('physical conquer mod',()=>{it('iterates in one isolated worktree until the gate, then receipts the patch and cleans up',async()=>{const cwd=repo();let agentTurns=0;const paths:string[]=[];const dispatch=vi.fn(async(id:string,prompt:string,context:any,options:any)=>{if(options.mode==='agent'){agentTurns++;paths.push(context.cwd);if(agentTurns===2)writeFileSync(join(context.cwd,'solved.txt'),'yes\n');return{id,exitCode:0,stdout:agentTurns===2?'CONQUER_DONE: solved.txt contains the requested result':'worked',stderr:'',timedOut:false};}return{id,exitCode:0,stdout:'VERDICT: CONTINUE\nCONFIDENCE: 80',stderr:'',timedOut:false};});const services={identity:{id:'agon.conquer',version:'1',contentHash:`sha256:${'a'.repeat(64)}`},source:'bundled',logger:{debug:vi.fn(),info:vi.fn(),warn:vi.fn()},receipts:{record:vi.fn(async()=>'conquer-r')},permissions:{check:vi.fn()},state:{read:vi.fn(),write:vi.fn()},engines:{listActive:vi.fn(async()=>['builder','a','b']),rank:vi.fn(async(ids:readonly string[])=>ids.map(engineId=>({engineId,reason:'none',scope:null}))),dispatch}}as unknown as ModServices;const out=await runConquerTask({task:'solve',gate:'test -f solved.txt',builder:'builder',engines:'a,b',maxTurns:'3'}, {invocationId:'c',cwd,platform:'darwin-arm64',signal:new AbortController().signal,config:{}},services);expect(out.exitCode).toBe(0);expect((out.result as any).turns).toHaveLength(2);expect((out.result as any).winningPatch).toContain('solved.txt');expect(existsSync(join(cwd,'solved.txt'))).toBe(false);expect(paths.every(path=>!existsSync(path))).toBe(true);});});
+describe('physical conquer mod',()=>{it('iterates in one isolated worktree until the gate, then receipts the patch and retains review work',async()=>{const cwd=repo();let agentTurns=0;const paths:string[]=[];const dispatch=vi.fn(async(id:string,prompt:string,context:any,options:any)=>{if(options.mode==='agent'){agentTurns++;paths.push(context.cwd);if(agentTurns===2)writeFileSync(join(context.cwd,'solved.txt'),'yes\n');return{id,exitCode:0,stdout:agentTurns===2?'CONQUER_DONE: solved.txt contains the requested result':'worked',stderr:'',timedOut:false};}return{id,exitCode:0,stdout:'VERDICT: CONTINUE\nCONFIDENCE: 80',stderr:'',timedOut:false};});const services={identity:{id:'agon.conquer',version:'1',contentHash:`sha256:${'a'.repeat(64)}`},source:'bundled',logger:{debug:vi.fn(),info:vi.fn(),warn:vi.fn()},receipts:{record:vi.fn(async()=>'conquer-r')},permissions:{check:vi.fn()},state:{read:vi.fn(),write:vi.fn()},engines:{listActive:vi.fn(async()=>['builder','a','b']),rank:vi.fn(async(ids:readonly string[])=>ids.map(engineId=>({engineId,reason:'none',scope:null}))),dispatch}}as unknown as ModServices;const out=await runConquerTask({task:'solve',gate:'test -f solved.txt',builder:'builder',engines:'a,b',maxTurns:'3'}, {invocationId:'c',cwd,platform:'darwin-arm64',signal:new AbortController().signal,config:{}},services);expect(out.exitCode).toBe(0);expect((out.result as any).turns).toHaveLength(2);expect((out.result as any).winningPatch).toContain('solved.txt');expect(existsSync(join(cwd,'solved.txt'))).toBe(false);expect(paths.every(path=>existsSync(path))).toBe(true);});});

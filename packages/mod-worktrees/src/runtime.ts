@@ -35,9 +35,10 @@ export function hydrateArtifacts(repoRoot: string, worktreePath: string): void {
 export const sessionRuntime: WorktreeSessionRuntime = Object.freeze({
   getAgonHome: agonHome,
   ensureAgonHome(): void { mkdirSync(agonHome(), { recursive: true }); },
-  worktreeAddOnBranch(repoRoot: string, path: string, branch: string, base?: string, link = true): string {
+  worktreeAddOnBranch(repoRoot: string, path: string, branch: string, base?: string, link = true, fresh = false): string {
     git(repoRoot, ['worktree', 'prune']);
-    try { git(repoRoot, ['worktree', 'add', path, branch]); }
+    if (fresh) git(repoRoot, ['worktree', 'add', '-b', branch, path, base?.trim() || 'HEAD']);
+    else try { git(repoRoot, ['worktree', 'add', path, branch]); }
     catch { git(repoRoot, ['worktree', 'add', '-b', branch, path, base?.trim() || 'HEAD']); }
     if (link) { linkDependencies(repoRoot, path); hydrateArtifacts(repoRoot, path); }
     return path;

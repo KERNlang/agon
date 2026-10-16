@@ -157,7 +157,7 @@ export function branchExists(repoDir: string, branch: string): boolean {
 /**
  * Add a git worktree checked out on a NAMED branch — unlike worktreeCreate, which detaches for throwaway forge candidates. Prefers git's DWIM (an existing local branch, or a tracking branch when <branch> resolves on exactly one remote); only when that fails is a fresh branch created off base/HEAD. When link is not false, overlay node_modules + dist so the worktree is immediately buildable.
  */
-export function worktreeAddOnBranch(repoDir: string, worktreePath: string, branch: string, base?: string, link?: boolean): string {
+export function worktreeAddOnBranch(repoDir: string, worktreePath: string, branch: string, base?: string, link?: boolean, fresh = false): string {
   // Session worktrees are persistent by design: do NOT register them for
   // process-exit cleanup. Only ephemeral throwaway worktrees (worktreeCreate)
   // should be tracked in activeWorktrees.
@@ -165,7 +165,10 @@ export function worktreeAddOnBranch(repoDir: string, worktreePath: string, branc
   // Guard the empty string: '' ?? 'HEAD' is '', which git rejects as a start-point.
   const startPoint = (base && base.trim()) || 'HEAD';
   try {
-    try {
+    if (fresh) {
+      // Git rejects existing branches atomically. Never reset prior work.
+      git(['worktree', 'add', '-b', branch, worktreePath, startPoint], repoDir);
+    } else try {
       // DWIM: checks out an existing local branch, or creates a tracking
       // branch when <branch> resolves on exactly one remote.
       git(['worktree', 'add', worktreePath, branch], repoDir);

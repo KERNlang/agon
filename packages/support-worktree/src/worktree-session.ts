@@ -1,13 +1,13 @@
-import { existsSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync, realpathSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync, realpathSync, statSync, lstatSync } from 'node:fs';
 
-import { join, sep } from 'node:path';
+import { join, sep, resolve, relative } from 'node:path';
 
 import { createHash } from 'node:crypto';
 
 export interface WorktreeSessionRuntime {
   getAgonHome(): string;
   ensureAgonHome(): void;
-  worktreeAddOnBranch(repoDir: string, worktreePath: string, branch: string, base?: string, link?: boolean): string;
+  worktreeAddOnBranch(repoDir: string, worktreePath: string, branch: string, base?: string, link?: boolean, fresh?: boolean): string;
   worktreeRemoveBestEffort(repoDir: string, worktreePath: string): void;
   linkWorktreeNodeModules(repoDir: string, worktreePath: string): void;
   hydrateWorktreeBuildArtifacts(repoDir: string, worktreePath: string): void;
@@ -81,9 +81,11 @@ export function detectPackageManager(dir: string): string | null {
 }
 
 /**
- * Create a session worktree on <branch> (created off base/HEAD if absent) and record its manifest. When link is not false, node_modules + dist are overlaid so it is immediately buildable. Throws if a worktree for this branch already exists.
+ * Create a session worktree and record its manifest. Fresh mode rejects existing
+ * branches; otherwise reopen the branch or create it from base/HEAD. When link
+ * is not false, overlay node_modules and dist. Reject existing worktree paths.
  */
-export function createSessionWorktree(opts: { repoRoot: string, branch: string, base?: string, link?: boolean }, runtime: WorktreeSessionRuntime): SessionWorktree {
+export function createSessionWorktree(opts: { repoRoot: string, branch: string, base?: string, link?: boolean, fresh?: boolean }, runtime: WorktreeSessionRuntime): SessionWorktree {
   runtime.ensureAgonHome();
   const dir = worktreePathFor(opts.repoRoot, opts.branch, runtime);
   if (existsSync(dir)) {
@@ -91,26 +93,25 @@ export function createSessionWorktree(opts: { repoRoot: string, branch: string, 
   }
   mkdirSync(sessionWorktreesDir(opts.repoRoot, runtime), { recursive: true });
 
-  runtime.worktreeAddOnBranch(opts.repoRoot, dir, opts.branch, opts.base, opts.link !== false);
+  runtime.worktreeAddOnBranch(opts.repoRoot, dir, opts.branch, opts.base, opts.link !== false, opts.fresh);
 
-  const manifest: SessionWorktree = {
-    branch: opts.branch,
-    repoRoot: opts.repoRoot,
-    // The worktree's OWN per-checkout git-dir (<repo>/.git/worktrees/<name>),
-    // not the main checkout's — this is what a per-checkout advisory lock keys on.
-    gitDir: runtime.absoluteGitDir(dir),
-    path: dir,
-    createdAt: new Date().toISOString(),
-    packageManager: detectPackageManager(dir),
-  };
   try {
+    const manifest: SessionWorktree = {
+      branch: opts.branch,
+      repoRoot: opts.repoRoot,
+      // Lock the worktree's Git directory, not the source checkout's directory.
+      gitDir: runtime.absoluteGitDir(dir),
+      path: dir,
+      createdAt: new Date().toISOString(),
+      packageManager: detectPackageManager(dir),
+    };
     writeFileSync(manifestPathFor(opts.repoRoot, opts.branch, runtime), JSON.stringify(manifest, null, 2), 'utf-8');
+    return manifest;
   } catch (err) {
     // Don't strand a worktree that list/find can't see — roll it back.
     runtime.worktreeRemoveBestEffort(opts.repoRoot, dir);
     throw err;
   }
-  return manifest;
 }
 
 /**
@@ -154,8 +155,22 @@ export function findSessionWorktree(repoRoot: string, branch: string, runtime: W
  * Guard against a tampered/corrupt manifest: only paths inside THIS repo's session-worktree store may ever be force-removed, never an arbitrary path the manifest claims.
  */
 function isInsideStore(repoRoot: string, p: string, runtime: WorktreeSessionRuntime): boolean {
-  const baseDir = sessionWorktreesDir(repoRoot, runtime);
-  return p === baseDir || p.startsWith(baseDir + sep);
+  const baseDir = resolve(sessionWorktreesDir(repoRoot, runtime));
+  const target = resolve(p);
+  if (!target.startsWith(baseDir + sep)) return false;
+  let cursor = baseDir;
+  try {
+    if (!lstatSync(cursor).isDirectory()) return false;
+    for (const part of relative(baseDir, target).split(sep)) {
+      cursor = join(cursor, part);
+      // Do not follow links from a manifest into another store or checkout.
+      if (!lstatSync(cursor).isDirectory()) return false;
+    }
+    return true;
+  } catch (error) {
+    // Missing descendants remain eligible for stale-manifest cleanup.
+    return (error as NodeJS.ErrnoException).code === 'ENOENT';
+  }
 }
 
 /**
@@ -215,6 +230,9 @@ export function pruneSessionWorktrees(repoRoot: string, olderThanMs: number, dry
 export function rehydrateSessionWorktree(repoRoot: string, branch: string, runtime: WorktreeSessionRuntime): boolean {
   const m = findSessionWorktree(repoRoot, branch, runtime);
   if (!m) return false;
+  if (!isInsideStore(repoRoot, m.path, runtime)) {
+    throw new Error(`Refusing to rehydrate ${m.path}: it is outside this repo's session-worktree store`);
+  }
   runtime.linkWorktreeNodeModules(repoRoot, m.path);
   runtime.hydrateWorktreeBuildArtifacts(repoRoot, m.path);
   return true;

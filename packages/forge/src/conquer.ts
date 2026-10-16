@@ -19,7 +19,9 @@ import { runBrainstorm } from './brainstorm.js';
 import { runCouncil } from './council.js';
 
 
-import { randomUUID } from 'node:crypto';
+import { createConquerIsolation as createOwnedConquerIsolation } from '@kernlang/agon-mod-conquer';
+import type { ConquerIsolation } from '@kernlang/agon-mod-conquer';
+export type { ConquerIsolation } from '@kernlang/agon-mod-conquer';
 
 export interface ConquerOptions {
   task: string;
@@ -37,23 +39,11 @@ export interface ConquerOptions {
   signal?: AbortSignal | undefined;
 }
 
-export interface ConquerIsolation {
-  repoRoot: string;
-  branch: string;
-  path: string;
-}
-
 /**
  * Create a persistent named worktree for one Conquer run. It branches from HEAD, so uncommitted source-checkout work remains untouched and is intentionally not copied into the build. The worktree is kept after success/failure for the human merge gate and crash recovery.
  */
 export function createConquerIsolation(task: string, cwd?: string, runId?: string): ConquerIsolation {
-  const sourceCwd = cwd ?? resolveWorkingDir();
-  const root = repoRoot(sourceCwd);
-  const slug = task.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 36) || 'build';
-  const suffix = (runId?.trim() || randomUUID().slice(0, 8)).replace(/[^a-zA-Z0-9._-]+/g, '-');
-  const branch = `conquer/${slug}-${suffix}`;
-  const worktree = createSessionWorktree({ repoRoot: root, branch, base: 'HEAD', link: true });
-  return { repoRoot: root, branch, path: worktree.path };
+  return createOwnedConquerIsolation(task, cwd ?? resolveWorkingDir(), { repoRoot, createSessionWorktree }, runId);
 }
 
 /**

@@ -43,7 +43,7 @@ export function worktreePathFor(repoRoot: string, branch: string): string {
   return modularWorktreePathFor(repoRoot, branch, compatibilityRuntime);
 }
 
-export function createSessionWorktree(opts: { repoRoot: string; branch: string; base?: string; link?: boolean }): SessionWorktree {
+export function createSessionWorktree(opts: { repoRoot: string; branch: string; base?: string; link?: boolean; fresh?: boolean }): SessionWorktree {
   return createModularSessionWorktree(opts, compatibilityRuntime);
 }
 

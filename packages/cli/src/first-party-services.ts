@@ -5,6 +5,7 @@ import { planSessionHost } from '@kernlang/agon-mod-plan';
 import { EngineRegistry, buildKernContextSpine, createRunDir, eventLogFlush, getRatings, loadConfig, pickTopRatedEngine, setSessionRoot } from '@kernlang/agon-core';
 import { createCliAdapter } from '@kernlang/agon-adapter-cli';
 import { createForgeHostServices } from '@kernlang/agon-core';
+import { repoRoot, createSessionWorktree } from '@kernlang/agon-core';
 import { createBrainstormHostServices } from '@kernlang/agon-mod-brainstorm';
 import { createConquerHostServices } from '@kernlang/agon-mod-conquer';
 import { rankCriticCascade } from '@kernlang/agon-mod-nero';
@@ -105,6 +106,7 @@ export function decorateCliFirstPartyServices(manifest: ModManifest, base: ModSe
   return Object.freeze({ ...base, runs, ...(browser ? { browser } : {}), ...(workspace ? { workspace } : {}),
     ...(brainstorm ? { brainstorm } : {}),
     ...(manifest.id === 'agon.conquer' ? { conquer: createConquerHostServices({
+      worktrees: { repoRoot, createSessionWorktree },
       openRegistry: () => {
         const registry = new EngineRegistry(); registry.load(resolveBuiltinEnginesDir()); return registry;
       },

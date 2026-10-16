@@ -2,10 +2,15 @@ import type { Awaitable, InvocationContext } from '@kernlang/agon-mod-api';
 import { guardEngineAdapter } from '@kernlang/agon-support-engine-runtime';
 import type { EngineAdapter, EngineDefinition } from '@kernlang/agon-support-engine-runtime';
 import type { FalsifierEffects } from './falsifier.js';
+import { createConquerIsolation } from './isolation.js';
+import type { ConquerIsolation, ConquerIsolationEffects } from './isolation.js';
 
 export interface ConquerHostServices {
   contextSpine(context: InvocationContext): Promise<string>;
-  open(context: InvocationContext): Awaitable<FalsifierEffects & { assertCurrent(): void }>;
+  open(context: InvocationContext): Awaitable<FalsifierEffects & {
+    assertCurrent(): void;
+    createIsolation(task: string, runId: string, base: string): ConquerIsolation;
+  }>;
 }
 
 /** Bind catalog and provider access to the current invocation authority. */
@@ -15,6 +20,7 @@ export function createConquerHostServices<Registry extends { get(id: string): En
   rankCritics(registry: Registry, engineIds: string[]): ReturnType<FalsifierEffects['rankCritics']>;
   contextSpine(context: InvocationContext): Promise<string>;
   captureAuthority(): () => void;
+  worktrees: ConquerIsolationEffects;
 }): ConquerHostServices {
   return {
     contextSpine: options.contextSpine,
@@ -30,6 +36,10 @@ export function createConquerHostServices<Registry extends { get(id: string): En
       const registry = options.openRegistry(context.cwd);
       return {
         assertCurrent,
+        createIsolation: (task, runId, base) => {
+          check();
+          return createConquerIsolation(task, context.cwd, options.worktrees, runId, base);
+        },
         adapter: guardEngineAdapter(options.createAdapter(registry), check),
         getEngine: id => { check(); return registry.get(id); },
         rankCritics: ids => { check(); return options.rankCritics(registry, ids); },

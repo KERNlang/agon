@@ -23,6 +23,24 @@ function git(cwd: string, args: readonly string[]): string {
   return execFileSync('git', [...args], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 16 * 1024 * 1024 }).trim();
 }
 
+/** Capture the source revision before a builder can change its own HEAD. */
+export function readWorktreeSource(cwd: string): { repoRoot: string; baseSha: string; dirtySourceExcluded: boolean } {
+  const repoRoot = git(cwd, ['rev-parse', '--show-toplevel']);
+  return {
+    repoRoot,
+    baseSha: git(repoRoot, ['rev-parse', 'HEAD']),
+    dirtySourceExcluded: git(repoRoot, ['status', '--porcelain=v1', '--untracked-files=normal']).length > 0,
+  };
+}
+
+/** Include tracked, binary and new files without staging their contents. */
+export function readWorktreePatch(cwd: string, base: string): string {
+  git(cwd, ['add', '-N', '.']);
+  return execFileSync('git', ['diff', '--binary', '--no-ext-diff', base, '--'], {
+    cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 32 * 1024 * 1024,
+  });
+}
+
 function safeLeaf(value: string): string {
   const leaf = value.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60);
   return leaf || 'candidate';
@@ -40,9 +58,7 @@ function isInside(parent: string, child: string): boolean {
  * Rebuild candidate artifacts after source edits. Do not stash checkout changes.
  */
 export function createForgeArena(cwd: string): ForgeArena {
-  const repoRoot = git(cwd, ['rev-parse', '--show-toplevel']);
-  const baseSha = git(repoRoot, ['rev-parse', 'HEAD']);
-  const dirtySourceExcluded = git(repoRoot, ['status', '--porcelain=v1', '--untracked-files=normal']).length > 0;
+  const { repoRoot, baseSha, dirtySourceExcluded } = readWorktreeSource(cwd);
   const rootPath = mkdtempSync(join(tmpdir(), `agon-forge-${basename(repoRoot)}-`));
   const candidates: ForgeCandidateWorktree[] = [];
   let closed = false;
@@ -71,8 +87,7 @@ export function createForgeArena(cwd: string): ForgeArena {
     },
     diff(candidatePath: string): string {
       assertCandidate(candidatePath);
-      git(candidatePath, ['add', '-N', '.']);
-      return execFileSync('git', ['diff', '--binary', '--no-ext-diff', 'HEAD'], { cwd: candidatePath, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 32 * 1024 * 1024 });
+      return readWorktreePatch(candidatePath, 'HEAD');
     },
     cleanup(): void {
       if (closed) return;

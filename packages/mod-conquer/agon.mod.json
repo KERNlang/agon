@@ -152,6 +152,7 @@
       "dist/workflow.d.ts",
       "dist/falsifier.d.ts",
       "dist/host.d.ts",
+      "dist/isolation.d.ts",
       "ownership.json",
       "schemas/config.schema.json"
     ],

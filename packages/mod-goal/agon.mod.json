@@ -67,6 +67,11 @@
       "required": true
     },
     {
+      "capability": "git.write",
+      "resources": [],
+      "required": false
+    },
+    {
       "capability": "state.read",
       "resources": [],
       "required": true

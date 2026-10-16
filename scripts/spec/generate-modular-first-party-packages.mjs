@@ -187,7 +187,7 @@ function expectedFiles(packageRecord) {
     permissions: [...inferredPermissions].sort(compareAscii).map((capability) => ({
       capability,
       resources: [],
-      required: !((short === 'worktrees' && capability === 'network') || (short === 'conquer' && capability === 'git.write')),
+      required: !((short === 'worktrees' && capability === 'network') || (['conquer', 'goal'].includes(short) && capability === 'git.write')),
     })),
     platforms,
     assets: [

@@ -16,6 +16,7 @@ import { runGitAction } from "@kernlang/agon-mod-git-actions";
 import { readWorktreePatch, runMutationAssessment } from "@kernlang/agon-support-worktree";
 import type { GoalModServices, GoalWorktree } from './host.js';
 import { runFitnessCommand } from "@kernlang/agon-support-verification";
+import { spawnWithTimeout } from '@kernlang/agon-support-engine-runtime';
 import {
   createPersistenceEnvelope,
   unwrapPersistenceEnvelope,
@@ -29,6 +30,12 @@ type Task = {
   status: "queued" | "running" | "done" | "failed";
   attempts: number;
   commit?: string;
+  publication?: {
+    commit: string;
+    remote: string;
+    status: 'pending' | 'succeeded' | 'unknown';
+    message?: string;
+  };
   error?: string;
 };
 type GoalState = {
@@ -493,6 +500,13 @@ export async function runGoal(
         stderr: `${error instanceof Error ? error.message : String(error)}\n`,
       };
     }
+    const remote = String(input.remote ?? 'origin');
+    if (input.push === true && input.dryRun !== true) {
+      if (input.commit === false) return { exitCode: 1, stderr: 'Goal --push requires task commits; remove commit=false.\n' };
+      const permission = await services.permissions.check('git.write', worktree.repoRoot);
+      await assertExecution();
+      if (permission !== 'allow') return { exitCode: 1, stderr: `Goal --push requires git.write permission (received ${permission}).\n` };
+    }
     let run: Awaited<ReturnType<NonNullable<ModServices["runs"]>["start"]>> | undefined;
     let state: GoalState = {
       id,
@@ -521,10 +535,14 @@ export async function runGoal(
           status: "running",
           budgetUsd,
           maxHours,
-          tasks: prior.tasks.map((t) =>
-            t.status === "running" || (t.status === "failed" && t.attempts < maxAttempts)
-              ? { ...t, status: "queued" } : t,
-          ),
+          tasks: prior.tasks.map((t) => {
+            const resumed: Task = t.status === 'running' || (t.status === 'failed' && t.attempts < maxAttempts)
+              ? { ...t, status: 'queued' } : t;
+            return resumed.publication?.status === 'pending'
+              ? { ...resumed, publication: { ...resumed.publication, status: 'unknown',
+                  message: 'Publication outcome was not persisted. Inspect the recorded remote and commit before retrying.' } }
+              : resumed;
+          }),
         };
       }
       await save();
@@ -815,6 +833,33 @@ export async function runGoal(
           delete runnable.error;
           state = event(state, "task-done", runnable.id, runnable.commit);
           await save();
+          if (input.push === true && runnable.commit) {
+            runnable.publication = { commit: runnable.commit, remote, status: 'pending' };
+            state = event(state, 'push-prepared', runnable.id, remote);
+            await save();
+            const permission = await services.permissions.check('git.write', worktree.repoRoot);
+            await assertExecution();
+            if (permission !== 'allow') throw new Error(`Goal publication stopped: git.write permission is ${permission}`);
+            if (git(worktree.path, ['symbolic-ref', '--short', 'HEAD']) !== branch ||
+                git(worktree.path, ['rev-parse', 'HEAD']) !== runnable.commit) {
+              throw new Error('Goal branch or commit changed before publication; inspect the retained worktree.');
+            }
+            let pushed: Pick<Awaited<ReturnType<typeof spawnWithTimeout>>, 'exitCode' | 'stderr' | 'timedOut' | 'aborted'>;
+            try {
+              pushed = await spawnWithTimeout({ command: 'git',
+                args: ['push', '--no-follow-tags', '--', remote, `${runnable.commit}:refs/heads/${branch}`],
+                cwd: worktree.path, timeout: 120_000, signal: context.signal });
+            } catch (error) {
+              pushed = { exitCode: 1, stderr: String(error), timedOut: false };
+            }
+            const succeeded = pushed.exitCode === 0 && !pushed.timedOut && !pushed.aborted;
+            const message = succeeded ? remote : `Remote outcome unknown; inspect ${remote} before retrying. Local commit ${runnable.commit} is retained. ${pushed.stderr.trim().slice(0, 500)}`;
+            runnable.publication = { commit: runnable.commit, remote,
+              status: succeeded ? 'succeeded' : 'unknown', ...(!succeeded ? { message } : {}) };
+            state = event(state, succeeded ? 'task-pushed' : 'push-failed', runnable.id, message);
+            await save();
+            await assertExecution();
+          }
           break;
         }
         if (runnable.status !== "done") {
@@ -833,6 +878,7 @@ export async function runGoal(
       await save();
       await assertExecution();
       const patch = readWorktreePatch(worktree.path, state.baseSha);
+      const publications = state.tasks.flatMap(task => task.publication ? [{ taskId: task.id, ...task.publication }] : []);
       const result = {
         state,
         worktree,
@@ -840,8 +886,12 @@ export async function runGoal(
         branchHead: git(worktree.path, ["rev-parse", "HEAD"]),
         sourceUntouched: true,
         runDir: run?.path ?? null,
+        publication: { requested: input.push === true, remote,
+          succeeded: publications.filter(item => item.status === 'succeeded').length,
+          failed: publications.filter(item => item.status !== 'succeeded').length,
+          outcomes: publications },
         promotion:
-          input.push === true || input.pr === true
+          input.pr === true
             ? {
                 requiresOperatorApproval: true,
                 branch,

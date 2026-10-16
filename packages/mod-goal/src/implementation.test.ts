@@ -324,11 +324,152 @@ describe('physical goal mod', () => {
     expect(execFileSync('git', ['branch', '--list', 'goal/*'], { cwd: other, encoding: 'utf8' }).trim()).toBe('');
   });
 
-  it('keeps push/PR as an explicit operator promotion plan and performs no network action', async () => {
+  it('pushes each completed task to the selected remote before starting the next task', async () => {
     const cwd = repo(); const h = harness();
-    const out = await runGoal({ intent: 'publish later', gate: 'test -f base.txt', engine: 'builder', reviewEngines: 'reviewer', requireTests: false, push: true, pr: true }, context(cwd), h.services);
+    const remote = mkdtempSync(join(tmpdir(), 'goal-remote-'));
+    execFileSync('git', ['init', '--bare', remote]);
+    execFileSync('git', ['remote', 'add', 'selected', remote], { cwd });
+    execFileSync('git', ['config', 'push.followTags', 'true'], { cwd });
+    execFileSync('git', ['tag', '-a', 'private-local-tag', '-m', 'local only'], { cwd });
+    const original = h.dispatch.getMockImplementation()!;
+    let firstTip = '';
+    h.dispatch.mockImplementation(async (...args) => {
+      if (args[3].mode === 'agent' && args[1].includes('TASK second')) {
+        firstTip = execFileSync('git', ['rev-parse', 'refs/heads/goal/publish'], { cwd: remote, encoding: 'utf8' }).trim();
+        expect(execFileSync('git', ['show', `${firstTip}:first.ts`], { cwd: remote, encoding: 'utf8' })).toContain('first = true');
+      }
+      return original(...args);
+    });
+    const out = await runGoal({ id: 'publish', intent: 'publish tasks', gate: 'test -f base.txt', engine: 'builder', reviewEngines: 'reviewer', requireTests: false, push: true, remote: 'selected',
+      tasks: [{ id: 'first', source: 'first' }, { id: 'second', source: 'second', dependsOn: ['first'] }],
+    }, context(cwd), h.services);
     expect(out).toMatchObject({ exitCode: 0 });
-    expect((out.result as any).promotion).toMatchObject({ requiresOperatorApproval: true, pushRequested: true, prRequested: true });
+    const result = out.result as any;
+    expect(firstTip).toBe(result.state.tasks[0].commit);
+    expect(execFileSync('git', ['rev-parse', 'refs/heads/goal/publish'], { cwd: remote, encoding: 'utf8' }).trim()).toBe(result.state.tasks[1].commit);
+    expect(result.state.events.filter((entry: any) => entry.type === 'task-pushed')).toHaveLength(2);
+    expect(execFileSync('git', ['branch', '--show-current'], { cwd, encoding: 'utf8' }).trim()).toBe('main');
+    expect(existsSync(join(cwd, 'first.ts'))).toBe(false);
+    expect(execFileSync('git', ['for-each-ref', '--format=%(refname)', 'refs/tags'], { cwd: remote, encoding: 'utf8' }).trim()).toBe('');
+  });
+
+  it('keeps completed commits when publication fails and reports the failure', async () => {
+    const cwd = repo(); const h = harness();
+    const out = await runGoal({ intent: 'push failure', gate: 'test -f base.txt', engine: 'builder', reviewEngines: 'reviewer', requireTests: false, push: true,
+      remote: join(cwd, 'missing-remote.git'),
+    }, context(cwd), h.services);
+    expect(out.exitCode).toBe(0);
+    const result = out.result as any;
+    expect(result.state.tasks[0].status).toBe('done');
+    expect(result.state.events.some((entry: any) => entry.type === 'push-failed')).toBe(true);
+    expect(result.state.events.some((entry: any) => entry.type === 'task-pushed')).toBe(false);
+    expect(result.publication).toMatchObject({ requested: true, failed: 1, succeeded: 0 });
+    expect(execFileSync('git', ['rev-parse', 'goal/push-failure'], { cwd, encoding: 'utf8' }).trim()).toBe(result.state.tasks[0].commit);
+  });
+
+  it.each([false, true])('never pushes without execution authorization (dryRun=%s)', async dryRun => {
+    const cwd = repo(); const h = harness();
+    const remote = mkdtempSync(join(tmpdir(), 'goal-no-push-'));
+    execFileSync('git', ['init', '--bare', remote]);
+    execFileSync('git', ['remote', 'add', 'origin', remote], { cwd });
+    const out = await runGoal({ intent: 'stay local', gate: 'true', requireTests: false, dryRun, push: dryRun }, context(cwd), h.services);
+    expect(out.exitCode).toBe(0);
+    expect(execFileSync('git', ['for-each-ref', '--format=%(refname)'], { cwd: remote, encoding: 'utf8' }).trim()).toBe('');
+    if (dryRun) expect(h.dispatch).not.toHaveBeenCalled();
+    else expect((out.result as any).state.tasks[0].status).toBe('done');
+  });
+
+  it('recovers an interrupted push response as unknown without rerunning the completed task', async () => {
+    const cwd = repo(); const h = harness();
+    const remote = mkdtempSync(join(tmpdir(), 'goal-response-lost-'));
+    execFileSync('git', ['init', '--bare', remote]);
+    execFileSync('git', ['remote', 'add', 'origin', remote], { cwd });
+    let interrupted = false;
+    const write = h.services.state.write as ReturnType<typeof vi.fn>;
+    write.mockImplementation(async (key, value) => {
+      if (value.payload.events.at(-1)?.type === 'task-pushed') interrupted = true;
+      if (interrupted) throw new Error('fixture process lost before outcome persistence');
+      h.state.set(key, value);
+    });
+    await expect(runGoal({ intent: 'response lost', gate: 'true', requireTests: false, push: true }, context(cwd), h.services)).rejects.toThrow('outcome persistence');
+    const published = execFileSync('git', ['rev-parse', 'refs/heads/goal/response-lost'], { cwd: remote, encoding: 'utf8' }).trim();
+    expect(h.state.get('goals/response-lost').payload.tasks[0].commit).toBe(published);
+    write.mockImplementation(async (key, value) => { h.state.set(key, value); });
+    h.dispatch.mockClear();
+    const resumed = await runGoal({ id: 'response-lost', resume: true, push: true }, context(cwd), h.services);
+    expect(resumed.exitCode).toBe(0);
+    expect(h.dispatch).not.toHaveBeenCalled();
+    expect((resumed.result as any).publication).toMatchObject({ succeeded: 0, failed: 1,
+      outcomes: [expect.objectContaining({ commit: published, remote: 'origin', status: 'unknown' })] });
+  });
+
+  it('refuses push when git.write is denied before implementation', async () => {
+    const cwd = repo(); const h = harness();
+    (h.services.permissions.check as ReturnType<typeof vi.fn>).mockResolvedValue('deny');
+    const out = await runGoal({ intent: 'denied push', gate: 'true', push: true }, context(cwd), h.services);
+    expect(out).toMatchObject({ exitCode: 1, stderr: expect.stringContaining('git.write') });
+    expect(h.dispatch).not.toHaveBeenCalled();
+    expect(h.services.runs!.start).not.toHaveBeenCalled();
+  });
+
+  it.each(['permission', 'cancellation', 'branch', 'head', 'generation', 'fence'] as const)('refuses publication after %s changes and retains the commit', async change => {
+    const cwd = repo(); const h = harness(); const abort = new AbortController();
+    const remote = mkdtempSync(join(tmpdir(), 'goal-revoked-'));
+    execFileSync('git', ['init', '--bare', remote]);
+    execFileSync('git', ['remote', 'add', 'origin', remote], { cwd });
+    const write = h.services.state.write as ReturnType<typeof vi.fn>;
+    let changed = false;
+    const guarded = { ...h.services, goal: {
+      open(invocation: Parameters<typeof h.goal.open>[0]) {
+        const opened = h.goal.open(invocation);
+        return { ...opened,
+          assertCurrent() {
+            opened.assertCurrent();
+            if (changed && change === 'generation') throw new Error('fixture generation changed');
+          },
+          async acquire(id: string) {
+            const lease = await opened.acquire(id);
+            return { release: () => lease.release(), assertOwned: async () => {
+              if (changed && change === 'fence') throw new Error('fixture fence lost');
+              await lease.assertOwned();
+            } };
+          },
+        };
+      },
+    } };
+    write.mockImplementation(async (key, value) => {
+      h.state.set(key, value);
+      const payload = value.payload;
+      if (!changed && payload.events.at(-1)?.type === 'push-prepared') {
+        changed = true;
+        if (change === 'permission') (h.services.permissions.check as ReturnType<typeof vi.fn>).mockResolvedValue('deny');
+        if (change === 'cancellation') abort.abort(new Error('cancel before push'));
+        if (change === 'branch') execFileSync('git', ['checkout', '-b', 'other-local'], { cwd: payload.worktree.path });
+        if (change === 'head') execFileSync('git', ['commit', '--allow-empty', '-m', 'concurrent local commit'], { cwd: payload.worktree.path });
+      }
+    });
+    await expect(runGoal({ intent: 'revoked push', gate: 'true', requireTests: false, push: true },
+      { ...context(cwd), signal: abort.signal }, guarded)).rejects.toThrow();
+    expect(changed).toBe(true);
+    expect(execFileSync('git', ['for-each-ref', '--format=%(refname)'], { cwd: remote, encoding: 'utf8' }).trim()).toBe('');
+    expect(execFileSync('git', ['rev-list', '--count', 'main..goal/revoked-push'], { cwd, encoding: 'utf8' }).trim()).toBe(change === 'head' ? '2' : '1');
+    expect(h.state.get('goals/revoked-push').payload.tasks[0].status).toBe('done');
+  });
+
+  it('continues after a rejected first push and publishes the next completed task', async () => {
+    const cwd = repo(); const h = harness();
+    const remote = mkdtempSync(join(tmpdir(), 'goal-reject-once-'));
+    execFileSync('git', ['init', '--bare', remote]);
+    execFileSync('git', ['remote', 'add', 'origin', remote], { cwd });
+    writeFileSync(join(remote, 'hooks', 'pre-receive'), '#!/bin/sh\nif test ! -f rejected-once; then\n  touch rejected-once\n  exit 1\nfi\nexit 0\n', { mode: 0o755 });
+    const out = await runGoal({ intent: 'reject once', gate: 'true', requireTests: false, push: true,
+      tasks: [{ id: 'first', source: 'first' }, { id: 'second', source: 'second', dependsOn: ['first'] }],
+    }, context(cwd), h.services);
+    expect(out.exitCode).toBe(0);
+    const result = out.result as any;
+    expect(result.state.tasks.map((task: any) => task.status)).toEqual(['done', 'done']);
+    expect(result.publication).toMatchObject({ succeeded: 1, failed: 1 });
+    expect(execFileSync('git', ['rev-parse', 'refs/heads/goal/reject-once'], { cwd: remote, encoding: 'utf8' }).trim()).toBe(result.state.tasks[1].commit);
   });
 
   it('refuses a red base, protected branch, missing resume, and invalid dependency graph', async () => {

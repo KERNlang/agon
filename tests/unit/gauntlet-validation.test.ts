@@ -90,22 +90,24 @@ it('keeps engine IDs out of executable filenames', async () => {
   expect(checked).toMatchObject({ engineId: artifact.engineId, validated: true, deterministic: true });
 });
 
-it('cancels a running validation process without starting the clean check', async () => {
+it.each([0, 500])('cancels a running validation process without starting the clean check (PID write delay %s ms)', async delay => {
   const controller = new AbortController();
   const pidPath = join(winnerWorktree, 'started');
   const artifact = { engineId: 'fixture',
-    testScript: "import { writeFileSync } from 'node:fs'; writeFileSync('started', String(process.pid)); setInterval(() => {}, 1000)",
+    testScript: `import { writeFileSync } from 'node:fs'; writeFileSync('started', ''); setTimeout(() => writeFileSync('started', String(process.pid)), ${delay}); setInterval(() => {}, 1000)`,
     testPath: '', failureMessage: '', validated: false, deterministic: false };
   const pending = validateBreakerArtifact({ artifact, winnerWorktree, cleanWorktree,
     fitnessTimeout: 10, fitnessCmd: JSON.stringify(process.execPath), signal: controller.signal });
   try {
-    await expect.poll(() => existsSync(pidPath), { timeout: 3000 }).toBe(true);
+    await expect.poll(() => existsSync(pidPath) && /^[1-9]\d*$/.test(readFileSync(pidPath, 'utf8')),
+      { timeout: 3000 }).toBe(true);
+    const pid = Number(readFileSync(pidPath, 'utf8'));
+    expect(Number.isSafeInteger(pid) && pid > 0).toBe(true);
     const cancelledAt = Date.now();
     controller.abort();
     expect(await pending).toMatchObject({ validated: false, deterministic: false });
     expect(Date.now() - cancelledAt).toBeLessThan(2500);
     expect(existsSync(join(cleanWorktree, 'started'))).toBe(false);
-    const pid = Number(readFileSync(pidPath, 'utf8'));
     try {
       await expect.poll(() => {
         try { process.kill(pid, 0); return true; }

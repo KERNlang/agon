@@ -130,6 +130,7 @@
       "dist/index.d.ts",
       "dist/implementation.d.ts",
       "dist/verdict.d.ts",
+      "dist/critic-cascade.d.ts",
       "ownership.json",
       "schemas/config.schema.json"
     ],

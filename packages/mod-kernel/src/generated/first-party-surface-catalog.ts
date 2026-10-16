@@ -106,7 +106,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.conquer",
       "version": "1.0.0",
-      "contentHash": "sha256:51a190d3147e1670d7494c5ad124ac40fe4852c3fecace1be1973ed9eea786cf"
+      "contentHash": "sha256:08837bd727f7c0a8b7787e0e5e280be8592a3bc7e3af3c48e2e083f716db3fbd"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "Conquer",
@@ -428,7 +428,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.nero",
       "version": "1.0.0",
-      "contentHash": "sha256:778b84387de82e998de390ed7f61a5bd9467e5cf292227ab863d4c3138c6f436"
+      "contentHash": "sha256:1a4cd3f103c53d6a8e2b00e4fa5e5a75a3b7ac92db307e2cd3c101369f7f3ba1"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "QuickNero",
@@ -1049,7 +1049,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.conquer",
       "version": "1.0.0",
-      "contentHash": "sha256:51a190d3147e1670d7494c5ad124ac40fe4852c3fecace1be1973ed9eea786cf"
+      "contentHash": "sha256:08837bd727f7c0a8b7787e0e5e280be8592a3bc7e3af3c48e2e083f716db3fbd"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "conquer",
@@ -2613,7 +2613,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.conquer",
       "version": "1.0.0",
-      "contentHash": "sha256:51a190d3147e1670d7494c5ad124ac40fe4852c3fecace1be1973ed9eea786cf"
+      "contentHash": "sha256:08837bd727f7c0a8b7787e0e5e280be8592a3bc7e3af3c48e2e083f716db3fbd"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "conquer",
@@ -3602,7 +3602,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.nero",
       "version": "1.0.0",
-      "contentHash": "sha256:778b84387de82e998de390ed7f61a5bd9467e5cf292227ab863d4c3138c6f436"
+      "contentHash": "sha256:1a4cd3f103c53d6a8e2b00e4fa5e5a75a3b7ac92db307e2cd3c101369f7f3ba1"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "nero",
@@ -4593,7 +4593,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.nero",
       "version": "1.0.0",
-      "contentHash": "sha256:778b84387de82e998de390ed7f61a5bd9467e5cf292227ab863d4c3138c6f436"
+      "contentHash": "sha256:1a4cd3f103c53d6a8e2b00e4fa5e5a75a3b7ac92db307e2cd3c101369f7f3ba1"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "QuickNero",
@@ -5881,7 +5881,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.nero",
       "version": "1.0.0",
-      "contentHash": "sha256:778b84387de82e998de390ed7f61a5bd9467e5cf292227ab863d4c3138c6f436"
+      "contentHash": "sha256:1a4cd3f103c53d6a8e2b00e4fa5e5a75a3b7ac92db307e2cd3c101369f7f3ba1"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "nero",
@@ -7244,7 +7244,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.nero",
       "version": "1.0.0",
-      "contentHash": "sha256:778b84387de82e998de390ed7f61a5bd9467e5cf292227ab863d4c3138c6f436"
+      "contentHash": "sha256:1a4cd3f103c53d6a8e2b00e4fa5e5a75a3b7ac92db307e2cd3c101369f7f3ba1"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "                        — toggle Nero mode (adversarial)",
@@ -9190,7 +9190,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.conquer",
       "version": "1.0.0",
-      "contentHash": "sha256:51a190d3147e1670d7494c5ad124ac40fe4852c3fecace1be1973ed9eea786cf"
+      "contentHash": "sha256:08837bd727f7c0a8b7787e0e5e280be8592a3bc7e3af3c48e2e083f716db3fbd"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "<task> --gate \"<cmd>\" [--builder X] [-e a,b] [--max-turns N] [--gate-timeout s] [--max-hours h] [--timeout s] — supervised-autonomous build: Cesar drives a builder CLI, convenes nero/tribunal/council on forks, stops at a human merge gate (background job)",
@@ -9807,7 +9807,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.nero",
       "version": "1.0.0",
-      "contentHash": "sha256:778b84387de82e998de390ed7f61a5bd9467e5cf292227ab863d4c3138c6f436"
+      "contentHash": "sha256:1a4cd3f103c53d6a8e2b00e4fa5e5a75a3b7ac92db307e2cd3c101369f7f3ba1"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "[<decision>]             — toggle Nero mode, or challenge a decision (top-rated critic)",

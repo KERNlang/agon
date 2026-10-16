@@ -14,3 +14,5 @@ export { runConquerWorkflow, ESCAPING_OPS, DONE_SENTINEL, ASK_SENTINEL, DEFAULT_
 export type { ConquerWorkflowOptions, ConquerWorkflowEffects, StuckSignals, ConquerCaps, ConquerState, ConquerTurn, ConquerResult } from './workflow.js';
 export { isAgentCapableEngine, buildFalsifierPrompt, parseFalsifierOutput, isSafeCounterexample, runDoneFalsifier, runDoneOracle } from './falsifier.js';
 export type { SandboxOps, FalsifierResult, FalsifierOptions, FalsifierEffects, DoneOracleOptions, DoneOracleResult } from './falsifier.js';
+export { createConquerHostServices } from './host.js';
+export type { ConquerHostServices } from './host.js';

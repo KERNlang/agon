@@ -1,4 +1,4 @@
-import{execFileSync}from'node:child_process';import{existsSync,mkdtempSync,writeFileSync}from'node:fs';import{tmpdir}from'node:os';import{join}from'node:path';import{describe,expect,it,vi}from'vitest';import type{ModServices,CommandContribution,Registrar}from'@kernlang/agon-mod-api';import{createMod,runConquerTask}from'./implementation.js';
+import{execFileSync}from'node:child_process';import{existsSync,mkdtempSync,writeFileSync}from'node:fs';import{tmpdir}from'node:os';import{join}from'node:path';import{describe,expect,it,vi}from'vitest';import type{ModServices,CommandContribution,Registrar}from'@kernlang/agon-mod-api';import{createMod,runConquerTask as runConquerTaskImpl}from'./implementation.js';
 import { assertContributionInput } from '@kernlang/agon-kernel';
 import * as verification from '@kernlang/agon-support-verification';
 import * as nero from '@kernlang/agon-mod-nero';
@@ -8,8 +8,161 @@ import * as brainstorm from '@kernlang/agon-mod-brainstorm';
 import * as worktrees from '@kernlang/agon-support-worktree';
 import { runAgentTask } from '@kernlang/agon-mod-agent';
 import { afterEach } from 'vitest';
-import { renameSync, unlinkSync } from 'node:fs';
-afterEach(() => vi.restoreAllMocks());
+import { renameSync, unlinkSync, rmSync, readFileSync, readdirSync } from 'node:fs';
+import type { ConquerModServices } from './implementation.js';
+import { createConquerHostServices } from './host.js';
+const recordDirectories: string[] = [];
+afterEach(() => {
+  vi.restoreAllMocks();
+  for (const directory of recordDirectories.splice(0)) rmSync(directory, { recursive: true, force: true });
+});
+
+/** Supply isolated host capabilities to the existing workflow fixtures. */
+function withConquerHost(services: ModServices): ConquerModServices {
+  const output = mkdtempSync(join(tmpdir(), 'agon-conquer-record-'));
+  recordDirectories.push(output);
+  const provided = services as ConquerModServices;
+  const configured: ConquerModServices = {
+    ...services,
+    conquer: {
+      contextSpine: provided.conquer?.contextSpine ?? (async () => ''),
+      open: provided.conquer?.open ?? (() => ({
+        assertCurrent: () => {},
+        rankCritics: ids => ids.map(engineId => ({ engineId })),
+        getEngine: id => ({ id, binary: id, agent: {} }) as any,
+        adapter: { dispatchAgent: async () => ({ exitCode: 0, stdout: 'VERDICT: SOUND', stderr: '',
+          durationMs: 1, timedOut: false, diff: '', diffLines: 0, filesChanged: 0 }) },
+      })),
+    },
+    runs: provided.runs ?? {
+      start: async () => ({ id: 'fixture', path: output, mode: 'conquer', startedAt: new Date().toISOString() }),
+      finish: async () => {},
+      writeArtifact: async (_run, name, content) => { writeFileSync(join(output, name), content); },
+    },
+  };
+  return configured;
+}
+
+async function runConquerTask(...[input, context, services]: Parameters<typeof runConquerTaskImpl>) {
+  return runConquerTaskImpl(input, context, withConquerHost(services));
+}
+
+it('rejects a missing Conquer host before starting provider work', async () => {
+  const cwd = repo();
+  const dispatch = vi.fn(async (_id, _prompt, context) => {
+    writeFileSync(join(context.cwd, 'feature.txt'), 'implemented\n');
+    return { exitCode: 0, stdout: 'CONQUER_DONE: feature works', stderr: '', timedOut: false };
+  });
+  const services = { logger: { debug: vi.fn() }, receipts: { record: vi.fn(async () => 'fixture') },
+    engines: { listActive: async () => ['builder'], dispatch } } as unknown as ModServices;
+  const result = await runConquerTaskImpl({ task: 'implement feature', gate: 'true', maxTurns: '1' },
+    { invocationId: 'missing-host', cwd, platform: 'darwin-arm64', signal: new AbortController().signal, config: {} }, services);
+  expect(result.exitCode).toBe(1);
+  expect(result.stderr).toContain('host capabilities');
+  expect(dispatch).not.toHaveBeenCalled();
+});
+
+it.each(['builder', 'critic', 'critic-command'] as const)('rejects completion after authority changes during %s work', async phase => {
+  const cwd = repo();
+  let current = true;
+  let candidate = '';
+  const critic = vi.fn(async () => {
+    current = false;
+    return { exitCode: 0, stdout: phase === 'critic-command'
+      ? `COUNTEREXAMPLE: printf retired > '${join(cwd, 'retired-effect.txt')}'\nOBSERVED: fixture\nVERDICT: FLAWED`
+      : 'VERDICT: SOUND', stderr: '', durationMs: 1,
+      timedOut: false, diff: '', diffLines: 0, filesChanged: 0 };
+  });
+  const conquer = createConquerHostServices({
+    openRegistry: () => ({ get: (id: string) => ({ id, binary: id, agent: {} }) as any }),
+    createAdapter: () => ({ dispatchAgent: critic, dispatch: vi.fn(), isAvailable: async () => true, getVersion: async () => null }),
+    rankCritics: (_registry, ids) => ids.map(engineId => ({ engineId })),
+    contextSpine: async () => '',
+    captureAuthority: () => () => { if (!current) throw new Error('fixture generation retired'); },
+  });
+  const record = vi.fn(async () => 'fixture');
+  const services = withConquerHost({ conquer, receipts: { record }, logger: { debug: vi.fn() },
+    engines: { listActive: async () => ['builder', 'critic'], dispatch: async (_id, _prompt, context) => {
+      candidate = context.cwd;
+      writeFileSync(join(candidate, 'feature.txt'), 'implemented\n');
+      if (phase === 'builder') current = false;
+      return { exitCode: 0, stdout: 'CONQUER_DONE: feature works', stderr: '', timedOut: false };
+    } },
+  } as unknown as ModServices);
+  const finish = vi.spyOn(services.runs!, 'finish');
+  await expect(runConquerTaskImpl({ task: 'implement feature', gate: 'true', builder: 'builder', maxTurns: '1' },
+    { invocationId: 'retired-host', cwd, platform: 'darwin-arm64', signal: new AbortController().signal, config: {} }, services))
+    .rejects.toThrow('fixture generation retired');
+  expect(critic).toHaveBeenCalledTimes(phase === 'builder' ? 0 : 1);
+  expect(record.mock.calls.some(([mode]) => mode === 'conquer')).toBe(false);
+  expect(finish).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ ok: false }), expect.anything());
+  expect(existsSync(candidate)).toBe(false);
+  expect(existsSync(join(cwd, 'retired-effect.txt'))).toBe(false);
+});
+
+it.each(['artifact', 'finish', 'partial-finish'] as const)('preserves the primary %s error without conflicting finalization', async phase => {
+  const cwd = repo();
+  const services = withConquerHost({ logger: { debug: vi.fn() }, receipts: { record: vi.fn(async () => 'fixture') },
+    engines: { listActive: async () => ['builder'], dispatch: async (_id, _prompt, context) => {
+      writeFileSync(join(context.cwd, 'feature.txt'), 'implemented\n');
+      return { exitCode: 0, stdout: 'CONQUER_DONE: feature works', stderr: '', timedOut: false };
+    } },
+  } as unknown as ModServices);
+  const primary = new Error(`fixture ${phase} failed`);
+  const persisted: boolean[] = [];
+  const finish = vi.spyOn(services.runs!, 'finish').mockImplementation(async (_run, status) => {
+    if (phase === 'partial-finish') persisted.push(status.ok);
+    throw phase === 'artifact' ? new Error('secondary finalization error') : primary;
+  });
+  if (phase === 'artifact') vi.spyOn(services.runs!, 'writeArtifact').mockRejectedValue(primary);
+  await expect(runConquerTaskImpl({ task: 'implement feature', gate: 'true', maxTurns: '1' },
+    { invocationId: 'finalization-failure', cwd, platform: 'darwin-arm64', signal: new AbortController().signal, config: {} }, services))
+    .rejects.toBe(primary);
+  expect(finish).toHaveBeenCalledTimes(1);
+  if (phase === 'partial-finish') expect(persisted).toEqual([true]);
+});
+
+it.each([false, true])('runs and records the real counterexample command (initially broken=%s)', async initiallyBroken => {
+  const cwd = repo();
+  const critic = vi.fn(async (options: { cwd: string; engine: { id: string } }) => {
+    expect(existsSync(join(options.cwd, 'feature.txt'))).toBe(true);
+    return { exitCode: 0, stdout: 'COUNTEREXAMPLE: grep -qx correct feature.txt\nOBSERVED: feature is wrong\nVERDICT: FLAWED',
+      stderr: '', durationMs: 1, timedOut: false, diff: '', diffLines: 0, filesChanged: 0 };
+  });
+  const conquer = createConquerHostServices({
+    openRegistry: () => ({ get: (id: string) => ({ id, binary: id, agent: {} }) as any }),
+    createAdapter: () => ({ dispatchAgent: critic, dispatch: vi.fn(), isAvailable: async () => true, getVersion: async () => null }),
+    rankCritics: (_registry, ids) => ids.map(engineId => ({ engineId })),
+    contextSpine: async () => '', captureAuthority: () => () => {},
+  });
+  let builds = 0;
+  const dispatch = vi.fn(async (_id, _prompt, context) => {
+    writeFileSync(join(context.cwd, 'feature.txt'), initiallyBroken && builds++ === 0 ? 'wrong\n' : 'correct\n');
+    return { exitCode: 0, stdout: 'CONQUER_DONE: feature is correct', stderr: '', timedOut: false };
+  });
+  const services = withConquerHost({ conquer, logger: { debug: vi.fn() }, receipts: { record: vi.fn(async () => 'fixture') },
+    engines: { listActive: async () => ['builder', 'critic', 'unselected'], dispatch },
+  } as unknown as ModServices);
+  const finish = vi.spyOn(services.runs!, 'finish');
+  const result = await runConquerTaskImpl({ task: 'implement feature', gate: 'true', builder: 'builder', engines: 'critic', maxTurns: '2' },
+    { invocationId: 'real-falsifier', cwd, platform: 'darwin-arm64', signal: new AbortController().signal, config: {} }, services);
+  expect(result.exitCode).toBe(0);
+  const payload = result.result as { outputDir: string; winningPatch: string };
+  const saved = JSON.parse(readFileSync(join(payload.outputDir, 'result.json'), 'utf8'));
+  expect(saved).toEqual(result.result);
+  expect(saved.status).toBe('completed');
+  expect(saved.turns).toHaveLength(initiallyBroken ? 2 : 1);
+  expect(saved.turns[0].completion).toMatchObject({ falsified: initiallyBroken, passed: !initiallyBroken,
+    critic: 'critic', counterexample: 'grep -qx correct feature.txt',
+    verification: { exitCode: initiallyBroken ? 1 : 0, timedOut: false } });
+  expect(saved.turns.at(-1).completion).toMatchObject({ passed: true, falsified: false });
+  expect(critic.mock.calls.map(([options]) => options.engine.id)).toEqual(initiallyBroken ? ['critic', 'critic'] : ['critic']);
+  if (initiallyBroken) expect(dispatch.mock.calls[1][1]).toContain('A falsifier reproduced a failure: `grep -qx correct feature.txt`');
+  expect(readFileSync(join(payload.outputDir, 'result.patch'), 'utf8')).toBe(payload.winningPatch);
+  expect(readdirSync(payload.outputDir).some(name => name.startsWith('sandbox-'))).toBe(false);
+  expect(existsSync(join(cwd, 'feature.txt'))).toBe(false);
+  expect(finish).toHaveBeenCalledExactlyOnceWith(expect.anything(), expect.objectContaining({ ok: true }), expect.anything());
+});
 
 it('cleans allocated worktrees when candidate creation fails', async () => {
   const cwd = repo();
@@ -128,7 +281,10 @@ it('routes ideation to Brainstorm and returns its response, not its JSON envelop
     { invocationId: 'brainstorm-branch', cwd, platform: 'darwin-arm64', signal: new AbortController().signal, config: {} }, services);
   expect(out.exitCode).toBe(0);
   expect(consult).toHaveBeenCalledExactlyOnceWith({ question: 'how do I start?', engines: 'advisor', timeout: '600' },
-    expect.objectContaining({ cwd: dispatch.mock.calls[0][2].cwd }), services);
+    expect.objectContaining({ cwd: dispatch.mock.calls[0][2].cwd }), expect.objectContaining({
+      engines: services.engines, receipts: services.receipts, logger: services.logger,
+      conquer: expect.objectContaining({ contextSpine }),
+    }));
   expect(dispatch.mock.calls[1][1]).toContain('[Cesar consulted brainstorm] Use a streaming reader');
   expect(dispatch.mock.calls[1][1]).not.toContain('{"response"');
   expect(contextSpine).toHaveBeenCalledOnce();
@@ -146,7 +302,7 @@ it.each(['--max-turns -2', '--max-turns 0', '--max-turns invalid', '--max-turns'
     if (method === 'command' && args[0] === 'tui') contribution = args[1] as CommandContribution;
     return () => {};
   } }) as Registrar;
-  await (await createMod(services)).activate(registrar);
+  await (await createMod(withConquerHost(services))).activate(registrar);
   const parse = () => contribution!.parse!(`/conquer task --gate "true" ${option}`);
   expect(parse).toThrow(/Invalid --max-(turns|hours)/);
   expect(dispatch).not.toHaveBeenCalled();
@@ -216,7 +372,7 @@ it.each(['max-turns', 'timeout', 'gate-timeout'])('preserves large typed TUI --%
     if (method === 'command' && args[0] === 'tui') contribution = args[1] as CommandContribution;
     return () => {};
   } }) as Registrar;
-  await (await createMod(services)).activate(registrar);
+  await (await createMod(withConquerHost(services))).activate(registrar);
   const parsed = await contribution!.parse!(`/conquer task --gate "false" --${flag} 1000000000000000000000${flag === 'max-turns' ? '' : ' --max-turns 1'}`);
   const input = JSON.parse(JSON.stringify(parsed));
   assertContributionInput(contribution!.inputSchema, input);
@@ -258,12 +414,12 @@ it.each(['missing-sentinel', 'empty-claim', 'changed-test', 'deleted-test', 'ren
       : scenario === 'missing-sentinel' || scenario === 'empty-claim' ? 'L2:'
       : scenario === 'red-gate' ? 'L0:'
       : scenario === 'no-diff' ? 'No patch'
-      : 'falsifier and oracle-tamper checks not performed';
+      : 'oracle-tamper check not performed';
     if (scenario === 'missing-sentinel') {
       expect(result.result).toMatchObject({ turns: [{ turn: 1, gate: null, done: false, agent: expect.anything() }] });
     } else {
       expect(result.result).toMatchObject({ turns: [expect.objectContaining({
-        completion: { passed: accepted, reason: expect.stringContaining(reason) },
+        completion: expect.objectContaining({ passed: accepted, reason: expect.stringContaining(reason) }),
       })] });
     }
     expect(dispatch).toHaveBeenCalledOnce();
@@ -655,7 +811,7 @@ it.each(['tui', 'argument-only', 'direct', 'canonical-precedence', 'deadline'] a
     if (method === 'command' && args[0] === 'tui') contribution = args[1] as CommandContribution;
     return () => {};
   } }) as Registrar;
-  await (await createMod(services)).activate(registrar);
+  await (await createMod(withConquerHost(services))).activate(registrar);
   const parsed = await contribution!.parse!(`${entry === 'argument-only' ? '' : '/conquer '}build feature --gate false --builder builder --engines advisor-a --max-turns 1 --timeout 7 --gate-timeout 9 --max-hours 0.5`);
   const canonical = JSON.parse(JSON.stringify(parsed));
   assertContributionInput(contribution!.inputSchema, canonical);

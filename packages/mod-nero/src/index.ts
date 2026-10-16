@@ -10,3 +10,4 @@ export { createMod } from './implementation.js';
 export { createMod as default } from './implementation.js';
 export { runNero } from './implementation.js';
 export { parseNeroVerdict } from './verdict.js';
+export { rankCriticCascade } from './critic-cascade.js';

@@ -1,5 +1,5 @@
 import type { EngineAdapter, RatingRecord } from '@kernlang/agon-core';
-import { parseNeroVerdict } from '@kernlang/agon-mod-nero';
+import { parseNeroVerdict, rankCriticCascade } from '@kernlang/agon-mod-nero';
 export { parseNeroVerdict } from '@kernlang/agon-mod-nero';
 
 import { EngineRegistry, getRatings, loadConfig, pickTopRatedEngine, resolveWorkingDir, seedNewEnginesFromRegistry } from '@kernlang/agon-core';
@@ -97,15 +97,8 @@ export function parseNeroConfidence(text: string): number | null {
  * Build Nero's critic cascade, best critic first. Repeatedly picks the top-rated critic (critique -> tribunal -> global -> random) and excludes it from the next pick, so a failed top critic can down-pass to the next-best. Pure (ratings injected) — exported for testing. NOTE: pickTopRatedEngine IGNORES `exclude` if it would empty the pool (resetting to the full list); the `seen` guard below stops the cascade when that reset re-surfaces an already-ranked or author engine, so the author is never reintroduced as a critic.
  */
 export function rankNeroCritics(engineIds: string[], ratings: RatingRecord, opts?: { exclude?:string[] }): Array<{ engineId: string; reason: 'top-rated' | 'random' | 'none'; scope: 'forge' | 'brainstorm' | 'tribunal' | 'critique' | 'global' | null }> {
-  const seen = new Set<string>(opts?.exclude ?? []);
-  const ranked: Array<{ engineId: string; reason: 'top-rated' | 'random' | 'none'; scope: 'forge' | 'brainstorm' | 'tribunal' | 'critique' | 'global' | null }> = [];
-  for (let i = 0; i < engineIds.length; i++) {
-    const picked = pickTopRatedEngine(engineIds, ratings, { modes: ['critique', 'tribunal'], exclude: [...seen] });
-    if (!picked.engineId || seen.has(picked.engineId)) break; // pool reset re-surfaced a seen/author engine -> exhausted
-    ranked.push(picked);
-    seen.add(picked.engineId);
-  }
-  return ranked;
+  return rankCriticCascade(engineIds, exclude =>
+    pickTopRatedEngine(engineIds, ratings, { modes: ['critique', 'tribunal'], exclude }), opts?.exclude);
 }
 
 /**

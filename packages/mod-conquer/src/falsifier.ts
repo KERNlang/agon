@@ -18,6 +18,7 @@ export interface FalsifierOptions {
 
 /** The host supplies catalog and ranking access, not verification policy. */
 export interface FalsifierEffects {
+  assertCurrent?(): void;
   rankCritics(engineIds: string[]): readonly { engineId: string }[];
   getEngine(engineId: string): EngineDefinition;
   adapter: Pick<EngineAdapter, 'dispatchAgent'>;
@@ -205,6 +206,7 @@ export async function runDoneFalsifier(opts: FalsifierOptions, effects: Falsifie
     // re-run gets its OWN bounded timeout (opts.timeout is SECONDS; spawn wants ms),
     // capped at 5 min — separate from the full critic-dispatch budget.
     if (opts.signal?.aborted) return { falsified: false, counterexample: parsed.counterexample, observed: parsed.observed, attackText, critic, advisoryOnly: false, note: 'aborted before mechanical verification — not blocking' };
+    effects.assertCurrent?.();
     const rerunTimeoutMs = Math.min(Math.max(opts.timeout, 1), 300) * 1000;
     const rerun = await sandbox.exec(parsed.counterexample, sandboxDir, rerunTimeoutMs, opts.signal);
     if (opts.signal?.aborted) return advisory({ ...evidence(), verification: rerun, note: 'aborted during mechanical verification — not blocking' });
@@ -256,4 +258,3 @@ export async function runDoneOracle(opts: DoneOracleOptions, effects: FalsifierE
   const decision = evaluateDoneEvidence({ ...opts, neroFalsified: falsifier.falsified });
   return { ...falsifier, ...decision };
 }
-

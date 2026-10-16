@@ -6,6 +6,8 @@ import { EngineRegistry, buildKernContextSpine, createRunDir, eventLogFlush, get
 import { createCliAdapter } from '@kernlang/agon-adapter-cli';
 import { createForgeHostServices } from '@kernlang/agon-core';
 import { createBrainstormHostServices } from '@kernlang/agon-mod-brainstorm';
+import { createConquerHostServices } from '@kernlang/agon-mod-conquer';
+import { rankCriticCascade } from '@kernlang/agon-mod-nero';
 import { glicko } from '@kernlang/agon-mod-ratings';
 import { EngineRegistry as CatalogEngineRegistry } from '@kernlang/agon-support-engine-catalog';
 import { classifyTask } from '@kernlang/agon-support-dedup';
@@ -102,9 +104,23 @@ export function decorateCliFirstPartyServices(manifest: ModManifest, base: ModSe
   } : undefined;
   return Object.freeze({ ...base, runs, ...(browser ? { browser } : {}), ...(workspace ? { workspace } : {}),
     ...(brainstorm ? { brainstorm } : {}),
-    ...(manifest.id === 'agon.conquer' ? { conquer: {
-      contextSpine: (context: Parameters<ModServices['engines']['dispatch']>[2]) => buildKernContextSpine(context.cwd),
-    } } : {}),
+    ...(manifest.id === 'agon.conquer' ? { conquer: createConquerHostServices({
+      openRegistry: () => {
+        const registry = new EngineRegistry(); registry.load(resolveBuiltinEnginesDir()); return registry;
+      },
+      createAdapter: createCliAdapter,
+      contextSpine: context => buildKernContextSpine(context.cwd),
+      rankCritics: (registry, ids) => {
+        glicko.seedNewEnginesFromRegistry(registry);
+        const ratings = glicko.getRatings();
+        return rankCriticCascade(ids, exclude =>
+          glicko.pickTopRatedEngine(ids, ratings, { modes: ['critique', 'tribunal'], exclude }));
+      },
+      captureAuthority: () => {
+        const assertCurrent = captureProcessSurfaceAuthority();
+        return () => { assertCurrent(); assertProcessSurfaceAvailable('cli', 'conquer'); };
+      },
+    }) } : {}),
     ...(manifest.id === 'agon.ratings' ? { ratings: {
       protectedEngineIds(context: Parameters<ModServices['engines']['dispatch']>[2]): readonly string[] {
         const registry = new EngineRegistry(); registry.load(resolveBuiltinEnginesDir());

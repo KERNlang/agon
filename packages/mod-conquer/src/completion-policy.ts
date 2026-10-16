@@ -1,4 +1,4 @@
-import { isTestFile, parseChangedLines, newFilesInDiff } from '@kernlang/agon-support-worktree';
+import { isTestFile, parsePatch, newFilesInDiff } from '@kernlang/agon-support-worktree';
 
 export interface DoneOracleInput {
   gateOk: boolean;
@@ -24,9 +24,9 @@ export interface DoneEvidenceInput extends Omit<DoneOracleInput, 'weakenedTests'
 
 /** Reject changes to existing tests before accepting a completion claim. */
 export function evaluateDoneEvidence(input: DoneEvidenceInput): { passed: boolean; reason: string } {
-  const changed = parseChangedLines(input.diff);
+  const changed = parsePatch(input.diff);
   const newSet = new Set(newFilesInDiff(input.diff));
-  const weakenedTests = Object.keys(changed).some(file => isTestFile(file) && !newSet.has(file));
+  const weakenedTests = changed.some(file => isTestFile(file.path) && !newSet.has(file.path));
   return doneOracleDecision({ ...input, weakenedTests });
 }
 

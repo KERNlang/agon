@@ -1,3 +1,6 @@
+import { decodeGitPath } from './git-path.js';
+import { parsePatch } from './patch-parser.js';
+
 /**
  * Heuristic: a path is a test if it lives under a tests/ or __tests__ dir, or carries a .test/.spec suffix. Used to split WITNESS targets (tests) from MUTATION targets (source).
  */
@@ -15,8 +18,8 @@ export function parseChangedLines(diff: string): Record<string, number[]> {
   let newLine = 0;
   for (const raw of diff.split('\n')) {
     if (raw.startsWith('+++ ')) {
-      const p = raw.slice(4).trim().replace(/\t.*$/, '');
-      file = p === '/dev/null' ? '' : p.replace(/^b\//, '').replace(/^"|"$/g, '');
+      const p = decodeGitPath(raw.slice(4).replace(/\t.*$/, ''));
+      file = p === '/dev/null' ? '' : p.replace(/^b\//, '');
       continue;
     }
     if (raw.startsWith('--- ')) continue;
@@ -45,16 +48,22 @@ export function parseChangedLines(diff: string): Record<string, number[]> {
  * Files ADDED in this diff (old side is /dev/null). These are the candidate new tests WITNESS must prove fail-on-base.
  */
 export function newFilesInDiff(diff: string): string[] {
-  const files: string[] = [];
+  const files = new Set<string>();
+  // Empty and binary additions can have only file metadata, without hunk headers.
+  for (const block of diff.split(/(?=^diff --git )/m)) {
+    if (!block.startsWith('diff --git ') || !/^new file mode /m.test(block)) continue;
+    const file = parsePatch(block)[0];
+    if (file) files.add(file.path);
+  }
   const lines = diff.split('\n');
   for (let i = 0; i < lines.length; i++) {
     if (lines[i].startsWith('--- ') && lines[i].slice(4).trim().replace(/\t.*$/, '') === '/dev/null') {
       const next = lines[i + 1] ?? '';
       if (next.startsWith('+++ ')) {
-        const p = next.slice(4).trim().replace(/\t.*$/, '');
-        if (p !== '/dev/null') files.push(p.replace(/^b\//, '').replace(/^"|"$/g, ''));
+        const p = decodeGitPath(next.slice(4).replace(/\t.*$/, ''));
+        if (p !== '/dev/null') files.add(p.replace(/^b\//, ''));
       }
     }
   }
-  return files;
+  return [...files];
 }

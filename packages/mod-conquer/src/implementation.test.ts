@@ -7,6 +7,7 @@ import * as council from '@kernlang/agon-mod-council';
 import * as worktrees from '@kernlang/agon-support-worktree';
 import { runAgentTask } from '@kernlang/agon-mod-agent';
 import { afterEach } from 'vitest';
+import { unlinkSync } from 'node:fs';
 afterEach(() => vi.restoreAllMocks());
 
 it.each(['--max-turns -2', '--max-turns 0', '--max-turns invalid', '--max-turns', '--max-hours -0.5', '--max-hours invalid', '--max-hours', '--max-hours Infinity', '--max-turns Infinity', '--max-hours --max-turns 2 3', '--max-hours --builder builder 3'])('rejects TUI budget %s before execution', async option => {
@@ -98,7 +99,7 @@ it.each(['max-turns', 'timeout', 'gate-timeout'])('preserves large typed TUI --%
   if (flag === 'gate-timeout') expect(fitness.mock.calls[0][2]).toBe(1e21);
 });
 
-it.each(['missing-sentinel', 'empty-claim', 'changed-test', 'new-test', 'valid-claim', 'red-gate', 'no-diff'] as const)(
+it.each(['missing-sentinel', 'empty-claim', 'changed-test', 'deleted-test', 'emptied-test', 'new-test', 'new-quoted-test', 'new-empty-test', 'valid-claim', 'red-gate', 'no-diff'] as const)(
   'checks completion evidence for %s', async scenario => {
     const cwd = repo();
     writeFileSync(join(cwd, 'guard.test.ts'), 'throw new Error("must implement feature");\n');
@@ -106,7 +107,11 @@ it.each(['missing-sentinel', 'empty-claim', 'changed-test', 'new-test', 'valid-c
     execFileSync('git', ['commit', '-m', 'frozen test fixture'], { cwd });
     const dispatch = vi.fn(async (engineId, _prompt, context, _options) => {
       if (scenario === 'changed-test') writeFileSync(join(context.cwd, 'guard.test.ts'), '// skipped\n');
+      else if (scenario === 'deleted-test') unlinkSync(join(context.cwd, 'guard.test.ts'));
+      else if (scenario === 'emptied-test') writeFileSync(join(context.cwd, 'guard.test.ts'), '');
       else if (scenario === 'new-test') writeFileSync(join(context.cwd, 'new.test.ts'), '// new coverage\n');
+      else if (scenario === 'new-quoted-test') writeFileSync(join(context.cwd, 'new\tquoted.test.ts'), '// new coverage\n');
+      else if (scenario === 'new-empty-test') writeFileSync(join(context.cwd, 'new.test.ts'), '');
       else if (scenario !== 'no-diff') writeFileSync(join(context.cwd, 'feature.txt'), 'implemented\n');
       return { engineId, exitCode: 0,
         stdout: scenario === 'missing-sentinel' ? 'still working' : scenario === 'empty-claim' ? 'CONQUER_DONE' : 'CONQUER_DONE: feature works',
@@ -117,10 +122,10 @@ it.each(['missing-sentinel', 'empty-claim', 'changed-test', 'new-test', 'valid-c
     const result = await runConquerTask({ task: 'implement feature without changing existing tests',
       gate: scenario === 'red-gate' ? 'false' : 'true', builder: 'builder', maxTurns: '1' },
     { invocationId: 'completion-evidence', cwd, platform: 'darwin-arm64', signal: new AbortController().signal, config: {} }, services);
-    const accepted = scenario === 'new-test' || scenario === 'valid-claim';
+    const accepted = ['new-test', 'new-quoted-test', 'new-empty-test', 'valid-claim'].includes(scenario);
     expect(result).toMatchObject({ exitCode: accepted ? 0 : 1,
       result: { status: accepted ? 'completed' : 'turn_budget_exceeded' } });
-    const reason = scenario === 'changed-test' ? 'L1:'
+    const reason = ['changed-test', 'deleted-test', 'emptied-test'].includes(scenario) ? 'L1:'
       : scenario === 'missing-sentinel' || scenario === 'empty-claim' ? 'L2:'
       : scenario === 'red-gate' ? 'L0:'
       : scenario === 'no-diff' ? 'No patch'

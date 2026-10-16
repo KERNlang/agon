@@ -68,6 +68,23 @@ describe('parseChangedLines', () => {
 });
 
 describe('newFilesInDiff', () => {
+  it('uses the same decoded paths for new files and added lines', () => {
+    const diff = ['diff --git "a/tests/a\\tb.ts" "b/tests/a\\tb.ts"',
+      'new file mode 100644', '--- /dev/null', '+++ "b/tests/a\\tb.ts"',
+      '@@ -0,0 +1 @@', '+test'].join('\n');
+    expect(newFilesInDiff(diff)).toEqual(['tests/a\tb.ts']);
+    expect(parseChangedLines(diff)).toEqual({ ['tests/a\tb.ts']: [1] });
+  });
+
+  it('includes empty and binary additions without old/new hunk headers', () => {
+    const diff = ['diff --git a/tests/empty.ts b/tests/empty.ts', 'new file mode 100644',
+      'index 0000000..e69de29', 'diff --git a/tests/data.bin b/tests/data.bin',
+      'new file mode 100644', 'index 0000000..1234567',
+      'Binary files /dev/null and b/tests/data.bin differ'].join('\n');
+    expect(newFilesInDiff(diff)).toEqual(['tests/empty.ts', 'tests/data.bin']);
+    expect(parseChangedLines(diff)).toEqual({});
+  });
+
   it('returns only files whose old side is /dev/null', () => {
     const diff = [
       '--- a/edited.ts',

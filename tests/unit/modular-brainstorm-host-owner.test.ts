@@ -1,4 +1,7 @@
 import { expect, it, vi } from 'vitest';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { cleanupTestAgonHome, setupTestAgonHome } from '../helpers/agon-home.js';
 import type { InvocationContext } from '@kernlang/agon-mod-api';
 import type { DispatchOptions, EngineAdapter, EngineDefinition } from '@kernlang/agon-support-engine-runtime';
 import * as panel from '@kernlang/agon-support-panel';
@@ -28,6 +31,40 @@ function fixture() {
     outputDir: '/output', signal: new AbortController().signal };
   return { engine, registry, dispatch, adapter, effects, context, options, controller };
 }
+
+it.each(['physical', 'compatibility'] as const)('uses invocation-scoped kernel settings for real preflight through the %s host', async path => {
+  const home = setupTestAgonHome('brainstorm-config-boundary');
+  vi.stubEnv('AGON_FORCE_HEALTH_PROBE', '1');
+  vi.stubEnv('AGON_DISABLE_FORGE_HEALTH_CHECK', '');
+  try {
+    const globalOnly = join(home, 'global-only');
+    const project = join(home, 'project');
+    const privateProject = join(home, 'private-project');
+    for (const directory of [globalOnly, project, privateProject]) mkdirSync(directory);
+    const files = [
+      [join(home, 'config.json'), '{"forgeHealthCheckApiTimeoutSec":41,"forgeMaxParallelApi":1}'],
+      [join(project, '.agon.json'), '{"forgeHealthCheckApiTimeoutSec":52}'],
+      [join(privateProject, '.agon.json'), '{"forgeHealthCheckApiTimeoutSec":63}'],
+      [join(privateProject, '.agon.local.json'), '{"forgeHealthCheckApiTimeoutSec":74}'],
+    ] as const;
+    for (const [file, bytes] of files) writeFileSync(file, bytes);
+    const { loadConfig } = await import('../../packages/core/src/signals/config.js');
+    const f = fixture();
+    f.engine.api = { baseUrl: 'https://example.invalid/v1', model: 'fixture', apiKeyEnv: 'FIXTURE_UNUSED' };
+    const host = path === 'physical'
+      ? createBrainstormHostServices({ ...f.effects, loadConfig })
+      : createCoreHost(() => f.registry as never, () => f.adapter);
+    for (const cwd of [globalOnly, project, privateProject]) {
+      const services = await host.open({ ...f.context, cwd });
+      expect(await services.preflight(f.options)).toEqual({ healthy: ['fixture'], skipped: [] });
+    }
+    expect(f.dispatch.mock.calls.map(([options]) => options.timeout)).toEqual([41, 52, 74]);
+    for (const [file, bytes] of files) expect(readFileSync(file, 'utf8')).toBe(bytes);
+  } finally {
+    cleanupTestAgonHome(home);
+    vi.unstubAllEnvs();
+  }
+});
 
 it('rejects a cancelled Brainstorm host before opening effects', () => {
   const f = fixture();

@@ -235,7 +235,7 @@
         "range": "^19.2.0"
       }
     ],
-    "packedBytes": 1354606,
+    "packedBytes": 1354603,
     "unpackedBytes": 6098692,
     "fileCount": 107,
     "files": [
@@ -668,10 +668,10 @@
         "size": 126374
       }
     ],
-    "payloadHash": "sha256:8c82a5e5eb3d707ccebcd1485456d66a3f9849fb6a9a5ec9092e74b8db8a73ff",
-    "integrity": "sha512-3cF+zSEEmv2vMyhkgdfNrxdeKL6J78bzXuNAP7km3xkavXhAL5un/Ng5ydTGmUfh8mlF+B9Zb2BpHZcZ+FNCNQ==",
-    "shasum": "e7e999ac7c5b9100c38686b1127af34c95338cf6",
-    "tarballHash": "sha256:2f3aea4e05cd819f3eb8d79c21b30927f13dd2df90ab5ffb9ee4a05f0c102495",
+    "payloadHash": "sha256:4f24bd3c37b278c0033c158914b2a57f9cdd46c959cfe641fe3df6c8c5cb45e4",
+    "integrity": "sha512-GCngQG/gPfUNyV8kKdoZ9MGB3Lrw8g9nt3/UjbAGAQ5ikP4HIu/xWFUoqJf0JHZnYz65U8ZlW9bKMZ8NB7RS9w==",
+    "shasum": "2521d7ed8feddec04f76817bafddd9a5fd6f522a",
+    "tarballHash": "sha256:ad3cb65e17845daaf7561656fba7f5558b37c1c6946b512bf2d34cc0b0d023b7",
     "packageJsonHash": "sha256:55b7df375710144ec9ebf42dd9cbf38f9ab48d154f03f55e551ea8281af64a51"
   },
   "packages": [
@@ -686,7 +686,7 @@
         "@kernlang/agon-mod-api"
       ],
       "peerDependencies": {},
-      "packedBytes": 192094,
+      "packedBytes": 192090,
       "unpackedBytes": 1579011,
       "fileCount": 77,
       "files": [
@@ -999,10 +999,10 @@
           "size": 548
         }
       ],
-      "payloadHash": "sha256:d07d624dd689d6476cfa432c387156d0f1f424cbb1c14903c29dbdde7486231e",
-      "integrity": "sha512-DM9FBeU2KQ6TGJBNPvUFjrLVE6XZvbh363oX13Ljn9n8yh61DVjgAfBrcQMwyYB1GMPPJ47X43bKwtYoJ3xosA==",
-      "shasum": "a04f0716642005b0b5499b360368030c303c2eee",
-      "tarballHash": "sha256:4d55612193fe9c07d4c0fae31ce5bffe44f58056b4e83f318d09143c20c5f2b5",
+      "payloadHash": "sha256:49eb44a702d0ae186cdb225adcd0edd59f2ac4590940c9c92c36658b4d236937",
+      "integrity": "sha512-ETyiV2r6iuyAMu16pXizg40qeJsfvBIUuX3JEc/eJRiDlSzTVtOSOfUthfBgJD0J2V8/ykMM89sdPJl4HOHI3w==",
+      "shasum": "20d75c96177717f4e0323c2ecc076f819f6e41e4",
+      "tarballHash": "sha256:c2c84574ffa26e2ccc30d3e92687644cab9dd274368182c952a1ad36ba427139",
       "packageJsonHash": "sha256:583381b00786c2729a1e32eb2d42f6324cb58df263378f0d0ad57a1401970f17",
       "manifestHash": "sha256:583381b00786c2729a1e32eb2d42f6324cb58df263378f0d0ad57a1401970f17"
     },

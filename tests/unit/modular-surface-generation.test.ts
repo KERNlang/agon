@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 import type { CommandContribution, InvocationContext } from '../../packages/mod-api/src/index.js';
 import {
@@ -40,6 +42,26 @@ function generation(id: string, disabledOwnerIds: readonly string[] = []): Surfa
 }
 
 describe('generated surface generation', () => {
+  it.each(['none', 'evidence', 'generated'])('binds the checked-in catalog to current owner metadata (ambient override=%s)', (override) => {
+    if (override === 'evidence') {
+      vi.stubEnv('AGON_SPEC_EVIDENCE_DIR', '/nonexistent/agon-test-evidence');
+    } else if (override === 'generated') {
+      vi.stubEnv('AGON_SPEC_GENERATED_DIR', '/nonexistent/agon-test-generated');
+    }
+    try {
+      expect(() => execFileSync(process.execPath, ['scripts/spec/generate-modular-surface-catalog.mjs', '--check'], {
+        cwd: fileURLToPath(new URL('../../', import.meta.url)), encoding: 'utf8', stdio: 'pipe',
+        env: {
+          ...process.env,
+          AGON_SPEC_EVIDENCE_DIR: fileURLToPath(new URL('../../docs/specs/evidence', import.meta.url)),
+          AGON_SPEC_GENERATED_DIR: fileURLToPath(new URL('../../packages/mod-kernel/src/generated', import.meta.url)),
+        },
+      })).not.toThrow();
+    } finally {
+      if (override !== 'none') vi.unstubAllEnvs();
+    }
+  });
+
   it('builds one immutable owner-tagged generation for all five surfaces', () => {
     const subject = generation('generated:test');
     expect(subject.catalog()).toHaveLength(450);

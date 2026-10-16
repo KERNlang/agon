@@ -393,6 +393,16 @@ export interface ManagedRetentionReport {
   /** Owned metadata and staging only. These entries are not collection grants. */
   readonly storage: readonly { readonly path: string; readonly logicalBytes: number }[];
   readonly totalStorageLogicalBytes: number;
+  /** Disjoint host-root totals. External caches and filesystem allocation are not measured. */
+  readonly accounting: {
+    readonly scope: 'host-root';
+    readonly unit: 'logical-file-bytes';
+    readonly excludedPaths: readonly ['locks'];
+    /** Evidence and other retained data. Listing an entry does not authorize removal. */
+    readonly other: readonly { readonly path: string; readonly logicalBytes: number }[];
+    readonly otherLogicalBytes: number;
+    readonly totalLogicalBytes: number;
+  };
   readonly activeLeases: readonly GenerationLease[];
   readonly artifactLeases: readonly ArtifactGenerationLease[];
 }
@@ -668,6 +678,32 @@ export class ManagedRetentionInspector {
           }, { cause: error });
         }
       }
+      const other: ManagedRetentionReport['accounting']['other'][number][] = [];
+      let otherLogicalBytes = 0;
+      let totalLogicalBytes = totalStorageLogicalBytes + totalInstallationLogicalBytes + totalUnreferencedInstallationLogicalBytes;
+      try {
+        const measured = new Set(['locks', 'installations', ...storage.map(entry => entry.path)]);
+        for (const entry of [...await host.hostIo.readdir(host.root, { withFileTypes: true })].sort((a, b) => a.name.localeCompare(b.name))) {
+          if (measured.has(entry.name)) continue;
+          const path = join(host.root, entry.name);
+          await assertNoSymlinkComponents(host.root, entry.name);
+          const info = await host.hostIo.stat(path);
+          const logicalBytes = info.isDirectory() ? await directoryLogicalBytes(host, path) : info.isFile() ? info.size : NaN;
+          if (!Number.isSafeInteger(logicalBytes) || logicalBytes < 0
+            || !Number.isSafeInteger(otherLogicalBytes + logicalBytes)) throw new TypeError('retained evidence size is invalid');
+          await assertNoSymlinkComponents(host.root, entry.name);
+          otherLogicalBytes += logicalBytes;
+          other.push(Object.freeze({ path: entry.name, logicalBytes }));
+        }
+        totalLogicalBytes += otherLogicalBytes;
+        if (!Number.isSafeInteger(totalLogicalBytes)) throw new TypeError('host-root logical bytes exceed safe integer bounds');
+      } catch (error) {
+        throw new DurableHostError('MOD_GENERATION_CORRUPT', 'cannot measure retained evidence and other host data', {
+          cause: error instanceof Error ? error.message : String(error),
+        }, { cause: error });
+      }
+      const accounting: ManagedRetentionReport['accounting'] = Object.freeze({ scope: 'host-root', unit: 'logical-file-bytes',
+        excludedPaths: Object.freeze(['locks'] as const), other: Object.freeze(other), otherLogicalBytes, totalLogicalBytes });
       let rollbackWindow: ManagedRetentionReport['rollbackWindow'];
       if (this.#window) {
         try {
@@ -681,7 +717,7 @@ export class ManagedRetentionInspector {
       report = Object.freeze({ schemaVersion: 1, selectedGeneration: pointer?.generation ?? null,
         ...(rollbackWindow ? { rollbackWindow } : {}),
         generations: Object.freeze(generations),
-        storage: Object.freeze(storage), totalStorageLogicalBytes,
+        storage: Object.freeze(storage), totalStorageLogicalBytes, accounting,
         installations: Object.freeze(installations), totalInstallationLogicalBytes,
         unreferencedInstallations: Object.freeze(unreferencedInstallations), totalUnreferencedInstallationLogicalBytes,
         activeLeases: inventory.activeLeases,

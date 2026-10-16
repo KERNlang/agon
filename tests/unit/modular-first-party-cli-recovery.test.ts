@@ -319,6 +319,12 @@ describe('first-party safe-mode CLI recovery', () => {
       unreferencedInstallations: [{ installationId: unreferencedId, logicalBytes: 12 }],
       totalUnreferencedInstallationLogicalBytes: 12 });
     expect(JSON.parse(result.stdout).totalStorageLogicalBytes).toBeGreaterThan(7);
+    const reported = JSON.parse(result.stdout);
+    expect(reported.accounting).toMatchObject({ scope: 'host-root', unit: 'logical-file-bytes', excludedPaths: ['locks'] });
+    expect(reported.accounting.otherLogicalBytes).toBeGreaterThan(0);
+    expect(reported.accounting.totalLogicalBytes).toBe(reported.totalStorageLogicalBytes
+      + reported.totalInstallationLogicalBytes + reported.totalUnreferencedInstallationLogicalBytes + reported.accounting.otherLogicalBytes);
+    expect(reported.accounting.other).toContainEqual({ path: 'current-generation.json', logicalBytes: before.byteLength });
     expect(await readFile(join(host.root, 'purge-staging', 'pending'), 'utf8')).toBe('pending');
     expect(await readFile(join(host.root, 'installations', unreferencedId, 'payload'), 'utf8')).toBe('unreferenced');
     expect(await readFile(host.paths.current)).toEqual(before);

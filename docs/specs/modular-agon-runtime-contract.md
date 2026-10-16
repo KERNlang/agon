@@ -500,9 +500,28 @@ a missing declared artifact is corruption, not an unmanaged generation.
 Complete lease-aware retention remains unfinished. The explicit purge CLI is
 described under Approved purge replay below.
 
+The retention report's `accounting` block measures regular-file logical bytes
+under the managed host root. It excludes `locks` coordination files explicitly.
+Existing storage totals include generation metadata and staging. Installation
+totals count shared payloads once. `other` lists all remaining root entries,
+including receipts, journals, leases, saved approvals and unknown retained data.
+The total adds these disjoint groups; it does not add per-generation sizes again.
+Listed data is not approved for deletion. A metadata or directory-enumeration
+failure, symlink, special file or unsafe size fails rather than implying zero.
+Counting does not read file contents; content-read permission is not required.
+Lifecycle-owned groups are protected by the two writer fences. Auxiliary files
+such as saved approval plans can be written without those fences. Their sizes
+are observations during the scan, not one atomic filesystem snapshot. Concurrent
+auxiliary writes can change usage before or after the report. Collection must
+revalidate its exact targets and report any remaining quota shortfall.
+These are measured file sizes, not allocated disk blocks or guaranteed reclaimed
+space. Retirement preserves evidence that can outweigh the removed metadata.
+External caches are outside this named scope. Cache collection and quota-driven
+selection remain unfinished; this accounting block alone does not satisfy them.
+
 `agon mod retention` reports retained installation IDs, every generation that
 references each installation, and unreleased process leases. It acquires the
-lifecycle then generation writer fences to keep the report consistent. It does
+lifecycle then generation writer fences to keep lifecycle references consistent. It does
 not delete data, expire leases, or authorize collection. A lease for a missing
 generation blocks reference inspection and purge. Corrupt leases and generation
 references fail closed. Released leases are omitted. Inspection does not

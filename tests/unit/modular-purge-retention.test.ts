@@ -212,8 +212,15 @@ describe('managed purge generation retention', () => {
     const pointer = await readFile(host.paths.current, 'utf8');
     const receiptPath = join(host.paths.receipts, `${first.journal.transactionId}.committed.json`);
     const receipt = JSON.parse(await readFile(receiptPath, 'utf8'));
+    const beforeCollection = await new ManagedRetentionInspector(host).inspect();
     expect(await applyManagedGenerationCollection(host, plan, plan.planHash)).toEqual([1]);
     await expect(stat(host.generationPath(1))).rejects.toMatchObject({ code: 'ENOENT' });
+    const afterCollection = await new ManagedRetentionInspector(host).inspect();
+    const evidenceBytes = (await readFile(join(root, 'purge-transactions', `${plan.transactionId}.json`))).byteLength;
+    const removedBytes = beforeCollection.generations.find(entry => entry.generation === 1)!.logicalBytes;
+    expect(afterCollection.accounting.other).toContainEqual({ path: 'purge-transactions', logicalBytes: evidenceBytes });
+    expect(afterCollection.accounting.totalLogicalBytes)
+      .toBe(beforeCollection.accounting.totalLogicalBytes - removedBytes + evidenceBytes);
     expect(await readFile(host.paths.current, 'utf8')).toBe(pointer);
     await unlink(receiptPath);
     expect(await host.boot()).toMatchObject({ mode: 'normal', pointer: { generation: 2 }, recoveredTransactions: [first.journal.transactionId] });
@@ -551,6 +558,93 @@ describe('managed purge generation retention', () => {
     }
   });
 
+  it('counts retained evidence and unknown host data without double counting storage', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-retention-evidence-bytes-'));
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
+    await host.initialize();
+    const files = [
+      ['receipts/example.json', 'receipt'],
+      ['pending-authority/example.json', 'approval'],
+      ['unknown-state/keep.txt', 'keep'],
+      ['operator-note.txt', 'note'],
+      ['staging/payload', 'stage'],
+    ] as const;
+    await mkdir(join(root, 'pending-authority'));
+    await mkdir(join(root, 'unknown-state'));
+    for (const [path, bytes] of files) await writeFile(join(root, path), bytes);
+    const metadataOnly = new DurableModHost(root, { kernelVersion: '1.0.0', io: { ...nodeHostIo,
+      readFile: async path => {
+        if (files.some(([name]) => path === join(root, name))) throw new Error('content reads denied');
+        return nodeHostIo.readFile(path);
+      },
+    } });
+    const report = await new ManagedRetentionInspector(metadataOnly).inspect();
+    expect(report).toMatchObject({ accounting: {
+      scope: 'host-root', excludedPaths: ['locks'], unit: 'logical-file-bytes',
+      totalLogicalBytes: 28, otherLogicalBytes: 23,
+      other: expect.arrayContaining([
+        { path: 'receipts', logicalBytes: 7 },
+        { path: 'pending-authority', logicalBytes: 8 },
+        { path: 'unknown-state', logicalBytes: 4 },
+        { path: 'operator-note.txt', logicalBytes: 4 },
+      ]),
+    }, totalStorageLogicalBytes: 5 });
+    for (const [path, bytes] of files) expect(await readFile(join(root, path), 'utf8')).toBe(bytes);
+  });
+
+  it.each(['linked', 'unreadable', 'disappeared', 'overflow', 'special'] as const)
+    ('refuses unsafe retained evidence accounting: %s', async defect => {
+      const root = await mkdtemp(join(tmpdir(), 'agon-retention-evidence-invalid-'));
+      const target = join(root, 'operator-note');
+      await writeFile(join(root, 'outside'), 'retained');
+      if (defect === 'linked') await symlink(join(root, 'outside'), target);
+      else await writeFile(target, 'retained');
+      const host = new DurableModHost(root, { kernelVersion: '1.0.0', io: { ...nodeHostIo,
+        stat: async path => {
+          if (path !== target) return nodeHostIo.stat(path);
+          if (defect === 'unreadable' || defect === 'disappeared') throw Object.assign(new Error(defect), {
+            code: defect === 'unreadable' ? 'EACCES' : 'ENOENT',
+          });
+          return { size: defect === 'overflow' ? Number.MAX_SAFE_INTEGER + 1 : 0,
+            isFile: () => defect !== 'special', isDirectory: () => false };
+        },
+      } });
+      await expect(new ManagedRetentionInspector(host).inspect()).rejects.toMatchObject({ code: 'MOD_GENERATION_CORRUPT' });
+      expect(await readFile(join(root, 'outside'), 'utf8')).toBe('retained');
+      await expect(stat(host.paths.writerLock)).rejects.toMatchObject({ code: 'ENOENT' });
+      await expect(stat(join(root, 'locks', 'lifecycle-writer.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+    });
+
+  it.each(['other', 'grand-total'] as const)('rejects overflow of individually valid %s sizes', async group => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-retention-aggregate-size-'));
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0', io: { ...nodeHostIo,
+      stat: async path => path.endsWith('/huge')
+        ? { size: Number.MAX_SAFE_INTEGER, isFile: () => true, isDirectory: () => false }
+        : nodeHostIo.stat(path),
+    } });
+    await host.initialize();
+    await writeFile(join(root, group === 'other' ? 'huge' : 'staging/huge'), 'huge');
+    await writeFile(join(root, 'small'), 'x');
+    await expect(new ManagedRetentionInspector(host).inspect()).rejects.toMatchObject({ code: 'MOD_GENERATION_CORRUPT' });
+    expect(await readFile(join(root, 'small'), 'utf8')).toBe('x');
+    await expect(stat(host.paths.writerLock)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it.each(['dangling-link', 'nested-link', 'nested-enumeration'] as const)('refuses unsafe auxiliary trees: %s', async defect => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-retention-auxiliary-tree-'));
+    const nested = join(root, 'unknown-state', 'nested');
+    await mkdir(nested, { recursive: true });
+    if (defect !== 'nested-enumeration') await symlink(join(root, defect === 'dangling-link' ? 'absent' : 'unknown-state'), join(nested, 'link'));
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0', io: { ...nodeHostIo,
+      readdir: async (path, options) => {
+        if (defect === 'nested-enumeration' && path === nested) throw Object.assign(new Error('denied'), { code: 'EACCES' });
+        return nodeHostIo.readdir(path, options);
+      },
+    } });
+    await expect(new ManagedRetentionInspector(host).inspect()).rejects.toMatchObject({ code: 'MOD_GENERATION_CORRUPT' });
+    await expect(stat(host.paths.writerLock)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
   it.each(['linked', 'unreadable', 'disappeared', 'overflow', 'special'] as const)
     ('refuses unsafe owned storage accounting: %s', async defect => {
       const root = await mkdtemp(join(tmpdir(), 'agon-retention-storage-invalid-'));
@@ -706,6 +800,9 @@ describe('managed purge generation retention', () => {
       unreferencedInstallations: [], totalUnreferencedInstallationLogicalBytes: 0,
       storage: ['generations', 'staging', 'installation-staging', 'purge-staging'].map(path => ({ path, logicalBytes: 0 })),
       totalStorageLogicalBytes: 0,
+      accounting: { scope: 'host-root', unit: 'logical-file-bytes', excludedPaths: ['locks'],
+        other: ['leases', 'receipts', 'transactions'].map(path => ({ path, logicalBytes: 0 })),
+        otherLogicalBytes: 0, totalLogicalBytes: 0 },
     });
   });
 
@@ -864,7 +961,18 @@ describe('managed purge generation retention', () => {
     }));
     const generationBytes = generationSizes.reduce((sum, size) => sum + size, 0);
     expect(generationBytes).toBeGreaterThan(0);
+    const other = await Promise.all(['current-generation.json', 'desired-state.json', 'installation-receipts',
+      'installation-transactions', 'installed-index.json', 'leases', 'receipts', 'transactions'].map(async path => {
+      const absolute = join(root, path);
+      const info = await stat(absolute);
+      const sizes = info.isFile() ? [info.size] : await Promise.all((await readdir(absolute)).map(async name =>
+        (await readFile(join(absolute, name))).byteLength));
+      return { path, logicalBytes: sizes.reduce((sum, size) => sum + size, 0) };
+    }));
+    const otherLogicalBytes = other.reduce((sum, entry) => sum + entry.logicalBytes, 0);
     expect(report).toEqual({ schemaVersion: 1, selectedGeneration: second.pointer.generation,
+      accounting: { scope: 'host-root', unit: 'logical-file-bytes', excludedPaths: ['locks'], other, otherLogicalBytes,
+        totalLogicalBytes: generationBytes + logicalBytes + otherLogicalBytes },
       generations: [1, 2].map(generation => ({ generation, installationId: first.installation.installationId,
         committed: true, selected: generation === 2,
         logicalBytes: generationEntries.reduce((sum, path, index) =>

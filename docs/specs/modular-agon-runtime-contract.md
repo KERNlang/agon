@@ -597,8 +597,9 @@ cleanup. If publication never created a record, cleanup removes only its pending
 in-memory entry. Cleanup failure is reported, not treated as durable success.
 Malformed records and missing referenced generations fail inspection and purge.
 Caller owns approval and artifact verification; identity matching is not a sandbox.
-Automatic workflow-artifact attachment, rollback-window policy and collection are
-still unimplemented. No active/global installation is migrated by these APIs.
+Automatic workflow-artifact attachment and persisted rollback-window policy remain
+unimplemented. Explicit generation collection is described below. No active/global
+installation is migrated by these APIs.
 
 Operators use `agon mod retention retain <generation> --owner <id> --artifact <id>
 --hash sha256:<digest>` to preview an artifact reference. `agon mod retention
@@ -609,6 +610,54 @@ hash. Release rejects a changed record. Retrying an approved request does not
 create another reference. These commands never open the artifact ID as a path or
 delete artifact, generation or installation files. `agon mod retention` without
 a subcommand remains the read-only report.
+
+### Explicit generation retirement
+
+`agon mod retention collect --generation <id> --rollback-window-ms <duration>`
+previews removal of explicit expired generations. Repeat `--generation` for a
+batch. There is no default duration or automatic target selection. Preview saves
+an exact plan and prints its approval command. A plan larger than the existing
+256 KiB saved-plan limit fails with instructions to use a smaller batch.
+
+`agon mod retention collect <saved-plan> --approve <hash>` retires only that
+plan's generations. It binds the host root, selected pointer, explicit window,
+generation manifests and terminal receipt evidence. Under lifecycle then generation
+writer fences, apply checks current references, selection and history again.
+Selected generations, active process/artifact leases, unknown timing, unfinished
+selection work and unfinished installations prevent new retirement. Another
+persisted collection plan cannot reserve the same generation.
+
+Retirement uses the existing purge namespaces with a distinct typed journal.
+Ordinary purge cannot target generation paths. The new plan uses schema version3;
+its journal uses version2 and the generation-retention kind. Each target moves
+through pending, staged and removed. Durable intent precedes the quarantine
+rename; both parents are synced before staged publication. Staged is logical
+retirement. Physical deletion is explicit, retryable cleanup. A missing original
+and quarantine before staged is corruption, not successful removal.
+
+Add `--cancel` with the same saved plan and hash to cancel untouched pending
+targets. Already-staged cleanup finishes, but pending originals are not deleted.
+Cancelled targets release their reservation and need a fresh preview for removal.
+Retry never deletes replacement bytes at an original path. Output lists only
+generations actually removed, including prior completed targets in the same plan.
+
+Original selection receipts and journals remain. The retirement journal preserves
+validated terminal evidence so host recovery can repair a lost receipt after
+generation bytes are gone. This includes rollback selections of the same generation.
+Window inspection can use preserved exact predecessor links. Historical evidence
+never makes a generation executable: validation, leases and rollback reject retired
+IDs, including valid old bytes copied back into their original directory. Invalid
+retirement history blocks execution; it does not authorize deletion or repair from
+unverified metadata.
+
+Boot does not start collection or remove quarantine. A rename interrupted before
+its staged marker requires explicit plan replay. If interrupted before rename,
+host recovery verifies original bytes and restores immutable root permissions.
+This does not change existing recovery of an uncommitted installation transaction.
+
+This operation removes generation metadata only. Shared installation payloads,
+cache ordering, quota-driven selection and complete retention acceptance remain
+open. It does not certify the full modular release candidate.
 
 ### Foundation mutation evidence
 

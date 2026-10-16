@@ -30,6 +30,71 @@ async function previewAndApprove(command: any, target: string) {
 }
 
 describe('first-party safe-mode CLI recovery', () => {
+  it('previews, cancels and applies generation collection through the built CLI', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-cli-generation-collection '));
+    const host = new DurableModHost(join(root, 'host'), { kernelVersion: '1.0.0' });
+    const service = new ManagedLifecycleService(host);
+    const desiredState = createFullCompatDesiredState(createFirstPartyModCatalog(), '2026-09-04T00:00:00.000Z');
+    const first = await service.apply(await createManagedLifecyclePlan(host, request([artifact('@test/app')], { desiredState })), installer, verifier);
+    const next = artifact('@test/app', [], { version: '2.0.0', sourceLocator: 'cache:@test/app@2.0.0', contentHash: `sha256:${'2'.repeat(64)}` });
+    await service.apply(await createManagedLifecyclePlan(host, request([next], { desiredState, operation: 'update' })), installer, verifier);
+    const third = artifact('@test/app', [], { version: '3.0.0', sourceLocator: 'cache:@test/app@3.0.0', contentHash: `sha256:${'3'.repeat(64)}` });
+    await service.apply(await createManagedLifecyclePlan(host, request([third], { desiredState, operation: 'update' })), installer, verifier);
+    const payload = join(host.root, 'installations', first.installation.installationId, 'node_modules', '@test/app', 'package.json');
+    const payloadBefore = await readFile(payload);
+    const before = await readFile(host.paths.current);
+    const cli = fileURLToPath(new URL('../../packages/cli/dist/index.js', import.meta.url));
+    const run = (...args: string[]) => spawnSync(process.execPath, [cli, 'mod', 'retention', 'collect', ...args], {
+      env: { ...process.env, HOME: root, AGON_HOME: root, AGON_MODULAR_HOST_ROOT: host.root, AGON_MOD_SAFE_MODE: '1' },
+      cwd: root, encoding: 'utf8', timeout: 10_000,
+    });
+    for (const args of [[], ['--generation', '1'], ['--generation', '3', '--rollback-window-ms', '0'], ['--cancel']]) {
+      expect(run(...args).status).not.toBe(0);
+    }
+    const cancelledPreview = run('--generation', '1', '--rollback-window-ms', '0');
+    expect(cancelledPreview.status, cancelledPreview.stderr).toBe(0);
+    const cancelled = JSON.parse(cancelledPreview.stdout);
+    const cancel = run(cancelled.planPath, '--approve', cancelled.planHash, '--cancel');
+    expect(cancel.status, cancel.stderr).toBe(0);
+    expect(JSON.parse(cancel.stdout)).toMatchObject({ action: 'generation-collection-cancel', removedGenerations: [] });
+    expect(await host.validateGeneration(1)).toMatchObject({ generation: 1 });
+    expect(await readFile(payload)).toEqual(payloadBefore);
+    const result = run('--generation', '1', '--generation', '2', '--rollback-window-ms', '0');
+    expect(result.status, result.stderr).toBe(0);
+    const preview = JSON.parse(result.stdout);
+    expect(preview.warning).toContain('irreversible');
+    expect(run(preview.planPath, '--approve', 'wrong').status).not.toBe(0);
+    for (const action of [[], ['--cancel']]) {
+      for (const flags of [['--generation', '1'], ['--rollback-window-ms', '0']]) {
+        expect(run(preview.planPath, '--approve', preview.planHash, ...action, ...flags).status).not.toBe(0);
+      }
+    }
+    const planBytes = await readFile(preview.planPath);
+    const outside = join(root, 'outside-plan.json');
+    await writeFile(outside, planBytes);
+    expect(run(outside, '--approve', preview.planHash).status).not.toBe(0);
+    const envelope = JSON.parse(planBytes.toString());
+    await writeFile(preview.planPath, JSON.stringify({ ...envelope, kind: 'artifact-retention' }));
+    expect(run(preview.planPath, '--approve', preview.planHash).status).not.toBe(0);
+    await writeFile(preview.planPath, ' '.repeat(256 * 1024 + 1));
+    expect(run(preview.planPath, '--approve', preview.planHash).status).not.toBe(0);
+    await writeFile(preview.planPath, planBytes);
+    expect(await host.validateGeneration(1)).toMatchObject({ generation: 1 });
+    expect(await host.validateGeneration(2)).toMatchObject({ generation: 2 });
+    const lease = await host.leaseGeneration(1, 'job:keep-old-version');
+    expect(run(preview.planPath, '--approve', preview.planHash).status).not.toBe(0);
+    await host.releaseGenerationLease(lease.leaseId);
+    const applied = run(preview.planPath, '--approve', preview.planHash);
+    expect(applied.status, applied.stderr).toBe(0);
+    expect(JSON.parse(applied.stdout).removedGenerations).toEqual([1, 2]);
+    await expect(stat(host.generationPath(1))).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(stat(host.generationPath(2))).rejects.toMatchObject({ code: 'ENOENT' });
+    expect((await stat(join(host.root, 'installations', first.installation.installationId))).isDirectory()).toBe(true);
+    expect(await readFile(host.paths.current)).toEqual(before);
+    expect((await host.boot()).mode).toBe('normal');
+    expect(await readFile(payload)).toEqual(payloadBefore);
+  });
+
   it('reports both retained installations through the built CLI after rollback', async () => {
     const root = await mkdtemp(join(tmpdir(), 'agon-cli-retention-rollback-'));
     const host = new DurableModHost(join(root, 'host'), { kernelVersion: '1.0.0' });

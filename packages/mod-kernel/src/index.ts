@@ -160,7 +160,8 @@ export type {
   NpmCandidateInstallerOptions, SubprocessCandidateVerifierOptions,
 } from './candidate-process.js';
 
-export { applyManagedPurge, ManagedRetentionInspector, previewManagedPurge, recoverManagedLifecycle } from './lifecycle-recovery.js';
+export { applyManagedPurge, applyManagedGenerationCollection, ManagedRetentionInspector, previewManagedPurge, previewManagedGenerationCollection, recoverManagedLifecycle } from './lifecycle-recovery.js';
+export type { ManagedGenerationCollectionPlan } from './generation-retirement.js';
 export type { LifecycleRecoveryOptions, LifecycleRecoveryResult, ManagedPurgePlan, ManagedRetentionReport } from './lifecycle-recovery.js';
 
 export { createSetupActionPlan, executeSetupAction } from './setup-actions.js';

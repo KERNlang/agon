@@ -10,10 +10,10 @@
         "@kernlang/agon-mod-api"
       ],
       "sourceLocator": "@kernlang/agon-kernel@1.0.0",
-      "integrity": "sha512-3LygixvVbKv6Da5pl70JGixc5ekbn2hH6LpmUiobXd4IystqXNAMvUy+6rLQeaxDQRZ3jmHDoOwIlhjh2RfmYA==",
-      "contentHash": "sha256:def114358a5ac4cd0a14e643b22d3debb2c44ca8be0cc98395ca50814399c71f",
+      "integrity": "sha512-ypKy8I/ywwt/R2iNcZmTr77eCLWXgirBysC2FipVZH95ESR6/llmshZaIkJHvcm4K2vahWpldZmzsehVsvzL6w==",
+      "contentHash": "sha256:b13d221dcb05c49d25c712794b48aee38ff0f760e8ba7b39192a9b8ce2667fa3",
       "manifestHash": "sha256:583381b00786c2729a1e32eb2d42f6324cb58df263378f0d0ad57a1401970f17",
-      "payloadHash": "sha256:cf4407b4928880b557af182e3eddff4c2e3c627a0330a6073e48890752acad8a"
+      "payloadHash": "sha256:2a6687c5335e7a08e2019ede34d2f8d24d4f52bb0f98223bfdabf5db238b7db0"
     },
     {
       "id": "@kernlang/agon-mod-api",
@@ -941,8 +941,8 @@
   "launcherFiles": [
     "LICENSE",
     "README.md",
-    "dist/app-IDLRFMSW.js",
-    "dist/app-IDLRFMSW.js.map",
+    "dist/app-Y35HQBIM.js",
+    "dist/app-Y35HQBIM.js.map",
     "dist/attach-GXGTBTP7.js",
     "dist/attach-GXGTBTP7.js.map",
     "dist/browser-host.js",
@@ -1025,8 +1025,8 @@
     "dist/login-PKQLCX2F.js.map",
     "dist/mcp/index.js",
     "dist/mcp/index.js.map",
-    "dist/mod-HXZJBSE2.js",
-    "dist/mod-HXZJBSE2.js.map",
+    "dist/mod-LUW3D4IX.js",
+    "dist/mod-LUW3D4IX.js.map",
     "dist/models-TJNWIVHV.js",
     "dist/models-TJNWIVHV.js.map",
     "dist/onboarding-A64KIMYI.js",
@@ -1262,7 +1262,7 @@
           "@kernlang/agon-mod-api": "1.0.0",
           "semver": "^7.7.4"
         },
-        "integrity": "sha512-3LygixvVbKv6Da5pl70JGixc5ekbn2hH6LpmUiobXd4IystqXNAMvUy+6rLQeaxDQRZ3jmHDoOwIlhjh2RfmYA==",
+        "integrity": "sha512-ypKy8I/ywwt/R2iNcZmTr77eCLWXgirBysC2FipVZH95ESR6/llmshZaIkJHvcm4K2vahWpldZmzsehVsvzL6w==",
         "resolved": "https://registry.npmjs.org/@kernlang/agon-kernel/-/agon-kernel-1.0.0.tgz"
       },
       "node_modules/@kernlang/agon-mod-agent": {

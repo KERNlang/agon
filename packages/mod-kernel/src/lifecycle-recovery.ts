@@ -7,7 +7,8 @@ import { canonicalJson, sha256Canonical } from './lock.js';
 import type { ManagedInstallationRecord } from './managed-lifecycle.js';
 import { makeTreeRemovable } from './removable-tree.js';
 import { releaseLifecycleWriters, WriterFence } from './writer-lock.js';
-import { parseGenerationPointer, parseHostTransactionJournal } from './host-contracts.js';
+import { parseGenerationPointer, parseHostTransactionJournal, parseGenerationRetirementEvidence, type GenerationRetirementEvidence } from './host-contracts.js';
+import { parseGenerationCollectionPlan, parseGenerationRetirementJournal, readRetiredGenerations, validateRetirementDirectory, type ManagedGenerationCollectionPlan, type GenerationRetirementJournal } from './generation-retirement.js';
 import { assertNoSymlinkComponents } from './folder-mod-bounds.js';
 import { TrustGrantStore } from './trust-authority.js';
 
@@ -402,6 +403,7 @@ async function inspectRollbackWindow(host: DurableModHost, pointer: GenerationPo
   const observedMs = observedAt.getTime();
   const selectionLinks = new Map<string, { readonly pointer: GenerationPointer; readonly previous: GenerationPointer | null | undefined; readonly baseGeneration: number }>();
   const unknown = new Set<number>();
+  const retired = await readRetiredGenerations(host.root, host.hostIo);
   const entries = await host.hostIo.readdir(host.paths.transactions, { withFileTypes: true });
   for (const entry of entries) {
     if (!entry.name.endsWith('.json')) continue;
@@ -426,8 +428,13 @@ async function inspectRollbackWindow(host: DurableModHost, pointer: GenerationPo
       for (const outcome of ['committed', 'restart-required']) {
         const receiptPath = join(host.paths.receipts, `${journal.transactionId}.${outcome}.json`);
         try {
-          await assertNoSymlinkComponents(host.root, relative(host.root, receiptPath));
-          const receipt = await readJson<Record<string, unknown>>(host.hostIo, receiptPath);
+          await assertPurgeNoLinks(host, receiptPath);
+          const receipt = await readJson<Record<string, unknown>>(host.hostIo, receiptPath).catch(error => {
+            if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+            const preserved = retired.get(journal.candidateGeneration)?.receipts.find(receipt => receipt.transactionId === journal.transactionId && receipt.outcome === outcome);
+            if (!preserved) throw error;
+            return preserved as unknown as Record<string, unknown>;
+          });
           if (receipt.schemaVersion !== 1 || receipt.transactionId !== journal.transactionId
             || receipt.outcome !== outcome || canonicalJson(parseHostTransactionJournal(receipt.journal)) !== canonicalJson(journal)) continue;
           const candidate = parseGenerationPointer(receipt.pointer);
@@ -446,7 +453,7 @@ async function inspectRollbackWindow(host: DurableModHost, pointer: GenerationPo
       }
     }
     if (!selection) continue;
-    const manifest = await host.validateGeneration(journal.candidateGeneration);
+    const manifest = retired.get(journal.candidateGeneration)?.manifest ?? await host.validateGeneration(journal.candidateGeneration);
     if (selection.transactionId !== journal.transactionId || selection.generation !== journal.candidateGeneration
       || selection.lockHash !== journal.candidateLockHash || selection.lockHash !== manifest.lockHash
       || selection.graphHash !== manifest.graphHash) throw new TypeError('selection evidence does not bind its generation');
@@ -688,6 +695,225 @@ export class ManagedRetentionInspector {
     if (failures.length > 1) throw new AggregateError(failures, 'retention inspection and writer cleanup failed');
     return report!;
   }
+}
+
+async function captureRetirementEvidence(host: DurableModHost, generation: number): Promise<GenerationRetirementEvidence> {
+  const manifest = await host.validateGeneration(generation);
+  const receipts: unknown[] = [];
+  for (const entry of await host.hostIo.readdir(host.paths.transactions, { withFileTypes: true })) {
+    if (!entry.name.endsWith('.json')) continue;
+    const path = join(host.paths.transactions, entry.name);
+    await assertPurgeNoLinks(host, path);
+    if (!entry.isFile()) throw new TypeError('selection journal must be a file');
+    const journal = parseHostTransactionJournal(await readJson<unknown>(host.hostIo, path));
+    if (host.journalPath(journal.transactionId) !== path) throw new TypeError('selection journal filename differs from its identity');
+    if (journal.baseGeneration !== generation && journal.candidateGeneration !== generation) continue;
+    const terminal = journal.steps.find(step => step.id === 'cleanup') ?? journal.steps.find(step => step.id === 'restore-snapshots');
+    if (journal.state !== 'failed' && journal.state !== 'rolled-back'
+      && (journal.state !== 'committed' || terminal?.state !== 'passed')) {
+      throw new DurableHostError('MOD_TRANSACTION_CONFLICT', 'generation has unfinished selection work', { generation, transactionId: journal.transactionId });
+    }
+    if (journal.candidateGeneration !== generation || journal.state !== 'committed') continue;
+    let found = false;
+    for (const outcome of ['committed', 'restart-required', 'recovered-committed']) {
+      const receiptPath = join(host.paths.receipts, `${journal.transactionId}.${outcome}.json`);
+      await assertPurgeNoLinks(host, receiptPath);
+      if (!await pathExists(host.hostIo, receiptPath)) continue;
+      const receipt = await readJson<Record<string, unknown>>(host.hostIo, receiptPath);
+      const captured = parseHostTransactionJournal(receipt.journal);
+      const stableFields = ['transactionId', 'operation', 'startedAt', 'baseGeneration', 'candidateGeneration', 'fenceToken', 'previousLockHash', 'candidateLockHash'] as const;
+      if (receipt.outcome !== outcome || receipt.transactionId !== journal.transactionId
+        || stableFields.some(key => captured[key] !== journal[key])) {
+        throw new TypeError('selection receipt differs from the current journal');
+      }
+      if (canonicalJson(captured) !== canonicalJson(journal)) {
+        if (outcome === 'restart-required' && Date.parse(captured.updatedAt) <= Date.parse(journal.updatedAt)) continue;
+        throw new TypeError('terminal selection receipt differs from the current journal');
+      }
+      receipts.push(receipt);
+      found = true;
+    }
+    if (!found) throw new DurableHostError('MOD_TRANSACTION_CONFLICT', 'repair missing selection receipts before collection', { generation, transactionId: journal.transactionId });
+  }
+  const directory = join(host.root, 'installation-transactions');
+  await assertPurgeNoLinks(host, directory);
+  if (await pathExists(host.hostIo, directory)) {
+    for (const entry of await host.hostIo.readdir(directory, { withFileTypes: true })) {
+      if (!entry.name.endsWith('.json')) continue;
+      const path = join(directory, entry.name);
+      await assertPurgeNoLinks(host, path);
+      if (!entry.isFile()) throw new TypeError('installation journal must be a file');
+      const journal = parseJournal(await readJson<unknown>(host.hostIo, path));
+      // Incomplete installation recovery can infer its outcome from any retained generation.
+      if (journal.state !== 'committed' && journal.state !== 'failed') throw new DurableHostError('MOD_TRANSACTION_CONFLICT', 'recover unfinished installations before collection', { transactionId: journal.transactionId });
+    }
+  }
+  return parseGenerationRetirementEvidence({ manifest, receipts });
+}
+
+async function assertCollectionReferences(host: DurableModHost, generations: readonly number[], durationMs: number, now: Date): Promise<void> {
+  const inventory = await retainedGenerationInventory(host, host.hostIo);
+  const window = await inspectRollbackWindow(host, await host.readCurrentPointer(), inventory.generations, durationMs, now);
+  for (const generation of generations) {
+    if (!window.generations.some(entry => entry.generation === generation && !entry.protected)
+      || [...inventory.activeLeases, ...inventory.artifactLeases].some(lease => lease.generation === generation)) {
+      throw new DurableHostError('MOD_TRANSACTION_CONFLICT', 'generation remains protected from collection', { generation });
+    }
+  }
+}
+
+export async function previewManagedGenerationCollection(host: DurableModHost, options: {
+  readonly generations: readonly number[]; readonly rollbackWindowMs: number; readonly now?: () => Date;
+}): Promise<ManagedGenerationCollectionPlan> {
+  const generations = [...options.generations].sort((a, b) => a - b);
+  const rollbackWindowMs = options.rollbackWindowMs;
+  if (!generations.length || new Set(generations).size !== generations.length || generations.some(id => !Number.isSafeInteger(id) || id < 1)
+    || !Number.isSafeInteger(rollbackWindowMs) || rollbackWindowMs < 0) throw new TypeError('collection requires distinct positive generation IDs and an explicit nonnegative rollback window');
+  await host.initialize();
+  const fence = await WriterFence.acquire(join(host.root, 'locks', 'lifecycle-writer.json'), 'agon.kernel.retention', { io: host.hostIo });
+  let hostFence: WriterFence | undefined;
+  const errors: unknown[] = [];
+  try {
+    hostFence = await WriterFence.acquire(host.paths.writerLock, 'agon.kernel.retention', { io: host.hostIo });
+    const selectedPointer = await host.readCurrentPointer();
+    if (!selectedPointer) throw new DurableHostError('MOD_TRANSACTION_CONFLICT', 'collection requires a selected generation');
+    const now = (options.now ?? (() => new Date()))();
+    const transactionId = randomUUID();
+    await readRetiredGenerations(host.root, host.hostIo, { claim: { transactionId, generations } });
+    await assertCollectionReferences(host, generations, rollbackWindowMs, now);
+    const evidence: GenerationRetirementEvidence[] = [];
+    for (const generation of generations) evidence.push(await captureRetirementEvidence(host, generation));
+    const unsigned = { schemaVersion: 3 as const, kind: 'generation-retention' as const, transactionId,
+      hostRoot: host.root, selectedPointer, rollbackWindowMs, observedAt: now.toISOString(), generations: evidence };
+    return parseGenerationCollectionPlan({ ...unsigned, planHash: sha256Canonical(unsigned) });
+  } catch (error) { errors.push(error); throw error; }
+  finally { await releaseLifecycleWriters([hostFence, fence], errors); }
+}
+
+export async function applyManagedGenerationCollection(host: DurableModHost, input: ManagedGenerationCollectionPlan,
+  approvedPlanHash: string, options: { readonly now?: () => Date; readonly cancelPending?: boolean } = {},
+): Promise<readonly number[]> {
+  if (options.cancelPending !== undefined && typeof options.cancelPending !== 'boolean') throw new TypeError('cancelPending must be a boolean');
+  const cancelPending = options.cancelPending === true;
+  const plan = parseGenerationCollectionPlan(structuredClone(input));
+  if (plan.hostRoot !== host.root || plan.planHash !== approvedPlanHash) throw new DurableHostError('MOD_TRANSACTION_CONFLICT', 'collection approval does not bind this host and exact plan');
+  const fence = await WriterFence.acquire(join(host.root, 'locks', 'lifecycle-writer.json'), 'agon.kernel.retention', { io: host.hostIo });
+  let hostFence: WriterFence | undefined;
+  const errors: unknown[] = [];
+  try {
+    hostFence = await WriterFence.acquire(host.paths.writerLock, 'agon.kernel.retention', { io: host.hostIo });
+    await readRetiredGenerations(host.root, host.hostIo, { claim: { transactionId: plan.transactionId,
+      generations: plan.generations.map(evidence => evidence.manifest.generation) } });
+    const journalPath = join(host.root, 'purge-transactions', `${plan.transactionId}.json`);
+    const staging = join(host.root, 'purge-staging', plan.transactionId);
+    await assertPurgeNoLinks(host, journalPath);
+    await assertPurgeNoLinks(host, staging);
+    let phases: GenerationRetirementJournal['phases'][number][];
+    if (await pathExists(host.hostIo, journalPath)) {
+      const journal = parseGenerationRetirementJournal(await readJson<unknown>(host.hostIo, journalPath));
+      if (canonicalJson(journal.plan) !== canonicalJson(plan)) throw new DurableHostError('MOD_TRANSACTION_CONFLICT', 'retention journal differs from the approved plan');
+      phases = [...journal.phases];
+      await host.hostIo.syncFile(journalPath);
+      await host.hostIo.syncDirectory(dirname(journalPath));
+    } else phases = plan.generations.map(() => 'pending');
+    const save = () => atomicWrite(host.hostIo, journalPath, `${canonicalJson({ schemaVersion: 2, kind: 'generation-retention', plan, phases })}\n`);
+    const removeStaged = async (index: number) => {
+      await fence.assertOwned();
+      await hostFence!.assertOwned();
+      const staged = join(staging, String(index));
+      await assertPurgeNoLinks(host, staged);
+      if (await pathExists(host.hostIo, staged)) {
+        await makeTreeRemovable(host.hostIo, staged);
+        await host.hostIo.rm(staged, { recursive: true, force: false });
+      }
+      await host.hostIo.syncDirectory(staging);
+      phases[index] = 'removed';
+      await save();
+    };
+    // Validate every original target before starting any new retirement.
+    const pending: number[] = [];
+    for (const [index, evidence] of plan.generations.entries()) {
+      if (phases[index] === 'cancelled') continue;
+      const original = host.generationPath(evidence.manifest.generation);
+      const staged = join(staging, String(index));
+      await assertPurgeNoLinks(host, original);
+      await assertPurgeNoLinks(host, staged);
+      const originalExists = await pathExists(host.hostIo, original);
+      const stagedExists = await pathExists(host.hostIo, staged);
+      if (phases[index] !== 'pending') {
+        if (originalExists || (phases[index] === 'removed' && stagedExists)) throw new DurableHostError('MOD_TRANSACTION_CONFLICT', 'retired path contains replacement bytes');
+      } else if (stagedExists) {
+        if (originalExists) throw new DurableHostError('MOD_TRANSACTION_CONFLICT', 'both original and quarantined generation exist');
+        await validateRetirementDirectory(host.root, host.hostIo, staged, evidence);
+        await host.hostIo.syncDirectory(dirname(original));
+        await host.hostIo.syncDirectory(staging);
+        phases[index] = 'staged';
+        await save();
+      } else {
+        if (!originalExists) throw new DurableHostError('MOD_GENERATION_CORRUPT', 'pending retirement lost both original and quarantine');
+        pending.push(evidence.manifest.generation);
+      }
+    }
+    // Staged work is already retired. Fresh conflicts cannot strand its cleanup.
+    for (const [index, phase] of phases.entries()) if (phase === 'staged') await removeStaged(index);
+    if (cancelPending) {
+      for (const [index, evidence] of plan.generations.entries()) {
+        if (phases[index] !== 'pending') continue;
+        const original = host.generationPath(evidence.manifest.generation);
+        await validateRetirementDirectory(host.root, host.hostIo, original, evidence);
+        await fence.assertOwned();
+        await hostFence.assertOwned();
+        await host.hostIo.chmod(original, 0o555);
+        await host.hostIo.syncDirectory(original);
+      }
+      phases = phases.map(phase => phase === 'pending' ? 'cancelled' : phase);
+      await save();
+      await host.hostIo.syncDirectory(host.root);
+      return Object.freeze(plan.generations.filter((_, index) => phases[index] === 'removed').map(entry => entry.manifest.generation));
+    }
+    if (pending.length) {
+      for (const evidence of plan.generations.filter(entry => pending.includes(entry.manifest.generation))) {
+        if (canonicalJson(await captureRetirementEvidence(host, evidence.manifest.generation)) !== canonicalJson(evidence)) throw new DurableHostError('MOD_TRANSACTION_CONFLICT', 'generation evidence changed after preview');
+      }
+      if (canonicalJson(await host.readCurrentPointer()) !== canonicalJson(plan.selectedPointer)) throw new DurableHostError('MOD_TRANSACTION_CONFLICT', 'selection changed after collection preview');
+      const now = (options.now ?? (() => new Date()))();
+      if (now.getTime() < Date.parse(plan.observedAt)) throw new DurableHostError('MOD_TRANSACTION_CONFLICT', 'collection clock moved backward');
+      await assertCollectionReferences(host, pending, plan.rollbackWindowMs, now);
+    }
+    await save();
+    await host.hostIo.syncDirectory(host.root);
+    await host.hostIo.mkdir(staging, { recursive: true, mode: 0o700 });
+    await assertPurgeNoLinks(host, staging);
+    await host.hostIo.syncDirectory(dirname(staging));
+    await host.hostIo.syncDirectory(host.root);
+    for (const [index, evidence] of plan.generations.entries()) {
+      if (phases[index] === 'removed' || phases[index] === 'cancelled') continue;
+      await fence.assertOwned();
+      await hostFence.assertOwned();
+      const original = host.generationPath(evidence.manifest.generation);
+      const staged = join(staging, String(index));
+      if (phases[index] === 'pending') {
+        if (!await pathExists(host.hostIo, staged)) {
+          await host.hostIo.chmod(original, 0o700);
+          try { await host.hostIo.rename(original, staged); }
+          catch (error) {
+            if (await pathExists(host.hostIo, original)) {
+              try { await host.hostIo.chmod(original, 0o555); }
+              catch (restore) { throw new AggregateError([error, restore], 'retirement rename and permission restore failed'); }
+            }
+            throw error;
+          }
+        }
+        await host.hostIo.syncDirectory(dirname(original));
+        await host.hostIo.syncDirectory(staging);
+        phases[index] = 'staged';
+        await save();
+      }
+      await removeStaged(index);
+    }
+    return Object.freeze(plan.generations.filter((_, index) => phases[index] === 'removed').map(entry => entry.manifest.generation));
+  } catch (error) { errors.push(error); throw error; }
+  finally { await releaseLifecycleWriters([hostFence, fence], errors); }
 }
 
 export async function previewManagedPurge(

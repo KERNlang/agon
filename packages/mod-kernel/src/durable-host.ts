@@ -10,6 +10,7 @@ import { makeTreeRemovable } from './removable-tree.js';
 import { GenerationLeaseStore } from './generation-leases.js';
 import { disposeGenerationOwners } from './generation-disposal.js';
 import { assertMigrationSourceRevision, type MigrationSourceRevision } from './migration-engine.js';
+import { readRetiredGenerations } from './generation-retirement.js';
 
 export type HostTransactionOperation =
   | 'install' | 'update' | 'enable' | 'disable' | 'remove' | 'import'
@@ -332,6 +333,9 @@ export class DurableModHost {
   async validateGeneration(generation: number): Promise<GenerationManifest> {
     const root = this.generationPath(generation);
     try {
+      if ((await readRetiredGenerations(this.root, this.#io)).has(generation)) {
+        throw new DurableHostError('MOD_GENERATION_CORRUPT', `generation ${generation} has been retired`);
+      }
       const manifestInput = await readJson<unknown>(this.#io, join(root, 'generation.json'));
       const actualFiles = (await listFiles(this.#io, root)).filter((path) => path !== 'generation.json');
       const files: Record<string, Uint8Array> = Object.create(null);
@@ -565,6 +569,7 @@ export class DurableModHost {
 
   async #recoverTransactionsUnderFence(): Promise<readonly string[]> {
     const recovered: string[] = [];
+    const retired = await readRetiredGenerations(this.root, this.#io, { restorePendingPermissions: true });
     const files = (await this.#io.readdir(this.paths.transactions, { withFileTypes: true }))
       .filter((entry: any) => entry.isFile() && entry.name.endsWith('.json'))
       .map((entry: any) => entry.name).sort();
@@ -591,6 +596,16 @@ export class DurableModHost {
       if (journal.state === 'committed' && cleanupComplete) {
         if (await this.#hasBoundTerminalReceipt(journal)) continue;
         try {
+          const preserved = retired.get(journal.candidateGeneration);
+          if (preserved) {
+            const receipt = preserved.receipts.find(receipt => canonicalJson(receipt.journal) === canonicalJson(journal));
+            if (!receipt || preserved.manifest.kernelVersion !== this.#options.kernelVersion) {
+              throw new DurableHostError('MOD_GENERATION_CORRUPT', 'retirement does not preserve the exact terminal transaction');
+            }
+            await this.#writeReceipt(receipt);
+            recovered.push(journal.transactionId);
+            continue;
+          }
           const manifest = await this.validateGeneration(journal.candidateGeneration);
           const receiptPointer: GenerationPointer = pointer?.transactionId === journal.transactionId ? pointer : Object.freeze({
             schemaVersion: 1, generation: journal.candidateGeneration, graphHash: manifest.graphHash, lockHash: manifest.lockHash,

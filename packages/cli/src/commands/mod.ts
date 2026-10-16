@@ -18,6 +18,9 @@ import {
   previewManagedPurge,
   applyManagedPurge,
   type ManagedPurgePlan,
+  previewManagedGenerationCollection,
+  applyManagedGenerationCollection,
+  type ManagedGenerationCollectionPlan,
   parseArtifactLeaseIdentity,
   type ArtifactGenerationLease,
   type ArtifactLeaseIdentity,
@@ -86,6 +89,7 @@ type ArtifactRetentionPreview = ({ readonly action: 'retain'; readonly generatio
 
 type PendingPlan =
   | { readonly schemaVersion: 2; readonly kind: 'purge'; readonly preview: ManagedPurgePlan }
+  | { readonly schemaVersion: 2; readonly kind: 'generation-collection'; readonly preview: ManagedGenerationCollectionPlan }
   | { readonly schemaVersion: 2; readonly kind: 'artifact-retention'; readonly preview: ArtifactRetentionPreview }
   | { readonly schemaVersion: 2; readonly kind: 'authority'; readonly modId: string; readonly contentHash: string; readonly manifestHash: string; readonly preview: FolderModApprovalPreview }
   | { readonly schemaVersion: 2; readonly kind: 'activation'; readonly modId: string; readonly contentHash: string; readonly manifestHash: string; readonly preview: FolderModActivationPreview }
@@ -109,6 +113,10 @@ async function readPlan(pathInput: string): Promise<PendingPlan> {
   const metadata = await lstat(candidate);
   if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.size > PLAN_LIMIT) throw new TypeError('approval plan must be a real JSON file no larger than 256 KiB');
   const value = JSON.parse(await readFile(candidate, 'utf8')) as PendingPlan;
+  if (value.kind === 'generation-collection') {
+    if (value.schemaVersion !== 2 || value.preview?.schemaVersion !== 3 || value.preview.kind !== 'generation-retention') throw new TypeError('generation collection plan is malformed');
+    return value;
+  }
   if (value.kind === 'purge') {
     if (value.schemaVersion !== 2 || !value.preview || value.preview.schemaVersion !== 2
       || !Array.isArray(value.preview.installationPaths) || !Array.isArray(value.preview.dataPaths)
@@ -405,9 +413,46 @@ async function printRetentionReport(duration?: unknown): Promise<void> {
     duration === undefined ? undefined : { durationMs: Number(duration) }).inspect(), null, 2));
 }
 
-const retentionCommand = defineCommand({ meta: { name: 'retention', description: 'Inspect retained references, sizes and leases; manage artifact protection without deleting files' },
+const generationCollectionCommand = defineCommand({
+  meta: { name: 'collect', description: 'Preview expired generation removal; apply or cancel only an exactly approved saved plan' },
+  args: {
+    plan: { type: 'positional', required: false, description: 'Saved generation collection plan' },
+    generation: { type: 'string', description: 'Generation ID to retire; repeat for multiple IDs' },
+    'rollback-window-ms': { type: 'string', description: 'Required explicit rollback protection duration for preview' },
+    approve: { type: 'string', description: 'Exact saved plan hash' },
+    cancel: { type: 'boolean', default: false, description: 'Cancel untouched pending targets; finish already retired quarantine cleanup' },
+  },
+  async run({ args }) {
+    const host = new DurableModHost(paths().hostRoot, { kernelVersion: AGON_RUNTIME_VERSION });
+    const warning = 'Generation removal is irreversible. Installation payloads, transaction history and receipts are retained.';
+    if (args.plan !== undefined || args.approve !== undefined || args.cancel) {
+      if (!args.plan || !args.approve) throw new TypeError('collection apply or cancel requires a saved plan and its exact --approve hash');
+      if (args.generation !== undefined || args['rollback-window-ms'] !== undefined) throw new TypeError('saved collection approval cannot be combined with replacement targets or policy');
+      const document = await readPlan(String(args.plan));
+      if (document.kind !== 'generation-collection') throw new TypeError('collection requires a generation-collection plan');
+      const removedGenerations = await applyManagedGenerationCollection(host, document.preview, String(args.approve), { cancelPending: args.cancel });
+      console.log(JSON.stringify({ action: args.cancel ? 'generation-collection-cancel' : 'generation-collection',
+        planHash: document.preview.planHash, removedGenerations, warning }, null, 2));
+      return;
+    }
+    const values: unknown[] = Array.isArray(args.generation) ? args.generation : args.generation === undefined ? [] : [args.generation];
+    if (!values.length || values.some(value => typeof value !== 'string' || !/^[1-9]\d*$/.test(value))) throw new TypeError('collection preview requires --generation with positive integer IDs');
+    const duration = args['rollback-window-ms'];
+    if (typeof duration !== 'string' || !/^\d+$/.test(duration)) throw new TypeError('collection preview requires an explicit non-negative --rollback-window-ms');
+    const preview = await previewManagedGenerationCollection(host, { generations: values.map(Number), rollbackWindowMs: Number(duration) });
+    const document: PendingPlan = { schemaVersion: 2, kind: 'generation-collection', preview };
+    if (Buffer.byteLength(JSON.stringify(document, null, 2) + '\n') > PLAN_LIMIT) throw new TypeError('collection evidence exceeds the saved-plan limit; preview fewer generations per plan');
+    const planPath = await writePlan(document, preview.planHash);
+    const apply = `agon mod retention collect '${planPath.replace(/'/g, "'\\''")}' --approve ${preview.planHash}`;
+    console.log(JSON.stringify({ ...preview, action: 'generation-collection-preview', planPath, warning,
+      next: apply, cancel: `${apply} --cancel` }, null, 2));
+  },
+});
+
+const retentionCommand = defineCommand({ meta: { name: 'retention', description: 'Inspect references and rollback windows; manage artifact protection and explicitly approved collection' },
   subCommands: {
     retain: artifactRetentionCommand('retain'), release: artifactRetentionCommand('release'),
+    collect: generationCollectionCommand,
     inspect: defineCommand({
       args: { 'rollback-window-ms': { type: 'string', description: 'Inspect rollback protection for this explicit duration; does not authorize deletion' } },
       async run({ args }) { await printRetentionReport(args['rollback-window-ms']); },

@@ -10,7 +10,61 @@ import type {
   HostJournalStep,
   HostTransactionJournal,
   HostTransactionOperation,
+  HostTransactionReceipt,
 } from './durable-host.js';
+
+export interface GenerationRetirementEvidence {
+  readonly manifest: GenerationManifest;
+  readonly receipts: readonly HostTransactionReceipt[];
+}
+
+/** Historical evidence cannot authorize execution or a new generation lease. */
+export function parseGenerationRetirementEvidence(value: unknown): GenerationRetirementEvidence {
+  const input = record(value, 'generation retirement evidence');
+  exact(input, ['manifest', 'receipts'], 'generation retirement evidence');
+  const manifest = parseGenerationManifest(input.manifest);
+  const { contentHash, ...unsigned } = manifest;
+  if (sha256Canonical(unsigned) !== contentHash || manifest.generation < 1) throw new TypeError('retired generation manifest identity is invalid');
+  if (!Array.isArray(input.receipts) || input.receipts.length === 0) throw new TypeError('retirement requires terminal selection receipts');
+  const identities = new Set<string>();
+  const receipts = input.receipts.map(value => {
+    const receipt = record(value, 'retired selection receipt');
+    exact(receipt, ['schemaVersion', 'transactionId', 'ownerId', 'outcome', 'pointer', 'journal', 'events',
+      ...(Object.hasOwn(receipt, 'previousSelection') ? ['previousSelection'] : [])], 'retired selection receipt');
+    if (receipt.schemaVersion !== 1 || !['committed', 'restart-required', 'recovered-committed'].includes(String(receipt.outcome))) {
+      throw new TypeError('retired selection receipt is not committed');
+    }
+    const journal = parseHostTransactionJournal(receipt.journal);
+    const pointer = parseGenerationPointer(receipt.pointer);
+    const terminal = journal.steps.find(step => step.id === 'cleanup') ?? journal.steps.find(step => step.id === 'restore-snapshots');
+    if (journal.state !== 'committed' || terminal?.state !== 'passed'
+      || receipt.transactionId !== journal.transactionId || pointer.transactionId !== journal.transactionId
+      || journal.candidateGeneration !== manifest.generation || pointer.generation !== manifest.generation
+      || journal.candidateLockHash !== manifest.lockHash || pointer.lockHash !== manifest.lockHash
+      || pointer.graphHash !== manifest.graphHash) throw new TypeError('retired selection receipt does not bind its generation');
+    if (Date.parse(pointer.selectedAt) < Date.parse(journal.startedAt) || Date.parse(pointer.selectedAt) > Date.parse(journal.updatedAt)) {
+      throw new TypeError('retired selection time is outside its transaction');
+    }
+    const identity = `${journal.transactionId}.${String(receipt.outcome)}`;
+    if (identities.has(identity)) throw new TypeError('retirement contains duplicate receipts');
+    identities.add(identity);
+    if (!Array.isArray(receipt.events)) throw new TypeError('retired receipt events must be an array');
+    let previousSelection: GenerationPointer | null | undefined;
+    if (Object.hasOwn(receipt, 'previousSelection')) {
+      previousSelection = receipt.previousSelection === null ? null : parseGenerationPointer(receipt.previousSelection);
+      if ((previousSelection?.generation ?? 0) !== journal.baseGeneration
+        || (previousSelection?.lockHash ?? null) !== journal.previousLockHash
+        || previousSelection?.transactionId === journal.transactionId) throw new TypeError('retired receipt predecessor does not bind its base');
+    }
+    return Object.freeze({ schemaVersion: 1 as const, transactionId: journal.transactionId,
+      ownerId: string(receipt.ownerId, 'retired receipt owner'), outcome: receipt.outcome as HostTransactionReceipt['outcome'],
+      pointer, journal, events: Object.freeze(structuredClone(receipt.events)) as HostTransactionReceipt['events'],
+      ...(previousSelection === undefined ? {} : { previousSelection }),
+    });
+  });
+  if (!receipts.some(receipt => receipt.transactionId === manifest.transactionId)) throw new TypeError('retirement lacks the generation creation receipt');
+  return Object.freeze({ manifest, receipts: Object.freeze(receipts) });
+}
 
 /** Check one captured generation. Both synchronous and asynchronous readers use this. */
 export function validateGenerationContents(

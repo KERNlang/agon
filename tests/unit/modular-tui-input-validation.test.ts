@@ -29,6 +29,19 @@ import { dispatchSessionInfoIntent } from '../../packages/cli/src/signals/dispat
 describe('external TUI contribution input validation', () => {
   beforeEach(() => { run.mockClear(); contribution.parse.mockClear(); });
 
+  it('shows parser errors without invoking the workflow', async () => {
+    contribution.parse.mockImplementationOnce(() => { throw new TypeError('Invalid --max-turns: -2'); });
+    const dispatch = vi.fn();
+    const result = await dispatchSessionInfoIntent(
+      { type: 'mod-surface-command', commandName: 'conquer', args: 'task --max-turns -2' },
+      '/conquer task --max-turns -2',
+      { dispatch, ctx: { config: {} }, eventBus: undefined } as any,
+    );
+    expect(result).toEqual({ handled: true, ranAsJob: false });
+    expect(run).not.toHaveBeenCalled();
+    expect(dispatch).toHaveBeenCalledWith({ type: 'error', message: 'Invalid --max-turns: -2' });
+  });
+
   it('rejects parsed input that violates the contribution schema before invoking code', async () => {
     const dispatch = vi.fn();
     const result = await dispatchSessionInfoIntent(

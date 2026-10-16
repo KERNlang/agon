@@ -22,7 +22,11 @@ function normalizeConquerInput(raw: Readonly<Record<string, Json | undefined>>):
     input.timeout = input.turnTimeout;
   }
   for (const key of ['maxTurns', 'gateTimeout', 'timeout', 'maxHours']) {
-    if (typeof input[key] === 'number') input[key] = String(input[key]);
+    const value = input[key];
+    if (typeof value !== 'number') continue;
+    // Integer options must not become exponent notation before parseInt.
+    input[key] = key !== 'maxHours' && Number.isFinite(value)
+      ? BigInt(Math.trunc(value)).toString() : String(value);
   }
   return input;
 }
@@ -63,6 +67,44 @@ const completion = {
     : 'Claim, gate, and existing-test diff checks passed; falsifier and oracle-tamper checks not performed',
 };
 const done = !context.signal.aborted && agent.exitCode === 0 && completion.passed;turns.push({turn,agent:agent.result??null,gate:{exitCode:checked.exitCode,stdout:checked.stdout,stderr:checked.stderr,timedOut:checked.timedOut,durationMs:checked.durationMs},diffLines:diff.split('\n').length,done,completion});if(checked.aborted||context.signal.aborted){gateAborted=true;break;}if(done){const result={status:'completed',task,builder,advisors,gate,baseSha:arena.baseSha,dirtySourceExcluded:arena.dirtySourceExcluded,turns,winningPatch:diff};const receiptId=await services.receipts.record('conquer',result as unknown as Json);return{exitCode:0,stdout:`${JSON.stringify({...result,receiptId},null,2)}\n`,result:{...result,receiptId}as unknown as Json};}const issue=`Turn ${turn} did not satisfy completion requirements. ${completion.reason}. Gate exit ${checked.exitCode}. STDERR: ${checked.stderr.slice(0,4000)} STDOUT: ${checked.stdout.slice(0,4000)}`;if(advisors.length>=2){const consult=turn%3===1?await runNero({decision:`Continue the current implementation approach for: ${task}`,reasoning:issue,engines:advisors.join(','),timeout},context,services):turn%3===2?await runTribunal({question:`Diagnose this failed autonomous build and prescribe the next move. TASK: ${task}\n${issue}`,engines:advisors.join(','),mode:'red-team',rounds:'1',timeout},context,services):await runCouncil({question:`Choose the next corrective action for this failed build. TASK: ${task}\n${issue}`,engines:advisors.join(','),timeout},context,services);advice=consult.stdout||consult.stderr||issue;}else advice=issue;}const diff=arena.diff(worktree.path);const result={status:context.signal.aborted||gateAborted?'cancelled':builderFailed?'builder_failed':Date.now()>=deadline?'time_budget_exceeded':'turn_budget_exceeded',task,builder,advisors,gate,turns,lastPatch:diff};const receiptId=await services.receipts.record('conquer',result as unknown as Json);return{exitCode:1,stderr:`Conquer stopped without satisfying completion requirements. Receipt: ${receiptId}\n`,result:{...result,receiptId}as unknown as Json,failure:{code:'CONQUER_INCOMPLETE',message:builderFailed?'Conquer builder failed before verification':'Conquer stopped without satisfying completion requirements',retryable:true}};}finally{arena.cleanup();await services.logger.debug('conquer arena cleanup',{rootPath:arena.rootPath,cleanupComplete:!existsSync(arena.rootPath)});}}
-function parseConquer(value:string){let rest=value.replace(/^\/conquer\s*/i,''),gate:string|undefined,builder:string|undefined,engineIds:string[]|undefined,maxTurns:number|undefined,gateTimeout:number|undefined,maxHours:number|undefined,turnTimeout:number|undefined;const take=(pattern:RegExp,assign:(match:RegExpMatchArray)=>void)=>{const match=rest.match(pattern);if(match){assign(match);rest=rest.replace(match[0],' ');}};take(/--gate\s+(?:"([^"]*)"|'([^']*)'|(\S+(?:\s+(?!--|-[A-Za-z])\S+)*))/,m=>{gate=(m[1]??m[2]??m[3]??'').trim();});take(/(?:--builder|-b)\s+(\S+)/,m=>{builder=m[1];});take(/(?:--engines|-e)\s+(\S+)/,m=>{engineIds=m[1].split(',').map(x=>x.trim()).filter(Boolean);});take(/--max-turns\s+(\d+)/,m=>{maxTurns=Number.parseInt(m[1],10);});take(/--gate-timeout\s+(\d+)/,m=>{gateTimeout=Number.parseInt(m[1],10);});take(/--max-hours\s+(\d+(?:\.\d+)?)/,m=>{maxHours=Number.parseFloat(m[1]);});take(/--timeout\s+(\d+)/,m=>{turnTimeout=Number.parseInt(m[1],10);});return {task:rest.replace(/\s+/g,' ').trim(),gate,builder,engineIds,maxTurns,gateTimeout,maxHours,turnTimeout};}
+function parseConquer(value: string) {
+  const source = value.replace(/^\/conquer\s*/i, '');
+  const consumed: Array<{ start: number; end: number }> = [];
+  let gate: string | undefined, builder: string | undefined, engineIds: string[] | undefined;
+  const take = (pattern: RegExp, assign: (match: RegExpMatchArray) => void) => {
+    const matches = source.matchAll(new RegExp(pattern.source, `${pattern.flags}g`));
+    const match = [...matches].find(candidate => !consumed.some(range =>
+      candidate.index < range.end && candidate.index + candidate[0].length > range.start));
+    if (match) {
+      assign(match);
+      consumed.push({ start: match.index, end: match.index + match[0].length });
+    }
+  };
+  take(/--gate\s+(?:"([^"]*)"|'([^']*)'|(\S+(?:\s+(?!--|-[A-Za-z])\S+)*))/, m => { gate = (m[1] ?? m[2] ?? m[3] ?? '').trim(); });
+  take(/(?:--builder|-b)\s+(\S+)/, m => { builder = m[1]; });
+  take(/(?:--engines|-e)\s+(\S+)/, m => { engineIds = m[1].split(',').map(id => id.trim()).filter(Boolean); });
+  const numeric = (flag: string, parse: (value: string) => number, minimum: number, fallback?: number): number | undefined => {
+    let result: number | undefined;
+    take(new RegExp(`(?:^|\\s)--${flag}(?=\\s|$)(?:\\s+(?!--)(\\S+))?`), match => {
+      const raw = match[1] ?? '';
+      const parsed = parse(raw);
+      if (!Number.isFinite(parsed) || parsed < minimum) {
+        if (fallback === undefined) throw new TypeError(`Invalid --${flag}: ${raw || '(missing value)'}`);
+        result = fallback;
+      } else result = parsed;
+    });
+    return result;
+  };
+  const integer = (raw: string) => Number.parseInt(raw, 10);
+  const maxTurns = numeric('max-turns', integer, 1);
+  const gateTimeout = numeric('gate-timeout', integer, 1, 1800);
+  const maxHours = numeric('max-hours', Number.parseFloat, 0);
+  const turnTimeout = numeric('timeout', integer, 1, 600);
+  let rest = source;
+  for (const range of consumed.sort((left, right) => right.start - left.start)) {
+    rest = rest.slice(0, range.start) + ' ' + rest.slice(range.end);
+  }
+  return { task: rest.replace(/\s+/g, ' ').trim(), gate, builder, engineIds, maxTurns, gateTimeout, maxHours, turnTimeout };
+}
 export const createMod:AgonModFactory=services=>Object.freeze({apiVersion:'1'as const,async activate(registrar:Registrar):Promise<Dispose>{const d:Dispose[]=[];const command={description:'Supervised autonomous build in an isolated worktree with an explicit done oracle',inputSchema:schema,cli,run:(input:Json,context:InvocationContext)=>runConquerTask(input,context,services)};d.push(registrar.command('cli',{id:'cliCommands:0013',...command}));d.push(registrar.command('tui',{id:'tuiSlashCommands:0021',...command,inputSchema:tuiSchema,parse:parseConquer}));d.push(registrar.planStep({id:'cesarRoutes:0016',inputSchema:schema,resultSchema:schema,risk:'workspace-write',run:(input,context)=>runConquerTask(input,context,services)}));d.push(registrar.tool('cesar',{id:'cesarTools:0004',description:'Hand this task to the supervised Conquer controller',inputSchema:cesarSchema,effect:'process',run:async()=> 'Delegation accepted. STOP responding now. The orchestrator will handle the rest.'}));for (const id of ['resultAndEnvelopeTypes:0037', 'resultAndEnvelopeTypes:0055']) d.push(registrar.resultType({ id, schema: { type: 'object', additionalProperties: true }, readableVersions: '>=0.2.0', render: async (payload) => ({ text: JSON.stringify(payload, null, 2) }) }));
 return async()=>{for(const x of[...d].reverse())await x();};}});export default createMod;

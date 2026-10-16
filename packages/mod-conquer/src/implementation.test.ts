@@ -9,6 +9,95 @@ import { runAgentTask } from '@kernlang/agon-mod-agent';
 import { afterEach } from 'vitest';
 afterEach(() => vi.restoreAllMocks());
 
+it.each(['--max-turns -2', '--max-turns 0', '--max-turns invalid', '--max-turns', '--max-hours -0.5', '--max-hours invalid', '--max-hours', '--max-hours Infinity', '--max-turns Infinity', '--max-hours --max-turns 2 3', '--max-hours --builder builder 3'])('rejects TUI budget %s before execution', async option => {
+  const dispatch = vi.fn();
+  const services = { engines: { listActive: async () => ['builder'], dispatch } } as unknown as ModServices;
+  let contribution: CommandContribution | undefined;
+  const registrar = new Proxy({}, { get: (_, method) => (...args: unknown[]) => {
+    if (method === 'command' && args[0] === 'tui') contribution = args[1] as CommandContribution;
+    return () => {};
+  } }) as Registrar;
+  await (await createMod(services)).activate(registrar);
+  const parse = () => contribution!.parse!(`/conquer task --gate "true" ${option}`);
+  expect(parse).toThrow(/Invalid --max-(turns|hours)/);
+  expect(dispatch).not.toHaveBeenCalled();
+});
+
+it.each([
+  { option: '--max-hours .5', field: 'maxHours', expected: 0.5 },
+  { option: '--max-turns +2', field: 'maxTurns', expected: 2 },
+  { option: '--max-turns 2turns', field: 'maxTurns', expected: 2 },
+  { option: '--timeout -2', field: 'turnTimeout', expected: 600 },
+  { option: '--timeout invalid', field: 'turnTimeout', expected: 600 },
+  { option: '--gate-timeout -2', field: 'gateTimeout', expected: 1800 },
+  { option: '--gate-timeout invalid', field: 'gateTimeout', expected: 1800 },
+  { option: '--max-hours 0', field: 'maxHours', expected: 0 },
+  { option: '--timeout', field: 'turnTimeout', expected: 600 },
+  { option: '--gate-timeout', field: 'gateTimeout', expected: 1800 },
+  { option: '--timeout Infinity', field: 'turnTimeout', expected: 600 },
+  { option: '--gate-timeout 0', field: 'gateTimeout', expected: 1800 },
+  { option: '--timeout --max-turns 2', field: 'turnTimeout', expected: 600 },
+])('consumes the full TUI numeric option $option', async ({ option, field, expected }) => {
+  let contribution: CommandContribution | undefined;
+  const registrar = new Proxy({}, { get: (_, method) => (...args: unknown[]) => {
+    if (method === 'command' && args[0] === 'tui') contribution = args[1] as CommandContribution;
+    return () => {};
+  } }) as Registrar;
+  await (await createMod({} as ModServices)).activate(registrar);
+  const parsed = await contribution!.parse!(`/conquer task --gate "true" ${option}`);
+  const canonical = JSON.parse(JSON.stringify(parsed));
+  assertContributionInput(contribution!.inputSchema, canonical);
+  expect(canonical).toMatchObject({ task: 'task', [field]: expected });
+});
+
+it('does not borrow a missing timeout value from later positional text', async () => {
+  let contribution: CommandContribution | undefined;
+  const registrar = new Proxy({}, { get: (_, method) => (...args: unknown[]) => {
+    if (method === 'command' && args[0] === 'tui') contribution = args[1] as CommandContribution;
+    return () => {};
+  } }) as Registrar;
+  await (await createMod({} as ModServices)).activate(registrar);
+  expect(await contribution!.parse!('/conquer task --timeout --max-turns 2 3 --gate "true"'))
+    .toMatchObject({ task: 'task 3', turnTimeout: 600, maxTurns: 2 });
+});
+
+it.each(['', ' --timeout 7'])('keeps numeric flags inside the quoted gate separate from Conquer options: %s', async suffix => {
+  let contribution: CommandContribution | undefined;
+  const registrar = new Proxy({}, { get: (_, method) => (...args: unknown[]) => {
+    if (method === 'command' && args[0] === 'tui') contribution = args[1] as CommandContribution;
+    return () => {};
+  } }) as Registrar;
+  await (await createMod({} as ModServices)).activate(registrar);
+  const parsed = await contribution!.parse!(`/conquer task --gate "checker --timeout 1 --max-turns 2"${suffix}`);
+  const canonical = JSON.parse(JSON.stringify(parsed));
+  assertContributionInput(contribution!.inputSchema, canonical);
+  expect(canonical).toEqual({ task: 'task', gate: 'checker --timeout 1 --max-turns 2', ...(suffix ? { turnTimeout: 7 } : {}) });
+});
+
+it.each(['max-turns', 'timeout', 'gate-timeout'])('preserves large typed TUI --%s values through execution', async flag => {
+  const cwd = repo();
+  const fitness = vi.spyOn(verification, 'runFitnessCommand').mockResolvedValue({ exitCode: 1, stdout: '', stderr: '', timedOut: false, durationMs: 1 });
+  let calls = 0;
+  const dispatch = vi.fn(async (engineId, _prompt, _context, _options) => ({ engineId,
+    exitCode: ++calls === 3 ? 1 : 0, stdout: 'working', stderr: '', timedOut: false }));
+  const services = { logger: { debug: vi.fn() }, receipts: { record: vi.fn(async () => 'fixture') },
+    engines: { listActive: async () => ['builder'], dispatch } } as unknown as ModServices;
+  let contribution: CommandContribution | undefined;
+  const registrar = new Proxy({}, { get: (_, method) => (...args: unknown[]) => {
+    if (method === 'command' && args[0] === 'tui') contribution = args[1] as CommandContribution;
+    return () => {};
+  } }) as Registrar;
+  await (await createMod(services)).activate(registrar);
+  const parsed = await contribution!.parse!(`/conquer task --gate "false" --${flag} 1000000000000000000000${flag === 'max-turns' ? '' : ' --max-turns 1'}`);
+  const input = JSON.parse(JSON.stringify(parsed));
+  assertContributionInput(contribution!.inputSchema, input);
+  await contribution!.run(input, { invocationId: 'large-numeric-budget', cwd,
+    platform: 'darwin-arm64', signal: new AbortController().signal, config: {} });
+  expect(dispatch).toHaveBeenCalledTimes(flag === 'max-turns' ? 3 : 1);
+  if (flag === 'timeout') expect(dispatch.mock.calls[0][3]).toMatchObject({ timeoutSeconds: 1e21 });
+  if (flag === 'gate-timeout') expect(fitness.mock.calls[0][2]).toBe(1e21);
+});
+
 it.each(['missing-sentinel', 'empty-claim', 'changed-test', 'new-test', 'valid-claim', 'red-gate', 'no-diff'] as const)(
   'checks completion evidence for %s', async scenario => {
     const cwd = repo();

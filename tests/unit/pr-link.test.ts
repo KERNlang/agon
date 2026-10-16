@@ -3,8 +3,58 @@
 // human clicks it and the PR form is already filled.
 
 import { describe, expect, it } from 'vitest';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import * as worktreeOwner from '@kernlang/agon-support-worktree';
 
-import { normalizeGitHubRemote, prefilledPrUrl } from '../../packages/core/src/blocks/git.js';
+import { normalizeGitHubRemote, prefilledPrUrl, githubRepoUrl, defaultBaseBranch } from '../../packages/core/src/blocks/git.js';
+
+it('uses one shared owner for all GitHub PR helpers', () => {
+  for (const [name, implementation] of Object.entries({ normalizeGitHubRemote, prefilledPrUrl, githubRepoUrl, defaultBaseBranch })) {
+    expect(worktreeOwner).toHaveProperty(name, implementation);
+  }
+});
+
+it('resolves local remote metadata and default branches without network access', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'agon-pr-link-'));
+  const hooks = join(cwd, 'empty-hooks');
+  mkdirSync(hooks);
+  const git = (...args: string[]) => execFileSync('git', [
+    '-c', `core.hooksPath=${hooks}`, '-c', 'commit.gpgSign=false', ...args,
+  ], { cwd, stdio: 'pipe', timeout: 10_000 });
+  try {
+    expect(githubRepoUrl(cwd)).toBe('');
+    expect(defaultBaseBranch(cwd)).toBe('main');
+    git('init', '-q');
+    expect(defaultBaseBranch(cwd)).toBe('main');
+    expect(defaultBaseBranch(cwd, 'missing')).toBe('main');
+    const configuredHooks = join(cwd, 'configured-hooks');
+    mkdirSync(configuredHooks);
+    writeFileSync(join(configuredHooks, 'pre-commit'), '#!/bin/sh\nexit 99\n', { mode: 0o700 });
+    git('config', 'core.hooksPath', configuredHooks);
+    git('config', 'commit.gpgSign', 'true');
+    git('config', 'gpg.program', join(cwd, 'missing-fixture-signer'));
+    writeFileSync(join(cwd, 'file.txt'), 'fixture');
+    git('add', 'file.txt');
+    git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.test', 'commit', '-qm', 'fixture');
+    git('remote', 'add', 'origin', 'https://github.com/example/one.git');
+    git('remote', 'add', 'upstream', 'git@github.com:example/two.git');
+    expect(githubRepoUrl(cwd)).toBe('https://github.com/example/one');
+    expect(githubRepoUrl(cwd, 'upstream')).toBe('https://github.com/example/two');
+    expect(githubRepoUrl(cwd, 'missing')).toBe('');
+    git('update-ref', 'refs/remotes/origin/master', 'HEAD');
+    expect(defaultBaseBranch(cwd)).toBe('master');
+    git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+    expect(defaultBaseBranch(cwd)).toBe('main');
+    git('update-ref', 'refs/remotes/upstream/release', 'HEAD');
+    git('update-ref', 'refs/remotes/upstream/main', 'HEAD');
+    git('symbolic-ref', 'refs/remotes/upstream/HEAD', 'refs/remotes/upstream/release');
+    expect(defaultBaseBranch(cwd, 'upstream')).toBe('release');
+    expect(defaultBaseBranch(cwd)).toBe('main');
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
 
 describe('normalizeGitHubRemote', () => {
   it('normalizes scp-like ssh remotes', () => {

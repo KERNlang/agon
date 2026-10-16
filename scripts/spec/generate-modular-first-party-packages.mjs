@@ -162,7 +162,7 @@ function expectedFiles(packageRecord) {
     : short === 'think' ? ['dist/thinking.d.ts']
     : short === 'conquer' ? ['dist/completion-policy.d.ts', 'dist/workflow.d.ts', 'dist/falsifier.d.ts', 'dist/host.d.ts', 'dist/isolation.d.ts']
     : short === 'nero' ? ['dist/verdict.d.ts', 'dist/critic-cascade.d.ts']
-    : short === 'forge' ? ['dist/result-policy.d.ts', 'dist/apply.d.ts', ...['competition', 'corpus', 'errors', 'fitness', 'gauntlet', 'host', 'manifest', 'prompts', 'quality', 'scoring', 'stage-context', 'stages', 'synth-plan', 'synthesis', 'types', 'workflow'].map(name => `dist/${name}.d.ts`)]
+    : short === 'forge' ? ['dist/result-policy.d.ts', 'dist/apply.d.ts', ...['competition', 'corpus', 'errors', 'fitness', 'gauntlet', 'host', 'manifest', 'pr-text', 'prompts', 'quality', 'scoring', 'stage-context', 'stages', 'synth-plan', 'synthesis', 'types', 'workflow'].map(name => `dist/${name}.d.ts`)]
     : short === 'plan' ? ['dist/agent-review-step-execution.d.ts', 'dist/forge-step-execution.d.ts', 'dist/pipeline-step-execution.d.ts', 'dist/self-step-execution.d.ts', 'dist/step-executors.d.ts', 'dist/approval-policy.d.ts', 'dist/cost-estimator.d.ts', 'dist/execution-callbacks.d.ts', 'dist/execution-coordinator.d.ts', 'dist/execution-model.d.ts', 'dist/execution-state.d.ts', 'dist/execution-store.d.ts', 'dist/executor.d.ts', 'dist/formatter.d.ts', 'dist/panel-step-execution.d.ts', 'dist/proposal-workflow.d.ts', 'dist/resume-policy.d.ts', 'dist/resume-workflow.d.ts', 'dist/runtime.d.ts', 'dist/session-scope.d.ts', 'dist/session-selection.d.ts', 'dist/session-workflow.d.ts', 'dist/session.d.ts', 'dist/step-validation.d.ts', 'dist/worktree-workflow.d.ts']
     : short === 'brainstorm' ? ['dist/collector.d.ts', 'dist/host.d.ts', 'dist/policy.d.ts', 'dist/presentation.d.ts', 'dist/result.d.ts', 'dist/runtime.d.ts', 'dist/scout.d.ts', 'dist/session-record.d.ts', 'dist/session-workflow.d.ts', 'dist/workflow.d.ts']
     : short === 'jobs' ? ['dist/daemon-controller.d.ts', 'dist/cli-projection.d.ts', 'dist/cli-invocation.d.ts', 'dist/cli-client.d.ts', 'dist/cli-contract.d.ts', 'dist/daemon-contract.d.ts', 'dist/daemon-job-router.d.ts', 'dist/daemon-workflow.d.ts', 'dist/job-service.d.ts', 'dist/mcp-contract.d.ts', 'dist/persisted-job-service.d.ts', 'dist/session-jobs.d.ts', 'dist/workflow-process.d.ts', 'dist/workflow-handshake.d.ts']
@@ -342,6 +342,8 @@ export type {
   StageResult, WorktreeEntry, Critique, SynthesisResult,
 } from './types.js';
 export { createForgeWorkflow } from './workflow.js';
+export { buildPrTextPrompt, parsePrText, runPrText } from './pr-text.js';
+export type { PrTextInput, PrTextEffects, PrTextResult } from './pr-text.js';
 export type { ForgeWorkflowConfig, ForgeWorkflowRegistry, ForgeWorkflowEffects } from './workflow.js';
 export type { ForgeHostServices, ForgeModServices, ForgeInvocationContext } from './host.js';
 export { createForgeHostServices } from './host.js';

@@ -16,6 +16,8 @@ export type {
   StageResult, WorktreeEntry, Critique, SynthesisResult,
 } from './types.js';
 export { createForgeWorkflow } from './workflow.js';
+export { buildPrTextPrompt, parsePrText, runPrText } from './pr-text.js';
+export type { PrTextInput, PrTextEffects, PrTextResult } from './pr-text.js';
 export type { ForgeWorkflowConfig, ForgeWorkflowRegistry, ForgeWorkflowEffects } from './workflow.js';
 export type { ForgeHostServices, ForgeModServices, ForgeInvocationContext } from './host.js';
 export { createForgeHostServices } from './host.js';

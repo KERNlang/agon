@@ -263,6 +263,7 @@
       "dist/gauntlet.d.ts",
       "dist/host.d.ts",
       "dist/manifest.d.ts",
+      "dist/pr-text.d.ts",
       "dist/prompts.d.ts",
       "dist/quality.d.ts",
       "dist/scoring.d.ts",

@@ -2,7 +2,8 @@ import { runCommand } from 'citty';
 import type { CommandDef } from 'citty';
 import { beforeEach, expect, it, vi } from 'vitest';
 
-const state = vi.hoisted(() => ({ calls: [] as string[], disabled: new Set<string>(), failure: false, generation: 0 }));
+const state = vi.hoisted(() => ({ calls: [] as string[], inputs: [] as unknown[], flagProjection: false, requiredIntent: false,
+  disabled: new Set<string>(), failure: false, generation: 0 }));
 vi.mock('../../packages/cli/src/surface-authority-runtime.js', () => {
   const entries = ['ratings', 'ratings purge-unknown'].map(publicId => ({ publicId, category: 'cliCommands', description: publicId, aliases: publicId === 'ratings' ? ['scores'] : [] }));
   const check = (_surface: string, id: string) => { if (state.disabled.has(id)) throw new Error(`disabled: ${id}`); };
@@ -17,15 +18,42 @@ vi.mock('../../packages/cli/src/surface-authority-runtime.js', () => {
     processSurfaceClient: () => ({ assertAvailable(id: string) {
       check('cli', id);
       return { owner: { id: 'agon.ratings' }, payload: {
-        inputSchema: { type: 'object', additionalProperties: false, properties: {} }, cli: {},
-        run() { state.calls.push(id); if (state.failure) throw new Error('child failed'); return { exitCode: 0 }; },
+        inputSchema: { type: 'object', additionalProperties: false, required: state.requiredIntent ? ['intent'] : [], properties: state.flagProjection ? {
+          dryRun: { type: 'boolean', default: false }, requireTests: { type: 'boolean', default: true },
+          gateTimeout: { type: 'string', default: '1800' }, reviewEngines: { type: 'string' }, intent: { type: 'string' },
+        } : {} }, cli: state.flagProjection ? { positionals: ['intent'], aliases: { reviewEngines: 'r' } } : {},
+        run(input: unknown) { state.inputs.push(input); state.calls.push(id); if (state.failure) throw new Error('child failed'); return { exitCode: 0 }; },
       } };
     } }),
   };
 });
-import { createGeneratedLazySubCommands } from '../../packages/cli/src/lazy-commands.js';
+import { createGeneratedLazySubCommands, normalizeCliArguments } from '../../packages/cli/src/lazy-commands.js';
 
-beforeEach(() => { state.calls = []; state.disabled.clear(); state.failure = false; state.generation = 0; });
+beforeEach(() => { state.calls = []; state.inputs = []; state.flagProjection = false; state.requiredIntent = false; state.disabled.clear(); state.failure = false; state.generation = 0; });
+
+it('accepts a kebab-case boolean before a required positional', async () => {
+  state.flagProjection = true;
+  state.requiredIntent = true;
+  const root = { subCommands: createGeneratedLazySubCommands() };
+  await runCommand(root, { rawArgs: await normalizeCliArguments(root, ['ratings', 'purge-unknown', '--dry-run', 'task']) });
+  expect(state.inputs).toEqual([expect.objectContaining({ dryRun: true, intent: 'task' })]);
+});
+
+it.each([
+  [['--dry-run'], { dryRun: true }],
+  [['--dryRun'], { dryRun: true }],
+  [['--no-require-tests'], { requireTests: false }],
+  [['--gate-timeout', '25'], { gateTimeout: '25' }],
+  [['--gate-timeout=25'], { gateTimeout: '25' }],
+  [['--review-engines', 'fixture'], { reviewEngines: 'fixture' }],
+  [['-r', 'fixture'], { reviewEngines: 'fixture' }],
+  [['--', '--dry-run'], { intent: '--dry-run', dryRun: false }],
+] as const)('preserves explicit CLI spelling %j over defaults', async (args, expected) => {
+  state.flagProjection = true;
+  await runCommand({ subCommands: createGeneratedLazySubCommands() }, { rawArgs: ['ratings', 'purge-unknown', ...args] });
+  expect(state.inputs).toHaveLength(1);
+  expect(state.inputs[0]).toMatchObject(expected);
+});
 it('keeps the parent action for an empty positional argument, matching Citty', async () => {
   await runCommand({ subCommands: createGeneratedLazySubCommands() }, { rawArgs: ['ratings', ''] });
   expect(state.calls).toEqual(['ratings']);

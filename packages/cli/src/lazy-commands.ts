@@ -1,6 +1,7 @@
 import type { JobCliInvocationContext } from '@kernlang/agon-mod-jobs';
 import { captureProcessSurfaceAuthority } from './surface-authority-runtime.js';
-import type { CommandDef, CommandMeta, SubCommandsDef } from 'citty';
+import { parseArgs } from 'citty';
+import type { ArgsDef, CommandDef, CommandMeta, SubCommandsDef } from 'citty';
 import type { CommandContribution, CommandResult, Json, ModPlatform } from '@kernlang/agon-mod-api';
 import { assertContributionInput, selectModSettings } from '@kernlang/agon-kernel';
 import { assertProcessSurfaceAvailable, processSurfaceCatalog, processSurfaceClient, processSurfacePublicIds } from './surface-authority-runtime.js';
@@ -50,6 +51,32 @@ interface LazyCommandOptions {
 
 function resolveMaybeFn<T>(value: T | (() => T | Promise<T>) | undefined): T | Promise<T> | undefined {
   return typeof value === 'function' ? (value as () => T | Promise<T>)() : value;
+}
+
+function normalizeOptionSpellings(rawArgs: string[], names: string[]): string[] {
+  const declared = new Set(names);
+  const spellings = new Map(names.map(name => [name.replace(/[A-Z]/g, letter => `-${letter.toLowerCase()}`), name]));
+  let options = true;
+  return rawArgs.map(arg => {
+    if (arg === '--') { options = false; return arg; }
+    const match = options ? /^--(no-)?([^=]+)(=.*)?$/.exec(arg) : null;
+    if (!match || declared.has(match[2])) return arg;
+    const canonical = spellings.get(match[2]);
+    return canonical ? `--${match[1] ?? ''}${canonical}${match[3] ?? ''}` : arg;
+  });
+}
+
+/** Normalize before Citty can consume a required positional as an unknown flag value. */
+export async function normalizeCliArguments(command: CommandDef, rawArgs: string[]): Promise<string[]> {
+  const children = await resolveMaybeFn(command.subCommands);
+  const index = rawArgs.findIndex(arg => !arg.startsWith('-'));
+  const child = children?.[rawArgs[index]];
+  if (child) {
+    const resolved = await resolveMaybeFn(child);
+    if (resolved) return [...rawArgs.slice(0, index + 1), ...await normalizeCliArguments(resolved, rawArgs.slice(index + 1))];
+  }
+  const args = await resolveMaybeFn(command.args);
+  return normalizeOptionSpellings(rawArgs, Object.keys(args ?? {}));
 }
 
 function lazyCommand(
@@ -128,8 +155,13 @@ function schemaGeneratedCommand(publicId: string, description: string, displayNa
       if (ctx.cmd?.subCommands && selectedChild) return;
       assertInvocation();
       let input: Json;
-      if (projection) input = Object.fromEntries(Object.entries(ctx.args as Record<string, Json | undefined>)
-        .filter(([name, value]) => name in properties && value !== undefined)) as Json;
+      if (projection) {
+        // Normalize before parsing: defaults can hide Citty's alternate-spelling lookup.
+        const rawArgs = ctx.rawArgs && normalizeOptionSpellings(ctx.rawArgs, Object.keys(properties));
+        const parsed = rawArgs ? parseArgs(rawArgs, projectedArgs as ArgsDef) : ctx.args;
+        input = Object.fromEntries(Object.entries(parsed as Record<string, Json | undefined>)
+          .filter(([name, value]) => name in properties && value !== undefined)) as Json;
+      }
       else {
         input = {};
         if (typeof ctx.args.input === 'string' && ctx.args.input.trim()) {

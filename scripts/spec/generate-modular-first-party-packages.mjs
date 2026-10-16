@@ -263,6 +263,8 @@ export { runRag, buildRagIndex, queryRag, collectCorpusFiles, chunkMarkdown } fr
 ` : short === 'naturalize' ? `export { runNaturalize } from './implementation.js';
 ` : short === 'sanitize' ? `export { runSanitize, scanText, cleanText } from './implementation.js';
 ` : short === 'goal' ? `export { runGoal } from './implementation.js';
+export { createGoalHostServices } from './host.js';
+export type { GoalHostServices, GoalModServices, GoalWorktree, GoalWorktreeEffects } from './host.js';
 ` : short === 'plan' ? `export { createPersistenceEnvelope, unwrapPersistenceEnvelope } from './implementation.js';
 export { showWorktreePlan, listWorktreePlans, approveWorktreePlan, retryWorktreePlan, cancelWorktreePlan } from './worktree-workflow.js';
 export type { WorktreePlanHost, WorktreePlanEvent } from './worktree-workflow.js';

@@ -5,7 +5,12 @@ import { planSessionHost } from '@kernlang/agon-mod-plan';
 import { EngineRegistry, appendAttribution, appendPrAttribution, buildKernContextSpine, createRunDir, eventLogFlush, getRatings, loadConfig, pickTopRatedEngine, setSessionRoot } from '@kernlang/agon-core';
 import { createCliAdapter } from '@kernlang/agon-adapter-cli';
 import { createForgeHostServices } from '@kernlang/agon-core';
-import { repoRoot, createSessionWorktree } from '@kernlang/agon-core';
+import { repoRoot, createSessionWorktree, findSessionWorktree, worktreePathFor, rehydrateSessionWorktree } from '@kernlang/agon-core';
+import { createGoalHostServices } from '@kernlang/agon-mod-goal';
+import { WriterFence } from '@kernlang/agon-kernel';
+import { getAgonHome } from '@kernlang/agon-core';
+import { createHash } from 'node:crypto';
+import { join } from 'node:path';
 import { createBrainstormHostServices } from '@kernlang/agon-mod-brainstorm';
 import { createConquerHostServices } from '@kernlang/agon-mod-conquer';
 import { rankCriticCascade } from '@kernlang/agon-mod-nero';
@@ -105,6 +110,21 @@ export function decorateCliFirstPartyServices(manifest: ModManifest, base: ModSe
   } : undefined;
   return Object.freeze({ ...base, runs, ...(browser ? { browser } : {}), ...(workspace ? { workspace } : {}),
     ...(brainstorm ? { brainstorm } : {}),
+    ...(manifest.id === 'agon.goal' ? { goal: createGoalHostServices({
+      acquireWriter: async id => {
+        const path = join(getAgonHome(), 'goal-locks', `${createHash('sha256').update(id).digest('hex')}.lock`);
+        try { return await WriterFence.acquire(path, `agon.goal:${id}`); }
+        catch (error) {
+          if ((error as { code?: string }).code !== 'MOD_HOST_BUSY') throw error;
+          return WriterFence.recoverStale(path, `agon.goal:${id}`);
+        }
+      },
+      worktrees: { createSessionWorktree, findSessionWorktree, worktreePathFor, rehydrateSessionWorktree },
+      captureAuthority: () => {
+        const assertCurrent = captureProcessSurfaceAuthority();
+        return () => { assertCurrent(); assertProcessSurfaceAvailable('cli', 'goal'); };
+      },
+    }) } : {}),
     ...(manifest.id === 'agon.conquer' ? { conquer: createConquerHostServices({
       worktrees: { repoRoot, createSessionWorktree },
       publicationPolicy: context => {

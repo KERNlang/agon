@@ -1,7 +1,7 @@
 import { defineCommand, runMain } from 'citty';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { createGeneratedLazySubCommands } from './lazy-commands.js';
+import { createGeneratedLazySubCommands, normalizeCliArguments } from './lazy-commands.js';
 import { captureProcessSurfaceAuthority, initializeProcessSurfaceAuthority, modularHostRoot, processSurfaceClient, processSurfacePublicIds } from './surface-authority-runtime.js';
 import { loadAllAuthKeys } from '@kernlang/agon-support-engine-runtime';
 import { installCliExitSignals } from './lib/exit-signals.js';
@@ -207,5 +207,5 @@ if (isInteractiveSetup && isTty) {
     void importRepl().then((startRepl) => startRepl(), reportInteractiveLoadFailure);
   }
 } else {
-  await runMain(main);
+  await runMain(main, { rawArgs: await normalizeCliArguments(main, process.argv.slice(2)) });
 }

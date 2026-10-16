@@ -9,3 +9,5 @@ export const IMPLEMENTATION_KIND = 'physical' as const;
 export { createMod } from './implementation.js';
 export { createMod as default } from './implementation.js';
 export { runGoal } from './implementation.js';
+export { createGoalHostServices } from './host.js';
+export type { GoalHostServices, GoalModServices, GoalWorktree, GoalWorktreeEffects } from './host.js';

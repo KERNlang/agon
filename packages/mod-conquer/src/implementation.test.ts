@@ -1,9 +1,110 @@
 import{execFileSync}from'node:child_process';import{existsSync,mkdtempSync,writeFileSync}from'node:fs';import{tmpdir}from'node:os';import{join}from'node:path';import{describe,expect,it,vi}from'vitest';import type{ModServices,CommandContribution,Registrar}from'@kernlang/agon-mod-api';import{createMod,runConquerTask}from'./implementation.js';
 import { assertContributionInput } from '@kernlang/agon-kernel';
 import * as verification from '@kernlang/agon-support-verification';
+import * as nero from '@kernlang/agon-mod-nero';
+import * as tribunal from '@kernlang/agon-mod-tribunal';
+import * as council from '@kernlang/agon-mod-council';
 import { afterEach } from 'vitest';
 afterEach(() => vi.restoreAllMocks());
 function repo(){const cwd=mkdtempSync(join(tmpdir(),'agon-conquer-'));execFileSync('git',['init'],{cwd});execFileSync('git',['config','user.email','c@example.invalid'],{cwd});execFileSync('git',['config','user.name','C'],{cwd});writeFileSync(join(cwd,'README.md'),'x\n');execFileSync('git',['add','.'],{cwd});execFileSync('git',['commit','-m','base'],{cwd});return cwd;}
+
+it.each(['green-baseline', 'failed', 'timed-out', 'thrown', 'aborted'] as const)('preserves the builder execution boundary when %s', async scenario => {
+  const cwd = repo();
+  const controller = new AbortController();
+  const paths: string[] = [];
+  const fitness = vi.spyOn(verification, 'runFitnessCommand');
+  const dispatch = vi.fn(async (engineId, _prompt, context) => {
+    paths.push(context.cwd);
+    writeFileSync(join(context.cwd, 'feature.txt'), 'requested feature\n');
+    if (scenario === 'thrown') throw new Error('fixture provider failure');
+    if (scenario === 'aborted') controller.abort();
+    return { engineId, exitCode: scenario === 'failed' ? 1 : 0,
+      stdout: 'CONQUER_DONE: feature.txt contains the requested feature',
+      stderr: scenario === 'failed' ? 'fixture failed' : '', timedOut: scenario === 'timed-out' };
+  });
+  const record = vi.fn(async () => 'fixture');
+  const services = {
+    logger: { debug: vi.fn() }, receipts: { record },
+    engines: { listActive: async () => ['builder', 'advisor-a', 'advisor-b'], dispatch },
+  } as unknown as ModServices;
+  const gate = scenario === 'green-baseline' ? 'true' : 'test -f feature.txt';
+  const result = await runConquerTask({ task: 'add feature', gate, builder: 'builder', maxTurns: '3' },
+    { invocationId: 'builder-boundary', cwd, platform: 'darwin-arm64', signal: controller.signal, config: {} }, services);
+  expect(dispatch).toHaveBeenCalledOnce();
+  expect(dispatch.mock.calls[0][0]).toBe('builder');
+  expect(existsSync(join(cwd, 'feature.txt'))).toBe(false);
+  expect(paths).toHaveLength(1);
+  expect(paths.every(path => !existsSync(path))).toBe(true);
+  const expectedStatus = scenario === 'green-baseline' ? 'completed' : scenario === 'aborted' ? 'cancelled' : 'builder_failed';
+  expect(result).toMatchObject({ exitCode: scenario === 'green-baseline' ? 0 : 1,
+    result: { status: expectedStatus, turns: [expect.objectContaining({ turn: 1, done: scenario === 'green-baseline' })] } });
+  expect(record).toHaveBeenCalledWith('conquer', expect.objectContaining({ status: expectedStatus }));
+  if (scenario === 'green-baseline') {
+    expect(fitness).toHaveBeenCalledOnce();
+    expect(result.result).toMatchObject({ winningPatch: expect.stringContaining('feature.txt') });
+  } else {
+    expect(fitness).not.toHaveBeenCalled();
+    expect(result.result).toMatchObject({ lastPatch: expect.stringContaining('feature.txt') });
+  }
+});
+
+it.each([1, 2, 3])('stops before advisory dispatch when verification is cancelled on turn %s', async cancelTurn => {
+  const cwd = repo();
+  const controller = new AbortController();
+  const consults = [vi.spyOn(nero, 'runNero'), vi.spyOn(tribunal, 'runTribunal'), vi.spyOn(council, 'runCouncil')];
+  for (const consult of consults) consult.mockResolvedValue({ exitCode: 0, stdout: 'fixture advice' });
+  const runFitness = verification.runFitnessCommand;
+  let checks = 0;
+  const fitness = vi.spyOn(verification, 'runFitnessCommand').mockImplementation(async (...args) => {
+    const result = await runFitness(...args);
+    if (++checks === cancelTurn) { controller.abort(); return { ...result, aborted: cancelTurn !== 1 }; }
+    return result;
+  });
+  const paths: string[] = [];
+  const dispatch = vi.fn(async (engineId, _prompt, context) => {
+    paths.push(context.cwd);
+    writeFileSync(join(context.cwd, `turn-${paths.length}.txt`), 'partial work\n');
+    return { engineId, exitCode: 0, stdout: 'working', stderr: '', timedOut: false };
+  });
+  const record = vi.fn(async () => 'fixture');
+  const services = { logger: { debug: vi.fn() }, receipts: { record },
+    engines: { listActive: async () => ['builder', 'advisor-a', 'advisor-b'], dispatch } } as unknown as ModServices;
+  const result = await runConquerTask({ task: 'build feature', gate: cancelTurn === 1 ? 'true' : 'false', builder: 'builder', maxTurns: '4' },
+    { invocationId: 'gate-cancellation', cwd, platform: 'darwin-arm64', signal: controller.signal, config: {} }, services);
+  expect(result).toMatchObject({ exitCode: 1, result: { status: 'cancelled', lastPatch: expect.stringContaining(`turn-${cancelTurn}.txt`) } });
+  expect(fitness).toHaveBeenCalledTimes(cancelTurn);
+  expect(dispatch).toHaveBeenCalledTimes(cancelTurn);
+  for (const [index, consult] of consults.entries()) expect(consult).toHaveBeenCalledTimes(index < cancelTurn - 1 ? 1 : 0);
+  expect(record).toHaveBeenCalledWith('conquer', expect.objectContaining({ status: 'cancelled', turns: expect.arrayContaining([expect.objectContaining({ turn: cancelTurn, done: false })]) }));
+  expect(paths.every(path => !existsSync(path))).toBe(true);
+});
+
+it.each(['failed', 'timed-out'])('preserves prior work when the second builder turn is %s', async scenario => {
+  const cwd = repo();
+  const fitness = vi.spyOn(verification, 'runFitnessCommand');
+  const consult = vi.spyOn(nero, 'runNero').mockResolvedValue({ exitCode: 0, stdout: 'fixture advice' });
+  const paths: string[] = [];
+  const dispatch = vi.fn(async (engineId, _prompt, context) => {
+    paths.push(context.cwd);
+    writeFileSync(join(context.cwd, `turn-${paths.length}.txt`), 'partial work\n');
+    return { engineId, exitCode: paths.length === 2 && scenario === 'failed' ? 1 : 0,
+      stdout: 'partial output', stderr: 'fixture failure', timedOut: paths.length === 2 && scenario === 'timed-out' };
+  });
+  const record = vi.fn(async () => 'fixture');
+  const services = { logger: { debug: vi.fn() }, receipts: { record },
+    engines: { listActive: async () => ['builder', 'advisor-a', 'advisor-b'], dispatch } } as unknown as ModServices;
+  const result = await runConquerTask({ task: 'build feature', gate: 'false', builder: 'builder', maxTurns: '4' },
+    { invocationId: 'late-builder-failure', cwd, platform: 'darwin-arm64', signal: new AbortController().signal, config: {} }, services);
+  expect(result).toMatchObject({ exitCode: 1, result: { status: 'builder_failed', turns: [
+    expect.objectContaining({ turn: 1, done: false }), expect.objectContaining({ turn: 2, done: false, gate: null }),
+  ], lastPatch: expect.stringContaining('turn-1.txt') } });
+  expect(result.result).toMatchObject({ lastPatch: expect.stringContaining('turn-2.txt') });
+  expect(dispatch).toHaveBeenCalledTimes(2);
+  expect(fitness).toHaveBeenCalledOnce();
+  expect(consult).toHaveBeenCalledOnce();
+  expect(record).toHaveBeenCalledWith('conquer', expect.objectContaining({ status: 'builder_failed' }));
+  expect(paths.every(path => !existsSync(path))).toBe(true);
+});
 
 it.each(['tui', 'argument-only', 'direct', 'canonical-precedence', 'deadline'] as const)('preserves %s turn, timeout and advisor selections', async (entry) => {
   const cwd = repo();
@@ -54,7 +155,7 @@ it.each(['tui', 'argument-only', 'direct', 'canonical-precedence', 'deadline'] a
   expect(result.exitCode).toBe(1);
   expect(result.result).toMatchObject({ status: entry === 'deadline' ? 'time_budget_exceeded' : 'turn_budget_exceeded', advisors: ['advisor-a'], turns: [expect.any(Object)] });
   expect(input).toEqual(before);
-  expect(fitness).toHaveBeenCalledTimes(2);
+  expect(fitness).toHaveBeenCalledOnce();
   for (const call of fitness.mock.calls) {
     expect(call[0]).toBe('false');
     expect(call[1]).not.toBe(cwd);

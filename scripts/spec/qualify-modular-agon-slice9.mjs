@@ -138,12 +138,16 @@ const performancePasses = (evidence) => {
   return (evidence.passed === true || greenBudgets.length > 0) && greenBudgets.every(([, value]) => value === true);
 };
 if (process.argv.includes('--self-test')) {
-  if (!coveragePasses(coverage)) throw new Error('S9 coverage baseline is not green');
+  // Test the predicates without requiring a previous successful qualification.
+  const baseline = { packages: 49, firstPartyMods: 36, ownershipAssignments: 872,
+    releaseArtifacts: 51, physicalMods: 36, platformPassed: 3, platformExternallyBlocked: 9,
+    platformFailed: 0, measuredPerformanceSlices: 8 };
+  if (!coveragePasses(baseline)) throw new Error('S9 coverage rejected valid fixture evidence');
   for (const releaseArtifacts of [50, 52]) {
-    if (coveragePasses({ ...coverage, releaseArtifacts })) throw new Error('S9 coverage accepted a missing or extra release artifact');
+    if (coveragePasses({ ...baseline, releaseArtifacts })) throw new Error('S9 coverage accepted a missing or extra release artifact');
   }
-  if (coveragePasses({ ...coverage, platformPassed: 0, platformExternallyBlocked: 12 })) throw new Error('S9 coverage accepted an all-blocked platform matrix');
-  if (!performances.every(performancePasses)) throw new Error('S9 performance baseline is not green');
+  if (coveragePasses({ ...baseline, platformPassed: 0, platformExternallyBlocked: 12 })) throw new Error('S9 coverage accepted an all-blocked platform matrix');
+  if (!performancePasses({ passed: true }) || !performancePasses({ budgets: { latencyGreen: true, memoryGreen: true } })) throw new Error('S9 performance rejected valid fixture evidence');
   if (performancePasses({ budgets: { latencyGreen: true, memoryGreen: false } })) throw new Error('S9 performance accepted a red named budget');
   if (performancePasses({ budgets: { latencyMs: 10 } })) throw new Error('S9 performance accepted evidence without a verdict');
   console.log('S9 qualification negative controls passed');

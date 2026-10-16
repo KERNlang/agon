@@ -12,6 +12,35 @@ const qualificationSource = readFileSync(new URL('../../scripts/spec/qualify-mod
   .replace(/^import .*;\n/gm, '').replaceAll('import.meta.url', JSON.stringify('file:///fixture/scripts/spec/qualify-modular-agon-slice9.mjs'));
 const releaseArtifactCount = JSON.parse(readFileSync(new URL('../../docs/specs/evidence/modular-agon-release-set.json', import.meta.url), 'utf8')).artifactCount;
 
+it.each([[3, true], [1, true], [3, false], [0, false]] as const)(
+  'runs qualification self-tests independently of stored platform=%i and performance=%s', (passed, performancePassed) => {
+    const exited = new Error('self-test exited');
+    let exitCode: number | undefined;
+    expect(() => runInNewContext(qualificationSource, {
+      URL, join,
+      process: { argv: ['--self-test'], env: {}, exit: (code: number) => { exitCode = code; throw exited; } },
+      tmpdir: () => '/fixture/tmp', mkdtempSync: (prefix: string) => prefix + 'unique', rmSync() {},
+      collectSubjectContamination: () => ({ ignored: [], untracked: [], unstaged: [] }),
+      isSourceBearingPath: () => false,
+      hashGitSubject: () => 'sha256:fixture',
+      validateStoredSubjectBoundReview: () => ({ passed: false }),
+      validateDependencyGraph: () => ({ duplicateEdges: [], uniqueEdges: 153 }),
+      readFileSync: (path: string) => {
+        if (path.endsWith('package-map.json')) return JSON.stringify({ packages: Array.from({ length: 49 }, (_, i) => ({ class: i < 36 ? 'user-toggleable-mod-package' : 'support' })) });
+        if (path.endsWith('ownership.json')) return JSON.stringify({ assignments: Array(872).fill(null) });
+        if (path.endsWith('release-set.json')) return JSON.stringify({ artifactCount: releaseArtifactCount });
+        if (path.endsWith('physical-cutover.json')) return JSON.stringify({ counts: { physical: 36 } });
+        if (path.endsWith('platform-matrix.json')) return JSON.stringify({ summary: { passed, externallyBlocked: 12 - passed, failed: 0 } });
+        if (path.endsWith('-performance.json')) return JSON.stringify({ passed: performancePassed });
+        throw new Error(`unexpected fixture read: ${path}`);
+      },
+      spawnSync: () => { throw new Error('self-test must not execute qualification commands'); },
+      console: { log() {} },
+    })).toThrow(exited);
+    expect(exitCode).toBe(0);
+  },
+);
+
 it.each([false, true])('requires child PATH node to resolve to the selected override (matching=%s)', (matching) => {
   let receipt: { passed: boolean } | undefined;
   const process = { platform: 'linux', arch: 'x64', version: 'v22.0.0', execPath: '/fixture/node22', env: {}, argv: [], exitCode: 0 };

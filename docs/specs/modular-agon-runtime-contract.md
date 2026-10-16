@@ -967,6 +967,23 @@ attempts before cleanup and then propagates the original error. It does not
 remove a worktree while a sibling attempt still uses it. Existing dispatch and
 fitness timeouts, caller cancellation and quorum signals remain unchanged.
 
+## Forge invocation-host ownership
+
+`mod-forge/src/host.ts` owns `createForgeHostServices`. The host supplies registry,
+adapter and effect factories plus optional authority capture. Construction opens
+no transport. Each invocation checks cancellation and captured authority before
+opening its registry. The existing shared adapter guard checks that same authority
+and invocation/dispatch signals before every supported provider entry point.
+Rating seeding binds the invocation's registry, not a registry supplied later.
+Separate invocations do not share captured authority or registry state.
+
+Core preserves its public positional factory as a delegating compatibility export.
+It still composes concrete workflow effects; that remaining binding is not retired
+by this move. CLI and MCP retain their existing callers and authority callbacks.
+The physical factory and Core wrapper share one implementation of invocation
+policy. Invalid authority callback results fail before registry or adapter effects.
+No new dependency, workflow, permission default or persisted data is introduced.
+
 ## Forge stage ownership
 
 `@kernlang/agon-mod-forge` owns attempt execution, baseline evaluation and both

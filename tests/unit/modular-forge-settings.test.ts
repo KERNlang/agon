@@ -15,7 +15,8 @@ import { classifyNoDiffForgeResult as ownedNoDiffPolicy } from '@kernlang/agon-m
 import { DEFAULT_FIRST_PARTY_SETTINGS } from '../../packages/core/src/models/first-party-settings.generated.js';
 import { DEFAULT_AGON_CONFIG } from '../../packages/core/src/models/types.js';
 import { classifyNoDiffForgeResult } from '../../packages/forge/src/stages.js';
-import { createForgeHostServices } from '@kernlang/agon-core';
+import { createForgeHostServices, createForgeWorkflowEffects } from '@kernlang/agon-core';
+import * as ownedForgeHost from '../../packages/mod-forge/src/host.js';
 import type { EngineRegistry, EngineAdapter } from '@kernlang/agon-core';
 
 const createMod = (services: ModServices) => createForgeMod(withForgeHost(services));
@@ -23,6 +24,71 @@ const runForgeCompetition = (raw: Parameters<typeof runCompetition>[0], context:
   runCompetition(raw, context, withForgeHost(services));
 
 describe('Forge configuration ownership', () => {
+  it('binds each physical Forge host invocation to its own registry and authority', async () => {
+    const registries = [{} as EngineRegistry, {} as EngineRegistry];
+    const rawAdapters = [{ dispatch: vi.fn(async () => ({ exitCode: 0 })) }, { dispatch: vi.fn(async () => ({ exitCode: 0 })) }];
+    const seed = vi.fn();
+    const createEffects = vi.fn(() => ({ ...createForgeWorkflowEffects(), seedNewEnginesFromRegistry: seed }));
+    const openRegistry = vi.fn().mockReturnValueOnce(registries[0]).mockReturnValueOnce(registries[1]);
+    const createAdapter = vi.fn().mockReturnValueOnce(rawAdapters[0]).mockReturnValueOnce(rawAdapters[1]);
+    const stale = [false, false];
+    let captures = 0;
+    const captureAuthority = vi.fn(() => {
+      const index = captures++;
+      return () => { if (stale[index]) throw new Error(`stale invocation ${index}`); };
+    });
+    const host = ownedForgeHost.createForgeHostServices<EngineRegistry>({ openRegistry, createAdapter, createEffects, captureAuthority });
+    expect(openRegistry).not.toHaveBeenCalled();
+    expect(createAdapter).not.toHaveBeenCalled();
+    expect(createEffects).not.toHaveBeenCalled();
+    expect(captureAuthority).not.toHaveBeenCalled();
+    const context: InvocationContext = { invocationId: 'first', cwd: '/fixture/first', platform: 'darwin-arm64', config: {}, signal: new AbortController().signal };
+    const first = await host.open(context);
+    const second = await host.open({ ...context, invocationId: 'second', cwd: '/fixture/second' });
+    expect(openRegistry.mock.calls).toEqual([['/fixture/first'], ['/fixture/second']]);
+    expect(createAdapter.mock.calls).toEqual([[registries[0]], [registries[1]]]);
+    expect(createEffects).toHaveBeenCalledTimes(2);
+    first.effects.seedNewEnginesFromRegistry(registries[1]!);
+    second.effects.seedNewEnginesFromRegistry(registries[0]!);
+    expect(seed).toHaveBeenCalledTimes(2);
+    expect(seed.mock.calls[0]![0]).toBe(registries[0]);
+    expect(seed.mock.calls[1]![0]).toBe(registries[1]);
+    stale[0] = true;
+    await expect(first.adapter.dispatch({} as never)).rejects.toThrow('stale invocation 0');
+    expect(rawAdapters[0]!.dispatch).not.toHaveBeenCalled();
+    expect(await second.adapter.dispatch({} as never)).toEqual({ exitCode: 0 });
+    expect(rawAdapters[1]!.dispatch).toHaveBeenCalledTimes(1);
+    const aborted = new AbortController(); aborted.abort(new Error('child cancelled'));
+    await expect(second.adapter.dispatch({ signal: aborted.signal } as never)).rejects.toThrow('child cancelled');
+    expect(rawAdapters[1]!.dispatch).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['aborted', 'stale'])('rejects a physical Forge host %s open before any effects', async fault => {
+    const openRegistry = vi.fn(); const createAdapter = vi.fn(); const createEffects = vi.fn();
+    const reason = new Error(fault);
+    const controller = new AbortController();
+    if (fault === 'aborted') controller.abort(reason);
+    const captureAuthority = vi.fn(() => () => { throw reason; });
+    const host = ownedForgeHost.createForgeHostServices({ openRegistry, createAdapter, createEffects, captureAuthority });
+    const context: InvocationContext = { invocationId: 'refused', cwd: '/fixture', platform: 'darwin-arm64', config: {}, signal: controller.signal };
+    await expect(Promise.resolve().then(() => host.open(context))).rejects.toBe(reason);
+    expect(captureAuthority).toHaveBeenCalledTimes(fault === 'aborted' ? 0 : 1);
+    expect(openRegistry).not.toHaveBeenCalled();
+    expect(createAdapter).not.toHaveBeenCalled();
+    expect(createEffects).not.toHaveBeenCalled();
+  });
+
+  it.each([undefined, null])('rejects an invalid physical Forge authority result %s before transport', async result => {
+    const openRegistry = vi.fn(); const createAdapter = vi.fn(); const createEffects = vi.fn();
+    const host = ownedForgeHost.createForgeHostServices({ openRegistry, createAdapter, createEffects,
+      captureAuthority: () => result as never });
+    const context: InvocationContext = { invocationId: 'invalid-authority', cwd: '/fixture', platform: 'darwin-arm64', config: {}, signal: new AbortController().signal };
+    await expect(Promise.resolve().then(() => host.open(context))).rejects.toThrow(TypeError);
+    expect(openRegistry).not.toHaveBeenCalled();
+    expect(createAdapter).not.toHaveBeenCalled();
+    expect(createEffects).not.toHaveBeenCalled();
+  });
+
   it.each(['timeout', 'healthCheckTimeoutSec', 'earlyFinalizeCount', 'finalizeOnScore'] as const)(
     'rejects non-string %s at the direct export before host effects', async key => {
       const listActive = vi.fn(async () => ['fixture']);

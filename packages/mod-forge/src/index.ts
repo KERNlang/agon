@@ -18,6 +18,7 @@ export type {
 export { createForgeWorkflow } from './workflow.js';
 export type { ForgeWorkflowConfig, ForgeWorkflowRegistry, ForgeWorkflowEffects } from './workflow.js';
 export type { ForgeHostServices, ForgeModServices, ForgeInvocationContext } from './host.js';
+export { createForgeHostServices } from './host.js';
 export { planSynthesis } from './synth-plan.js';
 export { createForgeCorpus } from './corpus.js';
 export type { CorpusRecord } from './corpus.js';

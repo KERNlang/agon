@@ -1,9 +1,9 @@
 import {
   createForgeCorpus, createForgeManifestStore, runSyntaxCheck, runFitness,
+  createForgeHostServices as createModHost,
 } from '@kernlang/agon-mod-forge';
 import type { ForgeHostServices, ForgeWorkflowEffects } from '@kernlang/agon-mod-forge';
 import type { EngineAdapter } from '@kernlang/agon-support-engine-runtime';
-import { guardEngineAdapter } from '@kernlang/agon-support-engine-runtime';
 import { createSidechainLogger } from '@kernlang/agon-kernel';
 import { writeVersionedResultEnvelope } from '@kernlang/agon-support-persistence';
 import type { EngineRegistry } from '../signals/engine-registry.js';
@@ -41,30 +41,11 @@ export function createForgeWorkflowEffects(): ForgeWorkflowEffects<EngineRegistr
   };
 }
 
-/** Open invocation-scoped transport. Workflow policy stays in the Forge mod. */
+/** Preserve Core's public factory while the Forge mod owns invocation policy. */
 export function createForgeHostServices(
   openRegistry: (cwd: string) => EngineRegistry,
   createAdapter: (registry: EngineRegistry) => EngineAdapter,
   captureAuthority: () => () => void = () => () => {},
 ): ForgeHostServices {
-  return {
-    open(context) {
-      context.signal.throwIfAborted();
-      const assertCurrent = captureAuthority();
-      assertCurrent();
-      const registry = openRegistry(context.cwd);
-      const adapter = guardEngineAdapter(createAdapter(registry), signal => {
-        context.signal.throwIfAborted();
-        signal?.throwIfAborted();
-        assertCurrent();
-      });
-      return {
-        registry, adapter,
-        effects: {
-          ...createForgeWorkflowEffects(),
-          seedNewEnginesFromRegistry: () => { seedNewEnginesFromRegistry(registry); },
-        },
-      };
-    },
-  };
+  return createModHost({ openRegistry, createAdapter, createEffects: createForgeWorkflowEffects, captureAuthority });
 }

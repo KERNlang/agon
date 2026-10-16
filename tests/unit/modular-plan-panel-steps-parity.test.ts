@@ -25,7 +25,8 @@ const cases = (['brainstorm', 'tribunal', 'campfire', 'delegate'] as const).flat
 
 it('keeps panel step algorithms out of the CLI host', () => {
   const source = readFileSync(new URL('../../packages/cli/src/handlers/plan-mode.ts', import.meta.url), 'utf8');
-  expect(source).toContain('createPanelStepExecutors({');
+  expect(source).toContain('createPlanStepExecutors({');
+  expect(source).not.toContain('createPanelStepExecutors(');
   for (const kind of ['brainstorm', 'tribunal', 'campfire', 'delegate']) {
     expect(source).not.toMatch(new RegExp(`${kind}:\\s*wrap\\(`));
   }

@@ -28,7 +28,8 @@ const cases = (['live', 'plan', 'last', 'none'] as const).flatMap(mode => scenar
 
 it('removes the Self algorithm from the CLI without legacy imports in its owner', () => {
   const cli = readFileSync(new URL('../../packages/cli/src/handlers/plan-mode.ts', import.meta.url), 'utf8');
-  expect(cli).toContain('createSelfStepExecutor<');
+  expect(cli).toContain('createPlanStepExecutors({');
+  expect(cli).not.toContain('createSelfStepExecutor');
   expect(cli).not.toContain('[APPROVED PLAN STEP]');
   const owner = readFileSync(new URL('../../packages/mod-plan/src/self-step-execution.ts', import.meta.url), 'utf8');
   expect(owner).not.toMatch(/from ['"](?:@kernlang\/agon-(?:core|cli|forge)|\.\.\/)/);

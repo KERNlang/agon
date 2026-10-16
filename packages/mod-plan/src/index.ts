@@ -36,6 +36,8 @@ export type { PlanAgentReviewHost, PlanAgentReviewStepType, PlanAgentStepOutcome
 export { createForgeStepExecutors } from './forge-step-execution.js';
 export type { PlanForgeHost, PlanForgeEvent, PlanForgeManifest, PlanForgeUiEvent } from './forge-step-execution.js';
 export { createPipelineStepExecutor } from './pipeline-step-execution.js';
+export { createPlanStepExecutors } from './step-executors.js';
+export type { PlanStepExecutionHost } from './step-executors.js';
 export type { PlanPipelineHost, PlanPipelineRun, PlanPipelineIssue, PlanPipelineUiEvent } from './pipeline-step-execution.js';
 export type { PlanSelfStepHost, PlanSelfEvent, PlanSelfNotice } from './self-step-execution.js';
 export type { PlanPanelStepHost, PlanPanelStepType } from './panel-step-execution.js';

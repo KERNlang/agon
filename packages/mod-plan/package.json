@@ -22,6 +22,7 @@
     "dist/forge-step-execution.d.ts",
     "dist/pipeline-step-execution.d.ts",
     "dist/self-step-execution.d.ts",
+    "dist/step-executors.d.ts",
     "dist/approval-policy.d.ts",
     "dist/cost-estimator.d.ts",
     "dist/execution-callbacks.d.ts",

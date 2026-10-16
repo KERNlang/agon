@@ -206,17 +206,36 @@ it('does not delegate a self step through a disabled Agent owner', async () => {
 it('preserves enabled brainstorming and self delegation', async () => {
   await install();
   await initializeProcessSurfaceAuthority(root);
+  const leases = new GenerationLeaseStore({
+    directory: host.paths.leases,
+    writerLockPath: host.paths.writerLock,
+    processIdentity: 'observer',
+    validateGeneration: generation => host.validateGeneration(generation),
+  });
+  const observed: number[] = [];
+  effects.brainstorm.mockImplementationOnce(async () => {
+    observed.push((await leases.active(1)).length);
+    return { winner: 'fixture', response: 'answer' };
+  });
+  effects.delegate.mockImplementationOnce(async () => {
+    observed.push((await leases.active(1)).length);
+    return { response: 'answer' };
+  });
   const executors = buildStepExecutors(context());
   expect((await executors.brainstorm.execute(step('unknown-caller-type'), {})).result.status).toBe('success');
   expect((await executors.self.execute(step('self'), {})).result.status).toBe('success');
   expect(effects.brainstorm).toHaveBeenCalledOnce();
   expect(effects.delegate).toHaveBeenCalledOnce();
+  expect(observed).toEqual([1, 1]);
+  expect(await leases.active(1)).toEqual([]);
 });
 
 it('accepts all enabled step keys and rejects an unknown key', async () => {
   await install();
   await initializeProcessSurfaceAuthority(root);
-  for (const key of Object.keys(buildStepExecutors(context()))) {
+  const keys = Object.keys(buildStepExecutors(context()));
+  expect(keys).toEqual(['self', 'forge', 'teamforge', 'brainstorm', 'tribunal', 'campfire', 'delegate', 'pipeline', 'review', 'agent', 'team-agent']);
+  for (const key of keys) {
     expect(() => assertProcessPlanStepAvailable(key), key).not.toThrow();
   }
   expect(() => assertProcessPlanStepAvailable('unknown-step')).toThrow('unavailable');
@@ -545,6 +564,19 @@ it.each([false, true])('preserves the invocation outcome when lease cleanup fail
   else await expect(pending).rejects.toMatchObject({
     code: 'MOD_RESTART_REQUIRED', details: { outcome: 'invocation-completed', leaseId: expect.any(String) },
   });
+  expect(release).toHaveBeenCalledOnce();
+});
+
+it.each([false, true])('does not repeat catalog effects after lease cleanup fails (backend failed=%s)', async failed => {
+  await install();
+  await initializeProcessSurfaceAuthority(root);
+  const release = vi.spyOn(RuntimeDurableModHost.prototype, 'releaseGenerationLease')
+    .mockRejectedValueOnce(new Error('fixture lease cleanup failed'));
+  if (failed) effects.brainstorm.mockRejectedValueOnce(new Error('fixture backend failed'));
+  await expect(buildStepExecutors(context()).brainstorm.execute(step('brainstorm'), {})).rejects.toMatchObject({
+    code: 'MOD_RESTART_REQUIRED', details: { outcome: 'invocation-completed', leaseId: expect.any(String) },
+  });
+  expect(effects.brainstorm).toHaveBeenCalledOnce();
   expect(release).toHaveBeenCalledOnce();
 });
 

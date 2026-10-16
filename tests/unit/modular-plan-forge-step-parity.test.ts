@@ -30,7 +30,8 @@ const cases = (['forge', 'teamforge'] as const).flatMap(kind => [false, true].fl
 
 it('keeps Forge step algorithms and progress policies in the physical owner', () => {
   const cli = readFileSync(new URL('../../packages/cli/src/handlers/plan-mode.ts', import.meta.url), 'utf8');
-  expect(cli).toContain('const forgeExecutors = createForgeStepExecutors({');
+  expect(cli).toContain('createPlanStepExecutors({');
+  expect(cli).not.toContain('createForgeStepExecutors(');
   expect(cli).not.toMatch(/(?:forge|teamforge):\s*wrap\(/);
   expect(cli).not.toContain('const notePlanForgeEvent');
   const coreImport = cli.match(/import\s*\{[^}]*\}\s*from '@kernlang\/agon-core'/)?.[0];

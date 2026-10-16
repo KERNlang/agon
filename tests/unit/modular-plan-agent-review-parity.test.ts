@@ -29,7 +29,8 @@ const cases = (['review', 'agent', 'team-agent'] as const).flatMap(kind =>
 
 it('keeps the three algorithms out of the CLI and legacy packages out of their owner', () => {
   const source = readFileSync(new URL('../../packages/cli/src/handlers/plan-mode.ts', import.meta.url), 'utf8');
-  expect(source).toContain('createAgentReviewStepExecutors({');
+  expect(source).toContain('createPlanStepExecutors({');
+  expect(source).not.toContain('createAgentReviewStepExecutors(');
   expect(source).not.toMatch(/(?:review|agent|'team-agent'):\s*wrap\([^\n]*async/);
   const physical = readFileSync(new URL('../../packages/mod-plan/src/agent-review-step-execution.ts', import.meta.url), 'utf8');
   expect(physical).not.toMatch(/from ['"](?:@kernlang\/agon-(?:core|cli|forge)|\.\.\/)/);

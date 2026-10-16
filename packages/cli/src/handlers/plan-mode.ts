@@ -3,7 +3,7 @@ import { writeFileSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 
 import { planCostEstimator, resolveWorkingDir, RUNS_DIR, tracker, cesarPlanMarkdownPath, saveCesarPlan, spawnWithTimeout, getCoreWorkflowRegistry, compileWorkflowSpec, verifyWorkflowExecutionPlanFlow, verifyWorkflowRunFlow, throwWorkflowConformance, createWorkflowRun, appendWorkflowPhaseEvent } from '@kernlang/agon-core';
-import { publishPlanProposal, exitPlanSession, createPanelStepExecutors, createSelfStepExecutor, createAgentReviewStepExecutors, createForgeStepExecutors, createPipelineStepExecutor } from '@kernlang/agon-mod-plan';
+import { publishPlanProposal, exitPlanSession, createPlanStepExecutors } from '@kernlang/agon-mod-plan';
 import { readPatchContent, applyPatchToTree } from '@kernlang/agon-support-worktree';
 import { SurfaceGenerationError } from '@kernlang/agon-kernel';
 
@@ -74,14 +74,6 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
     assertProcessSurfaceAvailable('tui', '/plan');
     assertProcessPlanStepAvailable(type);
   };
-  const wrap = (type: string, fn: StepExecutor['execute']): StepExecutor => ({
-    execute: async (step, context, signal) => {
-      assertStepAvailable(type, signal);
-      return withProcessSurfaceAuthority(signal,
-        childSignal => assertStepAvailable(type, childSignal),
-        childSignal => fn(step, context, childSignal));
-    },
-  });
   const guardedAdapter = (type: string, signal?: AbortSignal) =>
     guardProcessEngineAdapter(ctx.adapter, () => assertStepAvailable(type, signal));
   const executionRefusal = (type: string, signal?: AbortSignal) => () => {
@@ -99,80 +91,81 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
     return { tokens: s.totalTokens, cost: s.meteredCostUsd };
   };
   
-  const agentReviewExecutors = createAgentReviewStepExecutors({
-    assertAvailable: assertStepAvailable,
-    snapshot: snapshotTokens,
-    reviewTarget: () => resolveReviewTarget('uncommitted', cwd, undefined),
-    selectReviewEngine: requested => selectReviewEngine(requested, ctx),
-    review: (diff, label, engineId, signal) => runReviewCore(diff, label, engineId, ctx, signal),
-    agent: (task, emit, options) => runAgentMode(task, emit as Dispatch, ctx, {
-      ...options, executionRefusal: executionRefusal('agent', options.parentSignal),
-    }),
-    teamAgent: (task, emit, options) => runAgentTeam(task, emit as Dispatch, ctx, {
-      ...options, executionRefusal: executionRefusal('team-agent', options.parentSignal),
-    }),
-  });
-  const panelExecutors = createPanelStepExecutors({
-    outputDir,
-    assertAvailable: assertStepAvailable,
-    snapshot: snapshotTokens,
-    activeEngines: () => ctx.activeEngines?.() ?? [],
-    brainstorm: options => runBrainstorm({ ...options, registry: ctx.registry, adapter: guardedAdapter('brainstorm', options.signal) }),
-    tribunal: options => runTribunal({ ...options, mode: options.mode as Parameters<typeof runTribunal>[0]['mode'], registry: ctx.registry, adapter: guardedAdapter('tribunal', options.signal) }),
-    campfire: options => runCampfire({ ...options, registry: ctx.registry, adapter: guardedAdapter('campfire', options.signal) }),
-    delegate: options => runDelegate({ ...options, registry: ctx.registry, adapter: guardedAdapter('delegate', options.signal) }),
-  });
-  
   const getPlanDispatch = (): Dispatch | undefined => liveDispatch ?? ctx.cesar?.planDispatch ?? ctx.cesar?.lastDispatch ?? undefined;
-  
+
   // Plan accepts an empty artifact as an explicit no-change outcome.
   const readPlanPatch = (path: string): { content: string } | null => {
     try { return { content: readPatchContent(path) }; }
     catch { return null; }
   };
-  const forgeExecutors = createForgeStepExecutors({
-    cwd,
-    outputDir,
-    assertAvailable: assertStepAvailable,
-    snapshot: snapshotTokens,
-    getDispatch: getPlanDispatch,
-    activeEngines: () => ctx.activeEngines?.() ?? [],
-    mkdir: path => { mkdirSync(path, { recursive: true }); },
-    readPatch: readPlanPatch,
-    applyPatch: applyPatchToTree,
-    run: (options, onEvent, owner) => runForge(options, ctx.registry, guardedAdapter(owner, options.signal), onEvent),
-  });
-  const pipelineExecutor = createPipelineStepExecutor({
-    cwd,
-    outputDir,
-    readPatch: readPlanPatch,
-    applyPatch: applyPatchToTree,
-    assertAvailable: assertStepAvailable,
-    isCancellation: signal => Boolean(signal?.aborted && !(signal.reason instanceof SurfaceGenerationError)),
-    snapshot: snapshotTokens,
-    getDispatch: () => {
-      const dispatch = getPlanDispatch();
-      return dispatch ? event => dispatch(event as Parameters<Dispatch>[0]) : undefined;
-    },
-    activeEngines: () => ctx.activeEngines?.() ?? [],
-    brainstorm: options => runBrainstorm({ ...options, registry: ctx.registry, adapter: guardedAdapter('brainstorm', options.signal) }),
-    tribunal: options => runTribunal({ ...options, mode: options.mode as Parameters<typeof runTribunal>[0]['mode'], registry: ctx.registry, adapter: guardedAdapter('tribunal', options.signal) }),
-    forge: (options, onEvent, owner) => runForge(options, ctx.registry, guardedAdapter(owner, options.signal), onEvent),
-    workflow: {
-      resolve: () => {
-        const spec = getCoreWorkflowRegistry().require('agon.brainstorm-forge-tribunal@v1');
-        return { id: spec.id, plan: compileWorkflowSpec(spec) };
-      },
-      verifyPlan: verifyWorkflowExecutionPlanFlow,
-      rejectPlan: throwWorkflowConformance,
-      createRun: createWorkflowRun,
-      append: appendWorkflowPhaseEvent,
-      verifyRun: verifyWorkflowRunFlow,
-    },
-  });
 
-  return {
-    self: wrap('self', createSelfStepExecutor<Parameters<Dispatch>[0]>({
+  return createPlanStepExecutors({
+    assertAvailable: assertStepAvailable,
+    withAuthority: withProcessSurfaceAuthority,
+    agentReview: {
+      assertAvailable: assertStepAvailable,
+      snapshot: snapshotTokens,
+      reviewTarget: () => resolveReviewTarget('uncommitted', cwd, undefined),
+      selectReviewEngine: requested => selectReviewEngine(requested, ctx),
+      review: (diff, label, engineId, signal) => runReviewCore(diff, label, engineId, ctx, signal),
+      agent: (task, emit, options) => runAgentMode(task, emit as Dispatch, ctx, {
+        ...options, executionRefusal: executionRefusal('agent', options.parentSignal),
+      }),
+      teamAgent: (task, emit, options) => runAgentTeam(task, emit as Dispatch, ctx, {
+        ...options, executionRefusal: executionRefusal('team-agent', options.parentSignal),
+      }),
+    },
+    panel: {
+      outputDir,
+      assertAvailable: assertStepAvailable,
+      snapshot: snapshotTokens,
+      activeEngines: () => ctx.activeEngines?.() ?? [],
+      brainstorm: options => runBrainstorm({ ...options, registry: ctx.registry, adapter: guardedAdapter('brainstorm', options.signal) }),
+      tribunal: options => runTribunal({ ...options, mode: options.mode as Parameters<typeof runTribunal>[0]['mode'], registry: ctx.registry, adapter: guardedAdapter('tribunal', options.signal) }),
+      campfire: options => runCampfire({ ...options, registry: ctx.registry, adapter: guardedAdapter('campfire', options.signal) }),
+      delegate: options => runDelegate({ ...options, registry: ctx.registry, adapter: guardedAdapter('delegate', options.signal) }),
+    },
+    forge: {
+      cwd,
+      outputDir,
+      assertAvailable: assertStepAvailable,
+      snapshot: snapshotTokens,
+      getDispatch: getPlanDispatch,
+      activeEngines: () => ctx.activeEngines?.() ?? [],
+      mkdir: path => { mkdirSync(path, { recursive: true }); },
+      readPatch: readPlanPatch,
+      applyPatch: applyPatchToTree,
+      run: (options, onEvent, owner) => runForge(options, ctx.registry, guardedAdapter(owner, options.signal), onEvent),
+    },
+    pipeline: {
+      cwd,
+      outputDir,
+      readPatch: readPlanPatch,
+      applyPatch: applyPatchToTree,
+      assertAvailable: assertStepAvailable,
+      isCancellation: signal => Boolean(signal?.aborted && !(signal.reason instanceof SurfaceGenerationError)),
+      snapshot: snapshotTokens,
+      getDispatch: () => {
+        const dispatch = getPlanDispatch();
+        return dispatch ? event => dispatch(event as Parameters<Dispatch>[0]) : undefined;
+      },
+      activeEngines: () => ctx.activeEngines?.() ?? [],
+      brainstorm: options => runBrainstorm({ ...options, registry: ctx.registry, adapter: guardedAdapter('brainstorm', options.signal) }),
+      tribunal: options => runTribunal({ ...options, mode: options.mode as Parameters<typeof runTribunal>[0]['mode'], registry: ctx.registry, adapter: guardedAdapter('tribunal', options.signal) }),
+      forge: (options, onEvent, owner) => runForge(options, ctx.registry, guardedAdapter(owner, options.signal), onEvent),
+      workflow: {
+        resolve: () => {
+          const spec = getCoreWorkflowRegistry().require('agon.brainstorm-forge-tribunal@v1');
+          return { id: spec.id, plan: compileWorkflowSpec(spec) };
+        },
+        verifyPlan: verifyWorkflowExecutionPlanFlow,
+        rejectPlan: throwWorkflowConformance,
+        createRun: createWorkflowRun,
+        append: appendWorkflowPhaseEvent,
+        verifyRun: verifyWorkflowRunFlow,
+      },
+    },
+    self: {
       cwd,
       outputDir,
       assertAvailable: assertStepAvailable,
@@ -185,16 +178,6 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
       delegate: options => runDelegate({
         ...options, registry: ctx.registry, adapter: guardedAdapter('delegate', options.signal),
       }),
-    }).execute),
-  
-    ...Object.fromEntries(Object.entries(forgeExecutors).map(([type, executor]) => [type, wrap(type, executor.execute)])),
-
-    ...Object.fromEntries(Object.entries(panelExecutors).map(([type, executor]) => [type, wrap(type, executor.execute)])),
-  
-    pipeline: wrap('pipeline', pipelineExecutor.execute),
-
-    review: wrap('review', agentReviewExecutors.review.execute),
-    agent: wrap('agent', agentReviewExecutors.agent.execute),
-    'team-agent': wrap('team-agent', agentReviewExecutors['team-agent'].execute),
-  };
+    },
+  });
 }

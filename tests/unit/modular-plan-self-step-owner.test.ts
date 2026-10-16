@@ -21,7 +21,11 @@ afterEach(() => vi.restoreAllMocks());
 
 it('keeps the Self algorithm in its physical owner', () => {
   const cli = readFileSync(new URL('../../packages/cli/src/handlers/plan-mode.ts', import.meta.url), 'utf8');
-  expect(cli).toContain('createSelfStepExecutor<');
+  expect(cli).toContain('createPlanStepExecutors({');
+  expect(cli).not.toContain('createSelfStepExecutor');
+  const catalog = readFileSync(new URL('../../packages/mod-plan/src/step-executors.ts', import.meta.url), 'utf8');
+  expect(catalog).toContain("self: wrap('self', createSelfStepExecutor(host.self).execute)");
+  expect(catalog).not.toMatch(/from ['"](?:@kernlang\/agon-(?:core|cli|forge)|\.\.\/)/);
   expect(cli).not.toContain('[APPROVED PLAN STEP]');
   expect(cli).not.toContain('[EXECUTOR OVERRIDE]');
   const owner = readFileSync(new URL('../../packages/mod-plan/src/self-step-execution.ts', import.meta.url), 'utf8');

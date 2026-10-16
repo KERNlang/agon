@@ -37,8 +37,9 @@ const cases = ['none', 'live', 'plan', 'last'].flatMap(ui => scenarios.map(scena
 
 it('keeps the pipeline step algorithm out of the CLI', () => {
   const source = readFileSync(new URL('../../packages/cli/src/handlers/plan-mode.ts', import.meta.url), 'utf8');
-  expect(source).toContain('const pipelineExecutor = createPipelineStepExecutor(');
-  expect(source).toContain("pipeline: wrap('pipeline', pipelineExecutor.execute)");
+  expect(source).toContain('createPlanStepExecutors({');
+  expect(source).not.toContain('createPipelineStepExecutor(');
+  expect(source).not.toContain('const wrap =');
   expect(source).not.toContain('const emitPipelinePhase');
 });
 

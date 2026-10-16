@@ -13,6 +13,67 @@ import { artifact, installer, lifecycleLock, request, verifier } from '../helper
 import { hostLock } from '../helpers/modular-host.js';
 
 describe('managed purge generation retention', () => {
+  it.each(['none', 'before-rename', 'after-rename', 'restore-failure', 'restore-stat-failure'] as const)('purges a real immutable installation after retirement with %s', async fault => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-retired-installation-purge-'));
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
+    const service = new ManagedLifecycleService(host);
+    const first = await service.apply(await createManagedLifecyclePlan(host, request([artifact('@test/app')])), installer, verifier);
+    const next = artifact('@test/app', [], { version: '2.0.0', sourceLocator: 'cache:@test/app@2.0.0', contentHash: `sha256:${'2'.repeat(64)}` });
+    const second = await service.apply(await createManagedLifecyclePlan(host, request([next], { operation: 'update' })), installer, verifier);
+    const prefix = join(root, 'installations', first.installation.installationId);
+    expect((await stat(prefix)).mode & 0o777).toBe(0o555);
+    await expect(previewManagedPurge(host, { installationIds: [first.installation.installationId] })).rejects.toThrow('retained');
+    const collection = await previewManagedGenerationCollection(host, { generations: [1], rollbackWindowMs: 0 });
+    await applyManagedGenerationCollection(host, collection, collection.planHash);
+    const selectedBefore = await readFile(host.paths.current);
+    const payload = join(root, 'installations', second.installation.installationId, 'node_modules', '@test/app', 'package.json');
+    const payloadBefore = await readFile(payload);
+    const purge = await previewManagedPurge(host, { installationIds: [first.installation.installationId] });
+    if (fault !== 'none') {
+      let renameFailed = false;
+      const interrupted = new DurableModHost(root, { kernelVersion: '1.0.0', io: { ...nodeHostIo,
+        rename: async (from, to) => {
+          if (from !== prefix) return nodeHostIo.rename(from, to);
+          if (fault === 'after-rename') await nodeHostIo.rename(from, to);
+          renameFailed = true;
+          throw new Error('fixture installation rename');
+        },
+        stat: async path => {
+          if (fault === 'restore-stat-failure' && renameFailed && path === prefix) throw new Error('fixture installation stat');
+          return nodeHostIo.stat(path);
+        },
+        chmod: async (path, mode) => {
+          if (fault === 'restore-failure' && path === prefix && mode === 0o555) throw new Error('fixture installation restore');
+          return nodeHostIo.chmod(path, mode);
+        },
+      } });
+      const attempt = applyManagedPurge(interrupted, purge, purge.planHash);
+      if (fault === 'restore-failure' || fault === 'restore-stat-failure') {
+        await expect(attempt).rejects.toMatchObject({ errors: [
+          expect.objectContaining({ message: 'fixture installation rename' }),
+          expect.objectContaining({ message: fault === 'restore-failure' ? 'fixture installation restore' : 'fixture installation stat' }),
+        ] });
+        expect((await stat(prefix)).mode & 0o777).toBe(0o700);
+      } else {
+        await expect(attempt).rejects.toThrow('fixture installation rename');
+        if (fault === 'before-rename') expect((await stat(prefix)).mode & 0o777).toBe(0o555);
+        else {
+          await expect(stat(prefix)).rejects.toMatchObject({ code: 'ENOENT' });
+          await mkdir(prefix);
+          await writeFile(join(prefix, 'replacement.txt'), 'keep replacement');
+        }
+      }
+      expect(await readFile(payload)).toEqual(payloadBefore);
+      expect(await readFile(host.paths.current)).toEqual(selectedBefore);
+    }
+    expect(await applyManagedPurge(host, purge, purge.planHash)).toEqual([prefix]);
+    if (fault === 'after-rename') expect(await readFile(join(prefix, 'replacement.txt'), 'utf8')).toBe('keep replacement');
+    else await expect(stat(prefix)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(await readFile(payload)).toEqual(payloadBefore);
+    expect(await readFile(host.paths.current)).toEqual(selectedBefore);
+    expect((await host.boot()).mode).toBe('normal');
+  });
+
   it.each(['before-remove', 'after-rename', 'partial-remove'] as const)('cancels stale pending targets after %s without deleting them and permits a fresh approved plan', async fault => {
     const root = await mkdtemp(join(tmpdir(), 'agon-retirement-cancel-'));
     const host = new DurableModHost(root, { kernelVersion: '1.0.0' });

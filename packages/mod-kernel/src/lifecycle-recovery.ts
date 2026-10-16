@@ -1066,7 +1066,24 @@ export async function applyManagedPurge(host: DurableModHost, input: ManagedPurg
         if (!await pathExists(host.hostIo, staged)) {
           await assertPurgeNoLinks(host, target);
           if (await pathExists(host.hostIo, target)) {
-            await host.hostIo.rename(target, staged);
+            const metadata = await host.hostIo.stat(target);
+            // macOS requires a writable root to rename an immutable installation.
+            const immutableInstallation = installationPaths.includes(target) && metadata.isDirectory()
+              && metadata.mode !== undefined && (metadata.mode & 0o777) === 0o555;
+            if (immutableInstallation) await host.hostIo.chmod(target, 0o700);
+            try { await host.hostIo.rename(target, staged); }
+            catch (error) {
+              if (immutableInstallation) {
+                try {
+                  if (await pathExists(host.hostIo, target)) {
+                    await host.hostIo.chmod(target, 0o555);
+                    await host.hostIo.syncDirectory(target);
+                  }
+                }
+                catch (restore) { throw new AggregateError([error, restore], 'installation purge rename and permission restore failed'); }
+              }
+              throw error;
+            }
           } else phases[index] = 'absent';
         }
         if (phases[index] !== 'absent') {

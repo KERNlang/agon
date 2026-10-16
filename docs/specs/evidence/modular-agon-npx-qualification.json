@@ -1,11 +1,13 @@
 {
   "schemaVersion": 1,
   "slice": "S9",
-  "passed": false,
+  "passed": true,
   "platform": "darwin-arm64",
   "node": "v26.3.0",
-  "scratch": "/tmp/amr-runtime/tmp/agon-s9-npx-bioC1e",
-  "error": "Error: packed workflow qualification failed: packed-brainstorm-tui, packed-brainstorm-tui-active-exit",
+  "profile": "minimal+think+review",
+  "installedPackageCount": 15,
+  "cacheDeletionSurvived": true,
+  "idempotent": true,
   "checks": [
     {
       "id": "pack:@kernlang/agon-kernel",
@@ -279,13 +281,13 @@
     },
     {
       "id": "packed-brainstorm-tui",
-      "passed": false,
-      "detail": "AssertionError [ERR_ASSERTION]: Traceback (most recent call last):\n  File \"/Users/ra/dev/agon-audit-qualification/scripts/perf/pty-drive.py\", line 128, in <module>\n    sys.exit(main())\n             ~~~~^^\n  File \"/Users/ra/dev/agon-audit-qualification/scripts/perf/pty-drive.py\", line 109, in main\n    os.write(fd, step[\"send\"].encode(\"utf-8\"))\n    ~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nOSError: [Errno 5] Input/output error\n\n\n1 !== 0\n"
+      "passed": true,
+      "detail": "installed npm bin on real 120x40 PTY: failed command, Escape cancellation of a running fixture engine with signal receipt and process-exit verification, two successful commands, persisted outcomes and idle double-Ctrl+C exit without forced cleanup"
     },
     {
-      "id": "packed-brainstorm-tui-active-exit",
-      "passed": false,
-      "detail": "AssertionError [ERR_ASSERTION]: Traceback (most recent call last):\n  File \"/Users/ra/dev/agon-audit-qualification/scripts/perf/pty-drive.py\", line 128, in <module>\n    sys.exit(main())\n             ~~~~^^\n  File \"/Users/ra/dev/agon-audit-qualification/scripts/perf/pty-drive.py\", line 109, in main\n    os.write(fd, step[\"send\"].encode(\"utf-8\"))\n    ~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nOSError: [Errno 5] Input/output error\n\n\n1 !== 0\n"
+      "id": "packed-brainstorm-active-exit",
+      "passed": true,
+      "detail": "double-Ctrl+C during fixture work: unforced app exit, owned engine disappears, fresh last --status reads unsuccessful host-exit record; no automatic resume or full session-finalization claim"
     },
     {
       "id": "npx-setup-first-run",

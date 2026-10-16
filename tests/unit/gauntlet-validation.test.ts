@@ -1,4 +1,5 @@
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -105,13 +106,21 @@ it('cancels a running validation process without starting the clean check', asyn
     expect(Date.now() - cancelledAt).toBeLessThan(2500);
     expect(existsSync(join(cleanWorktree, 'started'))).toBe(false);
     const pid = Number(readFileSync(pidPath, 'utf8'));
-    await expect.poll(() => {
-      try { process.kill(pid, 0); return true; }
-      catch (error) {
-        if ((error as NodeJS.ErrnoException).code === 'ESRCH') return false;
-        throw error;
-      }
-    }, { timeout: 1000 }).toBe(false);
+    try {
+      await expect.poll(() => {
+        try { process.kill(pid, 0); return true; }
+        catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'ESRCH') return false;
+          throw error;
+        }
+      }, { timeout: 1000 }).toBe(false);
+    } catch (error) {
+      let processState: string;
+      try { processState = execFileSync('ps', ['-o', 'pid=,ppid=,pgid=,stat=', '-p', String(pid)], { encoding: 'utf8', timeout: 1000 }); }
+      catch (probeError) { processState = `Process-state probe failed: ${String(probeError)}`; }
+      console.error('GAUNTLET_CANCEL_DIAG', JSON.stringify({ pid, elapsedMs: Date.now() - cancelledAt, processState }));
+      throw error;
+    }
   } finally {
     controller.abort();
     await pending;

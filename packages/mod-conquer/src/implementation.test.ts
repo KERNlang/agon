@@ -108,6 +108,20 @@ it('forwards fallback timeouts to advisors without changing independent Agent de
   expect(dispatch.mock.calls[0][3]).toMatchObject({ timeoutSeconds: 1 });
 });
 
+it('keeps the real Nero consultation inside the explicitly selected advisor pool', async () => {
+  const cwd = repo();
+  const dispatch = vi.fn(async (engineId, _prompt, _context, options) => ({
+    engineId, exitCode: 0, stdout: options.mode === 'agent' ? 'working' : 'Confidence: 80%\nVERDICT: SOUND',
+    stderr: '', timedOut: false,
+  }));
+  const services = { logger: { debug: vi.fn() }, receipts: { record: vi.fn(async () => 'fixture') },
+    engines: { listActive: async () => ['builder', 'unselected', 'advisor-a', 'advisor-b'], dispatch } } as unknown as ModServices;
+  const result = await runConquerTask({ task: 'build feature', gate: 'false', builder: 'builder', engines: 'advisor-a,advisor-b', maxTurns: '1' },
+    { invocationId: 'nero-advisor-pool', cwd, platform: 'darwin-arm64', signal: new AbortController().signal, config: {} }, services);
+  expect(result).toMatchObject({ exitCode: 1, result: { status: 'turn_budget_exceeded', advisors: ['advisor-a', 'advisor-b'] } });
+  expect(dispatch.mock.calls.map(call => call[0])).toEqual(['builder', 'advisor-a']);
+});
+
 it.each(['green-baseline', 'failed', 'timed-out', 'thrown', 'aborted'] as const)('preserves the builder execution boundary when %s', async scenario => {
   const cwd = repo();
   const controller = new AbortController();

@@ -31,6 +31,38 @@ afterEach(() => {
 });
 
 describe('loadConfig() memoization', () => {
+  it.each([
+    ['gauntletEnabled', true, false],
+    ['gauntletEnabled', false, true],
+    ['gauntletMaxBreakers', 7, 8],
+    ['gauntletRepairTimeout', 450, 600],
+    ['corpusReplayLimit', 9, 12],
+  ] as const)('preserves legacy and namespaced Forge setting %s through writes', async (key, legacy, namespaced) => {
+    home = setupTestAgonHome('forge-config-roundtrip');
+    const path = agonHomePath('config.json');
+    const { loadConfig, configSet } = await import('../../packages/core/src/signals/config.js');
+    writeFileSync(path, JSON.stringify({ [key]: legacy, future: { keep: true } }));
+    expect(loadConfig()[key]).toBe(legacy);
+    writeFileSync(path, JSON.stringify({ [key]: legacy, mods: { 'agon.forge': { [key]: namespaced, future: 'keep' } }, future: { keep: true } }));
+    expect(loadConfig()[key]).toBe(namespaced);
+    configSet(key, legacy);
+    expect(loadConfig()[key]).toBe(legacy);
+    expect(JSON.parse(readFileSync(path, 'utf8'))).toMatchObject({
+      [key]: legacy, mods: { 'agon.forge': { [key]: legacy, future: 'keep' } }, future: { keep: true },
+    });
+    const project = join(home, 'project');
+    mkdirSync(project);
+    const localPath = join(project, '.agon.json');
+    writeFileSync(path, JSON.stringify({ mods: { 'agon.forge': { [key]: namespaced } } }));
+    writeFileSync(localPath, JSON.stringify({ [key]: legacy }));
+    expect(loadConfig(project)).toMatchObject({ [key]: legacy, mods: { 'agon.forge': { [key]: legacy } } });
+    writeFileSync(path, JSON.stringify({ [key]: legacy }));
+    writeFileSync(localPath, JSON.stringify({ mods: { 'agon.forge': { [key]: namespaced } } }));
+    expect(loadConfig(project)).toMatchObject({ [key]: namespaced, mods: { 'agon.forge': { [key]: namespaced } } });
+    writeFileSync(join(project, '.agon.local.json'), JSON.stringify({ [key]: legacy }));
+    expect(loadConfig(project)).toMatchObject({ [key]: legacy, mods: { 'agon.forge': { [key]: legacy } } });
+  });
+
   it('reuses the parsed merge after checking current bytes and returns a fresh object', async () => {
     home = setupTestAgonHome('config-memo-same');
     writeFileSync(agonHomePath('config.json'), JSON.stringify({ commitCoAuthor: 'v1' }));

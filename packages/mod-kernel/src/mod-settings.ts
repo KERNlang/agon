@@ -153,7 +153,9 @@ export function resolveRegisteredModSettings(ownerId: string, settings: unknown,
     }
     const resolved = { ...selected, ...Object.fromEntries(proposed) };
     for (const schema of schemas) {
-      const valueSchema = Object.fromEntries(Object.entries(schema as Record<string, unknown>).filter(([key]) => key !== 'x-agon-config'));
+      // Persisted owner schemas retain document identity and migration metadata.
+      const valueSchema = Object.fromEntries(Object.entries(schema as Record<string, unknown>)
+        .filter(([key]) => key !== 'x-agon-config' && key !== '$id'));
       const failure = validateContributionInput(valueSchema, resolved);
       if (failure) throw new TypeError(failure);
     }

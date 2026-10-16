@@ -114,6 +114,9 @@ function assignmentFor(category, item) {
   const raw = item.id;
   const normalized = normalizeSurfaceId(raw);
   const source = item.source ?? '';
+  if (category === 'configKeys' && ['gauntletEnabled', 'gauntletMaxBreakers', 'gauntletRepairTimeout', 'corpusReplayLimit'].includes(raw)) {
+    return { class: MOD, package: '@kernlang/agon-mod-forge', rule: 'exact-forge-settings-owner' };
+  }
   if (category === 'generatedDocumentation') return { class: MOD, package: '@kernlang/agon-mod-routing-docs', rule: 'generated-docs-owner' };
   const physicalMod = source.match(new RegExp('^packages/mod-([^/]+)/'));
   if (physicalMod) return { class: MOD, package: '@kernlang/agon-mod-' + physicalMod[1], rule: 'physical-mod-owner' };

@@ -3,10 +3,14 @@
   "$id": "https://kernlang.dev/schemas/forge/config.schema.json",
   "title": "forge configuration",
   "type": "object",
-  "x-agon-config": { "version": 1, "legacyAliases": ["autoReviewAfterForge", "forgeFitnessTimeout"] },
+  "x-agon-config": { "version": 1, "legacyAliases": ["autoReviewAfterForge", "forgeFitnessTimeout", "gauntletEnabled", "gauntletMaxBreakers", "gauntletRepairTimeout", "corpusReplayLimit"] },
   "properties": {
     "autoReviewAfterForge": { "type": "boolean", "default": true },
-    "forgeFitnessTimeout": { "type": "number", "default": 120 }
+    "forgeFitnessTimeout": { "type": "number", "default": 120 },
+    "gauntletEnabled": { "type": "boolean", "default": false },
+    "gauntletMaxBreakers": { "type": "number", "default": 3 },
+    "gauntletRepairTimeout": { "type": "number", "default": 300 },
+    "corpusReplayLimit": { "type": "number", "default": 5 }
   },
   "additionalProperties": true
 }

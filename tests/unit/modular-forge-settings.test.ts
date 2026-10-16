@@ -8,6 +8,7 @@ import { describe, expect, it, vi } from 'vitest';
 import ts from 'typescript';
 import type { CommandContribution, CommandResult, IntentContribution, InvocationContext, ModServices } from '../../packages/mod-api/src/index.js';
 import { ModRegistry } from '../../packages/mod-kernel/src/index.js';
+import { DEFAULT_KERNEL_SETTINGS } from '../../packages/mod-kernel/src/settings.js';
 import { resolveRegisteredModSettings } from '../../packages/mod-kernel/src/mod-settings.js';
 import { createMod as createForgeMod, MANIFEST, runForgeCompetition as runCompetition } from '../../packages/mod-forge/src/index.js';
 import { withForgeHost } from '../helpers/forge-host.js';
@@ -24,6 +25,20 @@ const runForgeCompetition = (raw: Parameters<typeof runCompetition>[0], context:
   runCompetition(raw, context, withForgeHost(services));
 
 describe('Forge configuration ownership', () => {
+  it('owns hardened Forge and corpus defaults outside the kernel', () => {
+    const schema = JSON.parse(readFileSync(new URL('../../packages/mod-forge/schemas/config.schema.json', import.meta.url), 'utf8'));
+    const expected = { gauntletEnabled: false, gauntletMaxBreakers: 3, gauntletRepairTimeout: 300, corpusReplayLimit: 5 };
+    const ledger = JSON.parse(readFileSync(new URL('../../docs/specs/evidence/modular-agon-ownership.json', import.meta.url), 'utf8'));
+    for (const [key, value] of Object.entries(expected)) {
+      expect(schema.properties[key]).toEqual({ type: typeof value, default: value });
+      expect(schema['x-agon-config'].legacyAliases).toContain(key);
+      expect(ledger.assignments.filter((item: { category: string; id: string }) => item.category === 'configKeys' && item.id === key))
+        .toEqual([expect.objectContaining({ package: '@kernlang/agon-mod-forge', class: 'user-toggleable-mod-package' })]);
+      expect(DEFAULT_AGON_CONFIG[key as keyof typeof expected]).toBe(value);
+      expect(Object.hasOwn(DEFAULT_KERNEL_SETTINGS, key)).toBe(false);
+    }
+  });
+
   it('binds each physical Forge host invocation to its own registry and authority', async () => {
     const registries = [{} as EngineRegistry, {} as EngineRegistry];
     const rawAdapters = [{ dispatch: vi.fn(async () => ({ exitCode: 0 })) }, { dispatch: vi.fn(async () => ({ exitCode: 0 })) }];
@@ -677,6 +692,9 @@ describe('Forge configuration ownership', () => {
       expect(() => resolve({ ...base, 'x-agon-config': descriptor })).toThrow(/descriptor|alias/);
     }
     expect(() => resolve({ ...base, 'x-unknown': {} })).toThrow(/unsupported schema keyword/);
+    expect(resolve({ ...base, $id: 'https://example.invalid/settings' })).toEqual({ enabled: true });
+    expect(() => resolve({ ...base, $id: 'https://example.invalid/settings', $ref: 'remote.json' }))
+      .toThrow(/unsupported schema keyword/);
   });
   it('keeps mutable compatibility defaults independent of generated defaults', () => {
     const compatibility = DEFAULT_AGON_CONFIG.goalReviewEngines;
@@ -697,6 +715,10 @@ describe('Forge configuration ownership', () => {
     expect(schema.properties).toEqual({
       autoReviewAfterForge: { type: 'boolean', default: true },
       forgeFitnessTimeout: { type: 'number', default: 120 },
+      gauntletEnabled: { type: 'boolean', default: false },
+      gauntletMaxBreakers: { type: 'number', default: 3 },
+      gauntletRepairTimeout: { type: 'number', default: 300 },
+      corpusReplayLimit: { type: 'number', default: 5 },
     });
     expect(DEFAULT_FIRST_PARTY_SETTINGS).toMatchObject(Object.fromEntries(
       Object.entries(schema.properties as Record<string, { default: unknown }>).map(([key, property]) => [key, property.default]),
@@ -764,9 +786,11 @@ describe('Forge configuration ownership', () => {
     await mod.activate(session.registrar);
     session.commit();
     const schemas = MANIFEST.contributes.configKeys.map(({ id }) => registry.resolve('config', id)!.payload);
-    expect(resolveRegisteredModSettings(owner.id, {}, schemas)).toEqual({ autoReviewAfterForge: true, forgeFitnessTimeout: 120 });
+    const defaults = { autoReviewAfterForge: true, forgeFitnessTimeout: 120,
+      gauntletEnabled: false, gauntletMaxBreakers: 3, gauntletRepairTimeout: 300, corpusReplayLimit: 5 };
+    expect(resolveRegisteredModSettings(owner.id, {}, schemas)).toEqual(defaults);
     expect(resolveRegisteredModSettings(owner.id, { autoReviewAfterForge: false, forgeFitnessTimeout: 0, future: 'keep' }, schemas))
-      .toEqual({ autoReviewAfterForge: false, forgeFitnessTimeout: 0, future: 'keep' });
+      .toEqual({ ...defaults, autoReviewAfterForge: false, forgeFitnessTimeout: 0, future: 'keep' });
     const command = registry.project('cli').entries[0].payload as CommandContribution;
     const context: InvocationContext = { invocationId: 'forge-invalid', cwd: '/fixture', platform: 'darwin-arm64', signal: new AbortController().signal, config: {} };
     for (const config of [{ forgeFitnessTimeout: 'wrong' }, { forgeFitnessTimeout: null }, { forgeFitnessTimeout: Infinity }, { autoReviewAfterForge: 'false' }]) {

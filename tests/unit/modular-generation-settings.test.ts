@@ -11,10 +11,44 @@ import { resolveRegisteredModSettings } from '../../packages/mod-kernel/src/mod-
 import { ModRegistry, readSelectedGenerationConfigurationSync } from '@kernlang/agon-kernel';
 import type { CommandContribution } from '@kernlang/agon-mod-api';
 import { manifest } from '../helpers/modular-agon.js';
+import forgeConfigSchema from '../../packages/mod-forge/schemas/config.schema.json' with { type: 'json' };
 
 afterEach(() => { vi.unstubAllEnvs(); invalidateConfigCache(); });
 
 describe('selected generation settings in the normal Core reader', () => {
+  it('validates Forge gauntlet writes against the selected owner schema without losing data', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'agon-forge-selected-config-'));
+    const hostRoot = join(home, 'host');
+    vi.stubEnv('AGON_HOME', home);
+    vi.stubEnv('AGON_MODULAR_HOST_ROOT', hostRoot);
+    const sourcePath = join(home, 'config.json');
+    const source = JSON.stringify({ retained: true });
+    await writeFile(sourcePath, source);
+    const host = new DurableModHost(hostRoot, { kernelVersion: '1.0.0' });
+    const input = request([artifact('@kernlang/agon-mod-forge')]);
+    const hash = (bytes: string) => `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+    await host.commitGeneration({ operation: 'install', lock: input.lock,
+      desiredState: input.desiredState, installedIndex: {}, files: {
+        'config/index.json': JSON.stringify({ schemaVersion: 1, source: { path: sourcePath, contentHash: hash(source) }, selectedHash: hash(source), ownerCount: 1 }),
+        'config/source-global.json': source, 'config/selected-global.json': source,
+        'config/owners.json': JSON.stringify([{ ownerId: 'agon.forge', version: 1, schema: forgeConfigSchema, assetHash: hash(JSON.stringify(forgeConfigSchema)) }]),
+        'config/migration-receipts.json': '[]',
+      } });
+    for (const [key, value] of [
+      ['gauntletEnabled', true], ['gauntletMaxBreakers', 8],
+      ['gauntletRepairTimeout', 600], ['corpusReplayLimit', 12],
+    ] as const) {
+      configSet(key, value);
+      expect(loadConfig()[key]).toBe(value);
+      const before = await readFile(sourcePath, 'utf8');
+      expect(JSON.parse(before)).toMatchObject({ retained: true, [key]: value, mods: { 'agon.forge': { [key]: value } } });
+      expect(() => configSet(key, 'invalid')).toThrow();
+      expect(await readFile(sourcePath, 'utf8')).toBe(before);
+    }
+    configSet('gauntletEnabled', false);
+    expect(loadConfig().gauntletEnabled).toBe(false);
+  });
+
   it('pins nested rules while edits, permissions and write validation remain live', async () => {
     const home = await mkdtemp(join(tmpdir(), 'agon-config-invocation-'));
     const hostRoot = join(home, 'host');

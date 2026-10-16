@@ -5549,9 +5549,9 @@
       "category": "configKeys",
       "id": "corpusReplayLimit",
       "source": "packages/core/src/models/types.ts:111",
-      "class": "minimal-kernel-machinery",
-      "package": "@kernlang/agon-kernel",
-      "rule": "kernel-contract-default"
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-forge",
+      "rule": "exact-forge-settings-owner"
     },
     {
       "category": "configKeys",
@@ -5765,25 +5765,25 @@
       "category": "configKeys",
       "id": "gauntletEnabled",
       "source": "packages/core/src/models/types.ts:108",
-      "class": "minimal-kernel-machinery",
-      "package": "@kernlang/agon-kernel",
-      "rule": "kernel-contract-default"
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-forge",
+      "rule": "exact-forge-settings-owner"
     },
     {
       "category": "configKeys",
       "id": "gauntletMaxBreakers",
       "source": "packages/core/src/models/types.ts:109",
-      "class": "minimal-kernel-machinery",
-      "package": "@kernlang/agon-kernel",
-      "rule": "kernel-contract-default"
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-forge",
+      "rule": "exact-forge-settings-owner"
     },
     {
       "category": "configKeys",
       "id": "gauntletRepairTimeout",
       "source": "packages/core/src/models/types.ts:110",
-      "class": "minimal-kernel-machinery",
-      "package": "@kernlang/agon-kernel",
-      "rule": "kernel-contract-default"
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-forge",
+      "rule": "exact-forge-settings-owner"
     },
     {
       "category": "configKeys",

@@ -44,7 +44,8 @@ it('distinguishes relocated Plan definitions from remaining execution ownership'
   }
   // Include kernel-classified declarations without changing the frozen S5 count.
   expect(ledger.sourceRelocations).toHaveLength(13);
-  expect(ledger.counts.assignments).toBe(344);
+  // Four Forge settings moved from the kernel to their physical mod owner.
+  expect(ledger.counts.assignments).toBe(348);
 });
 
 it.each([definitionPath, evidencePath, ...bindings])('rejects absent relocation evidence: %s', path => {

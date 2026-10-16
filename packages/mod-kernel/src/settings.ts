@@ -34,10 +34,6 @@ export interface KernelSettings {
   jobCancelGraceMs?: number;
   jobShutdownTimeoutMs?: number;
   daemonFrameMaxBytes?: number;
-  gauntletEnabled?: boolean;
-  gauntletMaxBreakers?: number;
-  gauntletRepairTimeout?: number;
-  corpusReplayLimit?: number;
   cesarEnabled?: boolean;
   cesarScoutCount?: number;
   cesarScoutTimeout?: number;
@@ -129,10 +125,6 @@ export const DEFAULT_KERNEL_SETTINGS: Required<KernelSettings> = {
   jobCancelGraceMs: 2000,
   jobShutdownTimeoutMs: 10000,
   daemonFrameMaxBytes: 1048576,
-  gauntletEnabled: false,
-  gauntletMaxBreakers: 3,
-  gauntletRepairTimeout: 300,
-  corpusReplayLimit: 5,
   cesarEnabled: true,
   cesarScoutCount: 2,
   cesarScoutTimeout: 18,

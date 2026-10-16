@@ -3,6 +3,7 @@ import type { AgonModFactory, Dispose, InvocationContext, Json, Registrar } from
 import { applyInputSchema, parseApply, runApply } from './apply.js';
 import { runForgeCompetition } from './competition.js';
 import ownerConfigSchema from '../schemas/config.schema.json' with { type: 'json' };
+import manifest from '../agon.mod.json' with { type: 'json' };
 
 export { runForgeCompetition };
 
@@ -201,7 +202,7 @@ export const createMod: AgonModFactory = (services) =>
             }),
           }),
         );
-      for (const id of ["configKeys:0006", "configKeys:0072"])
+      for (const { id } of manifest.contributes.configKeys)
         disposers.push(
           registrar.config(id, configSchema),
         );

@@ -122,8 +122,8 @@
         "@kernlang/agon-support-worktree",
         "@kernlang/agon-support-verification"
       ],
-      "assignments": 51,
-      "assignmentHash": "sha256:15d0a76b574c6a892c6af049f7c336304fd35832ff39b4e3f229254b4b8245d9",
+      "assignments": 55,
+      "assignmentHash": "sha256:f5854bb78fbf16300233d36b477cca0d9e5b483492bb84b3eab4dfebf357b399",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -2600,11 +2600,91 @@
     },
     {
       "category": "configKeys",
+      "id": "corpusReplayLimit",
+      "source": "packages/core/src/models/types.ts:111",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-forge",
+      "rule": "exact-forge-settings-owner",
+      "legacyPath": "packages/core/src/models/types.ts",
+      "physicalPackage": "packages/mod-forge",
+      "physicalEntrypoint": "packages/mod-forge/src/index.ts",
+      "implementationPaths": [
+        "packages/mod-forge/src/index.ts"
+      ],
+      "ownershipAsset": "packages/mod-forge/ownership.json",
+      "compatibilityAdapter": "packages/core/src/models/types.ts",
+      "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
+      "registrationBoundary": "public-mod-api",
+      "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
+    },
+    {
+      "category": "configKeys",
       "id": "forgeFitnessTimeout",
       "source": "packages/core/src/models/types.ts:79",
       "class": "user-toggleable-mod-package",
       "package": "@kernlang/agon-mod-forge",
       "rule": "semantic-source-rule",
+      "legacyPath": "packages/core/src/models/types.ts",
+      "physicalPackage": "packages/mod-forge",
+      "physicalEntrypoint": "packages/mod-forge/src/index.ts",
+      "implementationPaths": [
+        "packages/mod-forge/src/index.ts"
+      ],
+      "ownershipAsset": "packages/mod-forge/ownership.json",
+      "compatibilityAdapter": "packages/core/src/models/types.ts",
+      "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
+      "registrationBoundary": "public-mod-api",
+      "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
+    },
+    {
+      "category": "configKeys",
+      "id": "gauntletEnabled",
+      "source": "packages/core/src/models/types.ts:108",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-forge",
+      "rule": "exact-forge-settings-owner",
+      "legacyPath": "packages/core/src/models/types.ts",
+      "physicalPackage": "packages/mod-forge",
+      "physicalEntrypoint": "packages/mod-forge/src/index.ts",
+      "implementationPaths": [
+        "packages/mod-forge/src/index.ts"
+      ],
+      "ownershipAsset": "packages/mod-forge/ownership.json",
+      "compatibilityAdapter": "packages/core/src/models/types.ts",
+      "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
+      "registrationBoundary": "public-mod-api",
+      "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
+    },
+    {
+      "category": "configKeys",
+      "id": "gauntletMaxBreakers",
+      "source": "packages/core/src/models/types.ts:109",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-forge",
+      "rule": "exact-forge-settings-owner",
+      "legacyPath": "packages/core/src/models/types.ts",
+      "physicalPackage": "packages/mod-forge",
+      "physicalEntrypoint": "packages/mod-forge/src/index.ts",
+      "implementationPaths": [
+        "packages/mod-forge/src/index.ts"
+      ],
+      "ownershipAsset": "packages/mod-forge/ownership.json",
+      "compatibilityAdapter": "packages/core/src/models/types.ts",
+      "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
+      "registrationBoundary": "public-mod-api",
+      "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
+    },
+    {
+      "category": "configKeys",
+      "id": "gauntletRepairTimeout",
+      "source": "packages/core/src/models/types.ts:110",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-forge",
+      "rule": "exact-forge-settings-owner",
       "legacyPath": "packages/core/src/models/types.ts",
       "physicalPackage": "packages/mod-forge",
       "physicalEntrypoint": "packages/mod-forge/src/index.ts",
@@ -7851,13 +7931,13 @@
   ],
   "counts": {
     "packages": 36,
-    "assignments": 344,
+    "assignments": 348,
     "categories": {
       "builtinCommandMetadata": 34,
       "cesarRoutes": 45,
       "cesarTools": 16,
       "cliCommands": 50,
-      "configKeys": 9,
+      "configKeys": 13,
       "emittedEvents": 9,
       "generatedDocumentation": 3,
       "intentVariants": 35,

@@ -88,7 +88,7 @@ describe('frozen first-party package graph', () => {
           contamination: {}, subjectKind: 'commit', indexHash: 'same', commitHash: 'same',
           reviewEvidence: { passed: true }, steps: [{ passed: true }],
           performance: { passed: true, budgets: { coldGreen: true, rssGreen: true, planGreen: true, groupedViewGreen: true } },
-          migration: { packages: 11, counts: { packages: 36, assignments: 344 } },
+          migration: { packages: 11, counts: { packages: 36, assignments: 348 } },
           behaviorAudit: { status: 'green' }, inventoryAssignments,
           coverage: {}, coveragePasses: () => true, freshPlatformPassed: true,
           freshPerformancePassed: true, performances: [{ passed: true }],

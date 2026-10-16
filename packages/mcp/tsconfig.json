@@ -9,6 +9,10 @@
   "references": [
     { "path": "../forge" },
     { "path": "../mod-kernel" },
+    { "path": "../mod-brainstorm" },
+    { "path": "../mod-ratings" },
+    { "path": "../support-dedup" },
+    { "path": "../support-engine-catalog" },
     { "path": "../mod-jobs" },
     { "path": "../mod-rooms" },
     { "path": "../support-engine-runtime" },

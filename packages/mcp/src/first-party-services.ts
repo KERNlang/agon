@@ -4,7 +4,12 @@ import { resolveEngineDefinitionsDir } from '@kernlang/agon-support-engine-runti
 import { resolveExplicitReviewEngines } from '@kernlang/agon-support-verification';
 
 import { createCliAdapter } from '@kernlang/agon-adapter-cli';
-import { createBrainstormHostServices, createForgeHostServices } from '@kernlang/agon-core';
+import { createForgeHostServices } from '@kernlang/agon-core';
+import { createBrainstormHostServices } from '@kernlang/agon-mod-brainstorm';
+import { glicko } from '@kernlang/agon-mod-ratings';
+import { EngineRegistry as CatalogEngineRegistry } from '@kernlang/agon-support-engine-catalog';
+import { classifyTask } from '@kernlang/agon-support-dedup';
+import { buildKernDraftPrompt, parseKernDraft } from '@kernlang/protocol';
 import { EngineRegistry, createRunDir, getRatings, loadConfig, pickTopRatedEngine, writeRunStatus } from '@kernlang/agon-core';
 import type { Json, ModManifest, ModServices } from '@kernlang/agon-mod-api';
 import { handleJobToolCall } from './job-tools.js';
@@ -40,9 +45,18 @@ export function decorateMcpFirstPartyServices(manifest: ModManifest, base: ModSe
         return handleJobToolCall(name, input, context);
       },
     }) } : {}),
-    ...(manifest.id === 'agon.brainstorm' || manifest.id === 'agon.pipeline-orchestration' ? { brainstorm: createBrainstormHostServices(() => {
-      const registry = new EngineRegistry(); registry.load(resolveEngineDefinitionsDir()); return registry;
-    }, createCliAdapter, () => captureMcpSurfaceAuthority('Brainstorm')) } : {}),
+    ...(manifest.id === 'agon.brainstorm' || manifest.id === 'agon.pipeline-orchestration' ? { brainstorm: createBrainstormHostServices<CatalogEngineRegistry>({
+      openRegistry: () => {
+        const registry = new CatalogEngineRegistry(glicko.getEngineGlickoRating);
+        registry.load(resolveEngineDefinitionsDir()); return registry;
+      },
+      createAdapter: createCliAdapter,
+      loadConfig, classifyTask,
+      readRatings: glicko.getRatings, seedRegistry: glicko.seedNewEnginesFromRegistry,
+      updateRanked: glicko.updateGlickoRanked,
+      buildPrompt: buildKernDraftPrompt, parseDraft: parseKernDraft,
+      captureAuthority: () => captureMcpSurfaceAuthority('Brainstorm'),
+    }) } : {}),
     runs: Object.freeze({
       start(mode: string, label: string | undefined) { const startedAt = new Date().toISOString(); const created = createRunDir({ mode, label, announce: false }); return Object.freeze({ id: created.id, path: created.path, mode, startedAt }); },
       finish(handle: { path: string }, status: Json): void { writeRunStatus(handle.path, status as never); },

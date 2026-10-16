@@ -4,7 +4,12 @@ import { patchApplicationHost } from './patch-application-host.js';
 import { planSessionHost } from '@kernlang/agon-mod-plan';
 import { EngineRegistry, createRunDir, eventLogFlush, getRatings, loadConfig, pickTopRatedEngine, setSessionRoot } from '@kernlang/agon-core';
 import { createCliAdapter } from '@kernlang/agon-adapter-cli';
-import { createBrainstormHostServices, createForgeHostServices } from '@kernlang/agon-core';
+import { createForgeHostServices } from '@kernlang/agon-core';
+import { createBrainstormHostServices } from '@kernlang/agon-mod-brainstorm';
+import { glicko } from '@kernlang/agon-mod-ratings';
+import { EngineRegistry as CatalogEngineRegistry } from '@kernlang/agon-support-engine-catalog';
+import { classifyTask } from '@kernlang/agon-support-dedup';
+import { buildKernDraftPrompt, parseKernDraft } from '@kernlang/protocol';
 import type { Json, ModManifest, ModServices } from '@kernlang/agon-mod-api';
 import { resolveBuiltinEnginesDir } from './lib/engines-dir.js';
 import { captureProcessSurfaceAuthority, assertProcessSurfaceAvailable } from './surface-authority-runtime.js';
@@ -76,11 +81,20 @@ export function decorateCliFirstPartyServices(manifest: ModManifest, base: ModSe
   }) : undefined;
   const usesBrainstorm = manifest.id === 'agon.brainstorm' || manifest.id === 'agon.pipeline-orchestration';
   const brainstorm = usesBrainstorm ? {
-    ...createBrainstormHostServices(() => {
-      const registry = new EngineRegistry(); registry.load(resolveBuiltinEnginesDir()); return registry;
-    }, createCliAdapter, () => {
-      const assertCurrent = captureProcessSurfaceAuthority();
-      return () => { assertCurrent(); assertProcessSurfaceAvailable('cli', 'brainstorm'); };
+    ...createBrainstormHostServices<CatalogEngineRegistry>({
+      openRegistry: () => {
+        const registry = new CatalogEngineRegistry(glicko.getEngineGlickoRating);
+        registry.load(resolveBuiltinEnginesDir()); return registry;
+      },
+      createAdapter: createCliAdapter,
+      loadConfig, classifyTask,
+      readRatings: glicko.getRatings, seedRegistry: glicko.seedNewEnginesFromRegistry,
+      updateRanked: glicko.updateGlickoRanked,
+      buildPrompt: buildKernDraftPrompt, parseDraft: parseKernDraft,
+      captureAuthority: () => {
+        const assertCurrent = captureProcessSurfaceAuthority();
+        return () => { assertCurrent(); assertProcessSurfaceAvailable('cli', 'brainstorm'); };
+      },
     }),
     ...(manifest.id === 'agon.brainstorm' ? {
       writeCliOutput(text: string): void { process.stdout.write(text); },

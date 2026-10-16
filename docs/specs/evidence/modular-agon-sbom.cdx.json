@@ -1,7 +1,7 @@
 {
   "bomFormat": "CycloneDX",
   "specVersion": "1.6",
-  "serialNumber": "urn:uuid:70c91914-4b3a-5b2c-a88f-ef4de76b65be",
+  "serialNumber": "urn:uuid:5964f5e9-c356-55f2-9afc-6b32cd22fdb1",
   "version": 1,
   "metadata": {
     "component": {
@@ -38,7 +38,7 @@
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "fa1111a901e39a54bb5f93a6f4457b7909cabe0c95b37fedc868fee88e7a555b"
+          "content": "eb8172b1e9f6873cc8b6800e659ac5a3c88c482580d1581650fb70cfd1f2ce21"
         }
       ],
       "licenses": [
@@ -51,7 +51,7 @@
       "properties": [
         {
           "name": "npm:integrity",
-          "value": "sha512-fEfhtewCfyc1nbTf1tmF8cPfjXpcKDgLlNUwuzxMNtZ2w9Mom87htfzqn7w8Oe43rGojI1Hc8S7AydAuCFnijQ=="
+          "value": "sha512-hrgYVlMDCMpglvVHusFf+ppzuszXt9mLOY82RIXI0Q0jegERwrXzfgKYymsKijWcGkVfCEmLBh2/xG3rq5nmEg=="
         },
         {
           "name": "agon:class",
@@ -5138,6 +5138,7 @@
         "@kernlang/agon-mod-tribunal@1.0.0",
         "@kernlang/agon-mod-worktrees@1.0.0",
         "@kernlang/agon-support-browser-bridge@1.0.0",
+        "@kernlang/agon-support-dedup@1.0.0",
         "@kernlang/agon-support-engine-catalog@1.0.0",
         "@kernlang/agon-support-engine-runtime@1.0.0",
         "@kernlang/agon-support-judge@1.0.0",

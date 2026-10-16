@@ -1,5 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { EngineDispatchOptions, InvocationContext } from '@kernlang/agon-mod-api';
+import { glicko } from '@kernlang/agon-mod-ratings';
+import { classifyTask } from '@kernlang/agon-support-dedup';
+import { buildKernDraftPrompt, parseKernDraft } from '@kernlang/protocol';
+import { EngineRegistry as CatalogEngineRegistry } from '@kernlang/agon-support-engine-catalog';
+import type { BrainstormModServices } from '@kernlang/agon-mod-brainstorm';
 
 // Stop at the adapter boundary: no engine process, personal configuration or
 // run directory is needed to test the actual CLI and MCP host implementations.
@@ -7,6 +12,7 @@ const fixture = vi.hoisted(() => ({
   dispatch: vi.fn(),
   brainstorm: { open: vi.fn() },
   brainstormFactory: vi.fn(),
+  realHost: false, adapterOpened: vi.fn(), rating: vi.fn(() => ({ mu: 1000, phi: 30 })),
   captureCli: vi.fn(), captureMcp: vi.fn(), assertCli: vi.fn(), assertCurrent: vi.fn(),
   forge: { open: vi.fn() },
   loadConfig: vi.fn(() => ({})),
@@ -20,14 +26,29 @@ vi.mock('@kernlang/agon-core', () => ({
     get() { return fixture.engine; }
   },
   loadConfig: fixture.loadConfig,
-  createBrainstormHostServices: (...args: unknown[]) => { fixture.brainstormFactory(...args); return fixture.brainstorm; },
   createForgeHostServices: () => fixture.forge,
   createRunDir: () => ({ id: 'fixture-run', path: '/fixture/output' }),
   getRatings: vi.fn(), pickTopRatedEngine: vi.fn(), writeRunStatus: vi.fn(),
   eventLogFlush: vi.fn(), setSessionRoot: vi.fn(),
 }));
-vi.mock('@kernlang/agon-adapter-cli', () => ({ createCliAdapter: () => ({ dispatch: fixture.dispatch }) }));
-vi.mock('@kernlang/agon-support-engine-runtime', () => ({ resolveEngineDefinitionsDir: () => '/fixture/engines' }));
+vi.mock('@kernlang/agon-adapter-cli', () => ({ createCliAdapter: () => {
+  fixture.adapterOpened(); return { dispatch: fixture.dispatch };
+} }));
+vi.mock('@kernlang/agon-mod-brainstorm', async importOriginal => {
+  const actual = await importOriginal<typeof import('@kernlang/agon-mod-brainstorm')>();
+  return { ...actual, createBrainstormHostServices: (effects: Parameters<typeof actual.createBrainstormHostServices>[0]) => {
+    fixture.brainstormFactory(effects);
+    return fixture.realHost ? actual.createBrainstormHostServices(effects) : fixture.brainstorm;
+  } };
+});
+vi.mock('@kernlang/agon-mod-ratings', async importOriginal => {
+  const actual = await importOriginal<typeof import('@kernlang/agon-mod-ratings')>();
+  return { ...actual, glicko: { ...actual.glicko, getEngineGlickoRating: fixture.rating } };
+});
+vi.mock('@kernlang/agon-support-engine-runtime', async importOriginal => ({
+  ...await importOriginal<typeof import('@kernlang/agon-support-engine-runtime')>(),
+  resolveEngineDefinitionsDir: () => '/fixture/engines',
+}));
 vi.mock('../../packages/cli/src/lib/engines-dir.js', () => ({ resolveBuiltinEnginesDir: () => '/fixture/engines' }));
 vi.mock('../../packages/cli/src/handlers/engine-filter.js', () => ({ filterDefaultOrchestrationEngines: (ids: string[]) => ids }));
 vi.mock('../../packages/cli/src/patch-application-host.js', () => ({ patchApplicationHost: {} }));
@@ -48,10 +69,12 @@ import { createMcpEngineServices, decorateMcpFirstPartyServices } from '../../pa
 const result = { exitCode: 0, stdout: 'fixture answer', stderr: '', durationMs: 4, timedOut: false };
 beforeEach(() => {
   vi.clearAllMocks(); fixture.dispatch.mockResolvedValue(result);
+  fixture.realHost = false;
   fixture.captureCli.mockReturnValue(fixture.assertCurrent);
   fixture.captureMcp.mockReturnValue(fixture.assertCurrent);
   fixture.assertCurrent.mockReset();
 });
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); });
 
 describe.each([decorateCliFirstPartyServices, decorateMcpFirstPartyServices])('Ratings protection host', decorate => {
   it('protects all registered engines plus configured historical IDs, without dispatch', async () => {
@@ -88,11 +111,73 @@ describe.each([decorateCliFirstPartyServices, decorateMcpFirstPartyServices])('F
 });
 
 describe.each([decorateCliFirstPartyServices, decorateMcpFirstPartyServices])('Brainstorm host wiring', decorate => {
+  it.each(['agon.brainstorm', 'agon.pipeline-orchestration'])('opens %s with the physical registry and Ratings lookup', id => {
+    const load = vi.spyOn(CatalogEngineRegistry.prototype, 'load').mockImplementation(() => {});
+    decorate({ id } as never, {} as never);
+    expect(load).not.toHaveBeenCalled();
+    const registry = fixture.brainstormFactory.mock.calls[0]![0].openRegistry('/fixture/project') as CatalogEngineRegistry;
+    expect(registry).toBeInstanceOf(CatalogEngineRegistry);
+    expect(load).toHaveBeenCalledExactlyOnceWith('/fixture/engines');
+    expect(registry.getFallbackChain('source', 'code', ['candidate'])).toEqual(['candidate']);
+    expect(fixture.rating).toHaveBeenCalledExactlyOnceWith('candidate', 'code');
+  });
+  it.each(['agon.brainstorm', 'agon.pipeline-orchestration'])('executes %s through the real host with scoped effects', async id => {
+    fixture.realHost = true;
+    const load = vi.spyOn(CatalogEngineRegistry.prototype, 'load').mockImplementation(() => {});
+    vi.spyOn(CatalogEngineRegistry.prototype, 'get').mockReturnValue({
+      ...fixture.engine, api: { baseUrl: 'https://example.invalid', model: 'fixture', apiKeyEnv: 'UNUSED' },
+    } as never);
+    vi.stubEnv('AGON_FORCE_HEALTH_PROBE', '1');
+    vi.stubEnv('AGON_DISABLE_FORGE_HEALTH_CHECK', '');
+    const decorated = decorate({ id } as never, {} as never) as BrainstormModServices;
+    expect(load).not.toHaveBeenCalled();
+    expect(fixture.adapterOpened).not.toHaveBeenCalled();
+    const controller = new AbortController();
+    const context: InvocationContext = { invocationId: 'physical', cwd: '/fixture/invocation',
+      platform: 'darwin-arm64', signal: controller.signal, config: {} };
+    const aborted = new AbortController(); aborted.abort(new Error('already cancelled'));
+    expect(() => decorated.brainstorm!.open({ ...context, signal: aborted.signal })).toThrow('already cancelled');
+    expect(load).not.toHaveBeenCalled();
+    const services = await decorated.brainstorm!.open(context);
+    const options = { question: 'fixture', engines: ['fixture-engine'], timeout: 37, outputDir: '/fixture/output' };
+    await services.preflight(options);
+    expect(fixture.loadConfig).toHaveBeenCalledExactlyOnceWith(context.cwd);
+    fixture.dispatch.mockClear();
+    const seat = services.selectSeat(options, 'fixture-engine');
+    await seat('seat', 'system');
+    await services.selectWinner(options, 'fixture-engine')('winner');
+    expect(fixture.dispatch).toHaveBeenCalledTimes(2);
+    for (const [request] of fixture.dispatch.mock.calls) expect(request).toMatchObject({ cwd: context.cwd, signal: context.signal });
+    fixture.dispatch.mockClear();
+    fixture.assertCurrent.mockImplementation(() => { throw new Error('stale host'); });
+    await expect(seat('stale', 'system')).resolves.toMatchObject({ ok: false, failure: 'error', detail: 'stale host' });
+    expect(fixture.dispatch).not.toHaveBeenCalled();
+    fixture.assertCurrent.mockReset();
+    controller.abort(new Error('cancelled invocation'));
+    await expect(seat('cancelled', 'system')).resolves.toMatchObject({ ok: false, attempts: 0, detail: 'aborted before dispatch' });
+    expect(fixture.dispatch).not.toHaveBeenCalled();
+  });
+  it.each(['agon.brainstorm', 'agon.pipeline-orchestration'])('binds %s effects to their physical owners', id => {
+    decorate({ id } as never, {} as never);
+    expect(fixture.brainstormFactory).toHaveBeenCalledOnce();
+    expect(fixture.brainstormFactory.mock.calls[0]).toHaveLength(1);
+    expect(fixture.brainstormFactory.mock.calls[0]![0]).toMatchObject({
+      loadConfig: fixture.loadConfig,
+      classifyTask,
+      readRatings: glicko.getRatings,
+      seedRegistry: glicko.seedNewEnginesFromRegistry,
+      updateRanked: glicko.updateGlickoRanked,
+      buildPrompt: buildKernDraftPrompt,
+      parseDraft: parseKernDraft,
+    });
+    expect(fixture.loadConfig).not.toHaveBeenCalled();
+    expect(fixture.dispatch).not.toHaveBeenCalled();
+  });
   it.each(['agon.brainstorm', 'agon.pipeline-orchestration'])('pins deferred %s effects to current surface authority', id => {
     decorate({ id } as never, {} as never);
     expect(fixture.captureCli).not.toHaveBeenCalled();
     expect(fixture.captureMcp).not.toHaveBeenCalled();
-    const capture = fixture.brainstormFactory.mock.calls[0]![2] as () => () => void;
+    const capture = fixture.brainstormFactory.mock.calls[0]![0].captureAuthority as () => () => void;
     expect(capture).toBeTypeOf('function');
     const check = capture();
     check();

@@ -42,7 +42,7 @@ export function decorateMcpFirstPartyServices(manifest: ModManifest, base: ModSe
     }) } : {}),
     ...(manifest.id === 'agon.brainstorm' || manifest.id === 'agon.pipeline-orchestration' ? { brainstorm: createBrainstormHostServices(() => {
       const registry = new EngineRegistry(); registry.load(resolveEngineDefinitionsDir()); return registry;
-    }, createCliAdapter) } : {}),
+    }, createCliAdapter, () => captureMcpSurfaceAuthority('Brainstorm')) } : {}),
     runs: Object.freeze({
       start(mode: string, label: string | undefined) { const startedAt = new Date().toISOString(); const created = createRunDir({ mode, label, announce: false }); return Object.freeze({ id: created.id, path: created.path, mode, startedAt }); },
       finish(handle: { path: string }, status: Json): void { writeRunStatus(handle.path, status as never); },

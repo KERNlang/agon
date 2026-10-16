@@ -967,6 +967,20 @@ attempts before cleanup and then propagates the original error. It does not
 remove a worktree while a sibling attempt still uses it. Existing dispatch and
 fitness timeouts, caller cancellation and quorum signals remain unchanged.
 
+## Brainstorm invocation authority
+
+The physical Brainstorm host checks cancellation and captured host authority
+before opening its registry. The shared adapter guard repeats these checks at
+provider entry, including preflight probes, seat retries and winner expansion.
+CLI and MCP capture their current host and Brainstorm contribution at invocation
+opening. Separate invocations retain separate authority checks. A changed host
+cannot authorize a dispatcher captured by the previous host.
+
+Core's public factory keeps its two-argument calling form and accepts optional
+authority capture as its third argument. The legacy engine-options API does not
+accept this callback; its caller still supplies the adapter. These checks do not
+replace cancellation of already-running work or retire Core effect composition.
+
 ## Forge invocation-host ownership
 
 `mod-forge/src/host.ts` owns `createForgeHostServices`. The host supplies registry,

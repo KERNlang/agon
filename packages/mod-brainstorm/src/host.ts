@@ -2,6 +2,7 @@ import type { Awaitable, InvocationContext, ModServices } from '@kernlang/agon-m
 import type { BrainstormRuntimeServices } from './runtime.js';
 import type { BrainstormWorkflowOptions } from './workflow.js';
 import type { EngineAdapter, TaskClass } from '@kernlang/agon-support-engine-runtime';
+import { guardEngineAdapter } from '@kernlang/agon-support-engine-runtime';
 import { dispatchSeatWithRetry, preflightHealthFilter } from '@kernlang/agon-support-panel';
 import type { PanelEngineRegistry, PanelHealthRuntime } from '@kernlang/agon-support-panel';
 import { dedupBrainstormDrafts } from '@kernlang/agon-support-dedup';
@@ -28,6 +29,7 @@ export interface BrainstormHostEffects<Registry extends PanelEngineRegistry>
   extends Pick<BrainstormRuntimeServices<BrainstormWorkflowOptions>, 'readRatings' | 'buildPrompt' | 'parseDraft'> {
   openRegistry(cwd: string): Registry;
   createAdapter(registry: Registry): EngineAdapter;
+  captureAuthority?(): () => void;
   seedRegistry(registry: Registry): void;
   loadConfig: PanelHealthRuntime['loadConfig'];
   classifyTask(question: string): TaskClass;
@@ -40,7 +42,7 @@ export interface BrainstormEngineOptions<Registry extends PanelEngineRegistry> e
 }
 
 export type BrainstormEngineEffects<Registry extends PanelEngineRegistry> =
-  Omit<BrainstormHostEffects<Registry>, 'openRegistry' | 'createAdapter'>;
+  Omit<BrainstormHostEffects<Registry>, 'openRegistry' | 'createAdapter' | 'captureAuthority'>;
 
 /** Bind the public engine-options API without capturing a process cwd at construction. */
 export function createBrainstormEngineServices<Registry extends PanelEngineRegistry>(
@@ -86,10 +88,18 @@ export function createBrainstormEngineServices<Registry extends PanelEngineRegis
 export function createBrainstormHostServices<Registry extends PanelEngineRegistry>(
   effects: BrainstormHostEffects<Registry>,
 ): BrainstormHostServices {
+  const { captureAuthority = () => () => {} } = effects;
   return {
     open(context) {
+      context.signal.throwIfAborted();
+      const assertCurrent = captureAuthority();
+      assertCurrent();
       const registry = effects.openRegistry(context.cwd);
-      const adapter = effects.createAdapter(registry);
+      const adapter = guardEngineAdapter(effects.createAdapter(registry), signal => {
+        context.signal.throwIfAborted();
+        signal?.throwIfAborted();
+        assertCurrent();
+      });
       return {
         readRatings: effects.readRatings,
         buildPrompt: effects.buildPrompt,

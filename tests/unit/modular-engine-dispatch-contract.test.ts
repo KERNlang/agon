@@ -6,6 +6,8 @@ import type { EngineDispatchOptions, InvocationContext } from '@kernlang/agon-mo
 const fixture = vi.hoisted(() => ({
   dispatch: vi.fn(),
   brainstorm: { open: vi.fn() },
+  brainstormFactory: vi.fn(),
+  captureCli: vi.fn(), captureMcp: vi.fn(), assertCli: vi.fn(), assertCurrent: vi.fn(),
   forge: { open: vi.fn() },
   loadConfig: vi.fn(() => ({})),
   engine: { id: 'fixture-engine' },
@@ -18,7 +20,7 @@ vi.mock('@kernlang/agon-core', () => ({
     get() { return fixture.engine; }
   },
   loadConfig: fixture.loadConfig,
-  createBrainstormHostServices: () => fixture.brainstorm,
+  createBrainstormHostServices: (...args: unknown[]) => { fixture.brainstormFactory(...args); return fixture.brainstorm; },
   createForgeHostServices: () => fixture.forge,
   createRunDir: () => ({ id: 'fixture-run', path: '/fixture/output' }),
   getRatings: vi.fn(), pickTopRatedEngine: vi.fn(), writeRunStatus: vi.fn(),
@@ -34,12 +36,22 @@ vi.mock('../../packages/cli/src/commands/chrome.js', () => ({}));
 vi.mock('../../packages/cli/src/commands/drive.js', () => ({}));
 vi.mock('../../packages/cli/src/commands/ext.js', () => ({}));
 vi.mock('../../packages/cli/src/commands/browser-host.js', () => ({}));
+vi.mock('../../packages/cli/src/surface-authority-runtime.js', () => ({
+  captureProcessSurfaceAuthority: fixture.captureCli,
+  assertProcessSurfaceAvailable: fixture.assertCli,
+}));
+vi.mock('../../packages/mcp/src/surface-authority.js', () => ({ captureMcpSurfaceAuthority: fixture.captureMcp }));
 
 import { createCliEngineServices, decorateCliFirstPartyServices } from '../../packages/cli/src/first-party-services.js';
 import { createMcpEngineServices, decorateMcpFirstPartyServices } from '../../packages/mcp/src/first-party-services.js';
 
 const result = { exitCode: 0, stdout: 'fixture answer', stderr: '', durationMs: 4, timedOut: false };
-beforeEach(() => { vi.clearAllMocks(); fixture.dispatch.mockResolvedValue(result); });
+beforeEach(() => {
+  vi.clearAllMocks(); fixture.dispatch.mockResolvedValue(result);
+  fixture.captureCli.mockReturnValue(fixture.assertCurrent);
+  fixture.captureMcp.mockReturnValue(fixture.assertCurrent);
+  fixture.assertCurrent.mockReset();
+});
 
 describe.each([decorateCliFirstPartyServices, decorateMcpFirstPartyServices])('Ratings protection host', decorate => {
   it('protects all registered engines plus configured historical IDs, without dispatch', async () => {
@@ -76,6 +88,23 @@ describe.each([decorateCliFirstPartyServices, decorateMcpFirstPartyServices])('F
 });
 
 describe.each([decorateCliFirstPartyServices, decorateMcpFirstPartyServices])('Brainstorm host wiring', decorate => {
+  it.each(['agon.brainstorm', 'agon.pipeline-orchestration'])('pins deferred %s effects to current surface authority', id => {
+    decorate({ id } as never, {} as never);
+    expect(fixture.captureCli).not.toHaveBeenCalled();
+    expect(fixture.captureMcp).not.toHaveBeenCalled();
+    const capture = fixture.brainstormFactory.mock.calls[0]![2] as () => () => void;
+    expect(capture).toBeTypeOf('function');
+    const check = capture();
+    check();
+    expect(fixture.assertCurrent).toHaveBeenCalledOnce();
+    if (decorate === decorateCliFirstPartyServices) {
+      expect(fixture.captureCli).toHaveBeenCalledOnce();
+      expect(fixture.assertCli).toHaveBeenCalledExactlyOnceWith('cli', 'brainstorm');
+    } else expect(fixture.captureMcp).toHaveBeenCalledExactlyOnceWith('Brainstorm');
+    const reason = new Error('host replaced');
+    fixture.assertCurrent.mockImplementationOnce(() => { throw reason; });
+    expect(check).toThrow(reason);
+  });
   it.each(['agon.brainstorm', 'agon.pipeline-orchestration'])('provides host effects to the bundled %s consumer', id => {
     const services = decorate({ id } as never, {} as never);
     const expected = decorate === decorateCliFirstPartyServices && id === 'agon.brainstorm'

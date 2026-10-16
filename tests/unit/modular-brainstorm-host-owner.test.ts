@@ -4,6 +4,7 @@ import type { DispatchOptions, EngineAdapter, EngineDefinition } from '@kernlang
 import * as panel from '@kernlang/agon-support-panel';
 import { createBrainstormHostServices, createBrainstormEngineServices } from '../../packages/mod-brainstorm/src/host.js';
 import type { BrainstormHostEffects } from '../../packages/mod-brainstorm/src/host.js';
+import { createBrainstormHostServices as createCoreHost } from '../../packages/core/src/blocks/brainstorm-host.js';
 
 function fixture() {
   const engine: EngineDefinition = { schemaVersion: 3, id: 'fixture', displayName: 'fixture',
@@ -27,6 +28,114 @@ function fixture() {
     outputDir: '/output', signal: new AbortController().signal };
   return { engine, registry, dispatch, adapter, effects, context, options, controller };
 }
+
+it('rejects a cancelled Brainstorm host before opening effects', () => {
+  const f = fixture();
+  const reason = new Error('cancelled before open');
+  f.controller.abort(reason);
+  expect(() => createBrainstormHostServices(f.effects).open(f.context)).toThrow(reason);
+  expect(f.effects.openRegistry).not.toHaveBeenCalled();
+  expect(f.effects.createAdapter).not.toHaveBeenCalled();
+});
+
+it.each(['cancelled', 'stale'])('rejects deferred Brainstorm transport when %s', async fault => {
+  const f = fixture();
+  let stale = false;
+  const reason = new Error(fault);
+  const host = createBrainstormHostServices({ ...f.effects,
+    captureAuthority: () => () => { if (stale) throw reason; },
+  });
+  const opened = await host.open(f.context);
+  const winner = opened.selectWinner(f.options, 'fixture');
+  if (fault === 'cancelled') f.controller.abort(reason);
+  else stale = true;
+  await expect(winner('must not dispatch')).rejects.toBe(reason);
+  expect(f.dispatch).not.toHaveBeenCalled();
+});
+
+it.each([undefined, null])('rejects an invalid Brainstorm authority result %s before effects', result => {
+  const f = fixture();
+  const host = createBrainstormHostServices({ ...f.effects,
+    captureAuthority: () => result,
+  } as unknown as BrainstormHostEffects<typeof f.registry>);
+  expect(() => host.open(f.context)).toThrow(TypeError);
+  expect(f.effects.openRegistry).not.toHaveBeenCalled();
+  expect(f.effects.createAdapter).not.toHaveBeenCalled();
+});
+
+it('preserves Core two-argument callers and forwards authority to the physical host', async () => {
+  const f = fixture();
+  const legacy = await createCoreHost(() => f.registry as never, () => f.adapter).open(f.context);
+  await legacy.selectWinner(f.options, 'fixture')('legacy call');
+  expect(f.dispatch).toHaveBeenCalledOnce();
+  const reason = new Error('Core authority changed');
+  let stale = false;
+  const guarded = await createCoreHost(() => f.registry as never, () => f.adapter,
+    () => () => { if (stale) throw reason; }).open(f.context);
+  stale = true;
+  await expect(guarded.selectWinner(f.options, 'fixture')('blocked')).rejects.toBe(reason);
+  expect(f.dispatch).toHaveBeenCalledOnce();
+});
+
+it('rejects valid but stale authority before opening a Brainstorm registry', () => {
+  const f = fixture();
+  const reason = new Error('generation changed');
+  const host = createBrainstormHostServices({ ...f.effects, captureAuthority: () => () => { throw reason; } });
+  expect(() => host.open(f.context)).toThrow(reason);
+  expect(f.effects.openRegistry).not.toHaveBeenCalled();
+  expect(f.effects.createAdapter).not.toHaveBeenCalled();
+});
+
+it('keeps separate Brainstorm authority captures across invocations', async () => {
+  const f = fixture();
+  let generation = 1;
+  const host = createBrainstormHostServices({ ...f.effects, captureAuthority: () => {
+    const selected = generation;
+    return () => { if (selected !== generation) throw new Error('old generation'); };
+  } });
+  const old = await host.open(f.context);
+  generation = 2;
+  const current = await host.open(f.context);
+  await expect(old.selectWinner(f.options, 'fixture')('old')).rejects.toThrow('old generation');
+  await current.selectWinner(f.options, 'fixture')('current');
+  expect(f.dispatch).toHaveBeenCalledOnce();
+  expect(f.dispatch.mock.calls[0]![0].prompt).toBe('current');
+});
+
+it('checks authority again before a panel retry reaches the provider', async () => {
+  const f = fixture();
+  let stale = false;
+  f.dispatch.mockImplementationOnce(async () => {
+    stale = true;
+    return { stdout: '', stderr: '', exitCode: 0, durationMs: 0, timedOut: false };
+  });
+  const host = createBrainstormHostServices({ ...f.effects,
+    captureAuthority: () => () => { if (stale) throw new Error('retry authority lost'); },
+  });
+  const opened = await host.open(f.context);
+  const result = await opened.selectSeat(f.options, 'fixture')('prompt');
+  expect(result).toMatchObject({ ok: false, failure: 'error' });
+  expect(result.detail).toContain('retry authority lost');
+  expect(f.dispatch).toHaveBeenCalledOnce();
+});
+
+it('prevents a stale real preflight probe from reaching the provider', async () => {
+  const f = fixture();
+  let stale = false;
+  const host = createBrainstormHostServices({ ...f.effects,
+    captureAuthority: () => () => { if (stale) throw new Error('probe authority lost'); },
+  });
+  const opened = await host.open(f.context);
+  stale = true;
+  vi.stubEnv('AGON_FORCE_HEALTH_PROBE', '1');
+  vi.stubEnv('AGON_DISABLE_FORGE_HEALTH_CHECK', '');
+  try {
+    expect(await opened.preflight(f.options)).toEqual({ healthy: [], skipped: [{
+      engineId: 'fixture', status: 'health-check-failed', reason: 'dispatch-threw: probe authority lost',
+    }] });
+    expect(f.dispatch).not.toHaveBeenCalled();
+  } finally { vi.unstubAllEnvs(); }
+});
 
 it('opens effects lazily and keeps concurrent invocation contexts separate', async () => {
   const f = fixture();
@@ -154,7 +263,14 @@ it('binds preflight config and cancellation to the invocation, not process cwd',
     await second.preflight(f.options);
     expect(await services.preflight(f.options)).toEqual({ healthy: ['fixture'], skipped: [] });
     expect(preflight).toHaveBeenCalledTimes(2);
-    expect(observed).toEqual([[other.registry, other.adapter, otherContext.signal], [f.registry, f.adapter, f.context.signal]]);
+    const secondAdapter = preflight.mock.calls[0]![0].adapter;
+    const firstAdapter = preflight.mock.calls[1]![0].adapter;
+    expect(observed).toEqual([[other.registry, secondAdapter, otherContext.signal], [f.registry, firstAdapter, f.context.signal]]);
+    expect(secondAdapter).not.toBe(other.adapter);
+    expect(firstAdapter).not.toBe(f.adapter);
+    expect(await firstAdapter.isAvailable(f.engine)).toBe(true);
+    other.controller.abort(new Error('preflight cancelled'));
+    await expect(secondAdapter.isAvailable(other.engine)).rejects.toThrow('preflight cancelled');
     expect(f.effects.loadConfig.mock.calls).toEqual([['/second'], ['/invocation']]);
     expect(f.dispatch).not.toHaveBeenCalled();
   } finally {

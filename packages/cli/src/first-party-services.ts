@@ -78,7 +78,10 @@ export function decorateCliFirstPartyServices(manifest: ModManifest, base: ModSe
   const brainstorm = usesBrainstorm ? {
     ...createBrainstormHostServices(() => {
       const registry = new EngineRegistry(); registry.load(resolveBuiltinEnginesDir()); return registry;
-    }, createCliAdapter),
+    }, createCliAdapter, () => {
+      const assertCurrent = captureProcessSurfaceAuthority();
+      return () => { assertCurrent(); assertProcessSurfaceAvailable('cli', 'brainstorm'); };
+    }),
     ...(manifest.id === 'agon.brainstorm' ? {
       writeCliOutput(text: string): void { process.stdout.write(text); },
     } : {}),

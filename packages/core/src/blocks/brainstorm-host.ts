@@ -14,9 +14,10 @@ import { classifyTask } from './task-classifier.js';
 export function createBrainstormHostServices(
   openRegistry: (cwd: string) => EngineRegistry,
   createAdapter: (registry: EngineRegistry) => EngineAdapter,
+  captureAuthority: () => () => void = () => () => {},
 ): BrainstormHostServices {
   return createModHost<EngineRegistry>({
-    openRegistry, createAdapter, loadConfig, classifyTask,
+    openRegistry, createAdapter, captureAuthority, loadConfig, classifyTask,
     readRatings: getRatings, buildPrompt: buildKernDraftPrompt, parseDraft: parseKernDraft,
     seedRegistry: seedNewEnginesFromRegistry, updateRanked: updateGlickoRanked,
   });

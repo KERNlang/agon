@@ -8,3 +8,5 @@ export const SOURCE_OCCURRENCES = Object.freeze(ownership.assignments);
 export const IMPLEMENTATION_KIND = 'physical' as const;
 export { createMod } from './implementation.js';
 export { createMod as default } from './implementation.js';
+export { doneOracleDecision } from './completion-policy.js';
+export type { DoneOracleInput } from './completion-policy.js';

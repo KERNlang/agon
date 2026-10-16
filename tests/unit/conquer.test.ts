@@ -2,6 +2,7 @@
 // stuck classifier, escalation gate, worktree auto-approve guard, and the compact
 // consult-feedback formatter. All pure; no engine dispatch.
 import { describe, expect, it } from 'vitest';
+import * as conquerOwner from '@kernlang/agon-mod-conquer';
 import {
   pickEscalationMode,
   classifyStuck,
@@ -275,6 +276,9 @@ describe('buildConquerTurnPrompt', () => {
 });
 
 describe('doneOracleDecision — mechanical layers', () => {
+  it('uses the physical Conquer policy through the historical Forge export', () => {
+    expect(conquerOwner).toHaveProperty('doneOracleDecision', doneOracleDecision);
+  });
   const ok: DoneOracleInput = { gateOk: true, oracleTampered: false, weakenedTests: false, claim: 'X works', neroFalsified: false };
   it('passes when all layers clean', () => {
     expect(doneOracleDecision(ok).passed).toBe(true);

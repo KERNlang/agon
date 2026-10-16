@@ -9,6 +9,7 @@
   "references": [
     { "path": "../mod-forge" },
     { "path": "../mod-brainstorm" },
+    { "path": "../mod-conquer" },
     { "path": "../core" },
     { "path": "../support-persistence" }
   ]

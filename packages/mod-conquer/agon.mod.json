@@ -144,6 +144,7 @@
       "dist/index.js",
       "dist/index.d.ts",
       "dist/implementation.d.ts",
+      "dist/completion-policy.d.ts",
       "ownership.json",
       "schemas/config.schema.json"
     ],

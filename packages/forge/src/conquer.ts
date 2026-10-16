@@ -1,4 +1,7 @@
 import type { EngineAdapter, EngineRegistry, RatingRecord } from '@kernlang/agon-core';
+import { doneOracleDecision } from '@kernlang/agon-mod-conquer';
+export { doneOracleDecision } from '@kernlang/agon-mod-conquer';
+export type { DoneOracleInput } from '@kernlang/agon-mod-conquer';
 
 import { resolveWorkingDir, getRatings, seedNewEnginesFromRegistry, spawnWithTimeout, buildKernContextSpine, repoRoot, createSessionWorktree } from '@kernlang/agon-core';
 
@@ -178,14 +181,6 @@ export function createConquerIsolation(task: string, cwd?: string, runId?: strin
   return { repoRoot: root, branch, path: worktree.path };
 }
 
-export interface DoneOracleInput {
-  gateOk: boolean;
-  oracleTampered: boolean;
-  weakenedTests: boolean;
-  claim: string;
-  neroFalsified: boolean;
-}
-
 /**
  * Pure cap check: the run stops when it has used maxTurns or exceeded maxWallClockMs (0 = no wall-clock cap). Budget-USD is intentionally NOT enforced here — DispatchResult carries token usage, not price, so spend is best-effort until a cost-bearing result exists. Pure — exported for testing.
  */
@@ -291,18 +286,6 @@ export async function dispatchConsult(opts: { mode: 'nero' | 'tribunal' | 'brain
     confidence: typeof r?.confidence === 'number' ? r.confidence : null,
     flawed: false,
   };
-}
-
-/**
- * Mechanical, layered done decision (the design's L0/L1/L2/L5). A tampered frozen oracle, weakened existing tests, a red gate, an empty claim, or a reproducible nero counterexample each BLOCK; otherwise the work passes the AUTOMATED bar and proceeds to the human merge gate (L6). Pure — exported for testing. Gate execution + diff classification + nero are done outside and passed in.
- */
-export function doneOracleDecision(i: DoneOracleInput): { passed: boolean; reason: string } {
-  if (i.oracleTampered) return { passed: false, reason: 'L0: the frozen baseline oracle was modified' };
-  if (i.weakenedTests) return { passed: false, reason: 'L1: existing tests were weakened or rewritten (acceptance drift)' };
-  if (!i.gateOk) return { passed: false, reason: 'L0: the gate (build / typecheck / lint / tests) is not green' };
-  if (!i.claim || !i.claim.trim()) return { passed: false, reason: 'L2: the builder produced no disprovable claim' };
-  if (i.neroFalsified) return { passed: false, reason: 'L5: nero produced a runnable counterexample against the claim' };
-  return { passed: true, reason: 'L0–L5 clean — ready for the human merge gate' };
 }
 
 export interface SandboxOps {

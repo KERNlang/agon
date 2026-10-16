@@ -13,11 +13,13 @@ afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: 
 
 describe('Conquer publication owner', () => {
   it('preserves the guarded Git sequence and timeouts', async () => {
-    const git = vi.fn(async () => ok).mockResolvedValueOnce({ ...ok, stdout: 'conquer/feature\n' });
+    const git = vi.fn(async (args: string[]) => ({ ...ok, exitCode: args[0] === 'diff' ? 1 : 0 }))
+      .mockResolvedValueOnce({ ...ok, stdout: 'conquer/feature\n' });
     expect(await publishConquerBranch(opts, git)).toEqual({ ok: true, branch: 'conquer/feature' });
     expect(git.mock.calls).toEqual([
       [['rev-parse', '--abbrev-ref', 'HEAD'], 15_000],
       [['add', '-A'], 30_000],
+      [['diff', '--cached', '--quiet', '--exit-code'], 15_000],
       [['commit', '-m', 'conquer: build feature', '-m', 'verified claim'], 30_000],
       [['push', '-u', 'origin', 'conquer/feature'], 120_000],
     ]);
@@ -39,22 +41,23 @@ describe('Conquer publication owner', () => {
   });
 
   it('formats the commit body only after successful staging', async () => {
-    const git = vi.fn(async () => ok).mockResolvedValueOnce({ ...ok, stdout: 'conquer/feature' });
+    const git = vi.fn(async (args: string[]) => ({ ...ok, exitCode: args[0] === 'diff' ? 1 : 0 }))
+      .mockResolvedValueOnce({ ...ok, stdout: 'conquer/feature' });
     const commitBody = vi.fn(() => {
-      expect(git).toHaveBeenCalledTimes(2);
+      expect(git).toHaveBeenCalledTimes(3);
       return 'formatted claim';
     });
     await publishConquerBranch({ ...opts, commitBody }, git);
     expect(commitBody).toHaveBeenCalledTimes(1);
-    expect(git).toHaveBeenNthCalledWith(3, ['commit', '-m', 'conquer: build feature', '-m', 'formatted claim'], 30_000);
+    expect(git).toHaveBeenNthCalledWith(4, ['commit', '-m', 'conquer: build feature', '-m', 'formatted claim'], 30_000);
   });
 
-  it.each(['branch', 'add', 'commit', 'push'] as const)('stops at failed %s', async stage => {
-    const index = ['branch', 'add', 'commit', 'push'].indexOf(stage);
+  it.each(['branch', 'add', 'status', 'commit', 'push'] as const)('stops at failed %s', async stage => {
+    const index = ['branch', 'add', 'status', 'commit', 'push'].indexOf(stage);
     let calls = 0;
-    const git = vi.fn(async () => calls++ === index
-      ? { exitCode: 1, stdout: 'conquer/feature', stderr: 'x'.repeat(300) }
-      : { ...ok, stdout: 'conquer/feature' });
+    const git = vi.fn(async (args: string[]) => calls++ === index
+      ? { exitCode: 128, stdout: 'conquer/feature', stderr: 'x'.repeat(300) }
+      : { ...ok, exitCode: args[0] === 'diff' ? 1 : 0, stdout: 'conquer/feature' });
     const result = await publishConquerBranch(opts, git);
     expect(result).toMatchObject({ ok: false, stage });
     expect(git).toHaveBeenCalledTimes(index + 1);
@@ -64,7 +67,37 @@ describe('Conquer publication owner', () => {
     }
   });
 
-  it('publishes only to a local bare remote and leaves the source branch unchanged', async () => {
+  it.each([['timedOut', 0], ['timedOut', 1], ['aborted', 0], ['aborted', 1]] as const)('rejects a %s diff with exit %i', async (flag, exitCode) => {
+    const git = vi.fn(async (args: string[]) => ({ ...ok, stdout: 'conquer/feature',
+      ...(args[0] === 'diff' ? { exitCode, [flag]: true } : {}) }));
+    const commitBody = vi.fn(opts.commitBody);
+    expect(await publishConquerBranch({ ...opts, commitBody }, git)).toMatchObject({ ok: false, stage: 'status' });
+    expect(git).toHaveBeenCalledTimes(3);
+    expect(commitBody).not.toHaveBeenCalled();
+  });
+
+  it('skips formatting and commit when the index matches HEAD', async () => {
+    const git = vi.fn(async (args: string[]) => ({ ...ok, stdout: args[0] === 'rev-parse' ? 'conquer/feature' : '' }));
+    const commitBody = vi.fn(opts.commitBody);
+    expect(await publishConquerBranch({ ...opts, commitBody }, git)).toEqual({ ok: true, branch: 'conquer/feature' });
+    expect(commitBody).not.toHaveBeenCalled();
+    expect(git.mock.calls.map(call => call[0][0])).toEqual(['rev-parse', 'add', 'diff', 'push']);
+  });
+
+  it('reports push failure after skipping an empty commit', async () => {
+    const git = vi.fn(async (args: string[]) => args[0] === 'push'
+      ? { exitCode: 128, stdout: '', stderr: 'remote rejected' }
+      : { ...ok, stdout: args[0] === 'rev-parse' ? 'conquer/feature' : '' });
+    const commitBody = vi.fn(opts.commitBody);
+    expect(await publishConquerBranch({ ...opts, commitBody }, git)).toMatchObject({
+      ok: false, stage: 'push', branch: 'conquer/feature',
+      message: 'git push failed: remote rejected — committed locally on conquer/feature; push it manually.',
+    });
+    expect(commitBody).not.toHaveBeenCalled();
+    expect(git.mock.calls.map(call => call[0][0])).toEqual(['rev-parse', 'add', 'diff', 'push']);
+  });
+
+  it.each(['uncommitted', 'committed', 'mixed'] as const)('publishes %s work only to a local bare remote and leaves the source branch unchanged', async state => {
     const root = mkdtempSync(join(tmpdir(), 'agon-conquer-publication-'));
     roots.push(root);
     const cwd = join(root, 'source');
@@ -85,6 +118,12 @@ describe('Conquer publication owner', () => {
     const worktree = join(root, 'candidate');
     git(['worktree', 'add', '-b', 'conquer/feature', worktree]);
     writeFileSync(join(worktree, 'feature.txt'), 'feature\n');
+    if (state !== 'uncommitted') {
+      git(['add', 'feature.txt'], worktree);
+      git(['commit', '-m', 'builder implementation'], worktree);
+    }
+    const beforePublication = git(['rev-parse', 'HEAD'], worktree);
+    if (state === 'mixed') writeFileSync(join(worktree, 'followup.txt'), 'remaining work\n');
     const out = await publishConquerBranch({ ...opts, cwd: worktree },
       (args, timeout) => spawnWithTimeout({ command: 'git', args: [...prefix, ...args], cwd: worktree, timeout }));
     expect(out).toEqual({ ok: true, branch: 'conquer/feature' });
@@ -92,6 +131,9 @@ describe('Conquer publication owner', () => {
     expect(git(['status', '--porcelain'])).toBe('');
     expect(git(['rev-parse', 'refs/heads/conquer/feature'], remote)).toBe(git(['rev-parse', 'HEAD'], worktree));
     expect(git(['show', 'conquer/feature:feature.txt'], remote)).toBe('feature');
+    expect(git(['rev-list', '--count', 'main..conquer/feature'])).toBe(state === 'mixed' ? '2' : '1');
+    if (state === 'mixed') expect(git(['show', 'conquer/feature:followup.txt'], remote)).toBe('remaining work');
+    if (state === 'committed') expect(git(['rev-parse', 'HEAD'], worktree)).toBe(beforePublication);
     expect(git(['log', '-1', '--format=%B', 'conquer/feature'], remote).includes('Co-Authored-By')).toBe(false);
   });
 });

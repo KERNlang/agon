@@ -9,11 +9,12 @@ export interface ConquerPublicationOptions {
 
 export type ConquerPublicationGit = (args: string[], timeout: number) => Promise<{
   exitCode: number; stdout: string; stderr: string;
+  timedOut?: boolean; aborted?: boolean;
 }>;
 
 export type ConquerPublicationResult =
   | { ok: true; branch: string }
-  | { ok: false; stage: 'branch' | 'add' | 'commit' | 'push'; branch: string; message: string };
+  | { ok: false; stage: 'branch' | 'add' | 'status' | 'commit' | 'push'; branch: string; message: string };
 
 /** Publish a verified Conquer result after the caller approves the push. */
 export async function publishConquerBranch(
@@ -35,10 +36,18 @@ export async function publishConquerBranch(
     return { ok: false, stage: 'add', branch,
       message: `git add failed: ${String(added.stderr ?? '').slice(0, 200)} — review the tree manually.` };
   }
-  const committed = await git(['commit', '-m', `conquer: ${options.task}`, '-m', options.commitBody()], 30_000);
-  if (committed.exitCode !== 0) {
-    return { ok: false, stage: 'commit', branch,
-      message: `git commit failed: ${String(committed.stderr ?? '').slice(0, 200)} — review the tree manually.` };
+  const staged = await git(['diff', '--cached', '--quiet', '--exit-code'], 15_000);
+  if (staged.timedOut || staged.aborted || (staged.exitCode !== 0 && staged.exitCode !== 1)) {
+    return { ok: false, stage: 'status', branch,
+      message: `git staged-change check failed: ${String(staged.stderr ?? '').slice(0, 200)} — review the tree manually.` };
+  }
+  // A builder can commit its own changes. Do not create an empty second commit.
+  if (staged.exitCode === 1) {
+    const committed = await git(['commit', '-m', `conquer: ${options.task}`, '-m', options.commitBody()], 30_000);
+    if (committed.exitCode !== 0) {
+      return { ok: false, stage: 'commit', branch,
+        message: `git commit failed: ${String(committed.stderr ?? '').slice(0, 200)} — review the tree manually.` };
+    }
   }
   const pushed = await git(['push', '-u', 'origin', branch], 120_000);
   if (pushed.exitCode !== 0) {

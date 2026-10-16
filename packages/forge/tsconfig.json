@@ -10,6 +10,7 @@
     { "path": "../mod-forge" },
     { "path": "../mod-brainstorm" },
     { "path": "../mod-conquer" },
+    { "path": "../mod-nero" },
     { "path": "../core" },
     { "path": "../support-persistence" },
     { "path": "../support-worktree" }

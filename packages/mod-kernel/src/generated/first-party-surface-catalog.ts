@@ -428,7 +428,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.nero",
       "version": "1.0.0",
-      "contentHash": "sha256:a947cf91b65c2b4a2672d744206916b0dc043ce57f4077562742c651cf632fa8"
+      "contentHash": "sha256:778b84387de82e998de390ed7f61a5bd9467e5cf292227ab863d4c3138c6f436"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "QuickNero",
@@ -3602,7 +3602,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.nero",
       "version": "1.0.0",
-      "contentHash": "sha256:a947cf91b65c2b4a2672d744206916b0dc043ce57f4077562742c651cf632fa8"
+      "contentHash": "sha256:778b84387de82e998de390ed7f61a5bd9467e5cf292227ab863d4c3138c6f436"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "nero",
@@ -4593,7 +4593,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.nero",
       "version": "1.0.0",
-      "contentHash": "sha256:a947cf91b65c2b4a2672d744206916b0dc043ce57f4077562742c651cf632fa8"
+      "contentHash": "sha256:778b84387de82e998de390ed7f61a5bd9467e5cf292227ab863d4c3138c6f436"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "QuickNero",
@@ -5881,7 +5881,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.nero",
       "version": "1.0.0",
-      "contentHash": "sha256:a947cf91b65c2b4a2672d744206916b0dc043ce57f4077562742c651cf632fa8"
+      "contentHash": "sha256:778b84387de82e998de390ed7f61a5bd9467e5cf292227ab863d4c3138c6f436"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "nero",
@@ -7244,7 +7244,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.nero",
       "version": "1.0.0",
-      "contentHash": "sha256:a947cf91b65c2b4a2672d744206916b0dc043ce57f4077562742c651cf632fa8"
+      "contentHash": "sha256:778b84387de82e998de390ed7f61a5bd9467e5cf292227ab863d4c3138c6f436"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "                        — toggle Nero mode (adversarial)",
@@ -9807,7 +9807,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.nero",
       "version": "1.0.0",
-      "contentHash": "sha256:a947cf91b65c2b4a2672d744206916b0dc043ce57f4077562742c651cf632fa8"
+      "contentHash": "sha256:778b84387de82e998de390ed7f61a5bd9467e5cf292227ab863d4c3138c6f436"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "[<decision>]             — toggle Nero mode, or challenge a decision (top-rated critic)",

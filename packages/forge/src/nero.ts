@@ -1,4 +1,6 @@
 import type { EngineAdapter, RatingRecord } from '@kernlang/agon-core';
+import { parseNeroVerdict } from '@kernlang/agon-mod-nero';
+export { parseNeroVerdict } from '@kernlang/agon-mod-nero';
 
 import { EngineRegistry, getRatings, loadConfig, pickTopRatedEngine, resolveWorkingDir, seedNewEnginesFromRegistry } from '@kernlang/agon-core';
 
@@ -77,18 +79,6 @@ export function buildNeroPrompt(opts: { decision:string; reasoning?:string; focu
   lines.push('**Failure scenario:** <concrete sequence of events>');
   lines.push('**Impact:** <what breaks and how badly>');
   return lines.join('\n');
-}
-
-/**
- * Extract the final verdict from Nero's output. Pure — exported for testing. The prompt instructs the critic to END with the verdict, so take the LAST VERDICT: marker — earlier ones may appear inside the critic's reasoning.
- */
-export function parseNeroVerdict(text: string): 'flawed' | 'proceed-with-caution' | 'sound' | 'unknown' {
-  const matches = [...text.matchAll(/VERDICT:\s*(FLAWED|PROCEED WITH CAUTION|SOUND)/gi)];
-  if (matches.length === 0) return 'unknown';
-  const v = matches[matches.length - 1][1].toUpperCase();
-  if (v === 'FLAWED') return 'flawed';
-  if (v === 'SOUND') return 'sound';
-  return 'proceed-with-caution';
 }
 
 /**

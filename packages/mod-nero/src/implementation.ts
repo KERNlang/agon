@@ -1,4 +1,5 @@
 import { commandResultToToolResult } from '@kernlang/agon-mod-api';
+import { parseNeroVerdict as verdict } from './verdict.js';
 import type { AgonModFactory, CommandResult, Dispose, Json, ModServices, RankedEngine, Registrar } from '@kernlang/agon-mod-api';
 
 const schema = Object.freeze({ type: 'object', additionalProperties: true, properties: { decision: { type: 'string' }, reasoning: { type: 'string' }, focus: { type: 'string' }, confidence: { type: 'string' }, engine: { type: 'string' }, engines: { type: 'string' }, timeout: { type: 'string', default: '120' }, json: { type: 'boolean' }, quiet: { type: 'boolean' }, label: { type: 'string' }, _: { type: 'array', items: { type: 'string' } } } }) as Readonly<Record<string, Json>>;
@@ -7,8 +8,6 @@ const cli = Object.freeze({ positionals: ['decision'], aliases: { engines: 'e' }
 const text = (value: unknown) => typeof value === 'string' ? value.trim() : '';
 const extras = (value: unknown) => Array.isArray(value) ? value.map(String) : [];
 const ids = (value: Json | undefined) => typeof value === 'string' ? value.split(',').map((id) => id.trim()).filter(Boolean) : [];
-type Verdict = 'flawed' | 'proceed-with-caution' | 'sound' | 'unknown';
-function verdict(value: string): Verdict { const found = [...value.matchAll(/VERDICT:\s*(FLAWED|PROCEED WITH CAUTION|SOUND)/gi)].at(-1)?.[1].toUpperCase(); return found === 'FLAWED' ? 'flawed' : found === 'SOUND' ? 'sound' : found === 'PROCEED WITH CAUTION' ? 'proceed-with-caution' : 'unknown'; }
 function confidence(value: string): number | null { const match = value.match(/confidence[:\s]*~?\s*(\d{1,3})\s*%/i) ?? value.match(/~?\s*(\d{1,3})\s*%/); if (!match) return null; const n = Number(match[1]); return n >= 0 && n <= 100 ? n : null; }
 function prompt(input: Record<string, Json>, decision: string): string { return [`You are Nero — a structurally adversarial reviewer. Find why this reasoning is wrong.`, `DECISION UNDER REVIEW:\n${decision}`, text(input.reasoning) ? `STATED REASONING:\n${text(input.reasoning)}` : '', text(input.confidence) ? `AUTHOR'S CONFIDENCE: ${text(input.confidence)}%` : '', text(input.focus) ? `FOCUS: ${text(input.focus)}` : '', 'Give at most five concrete failure scenarios using INVERSION, PRE-MORTEM, or SECOND-ORDER reasoning.', 'Begin with "Confidence: X%" (confidence the original is correct).', 'End with exactly one: VERDICT: FLAWED, VERDICT: PROCEED WITH CAUTION, or VERDICT: SOUND.'].filter(Boolean).join('\n\n'); }
 

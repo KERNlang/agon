@@ -61,6 +61,7 @@ try {
   writeFileSync(join(temp, 'evidence/review-a.txt'), 'review A\n');
   writeFileSync(join(temp, 'evidence/review-b.txt'), 'review B\n');
   git(temp, 'add', 'evidence/review-a.txt', 'evidence/review-b.txt');
+  git(temp, 'commit', '-qm', 'review artifacts');
   const artifactHash = (path) => hashGitSubject(temp, { kind: 'index', pathspecs: [path], includePathsInHash: false });
   const review = {
     schemaVersion: 1,
@@ -73,6 +74,33 @@ try {
     findings: [],
   };
   assert.equal(validateSubjectBoundReview(temp, review, { kind: 'index', hash: indexHash }).passed, true);
+  const acceptedInvalidReviews = [];
+  for (const engine of [undefined, null, '', ' ', ' engine-a', 'engine-a ', 1, {}, []]) {
+    const candidate = { ...review, runs: [{ ...review.runs[0], engine }, review.runs[1]] };
+    if (validateSubjectBoundReview(temp, candidate, { kind: 'index', hash: indexHash }).passed) {
+      acceptedInvalidReviews.push(`invalid engine: ${JSON.stringify(engine)}`);
+    }
+  }
+  for (const path of ['.', 'evidence', 'evidence/*.txt', 'evidence/review-?.txt']) {
+    const candidate = { ...review, runs: [{ ...review.runs[0], artifacts: [{ path, hash: artifactHash(path) }] }, review.runs[1]] };
+    if (validateSubjectBoundReview(temp, candidate, { kind: 'index', hash: indexHash }).passed) {
+      acceptedInvalidReviews.push(`nonliteral artifact: ${path}`);
+    }
+  }
+  assert.deepEqual(acceptedInvalidReviews, [], 'review identity must name valid engine identifiers and exact files');
+  const committedReview = { ...review, subject: { kind: 'commit', hash: indexHash } };
+  const committedSubject = { kind: 'commit', revision: 'HEAD', hash: indexHash };
+  assert.equal(validateSubjectBoundReview(temp, committedReview, committedSubject).passed, true);
+  assert.equal(validateSubjectBoundReview(temp, { ...committedReview, runs: [
+    { ...review.runs[0], artifacts: [{ path: 'evidence/*.txt', hash: artifactHash('evidence/*.txt') }] }, review.runs[1],
+  ] }, committedSubject).passed, false);
+  const literalPath = 'evidence/review-[literal].txt';
+  writeFileSync(join(temp, literalPath), 'literal artifact\n');
+  git(temp, 'add', '--', `:(literal)${literalPath}`);
+  const literalReview = { ...review, runs: [
+    { ...review.runs[0], artifacts: [{ path: literalPath, hash: artifactHash(`:(literal)${literalPath}`) }] }, review.runs[1],
+  ] };
+  assert.equal(validateSubjectBoundReview(temp, literalReview, { kind: 'index', hash: indexHash }).passed, true);
   assert.equal(validateSubjectBoundReview(temp, { ...review, runs: review.runs.map((run) => ({ ...run, engine: 'same' })) }, { kind: 'index', hash: indexHash }).passed, false);
   assert.equal(validateSubjectBoundReview(temp, { ...review, runs: [{ ...review.runs[0], artifacts: [{ path: '/tmp/absolute.txt', hash: 'sha256:bad' }] }, review.runs[1]] }, { kind: 'index', hash: indexHash }).passed, false);
   assert.equal(validateSubjectBoundReview(temp, { ...review, subject: { kind: 'commit', hash: indexHash } }, { kind: 'index', hash: indexHash }).passed, false);

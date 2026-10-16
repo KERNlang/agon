@@ -101,6 +101,9 @@ export function validateSubjectBoundReview(root, review, expectedSubject) {
   if (review.subject?.kind !== expectedSubject.kind || review.subject?.hash !== expectedSubject.hash) return fail('review subject mismatch');
   if (review.disposition !== 'passed') return fail('review disposition is not passed');
   const runs = Array.isArray(review.runs) ? review.runs.filter((run) => run.status === 'completed') : [];
+  if (runs.some((run) => typeof run.engine !== 'string' || run.engine.length === 0 || run.engine.trim() !== run.engine)) {
+    return fail('review engine identifiers must be nonempty trimmed strings');
+  }
   if (runs.length < 2 || new Set(runs.map((run) => run.engine)).size !== runs.length) return fail('distinct completed review engines are required');
   const paths = new Set();
   for (const run of runs) {
@@ -111,7 +114,11 @@ export function validateSubjectBoundReview(root, review, expectedSubject) {
       paths.add(artifact.path);
       let actual;
       try {
-        actual = hashGitSubject(root, { kind: expectedSubject.kind, revision: expectedSubject.revision, pathspecs: [artifact.path], includePathsInHash: false });
+        const entries = subjectEntries(root, expectedSubject, [`:(literal)${artifact.path}`]);
+        if (entries.length !== 1 || entries[0].path !== artifact.path || !['100644', '100755'].includes(entries[0].mode)) {
+          return fail('review artifact must name one exact regular Git file');
+        }
+        actual = sha256(git(root, ['cat-file', 'blob', entries[0].objectId], null));
       } catch {
         return fail('review artifact is absent from the qualified Git subject');
       }

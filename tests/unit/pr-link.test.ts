@@ -44,6 +44,8 @@ it('resolves local remote metadata and default branches without network access',
     expect(githubRepoUrl(cwd)).toBe('https://github.com/example/one');
     expect(githubRepoUrl(cwd, 'upstream')).toBe('https://github.com/example/two');
     expect(githubRepoUrl(cwd, 'missing')).toBe('');
+    git('remote', 'set-url', '--push', 'upstream', 'https://github.com/example/push-target.git');
+    expect(githubRepoUrl(cwd, 'upstream')).toBe('https://github.com/example/push-target');
     git('update-ref', 'refs/remotes/origin/master', 'HEAD');
     expect(defaultBaseBranch(cwd)).toBe('master');
     git('update-ref', 'refs/remotes/origin/main', 'HEAD');

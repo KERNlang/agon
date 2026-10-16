@@ -1,7 +1,7 @@
 {
   "bomFormat": "CycloneDX",
   "specVersion": "1.6",
-  "serialNumber": "urn:uuid:82336337-8f4b-593b-aaab-e01495a10a24",
+  "serialNumber": "urn:uuid:6e623efa-8000-5432-bfe2-032d20cad013",
   "version": 1,
   "metadata": {
     "component": {
@@ -38,7 +38,7 @@
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "ee4eaaa5b1ae65ea4bccf756835204df2764a3aa5ceca8845fe6933772ac0686"
+          "content": "1c12e3098e8e0c78ee61b1a052db81a99334788b18584fb11dec34d470a7d801"
         }
       ],
       "licenses": [
@@ -51,7 +51,7 @@
       "properties": [
         {
           "name": "npm:integrity",
-          "value": "sha512-kiilH24PEj/OL5C6jPIcmZa9wSHkUALIaUudRzZmaYO0pFDTuhguUQsfY1Dz1mz597l4oNKnM1nH23gbHJ7JBw=="
+          "value": "sha512-e6NYk3/IpvjhN7mufQYMmWrXKAwrn3T2Qsplqfwpsi1zpX58Rk3qXa+1Fd7kfA4ihHXNh3lqzoGiQYLXu5LEdg=="
         },
         {
           "name": "agon:class",
@@ -248,7 +248,7 @@
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "29c615d4d56c4c4f95198ab227d31e115bf07283acb93de85d7b1d9cb0ea149e"
+          "content": "694fe1513f84789b00737ec843d1872a211bdd97cce328ce28db7eca39e02fe4"
         }
       ],
       "licenses": [
@@ -261,7 +261,7 @@
       "properties": [
         {
           "name": "npm:integrity",
-          "value": "sha512-7XRRj8usTIAuPXwKMTiGNqUHA2yJnyOQXTSq0047NK8t6NnKCX75BlP6mkQP2aDUQ3BvC2We4P7T5Up7+RSsHg=="
+          "value": "sha512-zTRxDX/ANVHeXWar6bpNhxA8JSUrk3Hfh3tLHnUFIAu+7OVnDKM/HDqLQuILTVklLiw/XSGYmKClx4dGdT3agg=="
         },
         {
           "name": "agon:class",
@@ -908,7 +908,7 @@
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "844dce7c158bcad72663d4230b12befe147691dcae87f2bf41999838793021d8"
+          "content": "42acfb501de2b0f746f4eb9c5afb8886d4ae9e950bb5ce253ced16a9fb65e55f"
         }
       ],
       "licenses": [
@@ -921,7 +921,7 @@
       "properties": [
         {
           "name": "npm:integrity",
-          "value": "sha512-itzvThbXj/eihuvIDBkn09qz+pDavc2g3xcqhrKqk2HjoTj1XZE9u+D1dz6MvhjHszUVe4VUp8DjWttDugZVOA=="
+          "value": "sha512-nARJRy2oVNlKJ0zVrxFo+rfJJAuyPp6X6xB7woHRaxhXtPpW3PZbZmZb4ONfN6T2pyyMnkPziQAx84IFvaA1Uw=="
         },
         {
           "name": "agon:class",
@@ -938,7 +938,7 @@
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "561700ff0d8e577897cad8bb37f0adc1d5c6f234931189c2e3d06244d86f25d7"
+          "content": "afee1557592f4364ef762f9df4976b2f6e039eebf3ba0abf62fc34886a2d7b64"
         }
       ],
       "licenses": [
@@ -951,7 +951,7 @@
       "properties": [
         {
           "name": "npm:integrity",
-          "value": "sha512-erezTsYPUGRLzPd7Wl5/4YgILS41NsBW2zXeB4+34nHRKQKlJXJoeLv+Lz09Fiyo71UbDYgvqjo6oho6nU874A=="
+          "value": "sha512-ZQqPYozOn5RtM0XpkZizshYDbFpnHbzSJyNcRxhVyAATzd3jySs9P9LxDJtddjA8BWE63ouAe+Fhd7BatrDjFw=="
         },
         {
           "name": "agon:class",

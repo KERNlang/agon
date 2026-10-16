@@ -2,6 +2,7 @@ import { expect, it, vi } from 'vitest';
 import type { ModManifest, ModServices } from '@kernlang/agon-mod-api';
 import type { BrainstormModServices } from '@kernlang/agon-mod-brainstorm';
 import type { ConquerModServices } from '@kernlang/agon-mod-conquer';
+import type { GoalModServices } from '@kernlang/agon-mod-goal';
 import * as core from '@kernlang/agon-core';
 import * as forge from '@kernlang/agon-forge';
 import * as adapters from '@kernlang/agon-adapter-cli';
@@ -60,7 +61,8 @@ it('binds Conquer publication to kernel configuration rather than mod-owned conf
   } finally { vi.restoreAllMocks(); }
 });
 
-it.each(['enabled', 'disabled', 'retired-during'] as const)('guards optional Forge PR prose when %s', async state => {
+it.each((['conquer', 'goal'] as const).flatMap(owner =>
+  (['enabled', 'disabled', 'retired-during'] as const).map(state => ({ owner, state }))))('guards optional Forge PR prose for $owner when $state', async ({ owner, state }) => {
   let current = true;
   vi.spyOn(core, 'loadConfig').mockReturnValue({ protectedPushBranches: [] } as ReturnType<typeof core.loadConfig>);
   vi.spyOn(core.EngineRegistry.prototype, 'load').mockImplementation(() => {});
@@ -75,8 +77,8 @@ it.each(['enabled', 'disabled', 'retired-during'] as const)('guards optional For
     return 'TITLE: feat: fixture\n\nVerified fixture body';
   });
   try {
-    const services = decorateCliFirstPartyServices({ id: 'agon.conquer' } as ModManifest, {} as ModServices) as ConquerModServices;
-    const opened = await services.conquer!.open({ invocationId: 'draft-host', cwd: '/fixture-project',
+    const services = decorateCliFirstPartyServices({ id: `agon.${owner}` } as ModManifest, {} as ModServices) as ConquerModServices & GoalModServices;
+    const opened = await services[owner]!.open({ invocationId: 'draft-host', cwd: '/fixture-project',
       platform: 'darwin-arm64', signal: new AbortController().signal, config: {} });
     const draft = opened.draftPullRequest!({ engineId: 'fixture', intent: 'task', context: 'verified', commits: '', diff: '' }, dispatch);
     if (state === 'enabled') {

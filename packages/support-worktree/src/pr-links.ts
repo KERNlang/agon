@@ -24,7 +24,7 @@ export function normalizeGitHubRemote(url: string): string {
  */
 export function githubRepoUrl(cwd: string, remote?: string): string {
   try {
-    return normalizeGitHubRemote(git(['remote', 'get-url', remote ?? 'origin'], cwd));
+    return normalizeGitHubRemote(git(['remote', 'get-url', '--push', remote ?? 'origin'], cwd));
   } catch {
     return '';
   }

@@ -4,6 +4,7 @@ export * from './worktree-lock.js';
 export * from './worktree-session.js';
 export * from './forge-arena.js';
 export * from './pr-links.js';
+export * from './pull-request.js';
 export * from './dependency-overlay.js';
 export * from './workspace-bookmarks.js';
 export * from './mutation-runner.js';

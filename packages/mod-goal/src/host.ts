@@ -3,6 +3,7 @@ import { realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { InvocationContext, ModServices } from '@kernlang/agon-mod-api';
 import { readWorktreeSource } from '@kernlang/agon-support-worktree';
+import type { PullRequestDraft } from '@kernlang/agon-support-worktree';
 
 export interface GoalWorktree {
   readonly repoRoot: string;
@@ -23,6 +24,8 @@ export interface GoalHostServices {
     assertCurrent(): void;
     acquire(id: string): Promise<{ assertOwned(): Promise<void>; release(): Promise<void> }>;
     openWorktree(branch: string, resumeBase?: string, expectedRepoRoot?: string): GoalWorktree;
+    draftPullRequest?(input: PullRequestDraft, dispatch: (prompt: string) => Promise<string>): Promise<{ ok: boolean; title: string; body: string }>;
+    formatPullRequestBody?(body: string): string;
   };
 }
 
@@ -37,6 +40,8 @@ export function createGoalHostServices(options: {
   worktrees: GoalWorktreeEffects;
   captureAuthority(): () => void;
   acquireWriter(id: string): Promise<{ assertOwned(): Promise<void>; release(): Promise<void> }>;
+  draftPullRequest?(input: PullRequestDraft, dispatch: (prompt: string) => Promise<string>): Promise<{ ok: boolean; title: string; body: string }>;
+  formatPullRequestBody?(body: string, context: InvocationContext): string;
 }): GoalHostServices {
   return {
     open(context) {
@@ -45,6 +50,20 @@ export function createGoalHostServices(options: {
       assertCurrent();
       return {
         assertCurrent,
+        ...(options.draftPullRequest ? { draftPullRequest: async (input: PullRequestDraft, dispatch: (prompt: string) => Promise<string>) => {
+          assertCurrent();
+          const result = await options.draftPullRequest!(input, async prompt => {
+            assertCurrent();
+            const response = await dispatch(prompt);
+            assertCurrent();
+            return response;
+          });
+          assertCurrent();
+          return result;
+        } } : {}),
+        ...(options.formatPullRequestBody ? { formatPullRequestBody: (body: string) => {
+          assertCurrent(); return options.formatPullRequestBody!(body, context);
+        } } : {}),
         async acquire(id) {
           assertCurrent();
           const lease = await options.acquireWriter(id);

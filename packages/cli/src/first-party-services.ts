@@ -13,6 +13,7 @@ import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { createBrainstormHostServices } from '@kernlang/agon-mod-brainstorm';
 import { createConquerHostServices } from '@kernlang/agon-mod-conquer';
+import type { PrTextInput } from '@kernlang/agon-mod-forge';
 import { rankCriticCascade } from '@kernlang/agon-mod-nero';
 import { glicko } from '@kernlang/agon-mod-ratings';
 import { EngineRegistry as CatalogEngineRegistry } from '@kernlang/agon-support-engine-catalog';
@@ -27,6 +28,20 @@ import { runChrome } from './commands/chrome.js';
 import { runDrive } from './commands/drive.js';
 import { runExtInstall, runExtNativeHost } from './commands/ext.js';
 import { runBrowserHostInstall, runBrowserHostStatus, runBrowserHostStop, runBrowserHostUninstall } from './commands/browser-host.js';
+
+async function draftFirstPartyPullRequest(input: PrTextInput, dispatch: (prompt: string) => Promise<string>) {
+  assertProcessSurfaceAvailable('cli', 'forge');
+  const assertCurrent = captureProcessSurfaceAuthority();
+  const { runPrText } = await import('@kernlang/agon-mod-forge');
+  return runPrText(input, { dispatch: async prompt => {
+    assertCurrent();
+    assertProcessSurfaceAvailable('cli', 'forge');
+    const response = await dispatch(prompt);
+    assertCurrent();
+    assertProcessSurfaceAvailable('cli', 'forge');
+    return response;
+  } });
+}
 
 export function decorateCliFirstPartyServices(manifest: ModManifest, base: ModServices): ModServices {
   const runs = cliRunRecordHost;
@@ -111,6 +126,8 @@ export function decorateCliFirstPartyServices(manifest: ModManifest, base: ModSe
   return Object.freeze({ ...base, runs, ...(browser ? { browser } : {}), ...(workspace ? { workspace } : {}),
     ...(brainstorm ? { brainstorm } : {}),
     ...(manifest.id === 'agon.goal' ? { goal: createGoalHostServices({
+      draftPullRequest: draftFirstPartyPullRequest,
+      formatPullRequestBody: (body, context) => appendPrAttribution(body, loadConfig(context.cwd)),
       acquireWriter: async id => {
         const path = join(getAgonHome(), 'goal-locks', `${createHash('sha256').update(id).digest('hex')}.lock`);
         try { return await WriterFence.acquire(path, `agon.goal:${id}`); }
@@ -133,19 +150,7 @@ export function decorateCliFirstPartyServices(manifest: ModManifest, base: ModSe
           commitBody: claim => appendAttribution(claim, config),
           prBody: body => appendPrAttribution(body, config) };
       },
-      draftPullRequest: async (input, dispatch) => {
-        assertProcessSurfaceAvailable('cli', 'forge');
-        const assertCurrent = captureProcessSurfaceAuthority();
-        const { runPrText } = await import('@kernlang/agon-mod-forge');
-        return runPrText(input, { dispatch: async prompt => {
-          assertCurrent();
-          assertProcessSurfaceAvailable('cli', 'forge');
-          const response = await dispatch(prompt);
-          assertCurrent();
-          assertProcessSurfaceAvailable('cli', 'forge');
-          return response;
-        } });
-      },
+      draftPullRequest: draftFirstPartyPullRequest,
       openRegistry: () => {
         const registry = new EngineRegistry(); registry.load(resolveBuiltinEnginesDir()); return registry;
       },

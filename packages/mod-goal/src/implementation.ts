@@ -1,4 +1,5 @@
 import { execFileSync, spawn } from "node:child_process";
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, statSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type {
@@ -13,7 +14,8 @@ import type {
 import { runAgentTask } from "@kernlang/agon-mod-agent";
 import { runReview } from "@kernlang/agon-mod-review";
 import { runGitAction } from "@kernlang/agon-mod-git-actions";
-import { readWorktreePatch, runMutationAssessment } from "@kernlang/agon-support-worktree";
+import { readWorktreePatch, runMutationAssessment, preparePullRequest, defaultBaseBranch, githubRepoUrl } from "@kernlang/agon-support-worktree";
+import type { PreparedPullRequest } from '@kernlang/agon-support-worktree';
 import type { GoalModServices, GoalWorktree } from './host.js';
 import { runFitnessCommand } from "@kernlang/agon-support-verification";
 import { spawnWithTimeout } from '@kernlang/agon-support-engine-runtime';
@@ -33,6 +35,7 @@ type Task = {
   publication?: {
     commit: string;
     remote: string;
+    destinationHash?: string;
     status: 'pending' | 'succeeded' | 'unknown';
     message?: string;
   };
@@ -46,6 +49,11 @@ type GoalState = {
   baseSha: string;
   worktree?: GoalWorktree;
   baselineVerified?: boolean;
+  pullRequest?: {
+    commit: string; remote: string; repoUrl: string; base: string;
+    status: 'pending' | 'created' | 'unknown' | 'not-attempted';
+    url?: string; message?: string;
+  };
   createdAt: string;
   updatedAt: string;
   status: "running" | "done" | "failed" | "stopped" | "cancelled";
@@ -359,6 +367,15 @@ const event = (
     },
   ].slice(-1000),
 });
+
+/** Bind publication to one configured destination without persisting credentials. */
+function pushDestination(cwd: string, remote: string): { hash: string; url: string } | undefined {
+  let urls: string[];
+  try { urls = git(cwd, ['remote', 'get-url', '--push', '--all', remote]).split('\n').filter(Boolean); }
+  catch { urls = [remote]; }
+  if (urls.length !== 1) return undefined;
+  return { hash: createHash('sha256').update(urls[0]).digest('hex'), url: urls[0] };
+}
 const persistGoal = (services: ModServices, state: GoalState) =>
   services.state.write(
     `goals/${state.id}`,
@@ -834,14 +851,16 @@ export async function runGoal(
           state = event(state, "task-done", runnable.id, runnable.commit);
           await save();
           if (input.push === true && runnable.commit) {
-            runnable.publication = { commit: runnable.commit, remote, status: 'pending' };
+            const destinationHash = pushDestination(worktree.path, remote)?.hash;
+            runnable.publication = { commit: runnable.commit, remote, destinationHash, status: 'pending' };
             state = event(state, 'push-prepared', runnable.id, remote);
             await save();
             const permission = await services.permissions.check('git.write', worktree.repoRoot);
             await assertExecution();
             if (permission !== 'allow') throw new Error(`Goal publication stopped: git.write permission is ${permission}`);
             if (git(worktree.path, ['symbolic-ref', '--short', 'HEAD']) !== branch ||
-                git(worktree.path, ['rev-parse', 'HEAD']) !== runnable.commit) {
+                git(worktree.path, ['rev-parse', 'HEAD']) !== runnable.commit ||
+                pushDestination(worktree.path, remote)?.hash !== destinationHash) {
               throw new Error('Goal branch or commit changed before publication; inspect the retained worktree.');
             }
             let pushed: Pick<Awaited<ReturnType<typeof spawnWithTimeout>>, 'exitCode' | 'stderr' | 'timedOut' | 'aborted'>;
@@ -852,9 +871,10 @@ export async function runGoal(
             } catch (error) {
               pushed = { exitCode: 1, stderr: String(error), timedOut: false };
             }
-            const succeeded = pushed.exitCode === 0 && !pushed.timedOut && !pushed.aborted;
+            const succeeded = pushed.exitCode === 0 && !pushed.timedOut && !pushed.aborted &&
+              pushDestination(worktree.path, remote)?.hash === destinationHash;
             const message = succeeded ? remote : `Remote outcome unknown; inspect ${remote} before retrying. Local commit ${runnable.commit} is retained. ${pushed.stderr.trim().slice(0, 500)}`;
-            runnable.publication = { commit: runnable.commit, remote,
+            runnable.publication = { commit: runnable.commit, remote, destinationHash,
               status: succeeded ? 'succeeded' : 'unknown', ...(!succeeded ? { message } : {}) };
             state = event(state, succeeded ? 'task-pushed' : 'push-failed', runnable.id, message);
             await save();
@@ -879,27 +899,94 @@ export async function runGoal(
       await assertExecution();
       const patch = readWorktreePatch(worktree.path, state.baseSha);
       const publications = state.tasks.flatMap(task => task.publication ? [{ taskId: task.id, ...task.publication }] : []);
+      const branchHead = git(worktree.path, ['rev-parse', 'HEAD']);
+      let pullRequest: (PreparedPullRequest & { creation?: GoalState['pullRequest'] }) | undefined;
+      const publishedTip = publications.find(item => item.status === 'succeeded' && item.commit === branchHead && item.remote === remote);
+      if (input.push === true && publishedTip) {
+        const base = defaultBaseBranch(worktree.repoRoot, remote);
+        const repoUrl = githubRepoUrl(worktree.repoRoot, remote);
+        const summary = `Goal: ${intent}\nStatus: ${state.status}\nTasks: ${state.tasks.filter(task => task.status === 'done').length}/${state.tasks.length} done\nGate: ${gate}`;
+        pullRequest = await preparePullRequest({ title: `goal: ${intent}`.slice(0, 72), body: summary,
+          context: `Goal run summary (verified):\n${summary}`, intent, engineId: engine,
+          branch, base, remote, repoUrl }, {
+          git: async (args, timeout) => {
+            await assertExecution();
+            const result = await spawnWithTimeout({ command: 'git', args, cwd: worktree.path, timeout, signal: context.signal });
+            await assertExecution(); return result;
+          },
+          formatBody: capabilities.formatPullRequestBody,
+          ...(capabilities.draftPullRequest ? { draft: draft => capabilities.draftPullRequest!(draft, async prompt => {
+            await assertExecution();
+            const response = await services.engines.dispatch(engine, prompt, { ...context, cwd: worktree.path },
+              { timeoutSeconds: 300, textOnly: true, mode: 'exec' });
+            await assertExecution();
+            if (!response || typeof response !== 'object' || Array.isArray(response) || response.exitCode !== 0 || response.timedOut === true)
+              throw new Error('Goal PR text generation failed');
+            return typeof response.stdout === 'string' ? response.stdout : '';
+          }) } : {}),
+        });
+        if (input.pr === true) {
+          const previous = state.pullRequest;
+          if (previous && previous.status !== 'not-attempted') {
+            state.pullRequest = previous.status === 'pending' ? { ...previous, status: 'unknown',
+              message: 'PR creation outcome was not persisted. Inspect GitHub before creating another PR.' } : previous;
+          } else {
+            let started = false;
+            const identity = { commit: branchHead, remote, repoUrl, base };
+            try {
+              if (!repoUrl) throw new Error('The selected push remote has no supported GitHub URL. Create the PR manually.');
+              state.pullRequest = { ...identity, status: 'pending' };
+              await save();
+              const permission = await services.permissions.check('git.write', worktree.repoRoot);
+              await assertExecution();
+              if (permission !== 'allow') throw new Error(`PR creation requires git.write permission (received ${permission}).`);
+              const destination = pushDestination(worktree.path, remote);
+              if (!destination || !publishedTip.destinationHash || destination.hash !== publishedTip.destinationHash)
+                throw new Error('The push destination differs from the recorded publication. Inspect the remote before creating a PR.');
+              const observed = await spawnWithTimeout({ command: 'git',
+                args: ['ls-remote', '--exit-code', '--refs', '--', destination.url, `refs/heads/${branch}`],
+                cwd: worktree.path, timeout: 30_000, signal: context.signal });
+              await assertExecution();
+              if (observed.exitCode !== 0 || observed.timedOut || observed.aborted ||
+                  observed.stdout.trim() !== `${branchHead}\trefs/heads/${branch}`)
+                throw new Error('The remote branch does not resolve to the verified Goal commit. Inspect it before creating a PR.');
+              const currentPermission = await services.permissions.check('git.write', worktree.repoRoot);
+              await assertExecution();
+              if (currentPermission !== 'allow') throw new Error(`PR creation requires git.write permission (received ${currentPermission}).`);
+              if (git(worktree.path, ['symbolic-ref', '--short', 'HEAD']) !== branch ||
+                  git(worktree.path, ['rev-parse', 'HEAD']) !== branchHead ||
+                  pushDestination(worktree.path, remote)?.hash !== publishedTip.destinationHash ||
+                  githubRepoUrl(worktree.repoRoot, remote) !== repoUrl || defaultBaseBranch(worktree.repoRoot, remote) !== base)
+                throw new Error('Goal publication target changed while preparing the PR. Inspect it before retrying.');
+              started = true;
+              const created = await spawnWithTimeout({ command: 'gh', args: ['pr', 'create', '--repo', repoUrl,
+                '--base', base, '--head', branch, '--title', pullRequest.title, '--body', pullRequest.body],
+                cwd: worktree.path, timeout: 120_000, signal: context.signal });
+              state.pullRequest = created.exitCode === 0 && !created.timedOut && !created.aborted
+                ? { ...identity, status: 'created', url: created.stdout.trim() }
+                : { ...identity, status: 'unknown', message: `PR creation outcome unknown. Inspect GitHub before retrying. ${created.stderr.trim().slice(0, 500)}` };
+            } catch (error) {
+              state.pullRequest = { ...identity, status: started ? 'unknown' : 'not-attempted',
+                message: `${started ? 'PR creation outcome unknown. Inspect GitHub before retrying. ' : ''}${error instanceof Error ? error.message : String(error)}` };
+            }
+          }
+          await save();
+          pullRequest.creation = state.pullRequest;
+        }
+      }
+      await lease.assertOwned();
       const result = {
         state,
         worktree,
         patch,
-        branchHead: git(worktree.path, ["rev-parse", "HEAD"]),
+        branchHead,
         sourceUntouched: true,
         runDir: run?.path ?? null,
         publication: { requested: input.push === true, remote,
           succeeded: publications.filter(item => item.status === 'succeeded').length,
           failed: publications.filter(item => item.status !== 'succeeded').length,
           outcomes: publications },
-        promotion:
-          input.pr === true
-            ? {
-                requiresOperatorApproval: true,
-                branch,
-                remote: String(input.remote ?? "origin"),
-                pushRequested: input.push === true,
-                prRequested: input.pr === true,
-              }
-            : null,
+        ...(pullRequest ? { pullRequest } : {}),
       };
       if (run) {
         await services.runs?.writeArtifact(run, "result.json", `${JSON.stringify(result, null, 2)}\n`, { ...context, cwd: worktree.path });

@@ -516,8 +516,8 @@ auxiliary writes can change usage before or after the report. Collection must
 revalidate its exact targets and report any remaining quota shortfall.
 These are measured file sizes, not allocated disk blocks or guaranteed reclaimed
 space. Retirement preserves evidence that can outweigh the removed metadata.
-External caches are outside this named scope. Cache collection and quota-driven
-selection remain unfinished; this accounting block alone does not satisfy them.
+External caches are outside this accounting block. Quota collection below adds
+the engine-catalog binary cache once when it is outside the host root.
 
 `agon mod retention` reports retained installation IDs, every generation that
 references each installation, and unreleased process leases. It acquires the
@@ -586,8 +586,8 @@ that order. `totalStorageLogicalBytes` sums only these entries, not installation
 Missing roots count zero; failed reads, links, non-regular entries and unsafe size
 totals fail closed. These sizes are neither allocated disk space nor permission
 to collect files. The default npm cache lives in temporary candidate staging;
-caller-selected external caches are not scanned. Quota collection is under
-implementation; it is not yet available through the CLI or release-qualified.
+caller-selected external caches are not scanned. Explicit quota collection is
+available through the CLI as described below; it is not release-qualified.
 The size report assumes all concurrent writers obey the managed fences. Path
 checks reject observed links and read failures; they are not atomic traversal
 against an external actor swapping filesystem entries between checks. A byte
@@ -621,8 +621,24 @@ Quota inspection can recover proven dead writers; live writers still block it.
 Inspection cleanup retains ownership across inspector instances for the same host.
 Real process-kill tests cover inspection release, payload permission transition
 and payload rename. These checks do not constitute complete release qualification.
-CLI approval integration, the complete failure matrix and release qualification
-remain incomplete.
+The complete failure matrix and release qualification remain incomplete.
+
+`agon mod retention quota --quota-bytes <bytes> --rollback-window-ms <duration>`
+previews quota collection. Both values must be explicit non-negative safe integers.
+The CLI binds the existing cache owner to the canonical Agon home, independently
+of `AGON_MODULAR_HOST_ROOT`. Preview does not create a missing home or cache.
+It saves the kernel plan in the existing pending-authority directory and prints
+the exact approval command. A null plan reports either `already-below-quota` or
+`no-net-beneficial-collection`; the latter is not success at meeting the quota.
+
+`agon mod retention quota <saved-plan> --approve <hash>` applies that exact plan.
+Replacement quota or window flags are rejected. Add `--cancel` with the same
+plan and hash to cancel pending work and finish already-started cleanup.
+Output separates durable attempt state from current `logicalBytes`, `quotaMet`
+and `shortfallBytes`. Preserved receipts, approvals and protected data can leave
+a shortfall even after successful removals. These are logical file sizes, not
+physical disk savings. Terminal replay never starts collecting later growth.
+No quota default, automatic collector or persistent policy is introduced.
 
 `artifactLeases` lists explicit reproducible-artifact references. Version-2 lease
 records bind one generation to an owner, opaque artifact ID and SHA-256 content
@@ -706,9 +722,9 @@ its staged marker requires explicit plan replay. If interrupted before rename,
 host recovery verifies original bytes and restores immutable root permissions.
 This does not change existing recovery of an uncommitted installation transaction.
 
-This operation removes generation metadata only. Shared installation payloads,
-cache ordering, quota-driven selection and complete retention acceptance remain
-open. It does not certify the full modular release candidate.
+This explicit generation operation removes metadata only. Quota collection above
+composes it with cache collection and conditional installation purge. Complete
+retention acceptance remains open. This does not certify the modular release.
 
 ### Foundation mutation evidence
 

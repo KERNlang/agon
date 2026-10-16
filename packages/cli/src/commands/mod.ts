@@ -1,6 +1,8 @@
 import { lstat, mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
-import { dirname, isAbsolute, join, relative } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { homedir } from 'node:os';
+import { binaryCacheRetentionPath, inspectBinaryCache, evictBinaryCache, recoverBinaryCacheWriter } from '@kernlang/agon-support-engine-catalog';
 import { defineCommand } from 'citty';
 import {
   AGON_RUNTIME_VERSION,
@@ -21,6 +23,11 @@ import {
   previewManagedGenerationCollection,
   applyManagedGenerationCollection,
   type ManagedGenerationCollectionPlan,
+  previewManagedQuotaCollection,
+  applyManagedQuotaCollection,
+  parseManagedQuotaPlan,
+  type ManagedQuotaPlan,
+  type RetentionCacheOwner,
   parseArtifactLeaseIdentity,
   type ArtifactGenerationLease,
   type ArtifactLeaseIdentity,
@@ -90,6 +97,7 @@ type ArtifactRetentionPreview = ({ readonly action: 'retain'; readonly generatio
 type PendingPlan =
   | { readonly schemaVersion: 2; readonly kind: 'purge'; readonly preview: ManagedPurgePlan }
   | { readonly schemaVersion: 2; readonly kind: 'generation-collection'; readonly preview: ManagedGenerationCollectionPlan }
+  | { readonly schemaVersion: 2; readonly kind: 'quota-collection'; readonly preview: ManagedQuotaPlan }
   | { readonly schemaVersion: 2; readonly kind: 'artifact-retention'; readonly preview: ArtifactRetentionPreview }
   | { readonly schemaVersion: 2; readonly kind: 'authority'; readonly modId: string; readonly contentHash: string; readonly manifestHash: string; readonly preview: FolderModApprovalPreview }
   | { readonly schemaVersion: 2; readonly kind: 'activation'; readonly modId: string; readonly contentHash: string; readonly manifestHash: string; readonly preview: FolderModActivationPreview }
@@ -113,6 +121,10 @@ async function readPlan(pathInput: string): Promise<PendingPlan> {
   const metadata = await lstat(candidate);
   if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.size > PLAN_LIMIT) throw new TypeError('approval plan must be a real JSON file no larger than 256 KiB');
   const value = JSON.parse(await readFile(candidate, 'utf8')) as PendingPlan;
+  if (value.kind === 'quota-collection') {
+    if (value.schemaVersion !== 2) throw new TypeError('quota collection plan is malformed');
+    return { schemaVersion: 2, kind: 'quota-collection', preview: parseManagedQuotaPlan(value.preview) };
+  }
   if (value.kind === 'generation-collection') {
     if (value.schemaVersion !== 2 || value.preview?.schemaVersion !== 3 || value.preview.kind !== 'generation-retention') throw new TypeError('generation collection plan is malformed');
     return value;
@@ -449,10 +461,63 @@ const generationCollectionCommand = defineCommand({
   },
 });
 
+function retentionCacheOwner(): RetentionCacheOwner {
+  const configured = process.env.AGON_HOME?.trim();
+  const path = binaryCacheRetentionPath(configured ? resolve(configured) : join(homedir(), '.agon'));
+  const home = dirname(dirname(path));
+  return { path, inspect: () => inspectBinaryCache(home),
+    evict: snapshot => evictBinaryCache(home, snapshot), recover: () => recoverBinaryCacheWriter(home) };
+}
+
+const quotaCollectionCommand = defineCommand({
+  meta: { name: 'quota', description: 'Preview logical-byte quota collection; apply or cancel an exactly approved saved plan' },
+  args: {
+    plan: { type: 'positional', required: false, description: 'Saved quota collection plan' },
+    'quota-bytes': { type: 'string', description: 'Required explicit logical-byte limit for preview' },
+    'rollback-window-ms': { type: 'string', description: 'Required explicit rollback protection duration for preview' },
+    approve: { type: 'string', description: 'Exact saved plan hash' },
+    cancel: { type: 'boolean', default: false, description: 'Cancel pending removals; finish already started cleanup' },
+  },
+  async run({ args }) {
+    const host = new DurableModHost(paths().hostRoot, { kernelVersion: AGON_RUNTIME_VERSION });
+    const warning = 'Removal is irreversible. Logical bytes are not physical disk savings. Protected data can prevent meeting the quota.';
+    if (args.plan !== undefined || args.approve !== undefined || args.cancel) {
+      if (!args.plan || !args.approve) throw new TypeError('quota apply or cancel requires a saved plan and its exact --approve hash');
+      if (args['quota-bytes'] !== undefined || args['rollback-window-ms'] !== undefined) throw new TypeError('saved quota approval cannot be combined with replacement policy');
+      const document = await readPlan(String(args.plan));
+      if (document.kind !== 'quota-collection') throw new TypeError('quota collection requires a quota-collection plan');
+      const result = await applyManagedQuotaCollection(host, document.preview, String(args.approve), {
+        cacheOwner: retentionCacheOwner(), cancelPending: args.cancel,
+      });
+      console.log(JSON.stringify({ ...result, action: args.cancel ? 'quota-collection-cancel' : 'quota-collection',
+        planHash: document.preview.planHash, warning }, null, 2));
+      return;
+    }
+    const readCount = (key: 'quota-bytes' | 'rollback-window-ms') => {
+      const value = args[key];
+      if (typeof value !== 'string' || !/^\d+$/.test(value) || !Number.isSafeInteger(Number(value))) {
+        throw new TypeError(`quota preview requires an explicit non-negative safe integer --${key}`);
+      }
+      return Number(value);
+    };
+    const quotaBytes = readCount('quota-bytes');
+    const preview = await previewManagedQuotaCollection(host, { quotaBytes, rollbackWindowMs: readCount('rollback-window-ms'),
+      cacheOwner: retentionCacheOwner() });
+    const quotaMet = preview.logicalBytes <= quotaBytes;
+    const planPath = preview.plan ? await writePlan({ schemaVersion: 2, kind: 'quota-collection', preview: preview.plan }, preview.plan.planHash) : null;
+    const apply = planPath && `agon mod retention quota '${planPath.replace(/'/g, "'\\''")}' --approve ${preview.plan!.planHash}`;
+    console.log(JSON.stringify({ ...preview, action: 'quota-collection-preview', quotaBytes, quotaMet,
+      shortfallBytes: Math.max(0, preview.logicalBytes - quotaBytes), planPath, planHash: preview.plan?.planHash ?? null,
+      reason: preview.plan ? 'approval-required' : quotaMet ? 'already-below-quota' : 'no-net-beneficial-collection',
+      warning, next: apply, cancel: apply ? `${apply} --cancel` : null }, null, 2));
+  },
+});
+
 const retentionCommand = defineCommand({ meta: { name: 'retention', description: 'Inspect references and rollback windows; manage artifact protection and explicitly approved collection' },
   subCommands: {
     retain: artifactRetentionCommand('retain'), release: artifactRetentionCommand('release'),
     collect: generationCollectionCommand,
+    quota: quotaCollectionCommand,
     inspect: defineCommand({
       args: { 'rollback-window-ms': { type: 'string', description: 'Inspect rollback protection for this explicit duration; does not authorize deletion' } },
       async run({ args }) { await printRetentionReport(args['rollback-window-ms']); },

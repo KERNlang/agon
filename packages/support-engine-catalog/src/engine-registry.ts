@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync, existsSync, statSync, lstatSync, realpathSync, accessSync, mkdirSync, writeFileSync, renameSync, unlinkSync, openSync, closeSync, fsyncSync, constants } from 'node:fs';
 
-import { join, dirname, resolve, delimiter } from 'node:path';
+import { join, dirname, basename, resolve, delimiter } from 'node:path';
 
 import { homedir } from 'node:os';
 
@@ -34,8 +34,22 @@ function binaryCacheFile(): string {
 
 export type BinaryCacheSnapshot = RetentionCacheSnapshot;
 
+/** Resolve the owner identity without creating an absent home. */
+export function binaryCacheRetentionPath(home: string): string {
+  let parent = resolve(home);
+  const missing: string[] = [];
+  for (;;) {
+    try { return join(realpathSync(parent), ...missing, 'cache', 'binaries.json'); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT' || dirname(parent) === parent) throw error;
+      missing.unshift(basename(parent));
+      parent = dirname(parent);
+    }
+  }
+}
+
 function retentionCacheFile(home: string): string | null {
-  const directory = join(realpathSync(home), 'cache');
+  const directory = dirname(binaryCacheRetentionPath(home));
   try {
     const metadata = lstatSync(directory);
     if (!metadata.isDirectory() || metadata.isSymbolicLink()) throw new TypeError('binary cache directory must be a real directory');
@@ -90,7 +104,7 @@ export async function recoverBinaryCacheWriter(home: string): Promise<void> {
 /** Remove the approved identity once. A replacement requires another preview. */
 export function evictBinaryCache(home: string, expected: BinaryCacheSnapshot): 'removed' | 'missing' | 'changed' {
   const file = retentionCacheFile(home);
-  const expectedPath = join(realpathSync(home), 'cache', 'binaries.json');
+  const expectedPath = binaryCacheRetentionPath(home);
   if (expected.path !== expectedPath || !Number.isSafeInteger(expected.logicalBytes) || expected.logicalBytes < 0
     || !/^\d+:\d+:\d+:\d+:\d+$/.test(expected.identity)) throw new TypeError('binary cache approval does not match the owner path');
   if (!file) return 'missing';

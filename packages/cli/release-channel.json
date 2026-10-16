@@ -44,10 +44,10 @@
         "@kernlang/agon-support-engine-runtime"
       ],
       "sourceLocator": "@kernlang/agon-support-engine-catalog@1.0.0",
-      "integrity": "sha512-4OySN6QdRATie6A7mSIJSul+SlGM5Jgvaqk371cNI9hZrM6brLzUcmzMggfwQncEQaOOn5btCxDGJDSCh60ZZA==",
-      "contentHash": "sha256:3d71dd1d41c4a5570c8697a532aaa3b44a79ad29cc3688a427d1565b50de2327",
+      "integrity": "sha512-crNe2kJEX55repFVsNFEote/x6l1DSvzzXZtGGX5iQFSdimLf12O/QYirEkwyWmu0xfu1NWRfjGiNNDSm0k2yg==",
+      "contentHash": "sha256:5c94db38278f67ec57a260f65a23a77a26020bec4a07ec1194a3d244836ddd4b",
       "manifestHash": "sha256:6f07fc6e64ae607bec7d2bf7ea3f65ddb686f89bbfc2d65e2b9274736daa77fa",
-      "payloadHash": "sha256:348de01200d54176d6f8da349b94fc6f8fcbea42031052907bf98282f35f10b0"
+      "payloadHash": "sha256:bd18d3b6edd9b1b5f08cc69d979325a49db092dc54fe40a08b953ea6f5af5c85"
     },
     {
       "id": "@kernlang/agon-support-persistence",
@@ -941,8 +941,8 @@
   "launcherFiles": [
     "LICENSE",
     "README.md",
-    "dist/app-NLEJYAHZ.js",
-    "dist/app-NLEJYAHZ.js.map",
+    "dist/app-WD4JEDSI.js",
+    "dist/app-WD4JEDSI.js.map",
     "dist/attach-D4YH6PRD.js",
     "dist/attach-D4YH6PRD.js.map",
     "dist/browser-host.js",
@@ -1025,8 +1025,8 @@
     "dist/login-7TVQSFPD.js.map",
     "dist/mcp/index.js",
     "dist/mcp/index.js.map",
-    "dist/mod-IG23NGJV.js",
-    "dist/mod-IG23NGJV.js.map",
+    "dist/mod-YMCOMSLG.js",
+    "dist/mod-YMCOMSLG.js.map",
     "dist/models-HRNDOYWV.js",
     "dist/models-HRNDOYWV.js.map",
     "dist/onboarding-U2HYDNAD.js",
@@ -1180,6 +1180,7 @@
           "@kernlang/agon-engines": "^0.1.2",
           "@kernlang/agon-kernel": "1.0.0",
           "@kernlang/agon-support-browser-bridge": "1.0.0",
+          "@kernlang/agon-support-engine-catalog": "1.0.0",
           "@kernlang/agon-support-engine-runtime": "1.0.0",
           "@kernlang/agon-support-judge": "1.0.0",
           "@kernlang/agon-support-persistence": "1.0.0",
@@ -1890,7 +1891,7 @@
         "peerDependencies": {
           "@kernlang/agon-kernel": ">=1.0.0 <2"
         },
-        "integrity": "sha512-4OySN6QdRATie6A7mSIJSul+SlGM5Jgvaqk371cNI9hZrM6brLzUcmzMggfwQncEQaOOn5btCxDGJDSCh60ZZA==",
+        "integrity": "sha512-crNe2kJEX55repFVsNFEote/x6l1DSvzzXZtGGX5iQFSdimLf12O/QYirEkwyWmu0xfu1NWRfjGiNNDSm0k2yg==",
         "resolved": "https://registry.npmjs.org/@kernlang/agon-support-engine-catalog/-/agon-support-engine-catalog-1.0.0.tgz"
       },
       "node_modules/@kernlang/agon-support-engine-runtime": {

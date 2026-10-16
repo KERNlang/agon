@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, readdir, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, realpath, rename, stat, writeFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -30,6 +30,151 @@ async function previewAndApprove(command: any, target: string) {
 }
 
 describe('first-party safe-mode CLI recovery', () => {
+  it('requires exact quota approval and preserves cancelled or replaced caches through the built CLI', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-cli-quota '));
+    const home = join(root, 'separate-home');
+    const hostRoot = join(root, 'host');
+    await mkdir(join(home, 'cache'), { recursive: true });
+    const cache = join(home, 'cache', 'binaries.json');
+    const original = ' '.repeat(64 * 1024);
+    await writeFile(cache, original);
+    const cli = fileURLToPath(new URL('../../packages/cli/dist/index.js', import.meta.url));
+    const run = (...args: string[]) => spawnSync(process.execPath, [cli, 'mod', 'retention', 'quota', ...args], {
+      env: { ...process.env, HOME: root, AGON_HOME: ` ${home} `, AGON_MODULAR_HOST_ROOT: hostRoot, AGON_MOD_SAFE_MODE: '1' },
+      cwd: root, encoding: 'utf8', timeout: 10_000,
+    });
+    const preview = () => {
+      const result = run('--quota-bytes', '0', '--rollback-window-ms', '0');
+      expect(result.status, result.stderr).toBe(0);
+      return JSON.parse(result.stdout);
+    };
+    for (const args of [[], ['--quota-bytes', '0'], ['--cancel'], ...['-1', '0.5', 'Infinity', '9007199254740992'].map(value => ['--quota-bytes', value, '--rollback-window-ms', '0'])]) {
+      expect(run(...args).status).not.toBe(0);
+    }
+    const first = preview();
+    expect(first).toMatchObject({ action: 'quota-collection-preview', quotaMet: false, logicalBytes: 65536,
+      reason: 'approval-required', plan: { cache: { path: await realpath(cache) }, steps: [] } });
+    expect(await readFile(cache, 'utf8')).toBe(original);
+    expect(run(first.planPath, '--approve', 'wrong').status).not.toBe(0);
+    for (const flags of [['--quota-bytes', '0'], ['--rollback-window-ms', '0']]) {
+      expect(run(first.planPath, '--approve', first.planHash, ...flags).status).not.toBe(0);
+      expect(run(first.planPath, '--approve', first.planHash, '--cancel', ...flags).status).not.toBe(0);
+    }
+    const saved = await readFile(first.planPath, 'utf8');
+    expect(JSON.parse(saved).preview).toEqual(first.plan);
+    for (const invalid of [
+      JSON.stringify({ ...JSON.parse(saved), kind: 'artifact-retention' }),
+      JSON.stringify({ ...JSON.parse(saved), preview: { ...first.plan, quotaBytes: 1 } }),
+      ' '.repeat(256 * 1024 + 1),
+    ]) {
+      await writeFile(first.planPath, invalid);
+      expect(run(first.planPath, '--approve', first.planHash).status).not.toBe(0);
+      expect(await readFile(cache, 'utf8')).toBe(original);
+    }
+    await writeFile(first.planPath, saved);
+    const cancelled = run(first.planPath, '--approve', first.planHash, '--cancel');
+    expect(cancelled.status, cancelled.stderr).toBe(0);
+    expect(JSON.parse(cancelled.stdout)).toMatchObject({ state: 'cancelled', quotaMet: false });
+    expect(run(first.planPath, '--approve', first.planHash).status).toBe(0);
+    expect(await readFile(cache, 'utf8')).toBe(original);
+    const changed = preview();
+    const replacementPath = join(home, 'cache', 'replacement.json');
+    await writeFile(replacementPath, 'x'.repeat(original.length));
+    await rename(replacementPath, cache);
+    const replacement = await readFile(cache);
+    const rejected = run(changed.planPath, '--approve', changed.planHash);
+    expect(rejected.status, rejected.stderr).toBe(0);
+    expect(JSON.parse(rejected.stdout)).toMatchObject({ cacheOutcome: 'changed', quotaMet: false });
+    expect(await readFile(cache)).toEqual(replacement);
+    const last = preview();
+    const applied = run(last.planPath, '--approve', last.planHash);
+    expect(applied.status, applied.stderr).toBe(0);
+    expect(JSON.parse(applied.stdout)).toMatchObject({ cacheOutcome: 'removed', state: 'exhausted', quotaMet: false });
+    await expect(stat(cache)).rejects.toMatchObject({ code: 'ENOENT' });
+    await writeFile(cache, original);
+    expect(run(last.planPath, '--approve', last.planHash).status).toBe(0);
+    expect(await readFile(cache, 'utf8')).toBe(original);
+    await rename(home, `${home}-moved`);
+    const missingHomeReplay = run(last.planPath, '--approve', last.planHash);
+    expect(missingHomeReplay.status, missingHomeReplay.stderr).toBe(0);
+    expect(JSON.parse(missingHomeReplay.stdout).state).toBe('exhausted');
+  });
+
+  it.each(['cache-first', 'missing-home'])('runs quota child plans with %s through the built CLI', async mode => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-cli-quota-children-'));
+    const home = join(root, 'separate', 'home');
+    const host = new DurableModHost(join(root, 'host'), { kernelVersion: '1.0.0' });
+    const service = new ManagedLifecycleService(host);
+    const largeInstaller = { install: async (...args: Parameters<typeof installer.install>) => {
+      await installer.install(...args);
+      await writeFile(join(args[1], 'payload.bin'), 'x'.repeat(65536));
+    } };
+    const desiredState = createFullCompatDesiredState(createFirstPartyModCatalog(), '2026-09-04T00:00:00.000Z');
+    const first = await service.apply(await createManagedLifecyclePlan(host, request([artifact('@test/app')], { desiredState })), largeInstaller, verifier);
+    const updated = artifact('@test/app', [], { version: '2.0.0', sourceLocator: 'cache:@test/app@2.0.0', contentHash: `sha256:${'2'.repeat(64)}` });
+    const second = await service.apply(await createManagedLifecyclePlan(host, request([updated], { desiredState, operation: 'update' })), largeInstaller, verifier);
+    const selected = await readFile(host.paths.current);
+    const cli = fileURLToPath(new URL('../../packages/cli/dist/index.js', import.meta.url));
+    const run = (...args: string[]) => {
+      const result = spawnSync(process.execPath, [cli, 'mod', 'retention', 'quota', ...args], {
+        env: { ...process.env, HOME: root, AGON_HOME: home, AGON_MODULAR_HOST_ROOT: host.root, AGON_MOD_SAFE_MODE: '1' },
+        cwd: root, encoding: 'utf8', timeout: 10_000,
+      });
+      expect(result.status, result.stderr).toBe(0);
+      return JSON.parse(result.stdout);
+    };
+    const protectedPreview = run('--quota-bytes', '0', '--rollback-window-ms', '86400000');
+    expect(protectedPreview).toMatchObject({ plan: null, quotaMet: false, reason: 'no-net-beneficial-collection' });
+    await expect(stat(home)).rejects.toMatchObject({ code: 'ENOENT' });
+    const cache = join(home, 'cache', 'binaries.json');
+    if (mode === 'cache-first') {
+      await mkdir(join(home, 'cache'), { recursive: true });
+      await writeFile(cache, 'c'.repeat(65536));
+    }
+    const observed = run('--quota-bytes', String(Number.MAX_SAFE_INTEGER), '--rollback-window-ms', '0');
+    const quotaBytes = mode === 'cache-first' ? observed.logicalBytes - 32768 : 0;
+    const preview = run('--quota-bytes', String(quotaBytes), '--rollback-window-ms', '0');
+    expect(preview.plan.steps.map((step: { kind: string }) => step.kind)).toEqual(['generation', 'installation']);
+    expect(JSON.parse(await readFile(preview.planPath, 'utf8')).preview).toEqual(preview.plan);
+    await mkdir(home, { recursive: true });
+    const applied = run(preview.planPath, '--approve', preview.planHash);
+    expect(applied).toMatchObject(mode === 'cache-first'
+      ? { state: 'quota-met', cacheOutcome: 'removed', completedSteps: 0, quotaMet: true }
+      : { state: 'exhausted', cacheOutcome: 'not-applicable', completedSteps: 2, quotaMet: false });
+    const oldPayload = join(host.root, 'installations', first.installation.installationId, 'payload.bin');
+    if (mode === 'cache-first') expect((await stat(oldPayload)).size).toBe(65536);
+    else await expect(stat(oldPayload)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect((await stat(join(host.root, 'installations', second.installation.installationId, 'payload.bin'))).size).toBe(65536);
+    await mkdir(join(home, 'cache'), { recursive: true });
+    await writeFile(cache, 'later growth'.repeat(65536));
+    const replay = run(preview.planPath, '--approve', preview.planHash);
+    expect(replay.state).toBe(applied.state);
+    expect(replay.quotaMet).toBe(false);
+    expect((await stat(cache)).size).toBe('later growth'.length * 65536);
+    if (mode === 'cache-first') expect((await stat(oldPayload)).size).toBe(65536);
+    expect(await readFile(host.paths.current)).toEqual(selected);
+  });
+
+  it('does not create a missing home or cache for quota preview', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-cli-quota-missing-'));
+    const home = join(root, 'absent-home');
+    const hostRoot = join(root, 'host');
+    const cli = fileURLToPath(new URL('../../packages/cli/dist/index.js', import.meta.url));
+    const run = () => spawnSync(process.execPath, [cli, 'mod', 'retention', 'quota', '--quota-bytes', '0', '--rollback-window-ms', '0'], {
+      env: { ...process.env, HOME: root, AGON_HOME: home, AGON_MODULAR_HOST_ROOT: hostRoot, AGON_MOD_SAFE_MODE: '1' },
+      cwd: root, encoding: 'utf8', timeout: 10_000,
+    });
+    const missing = run();
+    expect(missing.status, missing.stderr).toBe(0);
+    expect(JSON.parse(missing.stdout)).toMatchObject({ plan: null, planPath: null, quotaMet: true, reason: 'already-below-quota' });
+    await expect(stat(home)).rejects.toMatchObject({ code: 'ENOENT' });
+    await mkdir(home);
+    expect(run().status).toBe(0);
+    await expect(stat(join(home, 'cache'))).rejects.toMatchObject({ code: 'ENOENT' });
+    await writeFile(join(home, 'cache'), 'not a directory');
+    expect(run().status).not.toBe(0);
+  });
+
   it('previews, cancels and applies generation collection through the built CLI', async () => {
     const root = await mkdtemp(join(tmpdir(), 'agon-cli-generation-collection '));
     const host = new DurableModHost(join(root, 'host'), { kernelVersion: '1.0.0' });

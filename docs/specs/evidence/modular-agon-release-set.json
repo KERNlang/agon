@@ -179,6 +179,10 @@
         "range": "1.0.0"
       },
       {
+        "id": "@kernlang/agon-support-engine-catalog",
+        "range": "1.0.0"
+      },
+      {
         "id": "@kernlang/agon-support-engine-runtime",
         "range": "1.0.0"
       },
@@ -235,16 +239,16 @@
         "range": "^19.2.0"
       }
     ],
-    "packedBytes": 1354606,
-    "unpackedBytes": 6098692,
+    "packedBytes": 1355596,
+    "unpackedBytes": 6105586,
     "fileCount": 107,
     "files": [
       {
-        "path": "dist/app-NLEJYAHZ.js",
+        "path": "dist/app-WD4JEDSI.js",
         "size": 411121
       },
       {
-        "path": "dist/app-NLEJYAHZ.js.map",
+        "path": "dist/app-WD4JEDSI.js.map",
         "size": 276616
       },
       {
@@ -576,12 +580,12 @@
         "size": 17472
       },
       {
-        "path": "dist/mod-IG23NGJV.js",
-        "size": 38105
+        "path": "dist/mod-YMCOMSLG.js",
+        "size": 42390
       },
       {
-        "path": "dist/mod-IG23NGJV.js.map",
-        "size": 22968
+        "path": "dist/mod-YMCOMSLG.js.map",
+        "size": 25403
       },
       {
         "path": "dist/models-HRNDOYWV.js",
@@ -617,7 +621,7 @@
       },
       {
         "path": "dist/release-channel.json",
-        "size": 126374
+        "size": 126434
       },
       {
         "path": "dist/setup-IP5TJ2YS.js",
@@ -649,7 +653,7 @@
       },
       {
         "path": "package.json",
-        "size": 3734
+        "size": 3788
       },
       {
         "path": "py/agon-model-probe-wrapper.py",
@@ -665,14 +669,14 @@
       },
       {
         "path": "release-channel.json",
-        "size": 126374
+        "size": 126434
       }
     ],
-    "payloadHash": "sha256:a6fbb32de7c2acd6ddc7ed7ccbe79b4eccb1660e4edf289e970979d2400f0765",
-    "integrity": "sha512-2+C8MwhQWW9cK2pBX1eCGd9PhT3z7Is1anEFKovXuvfFbtnKPl4DFYoxCSfYqQ3YupppL0zix+Nh+j2032gxXw==",
-    "shasum": "93056eec1883a7ab1906e784ecedbd851db6f84f",
-    "tarballHash": "sha256:d978404a83462a86822aa2a7d793aca6cadcf880666382ec34be63e28a671ba4",
-    "packageJsonHash": "sha256:55b7df375710144ec9ebf42dd9cbf38f9ab48d154f03f55e551ea8281af64a51"
+    "payloadHash": "sha256:ca6eee41c406cd5b0d9da3d2c4843c4ed4f7b17aa738e94b39273109a51ab4bc",
+    "integrity": "sha512-0dcHVcb+I2IOx9cL/KPvSEyV6MsCi4XvU8+yHl8ckEl4fhPELytOhYgYDQ1KIG5ImEQbISXzSAWNDw7UzsI0vA==",
+    "shasum": "8d7b9d9395335d6f313dab77daf6feff5ee4f163",
+    "tarballHash": "sha256:aa315abacc45e036a0652637d1fd056f48d28877fbecd40c8539434420d3faea",
+    "packageJsonHash": "sha256:64ca7e8f8b5e4927527b3df4406f89a5ebecbc88a423ec3e2c946d368bdeba42"
   },
   "packages": [
     {
@@ -1301,8 +1305,8 @@
       "peerDependencies": {
         "@kernlang/agon-kernel": ">=1.0.0 <2"
       },
-      "packedBytes": 11432,
-      "unpackedBytes": 43333,
+      "packedBytes": 11574,
+      "unpackedBytes": 43879,
       "fileCount": 8,
       "files": [
         {
@@ -1311,7 +1315,7 @@
         },
         {
           "path": "dist/engine-registry.d.ts",
-          "size": 2675
+          "size": 2814
         },
         {
           "path": "dist/index.d.ts",
@@ -1319,7 +1323,7 @@
         },
         {
           "path": "dist/index.js",
-          "size": 32977
+          "size": 33384
         },
         {
           "path": "dist/package-metadata.d.ts",
@@ -1338,10 +1342,10 @@
           "size": 666
         }
       ],
-      "payloadHash": "sha256:348de01200d54176d6f8da349b94fc6f8fcbea42031052907bf98282f35f10b0",
-      "integrity": "sha512-4OySN6QdRATie6A7mSIJSul+SlGM5Jgvaqk371cNI9hZrM6brLzUcmzMggfwQncEQaOOn5btCxDGJDSCh60ZZA==",
-      "shasum": "57a040f242dbdf906717001c9574a583ec7eb6a7",
-      "tarballHash": "sha256:3d71dd1d41c4a5570c8697a532aaa3b44a79ad29cc3688a427d1565b50de2327",
+      "payloadHash": "sha256:bd18d3b6edd9b1b5f08cc69d979325a49db092dc54fe40a08b953ea6f5af5c85",
+      "integrity": "sha512-crNe2kJEX55repFVsNFEote/x6l1DSvzzXZtGGX5iQFSdimLf12O/QYirEkwyWmu0xfu1NWRfjGiNNDSm0k2yg==",
+      "shasum": "cae56c148bafea342d2f5ba409abefaf10f0a638",
+      "tarballHash": "sha256:5c94db38278f67ec57a260f65a23a77a26020bec4a07ec1194a3d244836ddd4b",
       "packageJsonHash": "sha256:6f07fc6e64ae607bec7d2bf7ea3f65ddb686f89bbfc2d65e2b9274736daa77fa",
       "manifestHash": "sha256:6f07fc6e64ae607bec7d2bf7ea3f65ddb686f89bbfc2d65e2b9274736daa77fa"
     },

@@ -9,3 +9,4 @@ export * from './mutation-runner.js';
 export * from './patch-apply.js';
 export * from './patch-parser.js';
 export * from './patch-content.js';
+export { isTestFile, parseChangedLines, newFilesInDiff } from './git-diff.js';

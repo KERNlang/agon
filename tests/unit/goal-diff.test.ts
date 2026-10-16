@@ -1,7 +1,14 @@
 import { describe, it, expect } from 'vitest';
+import * as worktreeOwner from '@kernlang/agon-support-worktree';
 import {
   isTestFile, parseChangedLines, newFilesInDiff,
 } from '../../packages/forge/src/goal/diff.js';
+
+it('keeps the legacy exports identical to the shared worktree owner', () => {
+  expect(worktreeOwner).toHaveProperty('isTestFile', isTestFile);
+  expect(worktreeOwner).toHaveProperty('parseChangedLines', parseChangedLines);
+  expect(worktreeOwner).toHaveProperty('newFilesInDiff', newFilesInDiff);
+});
 
 describe('isTestFile', () => {
   it('matches test/spec suffixes and tests dirs', () => {

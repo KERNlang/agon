@@ -270,6 +270,11 @@
       "detail": "exit=0"
     },
     {
+      "id": "packed-shared-git-diff-owner",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
       "id": "packed-mcp-failure-contract",
       "passed": true,
       "detail": "installed server and Jobs daemon: success, blocked-provider failure, missing job via installed CLI, cyclic plan, unknown tool"

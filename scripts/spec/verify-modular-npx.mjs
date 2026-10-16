@@ -61,6 +61,21 @@ try {
   writeFileSync(join(ephemeral, 'package-lock.json'), lockBytes);
   requireOk('ephemeral-npx-hydration', run('npm', ['ci', '--ignore-scripts', '--no-audit', '--no-fund', '--omit=optional', '--offline'], { cwd: ephemeral }));
   if (readFileSync(join(ephemeral, 'package-lock.json'), 'utf8') !== lockBytes) throw new Error('packed hydration changed the frozen dependency lock');
+  requireOk('packed-shared-git-diff-owner', run(process.execPath, ['--input-type=module', '-e', `
+    import assert from 'node:assert/strict';
+    import { pathToFileURL } from 'node:url';
+    import * as worktree from '@kernlang/agon-support-worktree';
+    const installedRoot = pathToFileURL(process.cwd() + '/node_modules/').href;
+    assert.ok(import.meta.resolve('@kernlang/agon-support-worktree').startsWith(installedRoot), 'shared owner must resolve from the installed prefix');
+    for (const name of ['isTestFile', 'parseChangedLines', 'newFilesInDiff']) {
+      assert.equal(typeof worktree[name], 'function', name);
+    }
+    assert.equal(worktree.isTestFile('tests/example.test.ts'), true);
+    assert.equal(worktree.isTestFile('src/example.ts'), false);
+    const diff = ['--- /dev/null', '+++ b/tests/example.test.ts', '@@ -0,0 +1,2 @@', '+first', '+second'].join('\\n');
+    assert.deepEqual(worktree.parseChangedLines(diff), { 'tests/example.test.ts': [1, 2] });
+    assert.deepEqual(worktree.newFilesInDiff(diff), ['tests/example.test.ts']);
+  `], { cwd: ephemeral }));
   // Independent probes must not hide later installer failures. Retain every
   // failed check and reject the whole qualification before emitting success.
   for (const [id, verify] of [

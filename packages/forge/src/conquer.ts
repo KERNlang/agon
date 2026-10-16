@@ -13,7 +13,7 @@ import { runBrainstorm } from './brainstorm.js';
 
 import { runCouncil } from './council.js';
 
-import { isTestFile, parseChangedLines, newFilesInDiff } from './goal/diff.js';
+import { isTestFile, parseChangedLines, newFilesInDiff } from '@kernlang/agon-support-worktree';
 
 import { join, dirname } from 'node:path';
 

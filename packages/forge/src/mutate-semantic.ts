@@ -4,7 +4,7 @@ import { preflightHealthFilter } from './health-check.js';
 
 import { dispatchSeatWithRetry, buildPanelHealth } from './seat-dispatch.js';
 
-import { isTestFile } from './goal/diff.js';
+import { isTestFile } from '@kernlang/agon-support-worktree';
 
 export interface SemanticTargetLine {
   line: number;

@@ -12,7 +12,7 @@ import type { EngineAdapter, EngineRegistry, Mutant, MutationReport } from '@ker
 
 import { generateMutants, runMutants, worktreeCreate, worktreeRemoveBestEffort, headSha, resolveWithinRoot } from '@kernlang/agon-core';
 
-import { parseChangedLines, isTestFile } from './goal/diff.js';
+import { parseChangedLines, isTestFile } from '@kernlang/agon-support-worktree';
 
 import { collectSemanticMutants, normalizeLens } from './mutate-semantic.js';
 

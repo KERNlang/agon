@@ -18,7 +18,7 @@ import { generateMutants, mutationSurvivors } from './mutation.js';
 
 import type { Mutant } from './mutation.js';
 
-import { parseChangedLines, newFilesInDiff, isTestFile } from './diff.js';
+import { parseChangedLines, newFilesInDiff, isTestFile } from '@kernlang/agon-support-worktree';
 
 import { gateFailureSignature, taskParkDecision, globalBreaker, budgetExceeded, timeExceeded, pushRecentOutcome, mutationGateDecision, foldMutationVerdicts } from './policy.js';
 

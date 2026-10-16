@@ -85,7 +85,7 @@ export type { Mutant } from './goal/mutation.js';
 export { generateMutants, applyMutantToSource, mutationSurvivors } from './goal/mutation.js';
 export type { FrozenOracle, WitnessResult } from './goal/oracle.js';
 export { hashOracleInputs, snapshotOracle, oracleTampered, witnessTest } from './goal/oracle.js';
-export { isTestFile, parseChangedLines, newFilesInDiff } from './goal/diff.js';
+export { isTestFile, parseChangedLines, newFilesInDiff } from '@kernlang/agon-support-worktree';
 export { gateFailureSignature, taskParkDecision, globalBreaker, budgetExceeded, timeExceeded, pickImplementWinner, chooseImplementRoster } from './goal/policy.js';
 export { planSynthesis } from './synth-plan.js';
 export type { SynthCandidate, SynthPlanOpts, SynthPlan } from './synth-plan.js';

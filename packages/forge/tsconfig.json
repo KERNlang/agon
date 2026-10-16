@@ -11,6 +11,7 @@
     { "path": "../mod-brainstorm" },
     { "path": "../mod-conquer" },
     { "path": "../core" },
-    { "path": "../support-persistence" }
+    { "path": "../support-persistence" },
+    { "path": "../support-worktree" }
   ]
 }

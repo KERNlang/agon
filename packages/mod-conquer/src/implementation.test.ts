@@ -9,6 +9,148 @@ import { runAgentTask } from '@kernlang/agon-mod-agent';
 import { afterEach } from 'vitest';
 afterEach(() => vi.restoreAllMocks());
 
+describe('explicit engine resolution across Conquer workflows', () => {
+  const workflows = [
+    { name: 'Agent', run: runAgentTask, input: { task: 'inspect', engines: 'alias-a,alias-b' } },
+    { name: 'Nero', run: nero.runNero, input: { decision: 'ship', engines: 'alias-a,alias-b' } },
+    { name: 'Council', run: council.runCouncil, input: { question: 'ship', engines: 'alias-a,alias-b', chairman: 'alias-a' } },
+    { name: 'Tribunal', run: tribunal.runTribunal, input: { question: 'ship', engines: 'alias-a,alias-b', rounds: '1' } },
+  ];
+  it.each(workflows)('$name resolves explicit aliases outside the default roster', async ({ run, input }) => {
+    const resolveRequested = vi.fn(async (ids: readonly string[]) => ids.map(id => id.replace('alias-', 'selected-')));
+    const dispatch = vi.fn(async (engineId: string) => ({ engineId, exitCode: 0, stdout: 'Confidence: 80%\nVERDICT: SOUND', stderr: '', timedOut: false }));
+    const services = { receipts: { record: vi.fn(async () => 'fixture') },
+      engines: { listActive: async () => ['default-a', 'default-b'], resolveRequested, dispatch } } as unknown as ModServices;
+    const result = await run(input, { invocationId: 'explicit-pool', cwd: process.cwd(), platform: 'darwin-arm64', signal: new AbortController().signal, config: {} }, services);
+    expect(result.exitCode).toBe(0);
+    expect(resolveRequested).toHaveBeenCalledWith(['alias-a', 'alias-b'], expect.anything());
+    expect(dispatch).toHaveBeenCalled();
+    expect(dispatch.mock.calls.every(([id]) => ['selected-a', 'selected-b'].includes(id))).toBe(true);
+  });
+  it.each(workflows)('$name rejects resolver failures without dispatch or receipts', async ({ run, input }) => {
+    const dispatch = vi.fn();
+    const record = vi.fn();
+    const services = { receipts: { record }, engines: { listActive: async () => ['alias-a', 'alias-b'], dispatch,
+      resolveRequested: async () => { throw new Error('Selected engine is removed or unavailable'); } } } as unknown as ModServices;
+    const result = await run(input, { invocationId: 'rejected-pool', cwd: process.cwd(), platform: 'darwin-arm64', signal: new AbortController().signal, config: {} }, services);
+    expect(result).toMatchObject({ exitCode: 1, stderr: expect.stringContaining('Selected engine is removed or unavailable') });
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(record).not.toHaveBeenCalled();
+  });
+  it.each(workflows)('$name preserves the default roster when no engine is selected', async ({ run, input }) => {
+    const resolveRequested = vi.fn(async () => { throw new Error('Defaults must not use explicit resolution'); });
+    const dispatch = vi.fn(async (engineId: string) => ({ engineId, exitCode: 0, stdout: 'Confidence: 80%\nVERDICT: SOUND', stderr: '', timedOut: false }));
+    const services = { receipts: { record: vi.fn(async () => 'fixture') },
+      engines: { listActive: async () => ['default-a', 'default-b'], resolveRequested, dispatch } } as unknown as ModServices;
+    const defaultInput = Object.fromEntries(Object.entries(input).filter(([key]) => key !== 'engines' && key !== 'chairman'));
+    const result = await run(defaultInput, { invocationId: 'default-pool', cwd: process.cwd(), platform: 'darwin-arm64', signal: new AbortController().signal, config: {} }, services);
+    expect(result.exitCode).toBe(0);
+    expect(resolveRequested).not.toHaveBeenCalled();
+    expect(dispatch).toHaveBeenCalled();
+    expect(dispatch.mock.calls.every(([id]) => ['default-a', 'default-b'].includes(id))).toBe(true);
+  });
+  it.each(workflows.slice(0, 2))('$name preserves the singular engine override', async ({ run, input }) => {
+    const resolveRequested = vi.fn(async (ids: readonly string[]) => ids.map(id => id.replace('alias-', 'selected-')));
+    const dispatch = vi.fn(async (engineId: string) => ({ engineId, exitCode: 0, stdout: 'Confidence: 80%\nVERDICT: SOUND', stderr: '', timedOut: false }));
+    const services = { receipts: { record: vi.fn(async () => 'fixture') },
+      engines: { listActive: async () => ['default-a'], resolveRequested, dispatch } } as unknown as ModServices;
+    const result = await run({ ...input, engine: 'alias-b' }, { invocationId: 'forced-engine', cwd: process.cwd(), platform: 'darwin-arm64', signal: new AbortController().signal, config: {} }, services);
+    expect(result.exitCode).toBe(0);
+    expect(resolveRequested).toHaveBeenCalledWith(['alias-b'], expect.anything());
+    expect(dispatch.mock.calls.map(([id]) => id)).toEqual(['selected-b']);
+  });
+  it('keeps canonical selections through real Agent, Nero, Tribunal and Council calls', async () => {
+    const cwd = repo();
+    const resolveRequested = vi.fn(async (ids: readonly string[]) => ids.map(id => id.replace('alias-', 'selected-')));
+    const dispatch = vi.fn(async (engineId: string, _prompt: string) => ({ engineId, exitCode: 0, stdout: 'Confidence: 80%\nVERDICT: SOUND', stderr: '', timedOut: false }));
+    const record = vi.fn(async () => 'fixture');
+    const services = { logger: { debug: vi.fn() }, receipts: { record },
+      engines: { listActive: async () => ['default-a', 'default-b'], resolveRequested, dispatch } } as unknown as ModServices;
+    const result = await runConquerTask({ task: 'build feature', gate: 'false', builder: 'alias-builder', engines: 'alias-a,alias-b', maxTurns: '3' },
+      { invocationId: 'nested-pool', cwd, platform: 'darwin-arm64', signal: new AbortController().signal, config: {} }, services);
+    expect(result).toMatchObject({ exitCode: 1, result: { status: 'turn_budget_exceeded', builder: 'selected-builder', advisors: ['selected-a', 'selected-b'] } });
+    expect(dispatch.mock.calls.filter(([id]) => id === 'selected-builder')).toHaveLength(3);
+    expect(dispatch.mock.calls.some(([id]) => id === 'selected-a')).toBe(true);
+    expect(dispatch.mock.calls.some(([id]) => id === 'selected-b')).toBe(true);
+    expect(dispatch.mock.calls.every(([id]) => ['selected-builder', 'selected-a', 'selected-b'].includes(id))).toBe(true);
+    for (const mode of ['nero', 'tribunal', 'council']) expect(record).toHaveBeenCalledWith(mode, expect.anything());
+    expect(dispatch.mock.calls.some(([, prompt]) => prompt.includes('You are Nero'))).toBe(true);
+    expect(dispatch.mock.calls.some(([, prompt]) => prompt.startsWith('ROLE:'))).toBe(true);
+    expect(dispatch.mock.calls.some(([, prompt]) => prompt.startsWith('Frame this question'))).toBe(true);
+    expect(dispatch.mock.calls.some(([, prompt]) => prompt.startsWith('Synthesize one accountable'))).toBe(true);
+  });
+  it.each([false, true])('resolves a non-default forced chair before effects (rejected=%s)', async rejected => {
+    const resolveRequested = vi.fn(async (ids: readonly string[]) => {
+      if (rejected && ids.length === 1) throw new Error('Chair unavailable');
+      return ids.map(id => id.replace('alias-', 'selected-'));
+    });
+    const rank = vi.fn(async () => [{ engineId: 'selected-a', reason: 'top-rated', scope: 'tribunal' }]);
+    const dispatch = vi.fn(async (engineId: string, _prompt: string) => ({ engineId, exitCode: 0, stdout: 'Confidence: 80%\nVERDICT: SOUND', stderr: '', timedOut: false }));
+    const record = vi.fn(async () => 'fixture');
+    const services = { receipts: { record }, engines: { listActive: async () => ['default-a'], resolveRequested, rank, dispatch } } as unknown as ModServices;
+    const result = await council.runCouncil({ question: 'ship', engines: 'alias-a,alias-b', chairman: 'alias-b' },
+      { invocationId: 'forced-chair', cwd: process.cwd(), platform: 'darwin-arm64', signal: new AbortController().signal, config: {} }, services);
+    expect(resolveRequested.mock.calls.map(([ids]) => ids)).toEqual([['alias-a', 'alias-b'], ['alias-b']]);
+    if (rejected) {
+      expect(result).toMatchObject({ exitCode: 1, stderr: expect.stringContaining('Chair unavailable') });
+      expect(dispatch).not.toHaveBeenCalled();
+      expect(rank).not.toHaveBeenCalled();
+      expect(record).not.toHaveBeenCalled();
+    } else {
+      expect(result).toMatchObject({ exitCode: 0, result: { chairmanId: 'selected-b', chairmanReason: 'forced' } });
+      expect(dispatch.mock.calls.filter(([, prompt]) => prompt.startsWith('Frame this question') || prompt.startsWith('Synthesize one accountable')).map(([id]) => id)).toEqual(['selected-b', 'selected-b']);
+    }
+  });
+  it.each([council.runCouncil, tribunal.runTribunal])('rejects a resolved one-engine panel before dispatch', async run => {
+    const dispatch = vi.fn();
+    const services = { engines: { resolveRequested: async () => ['same-engine'], dispatch } } as unknown as ModServices;
+    const result = await run({ question: 'ship', engines: 'alias-a,alias-b' },
+      { invocationId: 'thin-panel', cwd: process.cwd(), platform: 'darwin-arm64', signal: new AbortController().signal, config: {} }, services);
+    expect(result).toMatchObject({ exitCode: 1, stderr: expect.stringContaining('at least 2 engines') });
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+  it('deduplicates canonical advisors and removes the canonical builder', async () => {
+    const cwd = repo();
+    const resolveRequested = vi.fn(async (ids: readonly string[]) => ids.map(id => id === 'builder-alias' ? 'builder' : id === 'advisor-alias' ? 'advisor' : id));
+    const dispatch = vi.fn(async (engineId: string) => ({ engineId, exitCode: 0, stdout: 'Confidence: 80%\nVERDICT: SOUND', stderr: '', timedOut: false }));
+    const services = { logger: { debug: vi.fn() }, receipts: { record: vi.fn(async () => 'fixture') },
+      engines: { listActive: async () => ['default'], resolveRequested, dispatch } } as unknown as ModServices;
+    const result = await runConquerTask({ task: 'build feature', gate: 'false', builder: 'builder-alias', engines: 'builder,builder-alias,advisor,advisor-alias', maxTurns: '1' },
+      { invocationId: 'canonical-dedup', cwd, platform: 'darwin-arm64', signal: new AbortController().signal, config: {} }, services);
+    expect(result).toMatchObject({ result: { builder: 'builder', advisors: ['advisor'] } });
+    // Duplicate aliases must not satisfy the current two-advisor threshold.
+    expect(dispatch.mock.calls.map(([id]) => id)).toEqual(['builder']);
+  });
+  it.each([
+    { name: 'Agent', run: runAgentTask, input: { task: 'inspect' }, rejects: false },
+    { name: 'Nero', run: nero.runNero, input: { decision: 'ship' }, rejects: true },
+  ])('$name preserves validation of a superseded pool', async ({ run, input, rejects }) => {
+    const resolveRequested = vi.fn(async (ids: readonly string[]) => {
+      if (ids.includes('removed')) throw new Error('Pool engine removed');
+      return ids;
+    });
+    const dispatch = vi.fn(async (engineId: string) => ({ engineId, exitCode: 0, stdout: 'Confidence: 80%\nVERDICT: SOUND', stderr: '', timedOut: false }));
+    const services = { receipts: { record: vi.fn(async () => 'fixture') }, engines: { resolveRequested, dispatch } } as unknown as ModServices;
+    const result = await run({ ...input, engine: 'valid', engines: 'removed' },
+      { invocationId: 'override-validation', cwd: process.cwd(), platform: 'darwin-arm64', signal: new AbortController().signal, config: {} }, services);
+    expect(result.exitCode).toBe(rejects ? 1 : 0);
+    expect(dispatch.mock.calls.map(([id]) => id)).toEqual(rejects ? [] : ['valid']);
+    expect(resolveRequested.mock.calls.map(([ids]) => ids)).toEqual(rejects ? [['removed']] : [['valid']]);
+  });
+  it('rejects invalid advisors before creating a worktree or running the builder', async () => {
+    const cwd = repo();
+    const arena = vi.spyOn(worktrees, 'createForgeArena');
+    const dispatch = vi.fn(async () => ({ exitCode: 1, stdout: '', stderr: 'fixture stop', timedOut: false }));
+    const services = { logger: { debug: vi.fn() }, receipts: { record: vi.fn(async () => 'fixture') }, engines: { listActive: async () => ['builder'], dispatch,
+      resolveRequested: async (ids: readonly string[]) => { if (ids.includes('bad-advisor')) throw new Error('Invalid advisor'); return ids; } } } as unknown as ModServices;
+    const result = await runConquerTask({ task: 'build feature', gate: 'true', builder: 'builder', engines: 'bad-advisor' },
+      { invocationId: 'invalid-advisor', cwd, platform: 'darwin-arm64', signal: new AbortController().signal, config: {} }, services);
+    expect(result).toMatchObject({ exitCode: 1, stderr: expect.stringContaining('Invalid advisor') });
+    expect(arena).not.toHaveBeenCalled();
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+});
+
 it.each([
   ['maxTurns', 0], ['maxTurns', -1], ['maxTurns', '0'],
   ['maxTurns', ''], ['maxTurns', 'invalid'],

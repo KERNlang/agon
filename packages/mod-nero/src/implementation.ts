@@ -14,8 +14,25 @@ function prompt(input: Record<string, Json>, decision: string): string { return 
 
 export async function runNero(raw: Json, context: Parameters<ModServices['engines']['dispatch']>[2], services: ModServices): Promise<CommandResult> {
   const input = raw as Record<string, Json>; const decision = [text(input.decision), ...extras(input._).filter((part) => part !== input.decision)].filter(Boolean).join(' ').trim(); if (!decision) return { exitCode: 1, stderr: 'Provide a decision to challenge. Usage: agon nero "your decision"\n' };
-  const active = services.engines.listActive ? [...await services.engines.listActive(context)] : []; const requested = ids(input.engines); let pool = requested.length ? requested : active; const forced = text(input.engine);
-  const unknown = pool.filter((id) => active.length && !active.includes(id)); if (unknown.length) return { exitCode: 1, stderr: `Unknown or inactive engine${unknown.length > 1 ? 's' : ''}: ${unknown.join(', ')}\n` }; if (forced && active.length && !active.includes(forced)) return { exitCode: 1, stderr: `Unknown or inactive engine: ${forced}\n` }; if (forced) pool = [forced]; pool = [...new Set(pool)]; if (!pool.length) return { exitCode: 1, stderr: 'No active engine can play Nero.\n' };
+  let pool = ids(input.engines);
+  let forced = text(input.engine);
+  try {
+    if (services.engines.resolveRequested && (pool.length || forced)) {
+      if (pool.length) pool = [...await services.engines.resolveRequested(pool, context)];
+      if (forced) forced = (await services.engines.resolveRequested([forced], context))[0] ?? '';
+    } else {
+      const active = services.engines.listActive ? [...await services.engines.listActive(context)] : [];
+      if (!pool.length) pool = active;
+      const unknown = pool.filter(id => active.length && !active.includes(id));
+      if (unknown.length) return { exitCode: 1, stderr: `Unknown or inactive engine${unknown.length > 1 ? 's' : ''}: ${unknown.join(', ')}\n` };
+      if (forced && active.length && !active.includes(forced)) return { exitCode: 1, stderr: `Unknown or inactive engine: ${forced}\n` };
+    }
+  } catch (error) {
+    return { exitCode: 1, stderr: `${error instanceof Error ? error.message : String(error)}\n` };
+  }
+  if (forced) pool = [forced];
+  pool = [...new Set(pool)];
+  if (!pool.length) return { exitCode: 1, stderr: 'No active engine can play Nero.\n' };
   let ranked: readonly RankedEngine[] = pool.map((engineId) => ({ engineId, reason: 'random' as const, scope: null })); if (!forced && services.engines.rank) ranked = await services.engines.rank(pool, ['critique', 'tribunal'], context); if (forced) ranked = [{ engineId: forced, reason: 'top-rated', scope: null }];
   const timeoutSeconds = Math.max(1, Number.parseInt(text(input.timeout) || '120', 10)); const attempts: { engineId: string; attempt: number; error: string }[] = []; let lastText = '';
   for (const critic of ranked) { for (let attempt = 1; attempt <= 2; attempt++) { if (context.signal.aborted) return { exitCode: 1, stderr: 'Nero aborted before a verdict.\n' }; try { const output = await services.engines.dispatch(critic.engineId, prompt(input, decision), context, { timeoutSeconds: attempt === 1 ? timeoutSeconds : Math.max(1, Math.floor(timeoutSeconds / 2)), systemPrompt: 'You are an adversarial critic. Respond directly. Do not use tools.' }) as Record<string, Json>; lastText = text(output.stdout).replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim(); const parsed = verdict(lastText); if (output.exitCode === 0 && output.timedOut !== true && lastText && parsed !== 'unknown') { const result = { ok: true, engineId: critic.engineId, reason: forced ? 'forced' : critic.reason, scope: critic.scope, verdict: parsed, challengeConfidence: confidence(lastText), challengeText: lastText, attempts }; await services.receipts.record('nero', { engineId: critic.engineId, verdict: parsed, attempts: attempts.length + 1 }); const stdout = input.quiet === true ? `${parsed.toUpperCase()} — ${critic.engineId}\n` : `${JSON.stringify(result, null, 2)}\n`; return { exitCode: 0, stdout, result: result as Json }; } const why = output.timedOut === true ? 'timed out' : !lastText ? text(output.stderr) || 'empty response' : 'no parseable verdict'; attempts.push({ engineId: critic.engineId, attempt, error: why }); if (lastText && parsed === 'unknown') break; } catch (error) { attempts.push({ engineId: critic.engineId, attempt, error: error instanceof Error ? error.message : String(error) }); } } }

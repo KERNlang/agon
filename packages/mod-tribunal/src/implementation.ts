@@ -46,7 +46,17 @@ export async function runTribunal(raw: Json, context: Parameters<ModServices['en
   const input = raw as Record<string, Json>;
   const question = [text(input.question), ...extras(input._).filter((part) => part !== input.question)].filter(Boolean).join(' ').trim();
   if (!question) return { exitCode: 1, stderr: 'Provide a question. Usage: agon tribunal "question"\n' };
-  let engines = ids(input.engines); if (!engines.length && services.engines.listActive) engines = [...await services.engines.listActive(context)]; engines = engines.slice(0, 4);
+  let engines = ids(input.engines);
+  try {
+    if (engines.length && services.engines.resolveRequested) {
+      engines = [...await services.engines.resolveRequested(engines, context)];
+    } else if (!engines.length && services.engines.listActive) {
+      engines = [...await services.engines.listActive(context)];
+    }
+  } catch (error) {
+    return { exitCode: 1, stderr: `${error instanceof Error ? error.message : String(error)}\n` };
+  }
+  engines = engines.slice(0, 4);
   if (engines.length < 2) return { exitCode: 1, stderr: `Tribunal needs at least 2 engines. Only found: ${engines.join(', ') || 'none'}\n` };
   const modeText = text(input.mode) || 'adversarial'; if (!modes.has(modeText as Mode)) return { exitCode: 1, stderr: `Invalid tribunal mode: ${modeText}\n` }; const mode = modeText as Mode;
   const cfg = config(mode, engines.length); const requestedProtocol = (text(input.protocol) || 'auto').toLowerCase();

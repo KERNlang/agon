@@ -126,6 +126,18 @@ it.each(['review', 'forge pause', 'review exception'])('retains the final persis
   expect(effects.save).toHaveBeenCalledTimes(savedCount);
 });
 
+it('does not consume a different proposal when an approved plan becomes durable', async () => {
+  const other = { ...plan('self'), id: 'other', state: 'awaiting_approval' as const };
+  const cesar = { proposedPlan: other };
+  effects.execute.mockImplementationOnce(async value => ({ ...value, state: 'done' }));
+  await executeApprovedPlan({ ...plan('self'), selfReview: false }, {
+    dispatch: vi.fn(), setActivePlan: vi.fn(), ctx: { config: {}, cesar, setActiveAbort: vi.fn() },
+  } as any);
+  expect(effects.execute).toHaveBeenCalledOnce();
+  expect(effects.save.mock.calls[0][0].state).toBe('running');
+  expect(cesar.proposedPlan).toBe(other);
+});
+
 it('clears its abort controller when callback construction throws', async () => {
   const setActiveAbort = vi.fn();
   const dispatch = vi.fn(event => { if (event.type === 'todos-set') throw new Error('UI failed'); });

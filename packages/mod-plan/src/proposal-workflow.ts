@@ -52,6 +52,13 @@ export interface PlanProposalEffects {
   clearProposal(id: string): void;
 }
 
+/** True means a proposal was handled, not that execution succeeded. */
+export async function approvePlanProposal(pending: CesarPlan | null, execute: (plan: CesarPlan) => Promise<void>): Promise<boolean> {
+  if (!pending) return false;
+  await execute(approveCesarPlan(pending));
+  return true;
+}
+
 /** Refused execution returns the unchanged proposal to manual approval. */
 export async function activatePlanProposal(proposed: CesarPlan, host: PlanProposalEffects): Promise<void> {
   if (proposed.planFilePath) host.notify('info', `Plan saved: ${proposed.planFilePath}`);

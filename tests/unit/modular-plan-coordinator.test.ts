@@ -18,7 +18,7 @@ function fixture(changed: string[] = ['file.txt']) {
   const host = { createExecutors: vi.fn(() => ({})),
     executePlan: vi.fn(async (value: CesarPlan) => ({ ...value, state: 'done' as const })),
     callbacks: vi.fn(() => callbacks), setActivePlan: vi.fn(), setAbort: vi.fn(), releaseAbort: vi.fn(),
-    save: vi.fn(), writeMarkdown: vi.fn(), hasWorkingTreeChanges: vi.fn(() => changed.length > 0),
+    save: vi.fn(), clearProposal: vi.fn(), writeMarkdown: vi.fn(), hasWorkingTreeChanges: vi.fn(() => changed.length > 0),
     estimateReview: vi.fn(() => ({ tokens: 20, costUsd: 0.25 })),
     takeFallback: vi.fn(() => undefined), notify: vi.fn(), warn: vi.fn() };
   expect(physical).toHaveProperty('createPlanCoordinator');
@@ -26,6 +26,44 @@ function fixture(changed: string[] = ['file.txt']) {
 }
 
 describe('physical Plan execution coordinator', () => {
+  it.each([false, true])('consumes a proposal only after its running state is durable (save fails=%s)', async fails => {
+    const { coordinator, host } = fixture([]);
+    const trace: string[] = [];
+    host.save.mockImplementation(value => {
+      trace.push(`save:${value.state}`);
+      if (fails) throw new Error('storage unavailable');
+    });
+    host.clearProposal.mockImplementation(id => { trace.push(`clear:${id}`); });
+    await coordinator.executeApprovedPlan({ ...plan('brainstorm'), state: 'running', selfReview: false });
+    expect(trace).toEqual(fails ? ['save:running'] : ['save:running', 'clear:fixture', 'save:done']);
+    expect(host.executePlan).toHaveBeenCalledTimes(fails ? 0 : 1);
+    expect(host.clearProposal).toHaveBeenCalledTimes(fails ? 0 : 1);
+    if (fails) expect(host.notify).toHaveBeenCalledWith('error',
+      'Plan execution failed: storage unavailable. No work started; retry approval or resume after storage recovers.');
+  });
+  it.each([false, true])('writes Markdown after consuming the durable proposal (Markdown fails=%s)', async fails => {
+    const { coordinator, host } = fixture([]);
+    const trace: string[] = [];
+    host.save.mockImplementation(value => { trace.push(`save:${value.state}`); });
+    host.clearProposal.mockImplementation(id => { trace.push(`clear:${id}`); });
+    host.writeMarkdown.mockImplementation(value => {
+      trace.push(`markdown:${value.state}`);
+      if (fails) throw new Error('Markdown unavailable');
+    });
+    await coordinator.executeApprovedPlan({ ...plan('brainstorm'), state: 'running', selfReview: false, planFilePath: '/fixture/plan.md' });
+    expect(trace).toEqual(['save:running', 'clear:fixture', 'markdown:running', 'save:done', 'markdown:done']);
+    expect(host.executePlan).toHaveBeenCalledOnce();
+    expect(host.clearProposal).toHaveBeenCalledOnce();
+    expect(host.warn).toHaveBeenCalledTimes(fails ? 2 : 0);
+  });
+  it('retains compatibility with hosts that have no proposal state', async () => {
+    const { host } = fixture([]);
+    const { clearProposal: unused, ...withoutProposal } = host;
+    await physical.createPlanCoordinator(withoutProposal).executeApprovedPlan({ ...plan('brainstorm'), state: 'running', selfReview: false });
+    expect(unused).not.toHaveBeenCalled();
+    expect(host.executePlan).toHaveBeenCalledOnce();
+    expect(host.save.mock.calls.at(-1)![0].state).toBe('done');
+  });
   it.each([undefined, { result: { status: 'success', output: 'effect ran' } },
     { result: { status: 'success', output: 'effect ran', actualTokens: 1, actualCostUsd: NaN, durationMs: 1 } },
     { result: { status: 'success', output: 'effect ran', actualTokens: 1, actualCostUsd: 0, durationMs: 1 }, contextExport: 42 },

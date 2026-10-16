@@ -1,6 +1,27 @@
 import { expect, it, vi } from 'vitest';
 import * as owner from '@kernlang/agon-mod-plan';
 
+it('does not dispatch manual approval without a pending proposal', async () => {
+  const execute = vi.fn();
+  expect(await owner.approvePlanProposal(null, execute)).toBe(false);
+  expect(execute).not.toHaveBeenCalled();
+});
+
+it.each([false, true])('approves the selected proposal without swallowing execution failure=%s', async fails => {
+  const pending = { ...owner.createCesarPlan('fixture', []), state: 'awaiting_approval' as const };
+  const error = new Error('execution unavailable');
+  const execute = vi.fn(async (plan: owner.CesarPlan) => {
+    expect(plan.id).toBe(pending.id);
+    expect(plan.state).toBe('running');
+    if (fails) throw error;
+  });
+  const result = owner.approvePlanProposal(pending, execute);
+  if (fails) await expect(result).rejects.toBe(error);
+  else await expect(result).resolves.toBe(true);
+  expect(execute).toHaveBeenCalledOnce();
+  expect(pending.state).toBe('awaiting_approval');
+});
+
 it.each([true, false])('keeps a proposal pending when execution accepts=%s', async accepted => {
   expect(owner.activatePlanProposal).toBeTypeOf('function');
   const proposed = { ...owner.createCesarPlan('fixture', []), state: 'awaiting_approval' as const, planFilePath: '/fixture/plan.md' };

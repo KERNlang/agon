@@ -4,8 +4,8 @@ import { writeFileSync } from 'node:fs';
 import { resolveWorkingDir } from '@kernlang/agon-core';
 import { inspectWorkingTree } from '@kernlang/agon-support-worktree';
 
-import { approveCesarPlan, saveCesarPlan, executePlan, formatCesarPlanMarkdown, planCostEstimator, appendMessage } from '@kernlang/agon-core';
-import { rejectPlanProposal, activatePlanProposal } from '@kernlang/agon-mod-plan';
+import { saveCesarPlan, executePlan, formatCesarPlanMarkdown, planCostEstimator, appendMessage } from '@kernlang/agon-core';
+import { rejectPlanProposal, activatePlanProposal, approvePlanProposal } from '@kernlang/agon-mod-plan';
 
 import type { CesarPlan } from '@kernlang/agon-core';
 
@@ -61,13 +61,7 @@ export async function resumeCesarPlan(plan: CesarPlan, cb: DispatchCallbacks): P
  * Approve and execute the pending CesarPlan, if one exists. Backs /approve and natural approval aliases like go.
  */
 export async function approvePendingCesarPlan(cb: DispatchCallbacks): Promise<boolean> {
-  const pending = findPendingCesarPlan(cb.ctx);
-  if (!pending) {
-    return false;
-  }
-  const approved = approveCesarPlan(pending);
-  await executeApprovedPlan(approved, cb);
-  return true;
+  return approvePlanProposal(findPendingCesarPlan(cb.ctx), plan => executeApprovedPlan(plan, cb));
 }
 
 /**
@@ -141,10 +135,9 @@ function planCoordinator(cb: DispatchCallbacks) {
     },
     setAbort: controller => cb.ctx.setActiveAbort?.(controller),
     releaseAbort: controller => cb.ctx.setActiveAbort?.(null, controller),
-    save: plan => {
-      saveCesarPlan(plan);
-      // Do not consume the pending proposal until execution state is durable.
-      if (plan.state === 'running' && cb.ctx.cesar?.proposedPlan?.id === plan.id) cb.ctx.cesar.proposedPlan = undefined;
+    save: saveCesarPlan,
+    clearProposal: id => {
+      if (cb.ctx.cesar?.proposedPlan?.id === id) cb.ctx.cesar.proposedPlan = undefined;
     },
     writeMarkdown: plan => {
       if (plan.planFilePath) writeFileSync(plan.planFilePath, formatCesarPlanMarkdown(plan));

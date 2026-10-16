@@ -273,7 +273,7 @@ export { selectPendingPlan, selectResumablePlan, shouldApprovePendingCesarPlanIn
 export type { PlanSessionSnapshot } from './session-selection.js';
 export { startPlanTaskSession, resumePlanSession, exitPlanSession } from './session-workflow.js';
 export type { PlanTaskSessionEffects, PlanResumeSessionEffects, PlanExitSessionEffects } from './session-workflow.js';
-export { publishPlanProposal, activatePlanProposal, rejectPlanProposal } from './proposal-workflow.js';
+export { publishPlanProposal, activatePlanProposal, approvePlanProposal, rejectPlanProposal } from './proposal-workflow.js';
 export type { PlanProposalPublicationEffects, PlanProposalEffects, PlanRejectionEffects } from './proposal-workflow.js';
 export { evaluatePlanAutoApproval, evaluateAgenticPlanAutoApproval, MUTATING_STEP_TYPES } from './approval-policy.js';
 export type { PlanApprovalConfig, PlanApprovalEffects, PlanActionEvaluator, AutoApproveDecision } from './approval-policy.js';

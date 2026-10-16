@@ -39,6 +39,8 @@ export interface PlanCoordinatorHost {
   setAbort(controller: AbortController): void;
   releaseAbort(controller: AbortController): void;
   save(plan: CesarPlan): void;
+  /** Clear only the matching proposal. Hosts without proposal state may omit this. */
+  clearProposal?(id: string): void;
   writeMarkdown(plan: CesarPlan): void;
   hasWorkingTreeChanges(): boolean;
   estimateReview(): { tokens: number; costUsd: number };
@@ -121,6 +123,8 @@ export function createPlanCoordinator(host: PlanCoordinatorHost) {
   };
   function persistSnapshot(plan: CesarPlan, warning = '[plan] failed to write plan file:'): void {
     host.save(plan);
+    // Consume the proposal only after execution state is durable.
+    if (plan.state === 'running') host.clearProposal?.(plan.id);
     if (plan.planFilePath) {
       try { host.writeMarkdown(plan); }
       catch (error) { warn(warning, error instanceof Error ? error.message : error); }

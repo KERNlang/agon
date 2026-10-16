@@ -155,7 +155,10 @@ it.each(['direct', 'approve', 'automatic', 'resume'] as const)('blocks disabled 
     expect(cb.setActivePlan).toHaveBeenCalledExactlyOnceWith(value);
     expect(cb.dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('Plan auto-approved') }));
     expect(cb.dispatch).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('awaiting approval') }));
-  } else expect(cb.setActivePlan).not.toHaveBeenCalled();
+  } else {
+    expect(cb.setActivePlan).not.toHaveBeenCalled();
+    expect(cb.ctx.cesar!.proposedPlan).toBe(value);
+  }
   expect(value.state).toBe('awaiting_approval');
 });
 

@@ -49,18 +49,29 @@ export function defaultBaseBranch(cwd: string, remote?: string): string {
   return 'main';
 }
 
+function unicodePrefix(value: string, codeUnits: number): string {
+  const last = value.charCodeAt(codeUnits - 1);
+  const next = value.charCodeAt(codeUnits);
+  // URI encoding rejects a surrogate pair cut in half.
+  if (last >= 0xd800 && last <= 0xdbff && next >= 0xdc00 && next <= 0xdfff) codeUnits--;
+  return value.slice(0, codeUnits);
+}
+
 /**
- * GitHub compare URL with ?quick_pull=1&title=…&body=… — clicking it opens the new-PR form already filled in. This is agon's no-gh PR path: after a push, the human clicks the link and merges; no GitHub CLI/token needed. The title is clamped to 256 chars and the body shrunk until the whole URL fits in ~7500 chars (GitHub/browsers reject very long URLs) — callers print the full body in the terminal first so nothing is lost. Returns '' when repoUrl is empty. Pure; exported for unit tests.
+ * Build a prefilled compare link with at most 7500 characters. Keep the repository
+ * and branch identities intact. Return no link if they or the truncation note
+ * cannot fit. Callers print the full PR text separately.
  */
 export function prefilledPrUrl(opts: {repoUrl:string,base:string,branch:string,title:string,body:string}): string {
   if (!opts.repoUrl) return '';
-  const head = `${opts.repoUrl}/compare/${encodeURIComponent(opts.base)}...${encodeURIComponent(opts.branch)}?quick_pull=1&title=${encodeURIComponent(opts.title.slice(0, 256))}`;
+  const head = `${opts.repoUrl}/compare/${encodeURIComponent(opts.base)}...${encodeURIComponent(opts.branch)}?quick_pull=1&title=${encodeURIComponent(unicodePrefix(opts.title, 256))}`;
+  if (head.length > 7500) return '';
   let url = `${head}&body=${encodeURIComponent(opts.body)}`;
   const note = '\n\n…(body truncated — the full description was printed in the terminal)';
   let keep = opts.body.length;
   while (url.length > 7500 && keep > 0) {
     keep = Math.floor(keep * 0.7);
-    url = `${head}&body=${encodeURIComponent(opts.body.slice(0, keep) + note)}`;
+    url = `${head}&body=${encodeURIComponent(unicodePrefix(opts.body, keep) + note)}`;
   }
-  return url;
+  return url.length <= 7500 ? url : '';
 }

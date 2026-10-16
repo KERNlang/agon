@@ -108,4 +108,29 @@ describe('prefilledPrUrl', () => {
     const url = prefilledPrUrl(base);
     expect(decodeURIComponent(url.split('&body=')[1])).toBe(base.body);
   });
+
+  it('does not split a Unicode pair at the title limit', () => {
+    const url = prefilledPrUrl({ ...base, title: 'x'.repeat(255) + '😀' });
+    expect(new URL(url).searchParams.get('title')).toBe('x'.repeat(255));
+  });
+
+  it('truncates long Unicode bodies without a malformed URI', () => {
+    const url = prefilledPrUrl({ ...base, body: '😀'.repeat(5000) });
+    expect(url.length).toBeLessThanOrEqual(7500);
+    const body = new URL(url).searchParams.get('body')!;
+    expect(body).toMatch(/^😀+\n\n/u);
+    expect(body).toContain('body truncated');
+    expect(body).not.toContain('\uFFFD');
+  });
+
+  it.each(['repoUrl', 'base', 'branch'] as const)('omits an oversized link without truncating its %s identity', key => {
+    const oversized = key === 'repoUrl' ? 'x'.repeat(8000) : 'é'.repeat(2000);
+    expect(prefilledPrUrl({ ...base, [key]: `${base[key]}/${oversized}` })).toBe('');
+  });
+
+  it('omits the link when even the truncation note cannot fit', () => {
+    const emptyLength = prefilledPrUrl({ ...base, body: '' }).length;
+    const branch = base.branch + 'x'.repeat(7495 - emptyLength);
+    expect(prefilledPrUrl({ ...base, branch, body: 'x'.repeat(10000) })).toBe('');
+  });
 });

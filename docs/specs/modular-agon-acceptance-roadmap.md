@@ -112,7 +112,30 @@ caches, with lifecycle scripts disabled. It does not authorize global installs,
 new dependencies, or promotion of the active installation.
 Neither a read-only diagnostic nor a previous subject's passing tests replaces
 that gate. `node scripts/spec/assess-modular-agon-slices.mjs` separately checks
-availability of each slice's commands and exact clean-HEAD receipt requirements.
+availability of each slice's commands and committed receipt requirements.
+The assessor reads the roadmap, commands and receipts from one pinned evidence
+commit. It rejects dirty worktrees and source-bearing ignored files.
+
+Slice receipts use schema 2: `subjectCommit` identifies the tested commit;
+`subjectHash` binds its Git paths, modes and object IDs. The current evidence
+commit must descend from that tested commit and have the same subject hash.
+Only the nine exact `docs/specs/evidence/receipts/modular-agon-s1b.json` through
+`modular-agon-s9.json` receipt paths are excluded. No source, fixture, review or
+other evidence directory is excluded. A receipt-only follow-up commit can thus
+record results without circularly changing the tested subject. Untracked or
+staged-only receipts cannot qualify a slice. Old schema receipts require fresh
+qualification; changing their version field is not verification.
+Each schema-2 receipt also records `prerequisites`, an object from required slice
+ID to its exact Git receipt-blob ID. Those blobs must exist at the tested commit
+and remain unchanged at the evidence commit. Replacing a prerequisite receipt
+requires dependent requalification. The assessor requires all nine ordered slices
+with their agreed predecessor dependencies and nonempty command lists. An empty
+or shortened roadmap cannot report success.
+Subject paths use UTF-8 byte ordering, not the machine's locale. Old digests
+must be regenerated through qualification if their ordering differs. Ignored
+dependency/build outputs are exempt only at root `node_modules/` and immediate
+`packages/<name>/{node_modules,dist,dist-tsc}/` locations. A directory named
+`dist-custom` or `node_modules` under source does not hide source contamination.
 
 ## Platform and release matrix
 

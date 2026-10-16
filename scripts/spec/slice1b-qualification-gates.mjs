@@ -38,7 +38,7 @@ function subjectEntries(root, subject, pathspecs) {
     const objectId = subject.kind === 'index' ? objectTypeOrId : objectIdOrStage;
     if (!mode || !objectId || !path) throw new Error(`incomplete Git object listing entry: ${entry}`);
     return { mode, objectId, path };
-  }).sort((left, right) => left.path.localeCompare(right.path));
+  }).sort((left, right) => Buffer.compare(Buffer.from(left.path), Buffer.from(right.path)));
 }
 
 export function hashGitSubject(root, { kind, revision = 'HEAD', pathspecs, includePathsInHash = true, excludedPaths = [], excludedPathPrefixes = [], excludedPathSuffixes = [] }) {
@@ -66,7 +66,7 @@ export function isSourceBearingPath(path, { nonSourcePaths = [] } = {}) {
   if (nonSourcePaths.includes(path)) return false;
   const parts = path.split('/');
   const name = parts.at(-1) ?? path;
-  if (parts.some((part) => part === 'dist' || part === 'node_modules' || part.startsWith('dist-'))) return false;
+  if (/^(?:node_modules\/|packages\/[^/]+\/(?:node_modules|dist|dist-tsc)\/)/.test(path)) return false;
   return !name.endsWith('.tsbuildinfo') && !name.endsWith('.orig');
 }
 

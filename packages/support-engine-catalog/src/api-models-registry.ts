@@ -1,0 +1,368 @@
+import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync } from 'node:fs';
+
+import { join, resolve } from 'node:path';
+import { homedir } from 'node:os';
+
+function getCacheDir(): string {
+  return join(resolve(process.env.AGON_HOME?.trim() || join(homedir(), '.agon')), 'cache');
+}
+
+
+export interface ModelsDevModel {
+  id: string;
+  name: string;
+  family?: string;
+  tool_call?: boolean;
+  reasoning?: boolean;
+  attachment?: boolean;
+  cost?: {input:number, output:number};
+  limit?: {context:number, output:number};
+  provider?: {npm?:string, api?:string};
+}
+
+export interface ModelsDevProvider {
+  id: string;
+  name: string;
+  npm: string;
+  env: string[];
+  api?: string;
+  doc?: string;
+  models: Record<string, ModelsDevModel>;
+}
+
+export interface ModelEntry {
+  providerId: string;
+  providerName: string;
+  modelId: string;
+  modelName: string;
+  baseUrl: string;
+  apiKeyEnv: string;
+  format: 'openai'|'anthropic';
+  contextWindow?: number;
+  costInput?: number;
+  costOutput?: number;
+  toolCall?: boolean;
+  source?: 'api'|'cli';
+}
+
+export const CACHE_TTL_MS: number = 3600000;
+
+export const MODELS_DEV_URL: string = 'https://models.dev/api.json';
+
+export async function fetchModelsRegistry(): Promise<Record<string, ModelsDevProvider>> {
+  const cacheDir = getCacheDir();
+  const cacheFile = join(cacheDir, 'models-dev.json');
+  // Check cache first
+  if (existsSync(cacheFile)) {
+    try {
+      const stat = statSync(cacheFile);
+      const age = Date.now() - stat.mtimeMs;
+      if (age < CACHE_TTL_MS) {
+        return JSON.parse(readFileSync(cacheFile, 'utf-8'));
+      }
+    } catch (_e) { console.warn(`[agon] models-registry: cache read failed, refetching: ${_e instanceof Error ? _e.message : String(_e)}`); }
+  }
+
+  // Fetch from models.dev
+  const response = await fetch(MODELS_DEV_URL);
+  if (!response.ok) {
+    // If fetch fails and cache exists (even stale), use it
+    if (existsSync(cacheFile)) {
+      return JSON.parse(readFileSync(cacheFile, 'utf-8'));
+    }
+    throw new Error(`Failed to fetch models registry: ${response.status}`);
+  }
+
+  const data = await response.json() as Record<string, ModelsDevProvider>;
+
+  // Write cache
+  mkdirSync(cacheDir, { recursive: true });
+  writeFileSync(cacheFile, JSON.stringify(data));
+
+  return data;
+}
+
+export function resolveModelFormat(providerNpm: string, model?: ModelsDevModel): 'openai'|'anthropic' {
+  // Model-level override takes precedence
+  const npm = model?.provider?.npm ?? providerNpm;
+  if (npm.includes('anthropic')) {
+    return 'anthropic';
+  }
+  return 'openai';
+}
+
+export const CANONICAL_API_URLS: Record<string, string> = ({ anthropic: 'https://api.anthropic.com', openai: 'https://api.openai.com/v1', google: 'https://generativelanguage.googleapis.com/v1beta/openai', 'google-vertex': 'https://us-central1-aiplatform.googleapis.com/v1beta1', mistral: 'https://api.mistral.ai/v1', cohere: 'https://api.cohere.com/v2', xai: 'https://api.x.ai/v1' });
+
+export function resolveBaseUrl(provider: ModelsDevProvider, model?: ModelsDevModel): string|null {
+  // Model-level override
+  if (model?.provider?.api) {
+    return model.provider.api;
+  }
+  // Provider-level
+  if (provider.api) {
+    return provider.api;
+  }
+  // Fallback: well-known canonical API URLs for major providers
+  return CANONICAL_API_URLS[provider.id] ?? null;
+}
+
+export function buildModelEntries(registry: Record<string, ModelsDevProvider>): ModelEntry[] {
+  const entries: ModelEntry[] = [];
+
+  for (const provider of Object.values(registry)) {
+    for (const model of Object.values(provider.models)) {
+      const format = resolveModelFormat(provider.npm, model);
+      const baseUrl = resolveBaseUrl(provider, model);
+      if (!baseUrl) continue; // Skip providers without API URL
+
+      const apiKeyEnv = provider.env[0];
+      if (!apiKeyEnv) continue;
+
+      entries.push({
+        providerId: provider.id,
+        providerName: provider.name,
+        modelId: model.id,
+        modelName: model.name,
+        baseUrl,
+        apiKeyEnv,
+        format,
+        contextWindow: model.limit?.context,
+        costInput: model.cost?.input,
+        costOutput: model.cost?.output,
+        toolCall: model.tool_call,
+      });
+    }
+  }
+
+  // Sort by provider name, then model name
+  entries.sort((a, b) => {
+    const provCmp = a.providerName.localeCompare(b.providerName);
+    if (provCmp !== 0) return provCmp;
+    return a.modelName.localeCompare(b.modelName);
+  });
+
+  return entries;
+}
+
+export function searchModels(entries: ModelEntry[], query: string): ModelEntry[] {
+  if (!query.trim()) return entries;
+  const q = query.toLowerCase();
+  const terms = q.split(/\s+/);
+
+  // Known model-brand → canonical provider mappings
+  const canonicalProviders: Record<string, string[]> = {
+    claude: ['anthropic'],
+    sonnet: ['anthropic'],
+    opus: ['anthropic'],
+    haiku: ['anthropic'],
+    codex: ['openai'],
+    gpt: ['openai'],
+    'o1': ['openai'],
+    'o3': ['openai'],
+    'o4': ['openai'],
+    gemini: ['google'],
+    agy: ['google'],
+    antigravity: ['google'],
+    flash: ['google'],
+    qwen: ['alibaba', 'alibaba-cn'],
+    mistral: ['mistral'],
+    deepseek: ['deepseek'],
+    minimax: ['minimax', 'minimax-cn'],
+    llama: ['meta', 'llama'],
+    phi: ['azure'],
+    command: ['cohere'],
+    grok: ['xai'],
+  };
+
+  // Brand terms like "claude" or "gemini" are used to *boost* canonical
+  // providers during scoring (below), not to hard-filter. Hard-filtering
+  // breaks queries like "openrouter claude" that legitimately target a
+  // hosted variant on a non-canonical provider.
+  const matched = entries.filter((entry) => {
+    const haystack = `${entry.providerName} ${entry.modelName} ${entry.modelId}`.toLowerCase();
+    return terms.every((term: string) => haystack.includes(term));
+  });
+
+  // Score and sort by relevance
+  const scored = matched.map((entry) => {
+    let score = 0;
+    const pid = entry.providerId.toLowerCase();
+    const pname = entry.providerName.toLowerCase();
+
+    for (const term of terms) {
+      const canonical = canonicalProviders[term];
+      if (canonical && canonical.some((c: string) => pid === c || pid.startsWith(c))) {
+        score += 100;
+      }
+      if (pname.includes(term)) score += 20;
+      if (entry.modelName.toLowerCase().includes(term)) score += 10;
+    }
+
+    return { entry, score };
+  });
+
+  // Sort by score desc, then provider name asc for ties
+  scored.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    return a.entry.providerName.localeCompare(b.entry.providerName);
+  });
+
+  return scored.map((s) => s.entry);
+}
+
+export function normalizeBaseUrl(url: string, format: 'openai'|'anthropic'): string {
+  // The /anthropic proxy-prefix strip is ONLY valid for openai-format dispatch.
+  // (Legacy: agon's apiDispatch was openai-only, so every models.dev URL was
+  // coerced to the openai path.) For anthropic format, /anthropic/v1 IS the
+  // correct base — stripping it makes @ai-sdk/anthropic POST /v1/messages → 404.
+  if (format === 'anthropic') return url;
+  // Strip /anthropic/ only when it's the first path segment (proxy prefix)
+  try {
+    const parsed = new URL(url);
+    if (parsed.pathname.startsWith('/anthropic/') || parsed.pathname === '/anthropic') {
+      parsed.pathname = parsed.pathname.replace(/^\/anthropic/, '');
+      return parsed.toString().replace(/\/$/, '');
+    }
+    return url;
+  } catch {
+    return url.replace(/^(https?:\/\/[^/]+)\/anthropic(\/|$)/, '$1$2');
+  }
+}
+
+/**
+ * Module-level memo for the parsed models-dev.json shared by the catalog lookups, keyed by cache-file PATH + mtime — one synchronous parse per catalog refresh, and an in-process AGON_HOME change (tests, embedded use) can never serve another home's catalog.
+ */
+export const catalogWindowMemo = { file: '', mtimeMs: -1, data: null as (Record<string, any> | null) };
+
+/**
+ * Shared synchronous, memoized read of the models.dev cache for the catalog lookups. Null when the cache file is absent or unreadable.
+ */
+function readCatalogData(): Record<string, any> | null {
+  try {
+    const cacheFile = join(getCacheDir(), 'models-dev.json');
+    if (!existsSync(cacheFile)) return null;
+    const mtimeMs = statSync(cacheFile).mtimeMs;
+    if (catalogWindowMemo.file !== cacheFile || catalogWindowMemo.mtimeMs !== mtimeMs || !catalogWindowMemo.data) {
+      catalogWindowMemo.data = JSON.parse(readFileSync(cacheFile, 'utf-8'));
+      catalogWindowMemo.file = cacheFile;
+      catalogWindowMemo.mtimeMs = mtimeMs;
+    }
+    return catalogWindowMemo.data as Record<string, any>;
+  } catch { return null; }
+}
+
+/**
+ * Resolve a model's REAL context window from the locally cached models.dev catalog (~/.agon/cache/models-dev.json), synchronously and best-effort. Match order: (1) the provider+model pair whose sanitized `${providerId}-${modelId}` equals engineId — exact, since user engine ids are built that way; (2) exact modelId across all providers — unique hit wins, and a collision takes the CONSERVATIVE MINIMUM (a too-high limit overflows the real window before compaction fires; a too-low one merely compacts early). A STALE cache is still used (a months-old real window beats a guess-table). Returns null when the cache is absent/unreadable or the model is unknown — callers fall back to their own inference.
+ */
+export function lookupCatalogContextWindow(engineId: string, modelId: string): number | null {
+  try {
+    const data = readCatalogData();
+    if (!data) return null;
+    const sanitize = (value: string): string => value.replace(/[^a-zA-Z0-9._-]/g, '-').toLowerCase();
+    const wantEngine = sanitize(String(engineId ?? ''));
+    const wantModel = String(modelId ?? '');
+    const window = (m: any): number => Math.floor(Number(m?.limit?.context) || 0);
+    const modelHits: number[] = [];
+    for (const pid of Object.keys(data)) {
+      const models = data[pid]?.models ?? {};
+      for (const mid of Object.keys(models)) {
+        const w = window(models[mid]);
+        if (w <= 0) continue;
+        if (wantEngine && sanitize(`${pid}-${mid}`) === wantEngine) return w;
+        if (wantModel && mid === wantModel) modelHits.push(w);
+      }
+    }
+    if (modelHits.length > 0) return Math.min(...modelHits);
+    return null;
+  } catch { return null; }
+}
+
+/**
+ * Per-model price rates from the models.dev catalog, in USD per 1M tokens. All-zero rates are VALID and meaningful: a coding-plan model's marginal cost really is $0.
+ */
+export interface CatalogModelCost {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+}
+
+/**
+ * Resolve a model's REAL split pricing from the cached models.dev catalog, synchronously and best-effort. Deliberately matches ONLY the exact sanitized `${providerId}-${modelId}` === engineId pair (how user API engines are named) — never a loose cross-provider model-id fallback, so CLI engines ('claude', 'codex') and their deliberate subscription ballparks are untouched and unit tests stay machine-independent. Returns null when the cache is absent, the engine is unknown, the model carries no cost object, or the cost object lacks the base input/output rates (missing is NOT free — null routes the caller to legacy pricing); all-zero rates return as zeros (plan-included), not null.
+ */
+export function lookupCatalogModelCost(engineId: string): CatalogModelCost | null {
+  try {
+    const data = readCatalogData();
+    if (!data) return null;
+    const sanitize = (value: string): string => value.replace(/[^a-zA-Z0-9._-]/g, '-').toLowerCase();
+    const wantEngine = sanitize(String(engineId ?? ''));
+    if (!wantEngine) return null;
+    for (const pid of Object.keys(data)) {
+      const models = data[pid]?.models ?? {};
+      for (const mid of Object.keys(models)) {
+        if (sanitize(`${pid}-${mid}`) !== wantEngine) continue;
+        const cost = models[mid]?.cost;
+        if (!cost || typeof cost !== 'object') return null;
+        // MISSING is not FREE: absent base rates (input/output) mean the
+        // catalog entry is unusable — return null so the caller falls back to
+        // legacy pricing instead of billing $0. Absent CACHE fields fall back
+        // to conservative defaults (cache reads at the standard ~10% of
+        // input, cache writes at the input rate) — only an explicit 0 means
+        // plan-included/free.
+        const rate = (value: unknown): number | null => {
+          if (value === undefined || value === null) return null;
+          const n = Number(value);
+          return Number.isFinite(n) && n >= 0 ? n : null;
+        };
+        const input = rate(cost.input);
+        const output = rate(cost.output);
+        if (input === null || output === null) return null;
+        return {
+          input,
+          output,
+          cacheRead: rate(cost.cache_read) ?? input * 0.1,
+          cacheWrite: rate(cost.cache_write) ?? input,
+        };
+      }
+    }
+    return null;
+  } catch { return null; }
+}
+
+/**
+ * Resolve a model's image-input support (models.dev `attachment`) from the cached catalog, synchronously and best-effort. Same exact-match policy as lookupCatalogModelCost: only the sanitized `${providerId}-${modelId}` === engineId pair matches, so CLI engines and hand-named engines are untouched. Returns null when the cache is absent, the engine is unknown, or the catalog entry carries no boolean — null means 'catalog does not know', never 'no vision'.
+ */
+export function lookupCatalogModelAttachment(engineId: string): boolean | null {
+  try {
+    const data = readCatalogData();
+    if (!data) return null;
+    const sanitize = (value: string): string => value.replace(/[^a-zA-Z0-9._-]/g, '-').toLowerCase();
+    const wantEngine = sanitize(String(engineId ?? ''));
+    if (!wantEngine) return null;
+    for (const pid of Object.keys(data)) {
+      const models = data[pid]?.models ?? {};
+      for (const mid of Object.keys(models)) {
+        if (sanitize(`${pid}-${mid}`) !== wantEngine) continue;
+        const attachment = models[mid]?.attachment;
+        return typeof attachment === 'boolean' ? attachment : null;
+      }
+    }
+    return null;
+  } catch { return null; }
+}
+
+/**
+ * Single source of truth for 'can this engine see images'. A declared 'vision' capability in the engine definition ALWAYS wins — it is the user override for stale catalog rows (e.g. the kimi-for-coding/k3 coding-plan entry says attachment:false while the underlying kimi-k3 is multimodal). Otherwise API catalog engines inherit models.dev's `attachment` flag via the exact providerId-modelId match, so a freshly added catalog model gets vision without anyone hand-editing capabilities. Engines the catalog does not know (CLI binaries, hand-named engines) fall back to declaration-only — unchanged behavior.
+ */
+export function engineSupportsVision(engine: any): boolean {
+  if (!engine) return false;
+  if (engine.capabilities?.includes('vision')) return true;
+  return lookupCatalogModelAttachment(String(engine.id ?? '')) === true;
+}
+
+/**
+ * Persist the catalog's real contextWindow into the saved engine definition — session compaction and the ctx gauge size against api.contextWindow, and dropping it here is what sent 1M-window models to the 128k guess-table.
+ */
+export function modelEntryToEngineDef(entry: ModelEntry): Record<string, any> {
+  return { schemaVersion: 3, id: `${entry.providerId}-${entry.modelId}`.replace(/[^a-zA-Z0-9._-]/g, '-').toLowerCase(), displayName: `${entry.providerName} — ${entry.modelName}`, isLocal: false, tier: 'user', timeout: 180, exec: { args: [] }, review: { args: [] }, api: { baseUrl: normalizeBaseUrl(entry.baseUrl, entry.format ?? 'openai'), apiKeyEnv: entry.apiKeyEnv, model: entry.modelId, maxTokens: Math.min((entry.contextWindow ? Math.floor((entry.contextWindow / 4)) : 4096), 16384), contextWindow: (Number.isFinite(entry.contextWindow) && (entry.contextWindow ?? 0) > 0) ? Math.floor(entry.contextWindow as number) : undefined, format: entry.format ?? 'openai' } };
+}

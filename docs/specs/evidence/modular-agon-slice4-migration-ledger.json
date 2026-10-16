@@ -6,8 +6,8 @@
   "sourceOccurrences": 262,
   "counts": {
     "byte-verified-compatibility-mirror": 24,
-    "compatibility-adapter": 93,
-    "compatibility-consumer": 55,
+    "compatibility-adapter": 107,
+    "compatibility-consumer": 41,
     "physical-owner": 90
   },
   "entries": [
@@ -42,7 +42,7 @@
     {
       "owner": "@kernlang/agon-support-browser-bridge",
       "source": "packages/core/src/models/types.ts:184",
-      "disposition": "compatibility-consumer",
+      "disposition": "compatibility-adapter",
       "destination": [
         "src/syntax-validator-bridge.ts",
         "src/browser-host.ts"
@@ -56,7 +56,7 @@
     {
       "owner": "@kernlang/agon-support-browser-bridge",
       "source": "packages/core/src/models/types.ts:350",
-      "disposition": "compatibility-consumer",
+      "disposition": "compatibility-adapter",
       "destination": [
         "src/syntax-validator-bridge.ts",
         "src/browser-host.ts"
@@ -2562,7 +2562,7 @@
     {
       "owner": "@kernlang/agon-support-persistence",
       "source": "packages/core/src/models/types.ts:116",
-      "disposition": "compatibility-consumer",
+      "disposition": "compatibility-adapter",
       "destination": [
         "src/paths.ts",
         "src/file-history.ts",
@@ -2585,7 +2585,7 @@
     {
       "owner": "@kernlang/agon-support-persistence",
       "source": "packages/core/src/models/types.ts:118",
-      "disposition": "compatibility-consumer",
+      "disposition": "compatibility-adapter",
       "destination": [
         "src/paths.ts",
         "src/file-history.ts",
@@ -2608,7 +2608,7 @@
     {
       "owner": "@kernlang/agon-support-persistence",
       "source": "packages/core/src/models/types.ts:126",
-      "disposition": "compatibility-consumer",
+      "disposition": "compatibility-adapter",
       "destination": [
         "src/paths.ts",
         "src/file-history.ts",
@@ -2631,7 +2631,7 @@
     {
       "owner": "@kernlang/agon-support-persistence",
       "source": "packages/core/src/models/types.ts:135",
-      "disposition": "compatibility-consumer",
+      "disposition": "compatibility-adapter",
       "destination": [
         "src/paths.ts",
         "src/file-history.ts",
@@ -2654,7 +2654,7 @@
     {
       "owner": "@kernlang/agon-support-persistence",
       "source": "packages/core/src/models/types.ts:140",
-      "disposition": "compatibility-consumer",
+      "disposition": "compatibility-adapter",
       "destination": [
         "src/paths.ts",
         "src/file-history.ts",
@@ -2677,7 +2677,7 @@
     {
       "owner": "@kernlang/agon-support-persistence",
       "source": "packages/core/src/models/types.ts:259",
-      "disposition": "compatibility-consumer",
+      "disposition": "compatibility-adapter",
       "destination": [
         "src/paths.ts",
         "src/file-history.ts",
@@ -2700,7 +2700,7 @@
     {
       "owner": "@kernlang/agon-support-persistence",
       "source": "packages/core/src/models/types.ts:282",
-      "disposition": "compatibility-consumer",
+      "disposition": "compatibility-adapter",
       "destination": [
         "src/paths.ts",
         "src/file-history.ts",
@@ -2723,7 +2723,7 @@
     {
       "owner": "@kernlang/agon-support-persistence",
       "source": "packages/core/src/models/types.ts:284",
-      "disposition": "compatibility-consumer",
+      "disposition": "compatibility-adapter",
       "destination": [
         "src/paths.ts",
         "src/file-history.ts",
@@ -2746,7 +2746,7 @@
     {
       "owner": "@kernlang/agon-support-persistence",
       "source": "packages/core/src/models/types.ts:292",
-      "disposition": "compatibility-consumer",
+      "disposition": "compatibility-adapter",
       "destination": [
         "src/paths.ts",
         "src/file-history.ts",
@@ -2769,7 +2769,7 @@
     {
       "owner": "@kernlang/agon-support-persistence",
       "source": "packages/core/src/models/types.ts:301",
-      "disposition": "compatibility-consumer",
+      "disposition": "compatibility-adapter",
       "destination": [
         "src/paths.ts",
         "src/file-history.ts",
@@ -2792,7 +2792,7 @@
     {
       "owner": "@kernlang/agon-support-persistence",
       "source": "packages/core/src/models/types.ts:306",
-      "disposition": "compatibility-consumer",
+      "disposition": "compatibility-adapter",
       "destination": [
         "src/paths.ts",
         "src/file-history.ts",
@@ -2815,7 +2815,7 @@
     {
       "owner": "@kernlang/agon-support-persistence",
       "source": "packages/core/src/models/types.ts:93",
-      "disposition": "compatibility-consumer",
+      "disposition": "compatibility-adapter",
       "destination": [
         "src/paths.ts",
         "src/file-history.ts",
@@ -4417,7 +4417,8 @@
       "disposition": "compatibility-adapter",
       "destination": [
         "src/engine-registry.ts",
-        "src/cli-models-registry.ts"
+        "src/cli-models-registry.ts",
+        "src/api-models-registry.ts"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
       "evidence": [
@@ -4431,7 +4432,8 @@
       "disposition": "compatibility-adapter",
       "destination": [
         "src/engine-registry.ts",
-        "src/cli-models-registry.ts"
+        "src/cli-models-registry.ts",
+        "src/api-models-registry.ts"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
       "evidence": [

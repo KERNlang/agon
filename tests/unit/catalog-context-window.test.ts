@@ -1,9 +1,11 @@
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
+import * as catalogOwner from '@kernlang/agon-support-engine-catalog';
+import * as legacyCatalog from '../../packages/core/src/signals/models-registry.js';
 
-// Source of truth: packages/core/src/signals/models-registry.ts
+// Core keeps compatibility exports for the physical catalog owner.
 import { lookupCatalogContextWindow, lookupCatalogModelCost, lookupCatalogModelAttachment, engineSupportsVision } from '../../packages/core/src/signals/models-registry.js';
 import { estimateCost, estimateCostCacheAware } from '../../packages/core/src/signals/token-tracker.js';
 
@@ -51,6 +53,50 @@ describe('lookupCatalogContextWindow — real windows from the models.dev cache'
     if (prevHome === undefined) delete process.env.AGON_HOME;
     else process.env.AGON_HOME = prevHome;
     rmSync(home, { recursive: true, force: true });
+  });
+
+  it('uses one physical implementation and memo through both public paths', () => {
+    expect(Object.keys(legacyCatalog).sort()).toEqual([
+      'CACHE_TTL_MS', 'MODELS_DEV_URL', 'fetchModelsRegistry', 'resolveModelFormat',
+      'CANONICAL_API_URLS', 'resolveBaseUrl', 'buildModelEntries', 'searchModels',
+      'normalizeBaseUrl', 'catalogWindowMemo', 'lookupCatalogContextWindow',
+      'lookupCatalogModelCost', 'lookupCatalogModelAttachment', 'engineSupportsVision',
+      'modelEntryToEngineDef',
+    ].sort());
+    expect(catalogOwner.API_MODELS_CACHE_TTL_MS).toBe(3600000);
+    expect(catalogOwner.CACHE_TTL_MS).toBe(3600000);
+    const physical = catalogOwner as unknown as Record<string, unknown>;
+    for (const [name, value] of Object.entries(legacyCatalog)) {
+      expect(physical[name === 'CACHE_TTL_MS' ? 'API_MODELS_CACHE_TTL_MS' : name], name).toBe(value);
+    }
+  });
+
+  it('refreshes shared cache data across homes with equal mtimes and on timestamp changes', () => {
+    const otherHome = join(home, 'other-home');
+    mkdirSync(join(otherHome, 'cache'), { recursive: true });
+    const originalPath = join(home, 'cache', 'models-dev.json');
+    const otherPath = join(otherHome, 'cache', 'models-dev.json');
+    const timestamp = new Date(1700000000000);
+    const data = (size: number) => JSON.stringify({ provider: { models: { model: { limit: { context: size } } } } });
+    writeFileSync(originalPath, data(1000));
+    writeFileSync(otherPath, data(2000));
+    utimesSync(originalPath, timestamp, timestamp);
+    utimesSync(otherPath, timestamp, timestamp);
+    expect(lookupCatalogContextWindow('provider-model', 'model')).toBe(1000);
+    process.env.AGON_HOME = otherHome;
+    expect(catalogOwner.lookupCatalogContextWindow('provider-model', 'model')).toBe(2000);
+    expect(lookupCatalogContextWindow('provider-model', 'model')).toBe(2000);
+    writeFileSync(otherPath, data(3000));
+    const changed = new Date(timestamp.getTime() + 1000);
+    utimesSync(otherPath, changed, changed);
+    expect(lookupCatalogContextWindow('provider-model', 'model')).toBe(3000);
+    expect(catalogOwner.lookupCatalogContextWindow('provider-model', 'model')).toBe(3000);
+  });
+
+  it('keeps an absolute memo key for a relative home override', () => {
+    process.env.AGON_HOME = relative(process.cwd(), home);
+    expect(lookupCatalogContextWindow('kimi-for-coding-k3', 'k3')).toBe(1048576);
+    expect(legacyCatalog.catalogWindowMemo.file).toBe(join(home, 'cache', 'models-dev.json'));
   });
 
   it('resolves the provider+model pair via the sanitized engine id (kimi k3 = 1M)', () => {

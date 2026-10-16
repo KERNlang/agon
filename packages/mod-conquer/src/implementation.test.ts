@@ -5,6 +5,7 @@ import * as nero from '@kernlang/agon-mod-nero';
 import * as tribunal from '@kernlang/agon-mod-tribunal';
 import * as council from '@kernlang/agon-mod-council';
 import * as worktrees from '@kernlang/agon-support-worktree';
+import { runAgentTask } from '@kernlang/agon-mod-agent';
 import { afterEach } from 'vitest';
 afterEach(() => vi.restoreAllMocks());
 
@@ -64,6 +65,47 @@ it.each([
   expect(dispatch).toHaveBeenCalledTimes(turns);
   expect(fitness).toHaveBeenCalledTimes(turns);
   expect(cleanup).toHaveBeenCalledOnce();
+});
+
+it.each(['timeout', 'gateTimeout'].flatMap(key => ['-2', '0', 'invalid', '7.9', '9'.repeat(400), ...(key === 'timeout' ? ['1000000000000000000000'] : [])].map(value => ({ key, value, label: value.length > 30 ? 'overflow' : value }))))('preserves legacy $key fallback for $label', async ({ key, value }) => {
+  const cwd = repo();
+  const fitness = vi.spyOn(verification, 'runFitnessCommand');
+  const dispatch = vi.fn(async (engineId, _prompt, context, _options) => {
+    writeFileSync(join(context.cwd, 'feature.txt'), 'requested feature\n');
+    return { engineId, exitCode: 0, stdout: 'CONQUER_DONE: feature exists', stderr: '', timedOut: false };
+  });
+  const services = { logger: { debug: vi.fn() }, receipts: { record: vi.fn(async () => 'fixture') },
+    engines: { listActive: async () => ['builder'], dispatch } } as unknown as ModServices;
+  const result = await runConquerTask({ task: 'build feature', gate: 'true', builder: 'builder', maxTurns: '1', [key]: value },
+    { invocationId: 'timeout-fallback', cwd, platform: 'darwin-arm64', signal: new AbortController().signal, config: {} }, services);
+  expect(result.exitCode).toBe(0);
+  expect(dispatch).toHaveBeenCalledOnce();
+  const expectedBuilderTimeout = key !== 'timeout' ? 600 : value === '7.9' ? 7 : value === '1000000000000000000000' ? 1e21 : 600;
+  expect(dispatch.mock.calls[0][3]).toMatchObject({ timeoutSeconds: expectedBuilderTimeout });
+  expect(fitness).toHaveBeenCalledOnce();
+  expect(fitness.mock.calls[0][2]).toBe(key === 'gateTimeout' && value === '7.9' ? 7 : 1800);
+});
+
+it('forwards fallback timeouts to advisors without changing independent Agent defaults', async () => {
+  const cwd = repo();
+  const consults = [vi.spyOn(nero, 'runNero'), vi.spyOn(tribunal, 'runTribunal'), vi.spyOn(council, 'runCouncil')];
+  for (const consult of consults) consult.mockResolvedValue({ exitCode: 0, stdout: 'fixture advice' });
+  const dispatch = vi.fn(async (engineId, _prompt, _context, _options) => ({ engineId, exitCode: 0, stdout: 'working', stderr: '', timedOut: false }));
+  const services = { logger: { debug: vi.fn() }, receipts: { record: vi.fn(async () => 'fixture') },
+    engines: { listActive: async () => ['builder', 'advisor-a', 'advisor-b'], dispatch } } as unknown as ModServices;
+  const context = { invocationId: 'advisor-timeout', cwd, platform: 'darwin-arm64', signal: new AbortController().signal, config: {} } as const;
+  const result = await runConquerTask({ task: 'build feature', gate: 'false', builder: 'builder', maxTurns: '3', timeout: '-2' }, context, services);
+  expect(result).toMatchObject({ exitCode: 1, result: { status: 'turn_budget_exceeded' } });
+  for (const consult of consults) {
+    expect(consult).toHaveBeenCalledOnce();
+    expect(consult.mock.calls[0][0]).toMatchObject({ timeout: '600' });
+  }
+  expect(dispatch).toHaveBeenCalledTimes(3);
+  for (const call of dispatch.mock.calls) expect(call[3]).toMatchObject({ timeoutSeconds: 600 });
+  dispatch.mockClear();
+  await runAgentTask({ task: 'direct task', engine: 'builder', timeout: '-2' }, context, services);
+  expect(dispatch).toHaveBeenCalledOnce();
+  expect(dispatch.mock.calls[0][3]).toMatchObject({ timeoutSeconds: 1 });
 });
 
 it.each(['green-baseline', 'failed', 'timed-out', 'thrown', 'aborted'] as const)('preserves the builder execution boundary when %s', async scenario => {

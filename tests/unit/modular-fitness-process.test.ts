@@ -28,8 +28,10 @@ it.each(['fitness', 'eslint', 'prettier'] as const)('cancels the real Forge %s p
   const controller = new AbortController();
   const reason = new Error('fixture cancellation');
   const pidPath = join(root, 'started.pid');
+  // File creation does not prove that the child has published its PID.
   const script = `import { writeFileSync } from 'node:fs';
-    writeFileSync(${JSON.stringify(pidPath)}, String(process.pid));
+    writeFileSync(${JSON.stringify(pidPath)}, '');
+    setTimeout(() => writeFileSync(${JSON.stringify(pidPath)}, String(process.pid) + '\\n'), 250);
     setTimeout(() => process.exit(0), 4000);`;
   const scriptPath = join(root, 'wait.mjs');
   writeFileSync(scriptPath, script);
@@ -48,9 +50,11 @@ it.each(['fitness', 'eslint', 'prettier'] as const)('cancels the real Forge %s p
   // Attach the rejection handler before aborting the real subprocess.
   const settled = pending.then(value => ({ value, error: undefined }), error => ({ value: undefined, error }));
   try {
-    await expect.poll(() => existsSync(pidPath), { timeout: 3000 }).toBe(true);
-    controller.abort(reason);
+    await expect.poll(() => existsSync(pidPath) ? readFileSync(pidPath, 'utf8') : '', { timeout: 3000 })
+      .toMatch(/^[1-9]\d*\n$/);
     const pid = Number(readFileSync(pidPath, 'utf8'));
+    expect(Number.isSafeInteger(pid) && pid > 1).toBe(true);
+    controller.abort(reason);
     await expect.poll(() => {
       try { process.kill(pid, 0); return true; }
       catch (error) {
@@ -139,18 +143,20 @@ it.each(['timeout', 'abort'] as const)('kills a SIGTERM-resistant descendant on 
   writeFileSync(join(root, 'child.cjs'), `
     const fs = require('node:fs');
     process.on('SIGTERM', () => {});
-    fs.writeFileSync('child.pid', String(process.pid));
+    fs.writeFileSync('child.pid', String(process.pid) + '\\n');
     setTimeout(() => process.exit(0), 5000);
   `);
   const pending = runFitnessCommand(`${JSON.stringify(process.execPath)} child.cjs; :`,
     root, reason === 'timeout' ? 1 : 10, controller.signal);
   try {
-    await expect.poll(() => existsSync(pidPath), { timeout: 3000 }).toBe(true);
+    await expect.poll(() => existsSync(pidPath) ? readFileSync(pidPath, 'utf8') : '', { timeout: 3000 })
+      .toMatch(/^[1-9]\d*\n$/);
+    const pid = Number(readFileSync(pidPath, 'utf8'));
+    expect(Number.isSafeInteger(pid) && pid > 1).toBe(true);
     if (reason === 'abort') controller.abort();
     const result = await pending;
     expect(result.aborted).toBe(reason === 'abort');
     expect(result.timedOut).toBe(reason === 'timeout');
-    const pid = Number(readFileSync(pidPath, 'utf8'));
     await expect.poll(() => {
       try { process.kill(pid, 0); return true; }
       catch (error) {

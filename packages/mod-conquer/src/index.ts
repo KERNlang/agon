@@ -18,3 +18,5 @@ export { createConquerHostServices } from './host.js';
 export type { ConquerHostServices } from './host.js';
 export { createConquerIsolation } from './isolation.js';
 export type { ConquerIsolation, ConquerIsolationEffects } from './isolation.js';
+export { publishConquerBranch } from './publication.js';
+export type { ConquerPublicationOptions, ConquerPublicationGit, ConquerPublicationResult } from './publication.js';

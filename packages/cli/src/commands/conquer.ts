@@ -2,7 +2,8 @@ import { defineCommand } from 'citty';
 
 import { EngineRegistry, ensureAgonHome, loadConfig, createRunDir, spawnWithTimeout, appendAttribution, appendPrAttribution, githubRepoUrl, defaultBaseBranch, prefilledPrUrl } from '@kernlang/agon-core';
 
-import { runConquer, runPrText, createConquerIsolation, isProtectedPushBranch } from '@kernlang/agon-forge';
+import { runConquer, runPrText, createConquerIsolation } from '@kernlang/agon-forge';
+import { publishConquerBranch } from '@kernlang/agon-mod-conquer';
 
 import type { ConquerResult, ConquerTurn } from '@kernlang/agon-forge';
 
@@ -188,77 +189,55 @@ export const conquerCommand: any = defineCommand({
     showFalsifier();
     if (args.push) {
       const git = (a: string[], t: number) => spawnWithTimeout({ command: 'git', args: a, cwd: worktreeCwd, timeout: t });
-      const branchRes = await git(['rev-parse', '--abbrev-ref', 'HEAD'], 15_000);
-      const headBranch = String(branchRes.stdout ?? '').trim();
-      if (branchRes.exitCode !== 0 || !headBranch || headBranch === 'HEAD') {
-        info(dim('Could not resolve a branch to push (detached HEAD?). The builder\'s changes are uncommitted in the tree — review + commit + push manually.'));
-        process.exitCode = 1;
-      } else if (isProtectedPushBranch(headBranch, config)) {
-        // Unattended pushes never land on a protected branch (main/master by
-        // default, protectedPushBranches to override) — a conquer worktree
-        // normally sits on its own conquer/<slug> branch, so a protected HEAD
-        // here means something unexpected happened. Leave the work committed
-        // locally and hand the push to the human.
-        info(dim(`Refusing to push protected branch '${headBranch}' from an unattended run. The work is in the worktree at ${worktreeCwd} — review and push it manually (or set protectedPushBranches in config).`));
+      const publication = await publishConquerBranch({
+        cwd: worktreeCwd, task: taskStr, commitBody: () => appendAttribution(claim, config),
+        protectedPushBranches: config.protectedPushBranches,
+      }, git);
+      if (!publication.ok) {
+        info(dim(publication.message));
         process.exitCode = 1;
       } else {
-        const add = await git(['add', '-A'], 30_000);
-        // appendAttribution = the Claude-Code-style footer (Generated-with line +
-        // Co-Authored-By trailer) on the claim body; opt out via commitCoAuthor "".
-        const commit = add.exitCode === 0 ? await git(['commit', '-m', `conquer: ${taskStr}`, '-m', appendAttribution(claim, config)], 30_000) : add;
-        if (add.exitCode !== 0 || commit.exitCode !== 0) {
-          const stage = add.exitCode !== 0 ? 'add' : 'commit';
-          const errTxt = String((add.exitCode !== 0 ? add.stderr : commit.stderr) ?? '').slice(0, 200);
-          info(dim(`git ${stage} failed: ${errTxt} — review the tree manually.`));
-          process.exitCode = 1;
-        } else {
-          const push = await git(['push', '-u', 'origin', headBranch], 120_000);
-          if (push.exitCode !== 0) {
-            info(dim(`git push failed: ${String(push.stderr ?? '').slice(0, 200)} — committed locally on ${headBranch}; push it manually.`));
-            process.exitCode = 1;
-          } else {
-            info(`Pushed ${headBranch}.`);
-            // Engine-written PR text + a prefilled compare link — the no-gh PR
-            // path: the human clicks the link (title+body already filled) and
-            // merges. A PR-text miss falls back to the templated title + the
-            // builder's claim; the push already succeeded, so never fail here.
-            const base = defaultBaseBranch(root);
-            let title = `conquer: ${taskStr}`.slice(0, 72);
-            let body = claim;
-            if (headBranch !== base) {
-              const logRes = await git(['log', '--oneline', `origin/${base}..HEAD`], 15_000);
-              const commits = logRes.exitCode === 0 ? String(logRes.stdout ?? '').trim() : '';
-              const diffRes = await git(['diff', `origin/${base}...HEAD`], 30_000);
-              const rawDiff = diffRes.exitCode === 0 ? String(diffRes.stdout ?? '') : '';
-              const diffLines = rawDiff.split('\n');
-              const cappedDiff = diffLines.length > 1200 ? diffLines.slice(0, 1200).join('\n') + `\n... (${diffLines.length - 1200} more lines)` : rawDiff;
-              info(dim(`Writing PR text (${builder})…`));
-              const pr = await runPrText({
-                engineId: builder,
-                intent: taskStr,
-                context: `Builder's verified done-claim: ${claim}\nAcceptance gate (passed): ${gate}`,
-                commits,
-                diff: cappedDiff,
-                registry,
-                adapter,
-                timeout: 300,
-                outputDir,
-                cwd: worktreeCwd,
-              });
-              if (pr.ok) { title = pr.title; body = pr.body; }
-              else info(dim('PR-text engine call failed — using the templated title + claim.'));
-            }
-            body = appendPrAttribution(body, config);
-            console.log('');
-            info(bold(title));
-            console.log(body);
-            console.log('');
-            const repoUrl = githubRepoUrl(root);
-            const url = headBranch !== base ? prefilledPrUrl({ repoUrl, base, branch: headBranch, title, body }) : '';
-            if (url) info(`Open the PR (form prefilled with the text above): ${url}`);
-            else info(`Open a PR from ${headBranch} to review + merge — this is your merge gate.`);
-          }
+        const headBranch = publication.branch;
+        info(`Pushed ${headBranch}.`);
+        // Engine-written PR text + a prefilled compare link — the no-gh PR
+        // path: the human clicks the link (title+body already filled) and
+        // merges. A PR-text miss falls back to the templated title + the
+        // builder's claim; the push already succeeded, so never fail here.
+        const base = defaultBaseBranch(root);
+        let title = `conquer: ${taskStr}`.slice(0, 72);
+        let body = claim;
+        if (headBranch !== base) {
+          const logRes = await git(['log', '--oneline', `origin/${base}..HEAD`], 15_000);
+          const commits = logRes.exitCode === 0 ? String(logRes.stdout ?? '').trim() : '';
+          const diffRes = await git(['diff', `origin/${base}...HEAD`], 30_000);
+          const rawDiff = diffRes.exitCode === 0 ? String(diffRes.stdout ?? '') : '';
+          const diffLines = rawDiff.split('\n');
+          const cappedDiff = diffLines.length > 1200 ? diffLines.slice(0, 1200).join('\n') + `\n... (${diffLines.length - 1200} more lines)` : rawDiff;
+          info(dim(`Writing PR text (${builder})…`));
+          const pr = await runPrText({
+            engineId: builder,
+            intent: taskStr,
+            context: `Builder's verified done-claim: ${claim}\nAcceptance gate (passed): ${gate}`,
+            commits,
+            diff: cappedDiff,
+            registry,
+            adapter,
+            timeout: 300,
+            outputDir,
+            cwd: worktreeCwd,
+          });
+          if (pr.ok) { title = pr.title; body = pr.body; }
+          else info(dim('PR-text engine call failed — using the templated title + claim.'));
         }
+        body = appendPrAttribution(body, config);
+        console.log('');
+        info(bold(title));
+        console.log(body);
+        console.log('');
+        const repoUrl = githubRepoUrl(root);
+        const url = headBranch !== base ? prefilledPrUrl({ repoUrl, base, branch: headBranch, title, body }) : '';
+        if (url) info(`Open the PR (form prefilled with the text above): ${url}`);
+        else info(`Open a PR from ${headBranch} to review + merge — this is your merge gate.`);
       }
     } else {
       info(dim(`The builder's changes are isolated on ${branch} at ${worktreeCwd}. Review and commit there, then open a PR to merge. Remove it later with: agon worktree rm ${branch}`));

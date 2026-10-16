@@ -137,6 +137,23 @@ dependency/build outputs are exempt only at root `node_modules/` and immediate
 `packages/<name>/{node_modules,dist,dist-tsc}/` locations. A directory named
 `dist-custom` or `node_modules` under source does not hide source contamination.
 
+All nine clean-checkout qualifiers pin the commit and index tree before hashing,
+review validation or execution. Receipts identify the pinned revision and tree;
+an index subject keeps its distinct `kind: index` label. Materialization reads
+raw Git blobs, preserves executable modes, and verifies exact bytes and paths
+before qualification commands run. Archive attributes, checkout filters, later
+HEAD movement and later index changes cannot substitute another tested tree.
+The same mechanism materializes the rollback parent for S4–S7. Symlinks,
+submodules, unexpected files/directories and `.git` indirection are rejected.
+Git paths must round-trip through UTF-8; invalid filename bytes are rejected
+before writing, not replaced. Qualification history imports blobs without clean
+filters and constructs the index from pinned paths, modes and object IDs. Both
+the index tree and resulting commit tree must equal the pinned tree. This also
+applies to rollback parents, so attribute-driven normalization cannot change
+the version used for rollback checks.
+The bounded Git batch limit is 64 MiB; exceeding it fails qualification rather
+than truncating or accepting incomplete files.
+
 ## Platform and release matrix
 
 | Target | Development evidence | Release evidence |

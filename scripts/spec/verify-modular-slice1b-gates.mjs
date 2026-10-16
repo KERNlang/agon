@@ -1,12 +1,17 @@
 import assert from 'node:assert/strict';
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { runInNewContext } from 'node:vm';
 import {
   collectSubjectContamination,
   hashGitSubject,
   isSourceBearingPath,
+  initializeMaterializedGitSubject,
+  materializeGitSubject,
+  pinGitSubject,
+  verifyMaterializedGitSubject,
   validateDependencyGraph,
   validateSubjectBoundReview,
   validateStoredSubjectBoundReview,
@@ -127,6 +132,101 @@ try {
   });
   if (localeHashes[0] !== localeHashes[1]) identityDefects.push('locale-dependent subject hash');
   assert.deepEqual(identityDefects, [], 'subject identity must reject hidden source and ignore locale');
+  const snapshotRoot = join(temp, 'snapshot-source');
+  mkdirSync(snapshotRoot);
+  git(snapshotRoot, 'init', '-q');
+  git(snapshotRoot, 'config', 'user.email', 'slice1b@example.invalid');
+  git(snapshotRoot, 'config', 'user.name', 'Slice 1B Fixture');
+  writeFileSync(join(snapshotRoot, '.gitattributes'), 'required.ts export-ignore\nversion.txt export-subst\nnormalized.txt text eol=lf\n');
+  writeFileSync(join(snapshotRoot, 'required.ts'), 'original source');
+  writeFileSync(join(snapshotRoot, 'version.txt'), '$Format:%H$\n');
+  writeFileSync(join(snapshotRoot, 'binary'), Buffer.from([0, 10, 255, 13]));
+  writeFileSync(join(snapshotRoot, 'normalized.txt'), 'first\r\nsecond\r\n');
+  chmodSync(join(snapshotRoot, 'binary'), 0o755);
+  git(snapshotRoot, 'add', '.gitattributes', 'required.ts', 'version.txt', 'binary');
+  const rawBlob = spawnSync('git', ['hash-object', '-w', '--stdin', '--no-filters'], { cwd: snapshotRoot, input: 'first\r\nsecond\r\n', encoding: 'utf8' });
+  assert.equal(rawBlob.status, 0, rawBlob.stderr);
+  git(snapshotRoot, 'update-index', '--add', '--cacheinfo', `100644,${rawBlob.stdout.trim()},normalized.txt`);
+  git(snapshotRoot, 'commit', '-qm', 'snapshot source');
+  const pinnedCommit = pinGitSubject(snapshotRoot, 'commit');
+  writeFileSync(join(snapshotRoot, 'required.ts'), 'staged source');
+  git(snapshotRoot, 'add', 'required.ts');
+  const pinnedIndex = pinGitSubject(snapshotRoot, 'index');
+  const pinnedHash = hashGitSubject(snapshotRoot, { ...pinnedIndex, pathspecs: ['.'] });
+  git(snapshotRoot, 'commit', '-qm', 'move HEAD');
+  writeFileSync(join(snapshotRoot, 'required.ts'), 'new index source');
+  git(snapshotRoot, 'add', 'required.ts');
+  assert.equal(hashGitSubject(snapshotRoot, { ...pinnedIndex, pathspecs: ['.'] }), pinnedHash);
+  for (const [subject, expected] of [[pinnedCommit, 'original source'], [pinnedIndex, 'staged source']]) {
+    const destination = mkdtempSync(join(temp, 'materialized-'));
+    assert.equal(materializeGitSubject(snapshotRoot, destination, subject).files, 5);
+    assert.equal(readFileSync(join(destination, 'required.ts'), 'utf8'), expected);
+    assert.equal(readFileSync(join(destination, 'version.txt'), 'utf8'), '$Format:%H$\n');
+    assert.deepEqual(readFileSync(join(destination, 'binary')), Buffer.from([0, 10, 255, 13]));
+    writeFileSync(join(destination, 'required.ts'), 'changed source');
+    assert.throws(() => verifyMaterializedGitSubject(snapshotRoot, destination, subject), /bytes or mode differ/);
+    writeFileSync(join(destination, 'required.ts'), expected);
+    chmodSync(join(destination, 'binary'), 0o644);
+    assert.throws(() => verifyMaterializedGitSubject(snapshotRoot, destination, subject), /bytes or mode differ/);
+    chmodSync(join(destination, 'binary'), 0o755);
+    writeFileSync(join(destination, 'extra.ts'), 'unqualified');
+    assert.throws(() => verifyMaterializedGitSubject(snapshotRoot, destination, subject), /unexpected qualification entry/);
+    rmSync(join(destination, 'extra.ts'));
+    mkdirSync(join(destination, 'extra-directory'));
+    assert.throws(() => verifyMaterializedGitSubject(snapshotRoot, destination, subject), /unexpected qualification entry/);
+    rmSync(join(destination, 'extra-directory'), { recursive: true });
+    rmSync(join(destination, 'required.ts'));
+    assert.throws(() => verifyMaterializedGitSubject(snapshotRoot, destination, subject), /ENOENT/);
+  }
+  const invalidGitDestination = mkdtempSync(join(temp, 'invalid-git-destination-'));
+  writeFileSync(join(invalidGitDestination, '.git'), 'gitdir: /not-a-qualification-repository\n');
+  assert.throws(() => materializeGitSubject(snapshotRoot, invalidGitDestination, pinnedCommit), /qualification Git directory/);
+  for (const name of ['clean-checkout', 'slice2', 'slice3', 'slice4', 'slice5', 'slice6', 'slice7', 'slice8', 'slice9']) {
+    const url = new URL(`qualify-modular-agon-${name}.mjs`, import.meta.url);
+    const source = readFileSync(url, 'utf8').split('const subjectKind =')[0]
+      .replace(/^import [\s\S]*?;\n/gm, '').replaceAll('import.meta.url', JSON.stringify(url.href));
+    for (const kind of ['commit', 'index']) {
+      const destination = mkdtempSync(join(temp, `qualifier-${name}-${kind}-`));
+      const subject = pinGitSubject(snapshotRoot, kind);
+      const call = ['slice8', 'slice9'].includes(name) ? 'materialize' : 'materializeSubject';
+      runInNewContext(source + `\ntry { ${call}(destination, kind); } finally { if (typeof runtimeRoot !== 'undefined') rmSync(runtimeRoot, { recursive: true, force: true }); }`, {
+        URL, fileURLToPath: () => snapshotRoot, destination, kind,
+        mkdtempSync, readFileSync, rmSync, tmpdir, join, spawnSync, process,
+        pinGitSubject, materializeGitSubject, initializeMaterializedGitSubject,
+      });
+      assert.equal(verifyMaterializedGitSubject(snapshotRoot, destination, subject).files, 5, `${name}/${kind} must use exact Git blobs`);
+      if (['slice4', 'slice5', 'slice6', 'slice7', 'slice8', 'slice9'].includes(name)) {
+        assert.equal(git(destination, 'rev-parse', 'HEAD^{tree}'), subject.tree, `${name}/${kind} history must preserve the raw tree`);
+      }
+      if (['slice4', 'slice5', 'slice6', 'slice7'].includes(name)) {
+        const expectedParent = kind === 'index' ? 'staged source' : 'original source';
+        assert.equal(git(destination, 'show', 'HEAD^:required.ts'), expectedParent, `${name}/${kind} must retain rollback parent`);
+        assert.equal(git(destination, 'rev-parse', 'HEAD^:normalized.txt'), rawBlob.stdout.trim(), 'rollback must not normalize the parent blob');
+      }
+    }
+  }
+  for (const [mode, object] of [['120000', git(snapshotRoot, 'rev-parse', 'HEAD:required.ts')], ['160000', git(snapshotRoot, 'rev-parse', 'HEAD')]]) {
+    git(snapshotRoot, 'update-index', '--add', '--cacheinfo', `${mode},${object},unsupported`);
+    const unsupported = pinGitSubject(snapshotRoot, 'index');
+    const destination = mkdtempSync(join(temp, 'unsupported-mode-'));
+    assert.throws(() => materializeGitSubject(snapshotRoot, destination, unsupported), /unsupported qualification entry/);
+    git(snapshotRoot, 'update-index', '--force-remove', 'unsupported');
+  }
+  for (const validUtf8 of [false, true]) {
+    const name = validUtf8 ? Buffer.from('bad-�.txt') : Buffer.concat([Buffer.from('bad-'), Buffer.from([255]), Buffer.from('.txt')]);
+    const tree = spawnSync('git', ['mktree', '-z'], { cwd: snapshotRoot, encoding: 'utf8',
+      input: Buffer.concat([Buffer.from(`100644 blob ${rawBlob.stdout.trim()}\t`), name, Buffer.from([0])]) });
+    assert.equal(tree.status, 0, tree.stderr);
+    const subject = { ...pinnedCommit, tree: tree.stdout.trim() };
+    const destination = mkdtempSync(join(temp, 'filename-encoding-'));
+    if (validUtf8) {
+      assert.equal(materializeGitSubject(snapshotRoot, destination, subject).files, 1);
+      assert.deepEqual(readdirSync(destination), ['bad-�.txt']);
+    } else {
+      assert.throws(() => materializeGitSubject(snapshotRoot, destination, subject), /valid UTF-8/);
+      assert.deepEqual(readdirSync(destination), [], 'invalid filenames must fail before writing');
+    }
+  }
   const assessmentRoot = join(temp, 'assessment space');
   mkdirSync(join(assessmentRoot, 'scripts/spec'), { recursive: true });
   mkdirSync(join(assessmentRoot, 'docs/specs/evidence/receipts'), { recursive: true });

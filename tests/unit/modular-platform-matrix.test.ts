@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
+import { fileURLToPath } from 'node:url';
 import { basename, dirname, join, resolve } from 'node:path';
 import { expect, it } from 'vitest';
 import { loadEvidencePasses } from '../../scripts/spec/measure-modular-load.mjs';
@@ -17,7 +18,8 @@ it.each([[3, true], [1, true], [3, false], [0, false]] as const)(
     const exited = new Error('self-test exited');
     let exitCode: number | undefined;
     expect(() => runInNewContext(qualificationSource, {
-      URL, join,
+      URL, join, fileURLToPath,
+      pinGitSubject: (_root: string, kind: string) => ({ kind, revision: 'fixture', tree: 'fixture-tree' }),
       process: { argv: ['--self-test'], env: {}, exit: (code: number) => { exitCode = code; throw exited; } },
       tmpdir: () => '/fixture/tmp', mkdtempSync: (prefix: string) => prefix + 'unique', rmSync() {},
       collectSubjectContamination: () => ({ ignored: [], untracked: [], unstaged: [] }),
@@ -95,7 +97,10 @@ it.each([
     cells: Array.from({ length: passed }, () => ({ status: 'passed', native })),
     summary: { passed, externallyBlocked: 12 - passed, failed: 0 } };
   runInNewContext(qualificationSource, {
-    URL, join, process: { argv: ['--run-clean', ...(native ? ['--native-runner'] : [])], env: {}, exitCode: 0 },
+    URL, join, fileURLToPath, process: { argv: ['--run-clean', ...(native ? ['--native-runner'] : [])], env: {}, exitCode: 0 },
+    pinGitSubject: (_root: string, kind: string) => ({ kind, revision: 'fixture', tree: 'fixture-tree' }),
+    materializeGitSubject: () => ({ tree: 'fixture-tree', files: 1 }),
+    initializeMaterializedGitSubject: () => ({ tree: 'fixture-tree', files: 1 }),
     tmpdir: () => '/fixture/tmp', mkdtempSync: (prefix: string) => prefix + 'unique', rmSync() {},
     collectSubjectContamination: () => ({ ignored: [], untracked: [], unstaged: [] }),
     isSourceBearingPath: () => false,

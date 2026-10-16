@@ -2,6 +2,8 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { initializeMaterializedGitSubject, materializeGitSubject, pinGitSubject } from './slice1b-qualification-gates.mjs';
 import {
   collectSubjectContamination,
   hashGitSubject,
@@ -10,7 +12,9 @@ import {
   validateStoredSubjectBoundReview,
 } from './slice1b-qualification-gates.mjs';
 
-const root = new URL('../..', import.meta.url).pathname.replace(/\/$/, '');
+const root = fileURLToPath(new URL('../..', import.meta.url));
+const commitSubject = pinGitSubject(root, 'commit');
+const indexSubject = pinGitSubject(root, 'index', commitSubject.revision);
 const excludedReceiptPaths = [
   'docs/specs/evidence/modular-agon-slice6-review-evidence.json',
   'docs/specs/evidence/modular-agon-slice6-verification-receipt.json',
@@ -35,43 +39,16 @@ function run(command, args, cwd = root) {
   return result;
 }
 
-function initializeQualificationRepository(checkout) {
-  const commands = [
-    ["init", "--quiet"],
-    ["add", "--all", "--force"],
-    ["-c", "user.name=Agon Qualification", "-c", "user.email=qualification", "commit", "--quiet", "-m", "qualification subject"],
-  ];
-  for (const args of commands) {
-    const result = run("git", args, checkout);
-    if (result.status !== 0) throw new Error(result.stderr || "git " + args[0] + " failed");
-  }
-}
-
 function materializeSubject(checkout, subject) {
-  const parentRevision = subject === 'index' ? 'HEAD' : 'HEAD^';
-  const parentArchive = join(checkout, 'parent.tar');
-  const archivedParent = run('git', ['archive', '--format=tar', '--output=' + parentArchive, parentRevision]);
-  if (archivedParent.status !== 0) throw new Error(archivedParent.stderr || 'parent git archive failed');
-  const extractedParent = run('tar', ['-xf', parentArchive, '-C', checkout]);
-  if (extractedParent.status !== 0) throw new Error(extractedParent.stderr || 'parent tar extraction failed');
-  rmSync(parentArchive, { force: true });
-  initializeQualificationRepository(checkout);
-  const cleared = run('git', ['rm', '-r', '--quiet', '--ignore-unmatch', '.'], checkout);
+  const parent = subject === 'index' ? commitSubject : pinGitSubject(root, 'commit', `${commitSubject.revision}^`);
+  materializeGitSubject(root, checkout, parent);
+  initializeMaterializedGitSubject(root, checkout, parent);
+  // Raw blobs can differ from Git's clean-filter view.
+  const cleared = run('git', ['rm', '-r', '--force', '--quiet', '--ignore-unmatch', '.'], checkout);
   if (cleared.status !== 0) throw new Error(cleared.stderr || 'qualification parent cleanup failed');
-
-  if (subject === 'index') {
-    const result = run('git', ['checkout-index', '--all', `--prefix=${checkout}/`]);
-    if (result.status !== 0) throw new Error(result.stderr || 'checkout-index failed');
-    initializeQualificationRepository(checkout);
-    return;
-  }
-  const archive = join(checkout, 'subject.tar');
-  const archived = run('git', ['archive', '--format=tar', `--output=${archive}`, 'HEAD']);
-  if (archived.status !== 0) throw new Error(archived.stderr || 'git archive failed');
-  const extracted = run('tar', ['-xf', archive, '-C', checkout]);
-  if (extracted.status !== 0) throw new Error(extracted.stderr || 'tar extraction failed');
-  rmSync(archive, { force: true });
-  initializeQualificationRepository(checkout);
+  const pinned = subject === 'index' ? indexSubject : commitSubject;
+  materializeGitSubject(root, checkout, pinned);
+  initializeMaterializedGitSubject(root, checkout, pinned);
 }
 
 function cleanSubjectSteps(subject) {
@@ -117,11 +94,11 @@ const contamination = Object.fromEntries(Object.entries(allContamination).map(([
 ]));
 const packageMap = JSON.parse(readFileSync(join(root, 'docs/specs/evidence/modular-agon-package-map.json'), 'utf8'));
 const graph = validateDependencyGraph(packageMap.packages);
-const indexHash = hashGitSubject(root, { kind: 'index', pathspecs: ['.'], excludedPaths: excludedReceiptPaths, excludedPathPrefixes: excludedReviewArtifactPrefixes });
-const commitHash = hashGitSubject(root, { kind: 'commit', revision: 'HEAD', pathspecs: ['.'], excludedPaths: excludedReceiptPaths, excludedPathPrefixes: excludedReviewArtifactPrefixes });
+const indexHash = hashGitSubject(root, { ...indexSubject, pathspecs: ['.'], excludedPaths: excludedReceiptPaths, excludedPathPrefixes: excludedReviewArtifactPrefixes });
+const commitHash = hashGitSubject(root, { ...commitSubject, pathspecs: ['.'], excludedPaths: excludedReceiptPaths, excludedPathPrefixes: excludedReviewArtifactPrefixes });
 const expectedHash = subjectKind === 'index' ? indexHash : commitHash;
 const reviewPath = 'docs/specs/evidence/modular-agon-slice6-review-evidence.json';
-const reviewEvidence = validateStoredSubjectBoundReview(root, reviewPath, { kind: subjectKind, revision: 'HEAD', hash: expectedHash });
+const reviewEvidence = validateStoredSubjectBoundReview(root, reviewPath, { ...(subjectKind === 'index' ? indexSubject : commitSubject), hash: expectedHash });
 const performance = JSON.parse(readFileSync(join(root, 'docs/specs/evidence/modular-agon-slice6-performance.json'), 'utf8'));
 const inventory = JSON.parse(readFileSync(join(root, 'docs/specs/evidence/modular-agon-current-inventory.json'), 'utf8'));
 const inventoryAssignments = Object.values(inventory.categories).reduce((sum, entries) => sum + entries.length, 0);
@@ -129,7 +106,7 @@ const steps = process.argv.includes('--run-clean') ? cleanSubjectSteps(subjectKi
 const receipt = {
   schemaVersion: 1,
   qualification: 'modular-agon-slice6-clean-checkout',
-  subject: { kind: subjectKind, hash: expectedHash, indexHash, commitHash, indexEqualsCommit: indexHash === commitHash },
+  subject: { ...(subjectKind === 'index' ? indexSubject : commitSubject), hash: expectedHash, indexHash, commitHash, indexEqualsCommit: indexHash === commitHash },
   contamination,
   graph: { packages: packageMap.packages.length, ...graph },
   firstPartyPackages: 36,

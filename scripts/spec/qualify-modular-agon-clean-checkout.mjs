@@ -2,9 +2,13 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { materializeGitSubject, pinGitSubject } from './slice1b-qualification-gates.mjs';
 import { collectSubjectContamination, hashGitSubject, validateDependencyGraph, validateStoredSubjectBoundReview, isSourceBearingPath } from './slice1b-qualification-gates.mjs';
 
-const root = new URL('../..', import.meta.url).pathname.replace(/\/$/, '');
+const root = fileURLToPath(new URL('../..', import.meta.url));
+const commitSubject = pinGitSubject(root, 'commit');
+const indexSubject = pinGitSubject(root, 'index', commitSubject.revision);
 const subjectPathspecs = ['.'];
 const excludedReceiptPaths = [
   'docs/specs/evidence/modular-agon-slice1b-review-evidence.json',
@@ -18,17 +22,7 @@ function run(command, args, cwd = root, encoding = 'utf8') {
 }
 
 function materializeSubject(checkout, subject) {
-  if (subject === 'index') {
-    const result = run('git', ['checkout-index', '--all', `--prefix=${checkout}/`]);
-    if (result.status !== 0) throw new Error(result.stderr || 'checkout-index failed');
-    return;
-  }
-  const archive = join(checkout, 'subject.tar');
-  const archived = run('git', ['archive', '--format=tar', `--output=${archive}`, 'HEAD']);
-  if (archived.status !== 0) throw new Error(archived.stderr || 'git archive failed');
-  const extracted = run('tar', ['-xf', archive, '-C', checkout]);
-  if (extracted.status !== 0) throw new Error(extracted.stderr || 'tar extraction failed');
-  rmSync(archive, { force: true });
+  materializeGitSubject(root, checkout, subject === 'index' ? indexSubject : commitSubject);
 }
 
 function cleanSubjectSteps(subject) {
@@ -64,16 +58,16 @@ const allContamination = collectSubjectContamination(root, ['.']);
 const contamination = Object.fromEntries(Object.entries(allContamination).map(([kind, paths]) => [kind, paths.filter((path) => isSourceBearingPath(path, { nonSourcePaths: excludedReceiptPaths }))]));
 const packageMap = JSON.parse(readFileSync(join(root, 'docs/specs/evidence/modular-agon-package-map.json'), 'utf8'));
 const graph = validateDependencyGraph(packageMap.packages);
-const indexHash = hashGitSubject(root, { kind: 'index', pathspecs: subjectPathspecs, excludedPaths: excludedReceiptPaths });
-const commitHash = hashGitSubject(root, { kind: 'commit', revision: 'HEAD', pathspecs: subjectPathspecs, excludedPaths: excludedReceiptPaths });
+const indexHash = hashGitSubject(root, { ...indexSubject, pathspecs: subjectPathspecs, excludedPaths: excludedReceiptPaths });
+const commitHash = hashGitSubject(root, { ...commitSubject, pathspecs: subjectPathspecs, excludedPaths: excludedReceiptPaths });
 const reviewEvidencePath = 'docs/specs/evidence/modular-agon-slice1b-review-evidence.json';
-const reviewEvidence = validateStoredSubjectBoundReview(root, reviewEvidencePath, { kind: subjectKind, revision: 'HEAD', hash: subjectKind === 'index' ? indexHash : commitHash });
+const reviewEvidence = validateStoredSubjectBoundReview(root, reviewEvidencePath, { ...(subjectKind === 'index' ? indexSubject : commitSubject), hash: subjectKind === 'index' ? indexHash : commitHash });
 const steps = process.argv.includes('--run-clean') ? cleanSubjectSteps(subjectKind) : [];
 const receipt = {
   schemaVersion: 2,
   qualification: 'modular-agon-clean-checkout',
   subject: {
-    kind: subjectKind,
+    ...(subjectKind === 'index' ? indexSubject : commitSubject),
     hash: subjectKind === 'index' ? indexHash : commitHash,
     indexHash,
     commitHash,

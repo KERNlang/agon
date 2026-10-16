@@ -2,10 +2,13 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { collectSubjectContamination, hashGitSubject, isSourceBearingPath, validateDependencyGraph, validateStoredSubjectBoundReview } from './slice1b-qualification-gates.mjs';
+import { fileURLToPath } from 'node:url';
+import { collectSubjectContamination, hashGitSubject, isSourceBearingPath, initializeMaterializedGitSubject, materializeGitSubject, pinGitSubject, validateDependencyGraph, validateStoredSubjectBoundReview } from './slice1b-qualification-gates.mjs';
 import { loadEvidencePasses } from './measure-modular-load.mjs';
 
-const root = new URL('../..', import.meta.url).pathname.replace(/\/$/, '');
+const root = fileURLToPath(new URL('../..', import.meta.url));
+const commitSubject = pinGitSubject(root, 'commit');
+const indexSubject = pinGitSubject(root, 'index', commitSubject.revision);
 const excluded = ['docs/specs/evidence/modular-agon-slice9-review-evidence.json', 'docs/specs/evidence/modular-agon-slice9-verification-receipt.json'];
 const excludedPrefixes = ['docs/specs/evidence/verification-logs/slice9/'];
 const runtimeRoot = mkdtempSync(join(tmpdir(), 'agon-modular-s9-runtime-'));
@@ -20,21 +23,9 @@ function run(command, args, cwd = root) {
 }
 
 function materialize(checkout, subject) {
-  if (subject === 'index') {
-    const result = run('git', ['checkout-index', '--all', `--prefix=${checkout}/`]);
-    if (result.status !== 0) throw new Error(result.stderr || 'checkout-index failed');
-  } else {
-    const archive = join(checkout, 'subject.tar');
-    const archived = run('git', ['archive', '--format=tar', `--output=${archive}`, 'HEAD']);
-    if (archived.status !== 0) throw new Error(archived.stderr || 'git archive failed');
-    const extracted = run('tar', ['-xf', archive, '-C', checkout]);
-    if (extracted.status !== 0) throw new Error(extracted.stderr || 'tar extraction failed');
-    rmSync(archive, { force: true });
-  }
-  for (const args of [['init', '--quiet'], ['add', '--all', '--force'], ['-c', 'user.name=Agon Qualification', '-c', 'user.email=qualification', 'commit', '--quiet', '-m', 'qualification subject']]) {
-    const result = run('git', args, checkout);
-    if (result.status !== 0) throw new Error(result.stderr || `git ${args[0]} failed`);
-  }
+  const pinned = subject === 'index' ? indexSubject : commitSubject;
+  materializeGitSubject(root, checkout, pinned);
+  initializeMaterializedGitSubject(root, checkout, pinned);
 }
 
 function cleanSteps(subject) {
@@ -97,11 +88,11 @@ function cleanSteps(subject) {
 const subjectKind = process.argv.includes('--subject=commit') ? 'commit' : 'index';
 const contaminationRaw = collectSubjectContamination(root, ['.']);
 const contamination = Object.fromEntries(Object.entries(contaminationRaw).map(([kind, paths]) => [kind, paths.filter((path) => isSourceBearingPath(path, { nonSourcePaths: excluded }))]));
-const indexHash = hashGitSubject(root, { kind: 'index', pathspecs: ['.'], excludedPaths: excluded, excludedPathPrefixes: excludedPrefixes });
-const commitHash = hashGitSubject(root, { kind: 'commit', revision: 'HEAD', pathspecs: ['.'], excludedPaths: excluded, excludedPathPrefixes: excludedPrefixes });
+const indexHash = hashGitSubject(root, { ...indexSubject, pathspecs: ['.'], excludedPaths: excluded, excludedPathPrefixes: excludedPrefixes });
+const commitHash = hashGitSubject(root, { ...commitSubject, pathspecs: ['.'], excludedPaths: excluded, excludedPathPrefixes: excludedPrefixes });
 const expectedHash = subjectKind === 'index' ? indexHash : commitHash;
 const reviewPath = 'docs/specs/evidence/modular-agon-slice9-review-evidence.json';
-const reviewEvidence = validateStoredSubjectBoundReview(root, reviewPath, { kind: subjectKind, revision: 'HEAD', hash: expectedHash });
+const reviewEvidence = validateStoredSubjectBoundReview(root, reviewPath, { ...(subjectKind === 'index' ? indexSubject : commitSubject), hash: expectedHash });
 const packageMap = JSON.parse(readFileSync(join(root, 'docs/specs/evidence/modular-agon-package-map.json'), 'utf8'));
 const ownership = JSON.parse(readFileSync(join(root, 'docs/specs/evidence/modular-agon-ownership.json'), 'utf8'));
 const release = JSON.parse(readFileSync(join(root, 'docs/specs/evidence/modular-agon-release-set.json'), 'utf8'));
@@ -154,7 +145,7 @@ if (process.argv.includes('--self-test')) {
   rmSync(runtimeRoot, { recursive: true, force: true });
   process.exit(0);
 }
-const receipt = { schemaVersion: 1, qualification: 'modular-agon-slice9-release-candidate', subject: { kind: subjectKind, hash: expectedHash, indexHash, commitHash, indexEqualsCommit: indexHash === commitHash }, contamination, graph, coverage, reviewEvidence, cleanCheckoutSteps: steps };
+const receipt = { schemaVersion: 1, qualification: 'modular-agon-slice9-release-candidate', subject: { ...(subjectKind === 'index' ? indexSubject : commitSubject), hash: expectedHash, indexHash, commitHash, indexEqualsCommit: indexHash === commitHash }, contamination, graph, coverage, reviewEvidence, cleanCheckoutSteps: steps };
 receipt.passed = Object.values(contamination).every((paths) => paths.length === 0) && (subjectKind === 'index' || indexHash === commitHash) && reviewEvidence.passed
   && graph.duplicateEdges.length === 0 && graph.uniqueEdges === 153 && coveragePasses(coverage) && freshPlatformPassed
   && freshPerformancePassed && performances.every(performancePasses) && freshLoadPassed

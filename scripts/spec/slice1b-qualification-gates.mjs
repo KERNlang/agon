@@ -1,11 +1,12 @@
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { isAbsolute, normalize, sep } from 'node:path';
+import { chmodSync, lstatSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { dirname, isAbsolute, join, normalize, sep } from 'node:path';
 
 const sha256 = (bytes) => `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
 
-function git(root, args, encoding = 'utf8') {
-  const result = spawnSync('git', args, { cwd: root, encoding, maxBuffer: 64 * 1024 * 1024 });
+function git(root, args, encoding = 'utf8', input) {
+  const result = spawnSync('git', args, { cwd: root, encoding, input, maxBuffer: 64 * 1024 * 1024 });
   if (result.error || result.status !== 0) throw result.error ?? new Error(result.stderr?.toString() || `git ${args.join(' ')} failed`);
   return result.stdout;
 }
@@ -21,30 +22,33 @@ function safeRelativePath(path) {
 }
 
 function objectBytes(root, subject, path) {
-  const object = subject.kind === 'index' ? `:${path}` : `${subject.revision ?? 'HEAD'}:${path}`;
+  const object = subject.tree ? `${subject.tree}:${path}` : subject.kind === 'index' ? `:${path}` : `${subject.revision ?? 'HEAD'}:${path}`;
   return git(root, ['show', object], null);
 }
 
 function subjectEntries(root, subject, pathspecs) {
-  const output = subject.kind === 'index'
-    ? String(git(root, ['ls-files', '--stage', '-z', '--', ...pathspecs]))
-    : String(git(root, ['ls-tree', '-r', '-z', subject.revision ?? 'HEAD', '--', ...pathspecs]));
+  const liveIndex = subject.kind === 'index' && !subject.tree;
+  const raw = liveIndex
+    ? git(root, ['ls-files', '--stage', '-z', '--', ...pathspecs], null)
+    : git(root, ['ls-tree', '-r', '-z', subject.tree ?? subject.revision ?? 'HEAD', '--', ...pathspecs], null);
+  const output = raw.toString('utf8');
+  if (!Buffer.from(output, 'utf8').equals(raw)) throw new Error('Git paths must be valid UTF-8');
   return output.split('\0').filter(Boolean).map((entry) => {
     const tab = entry.indexOf('\t');
     if (tab < 0) throw new Error(`invalid Git object listing entry: ${entry}`);
     const metadata = entry.slice(0, tab).split(' ');
     const path = entry.slice(tab + 1);
     const [mode, objectTypeOrId, objectIdOrStage] = metadata;
-    const objectId = subject.kind === 'index' ? objectTypeOrId : objectIdOrStage;
+    const objectId = liveIndex ? objectTypeOrId : objectIdOrStage;
     if (!mode || !objectId || !path) throw new Error(`incomplete Git object listing entry: ${entry}`);
     return { mode, objectId, path };
   }).sort((left, right) => Buffer.compare(Buffer.from(left.path), Buffer.from(right.path)));
 }
 
-export function hashGitSubject(root, { kind, revision = 'HEAD', pathspecs, includePathsInHash = true, excludedPaths = [], excludedPathPrefixes = [], excludedPathSuffixes = [] }) {
+export function hashGitSubject(root, { kind, revision = 'HEAD', tree, pathspecs, includePathsInHash = true, excludedPaths = [], excludedPathPrefixes = [], excludedPathSuffixes = [] }) {
   if (!['index', 'commit'].includes(kind)) throw new TypeError('subject kind must be index or commit');
   if (!Array.isArray(pathspecs) || pathspecs.length === 0) throw new TypeError('pathspecs must not be empty');
-  const subject = { kind, revision };
+  const subject = { kind, revision, tree };
   const entries = subjectEntries(root, subject, pathspecs).filter(({ path }) => !excludedPaths.includes(path) && !excludedPathPrefixes.some((prefix) => path.startsWith(prefix)) && !excludedPathSuffixes.some((suffix) => path.endsWith(suffix)));
   if (entries.length === 0) throw new Error('qualified subject contains no files');
   const digest = createHash('sha256');
@@ -60,6 +64,108 @@ export function hashGitSubject(root, { kind, revision = 'HEAD', pathspecs, inclu
     }
   }
   return `sha256:${digest.digest('hex')}`;
+}
+
+export function pinGitSubject(root, kind, revision = 'HEAD') {
+  if (!['index', 'commit'].includes(kind)) throw new TypeError('subject kind must be index or commit');
+  const commit = String(git(root, ['rev-parse', '--verify', `${revision}^{commit}`])).trim();
+  const tree = String(git(root, kind === 'index' ? ['write-tree'] : ['rev-parse', `${commit}^{tree}`])).trim();
+  return Object.freeze({ kind, revision: commit, tree });
+}
+
+function subjectBlobs(root, subject) {
+  if (!/^[a-f0-9]{40,64}$/.test(subject.tree ?? '')) throw new Error('materialization requires a pinned Git tree');
+  const entries = subjectEntries(root, subject, ['.']);
+  for (const entry of entries) {
+    if (!['100644', '100755'].includes(entry.mode) || !safeRelativePath(entry.path)
+        || entry.path.split('/').some(part => part.toLowerCase() === '.git')) {
+      throw new Error(`unsupported qualification entry: ${entry.path}`);
+    }
+  }
+  const data = git(root, ['cat-file', '--batch'], null, entries.map(entry => entry.objectId).join('\n') + '\n');
+  let offset = 0;
+  const blobs = entries.map(entry => {
+    const end = data.indexOf(10, offset);
+    const [objectId, type, sizeText] = data.subarray(offset, end).toString('utf8').split(' ');
+    const size = Number(sizeText);
+    if (end < offset || objectId !== entry.objectId || type !== 'blob' || !Number.isSafeInteger(size) || size < 0) throw new Error('invalid Git blob response');
+    offset = end + 1;
+    const bytes = data.subarray(offset, offset + size);
+    if (bytes.length !== size || data[offset + size] !== 10) throw new Error('truncated Git blob response');
+    offset += size + 1;
+    return { ...entry, bytes };
+  });
+  if (offset !== data.length) throw new Error('unexpected trailing Git blob response');
+  return blobs;
+}
+
+export function verifyMaterializedGitSubject(root, checkout, subject) {
+  const blobs = subjectBlobs(root, subject);
+  const expected = new Set(blobs.map(entry => entry.path));
+  const directories = new Set();
+  for (const { path } of blobs) {
+    for (let directory = dirname(path); directory !== '.'; directory = dirname(directory)) directories.add(directory);
+  }
+  const walk = (relative = '') => {
+    for (const name of readdirSync(join(checkout, relative))) {
+      const path = relative ? `${relative}/${name}` : name;
+      const stat = lstatSync(join(checkout, path));
+      if (!relative && name === '.git') {
+        if (!stat.isDirectory()) throw new Error('qualification Git directory must not be a link or file');
+        continue;
+      }
+      if (stat.isDirectory()) {
+        if (!directories.has(path)) throw new Error(`unexpected qualification entry: ${path}`);
+        walk(path);
+      }
+      else if (!stat.isFile() || !expected.has(path)) throw new Error(`unexpected qualification entry: ${path}`);
+    }
+  };
+  walk();
+  for (const { path, mode, bytes } of blobs) {
+    const file = join(checkout, path);
+    const stat = lstatSync(file);
+    if (!stat.isFile() || ((stat.mode & 0o111) !== 0) !== (mode === '100755') || !readFileSync(file).equals(bytes)) {
+      throw new Error(`qualification bytes or mode differ: ${path}`);
+    }
+  }
+  return { tree: subject.tree, files: blobs.length };
+}
+
+export function materializeGitSubject(root, checkout, subject) {
+  if (!lstatSync(checkout).isDirectory() || readdirSync(checkout).some(name => name !== '.git')) {
+    throw new Error('qualification destination must be an empty directory');
+  }
+  if (readdirSync(checkout).includes('.git') && !lstatSync(join(checkout, '.git')).isDirectory()) {
+    throw new Error('qualification Git directory must not be a link or file');
+  }
+  for (const { path, mode, bytes } of subjectBlobs(root, subject)) {
+    const destination = join(checkout, path);
+    mkdirSync(dirname(destination), { recursive: true });
+    writeFileSync(destination, bytes, { flag: 'wx' });
+    chmodSync(destination, mode === '100755' ? 0o755 : 0o644);
+  }
+  return verifyMaterializedGitSubject(root, checkout, subject);
+}
+
+export function initializeMaterializedGitSubject(root, checkout, subject) {
+  verifyMaterializedGitSubject(root, checkout, subject);
+  const format = String(git(root, ['rev-parse', '--show-object-format'])).trim();
+  git(checkout, ['init', '--quiet', `--object-format=${format}`]);
+  const entries = subjectEntries(root, subject, ['.']);
+  const objects = String(git(checkout, ['hash-object', '-w', '--no-filters', '--stdin-paths'], 'utf8',
+    entries.map(entry => JSON.stringify(entry.path)).join('\n') + '\n')).trim().split('\n');
+  if (objects.length !== entries.length || entries.some((entry, index) => entry.objectId !== objects[index])) {
+    throw new Error('qualification object import differs from pinned blobs');
+  }
+  git(checkout, ['read-tree', '--empty']);
+  git(checkout, ['update-index', '-z', '--index-info'], 'utf8',
+    entries.map(entry => `${entry.mode} ${entry.objectId}\t${entry.path}\0`).join(''));
+  if (String(git(checkout, ['write-tree'])).trim() !== subject.tree) throw new Error('qualification index differs from pinned tree');
+  git(checkout, ['-c', 'user.name=Agon Qualification', '-c', 'user.email=qualification',
+    'commit', '--quiet', '--allow-empty', '-m', 'qualification subject']);
+  if (String(git(checkout, ['rev-parse', 'HEAD^{tree}'])).trim() !== subject.tree) throw new Error('qualification commit differs from pinned tree');
+  return verifyMaterializedGitSubject(root, checkout, subject);
 }
 
 export function isSourceBearingPath(path, { nonSourcePaths = [] } = {}) {

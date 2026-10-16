@@ -22,7 +22,7 @@
     "typecheck": "tsc --noEmit"
   },
   "peerDependencies": {
-    "@kernlang/agon-kernel": ">=0.0.0-0 <2"
+    "@kernlang/agon-kernel": ">=1.0.0 <2"
   },
   "dependencies": {
     "@kernlang/agon-support-engine-runtime": "1.0.0",

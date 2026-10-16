@@ -235,8 +235,8 @@
         "range": "^19.2.0"
       }
     ],
-    "packedBytes": 1354322,
-    "unpackedBytes": 6098057,
+    "packedBytes": 1354315,
+    "unpackedBytes": 6098053,
     "fileCount": 107,
     "files": [
       {
@@ -617,7 +617,7 @@
       },
       {
         "path": "dist/release-channel.json",
-        "size": 126376
+        "size": 126374
       },
       {
         "path": "dist/setup-LWRWGYLT.js",
@@ -665,13 +665,13 @@
       },
       {
         "path": "release-channel.json",
-        "size": 126376
+        "size": 126374
       }
     ],
-    "payloadHash": "sha256:de4a95239d01f7cb60852b8c670c6e974d314fca772d9bb95aa61cee3ab25990",
-    "integrity": "sha512-5YOrtJL/owkPMh123jY80VopCnTcL8a6+e6r2SsBlFu5uTrxVd/Ir56WdsLYe9AskFoiuBwmHfTIUDNrtUOgkw==",
-    "shasum": "3333d7182823b0477357ed1efd7e4c3344e40bf5",
-    "tarballHash": "sha256:dd7a3e6839ede9eb3d2dfb54162e1898672977558d8fb189274b23a5e783f5d6",
+    "payloadHash": "sha256:7a722f7b487975930de1cd1fa42e83a6b4c615e8acb75ba874a028873b7bd93a",
+    "integrity": "sha512-uhflElKiA5QtPlPoyGzeRhA7NeWshWWpAWusyQbDfSWi6LnUT51hdW4H89yAEnZP6f0FgrsFFmifQ5bgpwHLFQ==",
+    "shasum": "e949ce476f33348bb8db3f9f736b6f750bfb910e",
+    "tarballHash": "sha256:93935aeeaa043ac7573fe1bac03ae23fbe32b385535c66975e2adfdb4fafc2ef",
     "packageJsonHash": "sha256:55b7df375710144ec9ebf42dd9cbf38f9ab48d154f03f55e551ea8281af64a51"
   },
   "packages": [
@@ -686,9 +686,9 @@
         "@kernlang/agon-mod-api"
       ],
       "peerDependencies": {},
-      "packedBytes": 186958,
-      "unpackedBytes": 1554553,
-      "fileCount": 76,
+      "packedBytes": 192094,
+      "unpackedBytes": 1579011,
+      "fileCount": 77,
       "files": [
         {
           "path": "dist/activated-surface-generation.d.ts",
@@ -844,11 +844,11 @@
         },
         {
           "path": "dist/index.d.ts",
-          "size": 10450
+          "size": 10692
         },
         {
           "path": "dist/index.js",
-          "size": 1011167
+          "size": 1032157
         },
         {
           "path": "dist/json-schema-input.d.ts",
@@ -864,7 +864,7 @@
         },
         {
           "path": "dist/lifecycle-recovery.d.ts",
-          "size": 5141
+          "size": 5735
         },
         {
           "path": "dist/lock.d.ts",
@@ -901,6 +901,10 @@
         {
           "path": "dist/package-activation-order.d.ts",
           "size": 522
+        },
+        {
+          "path": "dist/quota-retention.d.ts",
+          "size": 2632
         },
         {
           "path": "dist/readonly-map.d.ts",
@@ -995,10 +999,10 @@
           "size": 548
         }
       ],
-      "payloadHash": "sha256:1f2647fdd72d1c39576559c1349720a9d4c38b7c2659698060f4199254dd9ca7",
-      "integrity": "sha512-Qmvs24RA3AMQo3l9seY8M9revrtti16SBxPDSntzplEXhjtliHEPMLetCvtu4y7C1aNyu8yQ+wFkhmL5PJAriQ==",
-      "shasum": "9439ae97ca253eb5269faa03087a37951602b527",
-      "tarballHash": "sha256:1cbcbfabdf294e445e60a45b66457b2f09636ed760a4b22ae2c9516eb624c835",
+      "payloadHash": "sha256:d07d624dd689d6476cfa432c387156d0f1f424cbb1c14903c29dbdde7486231e",
+      "integrity": "sha512-DM9FBeU2KQ6TGJBNPvUFjrLVE6XZvbh363oX13Ljn9n8yh61DVjgAfBrcQMwyYB1GMPPJ47X43bKwtYoJ3xosA==",
+      "shasum": "a04f0716642005b0b5499b360368030c303c2eee",
+      "tarballHash": "sha256:4d55612193fe9c07d4c0fae31ce5bffe44f58056b4e83f318d09143c20c5f2b5",
       "packageJsonHash": "sha256:583381b00786c2729a1e32eb2d42f6324cb58df263378f0d0ad57a1401970f17",
       "manifestHash": "sha256:583381b00786c2729a1e32eb2d42f6324cb58df263378f0d0ad57a1401970f17"
     },
@@ -1295,10 +1299,10 @@
         "@kernlang/agon-support-engine-runtime"
       ],
       "peerDependencies": {
-        "@kernlang/agon-kernel": ">=0.0.0-0 <2"
+        "@kernlang/agon-kernel": ">=1.0.0 <2"
       },
-      "packedBytes": 10412,
-      "unpackedBytes": 39388,
+      "packedBytes": 11432,
+      "unpackedBytes": 43333,
       "fileCount": 8,
       "files": [
         {
@@ -1307,7 +1311,7 @@
         },
         {
           "path": "dist/engine-registry.d.ts",
-          "size": 2014
+          "size": 2675
         },
         {
           "path": "dist/index.d.ts",
@@ -1315,7 +1319,7 @@
         },
         {
           "path": "dist/index.js",
-          "size": 29691
+          "size": 32977
         },
         {
           "path": "dist/package-metadata.d.ts",
@@ -1331,15 +1335,15 @@
         },
         {
           "path": "package.json",
-          "size": 668
+          "size": 666
         }
       ],
-      "payloadHash": "sha256:eb5f9b0025cd58a89aa8d2cebc4f80178416042c0e2fd04e5e257218f95860fb",
-      "integrity": "sha512-D+rxoM2OHC5Yk+ME0GVXXj0peIQqOcwmCb9K98J8XCtXNlGlSec+EZyrpfy3rLlZ/aEbdd4w5J7wX7XILytbsQ==",
-      "shasum": "9189c80060d091ec512376392d20059e5c7e93b0",
-      "tarballHash": "sha256:132ebbe8ff076a9af0073360dc96fb9040eeea6441821571884032f5d4a7e10c",
-      "packageJsonHash": "sha256:fb2b89832a8070f14e24d007abff47e00676f10e5c63b201302e7cc3f33d3c16",
-      "manifestHash": "sha256:fb2b89832a8070f14e24d007abff47e00676f10e5c63b201302e7cc3f33d3c16"
+      "payloadHash": "sha256:348de01200d54176d6f8da349b94fc6f8fcbea42031052907bf98282f35f10b0",
+      "integrity": "sha512-4OySN6QdRATie6A7mSIJSul+SlGM5Jgvaqk371cNI9hZrM6brLzUcmzMggfwQncEQaOOn5btCxDGJDSCh60ZZA==",
+      "shasum": "57a040f242dbdf906717001c9574a583ec7eb6a7",
+      "tarballHash": "sha256:3d71dd1d41c4a5570c8697a532aaa3b44a79ad29cc3688a427d1565b50de2327",
+      "packageJsonHash": "sha256:6f07fc6e64ae607bec7d2bf7ea3f65ddb686f89bbfc2d65e2b9274736daa77fa",
+      "manifestHash": "sha256:6f07fc6e64ae607bec7d2bf7ea3f65ddb686f89bbfc2d65e2b9274736daa77fa"
     },
     {
       "id": "@kernlang/agon-support-persistence",

@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { DurableModHost } from '../../packages/mod-kernel/src/durable-host.js';
 import { rollbackGeneration } from '../../packages/mod-kernel/src/host-rollback.js';
-import { applyManagedPurge, applyManagedGenerationCollection, ManagedRetentionInspector, previewManagedPurge, previewManagedGenerationCollection, referencedInstallations } from '../../packages/mod-kernel/src/lifecycle-recovery.js';
+import { applyManagedPurge, applyManagedGenerationCollection, ManagedRetentionInspector, previewManagedPurge, previewManagedGenerationCollection, previewQuotaInstallationPurge, referencedInstallations } from '../../packages/mod-kernel/src/lifecycle-recovery.js';
 import { WriterFence } from '../../packages/mod-kernel/src/writer-lock.js';
 import { ManagedLifecycleService, createManagedLifecyclePlan } from '../../packages/mod-kernel/src/managed-lifecycle.js';
 import { nodeHostIo } from '../../packages/mod-kernel/src/host-io.js';
@@ -13,6 +13,63 @@ import { artifact, installer, lifecycleLock, request, verifier } from '../helper
 import { hostLock } from '../helpers/modular-host.js';
 
 describe('managed purge generation retention', () => {
+  it.each(['none', 'changed', 'unfinished', 'ordinary-replay', 'changed-constraint', 'already-purged'] as const)('binds a conditional payload before retirement and rechecks %s at deletion', async fault => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-conditional-payload-'));
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
+    const service = new ManagedLifecycleService(host);
+    const first = await service.apply(await createManagedLifecyclePlan(host, request([artifact('@test/app')])), installer, verifier);
+    const next = artifact('@test/app', [], { version: '2.0.0', sourceLocator: 'cache:@test/app@2.0.0', contentHash: `sha256:${'2'.repeat(64)}` });
+    await service.apply(await createManagedLifecyclePlan(host, request([next], { operation: 'update' })), installer, verifier);
+    await expect(previewQuotaInstallationPurge(host, first.installation.installationId, [])).rejects.toThrow('unapproved generation');
+    const target = await previewQuotaInstallationPurge(host, first.installation.installationId, [1]);
+    await expect(applyManagedPurge(host, target.plan, target.plan.planHash, target)).rejects.toThrow('retained');
+    const collection = await previewManagedGenerationCollection(host, { generations: [1], rollbackWindowMs: 0 });
+    await applyManagedGenerationCollection(host, collection, collection.planHash);
+    const prefix = target.plan.installationPaths[0]!;
+    const packagePath = join(prefix, 'node_modules', '@test/app', 'package.json');
+    const journalPath = join(root, 'installation-transactions', `${first.receipt.transactionId}.json`);
+    const originalPackage = await readFile(packagePath);
+    const originalJournal = await readFile(journalPath);
+    const selectedBefore = await readFile(host.paths.current);
+    if (fault === 'changed' || fault === 'ordinary-replay' || fault === 'changed-constraint') {
+      await chmod(packagePath, 0o600);
+      await writeFile(packagePath, 'replacement payload');
+      await expect(applyManagedPurge(host, target.plan, target.plan.planHash, target)).rejects.toThrow('identity changed');
+      expect(await readFile(packagePath, 'utf8')).toBe('replacement payload');
+      if (fault === 'ordinary-replay') {
+        await expect(applyManagedPurge(host, target.plan, target.plan.planHash)).rejects.toThrow('identity changed');
+        expect(await readFile(packagePath, 'utf8')).toBe('replacement payload');
+      } else if (fault === 'changed-constraint') {
+        const replacement = await previewQuotaInstallationPurge(host, first.installation.installationId, []);
+        await expect(applyManagedPurge(host, target.plan, target.plan.planHash, replacement)).rejects.toThrow('identity constraint');
+        expect(await readFile(packagePath, 'utf8')).toBe('replacement payload');
+      }
+      await writeFile(packagePath, originalPackage);
+      await chmod(packagePath, 0o444);
+    } else if (fault === 'unfinished') {
+      await writeFile(journalPath, JSON.stringify({ ...JSON.parse(originalJournal.toString()), state: 'verified' }));
+      await expect(applyManagedPurge(host, target.plan, target.plan.planHash, target)).rejects.toThrow('unfinished');
+      expect(await readFile(packagePath)).toEqual(originalPackage);
+      await writeFile(journalPath, originalJournal);
+    }
+    if (fault === 'already-purged') {
+      const other = await previewManagedPurge(host, { installationIds: [first.installation.installationId] });
+      expect(await applyManagedPurge(host, other, other.planHash)).toEqual([prefix]);
+    }
+    expect(await applyManagedPurge(host, target.plan, target.plan.planHash, target)).toEqual(fault === 'already-purged' ? [] : [prefix]);
+    if (fault === 'already-purged') {
+      await mkdir(prefix, { recursive: true });
+      await writeFile(join(prefix, 'replacement.txt'), 'keep replacement');
+      expect(await applyManagedPurge(host, target.plan, target.plan.planHash, target)).toEqual([]);
+      expect(await readFile(join(prefix, 'replacement.txt'), 'utf8')).toBe('keep replacement');
+      expect(await readFile(host.paths.current)).toEqual(selectedBefore);
+      return;
+    }
+    await expect(stat(prefix)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(await readFile(host.paths.current)).toEqual(selectedBefore);
+    expect((await host.boot()).mode).toBe('normal');
+  });
+
   it.each(['none', 'before-rename', 'after-rename', 'restore-failure', 'restore-stat-failure'] as const)('purges a real immutable installation after retirement with %s', async fault => {
     const root = await mkdtemp(join(tmpdir(), 'agon-retired-installation-purge-'));
     const host = new DurableModHost(root, { kernelVersion: '1.0.0' });

@@ -231,6 +231,8 @@ export interface ManagedPurgePlan {
   readonly selectedGeneration: number | null;
   readonly installationPaths: readonly string[];
   readonly dataPaths: readonly string[];
+  readonly installationHash?: `sha256:${string}`;
+  readonly installationMode?: number;
   readonly planHash: `sha256:${string}`;
 }
 
@@ -245,7 +247,7 @@ function assertPurgeDataPath(host: DurableModHost, path: string): string {
   const absolute = assertManagedPath(host.root, path);
   const protectedPaths = [...Object.values(host.paths),
     ...Object.values(new TrustGrantStore(host.root, host.hostIo).paths), dirname(host.paths.writerLock),
-    ...['installations', 'installation-staging', 'installation-transactions', 'installation-receipts', 'purge-transactions', 'purge-staging', 'pending-authority']
+    ...['installations', 'installation-staging', 'installation-transactions', 'installation-receipts', 'purge-transactions', 'purge-staging', 'retention-transactions', 'pending-authority']
       .map(name => join(host.root, name))];
   // Reserve the same namespaces on case-sensitive and case-insensitive hosts.
   const normalized = absolute.normalize('NFKC').toLowerCase();
@@ -533,23 +535,28 @@ async function directoryLogicalBytes(host: DurableModHost, prefix: string): Prom
   return total;
 }
 
+// Keep failed releases with the host even when a caller creates another inspector.
+const pendingInspectionWriters = new WeakMap<DurableModHost, Set<WriterFence>>();
+
 /** Own inspection locks and retain failed cleanup for the next inspection. */
 export class ManagedRetentionInspector {
   readonly #host: DurableModHost;
   readonly #window?: { readonly durationMs: number; readonly now: () => Date };
-  readonly #pending = new Set<WriterFence>();
+  readonly #pending: Set<WriterFence>;
   #inspection: Promise<ManagedRetentionReport> | undefined;
 
   constructor(host: DurableModHost, rollbackWindow?: { readonly durationMs: number; readonly now?: () => Date }) {
     this.#host = host;
+    this.#pending = pendingInspectionWriters.get(host) ?? new Set<WriterFence>();
+    pendingInspectionWriters.set(host, this.#pending);
     if (rollbackWindow) {
       if (!Number.isSafeInteger(rollbackWindow.durationMs) || rollbackWindow.durationMs < 0) throw new RangeError('rollback window must be a non-negative safe integer');
       this.#window = Object.freeze({ durationMs: rollbackWindow.durationMs, now: rollbackWindow.now ?? (() => new Date()) });
     }
   }
 
-  inspect(): Promise<ManagedRetentionReport> {
-    return this.#inspection ??= this.#inspect().finally(() => { this.#inspection = undefined; });
+  inspect(options: { readonly recoverStaleWriters?: boolean } = {}): Promise<ManagedRetentionReport> {
+    return this.#inspection ??= this.#inspect(options.recoverStaleWriters === true).finally(() => { this.#inspection = undefined; });
   }
 
   async #release(fence: WriterFence): Promise<void> {
@@ -562,7 +569,7 @@ export class ManagedRetentionInspector {
     }
   }
 
-  async #inspect(): Promise<ManagedRetentionReport> {
+  async #inspect(recoverStaleWriters: boolean): Promise<ManagedRetentionReport> {
     const host = this.#host;
     // Retry only captured fences. Never recover another owner's lock.
     const cleanupErrors: unknown[] = [];
@@ -575,8 +582,11 @@ export class ManagedRetentionInspector {
     let report: ManagedRetentionReport | undefined;
     const failures: unknown[] = [];
     try {
-      fences.push(await WriterFence.acquire(join(host.root, 'locks', 'lifecycle-writer.json'), 'agon.kernel.retention', { io: host.hostIo }));
-      fences.push(await WriterFence.acquire(host.paths.writerLock, 'agon.kernel.retention', { io: host.hostIo }));
+      for (const path of [join(host.root, 'locks', 'lifecycle-writer.json'), host.paths.writerLock]) {
+        fences.push(recoverStaleWriters && await pathExists(host.hostIo, path)
+          ? await WriterFence.recoverStale(path, 'agon.kernel.retention', { io: host.hostIo })
+          : await WriterFence.acquire(path, 'agon.kernel.retention', { io: host.hostIo }));
+      }
       const pointer = await host.readCurrentPointer();
       if (pointer) {
         const manifest = await host.validateGeneration(pointer.generation);
@@ -771,6 +781,11 @@ async function captureRetirementEvidence(host: DurableModHost, generation: numbe
     }
     if (!found) throw new DurableHostError('MOD_TRANSACTION_CONFLICT', 'repair missing selection receipts before collection', { generation, transactionId: journal.transactionId });
   }
+  await assertNoUnfinishedInstallations(host);
+  return parseGenerationRetirementEvidence({ manifest, receipts });
+}
+
+async function assertNoUnfinishedInstallations(host: DurableModHost): Promise<void> {
   const directory = join(host.root, 'installation-transactions');
   await assertPurgeNoLinks(host, directory);
   if (await pathExists(host.hostIo, directory)) {
@@ -784,7 +799,54 @@ async function captureRetirementEvidence(host: DurableModHost, generation: numbe
       if (journal.state !== 'committed' && journal.state !== 'failed') throw new DurableHostError('MOD_TRANSACTION_CONFLICT', 'recover unfinished installations before collection', { transactionId: journal.transactionId });
     }
   }
-  return parseGenerationRetirementEvidence({ manifest, receipts });
+}
+
+/** Bind all payload paths and contents, including dependencies, before conditional purge. */
+async function hashRetainedInstallation(host: DurableModHost, root: string): Promise<`sha256:${string}`> {
+  const pending = [root];
+  const files: Array<{ path: string; hash: string }> = [];
+  while (pending.length) {
+    const path = pending.pop()!;
+    await assertPurgeNoLinks(host, path);
+    const metadata = await host.hostIo.stat(path);
+    if (metadata.isDirectory()) {
+      for (const entry of await host.hostIo.readdir(path)) pending.push(join(path, entry));
+    } else if (path !== root && metadata.isFile()) {
+      const bytes = await host.hostIo.readFile(path);
+      files.push({ path: relative(root, path), hash: `sha256:${createHash('sha256').update(bytes).digest('hex')}` });
+    } else throw new TypeError('installation identity contains a non-regular entry');
+    await assertPurgeNoLinks(host, path);
+  }
+  return sha256Canonical(files.sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+}
+
+/** Prepare a payload target without authorizing deletion while references remain. */
+export async function previewQuotaInstallationPurge(host: DurableModHost, installationId: string,
+  retiringGenerations: readonly number[],
+): Promise<{ readonly plan: ManagedPurgePlan; readonly installationHash: `sha256:${string}` }> {
+  if (!/^[a-f0-9]{32}$/.test(installationId) || retiringGenerations.some(id => !Number.isSafeInteger(id) || id < 1)) {
+    throw new TypeError('conditional purge target is invalid');
+  }
+  const fence = await WriterFence.acquire(join(host.root, 'locks', 'lifecycle-writer.json'), 'agon.kernel.retention', { io: host.hostIo });
+  let hostFence: WriterFence | undefined;
+  const errors: unknown[] = [];
+  try {
+    hostFence = await WriterFence.acquire(host.paths.writerLock, 'agon.kernel.retention', { io: host.hostIo });
+    await assertNoUnfinishedInstallations(host);
+    const pointer = await host.readCurrentPointer();
+    const references = (await referencedInstallations(host)).get(installationId)?.generations ?? [];
+    if (references.some(id => id === pointer?.generation || !retiringGenerations.includes(id))) {
+      throw new DurableHostError('MOD_TRANSACTION_CONFLICT', 'conditional payload retains an unapproved generation reference');
+    }
+    const path = assertPurgeInstallationPath(host, join(host.root, 'installations', installationId));
+    const installationHash = await hashRetainedInstallation(host, path);
+    const mode = (await host.hostIo.stat(path)).mode;
+    if (mode === undefined) throw new TypeError('conditional purge requires installation permissions');
+    const unsigned = { schemaVersion: 2 as const, transactionId: randomUUID(), selectedGeneration: pointer?.generation ?? null,
+      installationPaths: [path], dataPaths: [], installationHash, installationMode: mode & 0o777 };
+    return Object.freeze({ plan: Object.freeze({ ...unsigned, planHash: sha256Canonical(unsigned) }), installationHash });
+  } catch (error) { errors.push(error); throw error; }
+  finally { await releaseLifecycleWriters([hostFence, fence], errors); }
 }
 
 async function assertCollectionReferences(host: DurableModHost, generations: readonly number[], durationMs: number, now: Date): Promise<void> {
@@ -981,7 +1043,9 @@ export async function previewManagedPurge(
   return Object.freeze({ ...unsigned, planHash: sha256Canonical(unsigned) });
 }
 
-export async function applyManagedPurge(host: DurableModHost, input: ManagedPurgePlan, approvedPlanHash: string): Promise<readonly string[]> {
+export async function applyManagedPurge(host: DurableModHost, input: ManagedPurgePlan, approvedPlanHash: string,
+  constraints?: { readonly installationHash: `sha256:${string}`; readonly cancelPending?: boolean },
+): Promise<readonly string[]> {
   // Retain approved targets across caller callbacks and asynchronous work.
   const plan = structuredClone(input);
   const { planHash, ...unsignedPlan } = plan;
@@ -995,6 +1059,15 @@ export async function applyManagedPurge(host: DurableModHost, input: ManagedPurg
   // Validate both namespaces before deleting any approved target.
   const installationPaths = plan.installationPaths.map(path => assertPurgeInstallationPath(host, path));
   const dataPaths = plan.dataPaths.map(path => assertPurgeDataPath(host, path));
+  const installationHash = plan.installationHash;
+  if (constraints && constraints.installationHash !== installationHash) {
+    throw new DurableHostError('MOD_TRANSACTION_CONFLICT', 'purge identity constraint differs from the approved plan');
+  }
+  if (constraints?.cancelPending !== undefined && typeof constraints.cancelPending !== 'boolean') throw new TypeError('cancelPending must be a boolean');
+  if (installationHash !== undefined && (installationPaths.length !== 1 || dataPaths.length !== 0
+    || !/^sha256:[a-f0-9]{64}$/.test(installationHash) || !Number.isInteger(plan.installationMode)
+    || plan.installationMode! < 0 || plan.installationMode! > 0o777)) throw new TypeError('conditional purge requires one installation identity and permissions');
+  if (installationHash === undefined && plan.installationMode !== undefined) throw new TypeError('installation permissions require a conditional identity');
   assertDistinctPurgeTargets([...installationPaths, ...dataPaths]);
   const fence = await WriterFence.acquire(join(host.root, 'locks', 'lifecycle-writer.json'), 'agon.kernel.lifecycle.purge', { io: host.hostIo });
   let hostFence: WriterFence | undefined;
@@ -1007,7 +1080,7 @@ export async function applyManagedPurge(host: DurableModHost, input: ManagedPurg
     const staging = join(host.root, 'purge-staging', plan.transactionId);
     await assertPurgeNoLinks(host, journalPath);
     await assertPurgeNoLinks(host, staging);
-    type Phase = 'pending' | 'staged' | 'removed' | 'absent';
+    type Phase = 'pending' | 'staged' | 'removed' | 'absent' | 'cancelled';
     let phases: Phase[];
     try {
       const value = await readJson<unknown>(host.hostIo, journalPath);
@@ -1016,7 +1089,7 @@ export async function applyManagedPurge(host: DurableModHost, input: ManagedPurg
       if (Object.keys(record).sort().join(',') !== 'phases,planHash,schemaVersion'
         || record.schemaVersion !== 1 || record.planHash !== planHash
         || !Array.isArray(record.phases) || record.phases.length !== targets.length
-        || record.phases.some(phase => !['pending', 'staged', 'removed', 'absent'].includes(phase))) {
+        || record.phases.some(phase => !['pending', 'staged', 'removed', 'absent', 'cancelled'].includes(phase))) {
         throw new TypeError('purge journal does not match the approved plan');
       }
       phases = [...record.phases] as Phase[];
@@ -1038,14 +1111,35 @@ export async function applyManagedPurge(host: DurableModHost, input: ManagedPurg
     // Validate all pending paths before any target is moved or removed.
     const pendingTargets = new Set<string>();
     for (const [index, target] of targets.entries()) {
-      if (phases[index] === 'removed' || phases[index] === 'absent') continue;
+      if (phases[index] === 'removed' || phases[index] === 'absent' || phases[index] === 'cancelled') continue;
       const staged = join(staging, String(index));
       await assertPurgeNoLinks(host, staged);
       if (phases[index] === 'pending' && !await pathExists(host.hostIo, staged)) {
+        if (constraints?.cancelPending) {
+          await assertPurgeNoLinks(host, target);
+          if (await pathExists(host.hostIo, target)) {
+            if (await hashRetainedInstallation(host, target) !== installationHash) {
+              throw new DurableHostError('MOD_TRANSACTION_CONFLICT', 'installation identity changed before purge cancellation');
+            }
+            if (plan.installationMode === 0o555) {
+              const mode = (await host.hostIo.stat(target)).mode;
+              if (mode === undefined || ![0o555, 0o700].includes(mode & 0o777)) {
+                throw new DurableHostError('MOD_TRANSACTION_CONFLICT', 'installation permissions changed before purge cancellation');
+              }
+              await fence.assertOwned();
+              await hostFence.assertOwned();
+              await host.hostIo.chmod(target, 0o555);
+              await host.hostIo.syncDirectory(target);
+            }
+          }
+          phases[index] = 'cancelled';
+          continue;
+        }
         await assertPurgeNoLinks(host, target);
         pendingTargets.add(target);
       }
     }
+    if (constraints?.cancelPending) await atomicWrite(host.hostIo, journalPath, `${canonicalJson({ schemaVersion: 1, planHash, phases })}\n`);
     // Quarantined bytes no longer refer to the original path or its generation.
     // New target selection still requires the complete original approval gates.
     if (pendingTargets.size > 0) {
@@ -1054,9 +1148,18 @@ export async function applyManagedPurge(host: DurableModHost, input: ManagedPurg
       const referenced = await referencedInstallations(host);
       const retained = installationPaths.filter(path => pendingTargets.has(path)).map(path => basename(path)).filter(id => referenced.has(id));
       if (retained.length > 0) throw new DurableHostError('MOD_TRANSACTION_CONFLICT', 'installation became retained after purge preview', { installationIds: retained });
+      if (installationHash) {
+        await assertNoUnfinishedInstallations(host);
+        // Another approved purge can already have removed this target.
+        // The existing absent phase consumes that identity without chasing replacements.
+        if (await pathExists(host.hostIo, installationPaths[0]!)
+          && await hashRetainedInstallation(host, installationPaths[0]!) !== installationHash) {
+          throw new DurableHostError('MOD_TRANSACTION_CONFLICT', 'installation identity changed after quota preview');
+        }
+      }
     }
     for (const [index, target] of targets.entries()) {
-      if (phases[index] === 'removed' || phases[index] === 'absent') continue;
+      if (phases[index] === 'removed' || phases[index] === 'absent' || phases[index] === 'cancelled') continue;
       await fence.assertOwned();
       await hostFence.assertOwned();
       const staged = join(staging, String(index));

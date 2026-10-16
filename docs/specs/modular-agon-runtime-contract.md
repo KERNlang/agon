@@ -586,11 +586,43 @@ that order. `totalStorageLogicalBytes` sums only these entries, not installation
 Missing roots count zero; failed reads, links, non-regular entries and unsafe size
 totals fail closed. These sizes are neither allocated disk space nor permission
 to collect files. The default npm cache lives in temporary candidate staging;
-caller-selected external caches are not scanned. Quota policy is not implemented.
+caller-selected external caches are not scanned. Quota collection is under
+implementation; it is not yet available through the CLI or release-qualified.
 The size report assumes all concurrent writers obey the managed fences. Path
 checks reject observed links and read failures; they are not atomic traversal
 against an external actor swapping filesystem entries between checks. A byte
 report is not a destructive authorization or a filesystem sandbox.
+
+The engine-catalog owner exposes `inspectBinaryCache`, `evictBinaryCache` and
+`recoverBinaryCacheWriter` for the exact `cache/binaries.json` path in an explicit
+Agon home. Inspection binds file identity and logical bytes. Eviction removes
+only that identity; missing or replaced files are reported without chasing new
+bytes. Symlinks and special files are rejected. Hard links retain the same
+per-path logical accounting as the host report; removal does not claim physical
+space reclamation. Cache replacement and eviction share the kernel writer fence.
+Explicit recovery reclaims only a dead writer through the same liveness protocol.
+Older unfenced publishers must be quiescent before collection. These owner APIs
+do not persist approval: the quota coordinator must durably consume an attempt
+before eviction and retain an unknown outcome after interruption or sync failure.
+The kernel quota coordinator composes these APIs with generation retirement and
+installation purge. Its saved parent plan binds fixed child plans and policy.
+Cancellation intent is persisted before child cleanup and survives ordinary
+resume. Conditional installation identity is part of the child purge plan hash,
+so the ordinary purge API cannot bypass that identity check. Consumed absence
+does not authorize deleting a later replacement. Parent terminal states do not
+restart when storage grows later. Preview adds only complete candidate groups
+whose exact saved approval fits 256 KiB. A large inventory does not prevent a
+smaller useful approval. Application validates cache byte counts even when host
+accounting already includes that cache.
+
+Conditional purge plans bind original root permissions as well as content.
+Cancellation validates identity before restoring a root made writable for rename.
+Quota inspection can recover proven dead writers; live writers still block it.
+Inspection cleanup retains ownership across inspector instances for the same host.
+Real process-kill tests cover inspection release, payload permission transition
+and payload rename. These checks do not constitute complete release qualification.
+CLI approval integration, the complete failure matrix and release qualification
+remain incomplete.
 
 `artifactLeases` lists explicit reproducible-artifact references. Version-2 lease
 records bind one generation to an owner, opaque artifact ID and SHA-256 content

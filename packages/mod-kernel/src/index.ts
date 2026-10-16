@@ -137,7 +137,7 @@ export type {
 } from './durable-host.js';
 export type { HostIo } from './host-io.js';
 export { migrateStagedCopy, readMigrationSourceRevision } from './migration-engine.js';
-export { withSynchronousWriterFence } from './writer-lock.js';
+export { WriterFence, withSynchronousWriterFence } from './writer-lock.js';
 export type { MigrationReceipt, MigrationSourceRevision, VersionedMigration } from './migration-engine.js';
 export type { HostBlockedReason, HostDoctorReport, HostEvent, HostEventLevel } from './host-observability.js';
 export { rollbackGeneration } from './host-rollback.js';
@@ -163,6 +163,8 @@ export type {
 export { applyManagedPurge, applyManagedGenerationCollection, ManagedRetentionInspector, previewManagedPurge, previewManagedGenerationCollection, recoverManagedLifecycle } from './lifecycle-recovery.js';
 export type { ManagedGenerationCollectionPlan } from './generation-retirement.js';
 export type { LifecycleRecoveryOptions, LifecycleRecoveryResult, ManagedPurgePlan, ManagedRetentionReport } from './lifecycle-recovery.js';
+export { applyManagedQuotaCollection, previewManagedQuotaCollection, parseManagedQuotaPlan } from './quota-retention.js';
+export type { ManagedQuotaPlan, RetentionCacheOwner, RetentionCacheSnapshot } from './quota-retention.js';
 
 export { createSetupActionPlan, executeSetupAction } from './setup-actions.js';
 export type { SetupActionDefinition, SetupActionKind, SetupActionPlan, SetupActionReceipt } from './setup-actions.js';

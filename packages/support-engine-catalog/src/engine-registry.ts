@@ -1,10 +1,12 @@
-import { readdirSync, readFileSync, existsSync, statSync, accessSync, mkdirSync, writeFileSync, renameSync, constants } from 'node:fs';
+import { readdirSync, readFileSync, existsSync, statSync, lstatSync, realpathSync, accessSync, mkdirSync, writeFileSync, renameSync, unlinkSync, openSync, closeSync, fsyncSync, constants } from 'node:fs';
 
 import { join, dirname, resolve, delimiter } from 'node:path';
 
 import { homedir } from 'node:os';
 
 import { createHash } from 'node:crypto';
+import { WriterFence, withSynchronousWriterFence } from '@kernlang/agon-kernel';
+import type { RetentionCacheSnapshot } from '@kernlang/agon-kernel';
 
 import type { EngineDefinition, EngineMode } from '@kernlang/agon-support-engine-runtime';
 import { EngineNotFoundError, validateEngineConfig } from '@kernlang/agon-support-engine-runtime';
@@ -28,6 +30,84 @@ function binaryCacheFile(): string {
   const override = process.env.AGON_HOME?.trim();
   const home = override ? resolve(override) : join(homedir(), '.agon');
   return join(home, 'cache', 'binaries.json');
+}
+
+export type BinaryCacheSnapshot = RetentionCacheSnapshot;
+
+function retentionCacheFile(home: string): string | null {
+  const directory = join(realpathSync(home), 'cache');
+  try {
+    const metadata = lstatSync(directory);
+    if (!metadata.isDirectory() || metadata.isSymbolicLink()) throw new TypeError('binary cache directory must be a real directory');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw error;
+  }
+  return join(directory, 'binaries.json');
+}
+
+function snapshotBinaryCache(file: string): BinaryCacheSnapshot | null {
+  try {
+    const metadata = lstatSync(file, { bigint: true });
+    if (!metadata.isFile() || metadata.isSymbolicLink()) throw new TypeError('binary cache must be a regular file');
+    const logicalBytes = Number(metadata.size);
+    if (!Number.isSafeInteger(logicalBytes) || logicalBytes < 0) throw new TypeError('binary cache size exceeds safe bounds');
+    return Object.freeze({ path: file, logicalBytes,
+      identity: [metadata.dev, metadata.ino, metadata.ctimeNs, metadata.mtimeNs, metadata.size].join(':') });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw error;
+  }
+}
+
+/** Inspect only the reconstructible binary cache in the specified Agon home. */
+export function inspectBinaryCache(home: string): BinaryCacheSnapshot | null {
+  const file = retentionCacheFile(home);
+  if (!file) return null;
+  let snapshot: BinaryCacheSnapshot | null = null;
+  withSynchronousWriterFence(join(dirname(file), 'binaries.writer.json'), 'agon.engine-catalog.retention', () => {
+    snapshot = snapshotBinaryCache(file);
+  });
+  return snapshot;
+}
+
+/** Recover a dead cache writer through the kernel's existing liveness protocol. */
+export async function recoverBinaryCacheWriter(home: string): Promise<void> {
+  const file = retentionCacheFile(home);
+  if (!file) return;
+  const lock = join(dirname(file), 'binaries.writer.json');
+  try {
+    const metadata = lstatSync(lock);
+    if (!metadata.isFile() || metadata.isSymbolicLink()) throw new TypeError('binary cache writer lock must be a regular file');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
+    throw error;
+  }
+  const fence = await WriterFence.recoverStale(lock, 'agon.engine-catalog.retention');
+  await fence.release();
+}
+
+/** Remove the approved identity once. A replacement requires another preview. */
+export function evictBinaryCache(home: string, expected: BinaryCacheSnapshot): 'removed' | 'missing' | 'changed' {
+  const file = retentionCacheFile(home);
+  const expectedPath = join(realpathSync(home), 'cache', 'binaries.json');
+  if (expected.path !== expectedPath || !Number.isSafeInteger(expected.logicalBytes) || expected.logicalBytes < 0
+    || !/^\d+:\d+:\d+:\d+:\d+$/.test(expected.identity)) throw new TypeError('binary cache approval does not match the owner path');
+  if (!file) return 'missing';
+  let outcome: 'removed' | 'missing' | 'changed' = 'missing';
+  withSynchronousWriterFence(join(dirname(file), 'binaries.writer.json'), 'agon.engine-catalog.retention', () => {
+    const current = snapshotBinaryCache(file);
+    if (!current) return;
+    if (current.identity !== expected.identity || current.logicalBytes !== expected.logicalBytes) {
+      outcome = 'changed';
+      return;
+    }
+    unlinkSync(file);
+    const descriptor = openSync(dirname(file), 'r');
+    try { fsyncSync(descriptor); } finally { closeSync(descriptor); }
+    outcome = 'removed';
+  });
+  return outcome;
 }
 
 function hashPathEnv(pathEnv: string): string {
@@ -79,16 +159,12 @@ function saveBinaryDiskCache(pathHash: string, entries: Record<string, { path: s
   try {
     const file = binaryCacheFile();
     mkdirSync(dirname(file), { recursive: true });
-    // Atomic write: temp file in the same dir + rename, so concurrent agon
-    // processes resolving binaries can't interleave partial writes into a
-    // corrupt cache file. (A corrupt file IS tolerated — the reader treats
-    // it as empty — but last-writer-wins beats self-healing by re-scan.)
-    // The pid suffix keeps concurrent writers off each other's temp file;
-    // renameSync over the target is atomic on POSIX. Mirrors configSet's
-    // .tmp + renameSync pattern in config.kern.
-    const tmpPath = `${file}.${process.pid}.tmp`;
-    writeFileSync(tmpPath, JSON.stringify({ pathHash, entries }), 'utf-8');
-    renameSync(tmpPath, file);
+    // Retention must inspect and remove the same cache identity without a replacement race.
+    withSynchronousWriterFence(join(dirname(file), 'binaries.writer.json'), 'agon.engine-catalog.binary-cache', () => {
+      const tmpPath = `${file}.${process.pid}.tmp`;
+      writeFileSync(tmpPath, JSON.stringify({ pathHash, entries }), 'utf-8');
+      renameSync(tmpPath, file);
+    });
   } catch {
     // Best-effort cache write; a failure here must never break binary resolution.
   }

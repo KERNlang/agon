@@ -164,14 +164,31 @@ describe('candidate process boundary', () => {
     expect(await hashInstalledPackagePayload(root)).not.toBe(before);
   });
 
-  it('hashes large installed npm payloads while retaining folder-mod limits', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'agon-npm-payload-count-'));
-    try {
+  describe('large installed npm payload identity', () => {
+    let fixtureRoot: string | undefined;
+    let setup: Promise<void> | undefined;
+    let verification: Promise<void> | undefined;
+    let closing = false;
+    beforeAll(() => setup = (async () => {
+      const root = await mkdtemp(join(tmpdir(), 'agon-npm-payload-count-'));
+      fixtureRoot = root;
       for (let index = 0; index < 4079; index += 32) {
+        if (closing) return;
         const writes = await Promise.allSettled(Array.from({ length: Math.min(32, 4079 - index) },
           (_, offset) => writeFile(join(root, `file-${index + offset}.js`), 'export {};')));
         for (const write of writes) if (write.status === 'rejected') throw write.reason;
       }
+    })());
+    afterAll(async () => {
+      closing = true;
+      // Drain timed-out work before removal. The original hook or test reports failure.
+      await setup?.catch(() => undefined);
+      await verification?.catch(() => undefined);
+      if (fixtureRoot) await rm(fixtureRoot, { recursive: true, force: true });
+    });
+    it('hashes large installed npm payloads while retaining folder-mod limits', () => verification = (async () => {
+      const root = fixtureRoot;
+      if (!root) throw new Error('payload fixture was not created');
       expect(await readdir(root)).toHaveLength(4079);
       await expect(walkBoundedPackage(root)).rejects.toThrow('file-count limit');
       const before = await hashInstalledPackagePayload(root);
@@ -183,9 +200,7 @@ describe('candidate process boundary', () => {
       expect(await hashInstalledPackagePayload(root)).not.toBe(before);
       await symlink(join(root, 'file-0.js'), join(root, 'linked.js'));
       await expect(hashInstalledPackagePayload(root)).rejects.toThrow('symbolic links');
-    } finally {
-      await rm(root, { recursive: true, force: true });
-    }
+    })());
   });
 
   describe('installed payload file limit', () => {

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -7,6 +8,9 @@ import { runInNewContext } from 'node:vm';
 import {
   collectSubjectContamination,
   hashGitSubject,
+  hashReviewSubject,
+  REVIEW_INPUT_POLICY,
+  validateSliceReview,
   isSourceBearingPath,
   initializeMaterializedGitSubject,
   materializeGitSubject,
@@ -242,8 +246,37 @@ try {
   const roadmapPath = 'docs/specs/evidence/modular-agon-implementation-roadmap.json';
   const fixtureSlices = sliceIds.map((id, index) => ({ id, dependsOn: index ? [sliceIds[index - 1]] : [], acceptanceCommands: ['npm run verify'] }));
   writeFileSync(join(assessmentRoot, roadmapPath), JSON.stringify({ slices: fixtureSlices }));
+  const reviewPath = id => `docs/specs/evidence/modular-agon-slice${id.slice(1).toLowerCase()}-review-evidence.json`;
+  const reviewArtifacts = ['review-a.txt', 'review-b.txt'].map(name => `docs/specs/evidence/${name}`);
+  for (const path of reviewArtifacts) writeFileSync(join(assessmentRoot, path), `independent fixture review ${path}\n`);
   git(assessmentRoot, 'add', '.');
   git(assessmentRoot, 'commit', '-qm', 'qualified source');
+  const reviewHashes = sliceIds.map(id => hashReviewSubject(assessmentRoot, { kind: 'commit' }, id));
+  assert.equal(new Set(reviewHashes).size, 9, 'slice IDs must separate review hash domains');
+  const rawReviewHash = hashGitSubject(assessmentRoot, { kind: 'commit', pathspecs: ['.'] });
+  for (const [index, id] of sliceIds.entries()) {
+    const expected = `sha256:${createHash('sha256').update(`modular-review-input-v2\0${id}\0${rawReviewHash}`).digest('hex')}`;
+    assert.equal(reviewHashes[index], expected, 'policy and slice domain separation must match the contract');
+  }
+  const fixtureReviews = sliceIds.map((id, index) => ({
+    schemaVersion: 1, subject: { kind: 'commit', policy: REVIEW_INPUT_POLICY, hash: reviewHashes[index] },
+    disposition: 'passed', findings: [],
+    runs: reviewArtifacts.map((path, engine) => ({ engine: `fixture-${engine}`, status: 'completed',
+      artifacts: [{ path, hash: hashGitSubject(assessmentRoot, { kind: 'commit', pathspecs: [path], includePathsInHash: false }) }] })),
+  }));
+  for (const [index, id] of sliceIds.entries()) writeFileSync(join(assessmentRoot, reviewPath(id)), JSON.stringify(fixtureReviews[index]));
+  git(assessmentRoot, 'add', ...sliceIds.map(reviewPath));
+  git(assessmentRoot, 'commit', '-qm', 'seal fixture reviews');
+  for (const [index, id] of sliceIds.entries()) {
+    assert.equal(hashReviewSubject(assessmentRoot, { kind: 'commit' }, id), reviewHashes[index], 'sealing all reviews must not change review inputs');
+    assert.equal(validateSliceReview(assessmentRoot, id, { kind: 'commit' }).passed, true);
+  }
+  assert.throws(() => hashReviewSubject(assessmentRoot, { kind: 'commit' }, 'S10'), /unknown review slice/);
+  const firstReview = fixtureReviews[0];
+  const expectedReviewSubject = { kind: 'commit', hash: reviewHashes[0], policy: REVIEW_INPUT_POLICY };
+  for (const policy of [undefined, 'legacy', `${REVIEW_INPUT_POLICY}-unknown`]) {
+    assert.equal(validateSubjectBoundReview(assessmentRoot, { ...firstReview, subject: { ...firstReview.subject, policy } }, expectedReviewSubject).passed, false, 'review policy must match');
+  }
   const receiptPath = 'docs/specs/evidence/receipts/modular-agon-s1b.json';
   const dependentReceiptPath = 'docs/specs/evidence/receipts/modular-agon-s2.json';
   const sliceReceipt = { schemaVersion: 2, passed: true, cleanWorktree: true,
@@ -271,6 +304,91 @@ try {
     git(assessmentRoot, 'commit', '-qm', `record ${sliceIds[index]} qualification`);
   }
   assert.equal(assess().status, 0, 'receipt-only commits must preserve tested source and prior receipts');
+  const aggregateHash = () => hashGitSubject(assessmentRoot, { kind: 'commit', pathspecs: ['.'],
+    excludedPaths: sliceIds.map(id => `docs/specs/evidence/receipts/modular-agon-${id.toLowerCase()}.json`) });
+  const originalReceipts = sliceIds.map(id => {
+    const path = `docs/specs/evidence/receipts/modular-agon-${id.toLowerCase()}.json`;
+    return { path, bytes: readFileSync(join(assessmentRoot, path)) };
+  });
+  for (const [index, id] of sliceIds.entries()) {
+    const originalReview = fixtureReviews[index];
+    const defects = [
+      { subject: { ...originalReview.subject, policy: undefined } },
+      { subject: { ...originalReview.subject, policy: 'legacy' } },
+      { findings: [{ status: 'open' }] },
+      { runs: originalReview.runs.map(run => ({ ...run, engine: 'duplicate' })) },
+      { runs: originalReview.runs.map(run => ({ ...run, artifacts: run.artifacts.map(artifact => ({ ...artifact, hash: 'sha256:bad' })) })) },
+    ];
+    writeFileSync(join(assessmentRoot, reviewPath(id)), JSON.stringify({ ...originalReview, ...defects[index % defects.length] }));
+    git(assessmentRoot, 'add', reviewPath(id));
+    git(assessmentRoot, 'commit', '-qm', 'invalid review with fresh fixture receipts');
+    const sourceHash = aggregateHash();
+    for (const [receiptIndex, receiptId] of sliceIds.entries()) {
+      const prerequisites = receiptIndex ? { [sliceIds[receiptIndex - 1]]: git(assessmentRoot, 'rev-parse', `HEAD:${originalReceipts[receiptIndex - 1].path}`) } : {};
+      const fresh = { ...sliceReceipt, subjectCommit: git(assessmentRoot, 'rev-parse', 'HEAD'), subjectHash: sourceHash, prerequisites };
+      writeFileSync(join(assessmentRoot, originalReceipts[receiptIndex].path), JSON.stringify(fresh));
+      git(assessmentRoot, 'add', originalReceipts[receiptIndex].path);
+      git(assessmentRoot, 'commit', '-qm', `fresh fixture ${receiptId}`);
+    }
+    const result = assess();
+    const cells = JSON.parse(result.stdout).slices;
+    assert.equal(cells.every(cell => cell.receipt.valid), true, 'fresh fixture receipts must pass independently of review validation');
+    assert.equal(cells[index].review.passed, false);
+    assert.equal(cells[index].ready, false, 'assessor must enforce each slice review');
+    assert.equal(result.status, 1);
+    writeFileSync(join(assessmentRoot, reviewPath(id)), JSON.stringify(originalReview));
+    for (const { path, bytes } of originalReceipts) writeFileSync(join(assessmentRoot, path), bytes);
+    git(assessmentRoot, 'add', reviewPath(id), ...originalReceipts.map(({ path }) => path));
+    git(assessmentRoot, 'commit', '-qm', 'restore fixture evidence');
+    assert.equal(assess().status, 0);
+  }
+  const projectionCases = [
+    ...sliceIds.map(id => ({ path: reviewPath(id), excluded: sliceIds, aggregateExcluded: false })),
+    ...originalReceipts.map(({ path }) => ({ path, excluded: sliceIds, aggregateExcluded: true })),
+    ...sliceIds.map(id => ({ path: `docs/specs/evidence/modular-agon-slice${id.slice(1).toLowerCase()}-verification-receipt.json`, excluded: [id], aggregateExcluded: false })),
+    ...['S1B', 'S3', 'S4', 'S9'].map(id => ({ path: `docs/specs/evidence/verification-logs/slice${id.slice(1).toLowerCase()}/probe.txt`, excluded: ['S4', 'S9'].includes(id) ? [id] : [], aggregateExcluded: false })),
+    ...['docs/specs/evidence/verification-logs/slice4-extra/probe.txt', `${reviewPath('S1B')}.bak`, 'tests/fixtures/review-probe.json'].map(path => ({ path, excluded: [], aggregateExcluded: false })),
+  ];
+  for (const { path, excluded, aggregateExcluded } of projectionCases) {
+    let original;
+    try { original = readFileSync(join(assessmentRoot, path)); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    mkdirSync(join(assessmentRoot, path, '..'), { recursive: true });
+    const before = aggregateHash();
+    const isManifest = sliceIds.some(id => reviewPath(id) === path);
+    writeFileSync(join(assessmentRoot, path), isManifest
+      ? JSON.stringify({ ...JSON.parse(original), note: 'harmless metadata' }) : 'changed projection fixture');
+    git(assessmentRoot, 'add', path);
+    git(assessmentRoot, 'commit', '-qm', 'projection boundary fixture');
+    assert.equal(aggregateHash() === before, aggregateExcluded, `aggregate binding: ${path}`);
+    for (const [index, id] of sliceIds.entries()) assert.equal(hashReviewSubject(assessmentRoot, { kind: 'commit' }, id) === reviewHashes[index], excluded.includes(id), `review boundary: ${id}: ${path}`);
+    if (isManifest) {
+      for (const id of sliceIds) assert.equal(validateSliceReview(assessmentRoot, id, { kind: 'commit' }).passed, true, 'harmless manifest metadata preserves review validity');
+      assert.equal(JSON.parse(assess().stdout).slices[0].receipt.valid, false, 'aggregate must bind even valid edited reviews');
+    }
+    if (original) writeFileSync(join(assessmentRoot, path), original);
+    else rmSync(join(assessmentRoot, path));
+    git(assessmentRoot, 'add', path);
+    git(assessmentRoot, 'commit', '-qm', 'restore projection boundary fixture');
+  }
+  for (const [index, id] of sliceIds.entries()) {
+    assert.equal(hashReviewSubject(assessmentRoot, { kind: 'commit' }, id), reviewHashes[index], 'receipt progression must preserve review input');
+    assert.equal(validateSliceReview(assessmentRoot, id, { kind: 'commit' }).passed, true);
+  }
+  for (const [path, altered] of [
+    [reviewPath('S1B'), JSON.stringify({ ...firstReview, findings: [{ status: 'open' }] })],
+    [reviewArtifacts[0], 'tampered artifact'],
+  ]) {
+    const original = readFileSync(join(assessmentRoot, path));
+    writeFileSync(join(assessmentRoot, path), altered);
+    git(assessmentRoot, 'add', path);
+    git(assessmentRoot, 'commit', '-qm', 'tamper review evidence');
+    assert.equal(assess().status, 1, 'aggregate receipts must bind every review envelope and artifact');
+    assert.equal(validateSliceReview(assessmentRoot, 'S1B', { kind: 'commit' }).passed, false, 'current review validation must reject tampering');
+    writeFileSync(join(assessmentRoot, path), original);
+    git(assessmentRoot, 'add', path);
+    git(assessmentRoot, 'commit', '-qm', 'restore review evidence');
+    assert.equal(assess().status, 0);
+  }
   writeFileSync(join(assessmentRoot, dependentReceiptPath), JSON.stringify({ ...dependentReceipt, subjectCommit: sliceReceipt.subjectCommit }));
   git(assessmentRoot, 'add', dependentReceiptPath);
   git(assessmentRoot, 'commit', '-qm', 'prerequisite absent at test time');
@@ -318,6 +436,7 @@ try {
   assert.equal(assess().status, 1, 'staged source changes must fail');
   git(assessmentRoot, 'commit', '-qm', 'changed source');
   assert.equal(assess().status, 1, 'changed committed source cannot reuse a previous receipt');
+  for (const [index, id] of sliceIds.entries()) assert.notEqual(hashReviewSubject(assessmentRoot, { kind: 'commit' }, id), reviewHashes[index], 'source changes must invalidate every review');
   writeFileSync(join(assessmentRoot, 'package.json'), JSON.stringify({ scripts: { verify: 'true' } }));
   git(assessmentRoot, 'add', 'package.json');
   git(assessmentRoot, 'commit', '-qm', 'restore tested source');
@@ -326,6 +445,7 @@ try {
   git(assessmentRoot, 'add', 'docs/specs/evidence/review.json');
   git(assessmentRoot, 'commit', '-qm', 'changed non-receipt evidence');
   assert.equal(assess().status, 1, 'other evidence must remain part of the tested subject');
+  for (const [index, id] of sliceIds.entries()) assert.notEqual(hashReviewSubject(assessmentRoot, { kind: 'commit' }, id), reviewHashes[index], 'unknown evidence must remain review input');
   for (const slices of [[], fixtureSlices.slice(1), [...fixtureSlices.slice(0, -1), fixtureSlices[0]],
     fixtureSlices.map((slice, index) => index === 0 ? { ...slice, acceptanceCommands: [] } : slice),
     fixtureSlices.map((slice, index) => index === 1 ? { ...slice, dependsOn: [] } : slice)]) {

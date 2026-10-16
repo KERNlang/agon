@@ -73,6 +73,35 @@ export function pinGitSubject(root, kind, revision = 'HEAD') {
   return Object.freeze({ kind, revision: commit, tree });
 }
 
+export const REVIEW_INPUT_POLICY = 'modular-review-input-v2';
+export const REVIEW_SLICE_IDS = Object.freeze(['S1B', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9']);
+const reviewManifestPath = id => `docs/specs/evidence/modular-agon-slice${id.slice(1).toLowerCase()}-review-evidence.json`;
+const reviewEnvelopePaths = REVIEW_SLICE_IDS.flatMap(id => [
+  reviewManifestPath(id),
+  `docs/specs/evidence/receipts/modular-agon-${id.toLowerCase()}.json`,
+]);
+
+/** Exclude review envelopes, not source or reviewer artifacts. */
+export function hashReviewSubject(root, { kind, revision, tree }, sliceId) {
+  if (!REVIEW_SLICE_IDS.includes(sliceId)) throw new TypeError('unknown review slice');
+  const name = `slice${sliceId.slice(1).toLowerCase()}`;
+  const hash = hashGitSubject(root, {
+    kind, revision, tree, pathspecs: ['.'],
+    excludedPaths: [...reviewEnvelopePaths, `docs/specs/evidence/modular-agon-${name}-verification-receipt.json`],
+    // Preserve the existing S4–S9 log exclusions. Aggregate hashing binds them.
+    excludedPathPrefixes: ['S4', 'S5', 'S6', 'S7', 'S8', 'S9'].includes(sliceId)
+      ? [`docs/specs/evidence/verification-logs/${name}/`] : [],
+  });
+  return sha256(`${REVIEW_INPUT_POLICY}\0${sliceId}\0${hash}`);
+}
+
+export function validateSliceReview(root, sliceId, subject) {
+  const hash = hashReviewSubject(root, subject, sliceId);
+  return validateStoredSubjectBoundReview(root, reviewManifestPath(sliceId), {
+    ...subject, hash, policy: REVIEW_INPUT_POLICY,
+  });
+}
+
 function subjectBlobs(root, subject) {
   if (!/^[a-f0-9]{40,64}$/.test(subject.tree ?? '')) throw new Error('materialization requires a pinned Git tree');
   const entries = subjectEntries(root, subject, ['.']);
@@ -204,6 +233,7 @@ export function validateDependencyGraph(packages) {
 export function validateSubjectBoundReview(root, review, expectedSubject) {
   const fail = (reason) => ({ passed: false, reason });
   if (!review || typeof review !== 'object' || review.schemaVersion !== 1) return fail('invalid review schema');
+  if (expectedSubject.policy !== undefined && review.subject?.policy !== expectedSubject.policy) return fail('review input policy mismatch');
   if (review.subject?.kind !== expectedSubject.kind || review.subject?.hash !== expectedSubject.hash) return fail('review subject mismatch');
   if (review.disposition !== 'passed') return fail('review disposition is not passed');
   const runs = Array.isArray(review.runs) ? review.runs.filter((run) => run.status === 'completed') : [];

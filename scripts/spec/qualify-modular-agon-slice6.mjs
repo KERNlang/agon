@@ -6,10 +6,10 @@ import { fileURLToPath } from 'node:url';
 import { initializeMaterializedGitSubject, materializeGitSubject, pinGitSubject } from './slice1b-qualification-gates.mjs';
 import {
   collectSubjectContamination,
-  hashGitSubject,
+  hashReviewSubject,
   isSourceBearingPath,
   validateDependencyGraph,
-  validateStoredSubjectBoundReview,
+  validateSliceReview,
 } from './slice1b-qualification-gates.mjs';
 
 const root = fileURLToPath(new URL('../..', import.meta.url));
@@ -19,7 +19,6 @@ const excludedReceiptPaths = [
   'docs/specs/evidence/modular-agon-slice6-review-evidence.json',
   'docs/specs/evidence/modular-agon-slice6-verification-receipt.json',
 ];
-const excludedReviewArtifactPrefixes = ["docs/specs/evidence/verification-logs/slice6/"];
 
 function run(command, args, cwd = root) {
   const result = spawnSync(command, args, {
@@ -94,11 +93,10 @@ const contamination = Object.fromEntries(Object.entries(allContamination).map(([
 ]));
 const packageMap = JSON.parse(readFileSync(join(root, 'docs/specs/evidence/modular-agon-package-map.json'), 'utf8'));
 const graph = validateDependencyGraph(packageMap.packages);
-const indexHash = hashGitSubject(root, { ...indexSubject, pathspecs: ['.'], excludedPaths: excludedReceiptPaths, excludedPathPrefixes: excludedReviewArtifactPrefixes });
-const commitHash = hashGitSubject(root, { ...commitSubject, pathspecs: ['.'], excludedPaths: excludedReceiptPaths, excludedPathPrefixes: excludedReviewArtifactPrefixes });
+const indexHash = hashReviewSubject(root, indexSubject, 'S6');
+const commitHash = hashReviewSubject(root, commitSubject, 'S6');
 const expectedHash = subjectKind === 'index' ? indexHash : commitHash;
-const reviewPath = 'docs/specs/evidence/modular-agon-slice6-review-evidence.json';
-const reviewEvidence = validateStoredSubjectBoundReview(root, reviewPath, { ...(subjectKind === 'index' ? indexSubject : commitSubject), hash: expectedHash });
+const reviewEvidence = validateSliceReview(root, 'S6', subjectKind === 'index' ? indexSubject : commitSubject);
 const performance = JSON.parse(readFileSync(join(root, 'docs/specs/evidence/modular-agon-slice6-performance.json'), 'utf8'));
 const inventory = JSON.parse(readFileSync(join(root, 'docs/specs/evidence/modular-agon-current-inventory.json'), 'utf8'));
 const inventoryAssignments = Object.values(inventory.categories).reduce((sum, entries) => sum + entries.length, 0);

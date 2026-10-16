@@ -4,14 +4,13 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { initializeMaterializedGitSubject, materializeGitSubject, pinGitSubject } from './slice1b-qualification-gates.mjs';
-import { collectSubjectContamination, hashGitSubject, isSourceBearingPath, validateDependencyGraph, validateStoredSubjectBoundReview } from './slice1b-qualification-gates.mjs';
+import { collectSubjectContamination, hashReviewSubject, isSourceBearingPath, validateDependencyGraph, validateSliceReview } from './slice1b-qualification-gates.mjs';
 
 const root = fileURLToPath(new URL('../..', import.meta.url));
 const commitSubject = pinGitSubject(root, 'commit');
 const indexSubject = pinGitSubject(root, 'index', commitSubject.revision);
 const runtimeRoot = mkdtempSync(join(tmpdir(), 'agon-modular-s8-runtime-'));
 const excluded = ['docs/specs/evidence/modular-agon-slice8-review-evidence.json', 'docs/specs/evidence/modular-agon-slice8-verification-receipt.json'];
-const excludedPrefixes = ['docs/specs/evidence/verification-logs/slice8/'];
 
 function run(command, args, cwd = root) {
   return spawnSync(command, args, { cwd, encoding: 'utf8', maxBuffer: 96 * 1024 * 1024, env: { ...process.env, AGON_HOME: join(runtimeRoot, 'agon-home'), npm_config_cache: process.env.AGON_QUALIFICATION_NPM_CACHE ?? join(runtimeRoot, 'npm-cache'), npm_config_logs_dir: join(runtimeRoot, 'npm-logs'), npm_config_ignore_scripts: 'true', NODE_OPTIONS: '--max-old-space-size=8192' } });
@@ -71,11 +70,10 @@ function cleanSteps(subject) {
 const subjectKind = process.argv.includes('--subject=commit') ? 'commit' : 'index';
 const allContamination = collectSubjectContamination(root, ['.']);
 const contamination = Object.fromEntries(Object.entries(allContamination).map(([kind, paths]) => [kind, paths.filter((path) => isSourceBearingPath(path, { nonSourcePaths: excluded }))]));
-const indexHash = hashGitSubject(root, { ...indexSubject, pathspecs: ['.'], excludedPaths: excluded, excludedPathPrefixes: excludedPrefixes });
-const commitHash = hashGitSubject(root, { ...commitSubject, pathspecs: ['.'], excludedPaths: excluded, excludedPathPrefixes: excludedPrefixes });
+const indexHash = hashReviewSubject(root, indexSubject, 'S8');
+const commitHash = hashReviewSubject(root, commitSubject, 'S8');
 const expectedHash = subjectKind === 'index' ? indexHash : commitHash;
-const reviewPath = 'docs/specs/evidence/modular-agon-slice8-review-evidence.json';
-const reviewEvidence = validateStoredSubjectBoundReview(root, reviewPath, { ...(subjectKind === 'index' ? indexSubject : commitSubject), hash: expectedHash });
+const reviewEvidence = validateSliceReview(root, 'S8', subjectKind === 'index' ? indexSubject : commitSubject);
 const packageMap = JSON.parse(readFileSync(join(root, 'docs/specs/evidence/modular-agon-package-map.json'), 'utf8'));
 const graph = validateDependencyGraph(packageMap.packages);
 const steps = process.argv.includes('--run-clean') ? cleanSteps(subjectKind) : [];

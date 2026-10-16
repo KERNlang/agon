@@ -6,10 +6,10 @@ import { fileURLToPath } from 'node:url';
 import { materializeGitSubject, pinGitSubject } from './slice1b-qualification-gates.mjs';
 import {
   collectSubjectContamination,
-  hashGitSubject,
+  hashReviewSubject,
   isSourceBearingPath,
   validateDependencyGraph,
-  validateStoredSubjectBoundReview,
+  validateSliceReview,
 } from './slice1b-qualification-gates.mjs';
 
 const root = fileURLToPath(new URL('../..', import.meta.url));
@@ -75,11 +75,10 @@ const contamination = Object.fromEntries(Object.entries(allContamination).map(([
 ]));
 const packageMap = JSON.parse(readFileSync(join(root, 'docs/specs/evidence/modular-agon-package-map.json'), 'utf8'));
 const graph = validateDependencyGraph(packageMap.packages);
-const indexHash = hashGitSubject(root, { ...indexSubject, pathspecs: ['.'], excludedPaths: excludedReceiptPaths });
-const commitHash = hashGitSubject(root, { ...commitSubject, pathspecs: ['.'], excludedPaths: excludedReceiptPaths });
+const indexHash = hashReviewSubject(root, indexSubject, 'S2');
+const commitHash = hashReviewSubject(root, commitSubject, 'S2');
 const expectedHash = subjectKind === 'index' ? indexHash : commitHash;
-const reviewPath = 'docs/specs/evidence/modular-agon-slice2-review-evidence.json';
-const reviewEvidence = validateStoredSubjectBoundReview(root, reviewPath, { ...(subjectKind === 'index' ? indexSubject : commitSubject), hash: expectedHash });
+const reviewEvidence = validateSliceReview(root, 'S2', subjectKind === 'index' ? indexSubject : commitSubject);
 const performance = JSON.parse(readFileSync(join(root, 'docs/specs/evidence/modular-agon-slice2-performance.json'), 'utf8'));
 const steps = process.argv.includes('--run-clean') ? cleanSubjectSteps(subjectKind) : [];
 const receipt = {

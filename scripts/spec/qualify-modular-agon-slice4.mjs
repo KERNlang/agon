@@ -6,10 +6,10 @@ import { fileURLToPath } from 'node:url';
 import { initializeMaterializedGitSubject, materializeGitSubject, pinGitSubject } from './slice1b-qualification-gates.mjs';
 import {
   collectSubjectContamination,
-  hashGitSubject,
+  hashReviewSubject,
   isSourceBearingPath,
   validateDependencyGraph,
-  validateStoredSubjectBoundReview,
+  validateSliceReview,
 } from './slice1b-qualification-gates.mjs';
 
 const root = fileURLToPath(new URL('../..', import.meta.url));
@@ -19,7 +19,6 @@ const excludedReceiptPaths = [
   'docs/specs/evidence/modular-agon-slice4-review-evidence.json',
   'docs/specs/evidence/modular-agon-slice4-verification-receipt.json',
 ];
-const excludedReviewArtifactPrefixes = ["docs/specs/evidence/verification-logs/slice4/"];
 
 function run(command, args, cwd = root) {
   const result = spawnSync(command, args, {
@@ -92,11 +91,10 @@ const contamination = Object.fromEntries(Object.entries(allContamination).map(([
 ]));
 const packageMap = JSON.parse(readFileSync(join(root, 'docs/specs/evidence/modular-agon-package-map.json'), 'utf8'));
 const graph = validateDependencyGraph(packageMap.packages);
-const indexHash = hashGitSubject(root, { ...indexSubject, pathspecs: ['.'], excludedPaths: excludedReceiptPaths, excludedPathPrefixes: excludedReviewArtifactPrefixes });
-const commitHash = hashGitSubject(root, { ...commitSubject, pathspecs: ['.'], excludedPaths: excludedReceiptPaths, excludedPathPrefixes: excludedReviewArtifactPrefixes });
+const indexHash = hashReviewSubject(root, indexSubject, 'S4');
+const commitHash = hashReviewSubject(root, commitSubject, 'S4');
 const expectedHash = subjectKind === 'index' ? indexHash : commitHash;
-const reviewPath = 'docs/specs/evidence/modular-agon-slice4-review-evidence.json';
-const reviewEvidence = validateStoredSubjectBoundReview(root, reviewPath, { ...(subjectKind === 'index' ? indexSubject : commitSubject), hash: expectedHash });
+const reviewEvidence = validateSliceReview(root, 'S4', subjectKind === 'index' ? indexSubject : commitSubject);
 const performance = JSON.parse(readFileSync(join(root, 'docs/specs/evidence/modular-agon-slice4-performance.json'), 'utf8'));
 const migration = JSON.parse(readFileSync(join(root, 'docs/specs/evidence/modular-agon-slice4-migration-ledger.json'), 'utf8'));
 const steps = process.argv.includes('--run-clean') ? cleanSubjectSteps(subjectKind) : [];

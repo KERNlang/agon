@@ -4,12 +4,11 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { materializeGitSubject, pinGitSubject } from './slice1b-qualification-gates.mjs';
-import { collectSubjectContamination, hashGitSubject, validateDependencyGraph, validateStoredSubjectBoundReview, isSourceBearingPath } from './slice1b-qualification-gates.mjs';
+import { collectSubjectContamination, hashReviewSubject, validateDependencyGraph, validateSliceReview, isSourceBearingPath } from './slice1b-qualification-gates.mjs';
 
 const root = fileURLToPath(new URL('../..', import.meta.url));
 const commitSubject = pinGitSubject(root, 'commit');
 const indexSubject = pinGitSubject(root, 'index', commitSubject.revision);
-const subjectPathspecs = ['.'];
 const excludedReceiptPaths = [
   'docs/specs/evidence/modular-agon-slice1b-review-evidence.json',
   'docs/specs/evidence/modular-agon-slice1b-verification-receipt.json',
@@ -58,10 +57,9 @@ const allContamination = collectSubjectContamination(root, ['.']);
 const contamination = Object.fromEntries(Object.entries(allContamination).map(([kind, paths]) => [kind, paths.filter((path) => isSourceBearingPath(path, { nonSourcePaths: excludedReceiptPaths }))]));
 const packageMap = JSON.parse(readFileSync(join(root, 'docs/specs/evidence/modular-agon-package-map.json'), 'utf8'));
 const graph = validateDependencyGraph(packageMap.packages);
-const indexHash = hashGitSubject(root, { ...indexSubject, pathspecs: subjectPathspecs, excludedPaths: excludedReceiptPaths });
-const commitHash = hashGitSubject(root, { ...commitSubject, pathspecs: subjectPathspecs, excludedPaths: excludedReceiptPaths });
-const reviewEvidencePath = 'docs/specs/evidence/modular-agon-slice1b-review-evidence.json';
-const reviewEvidence = validateStoredSubjectBoundReview(root, reviewEvidencePath, { ...(subjectKind === 'index' ? indexSubject : commitSubject), hash: subjectKind === 'index' ? indexHash : commitHash });
+const indexHash = hashReviewSubject(root, indexSubject, 'S1B');
+const commitHash = hashReviewSubject(root, commitSubject, 'S1B');
+const reviewEvidence = validateSliceReview(root, 'S1B', subjectKind === 'index' ? indexSubject : commitSubject);
 const steps = process.argv.includes('--run-clean') ? cleanSubjectSteps(subjectKind) : [];
 const receipt = {
   schemaVersion: 2,

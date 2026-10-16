@@ -138,6 +138,24 @@ dependency/build outputs are exempt only at root `node_modules/` and immediate
 `dist-custom` or `node_modules` under source does not hide source contamination.
 
 All nine clean-checkout qualifiers pin the commit and index tree before hashing,
+review validation or execution. Review inputs use policy `modular-review-input-v2`,
+with the policy and slice ID included in the hash domain. This projection omits
+only the nine exact S1B–S9 review manifests and nine aggregate receipt paths,
+in addition to the existing slice-specific verification receipt and S4–S9 log
+exclusions. Source, fixtures, unknown evidence and other review artifacts remain
+bound. Manifests cannot select exclusions. The aggregate schema-2 projection
+above is unchanged: it binds every review manifest and artifact. The aggregate
+assessor also validates every current slice review, including policy, findings,
+distinct completed engines and artifact hashes.
+
+Historical reviews are not silently migrated. The new policy requires fresh
+review or explicit reviewer reaffirmation. Finalize review artifacts first,
+seal all nine manifests, then freeze the aggregate subject. Run and record each
+slice in dependency order, committing only its aggregate receipt. Keep fresh
+command logs outside the tree during this chain. Any other content change
+requires fresh qualification; a replaced prerequisite requires dependent reruns.
+
+All nine clean-checkout qualifiers pin the commit and index tree before hashing,
 review validation or execution. Receipts identify the pinned revision and tree;
 an index subject keeps its distinct `kind: index` label. Materialization reads
 raw Git blobs, preserves executable modes, and verifies exact bytes and paths

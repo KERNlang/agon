@@ -24,8 +24,8 @@ it.each([[3, true], [1, true], [3, false], [0, false]] as const)(
       tmpdir: () => '/fixture/tmp', mkdtempSync: (prefix: string) => prefix + 'unique', rmSync() {},
       collectSubjectContamination: () => ({ ignored: [], untracked: [], unstaged: [] }),
       isSourceBearingPath: () => false,
-      hashGitSubject: () => 'sha256:fixture',
-      validateStoredSubjectBoundReview: () => ({ passed: false }),
+      hashReviewSubject: () => 'sha256:fixture',
+      validateSliceReview: () => ({ passed: false }),
       validateDependencyGraph: () => ({ duplicateEdges: [], uniqueEdges: 153 }),
       readFileSync: (path: string) => {
         if (path.endsWith('package-map.json')) return JSON.stringify({ packages: Array.from({ length: 49 }, (_, i) => ({ class: i < 36 ? 'user-toggleable-mod-package' : 'support' })) });
@@ -104,8 +104,8 @@ it.each([
     tmpdir: () => '/fixture/tmp', mkdtempSync: (prefix: string) => prefix + 'unique', rmSync() {},
     collectSubjectContamination: () => ({ ignored: [], untracked: [], unstaged: [] }),
     isSourceBearingPath: () => false,
-    hashGitSubject: () => 'sha256:fixture',
-    validateStoredSubjectBoundReview: () => ({ passed: true }),
+    hashReviewSubject: () => 'sha256:fixture',
+    validateSliceReview: () => ({ passed: true }),
     validateDependencyGraph: () => ({ duplicateEdges: [], uniqueEdges: 153 }),
     loadEvidencePasses,
     readFileSync: (path: string) => {

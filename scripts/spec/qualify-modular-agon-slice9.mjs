@@ -3,14 +3,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { collectSubjectContamination, hashGitSubject, isSourceBearingPath, initializeMaterializedGitSubject, materializeGitSubject, pinGitSubject, validateDependencyGraph, validateStoredSubjectBoundReview } from './slice1b-qualification-gates.mjs';
+import { collectSubjectContamination, hashReviewSubject, isSourceBearingPath, initializeMaterializedGitSubject, materializeGitSubject, pinGitSubject, validateDependencyGraph, validateSliceReview } from './slice1b-qualification-gates.mjs';
 import { loadEvidencePasses } from './measure-modular-load.mjs';
 
 const root = fileURLToPath(new URL('../..', import.meta.url));
 const commitSubject = pinGitSubject(root, 'commit');
 const indexSubject = pinGitSubject(root, 'index', commitSubject.revision);
 const excluded = ['docs/specs/evidence/modular-agon-slice9-review-evidence.json', 'docs/specs/evidence/modular-agon-slice9-verification-receipt.json'];
-const excludedPrefixes = ['docs/specs/evidence/verification-logs/slice9/'];
 const runtimeRoot = mkdtempSync(join(tmpdir(), 'agon-modular-s9-runtime-'));
 
 function run(command, args, cwd = root) {
@@ -88,11 +87,10 @@ function cleanSteps(subject) {
 const subjectKind = process.argv.includes('--subject=commit') ? 'commit' : 'index';
 const contaminationRaw = collectSubjectContamination(root, ['.']);
 const contamination = Object.fromEntries(Object.entries(contaminationRaw).map(([kind, paths]) => [kind, paths.filter((path) => isSourceBearingPath(path, { nonSourcePaths: excluded }))]));
-const indexHash = hashGitSubject(root, { ...indexSubject, pathspecs: ['.'], excludedPaths: excluded, excludedPathPrefixes: excludedPrefixes });
-const commitHash = hashGitSubject(root, { ...commitSubject, pathspecs: ['.'], excludedPaths: excluded, excludedPathPrefixes: excludedPrefixes });
+const indexHash = hashReviewSubject(root, indexSubject, 'S9');
+const commitHash = hashReviewSubject(root, commitSubject, 'S9');
 const expectedHash = subjectKind === 'index' ? indexHash : commitHash;
-const reviewPath = 'docs/specs/evidence/modular-agon-slice9-review-evidence.json';
-const reviewEvidence = validateStoredSubjectBoundReview(root, reviewPath, { ...(subjectKind === 'index' ? indexSubject : commitSubject), hash: expectedHash });
+const reviewEvidence = validateSliceReview(root, 'S9', subjectKind === 'index' ? indexSubject : commitSubject);
 const packageMap = JSON.parse(readFileSync(join(root, 'docs/specs/evidence/modular-agon-package-map.json'), 'utf8'));
 const ownership = JSON.parse(readFileSync(join(root, 'docs/specs/evidence/modular-agon-ownership.json'), 'utf8'));
 const release = JSON.parse(readFileSync(join(root, 'docs/specs/evidence/modular-agon-release-set.json'), 'utf8'));

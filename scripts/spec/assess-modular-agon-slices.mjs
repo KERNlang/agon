@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { collectSubjectContamination, hashGitSubject, isSourceBearingPath } from './slice1b-qualification-gates.mjs';
+import { collectSubjectContamination, hashGitSubject, isSourceBearingPath, validateSliceReview } from './slice1b-qualification-gates.mjs';
 
 const root = fileURLToPath(new URL('../..', import.meta.url));
 const headResult = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' });
@@ -72,7 +72,8 @@ for (const slice of roadmapValid ? roadmap.slices : []) {
   const dependenciesReady = slice.dependsOn.every((id) => assessed.find((entry) => entry.id === id)?.ready === true);
   const commands = slice.acceptanceCommands.map(commandAvailability);
   const receipt = receiptFor(slice);
-  assessed.push({ id: slice.id, dependenciesReady, commands, receipt, ready: dependenciesReady && commands.every(({ available }) => available) && receipt.valid });
+  const review = validateSliceReview(root, slice.id, { kind: 'commit', revision: subjectCommit });
+  assessed.push({ id: slice.id, dependenciesReady, commands, receipt, review, ready: dependenciesReady && commands.every(({ available }) => available) && receipt.valid && review.passed });
 }
 console.log(JSON.stringify({ schemaVersion: 2, evidenceCommit: subjectCommit, subjectHash, cleanWorktree, roadmapValid, slices: assessed, readySlices: assessed.filter(({ ready }) => ready).map(({ id }) => id) }, null, 2));
 if (!roadmapValid || !cleanWorktree || assessed.some(({ ready }) => !ready)) process.exitCode = 1;

@@ -30,13 +30,6 @@ function services(manifest: any): any {
     permissions: { check: vi.fn(async () => ({ allowed: true })) },
     state: { read: vi.fn(async () => undefined), write: vi.fn(async () => undefined) },
     engines: { dispatch: vi.fn(async () => null) },
-    firstPartyCompatibility: {
-      command: runtime.command,
-      tool: runtime.tool,
-      parseIntent: runtime.parseIntent,
-      lifecycle: async () => undefined,
-      render: runtime.renderDocs,
-    },
   };
 }
 

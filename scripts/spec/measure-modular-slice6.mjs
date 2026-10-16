@@ -13,7 +13,7 @@ try {
   const probe = `
     const kernel = await import('@kernlang/agon-kernel');
     const runtime = { command:()=>({exitCode:0}), tool:()=>null, parseIntent:()=>undefined, renderDocs:(id)=>({text:id}) };
-    const serviceFor=(manifest)=>({ identity:{id:manifest.id,version:manifest.version,contentHash:manifest.assets[0]?.contentHash??'sha256:${'0'.repeat(64)}'}, source:{kind:'bundled',locator:manifest.id}, logger:{debug(){},info(){},warn(){}}, receipts:{async record(){return 'receipt'}}, permissions:{async check(){return {allowed:true}}}, state:{async read(){},async write(){}}, engines:{async dispatch(){return null}}, firstPartyCompatibility:{command:runtime.command,tool:runtime.tool,parseIntent:runtime.parseIntent,async lifecycle(){},render:runtime.renderDocs} });
+    const serviceFor=(manifest)=>({ identity:{id:manifest.id,version:manifest.version,contentHash:manifest.assets[0]?.contentHash??'sha256:${'0'.repeat(64)}'}, source:{kind:'bundled',locator:manifest.id}, logger:{debug(){},info(){},warn(){}}, receipts:{async record(){return 'receipt'}}, permissions:{async check(){return {allowed:true}}}, state:{async read(){},async write(){}}, engines:{async dispatch(){return null}} });
     const started=performance.now();
     const packages=await Promise.all(${JSON.stringify(packageIds)}.map(async(id)=>{const loaded=await import(id);const services=serviceFor(loaded.MANIFEST);return {manifest:loaded.MANIFEST,mod:await loaded.createMod(services),services}}));
     const imported=performance.now();

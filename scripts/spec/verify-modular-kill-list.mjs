@@ -41,6 +41,7 @@ export function evaluateKillList(files) {
     && present(jobImplementation, [/import\s*\{\s*ModularJobService\s*\}\s*from\s*['"]\.\/persisted-job-service\.js['"]/, /export\s*\{\s*ModularJobService\s*\}/]);
   const envelopeTests = files['tests/unit/modular-envelope-contract.test.ts'] + files['tests/unit/modular-release-state-migrations.test.ts'];
   const bootstrap = files['packages/mod-kernel/src/first-party-surface-bootstrap.ts'];
+  const firstPartyGenerator = files['scripts/spec/generate-modular-first-party-packages.mjs'];
   const docsRenderer = files['packages/mod-routing-docs/src/guide-content.ts'];
   const docsEntrypoint = files['scripts/generate-mode-docs.mjs'];
   const legacyDocsSource = files['packages/cli/src/commands/agent-guide-text.ts'] ?? '';
@@ -57,7 +58,8 @@ export function evaluateKillList(files) {
     ['KL-008', !rootPackage.scripts?.postinstall && !rootPackage.scripts?.prepare && files['scripts/postinstall.mjs'] === undefined],
     ['KL-009', absent(update, [/["']install["']\s*,\s*["']-g["']/, /npm install -g/]) && present(update, [/runManagedSetup/, /preserveExistingState:\s*true/]) && present(managedSetup, [/ManagedLifecycleService/, /runBoundedCandidateProcess/])],
     ['KL-010', present(desired, [/REPOSITORY_ACTIVATION_FORBIDDEN/, /cannot come from repository configuration/])],
-    ['KL-011', absent(lazy + intent + cesar + mcp, [/legacyLazyCommandImplementations/, /switch\s*\(cmd\)/, /CESAR_SURFACE_IDS/, /ORCHESTRATION_TOOLS/])],
+    ['KL-011', absent(lazy + intent + cesar + mcp, [/legacyLazyCommandImplementations/, /switch\s*\(cmd\)/, /CESAR_SURFACE_IDS/, /ORCHESTRATION_TOOLS/])
+      && typeof firstPartyGenerator === 'string' && absent(bootstrap + firstPartyGenerator, [/firstPartyCompatibility/, /FirstPartyCompatibilityRuntime/, /createFirstPartyCompatibilityMod/])],
     ['KL-012', present(pipelineOrchestration, [/agon\.workflow\.pipeline-orchestration\.v1/, /mcp:Pipeline/, /brainstorm/, /forge/, /tribunal/]) && present(pipelineDelivery, [/agon\.workflow\.pipeline-delivery\.v1/, /tui:\/pipeline/, /cesar:pipeline/, /build/, /review/, /fix/])],
     ['KL-013', resultPersistenceOwned && jobPersistenceOwned && present(envelopes, [/PlanEnvelopeSchema/, /ResultEnvelopeSchema/, /SessionEnvelopeSchema/, /JobEnvelopeSchema/, /\.strict\(\)/]) && present(envelopeCodec, [/createPersistenceEnvelope/, /unwrapPersistenceEnvelope/, /validatePersistedEnvelope/]) && present(envelopeProducers, [/kind:\s*['"]plan['"]/, /kind:\s*['"]session['"]/, /kind:\s*['"]job['"]/, /kind:\s*['"]result['"]/]) && present(envelopeTests, [/legacy/i, /validatePersistedEnvelope|wrong envelope kind|reject/i])],
     ['KL-014', present(bootstrap, [/TrustGrantStore/, /evaluateThirdPartyAuthority/, /createSafeExternalModServices/]) && absent(extension, [/fail.open|catch\s*\{\s*return\s*\[/i])],
@@ -79,6 +81,7 @@ const paths = [
   'tests/unit/modular-envelope-contract.test.ts', 'tests/unit/modular-release-state-migrations.test.ts',
   'packages/mod-routing-docs/src/guide-content.ts', 'scripts/generate-mode-docs.mjs', 'packages/cli/src/commands/agent-guide-text.ts',
   'packages/mod-kernel/src/first-party-surface-bootstrap.ts',
+  'scripts/spec/generate-modular-first-party-packages.mjs',
   'docs/specs/evidence/modular-agon-slice6-compatibility-adapters.json',
 ];
 const files = Object.fromEntries(paths.flatMap((path) => {
@@ -98,6 +101,8 @@ if (process.argv.includes('--self-test')) {
     ['KL-005', 'packages/mcp/src/agon-orchestration.ts', 'export const ORCHESTRATION_TOOLS = []; export function handleToolCall() {}'],
     ['KL-008', 'package.json', JSON.stringify({ ...JSON.parse(files['package.json']), scripts: { postinstall: 'node scripts/postinstall.mjs' } })],
     ['KL-010', 'packages/mod-kernel/src/desired-state.ts', 'repository activation is allowed'],
+    ['KL-011', 'packages/mod-kernel/src/first-party-surface-bootstrap.ts', files['packages/mod-kernel/src/first-party-surface-bootstrap.ts'] + '\nconst firstPartyCompatibility = {};'],
+    ['KL-011', 'scripts/spec/generate-modular-first-party-packages.mjs', files['scripts/spec/generate-modular-first-party-packages.mjs'] + '\nfunction createFirstPartyCompatibilityMod() {}'],
     ['KL-012', 'packages/mod-pipeline-delivery/src/implementation.ts', 'const pipeline = ["build", "review", "fix"];'],
     ['KL-013', 'packages/forge/src/result-envelope.ts', 'export const legacyResult = {};'],
     ['KL-013', 'packages/support-persistence/src/result-envelope.ts', 'export const legacyResult = {};'],

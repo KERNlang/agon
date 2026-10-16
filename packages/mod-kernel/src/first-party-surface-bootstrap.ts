@@ -128,15 +128,8 @@ async function selectedDesiredState(hostRoot: string, candidate?: CandidateSurfa
   };
 }
 
-function createServices(hostRoot: string, manifest: ModManifest, runtime: GeneratedSurfaceRuntime, source: ModServices['source'] = 'bundled', contentHash = sha256Canonical(manifest)): ModServices {
+function createServices(hostRoot: string, manifest: ModManifest, source: ModServices['source'] = 'bundled', contentHash = sha256Canonical(manifest)): ModServices {
   const state = new ModStateStore(hostRoot, manifest.id);
-  const compatibility = {
-    command: (kind: string, id: string, input: Json, context: Parameters<GeneratedSurfaceRuntime['command']>[3]) => runtime.command(kind === 'cli-command' ? 'cli' : 'tui', id, input, context),
-    tool: (kind: string, id: string, input: Json, context: Parameters<GeneratedSurfaceRuntime['tool']>[3]) => runtime.tool(kind === 'mcp-tool' ? 'mcp' : 'cesar', id, input, context),
-    parseIntent: (id: string, input: string) => runtime.parseIntent(id, input),
-    lifecycle: async (id: string, payload: Json, context: Parameters<GeneratedSurfaceRuntime['tool']>[3]) => { await runtime.tool('cesar', id, payload, context); },
-    render: (id: string, payload: Json) => runtime.renderDocs(id, payload),
-  };
   return Object.freeze({
     identity: Object.freeze({ id: manifest.id, version: manifest.version, contentHash }),
     source,
@@ -146,18 +139,17 @@ function createServices(hostRoot: string, manifest: ModManifest, runtime: Genera
       read: async <T extends Json>(key: string) => state.read<T>(key),
       write: async (key: string, value: Json) => state.write(key, value),
     }),
-    engines: Object.freeze({ dispatch: async () => { throw new Error('engine dispatch is available only through the compatibility executor'); } }),
-    firstPartyCompatibility: Object.freeze(compatibility),
+    engines: Object.freeze({ dispatch: async () => { throw new Error('engine dispatch requires host-provided engine services'); } }),
   } as unknown as ModServices);
 }
 
-async function loadPackage(hostRoot: string, packageId: string, runtime: GeneratedSurfaceRuntime, decorateServices?: (manifest: ModManifest, services: ModServices) => ModServices): Promise<FirstPartySurfacePackage> {
+async function loadPackage(hostRoot: string, packageId: string, decorateServices?: (manifest: ModManifest, services: ModServices) => ModServices): Promise<FirstPartySurfacePackage> {
   const loaded = await import(packageId) as FirstPartyModule;
   if (!loaded.MANIFEST || typeof loaded.createMod !== 'function') throw new Error(`invalid bundled first-party package: ${packageId}`);
   if (loaded.MANIFEST.id !== packageId.replace('@kernlang/agon-mod-', 'agon.')) {
     throw new Error(`bundled package identity mismatch: ${packageId} != ${loaded.MANIFEST.id}`);
   }
-  const baseServices = createServices(hostRoot, loaded.MANIFEST, runtime);
+  const baseServices = createServices(hostRoot, loaded.MANIFEST);
   const services = decorateServices ? decorateServices(loaded.MANIFEST, baseServices) : baseServices;
   return Object.freeze({ manifest: loaded.MANIFEST, mod: await loaded.createMod(services), services });
 }
@@ -230,7 +222,7 @@ export async function bootstrapFirstPartySurfaceGeneration(options: {
   const activePackageIds = catalog.mods.map(({ id }) => id).filter((id) => resolved.effectivePackages.includes(id)).sort();
   const activeOwners = new Set(catalog.mods.filter(({ id }) => activePackageIds.includes(id)).map(({ modId }) => modId));
   const disabledOwnerIds = catalog.mods.map(({ modId }) => modId).filter((id) => !activeOwners.has(id)).sort();
-  const firstPartyPackages = await Promise.all(activePackageIds.map((id) => loadPackage(options.hostRoot, id, options.runtime, options.decorateFirstPartyServices)));
+  const firstPartyPackages = await Promise.all(activePackageIds.map((id) => loadPackage(options.hostRoot, id, options.decorateFirstPartyServices)));
   if (selection.lock) assertFirstPartyPackagesMatchLock(activePackageIds, firstPartyPackages, selection.lock);
 
   const modsRoot = options.modsRoot ?? join(dirname(options.hostRoot), 'mods');

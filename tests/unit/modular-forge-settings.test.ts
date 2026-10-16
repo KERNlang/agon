@@ -750,6 +750,25 @@ describe('Forge configuration ownership', () => {
       writeFileSync(schemaPath, JSON.stringify(schema));
       expect(run().status).toBe(0);
       expect(run(true).status).toBe(0);
+      const implementationPath = join(fixture, 'packages/mod-think/src/implementation.ts');
+      const implementation = readFileSync(implementationPath);
+      const earlierOutput = join(fixture, 'packages/mod-ask/src/index.ts');
+      const earlierBytes = readFileSync(earlierOutput);
+      writeFileSync(earlierOutput, '// stale output must survive failed generation\n');
+      const preservedPaths = [earlierOutput, join(fixture, 'packages/mod-think/src/index.ts'), join(fixture, 'package.json')];
+      const preserved = preservedPaths.map(path => readFileSync(path));
+      unlinkSync(implementationPath);
+      try {
+        for (const check of [false, true]) {
+          const missing = run(check);
+          expect(missing.status).toBe(1);
+          expect(missing.stderr).toContain('missing physical implementation for @kernlang/agon-mod-think');
+          preservedPaths.forEach((path, index) => expect(readFileSync(path)).toEqual(preserved[index]));
+        }
+      } finally {
+        writeFileSync(implementationPath, implementation);
+        writeFileSync(earlierOutput, earlierBytes);
+      }
       for (const mod of ['plan', 'forge']) {
         const index = readFileSync(join(fixture, `packages/mod-${mod}/src/index.ts`), 'utf8');
         expect(reExports(index)).toEqual(authoredExports[mod]);

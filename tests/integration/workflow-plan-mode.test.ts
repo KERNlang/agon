@@ -34,6 +34,13 @@ vi.mock('@kernlang/agon-forge', () => ({
   runDelegate: runDelegateMock,
 }));
 
+vi.mock('@kernlang/agon-mod-brainstorm', async original => {
+  const actual = await original<typeof import('@kernlang/agon-mod-brainstorm')>();
+  return { ...actual, createBrainstormRuntime: (...args: Parameters<typeof actual.createBrainstormRuntime>) => ({
+    ...actual.createBrainstormRuntime(...args), runBrainstorm: runBrainstormMock,
+  }) };
+});
+
 import { buildStepExecutors } from '../../packages/cli/src/handlers/plan-mode.js';
 
 function makeCtx(overrides: Record<string, unknown> = {}) {

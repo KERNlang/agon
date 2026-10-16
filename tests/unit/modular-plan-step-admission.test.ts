@@ -15,10 +15,23 @@ import type { DispatchOptions, EngineAdapter, EngineDefinition } from '@kernlang
 import { tracker, setSessionRoot, _resetSessionRootForTests } from '@kernlang/agon-core';
 
 const effects = vi.hoisted(() => ({ brainstorm: vi.fn(), brain: vi.fn(), delegate: vi.fn(), other: vi.fn(), verify: vi.fn() }));
+const composition = vi.hoisted(() => ({
+  real: false, seed: vi.fn(), ratings: vi.fn(() => ({ global: {}, byMode: { brainstorm: {} } })),
+  update: vi.fn(), classify: vi.fn(() => 'code'), config: vi.fn(() => ({})),
+}));
+vi.mock('@kernlang/agon-mod-ratings', async original => {
+  const actual = await original<typeof import('@kernlang/agon-mod-ratings')>();
+  return { ...actual, glicko: { ...actual.glicko, getRatings: composition.ratings,
+    seedNewEnginesFromRegistry: composition.seed, updateGlickoRanked: composition.update } };
+});
+vi.mock('@kernlang/agon-support-dedup', async original => ({
+  ...await original<object>(), classifyTask: composition.classify,
+  dedupBrainstormDrafts: async () => ({ groups: null, status: { status: 'unavailable', detail: 'isolated fixture' } }),
+}));
 vi.mock('../../packages/cli/src/cesar/brain.js', () => ({ handleCesarBrain: effects.brain }));
 vi.mock('@kernlang/agon-core', async original => {
   const core = await original<typeof import('@kernlang/agon-core')>();
-  return { ...core, spawnWithTimeout: effects.verify.mockImplementation(core.spawnWithTimeout) };
+  return { ...core, loadConfig: composition.config, spawnWithTimeout: effects.verify.mockImplementation(core.spawnWithTimeout) };
 });
 vi.mock('@kernlang/agon-forge', async original => ({
   ...await original<Record<string, unknown>>(), runBrainstorm: effects.brainstorm,
@@ -33,12 +46,21 @@ vi.mock('../../packages/cli/src/handlers/review.js', async original => ({
   selectReviewEngine: () => 'fixture',
 }));
 import { buildStepExecutors } from '../../packages/cli/src/handlers/plan-mode.js';
+vi.mock('@kernlang/agon-mod-brainstorm', async original => {
+  const actual = await original<typeof import('@kernlang/agon-mod-brainstorm')>();
+  return { ...actual, createBrainstormRuntime: (...args: Parameters<typeof actual.createBrainstormRuntime>) => {
+    const runtime = actual.createBrainstormRuntime(...args);
+    return { ...runtime, runBrainstorm: (...input: Parameters<typeof runtime.runBrainstorm>) =>
+      composition.real ? runtime.runBrainstorm(...input) : effects.brainstorm(...input) };
+  } };
+});
 
 const NOW = '2026-10-10T00:00:00.000Z';
 let root: string;
 let host: DurableModHost;
 beforeEach(async () => {
   vi.clearAllMocks();
+  composition.real = false;
   effects.verify.mockImplementation((await vi.importActual<typeof import('@kernlang/agon-core')>('@kernlang/agon-core')).spawnWithTimeout);
   effects.brainstorm.mockResolvedValue({ winner: 'fixture', response: 'answer' });
   effects.brain.mockReset().mockResolvedValue({ terminalState: 'completed', responded: true });
@@ -72,6 +94,55 @@ function context(): HandlerContext { return { config: {}, adapter: {} } as Handl
 function step(type: string): CesarPlanStep {
   return { id: 'step', type, description: 'fixture', state: 'pending', estimatedTokens: 0, estimatedCostUsd: 0 };
 }
+
+it.each(['brainstorm', 'pipeline'].flatMap(type =>
+  ['healthy', 'after-probe', 'after-draft'].map(transition => ({ type, transition })),
+))('runs the physical Brainstorm composition through Plan $type / $transition', async ({ type, transition }) => {
+  composition.real = true;
+  vi.stubEnv('AGON_FORCE_HEALTH_PROBE', '1');
+  vi.stubEnv('AGON_DISABLE_FORGE_HEALTH_CHECK', '');
+  await install();
+  await initializeProcessSurfaceAuthority(root);
+  let calls = 0;
+  const dispatch = vi.fn(async (options: DispatchOptions) => {
+    calls++;
+    if (calls === (transition === 'after-probe' ? 2 : transition === 'after-draft' ? 4 : -1)) {
+      await install('agon.brainstorm');
+    }
+    return {
+    exitCode: 0, stderr: '', timedOut: false,
+    stdout: options.prompt.includes('Multiple AI engines analyzed') ? 'physical synthesis' :
+      JSON.stringify({ approach: 'A sufficiently detailed fixture approach', confidence: 75,
+        reasoning: 'Test the physical owner', tradeoffs: [], keyFiles: [], steps: ['Verify the result'] }),
+    };
+  });
+  const registry = { get: (id: string) => ({ id }) } as HandlerContext['registry'];
+  const ctx = { ...context(), registry, adapter: { dispatch }, activeEngines: () => ['fixture', 'second'] } as HandlerContext;
+  const executors = buildStepExecutors(ctx);
+  expect(composition.seed).not.toHaveBeenCalled();
+  expect(composition.ratings).not.toHaveBeenCalled();
+  expect(dispatch).not.toHaveBeenCalled();
+  const result = await executors[type].execute(step(type), {});
+  expect(effects.brainstorm).not.toHaveBeenCalled();
+  expect(composition.seed).toHaveBeenCalledExactlyOnceWith(registry);
+  if (transition !== 'healthy') {
+    expect(result.result.status).toBe('failure');
+    expect(dispatch).toHaveBeenCalledTimes(transition === 'after-probe' ? 2 : 4);
+    expect(effects.other).not.toHaveBeenCalled();
+    return;
+  }
+  expect(result.result.status).toBe('success');
+  expect(composition.ratings).toHaveBeenCalled();
+  expect(composition.config).toHaveBeenCalled();
+  expect(composition.classify).toHaveBeenCalledExactlyOnceWith('fixture');
+  expect(composition.update).toHaveBeenCalledWith(
+    [{ engineId: 'fixture', score: expect.any(Number) }, { engineId: 'second', score: expect.any(Number) }], 'code', 'brainstorm',
+  );
+  expect(dispatch).toHaveBeenCalledTimes(5);
+  expect(dispatch.mock.calls[0][0].prompt).toBe('Reply with just: ok');
+  expect(dispatch.mock.calls[2][0]).toMatchObject({ engine: { id: 'fixture' }, textOnly: true, mode: 'exec' });
+  expect(dispatch.mock.calls[4][0].prompt).toContain('Multiple AI engines analyzed');
+});
 
 it.each(['failed', 'timed_out', 'cancelled', 'superseded'])('rejects a live self-step brain outcome of %s', async terminalState => {
   await install();

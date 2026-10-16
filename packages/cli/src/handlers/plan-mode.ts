@@ -9,7 +9,12 @@ import { SurfaceGenerationError } from '@kernlang/agon-kernel';
 
 import type { CesarPlan, StepExecutor } from '@kernlang/agon-core';
 
-import { runForge, runBrainstorm, runTribunal, runCampfire, runDelegate } from '@kernlang/agon-forge';
+import { runForge, runTribunal, runCampfire, runDelegate } from '@kernlang/agon-forge';
+import { createBrainstormRuntime, createBrainstormEngineServices } from '@kernlang/agon-mod-brainstorm';
+import { glicko } from '@kernlang/agon-mod-ratings';
+import { classifyTask } from '@kernlang/agon-support-dedup';
+import { buildKernDraftPrompt, parseKernDraft } from '@kernlang/protocol';
+import { loadConfig } from '@kernlang/agon-core';
 
 import type { Dispatch, HandlerContext } from './types.js';
 
@@ -21,6 +26,14 @@ import { handleCesarBrain } from '../cesar/brain.js';
 
 import { isAgenticAutoMode } from '../cesar/task-controller.js';
 import { assertProcessPlanStepAvailable, assertProcessSurfaceAvailable, captureProcessSurfaceAuthority, guardProcessEngineAdapter, withProcessSurfaceAuthority } from '../surface-authority-runtime.js';
+
+const { runBrainstorm } = createBrainstormRuntime(createBrainstormEngineServices<HandlerContext['registry']>({
+  readRatings: glicko.getRatings,
+  buildPrompt: buildKernDraftPrompt,
+  parseDraft: parseKernDraft,
+  seedRegistry: glicko.seedNewEnginesFromRegistry,
+  loadConfig, classifyTask, updateRanked: glicko.updateGlickoRanked,
+}));
 
 export async function handleProposePlan(args: Record<string, unknown>, dispatch: Dispatch, ctx: HandlerContext): Promise<CesarPlan> {
   return publishPlanProposal(args, {

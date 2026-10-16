@@ -27,6 +27,22 @@
       "rule": "exact-user-surface"
     },
     {
+      "category": "resultAndEnvelopeTypes",
+      "id": "ConquerResult",
+      "source": "packages/forge/src/conquer.ts:146",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-conquer",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "resultAndEnvelopeTypes",
+      "id": "FalsifierResult",
+      "source": "packages/forge/src/conquer.ts:314",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-conquer",
+      "rule": "semantic-source-rule"
+    },
+    {
       "category": "tuiSlashCommands",
       "id": "/conquer",
       "source": "packages/cli/src/signals/intent.ts:56",

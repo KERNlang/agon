@@ -138,6 +138,13 @@ function assignmentFor(category, item) {
     [/\/job|Job/, 'jobs'], [/\/provenance\b|Provenance/, 'provenance'], [/\/ratings|Glicko|Rating/, 'ratings'],
     [/\/mutate|Mutat/, 'mutate'], [/\/naturalize|Natural/, 'naturalize'], [/\/agent-|\/agent\b|Agent/, 'agent'],
   ];
+  // Resolve the workflow below the legacy package before matching that package.
+  const legacyWorkflow = source.match(/^packages\/forge\/src\/([^/:]+)/)?.[1];
+  if (legacyWorkflow) {
+    for (const [pattern, name] of sourceRules) {
+      if (pattern.test('/' + legacyWorkflow)) return { class: MOD, package: `@kernlang/agon-mod-${name}`, rule: 'semantic-source-rule' };
+    }
+  }
   for (const [pattern, name] of sourceRules) {
     if (pattern.test(source) || pattern.test(raw)) return { class: MOD, package: `@kernlang/agon-mod-${name}`, rule: 'semantic-source-rule' };
   }

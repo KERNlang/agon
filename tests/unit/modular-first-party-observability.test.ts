@@ -2,10 +2,41 @@ import { mkdtemp, readFile, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import type { CommandContribution, InvocationContext, ModServices } from '@kernlang/agon-mod-api';
+import type { CommandContribution, InvocationContext, ModServices, ResultContribution } from '@kernlang/agon-mod-api';
 import { bootstrapFirstPartySurfaceGeneration } from '../../packages/mod-kernel/src/first-party-surface-bootstrap.js';
 
 describe('first-party semantic receipts', () => {
+  it('keeps migrated result readers with their workflow owners and disposes their registrations', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-owned-results-'));
+    const boot = await bootstrapFirstPartySurfaceGeneration({ hostRoot: root,
+      runtime: { command: () => { throw new Error('unexpected command'); }, tool: () => { throw new Error('unexpected tool'); }, parseIntent: () => undefined, renderDocs: () => { throw new Error('legacy result renderer must not run'); } },
+    });
+    const owners = {
+      goal: ['0016', '0064', '0144'], campfire: ['0022'], conquer: ['0037', '0055'],
+      council: ['0039'], mutate: ['0083', '0114'], naturalize: ['0085'],
+      nero: ['0086'], research: ['0106'], synthesis: ['0126'],
+    };
+    const payload = { historical: true, nested: { value: 42 }, entries: ['one', 'two'] };
+    const registry = boot.activated.generation.registry;
+    try {
+      for (const [owner, ids] of Object.entries(owners)) {
+        for (const id of ids) {
+          const record = registry.resolve('result-type', `resultAndEnvelopeTypes:${id}`);
+          expect(record?.owner.id).toBe(`agon.${owner}`);
+          const reader = record!.payload as ResultContribution;
+          expect(reader.schema).toEqual({ type: 'object', additionalProperties: true });
+          expect(reader.readableVersions).toBe('>=0.2.0');
+          expect(await reader.render(payload)).toEqual({ text: JSON.stringify(payload, null, 2) });
+        }
+      }
+      expect(registry.resolve('result-type', 'resultAndEnvelopeTypes:0127')?.owner.id).toBe('agon.forge');
+      expect((registry.resolve('result-type', 'resultAndEnvelopeTypes:0034')?.payload as ResultContribution).readableVersions).toBe('>=1');
+    } finally { await boot.activated.dispose(); }
+    for (const id of Object.values(owners).flat()) {
+      expect(registry.resolve('result-type', `resultAndEnvelopeTypes:${id}`)).toBeUndefined();
+    }
+  });
+
   it.each([false, true])('keeps physical invocation separate from kernel runtime (safe mode: %s)', async safeMode => {
     const root = await mkdtemp(join(tmpdir(), 'agon-owned-dispatch-'));
     const command = vi.fn(() => {

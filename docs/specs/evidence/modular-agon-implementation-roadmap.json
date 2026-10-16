@@ -43,7 +43,6 @@
       "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
       "extractionSources": [
         "docs/modes.md",
-        "package.json:12",
         "packages/cli/package.json",
         "packages/cli/src/blocks/narration-fold.ts:4",
         "packages/cli/src/cesar/ask-marker.ts:24",
@@ -82,7 +81,6 @@
         "packages/cli/src/cesar/turn-state.ts:93",
         "packages/cli/src/commands/doctor.ts:172",
         "packages/cli/src/commands/doctor.ts:211",
-        "packages/cli/src/commands/install-agent-prompts.ts:1",
         "packages/cli/src/commands/mod.ts:312",
         "packages/cli/src/commands/mod.ts:313",
         "packages/cli/src/commands/models.ts:128",
@@ -567,7 +565,6 @@
         "packages/core/src/blocks/engine-memory.ts:32",
         "packages/core/src/blocks/hooks.ts:5",
         "packages/core/src/models/types.ts:121",
-        "packages/core/src/models/types.ts:147",
         "packages/core/src/models/types.ts:165",
         "packages/core/src/models/types.ts:166",
         "packages/core/src/models/types.ts:167",
@@ -1111,7 +1108,8 @@
       "extractionSources": [
         "packages/cli/src/lazy-commands.ts:320",
         "packages/cli/src/signals/intent.ts:56",
-        "packages/core/src/tools/research-verifier.ts:15"
+        "packages/core/src/tools/research-verifier.ts:15",
+        "packages/forge/src/research.ts:27"
       ],
       "migrationOrder": 16,
       "migrationSlice": "S5",
@@ -1495,6 +1493,7 @@
         "packages/cli/src/signals/intent.ts:56",
         "packages/core/src/blocks/builtin-commands.ts:17",
         "packages/core/src/cesar/plan.ts:52",
+        "packages/forge/src/campfire.ts:7",
         "packages/mcp/src/agon-orchestration.ts:24"
       ],
       "migrationOrder": 26,
@@ -1566,7 +1565,8 @@
       "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
       "extractionSources": [
         "packages/cli/src/lazy-commands.ts:308",
-        "packages/cli/src/signals/intent.ts:56"
+        "packages/cli/src/signals/intent.ts:56",
+        "packages/forge/src/naturalize.ts:18"
       ],
       "migrationOrder": 28,
       "migrationSlice": "S5",
@@ -1768,7 +1768,6 @@
         "packages/cli/src/cesar/task-controller.ts:11",
         "packages/cli/src/cesar/tools.ts:46",
         "packages/cli/src/cesar/tools.ts:47",
-        "packages/cli/src/commands/agent-guide-text.ts:1",
         "packages/cli/src/handlers/agent.ts:26",
         "packages/cli/src/models/handler-types.ts:113",
         "packages/cli/src/signals/intent-types.ts:36",
@@ -1793,7 +1792,6 @@
         "packages/core/src/cesar/plan.ts:52",
         "packages/core/src/models/agent-event.ts:8",
         "packages/core/src/models/types.ts:131",
-        "packages/core/src/models/types.ts:160",
         "packages/core/src/models/types.ts:297",
         "packages/mcp/src/agon-orchestration.ts:24"
       ],
@@ -1881,7 +1879,8 @@
       "extractionSources": [
         "packages/cli/src/cesar/tools.ts:41",
         "packages/cli/src/lazy-commands.ts:319",
-        "packages/cli/src/signals/intent.ts:56"
+        "packages/cli/src/signals/intent.ts:56",
+        "packages/forge/src/council.ts:36"
       ],
       "migrationOrder": 35,
       "migrationSlice": "S5",
@@ -1944,33 +1943,13 @@
         "packages/core/src/models/types.ts:717",
         "packages/core/src/models/types.ts:79",
         "packages/core/src/models/types.ts:9",
-        "packages/forge/src/campfire.ts:7",
-        "packages/forge/src/conquer.ts:146",
-        "packages/forge/src/conquer.ts:314",
         "packages/forge/src/corpus.ts:9",
-        "packages/forge/src/council.ts:36",
         "packages/forge/src/delegate.ts:5",
-        "packages/forge/src/goal/journal.ts",
-        "packages/forge/src/goal/oracle-probe.ts:19",
-        "packages/forge/src/goal/oracle-probe.ts:54",
-        "packages/forge/src/goal/oracle-probe.ts:62",
-        "packages/forge/src/goal/oracle-probe.ts:64",
-        "packages/forge/src/goal/oracle-probe.ts:70",
-        "packages/forge/src/goal/oracle.ts:24",
-        "packages/forge/src/goal/oracle.ts:87",
-        "packages/forge/src/goal/types.ts:20",
-        "packages/forge/src/goal/types.ts:48",
         "packages/forge/src/health-check.ts:16",
         "packages/forge/src/health-check.ts:193",
-        "packages/forge/src/mutate-semantic.ts:25",
-        "packages/forge/src/mutate.ts:48",
-        "packages/forge/src/naturalize.ts:18",
-        "packages/forge/src/nero.ts:28",
         "packages/forge/src/pr-text.ts:21",
         "packages/forge/src/quality.ts:49",
-        "packages/forge/src/research.ts:27",
         "packages/forge/src/synth-plan.ts:16",
-        "packages/forge/src/synthesis-modus.ts:30",
         "packages/forge/src/thinking.ts:88",
         "packages/forge/src/types-impl.ts:10",
         "packages/forge/src/types-impl.ts:3",
@@ -2011,7 +1990,9 @@
         "packages/cli/src/lazy-commands.ts:309",
         "packages/cli/src/signals/intent.ts:56",
         "packages/core/src/models/types.ts:149",
-        "packages/core/src/models/types.ts:315"
+        "packages/core/src/models/types.ts:315",
+        "packages/forge/src/mutate-semantic.ts:25",
+        "packages/forge/src/mutate.ts:48"
       ],
       "migrationOrder": 37,
       "migrationSlice": "S5",
@@ -2049,6 +2030,7 @@
         "packages/cli/src/signals/intent-types.ts:53",
         "packages/cli/src/signals/intent.ts:56",
         "packages/core/src/blocks/builtin-commands.ts:67",
+        "packages/forge/src/nero.ts:28",
         "packages/mcp/src/agon-orchestration.ts:24"
       ],
       "migrationOrder": 38,
@@ -2146,6 +2128,7 @@
         "packages/core/src/models/types.ts:278",
         "packages/core/src/models/types.ts:70",
         "packages/core/src/models/types.ts:80",
+        "packages/forge/src/synthesis-modus.ts:30",
         "packages/mcp/src/agon-orchestration.ts:24"
       ],
       "migrationOrder": 40,
@@ -2308,7 +2291,9 @@
         "packages/cli/src/cesar/tools.ts:44",
         "packages/cli/src/lazy-commands.ts:321",
         "packages/cli/src/models/handler-types.ts:113",
-        "packages/cli/src/signals/intent.ts:56"
+        "packages/cli/src/signals/intent.ts:56",
+        "packages/forge/src/conquer.ts:146",
+        "packages/forge/src/conquer.ts:314"
       ],
       "migrationOrder": 44,
       "migrationSlice": "S5",
@@ -2350,7 +2335,17 @@
         "packages/cli/src/cesar/tools.ts:43",
         "packages/cli/src/lazy-commands.ts:313",
         "packages/cli/src/models/handler-types.ts:113",
-        "packages/cli/src/signals/intent.ts:56"
+        "packages/cli/src/signals/intent.ts:56",
+        "packages/forge/src/goal/journal.ts",
+        "packages/forge/src/goal/oracle-probe.ts:19",
+        "packages/forge/src/goal/oracle-probe.ts:54",
+        "packages/forge/src/goal/oracle-probe.ts:62",
+        "packages/forge/src/goal/oracle-probe.ts:64",
+        "packages/forge/src/goal/oracle-probe.ts:70",
+        "packages/forge/src/goal/oracle.ts:24",
+        "packages/forge/src/goal/oracle.ts:87",
+        "packages/forge/src/goal/types.ts:20",
+        "packages/forge/src/goal/types.ts:48"
       ],
       "migrationOrder": 45,
       "migrationSlice": "S5",

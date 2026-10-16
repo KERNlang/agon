@@ -63,6 +63,7 @@ export const createMod: AgonModFactory = (services) => Object.freeze({
     disposers.push(registrar.tool('mcp', { id: 'mcpTools:0005', description: 'Run an open multi-model discussion', inputSchema: schema, effect: 'process', run: async (input, context) => commandResultToToolResult(await run(input, context, services)) }));
     for (const id of ['cesarRoutes:0010', 'cesarRoutes:0011', 'cesarRoutes:0012', 'cesarRoutes:0013']) disposers.push(registrar.planStep({ id, inputSchema: schema, resultSchema: schema, risk: 'read', run: (input, context) => run(input, context, services) }));
     disposers.push(registrar.tool('cesar', { id: 'cesarTools:0003', description: 'Hand this topic to an open multi-model Campfire discussion', inputSchema: cesarSchema, effect: 'read', run: async () => 'Delegation accepted — end your turn now so the run can start.' }));
+    for (const id of ['resultAndEnvelopeTypes:0022']) disposers.push(registrar.resultType({ id, schema: { type: 'object', additionalProperties: true }, readableVersions: '>=0.2.0', render: async (payload) => ({ text: JSON.stringify(payload, null, 2) }) }));
     return async () => { for (const dispose of [...disposers].reverse()) await dispose(); };
   },
 });

@@ -19,6 +19,22 @@
       "rule": "semantic-source-rule"
     },
     {
+      "category": "resultAndEnvelopeTypes",
+      "id": "MutateResult",
+      "source": "packages/forge/src/mutate.ts:48",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-mutate",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "resultAndEnvelopeTypes",
+      "id": "SemanticMutantsResult",
+      "source": "packages/forge/src/mutate-semantic.ts:25",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-mutate",
+      "rule": "semantic-source-rule"
+    },
+    {
       "category": "tuiSlashCommands",
       "id": "/mutate",
       "source": "packages/cli/src/signals/intent.ts:56",

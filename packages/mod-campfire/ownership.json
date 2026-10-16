@@ -75,6 +75,14 @@
       "rule": "semantic-source-rule"
     },
     {
+      "category": "resultAndEnvelopeTypes",
+      "id": "CampfireResult",
+      "source": "packages/forge/src/campfire.ts:7",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-campfire",
+      "rule": "semantic-source-rule"
+    },
+    {
       "category": "tuiSlashCommands",
       "id": "/campfire",
       "source": "packages/cli/src/signals/intent.ts:56",

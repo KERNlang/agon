@@ -19,6 +19,14 @@
       "rule": "semantic-source-rule"
     },
     {
+      "category": "resultAndEnvelopeTypes",
+      "id": "ResearchResult",
+      "source": "packages/forge/src/research.ts:27",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-research",
+      "rule": "semantic-source-rule"
+    },
+    {
       "category": "tuiSlashCommands",
       "id": "/research",
       "source": "packages/cli/src/signals/intent.ts:56",

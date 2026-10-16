@@ -43,6 +43,14 @@
       "rule": "exact-user-surface"
     },
     {
+      "category": "resultAndEnvelopeTypes",
+      "id": "NeroResult",
+      "source": "packages/forge/src/nero.ts:28",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-nero",
+      "rule": "semantic-source-rule"
+    },
+    {
       "category": "tuiSlashCommands",
       "id": "/nero",
       "source": "packages/cli/src/signals/intent.ts:56",

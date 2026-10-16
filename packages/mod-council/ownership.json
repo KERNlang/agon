@@ -19,6 +19,14 @@
       "rule": "exact-user-surface"
     },
     {
+      "category": "resultAndEnvelopeTypes",
+      "id": "CouncilResult",
+      "source": "packages/forge/src/council.ts:36",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-council",
+      "rule": "semantic-source-rule"
+    },
+    {
       "category": "tuiSlashCommands",
       "id": "/council",
       "source": "packages/cli/src/signals/intent.ts:56",

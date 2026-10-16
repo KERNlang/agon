@@ -212,6 +212,7 @@ export const createMod: AgonModFactory = (services) =>
           }),
         }),
       ];
+      for (const id of ['resultAndEnvelopeTypes:0085']) d.push(registrar.resultType({ id, schema: { type: 'object', additionalProperties: true }, readableVersions: '>=0.2.0', render: async (payload) => ({ text: JSON.stringify(payload, null, 2) }) }));
       return async () => {
         for (const x of [...d].reverse()) await x();
       };

@@ -59,6 +59,14 @@
       "rule": "semantic-source-rule"
     },
     {
+      "category": "resultAndEnvelopeTypes",
+      "id": "SynthesisResult",
+      "source": "packages/forge/src/synthesis-modus.ts:30",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-synthesis",
+      "rule": "semantic-source-rule"
+    },
+    {
       "category": "tuiSlashCommands",
       "id": "/synthesis",
       "source": "packages/cli/src/signals/intent.ts:56",

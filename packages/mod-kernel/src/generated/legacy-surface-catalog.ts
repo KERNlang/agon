@@ -197,7 +197,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.campfire",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:f7b990b19978f36029dd4198a91ba765c54019ce3fdf1ed0d9479fb9ad91238e"
+      "contentHash": "sha256:295d1c327149f59d38521d57a61390684cef8f600240962c08faab4a6242fae3"
     },
     "payload": {
       "publicId": "campfire",
@@ -216,7 +216,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.campfire",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:f7b990b19978f36029dd4198a91ba765c54019ce3fdf1ed0d9479fb9ad91238e"
+      "contentHash": "sha256:295d1c327149f59d38521d57a61390684cef8f600240962c08faab4a6242fae3"
     },
     "payload": {
       "publicId": "campfire",
@@ -235,7 +235,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.campfire",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:f7b990b19978f36029dd4198a91ba765c54019ce3fdf1ed0d9479fb9ad91238e"
+      "contentHash": "sha256:295d1c327149f59d38521d57a61390684cef8f600240962c08faab4a6242fae3"
     },
     "payload": {
       "publicId": "campfire",
@@ -254,7 +254,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.campfire",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:f7b990b19978f36029dd4198a91ba765c54019ce3fdf1ed0d9479fb9ad91238e"
+      "contentHash": "sha256:295d1c327149f59d38521d57a61390684cef8f600240962c08faab4a6242fae3"
     },
     "payload": {
       "publicId": "campfire",
@@ -311,7 +311,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.conquer",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:b8d77bf450fab9e1e646721f59faad65a55bb94eee19d63821502b14b38b9380"
+      "contentHash": "sha256:21844128b76c136c1f18eb03f20b251582e7be26582d822578b30406d95a5c12"
     },
     "payload": {
       "publicId": "conquer",
@@ -444,7 +444,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.forge",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:1dc4fe9f022b05da95394fa1f3d69508bd70b54fd76fe38fe758f2763a69e9d3"
+      "contentHash": "sha256:ce99a84a3f6a08ea073aa89d7410b882a87e0faa7fcb06300d8abe31c58993d0"
     },
     "payload": {
       "publicId": "forge",
@@ -463,7 +463,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.forge",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:1dc4fe9f022b05da95394fa1f3d69508bd70b54fd76fe38fe758f2763a69e9d3"
+      "contentHash": "sha256:ce99a84a3f6a08ea073aa89d7410b882a87e0faa7fcb06300d8abe31c58993d0"
     },
     "payload": {
       "publicId": "forge",
@@ -482,7 +482,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.forge",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:1dc4fe9f022b05da95394fa1f3d69508bd70b54fd76fe38fe758f2763a69e9d3"
+      "contentHash": "sha256:ce99a84a3f6a08ea073aa89d7410b882a87e0faa7fcb06300d8abe31c58993d0"
     },
     "payload": {
       "publicId": "forge",
@@ -501,7 +501,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.forge",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:1dc4fe9f022b05da95394fa1f3d69508bd70b54fd76fe38fe758f2763a69e9d3"
+      "contentHash": "sha256:ce99a84a3f6a08ea073aa89d7410b882a87e0faa7fcb06300d8abe31c58993d0"
     },
     "payload": {
       "publicId": "forge-full",
@@ -520,7 +520,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.forge",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:1dc4fe9f022b05da95394fa1f3d69508bd70b54fd76fe38fe758f2763a69e9d3"
+      "contentHash": "sha256:ce99a84a3f6a08ea073aa89d7410b882a87e0faa7fcb06300d8abe31c58993d0"
     },
     "payload": {
       "publicId": "forge-slice",
@@ -539,7 +539,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.forge",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:1dc4fe9f022b05da95394fa1f3d69508bd70b54fd76fe38fe758f2763a69e9d3"
+      "contentHash": "sha256:ce99a84a3f6a08ea073aa89d7410b882a87e0faa7fcb06300d8abe31c58993d0"
     },
     "payload": {
       "publicId": "forge-slice",
@@ -596,7 +596,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.goal",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:9c5ef2c7847d523d01d3e46b3cf7531392a6520c6245018a889f3b5540caed46"
+      "contentHash": "sha256:40d30a3a9d854d1f462401ee50809d0f9025661365d15417a6b30d4bf6c3cde9"
     },
     "payload": {
       "publicId": "goal",
@@ -1394,7 +1394,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.campfire",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:f7b990b19978f36029dd4198a91ba765c54019ce3fdf1ed0d9479fb9ad91238e"
+      "contentHash": "sha256:295d1c327149f59d38521d57a61390684cef8f600240962c08faab4a6242fae3"
     },
     "payload": {
       "publicId": "Campfire",
@@ -1413,7 +1413,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.conquer",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:b8d77bf450fab9e1e646721f59faad65a55bb94eee19d63821502b14b38b9380"
+      "contentHash": "sha256:21844128b76c136c1f18eb03f20b251582e7be26582d822578b30406d95a5c12"
     },
     "payload": {
       "publicId": "Conquer",
@@ -1432,7 +1432,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.council",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:0423455e576097051fc1553b5c3b6be7cb56f0ccb494a9337761b770b4097533"
+      "contentHash": "sha256:a53f005341eb3b9cb8d9fb54bbf6a5081300fab442a2b96f51e954804f7ac80c"
     },
     "payload": {
       "publicId": "Council",
@@ -1527,7 +1527,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.forge",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:1dc4fe9f022b05da95394fa1f3d69508bd70b54fd76fe38fe758f2763a69e9d3"
+      "contentHash": "sha256:ce99a84a3f6a08ea073aa89d7410b882a87e0faa7fcb06300d8abe31c58993d0"
     },
     "payload": {
       "publicId": "Forge",
@@ -1565,7 +1565,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.goal",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:9c5ef2c7847d523d01d3e46b3cf7531392a6520c6245018a889f3b5540caed46"
+      "contentHash": "sha256:40d30a3a9d854d1f462401ee50809d0f9025661365d15417a6b30d4bf6c3cde9"
     },
     "payload": {
       "publicId": "Goal",
@@ -1679,7 +1679,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.nero",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:d30f789537c9bc04e3500603f80be92edb6dca30609c9a97a755cd3b643a09c5"
+      "contentHash": "sha256:654cdcdbaaecb1a6c20d7057569ed929029b72eb1699edd40242f2c9fc0db869"
     },
     "payload": {
       "publicId": "QuickNero",
@@ -2078,7 +2078,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.campfire",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:f7b990b19978f36029dd4198a91ba765c54019ce3fdf1ed0d9479fb9ad91238e"
+      "contentHash": "sha256:295d1c327149f59d38521d57a61390684cef8f600240962c08faab4a6242fae3"
     },
     "payload": {
       "publicId": "campfire",
@@ -2135,7 +2135,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.conquer",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:b8d77bf450fab9e1e646721f59faad65a55bb94eee19d63821502b14b38b9380"
+      "contentHash": "sha256:21844128b76c136c1f18eb03f20b251582e7be26582d822578b30406d95a5c12"
     },
     "payload": {
       "publicId": "conquer",
@@ -2154,7 +2154,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.council",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:0423455e576097051fc1553b5c3b6be7cb56f0ccb494a9337761b770b4097533"
+      "contentHash": "sha256:a53f005341eb3b9cb8d9fb54bbf6a5081300fab442a2b96f51e954804f7ac80c"
     },
     "payload": {
       "publicId": "council",
@@ -2306,7 +2306,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.forge",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:1dc4fe9f022b05da95394fa1f3d69508bd70b54fd76fe38fe758f2763a69e9d3"
+      "contentHash": "sha256:ce99a84a3f6a08ea073aa89d7410b882a87e0faa7fcb06300d8abe31c58993d0"
     },
     "payload": {
       "publicId": "forge",
@@ -2325,7 +2325,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.goal",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:9c5ef2c7847d523d01d3e46b3cf7531392a6520c6245018a889f3b5540caed46"
+      "contentHash": "sha256:40d30a3a9d854d1f462401ee50809d0f9025661365d15417a6b30d4bf6c3cde9"
     },
     "payload": {
       "publicId": "goal",
@@ -2914,7 +2914,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.mutate",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:d26df50187ce8e6cdf77df9d5ee274893545824e39d5ecee31351d8a1ceac5e3"
+      "contentHash": "sha256:c6febfcac6fed866a48915fde5f8f316f72cbc0dcf63104a89e17603dfa8304b"
     },
     "payload": {
       "publicId": "mutate",
@@ -2933,7 +2933,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.naturalize",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:80283e86faa2230e4ddaab584a67c6afa0701cd9a6060423ec760c0204034cfc"
+      "contentHash": "sha256:ac86266d2575a63b1db69674929d32d1ba6c06f71cef1205437ef034ac527956"
     },
     "payload": {
       "publicId": "naturalize",
@@ -2952,7 +2952,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.nero",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:d30f789537c9bc04e3500603f80be92edb6dca30609c9a97a755cd3b643a09c5"
+      "contentHash": "sha256:654cdcdbaaecb1a6c20d7057569ed929029b72eb1699edd40242f2c9fc0db869"
     },
     "payload": {
       "publicId": "nero",
@@ -3066,7 +3066,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.research",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:4e5c667122fdb534778069d8ef65508aa1eeae93e36de35228d325b599c5a1f6"
+      "contentHash": "sha256:8a7bb0f8cd034b5dd078c3fb39335153c0643cc5bc8c3ea42ae4c1e9da37620b"
     },
     "payload": {
       "publicId": "research",
@@ -3161,7 +3161,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.synthesis",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:6007ddb852f5830433a92b0e8cb0f5c0cdcccc2035cc28c53654b547a0b55d59"
+      "contentHash": "sha256:9077629a6ba231b683d248e0c7b2629fe17fae305e678d2bfa6cb94aa1685777"
     },
     "payload": {
       "publicId": "synthesis",
@@ -3503,7 +3503,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.campfire",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:f7b990b19978f36029dd4198a91ba765c54019ce3fdf1ed0d9479fb9ad91238e"
+      "contentHash": "sha256:295d1c327149f59d38521d57a61390684cef8f600240962c08faab4a6242fae3"
     },
     "payload": {
       "publicId": "Campfire",
@@ -3579,7 +3579,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.forge",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:1dc4fe9f022b05da95394fa1f3d69508bd70b54fd76fe38fe758f2763a69e9d3"
+      "contentHash": "sha256:ce99a84a3f6a08ea073aa89d7410b882a87e0faa7fcb06300d8abe31c58993d0"
     },
     "payload": {
       "publicId": "Forge",
@@ -3769,7 +3769,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.nero",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:d30f789537c9bc04e3500603f80be92edb6dca30609c9a97a755cd3b643a09c5"
+      "contentHash": "sha256:654cdcdbaaecb1a6c20d7057569ed929029b72eb1699edd40242f2c9fc0db869"
     },
     "payload": {
       "publicId": "QuickNero",
@@ -3997,7 +3997,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.synthesis",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:6007ddb852f5830433a92b0e8cb0f5c0cdcccc2035cc28c53654b547a0b55d59"
+      "contentHash": "sha256:9077629a6ba231b683d248e0c7b2629fe17fae305e678d2bfa6cb94aa1685777"
     },
     "payload": {
       "publicId": "Synthesis",
@@ -4073,7 +4073,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.forge",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:1dc4fe9f022b05da95394fa1f3d69508bd70b54fd76fe38fe758f2763a69e9d3"
+      "contentHash": "sha256:ce99a84a3f6a08ea073aa89d7410b882a87e0faa7fcb06300d8abe31c58993d0"
     },
     "payload": {
       "publicId": "apply",
@@ -4168,7 +4168,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.campfire",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:f7b990b19978f36029dd4198a91ba765c54019ce3fdf1ed0d9479fb9ad91238e"
+      "contentHash": "sha256:295d1c327149f59d38521d57a61390684cef8f600240962c08faab4a6242fae3"
     },
     "payload": {
       "publicId": "campfire",
@@ -4643,7 +4643,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.forge",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:1dc4fe9f022b05da95394fa1f3d69508bd70b54fd76fe38fe758f2763a69e9d3"
+      "contentHash": "sha256:ce99a84a3f6a08ea073aa89d7410b882a87e0faa7fcb06300d8abe31c58993d0"
     },
     "payload": {
       "publicId": "forge",
@@ -4833,7 +4833,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.nero",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:d30f789537c9bc04e3500603f80be92edb6dca30609c9a97a755cd3b643a09c5"
+      "contentHash": "sha256:654cdcdbaaecb1a6c20d7057569ed929029b72eb1699edd40242f2c9fc0db869"
     },
     "payload": {
       "publicId": "nero",
@@ -5099,7 +5099,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.forge",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:1dc4fe9f022b05da95394fa1f3d69508bd70b54fd76fe38fe758f2763a69e9d3"
+      "contentHash": "sha256:ce99a84a3f6a08ea073aa89d7410b882a87e0faa7fcb06300d8abe31c58993d0"
     },
     "payload": {
       "publicId": "suggest-forge",
@@ -5365,7 +5365,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.forge",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:1dc4fe9f022b05da95394fa1f3d69508bd70b54fd76fe38fe758f2763a69e9d3"
+      "contentHash": "sha256:ce99a84a3f6a08ea073aa89d7410b882a87e0faa7fcb06300d8abe31c58993d0"
     },
     "payload": {
       "publicId": "apply",
@@ -5479,7 +5479,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.campfire",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:f7b990b19978f36029dd4198a91ba765c54019ce3fdf1ed0d9479fb9ad91238e"
+      "contentHash": "sha256:295d1c327149f59d38521d57a61390684cef8f600240962c08faab4a6242fae3"
     },
     "payload": {
       "publicId": "campfire",
@@ -5802,7 +5802,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.forge",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:1dc4fe9f022b05da95394fa1f3d69508bd70b54fd76fe38fe758f2763a69e9d3"
+      "contentHash": "sha256:ce99a84a3f6a08ea073aa89d7410b882a87e0faa7fcb06300d8abe31c58993d0"
     },
     "payload": {
       "publicId": "forge",
@@ -5954,7 +5954,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.nero",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:d30f789537c9bc04e3500603f80be92edb6dca30609c9a97a755cd3b643a09c5"
+      "contentHash": "sha256:654cdcdbaaecb1a6c20d7057569ed929029b72eb1699edd40242f2c9fc0db869"
     },
     "payload": {
       "publicId": "nero",
@@ -7189,7 +7189,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.forge",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:1dc4fe9f022b05da95394fa1f3d69508bd70b54fd76fe38fe758f2763a69e9d3"
+      "contentHash": "sha256:ce99a84a3f6a08ea073aa89d7410b882a87e0faa7fcb06300d8abe31c58993d0"
     },
     "payload": {
       "publicId": "/apply",
@@ -7303,7 +7303,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.campfire",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:f7b990b19978f36029dd4198a91ba765c54019ce3fdf1ed0d9479fb9ad91238e"
+      "contentHash": "sha256:295d1c327149f59d38521d57a61390684cef8f600240962c08faab4a6242fae3"
     },
     "payload": {
       "publicId": "/campfire",
@@ -7550,7 +7550,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.conquer",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:b8d77bf450fab9e1e646721f59faad65a55bb94eee19d63821502b14b38b9380"
+      "contentHash": "sha256:21844128b76c136c1f18eb03f20b251582e7be26582d822578b30406d95a5c12"
     },
     "payload": {
       "publicId": "/conquer",
@@ -7569,7 +7569,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.council",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:0423455e576097051fc1553b5c3b6be7cb56f0ccb494a9337761b770b4097533"
+      "contentHash": "sha256:a53f005341eb3b9cb8d9fb54bbf6a5081300fab442a2b96f51e954804f7ac80c"
     },
     "payload": {
       "publicId": "/council",
@@ -7778,7 +7778,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.forge",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:1dc4fe9f022b05da95394fa1f3d69508bd70b54fd76fe38fe758f2763a69e9d3"
+      "contentHash": "sha256:ce99a84a3f6a08ea073aa89d7410b882a87e0faa7fcb06300d8abe31c58993d0"
     },
     "payload": {
       "publicId": "/forge",
@@ -7797,7 +7797,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.goal",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:9c5ef2c7847d523d01d3e46b3cf7531392a6520c6245018a889f3b5540caed46"
+      "contentHash": "sha256:40d30a3a9d854d1f462401ee50809d0f9025661365d15417a6b30d4bf6c3cde9"
     },
     "payload": {
       "publicId": "/goal",
@@ -8006,7 +8006,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.mutate",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:d26df50187ce8e6cdf77df9d5ee274893545824e39d5ecee31351d8a1ceac5e3"
+      "contentHash": "sha256:c6febfcac6fed866a48915fde5f8f316f72cbc0dcf63104a89e17603dfa8304b"
     },
     "payload": {
       "publicId": "/mutate",
@@ -8025,7 +8025,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.naturalize",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:80283e86faa2230e4ddaab584a67c6afa0701cd9a6060423ec760c0204034cfc"
+      "contentHash": "sha256:ac86266d2575a63b1db69674929d32d1ba6c06f71cef1205437ef034ac527956"
     },
     "payload": {
       "publicId": "/naturalize",
@@ -8044,7 +8044,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.nero",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:d30f789537c9bc04e3500603f80be92edb6dca30609c9a97a755cd3b643a09c5"
+      "contentHash": "sha256:654cdcdbaaecb1a6c20d7057569ed929029b72eb1699edd40242f2c9fc0db869"
     },
     "payload": {
       "publicId": "/nero",
@@ -8196,7 +8196,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.research",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:4e5c667122fdb534778069d8ef65508aa1eeae93e36de35228d325b599c5a1f6"
+      "contentHash": "sha256:8a7bb0f8cd034b5dd078c3fb39335153c0643cc5bc8c3ea42ae4c1e9da37620b"
     },
     "payload": {
       "publicId": "/research",
@@ -8348,7 +8348,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.synthesis",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:6007ddb852f5830433a92b0e8cb0f5c0cdcccc2035cc28c53654b547a0b55d59"
+      "contentHash": "sha256:9077629a6ba231b683d248e0c7b2629fe17fae305e678d2bfa6cb94aa1685777"
     },
     "payload": {
       "publicId": "/synthesis",

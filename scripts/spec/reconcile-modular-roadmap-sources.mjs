@@ -9,17 +9,21 @@ const ownership = JSON.parse(readFileSync(join(evidence, 'modular-agon-ownership
 const packageMap = JSON.parse(readFileSync(join(evidence, 'modular-agon-package-map.json'), 'utf8'));
 const packageMapById = new Map(packageMap.packages.map((pkg) => [pkg.id, pkg]));
 const byPackage = new Map();
+const ownersBySource = new Map();
 for (const assignment of ownership.assignments) {
   const sources = byPackage.get(assignment.package) ?? new Set();
   sources.add(assignment.source);
   byPackage.set(assignment.package, sources);
+  const owners = ownersBySource.get(assignment.source) ?? new Set();
+  owners.add(assignment.package);
+  ownersBySource.set(assignment.source, owners);
 }
 for (const pkg of roadmap.packages) {
   const authoritative = packageMapById.get(pkg.id);
   if (!authoritative) throw new Error(`roadmap package is absent from authoritative package map: ${pkg.id}`);
   pkg.dependencies = [...authoritative.dependencies];
   pkg.extractionSources = [...new Set([
-    ...pkg.extractionSources,
+    ...pkg.extractionSources.filter(source => !ownersBySource.has(source) || ownersBySource.get(source).has(pkg.id)),
     ...(byPackage.get(pkg.id) ?? []),
   ])].sort();
 }

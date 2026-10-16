@@ -162,6 +162,7 @@ export const createMod: AgonModFactory = (services) => Object.freeze({
       registrar.command('tui', { id: 'tuiSlashCommands:0045', ...command, parse: (value: string) => ({ input: value.replace(/^\/mutate\s*/i, '') }) }),
       registrar.config('configKeys:0041', configSchema),
     ];
+    for (const id of ['resultAndEnvelopeTypes:0083', 'resultAndEnvelopeTypes:0114']) disposers.push(registrar.resultType({ id, schema: { type: 'object', additionalProperties: true }, readableVersions: '>=0.2.0', render: async (payload) => ({ text: JSON.stringify(payload, null, 2) }) }));
     return async () => { for (const dispose of [...disposers].reverse()) await dispose(); };
   },
 });

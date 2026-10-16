@@ -896,6 +896,7 @@ export const createMod: AgonModFactory = (services) =>
             "Delegation accepted. STOP responding now. The orchestrator will handle the rest.",
         }),
       );
+      for (const id of ['resultAndEnvelopeTypes:0016', 'resultAndEnvelopeTypes:0064', 'resultAndEnvelopeTypes:0144']) d.push(registrar.resultType({ id, schema: { type: 'object', additionalProperties: true }, readableVersions: '>=0.2.0', render: async (payload) => ({ text: JSON.stringify(payload, null, 2) }) }));
       return async () => {
         for (const dispose of [...d].reverse()) await dispose();
       };

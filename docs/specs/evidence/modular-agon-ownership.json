@@ -3718,7 +3718,7 @@
       "id": "oracle-gameable",
       "source": "packages/forge/src/goal/oracle-probe.ts:62",
       "class": "user-toggleable-mod-package",
-      "package": "@kernlang/agon-mod-forge",
+      "package": "@kernlang/agon-mod-goal",
       "rule": "semantic-source-rule"
     },
     {
@@ -3726,7 +3726,7 @@
       "id": "oracle-gate-error",
       "source": "packages/forge/src/goal/oracle-probe.ts:54",
       "class": "user-toggleable-mod-package",
-      "package": "@kernlang/agon-mod-forge",
+      "package": "@kernlang/agon-mod-goal",
       "rule": "semantic-source-rule"
     },
     {
@@ -3734,7 +3734,7 @@
       "id": "oracle-gate-holes",
       "source": "packages/forge/src/goal/oracle-probe.ts:64",
       "class": "user-toggleable-mod-package",
-      "package": "@kernlang/agon-mod-forge",
+      "package": "@kernlang/agon-mod-goal",
       "rule": "semantic-source-rule"
     },
     {
@@ -3742,7 +3742,7 @@
       "id": "oracle-gate-ok",
       "source": "packages/forge/src/goal/oracle-probe.ts:70",
       "class": "user-toggleable-mod-package",
-      "package": "@kernlang/agon-mod-forge",
+      "package": "@kernlang/agon-mod-goal",
       "rule": "semantic-source-rule"
     },
     {
@@ -3750,7 +3750,7 @@
       "id": "oracle-gate-start",
       "source": "packages/forge/src/goal/oracle-probe.ts:19",
       "class": "user-toggleable-mod-package",
-      "package": "@kernlang/agon-mod-forge",
+      "package": "@kernlang/agon-mod-goal",
       "rule": "semantic-source-rule"
     },
     {
@@ -4030,7 +4030,7 @@
       "id": "AttemptRecord",
       "source": "packages/forge/src/goal/types.ts:20",
       "class": "user-toggleable-mod-package",
-      "package": "@kernlang/agon-mod-forge",
+      "package": "@kernlang/agon-mod-goal",
       "rule": "semantic-source-rule"
     },
     {
@@ -4078,7 +4078,7 @@
       "id": "CampfireResult",
       "source": "packages/forge/src/campfire.ts:7",
       "class": "user-toggleable-mod-package",
-      "package": "@kernlang/agon-mod-forge",
+      "package": "@kernlang/agon-mod-campfire",
       "rule": "semantic-source-rule"
     },
     {
@@ -4198,7 +4198,7 @@
       "id": "ConquerResult",
       "source": "packages/forge/src/conquer.ts:146",
       "class": "user-toggleable-mod-package",
-      "package": "@kernlang/agon-mod-forge",
+      "package": "@kernlang/agon-mod-conquer",
       "rule": "semantic-source-rule"
     },
     {
@@ -4214,7 +4214,7 @@
       "id": "CouncilResult",
       "source": "packages/forge/src/council.ts:36",
       "class": "user-toggleable-mod-package",
-      "package": "@kernlang/agon-mod-forge",
+      "package": "@kernlang/agon-mod-council",
       "rule": "semantic-source-rule"
     },
     {
@@ -4342,7 +4342,7 @@
       "id": "FalsifierResult",
       "source": "packages/forge/src/conquer.ts:314",
       "class": "user-toggleable-mod-package",
-      "package": "@kernlang/agon-mod-forge",
+      "package": "@kernlang/agon-mod-conquer",
       "rule": "semantic-source-rule"
     },
     {
@@ -4414,7 +4414,7 @@
       "id": "GoalEvent",
       "source": "packages/forge/src/goal/types.ts:48",
       "class": "user-toggleable-mod-package",
-      "package": "@kernlang/agon-mod-forge",
+      "package": "@kernlang/agon-mod-goal",
       "rule": "semantic-source-rule"
     },
     {
@@ -4566,7 +4566,7 @@
       "id": "MutateResult",
       "source": "packages/forge/src/mutate.ts:48",
       "class": "user-toggleable-mod-package",
-      "package": "@kernlang/agon-mod-forge",
+      "package": "@kernlang/agon-mod-mutate",
       "rule": "semantic-source-rule"
     },
     {
@@ -4582,7 +4582,7 @@
       "id": "NaturalizeResult",
       "source": "packages/forge/src/naturalize.ts:18",
       "class": "user-toggleable-mod-package",
-      "package": "@kernlang/agon-mod-forge",
+      "package": "@kernlang/agon-mod-naturalize",
       "rule": "semantic-source-rule"
     },
     {
@@ -4590,7 +4590,7 @@
       "id": "NeroResult",
       "source": "packages/forge/src/nero.ts:28",
       "class": "user-toggleable-mod-package",
-      "package": "@kernlang/agon-mod-forge",
+      "package": "@kernlang/agon-mod-nero",
       "rule": "semantic-source-rule"
     },
     {
@@ -4750,7 +4750,7 @@
       "id": "ResearchResult",
       "source": "packages/forge/src/research.ts:27",
       "class": "user-toggleable-mod-package",
-      "package": "@kernlang/agon-mod-forge",
+      "package": "@kernlang/agon-mod-research",
       "rule": "semantic-source-rule"
     },
     {
@@ -4814,7 +4814,7 @@
       "id": "SemanticMutantsResult",
       "source": "packages/forge/src/mutate-semantic.ts:25",
       "class": "user-toggleable-mod-package",
-      "package": "@kernlang/agon-mod-forge",
+      "package": "@kernlang/agon-mod-mutate",
       "rule": "semantic-source-rule"
     },
     {
@@ -4910,7 +4910,7 @@
       "id": "SynthesisResult",
       "source": "packages/forge/src/synthesis-modus.ts:30",
       "class": "user-toggleable-mod-package",
-      "package": "@kernlang/agon-mod-forge",
+      "package": "@kernlang/agon-mod-synthesis",
       "rule": "semantic-source-rule"
     },
     {
@@ -5054,7 +5054,7 @@
       "id": "WitnessResult",
       "source": "packages/forge/src/goal/oracle.ts:24",
       "class": "user-toggleable-mod-package",
-      "package": "@kernlang/agon-mod-forge",
+      "package": "@kernlang/agon-mod-goal",
       "rule": "semantic-source-rule"
     },
     {
@@ -6230,7 +6230,7 @@
       "id": "goals/tmp",
       "source": "packages/forge/src/goal/oracle.ts:87",
       "class": "user-toggleable-mod-package",
-      "package": "@kernlang/agon-mod-forge",
+      "package": "@kernlang/agon-mod-goal",
       "rule": "semantic-source-rule"
     },
     {
@@ -6478,7 +6478,7 @@
       "id": "packages/forge/src/goal/journal.ts",
       "source": "packages/forge/src/goal/journal.ts",
       "class": "user-toggleable-mod-package",
-      "package": "@kernlang/agon-mod-forge",
+      "package": "@kernlang/agon-mod-goal",
       "rule": "semantic-source-rule"
     },
     {

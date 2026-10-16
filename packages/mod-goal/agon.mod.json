@@ -88,8 +88,8 @@
       "path": "ownership.json",
       "kind": "documentation",
       "mediaType": "application/json",
-      "contentHash": "sha256:c917af40ede2b5e1490ea3104d11ba96fc8fcb722fe277e97ce923f4b0e5f603",
-      "bytes": 1091,
+      "contentHash": "sha256:419a468f380a5f18a2b4037e02da2e55b066d98773860f3259bf95599eb36f00",
+      "bytes": 3773,
       "executable": false,
       "platforms": [
         "darwin-arm64",
@@ -138,7 +138,20 @@
       }
     ],
     "lifecycleHooks": [],
-    "resultTypes": [],
+    "resultTypes": [
+      {
+        "id": "resultAndEnvelopeTypes:0016",
+        "aliases": []
+      },
+      {
+        "id": "resultAndEnvelopeTypes:0064",
+        "aliases": []
+      },
+      {
+        "id": "resultAndEnvelopeTypes:0144",
+        "aliases": []
+      }
+    ],
     "configKeys": [],
     "generatedDocs": []
   },

@@ -106,8 +106,8 @@
         "@kernlang/agon-support-engine-runtime",
         "@kernlang/agon-support-panel"
       ],
-      "assignments": 10,
-      "assignmentHash": "sha256:43cbaf2d486e4efbfd4979ceeb44cf23c59d9100cd337292a91b068e0ded42cc",
+      "assignments": 11,
+      "assignmentHash": "sha256:89d2519262742fb14864fdadbfb05609c3db5889df4811e8215d212250f113eb",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -122,8 +122,8 @@
         "@kernlang/agon-support-worktree",
         "@kernlang/agon-support-verification"
       ],
-      "assignments": 55,
-      "assignmentHash": "sha256:7a2bc64cfeb998d55d4f8b166eb1797efd9cbcec8115e6cb37a82f478895b408",
+      "assignments": 35,
+      "assignmentHash": "sha256:f190b9fec07e63a3249992735a80861ff2ad85f34c4bd683397def165dfbcb0b",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -150,8 +150,8 @@
         "@kernlang/agon-support-panel",
         "@kernlang/agon-support-judge"
       ],
-      "assignments": 8,
-      "assignmentHash": "sha256:0cd7642d6966822b228aea38e6cd819700048425097277fb3686a3c304469fda",
+      "assignments": 9,
+      "assignmentHash": "sha256:03db55625d30dd6f91ae478b3d8f09a3f4b82cbe8266a9920e044661a9672c25",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -226,8 +226,8 @@
         "@kernlang/agon-support-worktree",
         "@kernlang/agon-support-verification"
       ],
-      "assignments": 4,
-      "assignmentHash": "sha256:d147a14e582ad2375d9f037ca41187e46783ad3c63ef3bd9ad11295b49d43e50",
+      "assignments": 14,
+      "assignmentHash": "sha256:91d4a17698cf5a8e509bcaa4540bea6b974574bd66559399eb9459573f9b8da6",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -244,8 +244,8 @@
         "@kernlang/agon-support-worktree",
         "@kernlang/agon-support-verification"
       ],
-      "assignments": 4,
-      "assignmentHash": "sha256:57521f959508aed925eb5b9babd7ee80f64c17cce9e19f14c21b942113f0f46e",
+      "assignments": 6,
+      "assignmentHash": "sha256:0aefafee8b1e9cc4bd4ac5f67a95e3c2fa11b91e6f7692d5034397e82b9218e9",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -257,8 +257,8 @@
         "@kernlang/agon-support-engine-runtime",
         "@kernlang/agon-support-judge"
       ],
-      "assignments": 6,
-      "assignmentHash": "sha256:3b8c7179fef401c258448b32a2d5f11ad693fca69a66ee56af52968d7490d37c",
+      "assignments": 7,
+      "assignmentHash": "sha256:df3a3b89c129f105f4bff2e223644f4babab49f173cd6993525840e03a2788f9",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -271,8 +271,8 @@
         "@kernlang/agon-support-panel",
         "@kernlang/agon-support-judge"
       ],
-      "assignments": 3,
-      "assignmentHash": "sha256:ee804fd11481297c057ecf3506a946b5e6b79f2f7568cc44a00682d80ec22449",
+      "assignments": 4,
+      "assignmentHash": "sha256:b8929b760dc27a77e87a86e6d6a14709735aacb632e790f9699a3df2433e6132",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -283,8 +283,8 @@
         "@kernlang/agon-mod-api",
         "@kernlang/agon-support-engine-runtime"
       ],
-      "assignments": 3,
-      "assignmentHash": "sha256:329a5ae6de196ed312be7a5807adc59d74285a1ca16774dc823a511f8ea6c84b",
+      "assignments": 4,
+      "assignmentHash": "sha256:89d3da3d35770f53b6abaa62b3376cdec211b32227c2c5f3e638b312c2bc3535",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -311,8 +311,8 @@
         "@kernlang/agon-support-verification",
         "@kernlang/agon-support-worktree"
       ],
-      "assignments": 3,
-      "assignmentHash": "sha256:31212832f2013891ab7b17310f8a0e81ad660650a4aac99bacca9ffba94b9c1b",
+      "assignments": 5,
+      "assignmentHash": "sha256:8d2c6f87be2fb1754e698b5270cd74baac1e79fde97814f99589678006a910c2",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -324,8 +324,8 @@
         "@kernlang/agon-support-engine-runtime",
         "@kernlang/agon-mod-sanitize"
       ],
-      "assignments": 2,
-      "assignmentHash": "sha256:58f0cc4af5b37841168bcd5986eac038932806a2d93f473c25d7bb3a4ac9561d",
+      "assignments": 3,
+      "assignmentHash": "sha256:55439cf8d608639fff7d34750f79c8f8901927e06a000c05fd514c21e6e9f1f1",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -2086,6 +2086,26 @@
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
     {
+      "category": "resultAndEnvelopeTypes",
+      "id": "CampfireResult",
+      "source": "packages/forge/src/campfire.ts:7",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-campfire",
+      "rule": "semantic-source-rule",
+      "legacyPath": "packages/forge/src/campfire.ts",
+      "physicalPackage": "packages/mod-campfire",
+      "physicalEntrypoint": "packages/mod-campfire/src/index.ts",
+      "implementationPaths": [
+        "packages/mod-campfire/src/index.ts"
+      ],
+      "ownershipAsset": "packages/mod-campfire/ownership.json",
+      "compatibilityAdapter": "packages/forge/src/campfire.ts",
+      "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
+      "registrationBoundary": "public-mod-api",
+      "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
+    },
+    {
       "category": "tuiSlashCommands",
       "id": "/campfire",
       "source": "packages/cli/src/signals/intent.ts:56",
@@ -2166,6 +2186,46 @@
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
     {
+      "category": "resultAndEnvelopeTypes",
+      "id": "ConquerResult",
+      "source": "packages/forge/src/conquer.ts:146",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-conquer",
+      "rule": "semantic-source-rule",
+      "legacyPath": "packages/forge/src/conquer.ts",
+      "physicalPackage": "packages/mod-conquer",
+      "physicalEntrypoint": "packages/mod-conquer/src/index.ts",
+      "implementationPaths": [
+        "packages/mod-conquer/src/index.ts"
+      ],
+      "ownershipAsset": "packages/mod-conquer/ownership.json",
+      "compatibilityAdapter": "packages/forge/src/conquer.ts",
+      "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
+      "registrationBoundary": "public-mod-api",
+      "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
+    },
+    {
+      "category": "resultAndEnvelopeTypes",
+      "id": "FalsifierResult",
+      "source": "packages/forge/src/conquer.ts:314",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-conquer",
+      "rule": "semantic-source-rule",
+      "legacyPath": "packages/forge/src/conquer.ts",
+      "physicalPackage": "packages/mod-conquer",
+      "physicalEntrypoint": "packages/mod-conquer/src/index.ts",
+      "implementationPaths": [
+        "packages/mod-conquer/src/index.ts"
+      ],
+      "ownershipAsset": "packages/mod-conquer/ownership.json",
+      "compatibilityAdapter": "packages/forge/src/conquer.ts",
+      "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
+      "registrationBoundary": "public-mod-api",
+      "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
+    },
+    {
       "category": "tuiSlashCommands",
       "id": "/conquer",
       "source": "packages/cli/src/signals/intent.ts:56",
@@ -2220,6 +2280,26 @@
       ],
       "ownershipAsset": "packages/mod-council/ownership.json",
       "compatibilityAdapter": "packages/cli/src/lazy-commands.ts",
+      "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
+      "registrationBoundary": "public-mod-api",
+      "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
+    },
+    {
+      "category": "resultAndEnvelopeTypes",
+      "id": "CouncilResult",
+      "source": "packages/forge/src/council.ts:36",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-council",
+      "rule": "semantic-source-rule",
+      "legacyPath": "packages/forge/src/council.ts",
+      "physicalPackage": "packages/mod-council",
+      "physicalEntrypoint": "packages/mod-council/src/index.ts",
+      "implementationPaths": [
+        "packages/mod-council/src/index.ts"
+      ],
+      "ownershipAsset": "packages/mod-council/ownership.json",
+      "compatibilityAdapter": "packages/forge/src/council.ts",
       "authority": "legacy-runtime-until-s6",
       "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
@@ -2699,106 +2779,6 @@
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
     {
-      "category": "emittedEvents",
-      "id": "oracle-gameable",
-      "source": "packages/forge/src/goal/oracle-probe.ts:62",
-      "class": "user-toggleable-mod-package",
-      "package": "@kernlang/agon-mod-forge",
-      "rule": "semantic-source-rule",
-      "legacyPath": "packages/forge/src/goal/oracle-probe.ts",
-      "physicalPackage": "packages/mod-forge",
-      "physicalEntrypoint": "packages/mod-forge/src/index.ts",
-      "implementationPaths": [
-        "packages/mod-forge/src/index.ts"
-      ],
-      "ownershipAsset": "packages/mod-forge/ownership.json",
-      "compatibilityAdapter": "packages/forge/src/goal/oracle-probe.ts",
-      "authority": "legacy-runtime-until-s6",
-      "legacyPresent": true,
-      "registrationBoundary": "public-mod-api",
-      "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
-    },
-    {
-      "category": "emittedEvents",
-      "id": "oracle-gate-error",
-      "source": "packages/forge/src/goal/oracle-probe.ts:54",
-      "class": "user-toggleable-mod-package",
-      "package": "@kernlang/agon-mod-forge",
-      "rule": "semantic-source-rule",
-      "legacyPath": "packages/forge/src/goal/oracle-probe.ts",
-      "physicalPackage": "packages/mod-forge",
-      "physicalEntrypoint": "packages/mod-forge/src/index.ts",
-      "implementationPaths": [
-        "packages/mod-forge/src/index.ts"
-      ],
-      "ownershipAsset": "packages/mod-forge/ownership.json",
-      "compatibilityAdapter": "packages/forge/src/goal/oracle-probe.ts",
-      "authority": "legacy-runtime-until-s6",
-      "legacyPresent": true,
-      "registrationBoundary": "public-mod-api",
-      "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
-    },
-    {
-      "category": "emittedEvents",
-      "id": "oracle-gate-holes",
-      "source": "packages/forge/src/goal/oracle-probe.ts:64",
-      "class": "user-toggleable-mod-package",
-      "package": "@kernlang/agon-mod-forge",
-      "rule": "semantic-source-rule",
-      "legacyPath": "packages/forge/src/goal/oracle-probe.ts",
-      "physicalPackage": "packages/mod-forge",
-      "physicalEntrypoint": "packages/mod-forge/src/index.ts",
-      "implementationPaths": [
-        "packages/mod-forge/src/index.ts"
-      ],
-      "ownershipAsset": "packages/mod-forge/ownership.json",
-      "compatibilityAdapter": "packages/forge/src/goal/oracle-probe.ts",
-      "authority": "legacy-runtime-until-s6",
-      "legacyPresent": true,
-      "registrationBoundary": "public-mod-api",
-      "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
-    },
-    {
-      "category": "emittedEvents",
-      "id": "oracle-gate-ok",
-      "source": "packages/forge/src/goal/oracle-probe.ts:70",
-      "class": "user-toggleable-mod-package",
-      "package": "@kernlang/agon-mod-forge",
-      "rule": "semantic-source-rule",
-      "legacyPath": "packages/forge/src/goal/oracle-probe.ts",
-      "physicalPackage": "packages/mod-forge",
-      "physicalEntrypoint": "packages/mod-forge/src/index.ts",
-      "implementationPaths": [
-        "packages/mod-forge/src/index.ts"
-      ],
-      "ownershipAsset": "packages/mod-forge/ownership.json",
-      "compatibilityAdapter": "packages/forge/src/goal/oracle-probe.ts",
-      "authority": "legacy-runtime-until-s6",
-      "legacyPresent": true,
-      "registrationBoundary": "public-mod-api",
-      "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
-    },
-    {
-      "category": "emittedEvents",
-      "id": "oracle-gate-start",
-      "source": "packages/forge/src/goal/oracle-probe.ts:19",
-      "class": "user-toggleable-mod-package",
-      "package": "@kernlang/agon-mod-forge",
-      "rule": "semantic-source-rule",
-      "legacyPath": "packages/forge/src/goal/oracle-probe.ts",
-      "physicalPackage": "packages/mod-forge",
-      "physicalEntrypoint": "packages/mod-forge/src/index.ts",
-      "implementationPaths": [
-        "packages/mod-forge/src/index.ts"
-      ],
-      "ownershipAsset": "packages/mod-forge/ownership.json",
-      "compatibilityAdapter": "packages/forge/src/goal/oracle-probe.ts",
-      "authority": "legacy-runtime-until-s6",
-      "legacyPresent": true,
-      "registrationBoundary": "public-mod-api",
-      "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
-    },
-    {
       "category": "intentVariants",
       "id": "apply",
       "source": "packages/cli/src/signals/intent-types.ts:31",
@@ -2880,66 +2860,6 @@
     },
     {
       "category": "resultAndEnvelopeTypes",
-      "id": "AttemptRecord",
-      "source": "packages/forge/src/goal/types.ts:20",
-      "class": "user-toggleable-mod-package",
-      "package": "@kernlang/agon-mod-forge",
-      "rule": "semantic-source-rule",
-      "legacyPath": "packages/forge/src/goal/types.ts",
-      "physicalPackage": "packages/mod-forge",
-      "physicalEntrypoint": "packages/mod-forge/src/index.ts",
-      "implementationPaths": [
-        "packages/mod-forge/src/index.ts"
-      ],
-      "ownershipAsset": "packages/mod-forge/ownership.json",
-      "compatibilityAdapter": "packages/forge/src/goal/types.ts",
-      "authority": "legacy-runtime-until-s6",
-      "legacyPresent": true,
-      "registrationBoundary": "public-mod-api",
-      "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
-    },
-    {
-      "category": "resultAndEnvelopeTypes",
-      "id": "CampfireResult",
-      "source": "packages/forge/src/campfire.ts:7",
-      "class": "user-toggleable-mod-package",
-      "package": "@kernlang/agon-mod-forge",
-      "rule": "semantic-source-rule",
-      "legacyPath": "packages/forge/src/campfire.ts",
-      "physicalPackage": "packages/mod-forge",
-      "physicalEntrypoint": "packages/mod-forge/src/index.ts",
-      "implementationPaths": [
-        "packages/mod-forge/src/index.ts"
-      ],
-      "ownershipAsset": "packages/mod-forge/ownership.json",
-      "compatibilityAdapter": "packages/forge/src/campfire.ts",
-      "authority": "legacy-runtime-until-s6",
-      "legacyPresent": true,
-      "registrationBoundary": "public-mod-api",
-      "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
-    },
-    {
-      "category": "resultAndEnvelopeTypes",
-      "id": "ConquerResult",
-      "source": "packages/forge/src/conquer.ts:146",
-      "class": "user-toggleable-mod-package",
-      "package": "@kernlang/agon-mod-forge",
-      "rule": "semantic-source-rule",
-      "legacyPath": "packages/forge/src/conquer.ts",
-      "physicalPackage": "packages/mod-forge",
-      "physicalEntrypoint": "packages/mod-forge/src/index.ts",
-      "implementationPaths": [
-        "packages/mod-forge/src/index.ts"
-      ],
-      "ownershipAsset": "packages/mod-forge/ownership.json",
-      "compatibilityAdapter": "packages/forge/src/conquer.ts",
-      "authority": "legacy-runtime-until-s6",
-      "legacyPresent": true,
-      "registrationBoundary": "public-mod-api",
-      "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
-    },
-    {
-      "category": "resultAndEnvelopeTypes",
       "id": "CorpusRecord",
       "source": "packages/forge/src/corpus.ts:9",
       "class": "user-toggleable-mod-package",
@@ -2960,26 +2880,6 @@
     },
     {
       "category": "resultAndEnvelopeTypes",
-      "id": "CouncilResult",
-      "source": "packages/forge/src/council.ts:36",
-      "class": "user-toggleable-mod-package",
-      "package": "@kernlang/agon-mod-forge",
-      "rule": "semantic-source-rule",
-      "legacyPath": "packages/forge/src/council.ts",
-      "physicalPackage": "packages/mod-forge",
-      "physicalEntrypoint": "packages/mod-forge/src/index.ts",
-      "implementationPaths": [
-        "packages/mod-forge/src/index.ts"
-      ],
-      "ownershipAsset": "packages/mod-forge/ownership.json",
-      "compatibilityAdapter": "packages/forge/src/council.ts",
-      "authority": "legacy-runtime-until-s6",
-      "legacyPresent": true,
-      "registrationBoundary": "public-mod-api",
-      "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
-    },
-    {
-      "category": "resultAndEnvelopeTypes",
       "id": "DelegateResult",
       "source": "packages/forge/src/delegate.ts:5",
       "class": "user-toggleable-mod-package",
@@ -2993,26 +2893,6 @@
       ],
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/forge/src/delegate.ts",
-      "authority": "legacy-runtime-until-s6",
-      "legacyPresent": true,
-      "registrationBoundary": "public-mod-api",
-      "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
-    },
-    {
-      "category": "resultAndEnvelopeTypes",
-      "id": "FalsifierResult",
-      "source": "packages/forge/src/conquer.ts:314",
-      "class": "user-toggleable-mod-package",
-      "package": "@kernlang/agon-mod-forge",
-      "rule": "semantic-source-rule",
-      "legacyPath": "packages/forge/src/conquer.ts",
-      "physicalPackage": "packages/mod-forge",
-      "physicalEntrypoint": "packages/mod-forge/src/index.ts",
-      "implementationPaths": [
-        "packages/mod-forge/src/index.ts"
-      ],
-      "ownershipAsset": "packages/mod-forge/ownership.json",
-      "compatibilityAdapter": "packages/forge/src/conquer.ts",
       "authority": "legacy-runtime-until-s6",
       "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
@@ -3100,86 +2980,6 @@
     },
     {
       "category": "resultAndEnvelopeTypes",
-      "id": "GoalEvent",
-      "source": "packages/forge/src/goal/types.ts:48",
-      "class": "user-toggleable-mod-package",
-      "package": "@kernlang/agon-mod-forge",
-      "rule": "semantic-source-rule",
-      "legacyPath": "packages/forge/src/goal/types.ts",
-      "physicalPackage": "packages/mod-forge",
-      "physicalEntrypoint": "packages/mod-forge/src/index.ts",
-      "implementationPaths": [
-        "packages/mod-forge/src/index.ts"
-      ],
-      "ownershipAsset": "packages/mod-forge/ownership.json",
-      "compatibilityAdapter": "packages/forge/src/goal/types.ts",
-      "authority": "legacy-runtime-until-s6",
-      "legacyPresent": true,
-      "registrationBoundary": "public-mod-api",
-      "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
-    },
-    {
-      "category": "resultAndEnvelopeTypes",
-      "id": "MutateResult",
-      "source": "packages/forge/src/mutate.ts:48",
-      "class": "user-toggleable-mod-package",
-      "package": "@kernlang/agon-mod-forge",
-      "rule": "semantic-source-rule",
-      "legacyPath": "packages/forge/src/mutate.ts",
-      "physicalPackage": "packages/mod-forge",
-      "physicalEntrypoint": "packages/mod-forge/src/index.ts",
-      "implementationPaths": [
-        "packages/mod-forge/src/index.ts"
-      ],
-      "ownershipAsset": "packages/mod-forge/ownership.json",
-      "compatibilityAdapter": "packages/forge/src/mutate.ts",
-      "authority": "legacy-runtime-until-s6",
-      "legacyPresent": true,
-      "registrationBoundary": "public-mod-api",
-      "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
-    },
-    {
-      "category": "resultAndEnvelopeTypes",
-      "id": "NaturalizeResult",
-      "source": "packages/forge/src/naturalize.ts:18",
-      "class": "user-toggleable-mod-package",
-      "package": "@kernlang/agon-mod-forge",
-      "rule": "semantic-source-rule",
-      "legacyPath": "packages/forge/src/naturalize.ts",
-      "physicalPackage": "packages/mod-forge",
-      "physicalEntrypoint": "packages/mod-forge/src/index.ts",
-      "implementationPaths": [
-        "packages/mod-forge/src/index.ts"
-      ],
-      "ownershipAsset": "packages/mod-forge/ownership.json",
-      "compatibilityAdapter": "packages/forge/src/naturalize.ts",
-      "authority": "legacy-runtime-until-s6",
-      "legacyPresent": true,
-      "registrationBoundary": "public-mod-api",
-      "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
-    },
-    {
-      "category": "resultAndEnvelopeTypes",
-      "id": "NeroResult",
-      "source": "packages/forge/src/nero.ts:28",
-      "class": "user-toggleable-mod-package",
-      "package": "@kernlang/agon-mod-forge",
-      "rule": "semantic-source-rule",
-      "legacyPath": "packages/forge/src/nero.ts",
-      "physicalPackage": "packages/mod-forge",
-      "physicalEntrypoint": "packages/mod-forge/src/index.ts",
-      "implementationPaths": [
-        "packages/mod-forge/src/index.ts"
-      ],
-      "ownershipAsset": "packages/mod-forge/ownership.json",
-      "compatibilityAdapter": "packages/forge/src/nero.ts",
-      "authority": "legacy-runtime-until-s6",
-      "legacyPresent": true,
-      "registrationBoundary": "public-mod-api",
-      "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
-    },
-    {
-      "category": "resultAndEnvelopeTypes",
       "id": "PostSynthesisFitnessResult",
       "source": "packages/core/src/cesar/agent-synthesis.ts:486",
       "class": "user-toggleable-mod-package",
@@ -3220,46 +3020,6 @@
     },
     {
       "category": "resultAndEnvelopeTypes",
-      "id": "ResearchResult",
-      "source": "packages/forge/src/research.ts:27",
-      "class": "user-toggleable-mod-package",
-      "package": "@kernlang/agon-mod-forge",
-      "rule": "semantic-source-rule",
-      "legacyPath": "packages/forge/src/research.ts",
-      "physicalPackage": "packages/mod-forge",
-      "physicalEntrypoint": "packages/mod-forge/src/index.ts",
-      "implementationPaths": [
-        "packages/mod-forge/src/index.ts"
-      ],
-      "ownershipAsset": "packages/mod-forge/ownership.json",
-      "compatibilityAdapter": "packages/forge/src/research.ts",
-      "authority": "legacy-runtime-until-s6",
-      "legacyPresent": true,
-      "registrationBoundary": "public-mod-api",
-      "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
-    },
-    {
-      "category": "resultAndEnvelopeTypes",
-      "id": "SemanticMutantsResult",
-      "source": "packages/forge/src/mutate-semantic.ts:25",
-      "class": "user-toggleable-mod-package",
-      "package": "@kernlang/agon-mod-forge",
-      "rule": "semantic-source-rule",
-      "legacyPath": "packages/forge/src/mutate-semantic.ts",
-      "physicalPackage": "packages/mod-forge",
-      "physicalEntrypoint": "packages/mod-forge/src/index.ts",
-      "implementationPaths": [
-        "packages/mod-forge/src/index.ts"
-      ],
-      "ownershipAsset": "packages/mod-forge/ownership.json",
-      "compatibilityAdapter": "packages/forge/src/mutate-semantic.ts",
-      "authority": "legacy-runtime-until-s6",
-      "legacyPresent": true,
-      "registrationBoundary": "public-mod-api",
-      "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
-    },
-    {
-      "category": "resultAndEnvelopeTypes",
       "id": "StageResult",
       "source": "packages/forge/src/types-impl.ts:3",
       "class": "user-toggleable-mod-package",
@@ -3293,26 +3053,6 @@
       ],
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/forge/src/quality.ts",
-      "authority": "legacy-runtime-until-s6",
-      "legacyPresent": true,
-      "registrationBoundary": "public-mod-api",
-      "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
-    },
-    {
-      "category": "resultAndEnvelopeTypes",
-      "id": "SynthesisResult",
-      "source": "packages/forge/src/synthesis-modus.ts:30",
-      "class": "user-toggleable-mod-package",
-      "package": "@kernlang/agon-mod-forge",
-      "rule": "semantic-source-rule",
-      "legacyPath": "packages/forge/src/synthesis-modus.ts",
-      "physicalPackage": "packages/mod-forge",
-      "physicalEntrypoint": "packages/mod-forge/src/index.ts",
-      "implementationPaths": [
-        "packages/mod-forge/src/index.ts"
-      ],
-      "ownershipAsset": "packages/mod-forge/ownership.json",
-      "compatibilityAdapter": "packages/forge/src/synthesis-modus.ts",
       "authority": "legacy-runtime-until-s6",
       "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
@@ -3373,66 +3113,6 @@
       ],
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/forge/src/thinking.ts",
-      "authority": "legacy-runtime-until-s6",
-      "legacyPresent": true,
-      "registrationBoundary": "public-mod-api",
-      "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
-    },
-    {
-      "category": "resultAndEnvelopeTypes",
-      "id": "WitnessResult",
-      "source": "packages/forge/src/goal/oracle.ts:24",
-      "class": "user-toggleable-mod-package",
-      "package": "@kernlang/agon-mod-forge",
-      "rule": "semantic-source-rule",
-      "legacyPath": "packages/forge/src/goal/oracle.ts",
-      "physicalPackage": "packages/mod-forge",
-      "physicalEntrypoint": "packages/mod-forge/src/index.ts",
-      "implementationPaths": [
-        "packages/mod-forge/src/index.ts"
-      ],
-      "ownershipAsset": "packages/mod-forge/ownership.json",
-      "compatibilityAdapter": "packages/forge/src/goal/oracle.ts",
-      "authority": "legacy-runtime-until-s6",
-      "legacyPresent": true,
-      "registrationBoundary": "public-mod-api",
-      "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
-    },
-    {
-      "category": "statePaths",
-      "id": "goals/tmp",
-      "source": "packages/forge/src/goal/oracle.ts:87",
-      "class": "user-toggleable-mod-package",
-      "package": "@kernlang/agon-mod-forge",
-      "rule": "semantic-source-rule",
-      "legacyPath": "packages/forge/src/goal/oracle.ts",
-      "physicalPackage": "packages/mod-forge",
-      "physicalEntrypoint": "packages/mod-forge/src/index.ts",
-      "implementationPaths": [
-        "packages/mod-forge/src/index.ts"
-      ],
-      "ownershipAsset": "packages/mod-forge/ownership.json",
-      "compatibilityAdapter": "packages/forge/src/goal/oracle.ts",
-      "authority": "legacy-runtime-until-s6",
-      "legacyPresent": true,
-      "registrationBoundary": "public-mod-api",
-      "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
-    },
-    {
-      "category": "stateStoreModules",
-      "id": "packages/forge/src/goal/journal.ts",
-      "source": "packages/forge/src/goal/journal.ts",
-      "class": "user-toggleable-mod-package",
-      "package": "@kernlang/agon-mod-forge",
-      "rule": "semantic-source-rule",
-      "legacyPath": "packages/forge/src/goal/journal.ts",
-      "physicalPackage": "packages/mod-forge",
-      "physicalEntrypoint": "packages/mod-forge/src/index.ts",
-      "implementationPaths": [
-        "packages/mod-forge/src/index.ts"
-      ],
-      "ownershipAsset": "packages/mod-forge/ownership.json",
-      "compatibilityAdapter": "packages/forge/src/goal/journal.ts",
       "authority": "legacy-runtime-until-s6",
       "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
@@ -3653,6 +3333,206 @@
       ],
       "ownershipAsset": "packages/mod-goal/ownership.json",
       "compatibilityAdapter": "packages/cli/src/lazy-commands.ts",
+      "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
+      "registrationBoundary": "public-mod-api",
+      "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
+    },
+    {
+      "category": "emittedEvents",
+      "id": "oracle-gameable",
+      "source": "packages/forge/src/goal/oracle-probe.ts:62",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-goal",
+      "rule": "semantic-source-rule",
+      "legacyPath": "packages/forge/src/goal/oracle-probe.ts",
+      "physicalPackage": "packages/mod-goal",
+      "physicalEntrypoint": "packages/mod-goal/src/index.ts",
+      "implementationPaths": [
+        "packages/mod-goal/src/index.ts"
+      ],
+      "ownershipAsset": "packages/mod-goal/ownership.json",
+      "compatibilityAdapter": "packages/forge/src/goal/oracle-probe.ts",
+      "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
+      "registrationBoundary": "public-mod-api",
+      "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
+    },
+    {
+      "category": "emittedEvents",
+      "id": "oracle-gate-error",
+      "source": "packages/forge/src/goal/oracle-probe.ts:54",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-goal",
+      "rule": "semantic-source-rule",
+      "legacyPath": "packages/forge/src/goal/oracle-probe.ts",
+      "physicalPackage": "packages/mod-goal",
+      "physicalEntrypoint": "packages/mod-goal/src/index.ts",
+      "implementationPaths": [
+        "packages/mod-goal/src/index.ts"
+      ],
+      "ownershipAsset": "packages/mod-goal/ownership.json",
+      "compatibilityAdapter": "packages/forge/src/goal/oracle-probe.ts",
+      "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
+      "registrationBoundary": "public-mod-api",
+      "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
+    },
+    {
+      "category": "emittedEvents",
+      "id": "oracle-gate-holes",
+      "source": "packages/forge/src/goal/oracle-probe.ts:64",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-goal",
+      "rule": "semantic-source-rule",
+      "legacyPath": "packages/forge/src/goal/oracle-probe.ts",
+      "physicalPackage": "packages/mod-goal",
+      "physicalEntrypoint": "packages/mod-goal/src/index.ts",
+      "implementationPaths": [
+        "packages/mod-goal/src/index.ts"
+      ],
+      "ownershipAsset": "packages/mod-goal/ownership.json",
+      "compatibilityAdapter": "packages/forge/src/goal/oracle-probe.ts",
+      "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
+      "registrationBoundary": "public-mod-api",
+      "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
+    },
+    {
+      "category": "emittedEvents",
+      "id": "oracle-gate-ok",
+      "source": "packages/forge/src/goal/oracle-probe.ts:70",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-goal",
+      "rule": "semantic-source-rule",
+      "legacyPath": "packages/forge/src/goal/oracle-probe.ts",
+      "physicalPackage": "packages/mod-goal",
+      "physicalEntrypoint": "packages/mod-goal/src/index.ts",
+      "implementationPaths": [
+        "packages/mod-goal/src/index.ts"
+      ],
+      "ownershipAsset": "packages/mod-goal/ownership.json",
+      "compatibilityAdapter": "packages/forge/src/goal/oracle-probe.ts",
+      "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
+      "registrationBoundary": "public-mod-api",
+      "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
+    },
+    {
+      "category": "emittedEvents",
+      "id": "oracle-gate-start",
+      "source": "packages/forge/src/goal/oracle-probe.ts:19",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-goal",
+      "rule": "semantic-source-rule",
+      "legacyPath": "packages/forge/src/goal/oracle-probe.ts",
+      "physicalPackage": "packages/mod-goal",
+      "physicalEntrypoint": "packages/mod-goal/src/index.ts",
+      "implementationPaths": [
+        "packages/mod-goal/src/index.ts"
+      ],
+      "ownershipAsset": "packages/mod-goal/ownership.json",
+      "compatibilityAdapter": "packages/forge/src/goal/oracle-probe.ts",
+      "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
+      "registrationBoundary": "public-mod-api",
+      "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
+    },
+    {
+      "category": "resultAndEnvelopeTypes",
+      "id": "AttemptRecord",
+      "source": "packages/forge/src/goal/types.ts:20",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-goal",
+      "rule": "semantic-source-rule",
+      "legacyPath": "packages/forge/src/goal/types.ts",
+      "physicalPackage": "packages/mod-goal",
+      "physicalEntrypoint": "packages/mod-goal/src/index.ts",
+      "implementationPaths": [
+        "packages/mod-goal/src/index.ts"
+      ],
+      "ownershipAsset": "packages/mod-goal/ownership.json",
+      "compatibilityAdapter": "packages/forge/src/goal/types.ts",
+      "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
+      "registrationBoundary": "public-mod-api",
+      "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
+    },
+    {
+      "category": "resultAndEnvelopeTypes",
+      "id": "GoalEvent",
+      "source": "packages/forge/src/goal/types.ts:48",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-goal",
+      "rule": "semantic-source-rule",
+      "legacyPath": "packages/forge/src/goal/types.ts",
+      "physicalPackage": "packages/mod-goal",
+      "physicalEntrypoint": "packages/mod-goal/src/index.ts",
+      "implementationPaths": [
+        "packages/mod-goal/src/index.ts"
+      ],
+      "ownershipAsset": "packages/mod-goal/ownership.json",
+      "compatibilityAdapter": "packages/forge/src/goal/types.ts",
+      "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
+      "registrationBoundary": "public-mod-api",
+      "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
+    },
+    {
+      "category": "resultAndEnvelopeTypes",
+      "id": "WitnessResult",
+      "source": "packages/forge/src/goal/oracle.ts:24",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-goal",
+      "rule": "semantic-source-rule",
+      "legacyPath": "packages/forge/src/goal/oracle.ts",
+      "physicalPackage": "packages/mod-goal",
+      "physicalEntrypoint": "packages/mod-goal/src/index.ts",
+      "implementationPaths": [
+        "packages/mod-goal/src/index.ts"
+      ],
+      "ownershipAsset": "packages/mod-goal/ownership.json",
+      "compatibilityAdapter": "packages/forge/src/goal/oracle.ts",
+      "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
+      "registrationBoundary": "public-mod-api",
+      "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
+    },
+    {
+      "category": "statePaths",
+      "id": "goals/tmp",
+      "source": "packages/forge/src/goal/oracle.ts:87",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-goal",
+      "rule": "semantic-source-rule",
+      "legacyPath": "packages/forge/src/goal/oracle.ts",
+      "physicalPackage": "packages/mod-goal",
+      "physicalEntrypoint": "packages/mod-goal/src/index.ts",
+      "implementationPaths": [
+        "packages/mod-goal/src/index.ts"
+      ],
+      "ownershipAsset": "packages/mod-goal/ownership.json",
+      "compatibilityAdapter": "packages/forge/src/goal/oracle.ts",
+      "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
+      "registrationBoundary": "public-mod-api",
+      "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
+    },
+    {
+      "category": "stateStoreModules",
+      "id": "packages/forge/src/goal/journal.ts",
+      "source": "packages/forge/src/goal/journal.ts",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-goal",
+      "rule": "semantic-source-rule",
+      "legacyPath": "packages/forge/src/goal/journal.ts",
+      "physicalPackage": "packages/mod-goal",
+      "physicalEntrypoint": "packages/mod-goal/src/index.ts",
+      "implementationPaths": [
+        "packages/mod-goal/src/index.ts"
+      ],
+      "ownershipAsset": "packages/mod-goal/ownership.json",
+      "compatibilityAdapter": "packages/forge/src/goal/journal.ts",
       "authority": "legacy-runtime-until-s6",
       "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
@@ -4443,6 +4323,46 @@
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
     {
+      "category": "resultAndEnvelopeTypes",
+      "id": "MutateResult",
+      "source": "packages/forge/src/mutate.ts:48",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-mutate",
+      "rule": "semantic-source-rule",
+      "legacyPath": "packages/forge/src/mutate.ts",
+      "physicalPackage": "packages/mod-mutate",
+      "physicalEntrypoint": "packages/mod-mutate/src/index.ts",
+      "implementationPaths": [
+        "packages/mod-mutate/src/index.ts"
+      ],
+      "ownershipAsset": "packages/mod-mutate/ownership.json",
+      "compatibilityAdapter": "packages/forge/src/mutate.ts",
+      "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
+      "registrationBoundary": "public-mod-api",
+      "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
+    },
+    {
+      "category": "resultAndEnvelopeTypes",
+      "id": "SemanticMutantsResult",
+      "source": "packages/forge/src/mutate-semantic.ts:25",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-mutate",
+      "rule": "semantic-source-rule",
+      "legacyPath": "packages/forge/src/mutate-semantic.ts",
+      "physicalPackage": "packages/mod-mutate",
+      "physicalEntrypoint": "packages/mod-mutate/src/index.ts",
+      "implementationPaths": [
+        "packages/mod-mutate/src/index.ts"
+      ],
+      "ownershipAsset": "packages/mod-mutate/ownership.json",
+      "compatibilityAdapter": "packages/forge/src/mutate-semantic.ts",
+      "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
+      "registrationBoundary": "public-mod-api",
+      "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
+    },
+    {
       "category": "tuiSlashCommands",
       "id": "/mutate",
       "source": "packages/cli/src/signals/intent.ts:56",
@@ -4477,6 +4397,26 @@
       ],
       "ownershipAsset": "packages/mod-naturalize/ownership.json",
       "compatibilityAdapter": "packages/cli/src/lazy-commands.ts",
+      "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
+      "registrationBoundary": "public-mod-api",
+      "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
+    },
+    {
+      "category": "resultAndEnvelopeTypes",
+      "id": "NaturalizeResult",
+      "source": "packages/forge/src/naturalize.ts:18",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-naturalize",
+      "rule": "semantic-source-rule",
+      "legacyPath": "packages/forge/src/naturalize.ts",
+      "physicalPackage": "packages/mod-naturalize",
+      "physicalEntrypoint": "packages/mod-naturalize/src/index.ts",
+      "implementationPaths": [
+        "packages/mod-naturalize/src/index.ts"
+      ],
+      "ownershipAsset": "packages/mod-naturalize/ownership.json",
+      "compatibilityAdapter": "packages/forge/src/naturalize.ts",
       "authority": "legacy-runtime-until-s6",
       "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
@@ -4597,6 +4537,26 @@
       ],
       "ownershipAsset": "packages/mod-nero/ownership.json",
       "compatibilityAdapter": "packages/mcp/src/agon-orchestration.ts",
+      "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
+      "registrationBoundary": "public-mod-api",
+      "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
+    },
+    {
+      "category": "resultAndEnvelopeTypes",
+      "id": "NeroResult",
+      "source": "packages/forge/src/nero.ts:28",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-nero",
+      "rule": "semantic-source-rule",
+      "legacyPath": "packages/forge/src/nero.ts",
+      "physicalPackage": "packages/mod-nero",
+      "physicalEntrypoint": "packages/mod-nero/src/index.ts",
+      "implementationPaths": [
+        "packages/mod-nero/src/index.ts"
+      ],
+      "ownershipAsset": "packages/mod-nero/ownership.json",
+      "compatibilityAdapter": "packages/forge/src/nero.ts",
       "authority": "legacy-runtime-until-s6",
       "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
@@ -5816,6 +5776,26 @@
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
     {
+      "category": "resultAndEnvelopeTypes",
+      "id": "ResearchResult",
+      "source": "packages/forge/src/research.ts:27",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-research",
+      "rule": "semantic-source-rule",
+      "legacyPath": "packages/forge/src/research.ts",
+      "physicalPackage": "packages/mod-research",
+      "physicalEntrypoint": "packages/mod-research/src/index.ts",
+      "implementationPaths": [
+        "packages/mod-research/src/index.ts"
+      ],
+      "ownershipAsset": "packages/mod-research/ownership.json",
+      "compatibilityAdapter": "packages/forge/src/research.ts",
+      "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
+      "registrationBoundary": "public-mod-api",
+      "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
+    },
+    {
       "category": "tuiSlashCommands",
       "id": "/research",
       "source": "packages/cli/src/signals/intent.ts:56",
@@ -6809,6 +6789,26 @@
       ],
       "ownershipAsset": "packages/mod-synthesis/ownership.json",
       "compatibilityAdapter": "packages/core/src/cesar/agent-synthesis.ts",
+      "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
+      "registrationBoundary": "public-mod-api",
+      "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
+    },
+    {
+      "category": "resultAndEnvelopeTypes",
+      "id": "SynthesisResult",
+      "source": "packages/forge/src/synthesis-modus.ts:30",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-synthesis",
+      "rule": "semantic-source-rule",
+      "legacyPath": "packages/forge/src/synthesis-modus.ts",
+      "physicalPackage": "packages/mod-synthesis",
+      "physicalEntrypoint": "packages/mod-synthesis/src/index.ts",
+      "implementationPaths": [
+        "packages/mod-synthesis/src/index.ts"
+      ],
+      "ownershipAsset": "packages/mod-synthesis/ownership.json",
+      "compatibilityAdapter": "packages/forge/src/synthesis-modus.ts",
       "authority": "legacy-runtime-until-s6",
       "legacyPresent": true,
       "registrationBoundary": "public-mod-api",

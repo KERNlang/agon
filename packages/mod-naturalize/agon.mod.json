@@ -59,8 +59,8 @@
       "path": "ownership.json",
       "kind": "documentation",
       "mediaType": "application/json",
-      "contentHash": "sha256:f978c20690ff96c7be1ade903f9260c5602213a69b8686994a060dd6c32285bd",
-      "bytes": 620,
+      "contentHash": "sha256:6fb298772c84a384858cdb05a3face9b11c37e8bdf147fcd1389a49bef070283",
+      "bytes": 897,
       "executable": false,
       "platforms": [
         "darwin-arm64",
@@ -100,7 +100,12 @@
     "mcpTools": [],
     "cesarTools": [],
     "lifecycleHooks": [],
-    "resultTypes": [],
+    "resultTypes": [
+      {
+        "id": "resultAndEnvelopeTypes:0085",
+        "aliases": []
+      }
+    ],
     "configKeys": [],
     "generatedDocs": []
   },

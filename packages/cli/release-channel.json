@@ -10,10 +10,10 @@
         "@kernlang/agon-mod-api"
       ],
       "sourceLocator": "@kernlang/agon-kernel@1.0.0",
-      "integrity": "sha512-6ukww6SrpG/qH1AYQSUq7fqvKxr4a8k4EdJsPweHnaUeEHmdzrRZWKBWoH6v7JJv7pWOg58oU4WLXx3WpkoVew==",
-      "contentHash": "sha256:b14306d39f3f36bfff38a63c665a56d80266dd5ff185b9bdf75235b3547fab40",
+      "integrity": "sha512-PJk/xfNlNjUNp+QLQU/RflqUx6RQDI/S7jeql8mScavaipMHeu6MG9IEXhvEclzkQWU7Tk8RoNh8lGHKck0bKA==",
+      "contentHash": "sha256:a801a7ce5862d126f22bc8260064cc9ce28459cba9d095ee25750b52291d2f78",
       "manifestHash": "sha256:583381b00786c2729a1e32eb2d42f6324cb58df263378f0d0ad57a1401970f17",
-      "payloadHash": "sha256:7e75f1914c49d64eea0d43622e3520a13619af87c05176d1ed171c9234f7198d"
+      "payloadHash": "sha256:1a79ca5f0b8650fb15a457b45b981ffe82c5635eac7629cf85986bb633c70152"
     },
     {
       "id": "@kernlang/agon-mod-api",
@@ -326,10 +326,10 @@
         "agon.panel"
       ],
       "sourceLocator": "@kernlang/agon-mod-campfire@1.0.0",
-      "integrity": "sha512-VicLyWcxfd59RSYs8YlXI7wwH8/f96odgV2AjTcfxTJUzWcxb2yCe022Ec+zrbGzA/oBORI21F7kYYAaJTxf6A==",
-      "contentHash": "sha256:001a64034bfd9342c5aa5d8df16c265ca3b340a4803cb46604fb4e3d46f3b8a0",
-      "manifestHash": "sha256:96899c11935dcbb42bb67f35f1a1d6f799f5e304c804a423a4671e1ca6903015",
-      "payloadHash": "sha256:64d8e8043de5df8f639190b46acce09e1cb8739161b8139b2a5b75162f14d9c3"
+      "integrity": "sha512-KJVrOfkgEdxVzrK5+q1fkkUh7q3wDGmR9hPIMyBnb7Q9gTUAfcHIjJ00uv5bmQ8lX4uIQKsWEgJEftVwo33uqw==",
+      "contentHash": "sha256:1a4c4a54f00dc04d6b560637f262f4b00c5342265abfdd240b3310bb8221db7f",
+      "manifestHash": "sha256:a454583f86d56394245fa375a773b9c60c7159b6703b971e3876018091f6b9dd",
+      "payloadHash": "sha256:6ef3be399f31bd59d7cc70d41316545438cfb3f7f8882fb187b8c87ab225ac53"
     },
     {
       "id": "@kernlang/agon-mod-forge",
@@ -352,10 +352,10 @@
         "agon.worktree"
       ],
       "sourceLocator": "@kernlang/agon-mod-forge@1.0.0",
-      "integrity": "sha512-8qysOujMVy+sEiscPys4PXwgID1ah1+VyIbIJ+Ibb0f0iGPg6Kn7bAgpWaDZxFAtKKwnO7d0qom0wpkyJFdeqw==",
-      "contentHash": "sha256:34d1a872eff6593e814295e89121c5222de1358b67a20edcdfab4dc212a4ac73",
-      "manifestHash": "sha256:d77da4d163d4c5c68c20f8c9730fbad2d18b47ed8e60592f8b778e26989ef412",
-      "payloadHash": "sha256:ce5c9551ac6c1896f451dcefe3e745656b3c630c8ce1d5c76c106705c43e8283"
+      "integrity": "sha512-1GX4ii/6lxHDvlD2ZY9+8p07ETqEt8MqwOAYVsBkEsBxIlIS7f9i+BASf8ZjVmymXah25av++xEEKvYBzvr4rw==",
+      "contentHash": "sha256:b528b7838d27e390e056e22824638c1de0cf097cb179950d0e4200c605b36fa6",
+      "manifestHash": "sha256:46d1a8d24497626931cdccad33b5c24c67be7e68f7916e0f4e1e7e1b3758dc5d",
+      "payloadHash": "sha256:362ab3b84c8963af5cc8f94b3ddb5f6554b90bf7343f07394f43c5a64d2eb4ba"
     },
     {
       "id": "@kernlang/agon-mod-team-forge",
@@ -396,10 +396,10 @@
         "agon.panel"
       ],
       "sourceLocator": "@kernlang/agon-mod-synthesis@1.0.0",
-      "integrity": "sha512-iV6D7FWq5vULITUNxCFGv5u9/Bk/bPxF7tDxTZfznUY2WqgzN1i/FeVk6/5zqyapGhd3DVRZ1DE0tLSdwq6Egw==",
-      "contentHash": "sha256:ce09b8b29ca0ab0c828837de853da1bec135ac3aadca5cae4d90eb68aa529d2b",
-      "manifestHash": "sha256:bdc9798b75e70d81651490eb240771beffacf22c352205848a14cc703f792765",
-      "payloadHash": "sha256:d2e52767f8059f36dcdc4d9b722660a645f5498dae21d4b26889c1ccc56a886c"
+      "integrity": "sha512-Y8PeAjd3EZVim0KALL+UwFHz2WUtMjktFwGJWOaGX3Tc+WPhU+rwLaUpN17vZPk319Pl4uygMEQkcwchzhtHaQ==",
+      "contentHash": "sha256:a0a9a7b9ed6b93eaffcdb4d690166741d6fc642875f9fd89021c8dd2e5c0fceb",
+      "manifestHash": "sha256:89e8d82f03c487c2e6b461c24311176eee1d6f3ba970aa2cec2a422e85212f7a",
+      "payloadHash": "sha256:96637bcd61cae83a5fde3630b552ca86bf89b1fa1e9971cc6332ba78e8eb3a59"
     },
     {
       "id": "@kernlang/agon-mod-review",
@@ -518,10 +518,10 @@
         "agon.worktree"
       ],
       "sourceLocator": "@kernlang/agon-mod-goal@1.0.0",
-      "integrity": "sha512-0G+A71zfdgj2aLl7oy6HwWaqNK4jkSwyTQ/1xTGBl3WQ0s5VsJSG0gEQwwJIsnckJsxU2Rr/MVH0QiN0fS2ipw==",
-      "contentHash": "sha256:84e1df285536d5d02735a0e188dd75ea201a659d43dd87410e9245bbb04860d7",
-      "manifestHash": "sha256:7fece84fe59449cd01c40812f63fb2ea8d374bcd12abc3d5f93fa9637a1c00a8",
-      "payloadHash": "sha256:b4af13fe0c157396ffc8bb4f371ea629d4e4f5d73482db0e40ad66ad3180e26c"
+      "integrity": "sha512-AXjkUom8T8ehpk8tMzyitxQNEfmcA8ej4GoKHFr9OsLFcFFEEp8C6sp/jCg3GSYSZFh7n9VSR1ZiwCqzqWq1bA==",
+      "contentHash": "sha256:431ddbbca56a8b6058fce6d0ad2d98482a5134aa8d62c973839ec22ce5a3c090",
+      "manifestHash": "sha256:8eb7a7ccf3e5517e4234d3e9d660deb96decc14d91f5dc8d7c0300936a0ff72f",
+      "payloadHash": "sha256:cbe6be5f7f11fc3c9131a215c25943a6b9c81aca54e24248fda9db39f05c7951"
     },
     {
       "id": "@kernlang/agon-mod-conquer",
@@ -548,10 +548,10 @@
         "agon.worktree"
       ],
       "sourceLocator": "@kernlang/agon-mod-conquer@1.0.0",
-      "integrity": "sha512-nbAruX+YsU3nfmQNDgrIDfcp9ckFQ4keYDwWFRs4xjhO7TslpmSAnxByBPDGn3AjC1KvsdyS+nEW3eeUMUasjA==",
-      "contentHash": "sha256:85073014d06986acd511077483216037f357522c24cc93e66402dbe36de713c2",
-      "manifestHash": "sha256:7957876a92107621c403901efeb68e7a56c12019ddc1a5617772ff8a7a85c54b",
-      "payloadHash": "sha256:7bf2b13518ab9f7fc251bbea00dc6dea8e4a1431cbb72157194315746ab87c16"
+      "integrity": "sha512-bW1Ox0faYHX3uAdcoQqnlG/7FhSdGAq2YBSonRLwfupjz6hh04iVK5I91HzlgrYh1k0I1Yhjr60INmGlQor7fA==",
+      "contentHash": "sha256:dc9b8d9ebd00ea75f1599b32a487b08d887ab1cd8f38c714fcd4436c553a1cf6",
+      "manifestHash": "sha256:b89a898dab6d14fafd71b6aa44c01234552943ebd7da6171eceef59c6739a53b",
+      "payloadHash": "sha256:1bb2fd2cd7166face2beb64319e79277a8e2d8a04da552191f7ce4e3fb1674d0"
     },
     {
       "id": "@kernlang/agon-mod-nero",
@@ -568,10 +568,10 @@
         "agon.judge"
       ],
       "sourceLocator": "@kernlang/agon-mod-nero@1.0.0",
-      "integrity": "sha512-hRuwub0905jtjAvzq3NSHIYQBq6sbzuqWr/OL5XwKUdxSnCo4n4+pdXDxB8GueE5U21Fq/Yo34UUoyExv/rU3A==",
-      "contentHash": "sha256:c11fdebc0c894e261cd32555b19894fdf9bdc5be702a63ab4669c2acfe3fc0b0",
-      "manifestHash": "sha256:8e0664e2602e63408dc992f0c95ef872b246e07b54c3a4d93e1169c0c988c602",
-      "payloadHash": "sha256:3f5c85ef5cf9b8d2dc7ae80dddff36783e70d36644819d40fff97af8e27ba852"
+      "integrity": "sha512-OuXIdTRVuoiblIgFyRCf4Z8BJH/4+bUlNb/k57011qz0TIxvAQOHvrXtwE0RkCRV/3HCndFB4u27P+VTHEHqaA==",
+      "contentHash": "sha256:44812b9a6b60e498079bb0ffd65bd428ba686c3124c5e9ef2c72844aa7d395c9",
+      "manifestHash": "sha256:2d44d12977bb17b3c3ac7cfacd2a0c50ec809d1b30c8eff4a7a20c2d52cda94e",
+      "payloadHash": "sha256:cfe01f9d7ad44a4a53ef9032c59a17a9e47923ced5cb6fe44739e6be8c4c2f62"
     },
     {
       "id": "@kernlang/agon-mod-council",
@@ -590,10 +590,10 @@
         "agon.panel"
       ],
       "sourceLocator": "@kernlang/agon-mod-council@1.0.0",
-      "integrity": "sha512-DFYa3ksCWHOkDBi3QcZsJEVKHPGKoivgWX6X8KxDjiP/C5bnvEK1IMCjLcxGuQCrddwG8SDo9yf7uAl3CkUFjQ==",
-      "contentHash": "sha256:a3caf698105d660797a13b82de2af1c1e0eb54ada32612041a479519294ff8eb",
-      "manifestHash": "sha256:ea402ccd68cc40460470537e87d2f58f8fbe4877d64958ddb32d89a7345f0e73",
-      "payloadHash": "sha256:c3404623035bdb38362b8c3ebbc816083f140c84bde973371947c833574c4789"
+      "integrity": "sha512-3PAI5LdTpvx4HeAxVYXE3JUUAeRG2DrLjUqUY6VhjOh+LgU+iPsbC/NSeMnUKVs5l7xIAKC+u4fx3pUBRdMQqA==",
+      "contentHash": "sha256:c9070bbc4b1e48e6260b5851c8f3e086a9c496f30d2e185d6b368bcaabf0cf5b",
+      "manifestHash": "sha256:f12692825c5d8cba792ab9f703e5a6b08ee8d890b54663eb90dcf1f0a89062ca",
+      "payloadHash": "sha256:1f0a76217cbb880219e02822e3192b6017eb94133df19a78613e43740f82c424"
     },
     {
       "id": "@kernlang/agon-mod-research",
@@ -608,10 +608,10 @@
         "agon.engine-runtime"
       ],
       "sourceLocator": "@kernlang/agon-mod-research@1.0.0",
-      "integrity": "sha512-5xFcV2lsKPECSzSHsV/w/GsVVsi4g8JBN6pag58fpgUROa4+cdSHtQd6f9mC78B8OQRf9XuGYSxUJEucvxZqRA==",
-      "contentHash": "sha256:9a5226d237386b524aecd3821d7a47d478c217825a62a5e54abe636378041ac4",
-      "manifestHash": "sha256:ead2be9763a864267a67cf417e564b30224a0c0f5c53ec2bf992243fd827cb32",
-      "payloadHash": "sha256:9b3abae81ce1eb97925462123e5b64df12e76f537905972b65e544a01ec3c82e"
+      "integrity": "sha512-/cOjOOYDCiTC+CGx41//upp1zVe92I9XDdw41syBWP9wYEJpXFPGULHHQp4NwT3/OncrPlTSuTg1559BWrYozg==",
+      "contentHash": "sha256:202e81e18aa9a38141e9b31985e496903fec00791fb614843ab5fc656f87b9f7",
+      "manifestHash": "sha256:bcbae9119e2ac7f9bdfc78edcfa874607a112d3c54d9d2907f0c3588354d19e0",
+      "payloadHash": "sha256:910f207e1856af11dbc8ec303e8d04b9c785184e6f2d29cff46e533f6d40d915"
     },
     {
       "id": "@kernlang/agon-mod-rag",
@@ -652,10 +652,10 @@
         "agon.worktree"
       ],
       "sourceLocator": "@kernlang/agon-mod-mutate@1.0.0",
-      "integrity": "sha512-OgIdD5xi1a1xPSKIsR7JtgjNgN0tTK+ir+AkiXSSvaFtYyAKDxYhWi5NeUxBUaCOLWb/r3Sb7Kq2VKGyYqJl+g==",
-      "contentHash": "sha256:d3e332ad8d30d0791f5506b33e37246e431533fa0f10123bbaa08ae9b24b4dee",
-      "manifestHash": "sha256:d0dc2bdceeea8912a70af059f6bbcaeaf17f489830a95df3fa855a506896c9d3",
-      "payloadHash": "sha256:3da53dce6265799e97d118e95ae2ab231531d35eb6b123a939e4d403a6669c4b"
+      "integrity": "sha512-bBq1dQM9nhK40nUn2CmLr1sSKScRqoUWGtS5SqYIFRDA6D2bNhT14qOl4PDyby7HWyB34eH3HKVKuU5f5ad3+w==",
+      "contentHash": "sha256:cba46119a8e3fbc069083f4fbe11625c854a59ecf38fa794cf75dbe41d8c90ed",
+      "manifestHash": "sha256:72b48f344d3f0dffa823039ec7f69713f1e71383a60fa76fc4cbc962a4403810",
+      "payloadHash": "sha256:e7f2b35a5fd8ded7c95c8cf9bd44da56dc6a11eb12b38386e7385461ac6a4688"
     },
     {
       "id": "@kernlang/agon-mod-naturalize",
@@ -672,10 +672,10 @@
         "agon.sanitize"
       ],
       "sourceLocator": "@kernlang/agon-mod-naturalize@1.0.0",
-      "integrity": "sha512-ZSmM/D4k0lLCfOj6YqiuIOr8oopTFEdThPbHi90/rYpwbzATRCtyCaaPt5g6ate3EfFGs9pDvNVHVhR0/+iqzQ==",
-      "contentHash": "sha256:a75af607a5c3d0f9736b672b1c65ff3d92aa79c239b408e2ad72f5183d0b9d05",
-      "manifestHash": "sha256:8b74a1012355d6745e2d171d72ae200cb9bfc87a8f79a0d1279f190782ce15c7",
-      "payloadHash": "sha256:2608885f6ce646a9f2749804ad9e96588d1bf71ae2052a88f9625d248925e583"
+      "integrity": "sha512-YXuBbw5qNk2yWP0JP+acuNi5a/xq3BLzMvdDjIXBfaUw2thj/DjQJ2QQuRBqv5L4aqMrIrGsXYJqWp+Aa7XnNQ==",
+      "contentHash": "sha256:6e4b2f3ada08f24386cd6bd6e93e49071dadcf311ec5541fb64253b806dd13f6",
+      "manifestHash": "sha256:26753ccf699803bd7a246dbed1d8f10a369b15de8a752fec5aa180c320c1197e",
+      "payloadHash": "sha256:a011adfc9fcc7f3903ed490143bf9345636c798668623b99cff626dc5b470ab1"
     },
     {
       "id": "@kernlang/agon-mod-sanitize",
@@ -941,107 +941,107 @@
   "launcherFiles": [
     "LICENSE",
     "README.md",
-    "dist/app-N4DNJJKU.js",
-    "dist/app-N4DNJJKU.js.map",
-    "dist/attach-HAT7VXNI.js",
-    "dist/attach-HAT7VXNI.js.map",
+    "dist/app-YGZMIPZ5.js",
+    "dist/app-YGZMIPZ5.js.map",
+    "dist/attach-IP7R4HI3.js",
+    "dist/attach-IP7R4HI3.js.map",
     "dist/browser-host.js",
     "dist/browser-host.js.map",
-    "dist/call-TTRXQBID.js",
-    "dist/call-TTRXQBID.js.map",
-    "dist/chunk-2GA566L5.js",
-    "dist/chunk-2GA566L5.js.map",
+    "dist/call-EYODZZNN.js",
+    "dist/call-EYODZZNN.js.map",
     "dist/chunk-37LCQRNC.js",
     "dist/chunk-37LCQRNC.js.map",
     "dist/chunk-3G43QNFV.js",
     "dist/chunk-3G43QNFV.js.map",
-    "dist/chunk-4NJSYVZW.js",
-    "dist/chunk-4NJSYVZW.js.map",
-    "dist/chunk-4W2VRM4J.js",
-    "dist/chunk-4W2VRM4J.js.map",
-    "dist/chunk-5C7L5ZIS.js",
-    "dist/chunk-5C7L5ZIS.js.map",
-    "dist/chunk-5ZNRMD57.js",
-    "dist/chunk-5ZNRMD57.js.map",
+    "dist/chunk-4PD2XLCR.js",
+    "dist/chunk-4PD2XLCR.js.map",
+    "dist/chunk-5HKLW54P.js",
+    "dist/chunk-5HKLW54P.js.map",
+    "dist/chunk-7AWLIZ3S.js",
+    "dist/chunk-7AWLIZ3S.js.map",
     "dist/chunk-7SUV6RHW.js",
     "dist/chunk-7SUV6RHW.js.map",
-    "dist/chunk-ANQ5PKEF.js",
-    "dist/chunk-ANQ5PKEF.js.map",
+    "dist/chunk-7TKICRPH.js",
+    "dist/chunk-7TKICRPH.js.map",
+    "dist/chunk-BA27KHO2.js",
+    "dist/chunk-BA27KHO2.js.map",
+    "dist/chunk-BTJSSTQ2.js",
+    "dist/chunk-BTJSSTQ2.js.map",
+    "dist/chunk-BXGV2VYO.js",
+    "dist/chunk-BXGV2VYO.js.map",
     "dist/chunk-C4OUBIJA.js",
     "dist/chunk-C4OUBIJA.js.map",
-    "dist/chunk-CC5VKWH3.js",
-    "dist/chunk-CC5VKWH3.js.map",
-    "dist/chunk-DPCZLGAG.js",
-    "dist/chunk-DPCZLGAG.js.map",
-    "dist/chunk-GFGOBABI.js",
-    "dist/chunk-GFGOBABI.js.map",
-    "dist/chunk-GKS5SJFU.js",
-    "dist/chunk-GKS5SJFU.js.map",
-    "dist/chunk-JCVNQHQM.js",
-    "dist/chunk-JCVNQHQM.js.map",
-    "dist/chunk-K5NVLSJF.js",
-    "dist/chunk-K5NVLSJF.js.map",
-    "dist/chunk-PFCIXZ3C.js",
-    "dist/chunk-PFCIXZ3C.js.map",
-    "dist/chunk-QSH5GHU2.js",
-    "dist/chunk-QSH5GHU2.js.map",
-    "dist/chunk-QSKHUM3N.js",
-    "dist/chunk-QSKHUM3N.js.map",
-    "dist/chunk-R6GSNPHF.js",
-    "dist/chunk-R6GSNPHF.js.map",
-    "dist/chunk-SVRFT5DK.js",
-    "dist/chunk-SVRFT5DK.js.map",
+    "dist/chunk-DTS7LGKT.js",
+    "dist/chunk-DTS7LGKT.js.map",
+    "dist/chunk-DXS4NYBJ.js",
+    "dist/chunk-DXS4NYBJ.js.map",
+    "dist/chunk-FJVRSCXD.js",
+    "dist/chunk-FJVRSCXD.js.map",
+    "dist/chunk-GJSD2JL7.js",
+    "dist/chunk-GJSD2JL7.js.map",
+    "dist/chunk-GO57GWDR.js",
+    "dist/chunk-GO57GWDR.js.map",
+    "dist/chunk-KPN6TV3E.js",
+    "dist/chunk-KPN6TV3E.js.map",
+    "dist/chunk-KVATYXZP.js",
+    "dist/chunk-KVATYXZP.js.map",
+    "dist/chunk-NYEMXPJW.js",
+    "dist/chunk-NYEMXPJW.js.map",
+    "dist/chunk-O4GKVMRP.js",
+    "dist/chunk-O4GKVMRP.js.map",
+    "dist/chunk-Q6CMNFYG.js",
+    "dist/chunk-Q6CMNFYG.js.map",
+    "dist/chunk-QGHUIXGH.js",
+    "dist/chunk-QGHUIXGH.js.map",
+    "dist/chunk-S64LOYIX.js",
+    "dist/chunk-S64LOYIX.js.map",
     "dist/chunk-TL5D3C6A.js",
     "dist/chunk-TL5D3C6A.js.map",
-    "dist/chunk-UZYHSE7R.js",
-    "dist/chunk-UZYHSE7R.js.map",
-    "dist/chunk-VVMLQWCB.js",
-    "dist/chunk-VVMLQWCB.js.map",
-    "dist/chunk-WEORGVZE.js",
-    "dist/chunk-WEORGVZE.js.map",
-    "dist/chunk-ZEYGMFRK.js",
-    "dist/chunk-ZEYGMFRK.js.map",
-    "dist/cli-host-36OHEIH3.js",
-    "dist/cli-host-36OHEIH3.js.map",
-    "dist/config-367OWOBD.js",
-    "dist/config-367OWOBD.js.map",
-    "dist/daemon-UE2KBNHH.js",
-    "dist/daemon-UE2KBNHH.js.map",
+    "dist/chunk-XDZHY4KX.js",
+    "dist/chunk-XDZHY4KX.js.map",
+    "dist/chunk-XQTNLNVJ.js",
+    "dist/chunk-XQTNLNVJ.js.map",
+    "dist/cli-host-LBFP5E3N.js",
+    "dist/cli-host-LBFP5E3N.js.map",
+    "dist/config-DMYZMJFW.js",
+    "dist/config-DMYZMJFW.js.map",
+    "dist/daemon-RS5AMKJG.js",
+    "dist/daemon-RS5AMKJG.js.map",
     "dist/dist-R4IQ4SDT.js",
     "dist/dist-R4IQ4SDT.js.map",
-    "dist/doctor-C2O6ENR2.js",
-    "dist/doctor-C2O6ENR2.js.map",
-    "dist/engine-S5VVR2LJ.js",
-    "dist/engine-S5VVR2LJ.js.map",
-    "dist/first-party-services-565HFRS2.js",
-    "dist/first-party-services-565HFRS2.js.map",
-    "dist/forge-UZXULBC2.js",
-    "dist/forge-UZXULBC2.js.map",
+    "dist/doctor-W33PABYM.js",
+    "dist/doctor-W33PABYM.js.map",
+    "dist/engine-OO4X2MFU.js",
+    "dist/engine-OO4X2MFU.js.map",
+    "dist/first-party-services-ASO4BKEE.js",
+    "dist/first-party-services-ASO4BKEE.js.map",
+    "dist/forge-RHEQG67I.js",
+    "dist/forge-RHEQG67I.js.map",
     "dist/index.js",
     "dist/index.js.map",
-    "dist/intent-skills-2KR2Y4LZ.js",
-    "dist/intent-skills-2KR2Y4LZ.js.map",
-    "dist/login-VBFTUP7H.js",
-    "dist/login-VBFTUP7H.js.map",
+    "dist/intent-skills-PBYI4SY3.js",
+    "dist/intent-skills-PBYI4SY3.js.map",
+    "dist/login-7LZSOWRY.js",
+    "dist/login-7LZSOWRY.js.map",
     "dist/mcp/index.js",
     "dist/mcp/index.js.map",
-    "dist/mod-SJZXHO3V.js",
-    "dist/mod-SJZXHO3V.js.map",
-    "dist/models-OCAR6RMX.js",
-    "dist/models-OCAR6RMX.js.map",
-    "dist/onboarding-DQVMSQTU.js",
-    "dist/onboarding-DQVMSQTU.js.map",
-    "dist/plan-mode-M7Y7VMAQ.js",
-    "dist/plan-mode-M7Y7VMAQ.js.map",
-    "dist/provider-VPWJJMNK.js",
-    "dist/provider-VPWJJMNK.js.map",
+    "dist/mod-SCSVKELR.js",
+    "dist/mod-SCSVKELR.js.map",
+    "dist/models-WKPH3245.js",
+    "dist/models-WKPH3245.js.map",
+    "dist/onboarding-3E23JHB6.js",
+    "dist/onboarding-3E23JHB6.js.map",
+    "dist/plan-mode-YE3FQGQM.js",
+    "dist/plan-mode-YE3FQGQM.js.map",
+    "dist/provider-R6EMDPCH.js",
+    "dist/provider-R6EMDPCH.js.map",
     "dist/release-channel.json",
-    "dist/setup-DDWP4ATE.js",
-    "dist/setup-DDWP4ATE.js.map",
-    "dist/src-IQIAOTPO.js",
-    "dist/src-IQIAOTPO.js.map",
-    "dist/update-7DWYYKVD.js",
-    "dist/update-7DWYYKVD.js.map",
+    "dist/setup-TON6BBRJ.js",
+    "dist/setup-TON6BBRJ.js.map",
+    "dist/src-QDFZH37S.js",
+    "dist/src-QDFZH37S.js.map",
+    "dist/update-4RWQHZZ6.js",
+    "dist/update-4RWQHZZ6.js.map",
     "package.json",
     "py/agon-model-probe-wrapper.py",
     "py/agon-tui-probe.py",
@@ -1264,7 +1264,7 @@
           "@kernlang/agon-mod-api": "1.0.0",
           "semver": "^7.7.4"
         },
-        "integrity": "sha512-6ukww6SrpG/qH1AYQSUq7fqvKxr4a8k4EdJsPweHnaUeEHmdzrRZWKBWoH6v7JJv7pWOg58oU4WLXx3WpkoVew==",
+        "integrity": "sha512-PJk/xfNlNjUNp+QLQU/RflqUx6RQDI/S7jeql8mScavaipMHeu6MG9IEXhvEclzkQWU7Tk8RoNh8lGHKck0bKA==",
         "resolved": "https://registry.npmjs.org/@kernlang/agon-kernel/-/agon-kernel-1.0.0.tgz"
       },
       "node_modules/@kernlang/agon-mod-agent": {
@@ -1351,7 +1351,7 @@
         "peerDependencies": {
           "@kernlang/agon-kernel": ">=0.0.0-0 <2"
         },
-        "integrity": "sha512-VicLyWcxfd59RSYs8YlXI7wwH8/f96odgV2AjTcfxTJUzWcxb2yCe022Ec+zrbGzA/oBORI21F7kYYAaJTxf6A==",
+        "integrity": "sha512-KJVrOfkgEdxVzrK5+q1fkkUh7q3wDGmR9hPIMyBnb7Q9gTUAfcHIjJ00uv5bmQ8lX4uIQKsWEgJEftVwo33uqw==",
         "resolved": "https://registry.npmjs.org/@kernlang/agon-mod-campfire/-/agon-mod-campfire-1.0.0.tgz"
       },
       "node_modules/@kernlang/agon-mod-conquer": {
@@ -1371,7 +1371,7 @@
         "peerDependencies": {
           "@kernlang/agon-kernel": ">=0.0.0-0 <2"
         },
-        "integrity": "sha512-nbAruX+YsU3nfmQNDgrIDfcp9ckFQ4keYDwWFRs4xjhO7TslpmSAnxByBPDGn3AjC1KvsdyS+nEW3eeUMUasjA==",
+        "integrity": "sha512-bW1Ox0faYHX3uAdcoQqnlG/7FhSdGAq2YBSonRLwfupjz6hh04iVK5I91HzlgrYh1k0I1Yhjr60INmGlQor7fA==",
         "resolved": "https://registry.npmjs.org/@kernlang/agon-mod-conquer/-/agon-mod-conquer-1.0.0.tgz"
       },
       "node_modules/@kernlang/agon-mod-council": {
@@ -1387,7 +1387,7 @@
         "peerDependencies": {
           "@kernlang/agon-kernel": ">=0.0.0-0 <2"
         },
-        "integrity": "sha512-DFYa3ksCWHOkDBi3QcZsJEVKHPGKoivgWX6X8KxDjiP/C5bnvEK1IMCjLcxGuQCrddwG8SDo9yf7uAl3CkUFjQ==",
+        "integrity": "sha512-3PAI5LdTpvx4HeAxVYXE3JUUAeRG2DrLjUqUY6VhjOh+LgU+iPsbC/NSeMnUKVs5l7xIAKC+u4fx3pUBRdMQqA==",
         "resolved": "https://registry.npmjs.org/@kernlang/agon-mod-council/-/agon-mod-council-1.0.0.tgz"
       },
       "node_modules/@kernlang/agon-mod-flow": {
@@ -1420,7 +1420,7 @@
         "peerDependencies": {
           "@kernlang/agon-kernel": ">=0.0.0-0 <2"
         },
-        "integrity": "sha512-8qysOujMVy+sEiscPys4PXwgID1ah1+VyIbIJ+Ibb0f0iGPg6Kn7bAgpWaDZxFAtKKwnO7d0qom0wpkyJFdeqw==",
+        "integrity": "sha512-1GX4ii/6lxHDvlD2ZY9+8p07ETqEt8MqwOAYVsBkEsBxIlIS7f9i+BASf8ZjVmymXah25av++xEEKvYBzvr4rw==",
         "resolved": "https://registry.npmjs.org/@kernlang/agon-mod-forge/-/agon-mod-forge-1.0.0.tgz"
       },
       "node_modules/@kernlang/agon-mod-git-actions": {
@@ -1456,7 +1456,7 @@
         "peerDependencies": {
           "@kernlang/agon-kernel": ">=0.0.0-0 <2"
         },
-        "integrity": "sha512-0G+A71zfdgj2aLl7oy6HwWaqNK4jkSwyTQ/1xTGBl3WQ0s5VsJSG0gEQwwJIsnckJsxU2Rr/MVH0QiN0fS2ipw==",
+        "integrity": "sha512-AXjkUom8T8ehpk8tMzyitxQNEfmcA8ej4GoKHFr9OsLFcFFEEp8C6sp/jCg3GSYSZFh7n9VSR1ZiwCqzqWq1bA==",
         "resolved": "https://registry.npmjs.org/@kernlang/agon-mod-goal/-/agon-mod-goal-1.0.0.tgz"
       },
       "node_modules/@kernlang/agon-mod-history": {
@@ -1517,7 +1517,7 @@
         "peerDependencies": {
           "@kernlang/agon-kernel": ">=0.0.0-0 <2"
         },
-        "integrity": "sha512-OgIdD5xi1a1xPSKIsR7JtgjNgN0tTK+ir+AkiXSSvaFtYyAKDxYhWi5NeUxBUaCOLWb/r3Sb7Kq2VKGyYqJl+g==",
+        "integrity": "sha512-bBq1dQM9nhK40nUn2CmLr1sSKScRqoUWGtS5SqYIFRDA6D2bNhT14qOl4PDyby7HWyB34eH3HKVKuU5f5ad3+w==",
         "resolved": "https://registry.npmjs.org/@kernlang/agon-mod-mutate/-/agon-mod-mutate-1.0.0.tgz"
       },
       "node_modules/@kernlang/agon-mod-naturalize": {
@@ -1532,7 +1532,7 @@
         "peerDependencies": {
           "@kernlang/agon-kernel": ">=0.0.0-0 <2"
         },
-        "integrity": "sha512-ZSmM/D4k0lLCfOj6YqiuIOr8oopTFEdThPbHi90/rYpwbzATRCtyCaaPt5g6ate3EfFGs9pDvNVHVhR0/+iqzQ==",
+        "integrity": "sha512-YXuBbw5qNk2yWP0JP+acuNi5a/xq3BLzMvdDjIXBfaUw2thj/DjQJ2QQuRBqv5L4aqMrIrGsXYJqWp+Aa7XnNQ==",
         "resolved": "https://registry.npmjs.org/@kernlang/agon-mod-naturalize/-/agon-mod-naturalize-1.0.0.tgz"
       },
       "node_modules/@kernlang/agon-mod-nero": {
@@ -1547,7 +1547,7 @@
         "peerDependencies": {
           "@kernlang/agon-kernel": ">=0.0.0-0 <2"
         },
-        "integrity": "sha512-hRuwub0905jtjAvzq3NSHIYQBq6sbzuqWr/OL5XwKUdxSnCo4n4+pdXDxB8GueE5U21Fq/Yo34UUoyExv/rU3A==",
+        "integrity": "sha512-OuXIdTRVuoiblIgFyRCf4Z8BJH/4+bUlNb/k57011qz0TIxvAQOHvrXtwE0RkCRV/3HCndFB4u27P+VTHEHqaA==",
         "resolved": "https://registry.npmjs.org/@kernlang/agon-mod-nero/-/agon-mod-nero-1.0.0.tgz"
       },
       "node_modules/@kernlang/agon-mod-pipeline-delivery": {
@@ -1658,7 +1658,7 @@
         "peerDependencies": {
           "@kernlang/agon-kernel": ">=0.0.0-0 <2"
         },
-        "integrity": "sha512-5xFcV2lsKPECSzSHsV/w/GsVVsi4g8JBN6pag58fpgUROa4+cdSHtQd6f9mC78B8OQRf9XuGYSxUJEucvxZqRA==",
+        "integrity": "sha512-/cOjOOYDCiTC+CGx41//upp1zVe92I9XDdw41syBWP9wYEJpXFPGULHHQp4NwT3/OncrPlTSuTg1559BWrYozg==",
         "resolved": "https://registry.npmjs.org/@kernlang/agon-mod-research/-/agon-mod-research-1.0.0.tgz"
       },
       "node_modules/@kernlang/agon-mod-review": {
@@ -1750,7 +1750,7 @@
         "peerDependencies": {
           "@kernlang/agon-kernel": ">=0.0.0-0 <2"
         },
-        "integrity": "sha512-iV6D7FWq5vULITUNxCFGv5u9/Bk/bPxF7tDxTZfznUY2WqgzN1i/FeVk6/5zqyapGhd3DVRZ1DE0tLSdwq6Egw==",
+        "integrity": "sha512-Y8PeAjd3EZVim0KALL+UwFHz2WUtMjktFwGJWOaGX3Tc+WPhU+rwLaUpN17vZPk319Pl4uygMEQkcwchzhtHaQ==",
         "resolved": "https://registry.npmjs.org/@kernlang/agon-mod-synthesis/-/agon-mod-synthesis-1.0.0.tgz"
       },
       "node_modules/@kernlang/agon-mod-team-brainstorm": {

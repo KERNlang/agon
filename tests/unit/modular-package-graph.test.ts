@@ -20,6 +20,51 @@ describe('frozen first-party package graph', () => {
     const mapPath = fileURLToPath(new URL('../../docs/specs/evidence/modular-agon-package-map.json', import.meta.url));
     expect(outputs.has(mapPath)).toBe(true);
     expect(JSON.parse(outputs.get(mapPath)!)).toEqual(JSON.parse(readFileSync(mapPath, 'utf8')));
+    const ownershipPath = fileURLToPath(new URL('../../docs/specs/evidence/modular-agon-ownership.json', import.meta.url));
+    const generatedOwnership = JSON.parse(outputs.get(ownershipPath)!);
+    expect(generatedOwnership).toEqual(JSON.parse(readFileSync(ownershipPath, 'utf8')));
+    const assignments = generatedOwnership.assignments as Array<{ category: string; id: string; source: string; package: string }>;
+    const inventory = JSON.parse(readFileSync(new URL('../../docs/specs/evidence/modular-agon-current-inventory.json', import.meta.url), 'utf8'));
+    const occurrenceKeys = assignments.map(row => JSON.stringify([row.category, row.id, row.source]));
+    const inventoryKeys = Object.entries(inventory.categories as Record<string, Array<{ id: string; source: string }>>)
+      .flatMap(([category, entries]) => entries.map(row => JSON.stringify([category, row.id, row.source])));
+    expect(new Set(occurrenceKeys).size).toBe(occurrenceKeys.length);
+    expect(occurrenceKeys.sort()).toEqual(inventoryKeys.sort());
+    // The outer legacy package must not hide a workflow's specific owner.
+    for (const [sourceName, owner] of [
+      ['campfire', 'campfire'], ['council', 'council'], ['conquer', 'conquer'],
+      ['goal', 'goal'], ['mutate', 'mutate'], ['naturalize', 'naturalize'],
+      ['nero', 'nero'], ['research', 'research'], ['synthesis-modus', 'synthesis'],
+    ]) {
+      const entries = assignments.filter(row => new RegExp(`^packages/forge/src/${sourceName}(?:[./-])`).test(row.source));
+      expect(entries.length, sourceName).toBeGreaterThan(0);
+      for (const entry of entries) expect(entry.package, `${entry.id} at ${entry.source}`).toBe(`@kernlang/agon-mod-${owner}`);
+    }
+    // Shared words in a name must not move Forge's own settings or result type.
+    expect(assignments.find(row => row.id === 'autoReviewAfterForge')?.package).toBe('@kernlang/agon-mod-forge');
+    expect(assignments.find(row => row.id === 'SynthesisResult' && row.source.startsWith('packages/forge/src/types-impl.ts:'))?.package).toBe('@kernlang/agon-mod-forge');
+  });
+
+  it('removes reassigned roadmap sources but preserves unassigned manual sources', () => {
+    const script = new URL('../../scripts/spec/reconcile-modular-roadmap-sources.mjs', import.meta.url);
+    const roadmapPath = fileURLToPath(new URL('../../docs/specs/evidence/modular-agon-implementation-roadmap.json', import.meta.url));
+    const roadmap = JSON.parse(readFileSync(roadmapPath, 'utf8'));
+    const forge = roadmap.packages.find((pkg: { id: string }) => pkg.id === '@kernlang/agon-mod-forge');
+    forge.extractionSources.push('packages/forge/src/conquer.ts:146', 'manual/unassigned.ts:1');
+    let output: typeof roadmap;
+    const source = readFileSync(script, 'utf8').replace(/^import .*;\n/gm, '')
+      .replaceAll('import.meta.dirname', JSON.stringify(dirname(fileURLToPath(script))));
+    runInNewContext(source, {
+      join, resolve, console: { log: () => {} },
+      readFileSync: (path: string, encoding: BufferEncoding) => path === roadmapPath ? JSON.stringify(roadmap) : readFileSync(path, encoding),
+      writeFileSync: (_path: string, contents: string) => { output = JSON.parse(contents); },
+    });
+    const updatedForge = output.packages.find((pkg: { id: string }) => pkg.id === '@kernlang/agon-mod-forge');
+    const conquer = output.packages.find((pkg: { id: string }) => pkg.id === '@kernlang/agon-mod-conquer');
+    expect(updatedForge.extractionSources).not.toContain('packages/forge/src/conquer.ts:146');
+    expect(updatedForge.extractionSources).toContain('manual/unassigned.ts:1');
+    expect(updatedForge.extractionSources).toContain('packages/forge/src/types-impl.ts:10');
+    expect(conquer.extractionSources).toContain('packages/forge/src/conquer.ts:146');
   });
 
   it.each(['checked-in', 'valid', 'permuted', 'missing', 'extra', 'swapped', 'duplicate', 'wrong-order'] as const)(

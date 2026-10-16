@@ -1,4 +1,7 @@
 import { runDoneOracle } from './falsifier.js';
+import { publishConquerBranch } from './publication.js';
+import type { ConquerPublicationResult } from './publication.js';
+import { spawnWithTimeout } from '@kernlang/agon-support-engine-runtime';
 import type { ConquerHostServices } from './host.js';
 import type { ConquerIsolation } from './isolation.js';
 import { readWorktreeSource, readWorktreePatch } from '@kernlang/agon-support-worktree';
@@ -44,7 +47,7 @@ function objectResult(result: CommandResult): Record<string, Json> {
   const payload = result.result;
   return payload !== null && typeof payload === 'object' && !Array.isArray(payload) ? payload : {};
 }
-export async function runConquerTask(raw:Json,context:InvocationContext,services:ConquerModServices):Promise<CommandResult>{const input=normalizeConquerInput(raw as Record<string,Json>);const task=text(input.task)||(Array.isArray(input._)?input._.map(String).join(' ').trim():'');const gate=text(input.gate);if(!task)return{exitCode:1,stderr:'Conquer requires a task.\n'};if(!gate)return{exitCode:1,stderr:'Conquer requires an explicit --gate done oracle.\n'};if(input.push===true)return{exitCode:1,stderr:'Physical Conquer produces a receipted patch; promotion/push requires the Git Actions mod and explicit operator approval.\n'};const active = services.engines.listActive ? [...await services.engines.listActive(context)] : [];
+export async function runConquerTask(raw:Json,context:InvocationContext,services:ConquerModServices):Promise<CommandResult>{const input=normalizeConquerInput(raw as Record<string,Json>);const task=text(input.task)||(Array.isArray(input._)?input._.map(String).join(' ').trim():'');const gate=text(input.gate);if(!task)return{exitCode:1,stderr:'Conquer requires a task.\n'};if(!gate)return{exitCode:1,stderr:'Conquer requires an explicit --gate done oracle.\n'};const active = services.engines.listActive ? [...await services.engines.listActive(context)] : [];
   const explicitBuilder = text(input.builder);
   const explicitAdvisors = text(input.engines);
   let builder = explicitBuilder || (active.includes('codex') ? 'codex' : active[0]);
@@ -69,6 +72,13 @@ export async function runConquerTask(raw:Json,context:InvocationContext,services
   const maxTurns=Number.parseInt(String(input.maxTurns??'40'),10);if(Number.isNaN(maxTurns)||maxTurns<1)return{exitCode:1,stderr:`Invalid --max-turns: ${input.maxTurns}\n`};let maxHours=0;if(input.maxHours!==undefined&&String(input.maxHours).trim()!==''){maxHours=Number.parseFloat(String(input.maxHours));if(Number.isNaN(maxHours)||maxHours<0)return{exitCode:1,stderr:`Invalid --max-hours: ${input.maxHours}\n`};}const timeoutRaw=Number.parseInt(String(input.timeout??'600'),10);const timeout=Number.isFinite(timeoutRaw)&&timeoutRaw>0?String(input.timeout??'600'):'600';const gateTimeoutRaw=Number.parseInt(String(input.gateTimeout??'1800'),10);const gateTimeout=Number.isFinite(gateTimeoutRaw)&&gateTimeoutRaw>0?gateTimeoutRaw:1800;
   if (!services.conquer || !services.runs) return { exitCode: 1, stderr: 'Conquer host capabilities are unavailable. Restart with a compatible modular host.\n' };
   const capabilities = await services.conquer.open(context);
+  if (input.push === true) {
+    if (!capabilities.publication) return { exitCode: 1, stderr: 'Conquer publication policy is unavailable. Restart with a compatible modular host.\n' };
+    const permission = await services.permissions.check('git.write', context.cwd);
+    if (permission !== 'allow') return { exitCode: 1, stderr: `Conquer --push requires git.write permission (received ${permission}).\n` };
+    context.signal.throwIfAborted();
+    capabilities.assertCurrent();
+  }
   const runs = services.runs;
   let source: ReturnType<typeof readWorktreeSource>;
   try { source = readWorktreeSource(context.cwd); }
@@ -157,9 +167,31 @@ export async function runConquerTask(raw:Json,context:InvocationContext,services
       : workflow.stopReason === 'done' ? 'completed'
       : workflow.stopReason === 'builder-failed' ? 'builder_failed'
       : workflow.stopReason === 'cap-time' ? 'time_budget_exceeded' : 'turn_budget_exceeded';
+    let publication: ConquerPublicationResult | undefined;
+    if (status === 'completed' && input.push === true && capabilities.publication) {
+      const policy = capabilities.publication;
+      publication = await publishConquerBranch({
+        cwd: retained.path, task, expectedBranch: retained.branch, protectedPushBranches: policy.protectedPushBranches,
+        commitBody: () => policy.commitBody(workflow.lastClaim || '(no claim captured)'),
+      }, async (args, commandTimeout) => {
+        context.signal.throwIfAborted();
+        capabilities.assertCurrent();
+        const permission = await services.permissions.check('git.write', context.cwd);
+        if (permission !== 'allow') throw new Error(`Conquer publication stopped: git.write permission is ${permission}`);
+        context.signal.throwIfAborted();
+        capabilities.assertCurrent();
+        const executed = await spawnWithTimeout({ command: 'git', args, cwd: retained.path,
+          timeout: commandTimeout, signal: context.signal });
+        context.signal.throwIfAborted();
+        capabilities.assertCurrent();
+        return executed;
+      });
+    }
+    const succeeded = status === 'completed' && publication?.ok !== false;
     const result = {
       status, task, builder, advisors, gate, turns, outputDir: run.path, workflow,
       worktree: retained, baseSha: source.baseSha, dirtySourceExcluded: source.dirtySourceExcluded,
+      ...(publication ? { publication } : {}),
       ...(status === 'completed' ? { winningPatch: diff }
         : { lastPatch: diff }),
     };
@@ -170,11 +202,16 @@ export async function runConquerTask(raw:Json,context:InvocationContext,services
     await runs.finish(run, {
       mode: 'conquer', startedAt: run.startedAt, endedAt: new Date().toISOString(),
       engines: [builder, ...advisors].map(id => ({ id, status: status === 'completed' ? 'ok' : 'error' })),
-      ok: status === 'completed', summary: workflow.doneReason || status,
+      ok: succeeded, summary: publication?.ok === false ? publication.message : workflow.doneReason || status,
     }, context);
-    if (status === 'completed') return {
+    if (succeeded) return {
       exitCode: 0, stdout: `${JSON.stringify({ ...result, receiptId }, null, 2)}\n`,
       result: { ...result, receiptId } as unknown as Json,
+    };
+    if (publication?.ok === false) return {
+      exitCode: 1, stderr: `${publication.message}\nWork preserved at ${retained.path} (created branch ${retained.branch}).\nReceipt: ${receiptId}\n`,
+      result: { ...result, receiptId } as unknown as Json,
+      failure: { code: 'CONQUER_PUBLICATION_FAILED', message: publication.message, retryable: false },
     };
     return {
       exitCode: 1, stderr: `Conquer stopped without satisfying completion requirements. Receipt: ${receiptId}\nWork preserved on ${retained.branch} at ${retained.path}.\n`,
@@ -235,11 +272,13 @@ function parseConquer(value: string) {
   const gateTimeout = numeric('gate-timeout', integer, 1, 1800);
   const maxHours = numeric('max-hours', Number.parseFloat, 0);
   const turnTimeout = numeric('timeout', integer, 1, 600);
+  let push: true | undefined;
+  take(/(?:^|\s)--push(?=\s|$)/, () => { push = true; });
   let rest = source;
   for (const range of consumed.sort((left, right) => right.start - left.start)) {
     rest = rest.slice(0, range.start) + ' ' + rest.slice(range.end);
   }
-  return { task: rest.replace(/\s+/g, ' ').trim(), gate, builder, engineIds, maxTurns, gateTimeout, maxHours, turnTimeout };
+  return { task: rest.replace(/\s+/g, ' ').trim(), gate, builder, engineIds, maxTurns, gateTimeout, maxHours, turnTimeout, ...(push ? { push } : {}) };
 }
 export const createMod:AgonModFactory=services=>Object.freeze({apiVersion:'1'as const,async activate(registrar:Registrar):Promise<Dispose>{const d:Dispose[]=[];const command={description:'Supervised autonomous build in an isolated worktree with an explicit done oracle',inputSchema:schema,cli,run:(input:Json,context:InvocationContext)=>runConquerTask(input,context,services)};d.push(registrar.command('cli',{id:'cliCommands:0013',...command}));d.push(registrar.command('tui',{id:'tuiSlashCommands:0021',...command,inputSchema:tuiSchema,parse:parseConquer}));d.push(registrar.planStep({id:'cesarRoutes:0016',inputSchema:schema,resultSchema:schema,risk:'workspace-write',run:(input,context)=>runConquerTask(input,context,services)}));d.push(registrar.tool('cesar',{id:'cesarTools:0004',description:'Hand this task to the supervised Conquer controller',inputSchema:cesarSchema,effect:'process',run:async()=> 'Delegation accepted. STOP responding now. The orchestrator will handle the rest.'}));for (const id of ['resultAndEnvelopeTypes:0037', 'resultAndEnvelopeTypes:0055']) d.push(registrar.resultType({ id, schema: { type: 'object', additionalProperties: true }, readableVersions: '>=0.2.0', render: async (payload) => ({ text: JSON.stringify(payload, null, 2) }) }));
 return async()=>{for(const x of[...d].reverse())await x();};}});export default createMod;

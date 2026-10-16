@@ -158,6 +158,7 @@ function expectedFiles(packageRecord) {
   if (['brainstorm', 'forge'].includes(short)) inferredPermissions.add('engine.dispatch');
   // Jobs persists scheduler observations through its separate storage adapter.
   if (short === 'jobs') inferredPermissions.add('state.write');
+  if (short === 'conquer') inferredPermissions.add('git.write');
   const physicalPackFiles = ['dist/implementation.d.ts', ...(short === 'rag' ? ['dist/store.d.ts', 'dist/types.d.ts', 'dist/grounding.d.ts']
     : short === 'think' ? ['dist/thinking.d.ts']
     : short === 'conquer' ? ['dist/completion-policy.d.ts', 'dist/workflow.d.ts', 'dist/falsifier.d.ts', 'dist/host.d.ts', 'dist/isolation.d.ts', 'dist/publication.d.ts']
@@ -186,7 +187,7 @@ function expectedFiles(packageRecord) {
     permissions: [...inferredPermissions].sort(compareAscii).map((capability) => ({
       capability,
       resources: [],
-      required: !(short === 'worktrees' && capability === 'network'),
+      required: !((short === 'worktrees' && capability === 'network') || (short === 'conquer' && capability === 'git.write')),
     })),
     platforms,
     assets: [
@@ -377,7 +378,7 @@ export type { ConquerWorkflowOptions, ConquerWorkflowEffects, StuckSignals, Conq
 export { isAgentCapableEngine, buildFalsifierPrompt, parseFalsifierOutput, isSafeCounterexample, runDoneFalsifier, runDoneOracle } from './falsifier.js';
 export type { SandboxOps, FalsifierResult, FalsifierOptions, FalsifierEffects, DoneOracleOptions, DoneOracleResult } from './falsifier.js';
 export { createConquerHostServices } from './host.js';
-export type { ConquerHostServices } from './host.js';
+export type { ConquerHostServices, ConquerPublicationPolicy } from './host.js';
 export { createConquerIsolation } from './isolation.js';
 export type { ConquerIsolation, ConquerIsolationEffects } from './isolation.js';
 export { publishConquerBranch } from './publication.js';

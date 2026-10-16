@@ -40,6 +40,51 @@ describe('Conquer publication owner', () => {
     expect(git).toHaveBeenCalledTimes(1);
   });
 
+  it.each(['changed', 'failed', 'timedOut', 'aborted'] as const)('refuses publication when the final branch check is %s', async condition => {
+    let reads = 0;
+    const git = vi.fn(async (args: string[]) => {
+      if (args[0] === 'rev-parse' && ++reads === 2) return {
+        ...ok, stdout: condition === 'changed' ? 'other-branch' : 'conquer/feature',
+        exitCode: condition === 'failed' ? 128 : 0,
+        timedOut: condition === 'timedOut', aborted: condition === 'aborted',
+      };
+      return { ...ok, stdout: args[0] === 'rev-parse' ? 'conquer/feature' : '',
+        exitCode: args[0] === 'diff' ? 1 : 0 };
+    });
+    expect(await publishConquerBranch({ ...opts, expectedBranch: 'conquer/feature' }, git))
+      .toMatchObject({ ok: false, stage: 'branch' });
+    expect(git.mock.calls.some(([args]) => args[0] === 'push')).toBe(false);
+  });
+
+  it.each([
+    ['add', 'timedOut'], ['add', 'aborted'], ['commit', 'timedOut'],
+    ['commit', 'aborted'], ['push', 'timedOut'], ['push', 'aborted'],
+  ] as const)('rejects %s with zero exit and %s', async (stage, flag) => {
+    const git = vi.fn(async (args: string[]) => ({ ...ok,
+      stdout: args[0] === 'rev-parse' ? 'conquer/feature' : '',
+      exitCode: args[0] === 'diff' ? 1 : 0,
+      ...(args[0] === stage ? { [flag]: true } : {}),
+    }));
+    expect(await publishConquerBranch(opts, git)).toMatchObject({ ok: false, stage });
+    expect(git.mock.calls.at(-1)![0][0]).toBe(stage);
+  });
+
+  it.each(['branch', 'add', 'status', 'commit', 'push', 'formatter'] as const)('records a thrown %s failure without retry', async fault => {
+    const stage = fault === 'formatter' ? 'commit' : fault;
+    const command = { branch: 'rev-parse', add: 'add', status: 'diff', commit: 'commit', push: 'push' }[stage];
+    const git = vi.fn(async (args: string[]) => {
+      if (fault !== 'formatter' && args[0] === command) throw new Error('fixture failure');
+      return { ...ok, stdout: args[0] === 'rev-parse' ? 'conquer/feature' : '', exitCode: args[0] === 'diff' ? 1 : 0 };
+    });
+    const result = await publishConquerBranch({ ...opts, expectedBranch: 'conquer/feature',
+      commitBody: () => { if (fault === 'formatter') throw new Error('fixture failure'); return 'claim'; },
+    }, git);
+    expect(result).toMatchObject({ ok: false, stage, branch: 'conquer/feature',
+      remoteOutcome: stage === 'push' ? 'unknown' : 'not-attempted' });
+    if (!result.ok) expect(result.message).toContain('fixture failure');
+    expect(git.mock.calls.filter(([args]) => args[0] === 'push')).toHaveLength(stage === 'push' ? 1 : 0);
+  });
+
   it('formats the commit body only after successful staging', async () => {
     const git = vi.fn(async (args: string[]) => ({ ...ok, exitCode: args[0] === 'diff' ? 1 : 0 }))
       .mockResolvedValueOnce({ ...ok, stdout: 'conquer/feature' });
@@ -91,13 +136,14 @@ describe('Conquer publication owner', () => {
     const commitBody = vi.fn(opts.commitBody);
     expect(await publishConquerBranch({ ...opts, commitBody }, git)).toMatchObject({
       ok: false, stage: 'push', branch: 'conquer/feature',
-      message: 'git push failed: remote rejected — committed locally on conquer/feature; push it manually.',
+      remoteOutcome: 'unknown',
+      message: 'git push failed: remote rejected — remote outcome is unknown. Inspect origin and local branch conquer/feature before retrying.',
     });
     expect(commitBody).not.toHaveBeenCalled();
     expect(git.mock.calls.map(call => call[0][0])).toEqual(['rev-parse', 'add', 'diff', 'push']);
   });
 
-  it.each(['uncommitted', 'committed', 'mixed'] as const)('publishes %s work only to a local bare remote and leaves the source branch unchanged', async state => {
+  it.each(['uncommitted', 'committed', 'mixed', 'reply-lost'] as const)('publishes %s work only to a local bare remote and leaves the source branch unchanged', async state => {
     const root = mkdtempSync(join(tmpdir(), 'agon-conquer-publication-'));
     roots.push(root);
     const cwd = join(root, 'source');
@@ -124,9 +170,18 @@ describe('Conquer publication owner', () => {
     }
     const beforePublication = git(['rev-parse', 'HEAD'], worktree);
     if (state === 'mixed') writeFileSync(join(worktree, 'followup.txt'), 'remaining work\n');
-    const out = await publishConquerBranch({ ...opts, cwd: worktree },
-      (args, timeout) => spawnWithTimeout({ command: 'git', args: [...prefix, ...args], cwd: worktree, timeout }));
-    expect(out).toEqual({ ok: true, branch: 'conquer/feature' });
+    let pushes = 0;
+    const out = await publishConquerBranch({ ...opts, cwd: worktree }, async (args, timeout) => {
+      const result = await spawnWithTimeout({ command: 'git', args: [...prefix, ...args], cwd: worktree, timeout });
+      if (args[0] === 'push') {
+        pushes += 1;
+        if (state === 'reply-lost') throw new Error('fixture lost reply after remote update');
+      }
+      return result;
+    });
+    if (state === 'reply-lost') expect(out).toMatchObject({ ok: false, stage: 'push', remoteOutcome: 'unknown' });
+    else expect(out).toEqual({ ok: true, branch: 'conquer/feature' });
+    expect(pushes).toBe(1);
     expect(git(['rev-parse', 'main'])).toBe(base);
     expect(git(['status', '--porcelain'])).toBe('');
     expect(git(['rev-parse', 'refs/heads/conquer/feature'], remote)).toBe(git(['rev-parse', 'HEAD'], worktree));

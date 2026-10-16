@@ -65,6 +65,11 @@
       "capability": "engine.dispatch",
       "resources": [],
       "required": true
+    },
+    {
+      "capability": "git.write",
+      "resources": [],
+      "required": false
     }
   ],
   "platforms": [

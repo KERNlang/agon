@@ -2,7 +2,7 @@ import { resolveExplicitReviewEngines } from '@kernlang/agon-support-verificatio
 import { cliRunRecordHost } from './run-record-host.js';
 import { patchApplicationHost } from './patch-application-host.js';
 import { planSessionHost } from '@kernlang/agon-mod-plan';
-import { EngineRegistry, buildKernContextSpine, createRunDir, eventLogFlush, getRatings, loadConfig, pickTopRatedEngine, setSessionRoot } from '@kernlang/agon-core';
+import { EngineRegistry, appendAttribution, buildKernContextSpine, createRunDir, eventLogFlush, getRatings, loadConfig, pickTopRatedEngine, setSessionRoot } from '@kernlang/agon-core';
 import { createCliAdapter } from '@kernlang/agon-adapter-cli';
 import { createForgeHostServices } from '@kernlang/agon-core';
 import { repoRoot, createSessionWorktree } from '@kernlang/agon-core';
@@ -107,6 +107,11 @@ export function decorateCliFirstPartyServices(manifest: ModManifest, base: ModSe
     ...(brainstorm ? { brainstorm } : {}),
     ...(manifest.id === 'agon.conquer' ? { conquer: createConquerHostServices({
       worktrees: { repoRoot, createSessionWorktree },
+      publicationPolicy: context => {
+        const config = loadConfig(context.cwd);
+        return { protectedPushBranches: config.protectedPushBranches,
+          commitBody: claim => appendAttribution(claim, config) };
+      },
       openRegistry: () => {
         const registry = new EngineRegistry(); registry.load(resolveBuiltinEnginesDir()); return registry;
       },

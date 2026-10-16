@@ -5,11 +5,17 @@ import type { FalsifierEffects } from './falsifier.js';
 import { createConquerIsolation } from './isolation.js';
 import type { ConquerIsolation, ConquerIsolationEffects } from './isolation.js';
 
+export interface ConquerPublicationPolicy {
+  readonly protectedPushBranches: readonly string[];
+  commitBody(claim: string): string;
+}
+
 export interface ConquerHostServices {
   contextSpine(context: InvocationContext): Promise<string>;
   open(context: InvocationContext): Awaitable<FalsifierEffects & {
     assertCurrent(): void;
     createIsolation(task: string, runId: string, base: string): ConquerIsolation;
+    readonly publication?: ConquerPublicationPolicy;
   }>;
 }
 
@@ -21,6 +27,7 @@ export function createConquerHostServices<Registry extends { get(id: string): En
   contextSpine(context: InvocationContext): Promise<string>;
   captureAuthority(): () => void;
   worktrees: ConquerIsolationEffects;
+  publicationPolicy?(context: InvocationContext): ConquerPublicationPolicy;
 }): ConquerHostServices {
   return {
     contextSpine: options.contextSpine,
@@ -34,8 +41,13 @@ export function createConquerHostServices<Registry extends { get(id: string): En
       };
       check();
       const registry = options.openRegistry(context.cwd);
+      const publication = options.publicationPolicy?.(context);
       return {
         assertCurrent,
+        ...(publication ? { publication: {
+          protectedPushBranches: Object.freeze([...publication.protectedPushBranches]),
+          commitBody: (claim: string) => { check(); return publication.commitBody(claim); },
+        } } : {}),
         createIsolation: (task, runId, base) => {
           check();
           return createConquerIsolation(task, context.cwd, options.worktrees, runId, base);

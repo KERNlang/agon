@@ -190,7 +190,7 @@ export const conquerCommand: any = defineCommand({
     if (args.push) {
       const git = (a: string[], t: number) => spawnWithTimeout({ command: 'git', args: a, cwd: worktreeCwd, timeout: t });
       const publication = await publishConquerBranch({
-        cwd: worktreeCwd, task: taskStr, commitBody: () => appendAttribution(claim, config),
+        cwd: worktreeCwd, task: taskStr, expectedBranch: branch, commitBody: () => appendAttribution(claim, config),
         protectedPushBranches: config.protectedPushBranches,
       }, git);
       if (!publication.ok) {

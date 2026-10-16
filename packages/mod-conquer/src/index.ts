@@ -15,7 +15,7 @@ export type { ConquerWorkflowOptions, ConquerWorkflowEffects, StuckSignals, Conq
 export { isAgentCapableEngine, buildFalsifierPrompt, parseFalsifierOutput, isSafeCounterexample, runDoneFalsifier, runDoneOracle } from './falsifier.js';
 export type { SandboxOps, FalsifierResult, FalsifierOptions, FalsifierEffects, DoneOracleOptions, DoneOracleResult } from './falsifier.js';
 export { createConquerHostServices } from './host.js';
-export type { ConquerHostServices } from './host.js';
+export type { ConquerHostServices, ConquerPublicationPolicy } from './host.js';
 export { createConquerIsolation } from './isolation.js';
 export type { ConquerIsolation, ConquerIsolationEffects } from './isolation.js';
 export { publishConquerBranch } from './publication.js';

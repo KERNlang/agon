@@ -8,7 +8,7 @@ import * as brainstorm from '@kernlang/agon-mod-brainstorm';
 import * as worktrees from '@kernlang/agon-support-worktree';
 import { runAgentTask } from '@kernlang/agon-mod-agent';
 import { afterEach } from 'vitest';
-import { renameSync, unlinkSync, rmSync, readFileSync, readdirSync } from 'node:fs';
+import { renameSync, unlinkSync, rmSync, readFileSync, readdirSync, mkdirSync } from 'node:fs';
 import type { ConquerModServices } from './implementation.js';
 import { createConquerHostServices } from './host.js';
 import { createConquerIsolation } from './isolation.js';
@@ -109,6 +109,143 @@ it('rejects a missing Conquer host before starting provider work', async () => {
   expect(dispatch).not.toHaveBeenCalled();
 });
 
+it.each(['uncommitted', 'committed', 'no-push', 'denied', 'ask', 'missing-policy', 'incomplete', 'push-failed', 'changed-branch', 'commit-switch'] as const)('physical Conquer publication: %s', async state => {
+  const cwd = repo();
+  recordDirectories.push(cwd);
+  const remote = mkdtempSync(join(tmpdir(), 'agon-conquer-remote-'));
+  recordDirectories.push(remote);
+  const git = (args: string[], path = cwd) => execFileSync('git', args,
+    { cwd: path, encoding: 'utf8', timeout: 10_000, stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  git(['init', '--bare'], remote);
+  git(['remote', 'add', 'origin', remote]);
+  const hooks = join(remote, 'fixture-hooks');
+  mkdirSync(hooks);
+  git(['config', 'core.hooksPath', hooks]);
+  git(['config', 'commit.gpgSign', 'false']);
+  if (state === 'push-failed') git(['remote', 'set-url', 'origin', join(remote, 'missing-repository')]);
+  if (state === 'commit-switch') writeFileSync(join(hooks, 'post-commit'), '#!/bin/sh\ngit checkout -b hook-moved >&2\n', { mode: 0o755 });
+  const sourceHead = git(['rev-parse', 'HEAD']);
+  const dispatch = vi.fn(async (_id, _prompt, context) => {
+    writeFileSync(join(context.cwd, 'feature.txt'), 'implemented\n');
+    if (state === 'changed-branch') git(['checkout', '-b', 'unrelated-feature'], context.cwd);
+    if (state === 'committed') {
+      git(['add', 'feature.txt'], context.cwd);
+      git(['-c', 'commit.gpgSign=false', 'commit', '-m', 'builder implementation'], context.cwd);
+    }
+    return { exitCode: 0, stdout: state === 'incomplete' ? 'still working' : 'CONQUER_DONE: feature works', stderr: '', timedOut: false };
+  });
+  const base = withConquerHost({ logger: { debug: vi.fn() }, receipts: { record: vi.fn(async () => 'fixture') },
+    permissions: { check: vi.fn(async () => state === 'denied' ? 'deny' : state === 'ask' ? 'ask' : 'allow') },
+    engines: { listActive: async () => ['builder'], dispatch },
+  } as unknown as ModServices);
+  const commitBody = vi.fn((claim: string) => claim);
+  const services = { ...base, conquer: { ...base.conquer!, open: async context => ({
+    ...await base.conquer!.open(context),
+    ...(state === 'missing-policy' ? {} : { publication: { protectedPushBranches: [], commitBody } }),
+  }) } };
+  const finish = vi.spyOn(services.runs!, 'finish');
+  const start = vi.spyOn(services.runs!, 'start');
+  const result = await runConquerTaskImpl({ task: 'publish feature', gate: 'test -f feature.txt',
+    builder: 'builder', maxTurns: '1', ...(state === 'no-push' ? {} : { push: true }) },
+    { invocationId: 'publication', cwd, platform: 'darwin-arm64', signal: new AbortController().signal, config: {} }, services);
+  expect(git(['rev-parse', 'HEAD'])).toBe(sourceHead);
+  expect(git(['status', '--porcelain'])).toBe('');
+  if (state === 'denied' || state === 'ask' || state === 'missing-policy') {
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain(state === 'missing-policy' ? 'publication policy' : 'git.write');
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(start).not.toHaveBeenCalled();
+  } else if (state === 'changed-branch' || state === 'commit-switch' || state === 'push-failed' || state === 'incomplete') {
+    expect(result.exitCode).toBe(1);
+    expect(result.failure?.code).toBe(state === 'incomplete' ? 'CONQUER_INCOMPLETE' : 'CONQUER_PUBLICATION_FAILED');
+    if (state === 'changed-branch' || state === 'commit-switch') expect(result.stderr).toContain('branch changed');
+    if (state === 'push-failed') expect(result.stderr).toContain('git push failed');
+    const payload = result.result as any;
+    expect(existsSync(payload.worktree.path)).toBe(true);
+    expect(JSON.parse(readFileSync(join(payload.outputDir, 'result.json'), 'utf8')).receiptId).toBe('fixture');
+    expect(finish).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ ok: false }), expect.anything());
+    if (state === 'commit-switch') expect(git(['branch', '--show-current'], payload.worktree.path)).toBe('hook-moved');
+    if (state === 'push-failed') expect(git(['show', 'HEAD:feature.txt'], payload.worktree.path)).toBe('implemented');
+    if (state === 'changed-branch') {
+      expect(git(['diff', '--cached'], payload.worktree.path)).toBe('');
+      expect(commitBody).not.toHaveBeenCalled();
+    }
+  } else {
+    expect(result.exitCode).toBe(0);
+    const payload = result.result as any;
+    expect(existsSync(payload.worktree.path)).toBe(true);
+    expect(payload.winningPatch).toContain('+implemented');
+    if (state === 'no-push') {
+      expect(services.permissions.check).not.toHaveBeenCalled();
+      expect(commitBody).not.toHaveBeenCalled();
+      expect(git(['rev-parse', 'HEAD'], payload.worktree.path)).toBe(sourceHead);
+      expect(git(['diff', '--cached'], payload.worktree.path)).toBe('');
+    }
+    if (state !== 'no-push') {
+      expect(payload.publication).toMatchObject({ ok: true, branch: payload.worktree.branch });
+      expect(git(['show', `${payload.worktree.branch}:feature.txt`], remote)).toBe('implemented');
+      expect(git(['rev-list', '--count', `${sourceHead}..${payload.worktree.branch}`], remote)).toBe('1');
+    }
+  }
+  if (state !== 'uncommitted' && state !== 'committed') {
+    expect(git(['for-each-ref', '--format=%(refname)', 'refs/heads'], remote)).toBe('');
+  }
+});
+
+it.each((['denied', 'retired', 'cancelled'] as const).flatMap(state =>
+  ([['branch', 2], ['add', 3], ['commit', 5], ['push', 7]] as const)
+    .map(([stage, checkAt]) => ({ state, stage, checkAt }))))('stops publication when permission await becomes $state before $stage', async ({ state, stage, checkAt }) => {
+  const cwd = repo();
+  recordDirectories.push(cwd);
+  const controller = new AbortController();
+  let current = true;
+  let candidate = '';
+  let checks = 0;
+  const base = withConquerHost({ logger: { debug: vi.fn() }, receipts: { record: vi.fn() },
+    permissions: { check: async () => {
+      checks += 1;
+      if (checks === checkAt) {
+        await Promise.resolve();
+        if (state === 'denied') return 'deny';
+        if (state === 'retired') current = false;
+        if (state === 'cancelled') controller.abort(new Error('fixture cancelled'));
+      }
+      return 'allow';
+    } },
+    engines: { listActive: async () => ['builder'], dispatch: async (_id, _prompt, context) => {
+      candidate = context.cwd;
+      writeFileSync(join(candidate, 'feature.txt'), 'implemented\n');
+      return { exitCode: 0, stdout: 'CONQUER_DONE: feature works', stderr: '', timedOut: false };
+    } },
+  } as unknown as ModServices);
+  const services = { ...base, conquer: { ...base.conquer!, open: async context => ({
+    ...await base.conquer!.open(context),
+    assertCurrent: () => { if (!current) throw new Error('fixture retired'); },
+    publication: { protectedPushBranches: [], commitBody: vi.fn(() => 'fixture') },
+  }) } };
+  const finish = vi.spyOn(services.runs!, 'finish');
+  const result = await runConquerTaskImpl({ task: 'publish feature', gate: 'test -f feature.txt',
+    builder: 'builder', maxTurns: '1', push: true },
+    { invocationId: 'publication-revoked', cwd, platform: 'darwin-arm64', signal: controller.signal, config: {} }, services);
+  expect(result).toMatchObject({ exitCode: 1, failure: { code: 'CONQUER_PUBLICATION_FAILED', retryable: false },
+    result: { publication: { ok: false, stage, remoteOutcome: stage === 'push' ? 'unknown' : 'not-attempted' } } });
+  expect(result.stderr).toContain(state === 'denied' ? 'git.write permission is deny' : `fixture ${state}`);
+  const payload = result.result as any;
+  expect(JSON.parse(readFileSync(join(payload.outputDir, 'result.json'), 'utf8')).publication.remoteOutcome)
+    .toBe(stage === 'push' ? 'unknown' : 'not-attempted');
+  expect(readFileSync(join(payload.outputDir, 'result.patch'), 'utf8')).toContain('+implemented');
+  expect(checks).toBe(checkAt);
+  expect(readFileSync(join(candidate, 'feature.txt'), 'utf8')).toBe('implemented\n');
+  const staged = execFileSync('git', ['diff', '--cached'], { cwd: candidate, encoding: 'utf8' });
+  if (stage === 'commit') expect(staged).toContain('+implemented');
+  else expect(staged).toBe('');
+  const sourceHead = execFileSync('git', ['rev-parse', 'HEAD'], { cwd, encoding: 'utf8' });
+  const candidateHead = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: candidate, encoding: 'utf8' });
+  if (stage === 'push') expect(candidateHead).not.toBe(sourceHead);
+  else expect(candidateHead).toBe(sourceHead);
+  expect(finish).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ ok: false }), expect.anything());
+});
+
 it.each(['builder', 'critic', 'critic-command'] as const)('rejects completion after authority changes during %s work', async phase => {
   const cwd = repo();
   let current = true;
@@ -146,6 +283,31 @@ it.each(['builder', 'critic', 'critic-command'] as const)('rejects completion af
   expect(finish).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ ok: false }), expect.anything());
   expect(existsSync(candidate)).toBe(true);
   expect(existsSync(join(cwd, 'retired-effect.txt'))).toBe(false);
+});
+
+it.each(['retired', 'cancelled'] as const)('snapshots publication policy and guards its formatter when %s', async state => {
+  const controller = new AbortController();
+  let current = true;
+  const branches = ['protected-fixture'];
+  const format = vi.fn((claim: string) => `claim: ${claim}`);
+  const host = createConquerHostServices({
+    worktrees: fixtureWorktrees,
+    openRegistry: () => ({ get: (id: string) => ({ id, binary: id, agent: {} }) as any }),
+    createAdapter: () => ({ dispatch: vi.fn(), isAvailable: async () => true, getVersion: async () => null }),
+    rankCritics: () => [], contextSpine: async () => '',
+    captureAuthority: () => () => { if (!current) throw new Error('fixture retired'); },
+    publicationPolicy: () => ({ protectedPushBranches: branches, commitBody: format }),
+  });
+  const opened = await host.open({ invocationId: 'policy', cwd: '/fixture', platform: 'darwin-arm64',
+    signal: controller.signal, config: {} });
+  branches.splice(0);
+  expect(opened.publication!.protectedPushBranches).toEqual(['protected-fixture']);
+  expect(Object.isFrozen(opened.publication!.protectedPushBranches)).toBe(true);
+  expect(opened.publication!.commitBody('verified')).toBe('claim: verified');
+  if (state === 'retired') current = false;
+  else controller.abort(new Error('fixture cancelled'));
+  expect(() => opened.publication!.commitBody('stale')).toThrow(`fixture ${state}`);
+  expect(format).toHaveBeenCalledExactlyOnceWith('verified');
 });
 
 it('rejects worktree allocation when authority retires during run creation', async () => {
@@ -440,6 +602,18 @@ it.each(['', ' --timeout 7'])('keeps numeric flags inside the quoted gate separa
   const canonical = JSON.parse(JSON.stringify(parsed));
   assertContributionInput(contribution!.inputSchema, canonical);
   expect(canonical).toEqual({ task: 'task', gate: 'checker --timeout 1 --max-turns 2', ...(suffix ? { turnTimeout: 7 } : {}) });
+});
+
+it.each(['', ' --push'])('keeps quoted gate --push separate from publication approval: %s', async suffix => {
+  let contribution: CommandContribution | undefined;
+  const registrar = new Proxy({}, { get: (_, method) => (...args: unknown[]) => {
+    if (method === 'command' && args[0] === 'tui') contribution = args[1] as CommandContribution;
+    return () => {};
+  } }) as Registrar;
+  await (await createMod({} as ModServices)).activate(registrar);
+  const parsed = JSON.parse(JSON.stringify(await contribution!.parse!(`/conquer task --gate "checker --push"${suffix}`)));
+  assertContributionInput(contribution!.inputSchema, parsed);
+  expect(parsed).toEqual({ task: 'task', gate: 'checker --push', ...(suffix ? { push: true } : {}) });
 });
 
 it.each(['max-turns', 'timeout', 'gate-timeout'])('preserves large typed TUI --%s values through execution', async flag => {

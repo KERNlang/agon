@@ -21,7 +21,13 @@ export const createMod: AgonModFactory = (services: ModServices) => Object.freez
       try { const dispatched = await services.engines.dispatch(resolved.engineId, resolved.prompt, context, { timeoutSeconds, systemPrompt: typeof input.system === 'string' ? input.system : undefined }) as Record<string, Json>;
         const answer = typeof dispatched.stdout === 'string' ? dispatched.stdout.trim() : ''; const ok = dispatched.exitCode === 0 && dispatched.timedOut !== true && answer.length > 0;
         await services.receipts.record('ask', { engineId: dispatched.engineId ?? resolved.engineId, ok, durationMs: dispatched.durationMs ?? null });
-        if (!ok) return { exitCode: 1, stderr: dispatched.timedOut === true ? `${String(dispatched.engineId)} timed out after ${timeoutSeconds}s\n` : `${String(dispatched.engineId)} exited ${String(dispatched.exitCode)} with no answer\n` };
+        if (!ok) {
+          const summary = dispatched.timedOut === true
+            ? `${String(dispatched.engineId)} timed out after ${timeoutSeconds}s`
+            : `${String(dispatched.engineId)} exited ${String(dispatched.exitCode)} with no answer`;
+          const detail = typeof dispatched.stderr === 'string' ? dispatched.stderr.trim().slice(0, 500) : '';
+          return { exitCode: 1, stderr: `${summary}\n${detail ? `${detail}\n` : ''}` };
+        }
         return { exitCode: 0, stdout: `${answer}\n` };
       } catch (error) { return { exitCode: 1, stderr: `${error instanceof Error ? error.message : String(error)}\n` }; }
     } }); }

@@ -150,6 +150,7 @@
       "dist/implementation.d.ts",
       "dist/completion-policy.d.ts",
       "dist/workflow.d.ts",
+      "dist/falsifier.d.ts",
       "ownership.json",
       "schemas/config.schema.json"
     ],

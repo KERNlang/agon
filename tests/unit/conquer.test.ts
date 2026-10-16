@@ -32,6 +32,8 @@ import {
 } from '@kernlang/agon-forge';
 import type { RatingRecord } from '@kernlang/agon-core';
 import { tmpdir } from 'node:os';
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 // Empty injected ratings → rankNeroCritics' cascade finds no rated engine and falls
 // back to the random branch; with a single-element advisor pool that deterministically
@@ -362,6 +364,42 @@ describe('parseFalsifierOutput', () => {
 });
 
 describe('runDoneFalsifier — evidence-based, mechanically verified', () => {
+  it.each([['42', false], ['43', true]] as const)('mechanically verifies a real copied fixture against %s', async (expected, falsified) => {
+    const root = mkdtempSync(join(tmpdir(), 'agon-falsifier-owner-'));
+    const source = join(root, 'source');
+    const outputDir = join(root, 'output');
+    mkdirSync(source); mkdirSync(outputDir);
+    writeFileSync(join(source, 'answer.txt'), '42\n');
+    let dispatches = 0;
+    try {
+      const result = await conquerOwner.runDoneFalsifier({
+        claim: 'answer is correct', cwd: source, engines: ['critic'], timeout: 5, outputDir,
+      }, {
+        rankCritics: ids => ids.map(engineId => ({ engineId })),
+        getEngine: id => ({ id, binary: id, agent: {} }) as any,
+        adapter: { dispatchAgent: async options => {
+          dispatches++;
+          expect(options.cwd).not.toBe(source);
+          expect(readFileSync(join(options.cwd!, 'answer.txt'), 'utf8')).toBe('42\n');
+          return { exitCode: 0, stderr: '', durationMs: 1, timedOut: false, diff: '', diffLines: 0, filesChanged: 0,
+            stdout: `COUNTEREXAMPLE: test "$(cat answer.txt)" = ${expected}\nVERDICT: FLAWED` };
+        } },
+      });
+      expect(result).toMatchObject({ falsified, advisoryOnly: false, critic: 'critic' });
+      expect(dispatches).toBe(1);
+      expect(readFileSync(join(source, 'answer.txt'), 'utf8')).toBe('42\n');
+      expect(readdirSync(outputDir)).toEqual([]);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+  it('uses the mod-owned falsifier policy through the legacy public exports', () => {
+    const owner = conquerOwner as unknown as Record<string, unknown>;
+    expect(owner.parseFalsifierOutput).toBe(parseFalsifierOutput);
+    expect(owner.buildFalsifierPrompt).toBe(buildFalsifierPrompt);
+    expect(owner.isAgentCapableEngine).toBe(isAgentCapableEngine);
+    expect(owner.isSafeCounterexample).toBe(isSafeCounterexample);
+    expect(owner.runDoneFalsifier).toBeTypeOf('function');
+    expect(owner.runDoneOracle).toBeTypeOf('function');
+  });
   const agentCapableRegistry = { get: (id: string) => ({ id, binary: id, agent: {} }) } as any;
   const apiOnlyRegistry = { get: (id: string) => ({ id, api: {} }) } as any;
   const mkSandbox = (over: Partial<SandboxOps> = {}): SandboxOps => ({
@@ -391,6 +429,7 @@ describe('runDoneFalsifier — evidence-based, mechanically verified', () => {
     expect(res.advisoryOnly).toBe(false);
     expect(res.counterexample).toBe('test 2 -eq 3');
     expect(res.critic).toBe('critic');
+    expect(res.verification).toMatchObject({ exitCode: 1, timedOut: false });
     expect(ran).toBe('test 2 -eq 3'); // the proposed command was actually re-run
   });
 
@@ -482,6 +521,44 @@ describe('runDoneFalsifier — evidence-based, mechanically verified', () => {
     expect(res.falsified).toBe(false);
     expect(res.advisoryOnly).toBe(true);
     expect(res.note).toMatch(/errored|degraded/i);
+    expect(res.attackText).toContain('VERDICT: FLAWED');
+    expect(res.counterexample).toBe('test 1 -eq 2');
+  });
+
+  it.each(['false', 'throw'])('cleans a partially created copy when clone returns %s', async failure => {
+    let removed = '';
+    const res = await runDoneFalsifier(base({ adapter: agentReply('VERDICT: SOUND'),
+      sandbox: mkSandbox({ clone: async () => {
+        if (failure === 'throw') throw new Error('partial copy failed');
+        return false;
+      }, remove: async path => { removed = path; } }),
+    }));
+    expect(res.advisoryOnly).toBe(true);
+    expect(removed).toContain('sandbox-');
+  });
+
+  it('treats a ranking failure as advisory without dispatch', async () => {
+    const res = await conquerOwner.runDoneFalsifier({ claim: 'done', cwd: tmpdir(),
+      engines: ['critic'], timeout: 1, outputDir: tmpdir() }, {
+      rankCritics: () => { throw new Error('ratings unreadable'); },
+      getEngine: () => { throw new Error('must not resolve'); },
+      adapter: { dispatchAgent: async () => { throw new Error('must not dispatch'); } },
+    });
+    expect(res).toMatchObject({ falsified: false, advisoryOnly: true });
+    expect(res.note).toContain('ratings unreadable');
+  });
+
+  it('does not classify cancellation during mechanical verification as a reproduced failure', async () => {
+    const controller = new AbortController();
+    const res = await runDoneFalsifier(base({ signal: controller.signal,
+      adapter: agentReply('COUNTEREXAMPLE: test 1 -eq 2\nOBSERVED: mismatch\nVERDICT: FLAWED'),
+      sandbox: mkSandbox({ exec: async () => {
+        controller.abort();
+        return { exitCode: 143, stdout: '', stderr: 'terminated', timedOut: false };
+      } }),
+    }));
+    expect(res).toMatchObject({ falsified: false, advisoryOnly: true, observed: 'mismatch' });
+    expect(res.note).toContain('aborted');
   });
 });
 
@@ -551,6 +628,7 @@ describe('runDoneOracle — cheap blockers gate the expensive falsifier (orderin
     expect(res.passed).toBe(false);
     expect(res.falsified).toBe(true);
     expect(res.reason).toMatch(/nero|counterexample/i);
+    expect(res).toMatchObject({ note: expect.stringContaining('reproduced'), verification: { exitCode: 1 } });
   });
 
   it('passes (ready for the human gate) when the falsifier returns SOUND', async () => {

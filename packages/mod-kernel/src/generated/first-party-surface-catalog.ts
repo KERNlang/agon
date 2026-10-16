@@ -106,7 +106,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.conquer",
       "version": "1.0.0",
-      "contentHash": "sha256:b31f929b8e6631aaa8099e05b18c530e9a97d410c8b6619853bbaa149f8cb018"
+      "contentHash": "sha256:51a190d3147e1670d7494c5ad124ac40fe4852c3fecace1be1973ed9eea786cf"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "Conquer",
@@ -1049,7 +1049,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.conquer",
       "version": "1.0.0",
-      "contentHash": "sha256:b31f929b8e6631aaa8099e05b18c530e9a97d410c8b6619853bbaa149f8cb018"
+      "contentHash": "sha256:51a190d3147e1670d7494c5ad124ac40fe4852c3fecace1be1973ed9eea786cf"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "conquer",
@@ -2613,7 +2613,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.conquer",
       "version": "1.0.0",
-      "contentHash": "sha256:b31f929b8e6631aaa8099e05b18c530e9a97d410c8b6619853bbaa149f8cb018"
+      "contentHash": "sha256:51a190d3147e1670d7494c5ad124ac40fe4852c3fecace1be1973ed9eea786cf"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "conquer",
@@ -9190,7 +9190,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.conquer",
       "version": "1.0.0",
-      "contentHash": "sha256:b31f929b8e6631aaa8099e05b18c530e9a97d410c8b6619853bbaa149f8cb018"
+      "contentHash": "sha256:51a190d3147e1670d7494c5ad124ac40fe4852c3fecace1be1973ed9eea786cf"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "<task> --gate \"<cmd>\" [--builder X] [-e a,b] [--max-turns N] [--gate-timeout s] [--max-hours h] [--timeout s] — supervised-autonomous build: Cesar drives a builder CLI, convenes nero/tribunal/council on forks, stops at a human merge gate (background job)",

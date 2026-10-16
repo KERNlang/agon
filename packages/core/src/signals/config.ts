@@ -1,4 +1,4 @@
-import { mkdirSync, readdirSync, statSync, rmSync } from 'node:fs';
+import { mkdirSync, readdirSync, lstatSync, rmSync } from 'node:fs';
 
 import { join } from 'node:path';
 import { createScopedConfigStore, normalizeKernelSettings, mergeModSettingsLayers, selectModSettings, projectLegacyModSettings, withSynchronousWriterFence, readSelectedGenerationConfigurationSync, applyModSettingsDefaults, readLegacyConfigAliases, resolveRegisteredModSettings, currentInvocationConfiguration } from '@kernlang/agon-kernel';
@@ -130,7 +130,8 @@ export function configSet(key: keyof AgonConfig, value: AgonConfig[keyof AgonCon
 }
 
 /**
- * Remove stale run directories beyond retention limit. Fresh dirs are protected so active forge/plan worktrees are never deleted mid-run.
+ * Remove stale run directories beyond the retention limit. Keep fresh directories.
+ * Run records and metadata have a separate retention policy.
  */
 export function pruneRuns(): void {
   // Review #10: dynamic runs dir via agonPath() — otherwise the frozen
@@ -142,7 +143,8 @@ export function pruneRuns(): void {
       .map((name: string) => {
         try {
           const fullPath = join(runsDir, name);
-          return { name, mtime: statSync(fullPath).mtimeMs };
+          const entry = lstatSync(fullPath);
+          return entry.isDirectory() ? { name, mtime: entry.mtimeMs } : null;
         } catch { return null; }
       })
       .filter((e: any): e is {name:string, mtime:number} => e !== null)

@@ -56,7 +56,12 @@ describe('candidate process boundary', () => {
   it('bounds empty directories as well as regular files', async () => {
     const root = await mkdtemp(join(tmpdir(), 'agon-payload-directories-'));
     try {
-      for (let index = 0; index < 4097; index++) await mkdir(join(root, `directory-${index}`));
+      for (let index = 0; index < 4097; index += 32) {
+        const writes = await Promise.allSettled(Array.from({ length: Math.min(32, 4097 - index) },
+          (_, offset) => mkdir(join(root, `directory-${index + offset}`))));
+        for (const write of writes) if (write.status === 'rejected') throw write.reason;
+      }
+      expect(await readdir(root)).toHaveLength(4097);
       await expect(walkBoundedPackage(root)).rejects.toThrow('entry-count limit');
     } finally {
       await rm(root, { recursive: true, force: true });

@@ -26,7 +26,9 @@ export interface DoneEvidenceInput extends Omit<DoneOracleInput, 'weakenedTests'
 export function evaluateDoneEvidence(input: DoneEvidenceInput): { passed: boolean; reason: string } {
   const changed = parsePatch(input.diff);
   const newSet = new Set(newFilesInDiff(input.diff));
-  const weakenedTests = changed.some(file => isTestFile(file.path) && !newSet.has(file.path));
+  const weakenedTests = changed.some(file =>
+    (file.renamedFrom !== undefined && isTestFile(file.renamedFrom))
+    || (isTestFile(file.path) && !newSet.has(file.path)));
   return doneOracleDecision({ ...input, weakenedTests });
 }
 

@@ -83,10 +83,10 @@
         "@kernlang/agon-support-verification"
       ],
       "sourceLocator": "@kernlang/agon-support-worktree@1.0.0",
-      "integrity": "sha512-VroYBLHkNqv7nKODRhQYHyjlbxAlgKBWjkr0EdBbwP3wUj4dMwpMWJh83DgHE202C1YCd3AQ8x/3T5TLtzLqAA==",
-      "contentHash": "sha256:b585ae8cadf19b00811801fb49e1792c16e9ef184906fe7d60c5b063b3efe634",
+      "integrity": "sha512-1Rt8uULsjc5H30xKfBGb9SW6mfLyTiQ0Ar9ELDWdzEv46SylJ/UOV04a6LcPIsDuOpxPCsRczSUlXrauekHIJQ==",
+      "contentHash": "sha256:fa4fe81a5d9abe3df3405f9f18f1341d73ac726b3e1672cd0c654325f594de6e",
       "manifestHash": "sha256:63fc703f5f437db4ad438a6d09faa6b8e0cb3262460a51ff01c6ac49658bd434",
-      "payloadHash": "sha256:4e46b4a41670552874908919c49e6834e076d7ceb3a21155f472dee8da5a463c"
+      "payloadHash": "sha256:516aefc78482f99ea91a388f1cadf00c06f1ec00116b8ad7f619ffe9b7db9e18"
     },
     {
       "id": "@kernlang/agon-support-panel",
@@ -550,10 +550,10 @@
         "agon.worktree"
       ],
       "sourceLocator": "@kernlang/agon-mod-conquer@1.0.0",
-      "integrity": "sha512-ukdTP2SCh45SJIAMZOl4TrO6oyBLDH8w9f/IGfAWoPegtlThbBpYaL8eNjlCSRS2flxO/fqZoPBRjtkjrai5uQ==",
-      "contentHash": "sha256:f449ff1fda7f8d8a46310f765e6976585796c12580b990f7319daa70b0df785c",
+      "integrity": "sha512-fbNzFH1ErMg5+Fl+ofJk68qhbbsNDGIrPTvJpDvh+5mHngQJ+KWoKJ6FpKGYRseG3nO5efhO2nwA3/3r9wdpqw==",
+      "contentHash": "sha256:a0cdf5e66488810b2b935514dfa0585bd827e066b2b1082a36594b31c512a788",
       "manifestHash": "sha256:38f3b990439ba586a858f6ba6818a63e1421d2b6523f60320043b09cb89bae21",
-      "payloadHash": "sha256:43491b3c11704ab05a1e9c3bb6544519c0689875746e03cd82c261a600d37686"
+      "payloadHash": "sha256:d46330f80f68494820bfea9e0fe61ecdac23f657c8d756d4c67f719efdade5e9"
     },
     {
       "id": "@kernlang/agon-mod-nero",
@@ -943,8 +943,8 @@
   "launcherFiles": [
     "LICENSE",
     "README.md",
-    "dist/app-PWJ5MSYJ.js",
-    "dist/app-PWJ5MSYJ.js.map",
+    "dist/app-HUF57W3Q.js",
+    "dist/app-HUF57W3Q.js.map",
     "dist/attach-IP7R4HI3.js",
     "dist/attach-IP7R4HI3.js.map",
     "dist/browser-host.js",
@@ -957,18 +957,16 @@
     "dist/chunk-37LCQRNC.js.map",
     "dist/chunk-3G43QNFV.js",
     "dist/chunk-3G43QNFV.js.map",
-    "dist/chunk-5AAOZ7L2.js",
-    "dist/chunk-5AAOZ7L2.js.map",
+    "dist/chunk-3RZTJZCW.js",
+    "dist/chunk-3RZTJZCW.js.map",
     "dist/chunk-7AWLIZ3S.js",
     "dist/chunk-7AWLIZ3S.js.map",
+    "dist/chunk-7QARTOQP.js",
+    "dist/chunk-7QARTOQP.js.map",
     "dist/chunk-7SUV6RHW.js",
     "dist/chunk-7SUV6RHW.js.map",
     "dist/chunk-7TKICRPH.js",
     "dist/chunk-7TKICRPH.js.map",
-    "dist/chunk-A4HKP2OJ.js",
-    "dist/chunk-A4HKP2OJ.js.map",
-    "dist/chunk-B2V4H3TZ.js",
-    "dist/chunk-B2V4H3TZ.js.map",
     "dist/chunk-BA27KHO2.js",
     "dist/chunk-BA27KHO2.js.map",
     "dist/chunk-BTJSSTQ2.js",
@@ -985,8 +983,6 @@
     "dist/chunk-FJVRSCXD.js.map",
     "dist/chunk-FKEBD5YQ.js",
     "dist/chunk-FKEBD5YQ.js.map",
-    "dist/chunk-FVU2MFSU.js",
-    "dist/chunk-FVU2MFSU.js.map",
     "dist/chunk-GJSD2JL7.js",
     "dist/chunk-GJSD2JL7.js.map",
     "dist/chunk-GO57GWDR.js",
@@ -997,6 +993,10 @@
     "dist/chunk-MVQEIHHI.js.map",
     "dist/chunk-NYEMXPJW.js",
     "dist/chunk-NYEMXPJW.js.map",
+    "dist/chunk-RQKNNCVT.js",
+    "dist/chunk-RQKNNCVT.js.map",
+    "dist/chunk-SN3IJIDP.js",
+    "dist/chunk-SN3IJIDP.js.map",
     "dist/chunk-SRFS2TAG.js",
     "dist/chunk-SRFS2TAG.js.map",
     "dist/chunk-TL5D3C6A.js",
@@ -1017,12 +1017,12 @@
     "dist/engine-OO4X2MFU.js.map",
     "dist/first-party-services-4JKEN62V.js",
     "dist/first-party-services-4JKEN62V.js.map",
-    "dist/forge-WJ2E4HX2.js",
-    "dist/forge-WJ2E4HX2.js.map",
+    "dist/forge-OHDORDBD.js",
+    "dist/forge-OHDORDBD.js.map",
     "dist/index.js",
     "dist/index.js.map",
-    "dist/intent-skills-FOMM7RVG.js",
-    "dist/intent-skills-FOMM7RVG.js.map",
+    "dist/intent-skills-GHPARVFL.js",
+    "dist/intent-skills-GHPARVFL.js.map",
     "dist/login-7LZSOWRY.js",
     "dist/login-7LZSOWRY.js.map",
     "dist/mcp/index.js",
@@ -1033,8 +1033,8 @@
     "dist/models-WKPH3245.js.map",
     "dist/onboarding-3E23JHB6.js",
     "dist/onboarding-3E23JHB6.js.map",
-    "dist/plan-mode-VKU7DHW4.js",
-    "dist/plan-mode-VKU7DHW4.js.map",
+    "dist/plan-mode-JFIOGOQW.js",
+    "dist/plan-mode-JFIOGOQW.js.map",
     "dist/provider-R6EMDPCH.js",
     "dist/provider-R6EMDPCH.js.map",
     "dist/release-channel.json",
@@ -1374,7 +1374,7 @@
         "peerDependencies": {
           "@kernlang/agon-kernel": ">=0.0.0-0 <2"
         },
-        "integrity": "sha512-ukdTP2SCh45SJIAMZOl4TrO6oyBLDH8w9f/IGfAWoPegtlThbBpYaL8eNjlCSRS2flxO/fqZoPBRjtkjrai5uQ==",
+        "integrity": "sha512-fbNzFH1ErMg5+Fl+ofJk68qhbbsNDGIrPTvJpDvh+5mHngQJ+KWoKJ6FpKGYRseG3nO5efhO2nwA3/3r9wdpqw==",
         "resolved": "https://registry.npmjs.org/@kernlang/agon-mod-conquer/-/agon-mod-conquer-1.0.0.tgz"
       },
       "node_modules/@kernlang/agon-mod-council": {
@@ -1985,7 +1985,7 @@
         "peerDependencies": {
           "@kernlang/agon-kernel": ">=0.0.0-0 <2"
         },
-        "integrity": "sha512-VroYBLHkNqv7nKODRhQYHyjlbxAlgKBWjkr0EdBbwP3wUj4dMwpMWJh83DgHE202C1YCd3AQ8x/3T5TLtzLqAA==",
+        "integrity": "sha512-1Rt8uULsjc5H30xKfBGb9SW6mfLyTiQ0Ar9ELDWdzEv46SylJ/UOV04a6LcPIsDuOpxPCsRczSUlXrauekHIJQ==",
         "resolved": "https://registry.npmjs.org/@kernlang/agon-support-worktree/-/agon-support-worktree-1.0.0.tgz"
       },
       "node_modules/@kernlang/protocol": {

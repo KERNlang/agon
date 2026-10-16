@@ -8,7 +8,7 @@ import * as brainstorm from '@kernlang/agon-mod-brainstorm';
 import * as worktrees from '@kernlang/agon-support-worktree';
 import { runAgentTask } from '@kernlang/agon-mod-agent';
 import { afterEach } from 'vitest';
-import { unlinkSync } from 'node:fs';
+import { renameSync, unlinkSync } from 'node:fs';
 afterEach(() => vi.restoreAllMocks());
 
 it('cleans allocated worktrees when candidate creation fails', async () => {
@@ -227,7 +227,7 @@ it.each(['max-turns', 'timeout', 'gate-timeout'])('preserves large typed TUI --%
   if (flag === 'gate-timeout') expect(fitness.mock.calls[0][2]).toBe(1e21);
 });
 
-it.each(['missing-sentinel', 'empty-claim', 'changed-test', 'deleted-test', 'emptied-test', 'new-test', 'new-quoted-test', 'new-empty-test', 'valid-claim', 'red-gate', 'no-diff'] as const)(
+it.each(['missing-sentinel', 'empty-claim', 'changed-test', 'deleted-test', 'renamed-test', 'emptied-test', 'new-test', 'new-quoted-test', 'new-empty-test', 'valid-claim', 'red-gate', 'no-diff'] as const)(
   'checks completion evidence for %s', async scenario => {
     const cwd = repo();
     writeFileSync(join(cwd, 'guard.test.ts'), 'throw new Error("must implement feature");\n');
@@ -236,6 +236,7 @@ it.each(['missing-sentinel', 'empty-claim', 'changed-test', 'deleted-test', 'emp
     const dispatch = vi.fn(async (engineId, _prompt, context, _options) => {
       if (scenario === 'changed-test') writeFileSync(join(context.cwd, 'guard.test.ts'), '// skipped\n');
       else if (scenario === 'deleted-test') unlinkSync(join(context.cwd, 'guard.test.ts'));
+      else if (scenario === 'renamed-test') renameSync(join(context.cwd, 'guard.test.ts'), join(context.cwd, 'guard.ts'));
       else if (scenario === 'emptied-test') writeFileSync(join(context.cwd, 'guard.test.ts'), '');
       else if (scenario === 'new-test') writeFileSync(join(context.cwd, 'new.test.ts'), '// new coverage\n');
       else if (scenario === 'new-quoted-test') writeFileSync(join(context.cwd, 'new\tquoted.test.ts'), '// new coverage\n');
@@ -253,7 +254,7 @@ it.each(['missing-sentinel', 'empty-claim', 'changed-test', 'deleted-test', 'emp
     const accepted = ['new-test', 'new-quoted-test', 'new-empty-test', 'valid-claim'].includes(scenario);
     expect(result).toMatchObject({ exitCode: accepted ? 0 : 1,
       result: { status: accepted ? 'completed' : 'turn_budget_exceeded' } });
-    const reason = ['changed-test', 'deleted-test', 'emptied-test'].includes(scenario) ? 'L1:'
+    const reason = ['changed-test', 'deleted-test', 'renamed-test', 'emptied-test'].includes(scenario) ? 'L1:'
       : scenario === 'missing-sentinel' || scenario === 'empty-claim' ? 'L2:'
       : scenario === 'red-gate' ? 'L0:'
       : scenario === 'no-diff' ? 'No patch'

@@ -10,6 +10,8 @@ export interface PatchHunk {
 
 export interface PatchFile {
   path: string;
+  /** Original path for a rename. Copies leave the source unchanged. */
+  renamedFrom?: string;
   hunks: PatchHunk[];
   additions: number;
   deletions: number;
@@ -53,7 +55,9 @@ export function parsePatch(content: string): PatchFile[] {
     }
 
     if (!currentHunk && currentFile) {
-      if (line.startsWith('rename to ') || line.startsWith('copy to ')) {
+      if (line.startsWith('rename from ')) {
+        currentFile.renamedFrom = decodeGitPath(line.slice(12));
+      } else if (line.startsWith('rename to ') || line.startsWith('copy to ')) {
         currentFile.path = decodeGitPath(line.slice(line.startsWith('rename to ') ? 10 : 8));
       } else if (line.startsWith('--- ') || line.startsWith('+++ ')) {
         const path = decodeGitPath(line.slice(4).split('\t', 1)[0]);

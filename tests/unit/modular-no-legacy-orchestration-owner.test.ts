@@ -37,6 +37,10 @@ describe('modular orchestration ownership guard', () => {
     expect(existsSync(resolve(root, 'packages/cli/src/commands/serve.ts'))).toBe(false);
   });
 
+  it('keeps the physical worktrees mod as the only worktree command owner', () => {
+    expect(existsSync(resolve(root, 'packages/cli/src/commands/worktree.ts'))).toBe(false);
+  });
+
   it('keeps the physical rooms mod as the only room runtime owner', () => {
     for (const file of [
       'types.ts', 'leases.ts', 'presence.ts', 'store.ts', 'tail.ts', 'tasks.ts',

@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { createGeneratedLazySubCommands } from '../../packages/cli/src/lazy-commands.js';
 import { disposeProcessSurfaceAuthority, initializeProcessSurfaceAuthority } from '../../packages/cli/src/surface-authority-runtime.js';
+import frozenWorktree from '../fixtures/modular-worktree-command-contract.json';
 
 type CommandDef = {
   meta?: { name?: string };
@@ -30,7 +31,7 @@ const physicalTopLevel = [
 ] as const;
 
 function allLegacyCommands(): CommandDef[] {
-  return Object.values(legacyModules).flatMap((module) => Object.values(module))
+  return [frozenWorktree.command, ...Object.values(legacyModules).flatMap((module) => Object.values(module))]
     .filter((value): value is CommandDef => Boolean(value && typeof value === 'object' && (value as CommandDef).meta?.name));
 }
 

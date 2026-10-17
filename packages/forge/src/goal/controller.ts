@@ -408,7 +408,7 @@ export async function runGoalController(opts: { spec: GoalSpec, repoRoot: string
         emit('witness-skip', task.id, 'no new/changed test files — diff-sensitivity witness skipped (requireTests=false)');
       }
       for (const tf of testFiles) {
-        const w = await witnessTest({ repoRoot, baseSha, newWorktree: wt, newTestFiles: [tf], testCmd: witnessCmd, timeout: witnessTimeoutSec });
+        const w = await witnessTest({ repoRoot, baseSha, newWorktree: wt, newTestFiles: [tf], testCmd: witnessCmd, timeout: witnessTimeoutSec, signal: opts.signal });
         if (!w.witnessed) throw { kind: 'witness', detail: `${tf} (base exit ${w.baseExit}${w.baseTimedOut ? ', timed out' : ''}, new exit ${w.newExit})` };
       }
 

@@ -47,7 +47,15 @@ function harness(hostOptions: Partial<Parameters<typeof createGoalHostServices>[
       worktreePathFor: (root, branch) => worktreePathFor(root, branch, runtime),
       rehydrateSessionWorktree: vi.fn((root: string, branch: string) => rehydrateSessionWorktree(root, branch, runtime)),
   } satisfies Parameters<typeof createGoalHostServices>[0]['worktrees'];
+  const oracleEffects: NonNullable<Parameters<typeof createGoalHostServices>[0]['oracleEffects']> = {
+      path: (...parts) => join(home, ...parts), ensureHome: () => undefined,
+      spawnWithTimeout: engineRuntime.spawnWithTimeout,
+      resolveWithin: worktreeSupport.resolveWithinRoot,
+      worktreeCreate: (root, path, sha) => { git(root, ['worktree', 'add', '--detach', path, sha]); return path; },
+      worktreeRemoveBestEffort: runtime.worktreeRemoveBestEffort,
+  };
   const goal = createGoalHostServices({
+    oracleEffects,
     acquireWriter: id => WriterFence.acquire(join(home, `${id}.lock`), `agon.goal:${id}`),
     captureAuthority: () => () => undefined,
     worktrees,
@@ -81,7 +89,7 @@ function harness(hostOptions: Partial<Parameters<typeof createGoalHostServices>[
     },
     engines: { listActive: vi.fn(async () => ['builder', 'reviewer']), dispatch },
   } as unknown as ModServices;
-  return { state, dispatch, finish, writeArtifact, services, goal, worktrees };
+  return { state, dispatch, finish, writeArtifact, services, goal, worktrees, oracleEffects };
 }
 
 const context = (cwd: string) => ({
@@ -90,6 +98,251 @@ const context = (cwd: string) => ({
 });
 
 describe('physical goal mod', () => {
+  it('honors a separate witness cancellation signal', async () => {
+    const cwd = repo(); const h = harness(); let spawned = 0;
+    h.oracleEffects.spawnWithTimeout = options => engineRuntime.spawnWithTimeout({ ...options, onSpawn: () => { spawned++; } });
+    const host = h.goal.open(context(cwd));
+    const worktree = host.openWorktree('goal/separate-cancellation');
+    writeFileSync(join(worktree.path, 'second.ts'), 'export const second = true;\n');
+    const abort = new AbortController(); abort.abort();
+    const witness = await host.verification!(async () => undefined).witnessVerifyCommand({
+      repoRoot: cwd, baseSha: worktree.baseSha, newWorktree: worktree.path,
+      verifyCmd: 'test -f second.ts', timeout: 10, signal: abort.signal });
+    expect(witness).toMatchObject({ witnessed: false, baseExit: 130, newExit: 130 });
+    expect(spawned).toBe(0);
+    expect(execFileSync('git', ['worktree', 'list', '--porcelain'], { cwd, encoding: 'utf8' }).match(/^worktree /gm)).toHaveLength(2);
+  });
+
+  it('fails closed when a legacy host lacks verification effects', async () => {
+    const cwd = repo(); const h = harness({ oracleEffects: undefined });
+    const out = await runGoal({ intent: 'missing witness host', gate: 'test -f base.txt',
+      tasks: [{ id: 'second', source: 'second', verify: 'test -f second.ts' }],
+      oracleGate: 'off', requireTests: false, maxAttempts: 1 }, context(cwd), h.services);
+    expect(out.exitCode).toBe(1);
+    expect((out.result as any).state.tasks[0].error).toContain('verification capabilities are unavailable');
+    expect(h.dispatch).toHaveBeenCalledOnce();
+  });
+
+  it.each([true, false])('checks the second task against its own accepted base (commit=%s)', async commit => {
+    const cwd = repo(); const h = harness();
+    const out = await runGoal({ intent: 'task bases', gate: 'test -f base.txt',
+      tasks: [{ id: 'first', source: 'first', verify: 'test -f first.ts' },
+        { id: 'second', source: 'second', dependsOn: ['first'], verify: 'test -f first.ts' }],
+      commit, oracleGate: 'off', requireTests: false, maxAttempts: 1 }, context(cwd), h.services);
+    expect(out.exitCode).toBe(1);
+    expect((out.result as any).state.tasks.map((task: any) => task.status)).toEqual(['done', 'failed']);
+    expect((out.result as any).state.tasks[1].error).toContain('base exit 0');
+    expect(execFileSync('git', ['rev-list', '--count', 'main..goal/task-bases'], { cwd, encoding: 'utf8' }).trim()).toBe(commit ? '1' : '0');
+  });
+
+  it('does not accept a test that fails on base only because its helper is missing', async () => {
+    const cwd = repo(); const h = harness();
+    h.dispatch.mockImplementation(async (_id: string, _prompt: string, invocation: any, options: any) => {
+      if (options.mode === 'agent') {
+        writeFileSync(join(invocation.cwd, 'helper.mjs'), 'export const ready = true;\n');
+        writeFileSync(join(invocation.cwd, 'answer.test.mjs'), "import './helper.mjs'; process.exit(0);\n");
+      }
+      return { exitCode: 0, stdout: '<!--AGON_REVIEW_FINDINGS_v1-->\n```json\n[]\n```', stderr: '', timedOut: false };
+    });
+    const out = await runGoal({ intent: 'missing test helper', gate: 'test ! -f answer.test.mjs || node answer.test.mjs',
+      maxAttempts: 1 }, context(cwd), h.services);
+    const witnessEvent = (out.result as any).state.events.find((entry: any) => entry.type === 'test-witness');
+    expect(JSON.parse(witnessEvent.detail)).toMatchObject({ witnessed: false, baseInvalidReason: 'module-load' });
+    expect(out.exitCode).toBe(1);
+    expect(h.dispatch).toHaveBeenCalledOnce();
+  });
+
+  it('keeps accepted uncommitted tests on the next task baseline', async () => {
+    const cwd = repo(); const h = harness();
+    h.dispatch.mockImplementation(async (_id: string, prompt: string, invocation: any, options: any) => {
+      if (options.mode === 'agent') {
+        const name = prompt.includes('TASK first') ? 'first' : 'second';
+        writeFileSync(join(invocation.cwd, `${name}.ts`), `export const ${name} = true;\n`);
+        writeFileSync(join(invocation.cwd, `${name}.test.mjs`), `import fs from 'node:fs'; if (!fs.existsSync('${name}.ts')) process.exit(1);\n`);
+      }
+      return { exitCode: 0, stdout: '<!--AGON_REVIEW_FINDINGS_v1-->\n```json\n[]\n```', stderr: '', timedOut: false };
+    });
+    const out = await runGoal({ intent: 'uncommitted tests',
+      gate: 'for f in *.test.mjs; do test ! -f "$f" || node "$f" || exit 1; done', commit: false,
+      tasks: [{ id: 'first', source: 'first' }, { id: 'second', source: 'second', dependsOn: ['first'] }],
+      maxAttempts: 1 }, context(cwd), h.services);
+    expect(out.exitCode, JSON.stringify(out)).toBe(0);
+    const state = (out.result as any).state;
+    expect(state.tasks.map((task: any) => task.status)).toEqual(['done', 'done']);
+    expect(state.events.filter((entry: any) => entry.type === 'test-witness').map((entry: any) => JSON.parse(entry.detail).file))
+      .toEqual(['first.test.mjs', 'second.test.mjs']);
+    expect(state.tasks[1].verificationBase.patch).toContain('first.ts');
+    expect(execFileSync('git', ['rev-list', '--count', 'main..goal/uncommitted-tests'], { cwd, encoding: 'utf8' }).trim()).toBe('0');
+  });
+
+  it('retains the uncommitted task baseline across failed work and resume', async () => {
+    const cwd = repo(); const h = harness(); let secondBuilds = 0;
+    h.dispatch.mockImplementation(async (_id: string, prompt: string, invocation: any, options: any) => {
+      if (options.mode === 'agent') {
+        const name = prompt.includes('TASK first') ? 'first' : 'second';
+        writeFileSync(join(invocation.cwd, `${name}.ts`), `export const ${name} = true;\n`);
+        if (name === 'second' && ++secondBuilds === 1) return { exitCode: 1, stdout: '', stderr: 'interrupted builder', timedOut: false };
+      }
+      return { exitCode: 0, stdout: '<!--AGON_REVIEW_FINDINGS_v1-->\n```json\n[]\n```', stderr: '', timedOut: false };
+    });
+    const input = { intent: 'resume uncommitted', gate: 'test -f base.txt', commit: false,
+      tasks: [{ id: 'first', source: 'first', verify: 'test -f first.ts' },
+        { id: 'second', source: 'second', dependsOn: ['first'], verify: 'test -f second.ts' }],
+      oracleGate: 'off', requireTests: false, maxAttempts: 1 };
+    const first = await runGoal(input, context(cwd), h.services);
+    expect(first.exitCode).toBe(1);
+    const baseline = (first.result as any).state.tasks[1].verificationBase;
+    expect(baseline.patch).toContain('first.ts');
+    expect(baseline.patch).not.toContain('second.ts');
+    const resumed = await runGoal({ ...input, resume: true, maxAttempts: 2 }, context(cwd), h.services);
+    expect(resumed.exitCode, JSON.stringify(resumed)).toBe(0);
+    expect((resumed.result as any).state.tasks[1].verificationBase).toEqual(baseline);
+    expect(secondBuilds).toBe(2);
+    expect(execFileSync('git', ['rev-list', '--count', 'main..goal/resume-uncommitted'], { cwd, encoding: 'utf8' }).trim()).toBe('0');
+  });
+
+  it('rejects a timed-out base and removes its verification worktree', async () => {
+    const cwd = repo(); const h = harness();
+    const out = await runGoal({ intent: 'timeout witness', gate: 'test -f base.txt',
+      tasks: [{ id: 'second', source: 'second', verify: 'if test -f second.ts; then exit 0; else sleep 5; fi' }],
+      oracleGate: 'off', requireTests: false, gateTimeout: 1, maxAttempts: 1 }, context(cwd), h.services);
+    expect(out.exitCode).toBe(1);
+    expect((out.result as any).state.tasks[0].error).toContain('timed out');
+    expect(h.dispatch).toHaveBeenCalledOnce();
+    expect(execFileSync('git', ['worktree', 'list', '--porcelain'], { cwd, encoding: 'utf8' }).match(/^worktree /gm)).toHaveLength(2);
+  });
+
+  it.each(['cancellation', 'generation', 'fence'])('stops between witness commands after %s changes', async change => {
+    const cwd = repo(); const abort = new AbortController();
+    let current = true, owned = true, spawned = 0;
+    const h = harness({ captureAuthority: () => () => { if (!current) throw new Error('generation changed'); },
+      acquireWriter: async () => ({ assertOwned: async () => { if (!owned) throw new Error('fence changed'); }, release: async () => undefined }) });
+    h.oracleEffects.spawnWithTimeout = options => engineRuntime.spawnWithTimeout({ ...options, onSpawn: () => {
+      spawned++;
+      if (change === 'cancellation') abort.abort(new Error('cancellation changed'));
+      if (change === 'generation') current = false;
+      if (change === 'fence') owned = false;
+    } });
+    await expect(runGoal({ intent: 'witness authority', gate: 'test -f base.txt',
+      tasks: [{ id: 'second', source: 'second', verify: 'test -f second.ts' }],
+      oracleGate: 'off', requireTests: false, maxAttempts: 1 }, { ...context(cwd), signal: abort.signal }, h.services)).rejects.toThrow(`${change} changed`);
+    expect(spawned).toBe(1);
+    expect(h.dispatch).toHaveBeenCalledOnce();
+    expect(execFileSync('git', ['worktree', 'list', '--porcelain'], { cwd, encoding: 'utf8' }).match(/^worktree /gm)).toHaveLength(2);
+    expect(existsSync(join(cwd, 'second.ts'))).toBe(false);
+  });
+
+  it.each(['cancellation', 'generation', 'fence'])('rejects %s loss before the first witness process starts', async change => {
+    const cwd = repo(); const abort = new AbortController();
+    let current = true, owned = true, spawned = 0;
+    const h = harness({ captureAuthority: () => () => { if (!current) throw new Error('generation changed'); },
+      acquireWriter: async () => ({ assertOwned: async () => { if (!owned) throw new Error('fence changed'); }, release: async () => undefined }) });
+    const create = h.oracleEffects.worktreeCreate;
+    h.oracleEffects.worktreeCreate = (...args) => {
+      const path = create(...args);
+      if (change === 'cancellation') abort.abort(new Error('cancellation changed'));
+      if (change === 'generation') current = false;
+      if (change === 'fence') owned = false;
+      return path;
+    };
+    h.oracleEffects.spawnWithTimeout = options => engineRuntime.spawnWithTimeout({ ...options, onSpawn: () => { spawned++; } });
+    await expect(runGoal({ intent: 'pre-spawn authority', gate: 'test -f base.txt',
+      tasks: [{ id: 'second', source: 'second', verify: 'test -f second.ts' }],
+      oracleGate: 'off', requireTests: false, maxAttempts: 1 }, { ...context(cwd), signal: abort.signal }, h.services)).rejects.toThrow(`${change} changed`);
+    expect(spawned).toBe(0);
+    expect(h.dispatch).toHaveBeenCalledOnce();
+    expect(execFileSync('git', ['worktree', 'list', '--porcelain'], { cwd, encoding: 'utf8' }).match(/^worktree /gm)).toHaveLength(2);
+  });
+
+  it.each([
+    [false, 'answer.test.mjs', false], [true, 'answer.test.mjs', false],
+    [false, 'über.test.mjs', false], [true, 'über.test.mjs', false],
+    [false, 'answer.test.mjs', true], [true, 'answer.test.mjs', true],
+    [false, 'über.test.mjs', true], [true, 'über.test.mjs', true],
+  ] as const)('requires changed tests to witness the implementation (tautology=%s, file=%s, tracked=%s)', async (tautology, testFile, tracked) => {
+    const cwd = repo(); const h = harness();
+    writeFileSync(join(cwd, 'answer.mjs'), 'export const answer = false;\n');
+    execFileSync('git', ['add', 'answer.mjs'], { cwd });
+    if (tracked) {
+      writeFileSync(join(cwd, testFile), '// Original check\nprocess.exit(0);\n');
+      execFileSync('git', ['add', testFile], { cwd });
+    }
+    execFileSync('git', ['commit', '-m', 'base behavior'], { cwd });
+    h.dispatch.mockImplementation(async (_id: string, _prompt: string, invocation: any, options: any) => {
+      if (options.mode === 'agent') {
+        writeFileSync(join(invocation.cwd, 'answer.mjs'), 'export const answer = true;\n');
+        writeFileSync(join(invocation.cwd, testFile), tautology
+          ? 'process.exit(0);\n'
+          : "import { answer } from './answer.mjs'; if (!answer) process.exit(1);\n");
+      }
+      return { exitCode: 0, stdout: '<!--AGON_REVIEW_FINDINGS_v1-->\n```json\n[]\n```', stderr: '', timedOut: false };
+    });
+    const out = await runGoal({ intent: 'test sensitivity', gate: `test ! -f '${testFile}' || node '${testFile}'`,
+      engine: 'builder', reviewEngines: 'reviewer', maxAttempts: 1 }, context(cwd), h.services);
+    expect(out.exitCode, JSON.stringify(out)).toBe(tautology ? 1 : 0);
+    const witnessEvent = (out.result as any).state.events.find((entry: any) => entry.type === 'test-witness');
+    expect(JSON.parse(witnessEvent.detail)).toMatchObject({ file: testFile, witnessed: !tautology,
+      baseSha: execFileSync('git', ['rev-parse', 'HEAD'], { cwd, encoding: 'utf8' }).trim() });
+    if (tautology) {
+      expect(h.dispatch).toHaveBeenCalledOnce();
+      expect((out.result as any).state.events).toContainEqual(expect.objectContaining({ type: 'witness-failed' }));
+      expect(execFileSync('git', ['rev-list', '--count', 'main..goal/test-sensitivity'], { cwd, encoding: 'utf8' }).trim()).toBe('0');
+    }
+    expect(readFileSync(join(cwd, 'answer.mjs'), 'utf8')).toContain('false');
+  });
+
+  it('does not count a deleted test as a witnessing test', async () => {
+    const cwd = repo(); const h = harness();
+    writeFileSync(join(cwd, 'old.test.mjs'), 'process.exit(0);\n');
+    execFileSync('git', ['add', 'old.test.mjs'], { cwd });
+    execFileSync('git', ['commit', '-m', 'old test'], { cwd });
+    h.dispatch.mockImplementation(async (_id: string, _prompt: string, invocation: any) => {
+      unlinkSync(join(invocation.cwd, 'old.test.mjs'));
+      writeFileSync(join(invocation.cwd, 'second.ts'), 'export const second = true;\n');
+      return { exitCode: 0, stdout: 'done', stderr: '', timedOut: false };
+    });
+    const out = await runGoal({ intent: 'deleted test', gate: 'test -f base.txt', maxAttempts: 1 }, context(cwd), h.services);
+    expect(out.exitCode).toBe(1);
+    expect((out.result as any).state.events).toContainEqual(expect.objectContaining({ type: 'witness-failed' }));
+    expect(h.dispatch).toHaveBeenCalledOnce();
+    expect(existsSync(join(cwd, 'old.test.mjs'))).toBe(true);
+  });
+
+  it('retries against the committed task base instead of retained failed edits', async () => {
+    const cwd = repo(); const h = harness(); let builds = 0;
+    h.dispatch.mockImplementation(async (_id: string, _prompt: string, invocation: any, options: any) => {
+      if (options.mode === 'agent') {
+        builds++;
+        writeFileSync(join(invocation.cwd, 'second.ts'), 'export const second = true;\n');
+        writeFileSync(join(invocation.cwd, 'check.test.mjs'), builds === 1 ? 'process.exit(0);\n'
+          : "import fs from 'node:fs'; if (!fs.existsSync('second.ts')) process.exit(1);\n");
+      }
+      return { exitCode: 0, stdout: '<!--AGON_REVIEW_FINDINGS_v1-->\n```json\n[]\n```', stderr: '', timedOut: false };
+    });
+    const out = await runGoal({ intent: 'witness retry', gate: 'test ! -f check.test.mjs || node check.test.mjs', maxAttempts: 2 }, context(cwd), h.services);
+    expect(out.exitCode, JSON.stringify(out)).toBe(0);
+    expect(builds).toBe(2);
+    expect((out.result as any).state.events.filter((entry: any) => entry.type === 'witness-failed')).toHaveLength(1);
+    expect(execFileSync('git', ['rev-list', '--count', 'main..goal/witness-retry'], { cwd, encoding: 'utf8' }).trim()).toBe('1');
+  });
+
+  it.each([false, true])('requires differential task verification even with red-team off (already green=%s)', async alreadyGreen => {
+    const cwd = repo(); const h = harness();
+    const out = await runGoal({ intent: 'differential verification', gate: 'test -f base.txt',
+      tasks: [{ id: 'second', source: 'make second', verify: alreadyGreen ? 'test -f base.txt' : 'test -f second.ts' }],
+      oracleGate: 'off', requireTests: false, engine: 'builder', reviewEngines: 'reviewer', maxAttempts: 1 }, context(cwd), h.services);
+    expect(out.exitCode).toBe(alreadyGreen ? 1 : 0);
+    const witnessEvent = (out.result as any).state.events.find((entry: any) => entry.type === 'verify-witness');
+    expect(JSON.parse(witnessEvent.detail)).toMatchObject({ witnessed: !alreadyGreen,
+      baseSha: execFileSync('git', ['rev-parse', 'HEAD'], { cwd, encoding: 'utf8' }).trim() });
+    if (alreadyGreen) {
+      expect(h.dispatch).toHaveBeenCalledOnce();
+      expect((out.result as any).state.events).toContainEqual(expect.objectContaining({ type: 'verify-failed' }));
+      expect(execFileSync('git', ['rev-list', '--count', 'main..goal/differential-verification'], { cwd, encoding: 'utf8' }).trim()).toBe('0');
+    }
+    expect(existsSync(join(cwd, 'second.ts'))).toBe(false);
+  });
+
   it.each([undefined, 'exit 1'])('uses the configured mutation witness command (%s)', async witnessCmd => {
     const cwd = repo(); const h = harness();
     const assessment = vi.spyOn(worktreeSupport, 'runMutationAssessment');

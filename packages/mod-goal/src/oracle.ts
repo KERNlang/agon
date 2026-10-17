@@ -2,6 +2,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync, copyFileSync } from
 import { join, basename, dirname } from 'node:path';
 import { createHash } from 'node:crypto';
 import type { spawnWithTimeout } from '@kernlang/agon-support-engine-runtime';
+import { applyPatchToTree } from '@kernlang/agon-support-worktree';
 import { assertSafeGoalId } from './paths.js';
 import type { GoalJournalEffects } from './journal.js';
 
@@ -25,6 +26,24 @@ export interface WitnessResult {
   baseTimedOut: boolean;
   baseExit: number;
   newExit: number;
+  baseInvalidReason?: 'timeout' | 'cancelled' | 'execution' | 'module-load';
+}
+
+/** Known setup failures cannot establish that a behavioral check ran. */
+function witnessResult(base: Awaited<ReturnType<typeof spawnWithTimeout>>, fresh: Awaited<ReturnType<typeof spawnWithTimeout>>): WitnessResult {
+  const moduleLoadFailure = /Error \[(?:ERR_MODULE_NOT_FOUND|ERR_UNKNOWN_FILE_EXTENSION)\]|code:\s*['"]MODULE_NOT_FOUND['"]|^(?:ModuleNotFoundError|ImportError):/m;
+  const baseInvalidReason: WitnessResult['baseInvalidReason'] = base.timedOut ? 'timeout'
+    : base.aborted || base.exitCode === 130 || base.exitCode === 143 ? 'cancelled'
+      : base.spawnError || base.exitCode === 126 || base.exitCode === 127 ? 'execution'
+        : moduleLoadFailure.test(`${base.stdout}\n${base.stderr}`) ? 'module-load' : undefined;
+  const failedOnBase = base.exitCode !== 0 && !baseInvalidReason;
+  const passedOnNew = fresh.exitCode === 0 && !fresh.timedOut && !fresh.aborted && !fresh.spawnError;
+  return {
+    witnessed: failedOnBase && passedOnNew,
+    failedOnBase, passedOnNew, baseTimedOut: base.timedOut,
+    baseExit: base.exitCode, newExit: fresh.exitCode,
+    ...(baseInvalidReason ? { baseInvalidReason } : {}),
+  };
 }
 
 /**
@@ -87,14 +106,20 @@ export function createGoalOracle(effects: GoalOracleEffects) {
   }
 
   /**
-   * Copy the new test(s) into a base-SHA worktree and run there (must FAIL, and NOT merely time out), then run in the new worktree (must PASS). Proves the test sees the gap. Rejects any newTestFiles entry that escapes its worktree root.
+   * Copy candidate tests onto the saved baseline and compare command results.
+   * Reject timeouts, known setup failures and paths outside the worktree.
+   * A differential result is evidence, not proof that an assertion ran.
    */
-  async function witnessTest(opts: {repoRoot:string, baseSha:string, newWorktree:string, newTestFiles:string[], testCmd:string, timeout:number}): Promise<WitnessResult> {
+  async function witnessTest(opts: {repoRoot:string, baseSha:string, basePatch?:string, newWorktree:string, newTestFiles:string[], testCmd:string, timeout:number, signal?:AbortSignal}): Promise<WitnessResult> {
     const { repoRoot, baseSha, newWorktree, newTestFiles, testCmd, timeout } = opts;
     const baseWt = join(effects.path('goals', 'tmp'), `witness-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`);
     const timeoutMs = Math.max(1, timeout) * 1000;
     try {
       effects.worktreeCreate(repoRoot, baseWt, baseSha);
+      if (opts.basePatch) {
+        const applied = applyPatchToTree(baseWt, opts.basePatch);
+        if (!applied.ok) throw new Error(`Cannot restore Goal verification baseline: ${applied.error}`);
+      }
       // Carry the *new* tests back onto the old code, so the test exists on base.
       for (const rel of newTestFiles) {
         const src = effects.resolveWithin(newWorktree, rel);
@@ -103,46 +128,34 @@ export function createGoalOracle(effects: GoalOracleEffects) {
         mkdirSync(dirname(dest), { recursive: true });
         copyFileSync(src, dest);
       }
-      const base = await effects.spawnWithTimeout({ command: '/bin/sh', args: ['-c', testCmd], cwd: baseWt, timeout: timeoutMs });
-      const fresh = await effects.spawnWithTimeout({ command: '/bin/sh', args: ['-c', testCmd], cwd: newWorktree, timeout: timeoutMs });
-      // A timeout on base is NOT a valid "failed on base" — it cannot bless a weak test.
-      const failedOnBase = base.exitCode !== 0 && !base.timedOut;
-      const passedOnNew = fresh.exitCode === 0 && !fresh.timedOut;
-      return {
-        witnessed: failedOnBase && passedOnNew,
-        failedOnBase,
-        passedOnNew,
-        baseTimedOut: base.timedOut,
-        baseExit: base.exitCode,
-        newExit: fresh.exitCode,
-      };
+      const base = await effects.spawnWithTimeout({ command: '/bin/sh', args: ['-c', testCmd], cwd: baseWt, timeout: timeoutMs, signal: opts.signal });
+      const fresh = await effects.spawnWithTimeout({ command: '/bin/sh', args: ['-c', testCmd], cwd: newWorktree, timeout: timeoutMs, signal: opts.signal });
+      return witnessResult(base, fresh);
     } finally {
       effects.worktreeRemoveBestEffort(repoRoot, baseWt);
     }
   }
 
   /**
-   * Differential behavioral oracle for a task's frozen --verify command. Runs the SAME command verbatim in a fresh base-SHA worktree (must FAIL, and not merely time out) and in the head worktree (must PASS). Unlike witnessTest it copies no files: verify is a self-contained, task-AUTHORED command (build + assert the produced artifact's behavior), so the implementing engine cannot author or weaken it. fail-on-base proves the command targets NEW behavior (not something already green); pass-on-head proves the implementation actually delivers it — the one signal a non-executing toContain test can never fake. The agent never sees this worktree; the command string lives in the journal, frozen like the gate. SECURITY: verify is run via /bin/sh exactly like the gate — it is TRUSTED operator/queue input, not untrusted-hosted content (agon's local-trust model). The base worktree is built fresh, so verify must be SELF-CONTAINED (run its own build); a bare `node dist/x.js` would fail on base only for lack of artifacts, faking the differential. Honours opts.signal so an interrupted run aborts the in-flight command instead of waiting out the timeout.
+   * Run the same trusted task command on baseline and candidate worktrees.
+   * Restore accepted uncommitted work, but copy no candidate tests or code.
+   * The command must prepare its own build and check the required behavior.
+   * Known load failures are rejected; arbitrary shell failures remain ambiguous.
+   * Cancellation stops the process. Cleanup also runs after cancellation.
    */
-  async function witnessVerifyCommand(opts: {repoRoot:string, baseSha:string, newWorktree:string, verifyCmd:string, timeout:number, signal?:AbortSignal}): Promise<WitnessResult> {
+  async function witnessVerifyCommand(opts: {repoRoot:string, baseSha:string, basePatch?:string, newWorktree:string, verifyCmd:string, timeout:number, signal?:AbortSignal}): Promise<WitnessResult> {
     const { repoRoot, baseSha, newWorktree, verifyCmd, timeout } = opts;
     const baseWt = join(effects.path('goals', 'tmp'), `verify-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`);
     const timeoutMs = Math.max(1, timeout) * 1000;
     try {
       effects.worktreeCreate(repoRoot, baseWt, baseSha);
+      if (opts.basePatch) {
+        const applied = applyPatchToTree(baseWt, opts.basePatch);
+        if (!applied.ok) throw new Error(`Cannot restore Goal verification baseline: ${applied.error}`);
+      }
       const base = await effects.spawnWithTimeout({ command: '/bin/sh', args: ['-c', verifyCmd], cwd: baseWt, timeout: timeoutMs, signal: opts.signal });
       const fresh = await effects.spawnWithTimeout({ command: '/bin/sh', args: ['-c', verifyCmd], cwd: newWorktree, timeout: timeoutMs, signal: opts.signal });
-      // A timeout on base is NOT a valid "failed on base" — it cannot bless a vacuous verify.
-      const failedOnBase = base.exitCode !== 0 && !base.timedOut;
-      const passedOnNew = fresh.exitCode === 0 && !fresh.timedOut;
-      return {
-        witnessed: failedOnBase && passedOnNew,
-        failedOnBase,
-        passedOnNew,
-        baseTimedOut: base.timedOut,
-        baseExit: base.exitCode,
-        newExit: fresh.exitCode,
-      };
+      return witnessResult(base, fresh);
     } finally {
       effects.worktreeRemoveBestEffort(repoRoot, baseWt);
     }

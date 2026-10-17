@@ -4,6 +4,8 @@ import { resolve } from 'node:path';
 import type { InvocationContext, ModServices } from '@kernlang/agon-mod-api';
 import { readWorktreeSource } from '@kernlang/agon-support-worktree';
 import type { PullRequestDraft } from '@kernlang/agon-support-worktree';
+import { createGoalOracle } from './oracle.js';
+import type { GoalOracleEffects } from './oracle.js';
 
 export interface GoalWorktree {
   readonly repoRoot: string;
@@ -24,6 +26,7 @@ export interface GoalHostServices {
     assertCurrent(): void;
     acquire(id: string): Promise<{ assertOwned(): Promise<void>; release(): Promise<void> }>;
     openWorktree(branch: string, resumeBase?: string, expectedRepoRoot?: string): GoalWorktree;
+    verification?(assertOwned: () => Promise<void>): Pick<ReturnType<typeof createGoalOracle>, 'witnessTest' | 'witnessVerifyCommand'>;
     draftPullRequest?(input: PullRequestDraft, dispatch: (prompt: string) => Promise<string>): Promise<{ ok: boolean; title: string; body: string }>;
     formatPullRequestBody?(body: string): string;
   };
@@ -38,6 +41,7 @@ const git = (cwd: string, args: string[]) => execFileSync('git', args, {
 /** Bind durable worktree access to the invocation's captured authority. */
 export function createGoalHostServices(options: {
   worktrees: GoalWorktreeEffects;
+  oracleEffects?: GoalOracleEffects;
   captureAuthority(): () => void;
   acquireWriter(id: string): Promise<{ assertOwned(): Promise<void>; release(): Promise<void> }>;
   draftPullRequest?(input: PullRequestDraft, dispatch: (prompt: string) => Promise<string>): Promise<{ ok: boolean; title: string; body: string }>;
@@ -50,6 +54,21 @@ export function createGoalHostServices(options: {
       assertCurrent();
       return {
         assertCurrent,
+        ...(options.oracleEffects ? { verification: (assertOwned: () => Promise<void>) => {
+          const effects = options.oracleEffects!;
+          const oracle = createGoalOracle({
+            ...effects,
+            worktreeCreate: (...args) => { assertCurrent(); return effects.worktreeCreate(...args); },
+            spawnWithTimeout: async command => {
+              await assertOwned(); assertCurrent();
+              const signal = command.signal ? AbortSignal.any([context.signal, command.signal]) : context.signal;
+              const result = await effects.spawnWithTimeout({ ...command, signal });
+              await assertOwned(); assertCurrent();
+              return result;
+            },
+          });
+          return { witnessTest: oracle.witnessTest, witnessVerifyCommand: oracle.witnessVerifyCommand };
+        } } : {}),
         ...(options.draftPullRequest ? { draftPullRequest: async (input: PullRequestDraft, dispatch: (prompt: string) => Promise<string>) => {
           assertCurrent();
           const result = await options.draftPullRequest!(input, async prompt => {

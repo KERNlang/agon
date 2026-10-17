@@ -7,6 +7,8 @@ import { createCliAdapter } from '@kernlang/agon-adapter-cli';
 import { createForgeHostServices } from '@kernlang/agon-core';
 import { repoRoot, createSessionWorktree, findSessionWorktree, worktreePathFor, rehydrateSessionWorktree } from '@kernlang/agon-core';
 import { createGoalHostServices } from '@kernlang/agon-mod-goal';
+import { agonPath, ensureAgonHome, worktreeCreate, worktreeRemoveBestEffort, spawnWithTimeout } from '@kernlang/agon-core';
+import { resolveWithinRoot } from '@kernlang/agon-support-worktree';
 import { WriterFence } from '@kernlang/agon-kernel';
 import { getAgonHome } from '@kernlang/agon-core';
 import { createHash } from 'node:crypto';
@@ -126,6 +128,8 @@ export function decorateCliFirstPartyServices(manifest: ModManifest, base: ModSe
   return Object.freeze({ ...base, runs, ...(browser ? { browser } : {}), ...(workspace ? { workspace } : {}),
     ...(brainstorm ? { brainstorm } : {}),
     ...(manifest.id === 'agon.goal' ? { goal: createGoalHostServices({
+      oracleEffects: { path: agonPath, ensureHome: ensureAgonHome, worktreeCreate, worktreeRemoveBestEffort,
+        spawnWithTimeout, resolveWithin: resolveWithinRoot },
       draftPullRequest: draftFirstPartyPullRequest,
       formatPullRequestBody: (body, context) => appendPrAttribution(body, loadConfig(context.cwd)),
       acquireWriter: async id => {

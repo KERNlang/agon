@@ -34,11 +34,25 @@ export function readWorktreeSource(cwd: string): { repoRoot: string; baseSha: st
 }
 
 /** Include tracked, binary and new files without staging their contents. */
-export function readWorktreePatch(cwd: string, base: string): string {
-  git(cwd, ['add', '-N', '.']);
-  return execFileSync('git', ['diff', '--binary', '--no-ext-diff', base, '--'], {
-    cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 32 * 1024 * 1024,
-  });
+export function readWorktreePatch(cwd: string, base: string, basePatch = ''): string {
+  let indexRoot: string | undefined;
+  try {
+    if (basePatch) {
+      // Reconstruct the saved baseline without changing the branch or its index.
+      indexRoot = mkdtempSync(join(tmpdir(), 'agon-diff-index-'));
+      const env = { ...process.env, GIT_INDEX_FILE: join(indexRoot, 'index') };
+      const options = { cwd, env, encoding: 'utf8' as const, timeout: 30_000, maxBuffer: 32 * 1024 * 1024 };
+      execFileSync('git', ['read-tree', base], options);
+      execFileSync('git', ['apply', '--cached', '--binary', '-'], { ...options, input: basePatch });
+      base = execFileSync('git', ['write-tree'], options).trim();
+    }
+    git(cwd, ['add', '-N', '.']);
+    return execFileSync('git', ['diff', '--binary', '--no-ext-diff', base, '--'], {
+      cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 32 * 1024 * 1024,
+    });
+  } finally {
+    if (indexRoot) rmSync(indexRoot, { recursive: true, force: true });
+  }
 }
 
 function safeLeaf(value: string): string {

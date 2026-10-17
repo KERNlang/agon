@@ -128,18 +128,42 @@ describe.each(['legacy', 'physical'] as const)('%s differential execution oracle
     expect(git(repo, 'worktree', 'list', '--porcelain')).toBe(before);
   });
 
-  it('does not accept cancellation as a witness and cleans up', async () => {
+  it.each(['mjs', 'cjs'])('rejects a missing %s test helper instead of reporting behavioral sensitivity', async extension => {
+    const wt = headWorktree();
+    writeFileSync(join(wt, 'helper.cjs'), 'module.exports = true;\n');
+    const file = `verify.${extension}`;
+    writeFileSync(join(wt, file), extension === 'mjs' ? "import './helper.cjs'; process.exit(0);\n" : "require('./helper.cjs'); process.exit(0);\n");
+    const before = git(repo, 'worktree', 'list', '--porcelain');
+    const result = await oracle.witnessTest({ repoRoot: repo, baseSha, newWorktree: wt,
+      newTestFiles: [file], testCmd: `${JSON.stringify(process.execPath)} ${file}`, timeout: 30 });
+    expect(result).toMatchObject({ witnessed: false, failedOnBase: false, passedOnNew: true, baseInvalidReason: 'module-load' });
+    expect(git(repo, 'worktree', 'list', '--porcelain')).toBe(before);
+    const prepared = await oracle.witnessTest({ repoRoot: repo, baseSha, newWorktree: wt,
+      newTestFiles: [file, 'helper.cjs'], testCmd: `${JSON.stringify(process.execPath)} ${file}`, timeout: 30 });
+    expect(prepared).toMatchObject({ witnessed: false, baseExit: 0, newExit: 0 });
+  });
+
+  it.each([126, 127, 130, 143])('rejects base execution/cancellation exit %s even if the candidate succeeds', async code => {
+    const wt = headWorktree();
+    const result = await oracle.witnessVerifyCommand({ repoRoot: repo, baseSha, newWorktree: wt,
+      verifyCmd: `test "$(cat feature.txt)" = ok || exit ${code}`, timeout: 30 });
+    expect(result).toMatchObject({ witnessed: false, failedOnBase: false, passedOnNew: true,
+      baseInvalidReason: code === 130 || code === 143 ? 'cancelled' : 'execution' });
+  });
+
+  it.each(['verify', 'test'])('does not accept cancellation as a %s witness and cleans up', async kind => {
     const wt = headWorktree();
     const before = git(repo, 'worktree', 'list', '--porcelain');
     const abort = new AbortController();
     abort.abort();
-    const result = await oracle.witnessVerifyCommand({ repoRoot: repo, baseSha, newWorktree: wt,
-      verifyCmd: verifyOk, timeout: 30, signal: abort.signal });
+    const result = kind === 'test'
+      ? await oracle.witnessTest({ repoRoot: repo, baseSha, newWorktree: wt, newTestFiles: [], testCmd: verifyOk, timeout: 30, signal: abort.signal })
+      : await oracle.witnessVerifyCommand({ repoRoot: repo, baseSha, newWorktree: wt, verifyCmd: verifyOk, timeout: 30, signal: abort.signal });
     expect(result).toMatchObject({ witnessed: false, passedOnNew: false, baseExit: 130, newExit: 130 });
     expect(git(repo, 'worktree', 'list', '--porcelain')).toBe(before);
   });
 
-  it('cleans up when cancellation arrives after the base process spawns', async () => {
+  it.each(['verify', 'test'])('cleans up when cancellation arrives after the %s base process spawns', async kind => {
     const wt = headWorktree();
     const before = git(repo, 'worktree', 'list', '--porcelain');
     const abort = new AbortController();
@@ -150,8 +174,9 @@ describe.each(['legacy', 'physical'] as const)('%s differential execution oracle
       worktreeCreate, worktreeRemoveBestEffort, resolveWithin: resolveWithinRoot,
       spawnWithTimeout: options => spawnWithTimeout({ ...options, onSpawn: () => { spawned++; abort.abort(); } }),
     });
-    const result = await active.witnessVerifyCommand({ repoRoot: repo, baseSha, newWorktree: wt,
-      verifyCmd: 'sleep 10', timeout: 30, signal: abort.signal });
+    const result = kind === 'test'
+      ? await active.witnessTest({ repoRoot: repo, baseSha, newWorktree: wt, newTestFiles: [], testCmd: 'sleep 10', timeout: 30, signal: abort.signal })
+      : await active.witnessVerifyCommand({ repoRoot: repo, baseSha, newWorktree: wt, verifyCmd: 'sleep 10', timeout: 30, signal: abort.signal });
     expect(spawned).toBe(1);
     expect(result).toMatchObject({ witnessed: false, passedOnNew: false, baseExit: 130, newExit: 130 });
     expect(git(repo, 'worktree', 'list', '--porcelain')).toBe(before);

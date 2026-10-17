@@ -14,7 +14,7 @@ import type {
 import { runAgentTask } from "@kernlang/agon-mod-agent";
 import { runReview } from "@kernlang/agon-mod-review";
 import { runGitAction } from "@kernlang/agon-mod-git-actions";
-import { readWorktreePatch, runMutationAssessment, changedLinesFromDiff, preparePullRequest, defaultBaseBranch, githubRepoUrl } from "@kernlang/agon-support-worktree";
+import { readWorktreePatch, runMutationAssessment, changedLinesFromDiff, preparePullRequest, defaultBaseBranch, githubRepoUrl, parsePatch, resolveWithinRoot } from "@kernlang/agon-support-worktree";
 import type { PreparedPullRequest } from '@kernlang/agon-support-worktree';
 import type { GoalModServices, GoalWorktree } from './host.js';
 import { mutationGateDecision, foldMutationVerdicts } from './policy.js';
@@ -32,6 +32,7 @@ type Task = {
   verify?: string;
   status: "queued" | "running" | "done" | "failed";
   attempts: number;
+  verificationBase?: { sha: string; patch: string };
   commit?: string;
   publication?: {
     commit: string;
@@ -509,6 +510,7 @@ export async function runGoal(
     if (prior && input.resume !== true)
       return { exitCode: 1, stderr: `Goal '${id}' already exists. Resume it explicitly or choose a new id.\n` };
     const assertExecution = async () => { await lease.assertOwned(); capabilities.assertCurrent(); };
+    const verification = capabilities.verification?.(assertExecution);
     let worktree: GoalWorktree;
     try {
       worktree = capabilities.openWorktree(branch, input.resume === true ? prior?.baseSha : undefined,
@@ -651,6 +653,18 @@ export async function runGoal(
             ),
         );
         if (!runnable) break;
+        if (!runnable.verificationBase) {
+          await assertExecution();
+          const sha = git(worktree.path, ['rev-parse', 'HEAD']);
+          // Old attempts have no saved patch. Do not bless their failed edits as a baseline.
+          if (runnable.attempts > 0 && state.tasks.some(task => task.status === 'done' && !task.commit)) {
+            throw new Error('Cannot reconstruct this older uncommitted Goal task baseline. Preserve the retained worktree and start a new goal.');
+          }
+          runnable.verificationBase = { sha, patch: runnable.attempts > 0 ? '' : readWorktreePatch(worktree.path, sha) };
+          await save();
+        }
+        const { sha: taskBaseSha, patch: taskBasePatch } = runnable.verificationBase;
+        const basePatchHash = createHash('sha256').update(taskBasePatch).digest('hex');
         for (
           let attempt = runnable.attempts + 1;
           attempt <= maxAttempts;
@@ -690,39 +704,30 @@ export async function runGoal(
           await assertExecution();
           const builderRuns = ((built.result as any)?.runs ?? []) as Array<{ costUsd?: number }>;
           state.spentUsd += builderRuns.reduce((sum, run) => sum + (Number(run.costUsd) || 0), 0);
-          const verify = await runFitnessCommand(
-            runnable.verify ?? gate,
+          const gateResult = await runFitnessCommand(
+            gate,
             worktree.path,
             gateTimeout,
             context.signal,
           );
           await assertExecution();
-          const global =
-            runnable.verify && verify.exitCode === 0
-              ? await runFitnessCommand(
-                  gate,
-                  worktree.path,
-                  gateTimeout,
-                  context.signal,
-                )
-              : verify;
-          await assertExecution();
           if (
             built.exitCode !== 0 ||
-            verify.exitCode !== 0 ||
-            global.exitCode !== 0
+            gateResult.exitCode !== 0 || gateResult.timedOut
           ) {
             runnable.status = "queued";
             state.noProgressStreak += 1;
-            runnable.error = `builder=${built.exitCode} verify=${verify.exitCode} gate=${global.exitCode}`;
+            runnable.error = `builder=${built.exitCode} gate=${gateResult.exitCode}${gateResult.timedOut ? ' (timed out)' : ''}`;
             state = event(state, "task-retry", runnable.id, runnable.error);
             continue;
           }
-          const taskDiff = readWorktreePatch(worktree.path, 'HEAD');
+          const taskDiff = readWorktreePatch(worktree.path, taskBaseSha, taskBasePatch);
+          const paths = parsePatch(taskDiff).map(file => file.path);
+          const testPaths = new Set(paths.filter(path => /(?:^|\/)(?:test|tests|__tests__)(?:\/|$)|\.(?:test|spec)\./i.test(path)));
+          const testFiles = [...testPaths].filter(path => existsSync(resolveWithinRoot(worktree.path, path)));
           if (requireTests && taskDiff.trim()) {
-            const paths = [...taskDiff.matchAll(/^diff --git a\/(.+?) b\/(.+)$/gm)].map((match) => match[2]);
-            const sourceChanged = paths.some((path) => /\.(?:[cm]?[jt]sx?|py|rs|go|java|kt)$/.test(path) && !/(?:^|\/)(?:test|tests|__tests__)(?:\/|$)|\.(?:test|spec)\./i.test(path));
-            const testChanged = paths.some((path) => /(?:^|\/)(?:test|tests|__tests__)(?:\/|$)|\.(?:test|spec)\./i.test(path));
+            const sourceChanged = paths.some((path) => /\.(?:[cm]?[jt]sx?|py|rs|go|java|kt)$/.test(path) && !testPaths.has(path));
+            const testChanged = testFiles.length > 0;
             if (sourceChanged && !testChanged) {
               runnable.status = "queued";
               runnable.error = "source changed without a test change while requireTests is enabled";
@@ -730,6 +735,45 @@ export async function runGoal(
               state = event(state, "witness-failed", runnable.id, runnable.error);
               continue;
             }
+          }
+          let verificationFailure: { type: 'witness-failed' | 'verify-failed'; detail: string } | undefined;
+          if ((testFiles.length > 0 || runnable.verify) && !verification) {
+            verificationFailure = { type: testFiles.length > 0 ? 'witness-failed' : 'verify-failed',
+              detail: 'Goal verification capabilities are unavailable. Restart with a compatible modular host.' };
+          } else if (verification) {
+            for (const file of testFiles) {
+              await assertExecution();
+              const witness = await verification.witnessTest({ repoRoot: worktree.repoRoot,
+                baseSha: taskBaseSha, basePatch: taskBasePatch, newWorktree: worktree.path, newTestFiles: [file],
+                testCmd: witnessCmd, timeout: gateTimeout, signal: context.signal });
+              await assertExecution();
+              state = event(state, 'test-witness', runnable.id, JSON.stringify({ baseSha: taskBaseSha, basePatchHash, file, command: witnessCmd, ...witness }));
+              await save();
+              if (!witness.witnessed) {
+                verificationFailure = { type: 'witness-failed', detail: `${file}: base exit ${witness.baseExit}${witness.baseTimedOut ? ' (timed out)' : ''}${witness.baseInvalidReason ? ` [${witness.baseInvalidReason}]` : ''}, candidate exit ${witness.newExit}` };
+                break;
+              }
+            }
+            if (!verificationFailure && runnable.verify) {
+              await assertExecution();
+              const witness = await verification.witnessVerifyCommand({ repoRoot: worktree.repoRoot,
+                baseSha: taskBaseSha, basePatch: taskBasePatch, newWorktree: worktree.path, verifyCmd: runnable.verify,
+                timeout: gateTimeout, signal: context.signal });
+              await assertExecution();
+              state = event(state, 'verify-witness', runnable.id, JSON.stringify({ baseSha: taskBaseSha, basePatchHash, command: runnable.verify, ...witness }));
+              await save();
+              if (!witness.witnessed) {
+                verificationFailure = { type: 'verify-failed', detail: `Task verification must fail on base without setup failure and pass on the candidate: base exit ${witness.baseExit}${witness.baseTimedOut ? ' (timed out)' : ''}${witness.baseInvalidReason ? ` [${witness.baseInvalidReason}]` : ''}, candidate exit ${witness.newExit}` };
+              }
+            }
+          }
+          if (verificationFailure) {
+            runnable.status = 'queued';
+            runnable.error = verificationFailure.detail;
+            state.noProgressStreak += 1;
+            state = event(state, verificationFailure.type, runnable.id, runnable.error);
+            await save();
+            continue;
           }
           let mutationEvidence: string | undefined;
           if (Object.keys(changedLinesFromDiff(taskDiff)).length > 0) {

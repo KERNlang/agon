@@ -11,6 +11,8 @@ it('exports the session scope from the physical Plan package', () => {
   expect(plan).toHaveProperty('dispatchPlanSession', expect.any(Function));
   expect(plan).toHaveProperty('createPlanSessionActions', expect.any(Function));
   expect(plan).toHaveProperty('createPlanExecutionSession', expect.any(Function));
+  expect(plan).toHaveProperty('dispatchPlanNaturalInput', expect.any(Function));
+  expect(plan).toHaveProperty('shouldEmitPlanPostDispatch', expect.any(Function));
 });
 
 it('binds physical and legacy-shaped requests to one Plan dispatcher', () => {
@@ -23,7 +25,16 @@ it('binds physical and legacy-shaped requests to one Plan dispatcher', () => {
   expect(content).toContain('createPlanSessionActions(');
   expect(content).toContain('createPlanExecutionSession(cb)');
   expect(content).not.toContain("from './plan-execution.js'");
+  expect(content).toContain('shouldEmitPlanPostDispatch(request, result)');
   expect(content).not.toMatch(/\bhandle(?:PlanShow|PlansList|Approve|Retry|Cancel)\b/);
+});
+
+it('keeps natural-input ordering in the physical session owner', () => {
+  const router = source('packages/cli/src/signals/dispatch/intent-router.ts');
+  expect(router).toContain('dispatchPlanNaturalInput(input,');
+  expect(router).not.toContain("from './plan-execution.js'");
+  expect(router).not.toContain('isCesarPlanResumeInput');
+  expect(router).not.toContain('shouldApprovePendingCesarPlanInput');
 });
 
 it('removes the CLI-owned session scope instead of retaining a second owner', () => {

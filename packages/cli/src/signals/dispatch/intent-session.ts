@@ -2,7 +2,7 @@ import { dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { createPatchApplicationUi, withPatchApplication } from '../../patch-application-host.js';
 import { escapeLiteralText } from '../../blocks/literal-text.js';
-import { withPlanSession, dispatchPlanSession, createPlanSessionActions, loadCesarPlan } from '@kernlang/agon-mod-plan';
+import { withPlanSession, dispatchPlanSession, createPlanSessionActions, loadCesarPlan, shouldEmitPlanPostDispatch } from '@kernlang/agon-mod-plan';
 import type { PlanSessionActions, PlanSessionDispatchResult } from '@kernlang/agon-mod-plan';
 import type { SessionJobsInvocationContext } from '@kernlang/agon-mod-jobs';
 import { runBrainstormSession } from '../../blocks/brainstorm-session.js';
@@ -76,8 +76,7 @@ function interactivePlanActions(cb: DispatchCallbacks): PlanSessionActions {
 }
 
 function finishPlanDispatch(request: PlanSessionRequest, input: string, cb: DispatchCallbacks, result: PlanSessionDispatchResult | null): void {
-  // Auto owns its post-dispatch event. Background task dispatch has no tail event.
-  if (request.type !== 'auto' && result?.handled && !result.ranAsJob) emitPostDispatch(request, input, cb);
+  if (shouldEmitPlanPostDispatch(request, result)) emitPostDispatch(request, input, cb);
 }
 
 async function runInteractivePlanRequest(request: PlanSessionRequest, input: string, cb: DispatchCallbacks) {

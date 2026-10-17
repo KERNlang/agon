@@ -9,11 +9,6 @@ import type { DispatchCallbacks } from '../../packages/cli/src/signals/dispatch.
 
 const effects = vi.hoisted(() => ({ approve: vi.fn(async () => true), resume: vi.fn(async () => {}), taskRoute: vi.fn(async () => false) }));
 vi.mock('../../packages/cli/src/signals/dispatch/cesar-router.js', () => ({ routeWithCesar: effects.taskRoute }));
-vi.mock('../../packages/cli/src/signals/dispatch/plan-execution.js', async original => ({
-  ...await original<Record<string, unknown>>(),
-  approvePendingCesarPlan: effects.approve,
-  resumeCesarPlan: effects.resume,
-}));
 import { dispatchIntent } from '../../packages/cli/src/signals/dispatch/intent-router.js';
 vi.mock('../../packages/cli/src/blocks/plan-execution-effects.js', async importOriginal => {
   const original = await importOriginal<typeof import('../../packages/cli/src/blocks/plan-execution-effects.js')>();
@@ -45,6 +40,8 @@ describe.each([true, false])('natural Plan input with disabled=%s', disabled => 
   });
   beforeEach(() => {
     vi.clearAllMocks();
+    effects.approve.mockReset().mockResolvedValue(true);
+    effects.resume.mockReset().mockResolvedValue(undefined);
     effects.taskRoute.mockReset().mockResolvedValue(false);
   });
 
@@ -191,7 +188,8 @@ describe.each([true, false])('natural Plan input with disabled=%s', disabled => 
     const plan = { id: 'cplan-fixture', state, steps: [], intent: 'fixture', createdAt: NOW };
     const dispatch = vi.fn();
     const runAsJob = vi.fn();
-    const cb = { dispatch, runAsJob, ctx: { activePlan: plan, cesar: {}, config: {} } } as unknown as DispatchCallbacks;
+    const emit = vi.fn(async (_event: string, _payload: unknown) => {});
+    const cb = { dispatch, runAsJob, eventBus: { emit }, ctx: { activePlan: plan, cesar: {}, config: {} } } as unknown as DispatchCallbacks;
     const before = structuredClone(plan);
     const result = await dispatchIntent({ type: 'chat', input }, input, cb);
     expect(result).toEqual({ handled: true, ranAsJob: false });
@@ -199,16 +197,19 @@ describe.each([true, false])('natural Plan input with disabled=%s', disabled => 
     expect(effects[action === 'approve' ? 'resume' : 'approve']).not.toHaveBeenCalled();
     expect(runAsJob).not.toHaveBeenCalled();
     expect(plan).toStrictEqual(before);
+    expect(emit.mock.calls.filter(([event]) => event === 'post:dispatch')).toHaveLength(1);
     if (disabled) expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'error', message: expect.stringContaining('unavailable') }));
   });
 
   it('keeps historical status readable without executing a disabled plan', async () => {
     const dispatch = vi.fn();
-    const cb = { dispatch, ctx: { activePlan: { id: 'cplan-history', state: 'paused', steps: [] }, cesar: {} } } as unknown as DispatchCallbacks;
+    const emit = vi.fn(async (_event: string, _payload: unknown) => {});
+    const cb = { dispatch, eventBus: { emit }, ctx: { activePlan: { id: 'cplan-history', state: 'paused', steps: [] }, cesar: {} } } as unknown as DispatchCallbacks;
     await dispatchIntent({ type: 'chat', input: 'status' }, 'status', cb);
     expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'info', message: expect.stringContaining('is paused') }));
     expect(effects.approve).not.toHaveBeenCalled();
     expect(effects.resume).not.toHaveBeenCalled();
+    expect(emit.mock.calls.filter(([event]) => event === 'post:dispatch')).toHaveLength(1);
   });
 
   it.each(['awaiting_approval', 'paused'] as const)('refuses %s actions after a generation change', async state => {
@@ -217,13 +218,39 @@ describe.each([true, false])('natural Plan input with disabled=%s', disabled => 
     try {
       await writeFile(pointer, '{}\n');
       const dispatch = vi.fn();
-      const cb = { dispatch, ctx: { activePlan: { id: 'cplan-stale', state, steps: [] }, cesar: {} } } as unknown as DispatchCallbacks;
+      const emit = vi.fn(async (_event: string, _payload: unknown) => {});
+      const cb = { dispatch, eventBus: { emit }, ctx: { activePlan: { id: 'cplan-stale', state, steps: [] }, cesar: {} } } as unknown as DispatchCallbacks;
       await dispatchIntent({ type: 'chat', input: 'go' }, 'go', cb);
       expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'error', message: expect.stringContaining('restart Agon') }));
       expect(effects.approve).not.toHaveBeenCalled();
       expect(effects.resume).not.toHaveBeenCalled();
+      expect(emit.mock.calls.filter(([event]) => event === 'post:dispatch')).toHaveLength(1);
     } finally {
       await writeFile(pointer, original);
     }
   });
+
+  if (!disabled) it.each(['approval-error', 'resume-error', 'resume-fallback', 'chat-fallback'] as const)(
+    'preserves natural-input tail and fallthrough for %s', async outcome => {
+      const failure = new Error('execution rejected');
+      const emit = vi.fn(async (_event: string, _payload: unknown) => {});
+      const proposedPlan = { id: 'proposal', state: 'awaiting_approval', steps: [] };
+      const activePlan = outcome === 'chat-fallback' ? undefined : { id: 'paused', state: 'paused', steps: [] };
+      const cb = { dispatch: vi.fn(), allImages: [], eventBus: { emit },
+        ctx: { config: {}, activePlan, cesar: { proposedPlan } },
+      } as unknown as DispatchCallbacks;
+      effects.approve.mockImplementation(async () => {
+        if (outcome === 'approval-error') throw failure;
+        return false;
+      });
+      effects.resume.mockImplementation(async () => { if (outcome === 'resume-error') throw failure; });
+      const operation = dispatchIntent({ type: 'chat', input: 'go' }, 'go', cb);
+      const failed = outcome.endsWith('-error');
+      if (failed) await expect(operation).rejects.toBe(failure);
+      else await expect(operation).resolves.toEqual({ handled: true, ranAsJob: false });
+      expect(effects.approve).toHaveBeenCalledOnce();
+      expect(effects.resume).toHaveBeenCalledTimes(outcome === 'resume-error' || outcome === 'resume-fallback' ? 1 : 0);
+      expect(effects.taskRoute).toHaveBeenCalledTimes(outcome === 'chat-fallback' ? 1 : 0);
+      expect(emit.mock.calls.filter(([event]) => event === 'post:dispatch')).toHaveLength(failed ? 0 : 1);
+    });
 });

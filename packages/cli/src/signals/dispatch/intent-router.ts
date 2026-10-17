@@ -3,9 +3,8 @@ import type { RegistryRecord } from '@kernlang/agon-kernel';
 
 import type { DispatchCallbacks, DispatchResult } from '../dispatch.js';
 
-import { findResumableCesarPlan, shouldApprovePendingCesarPlanInput, isCesarPlanResumeInput, isCesarPlanStatusInput, formatCesarPlanRuntimeStatus } from './plan-queries.js';
-
-import { resumeCesarPlan, approvePendingCesarPlan } from './plan-execution.js';
+import { dispatchPlanNaturalInput } from '@kernlang/agon-mod-plan';
+import { createPlanExecutionSession } from '../../blocks/plan-execution-effects.js';
 
 import { emitPostDispatch } from './utils.js';
 
@@ -30,33 +29,14 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
     await cb.eventBus.emit('pre:dispatch', { input, intentType: intent.type, cwd: resolveWorkingDir() });
   }
   
-  const approvePending = shouldApprovePendingCesarPlanInput(input, cb.ctx);
-  const resumablePlan = findResumableCesarPlan(cb.ctx);
-  const resumePending = resumablePlan !== null && isCesarPlanResumeInput(input);
-  // Natural aliases bypass the slash parser. Apply the same active-generation
-  // check before they reach compatibility execution or show a resume prompt.
-  if (approvePending || resumePending) {
-    try {
-      assertProcessSurfaceAvailable('tui', approvePending ? '/approve' : '/plan');
-    } catch (error) {
-      cb.dispatch({ type: 'error', message: error instanceof Error ? error.message : String(error) });
-      emitPostDispatch(intent, input, cb);
-      return { handled: true, ranAsJob: false };
-    }
-  }
-  if (approvePending) {
-    if (await approvePendingCesarPlan(cb)) {
-      emitPostDispatch(intent, input, cb);
-      return { handled: true, ranAsJob: false };
-    }
-  }
-  if (resumablePlan && resumePending) {
-    await resumeCesarPlan(resumablePlan, cb);
-    emitPostDispatch(intent, input, cb);
-    return { handled: true, ranAsJob: false };
-  }
-  if (resumablePlan && isCesarPlanStatusInput(input)) {
-    cb.dispatch({ type: 'info', message: formatCesarPlanRuntimeStatus(resumablePlan) });
+  const execution = createPlanExecutionSession(cb);
+  if (await dispatchPlanNaturalInput(input, {
+    snapshot: () => ({ proposedPlan: cb.ctx.cesar?.proposedPlan, activePlan: cb.ctx.activePlan }),
+    assertAvailable: action => assertProcessSurfaceAvailable('tui', action),
+    approve: () => execution.approvePending(),
+    resume: plan => execution.resume(plan),
+    notify: (type, message) => cb.dispatch({ type, message }),
+  })) {
     emitPostDispatch(intent, input, cb);
     return { handled: true, ranAsJob: false };
   }

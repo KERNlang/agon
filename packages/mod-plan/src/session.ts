@@ -3,10 +3,51 @@ import { showWorktreePlan, listWorktreePlans, approveWorktreePlan, retryWorktree
 import type { WorktreePlanHost } from './worktree-workflow.js';
 import { startPlanTaskSession, resumePlanSession } from './session-workflow.js';
 import type { PlanTaskSessionEffects, PlanResumeSessionEffects } from './session-workflow.js';
+import { shouldApprovePendingCesarPlanInput, selectResumablePlan, isCesarPlanResumeInput,
+  isCesarPlanStatusInput, formatCesarPlanRuntimeStatus } from './session-selection.js';
+import type { PlanSessionSnapshot } from './session-selection.js';
+import type { CesarPlan } from './execution-model.js';
 
 export interface PlanSessionDispatchResult {
   readonly handled: boolean;
   readonly ranAsJob: boolean;
+}
+
+export interface PlanNaturalInputEffects {
+  snapshot(): PlanSessionSnapshot;
+  assertAvailable(action: '/approve' | '/plan'): void;
+  approve(): Promise<boolean>;
+  resume(plan: CesarPlan): Promise<void>;
+  notify(level: 'info' | 'error', message: string): void;
+}
+
+/** Natural replies use the same approval authority as explicit commands. */
+export async function dispatchPlanNaturalInput(input: string, host: PlanNaturalInputEffects): Promise<boolean> {
+  const approvePending = shouldApprovePendingCesarPlanInput(input, host.snapshot());
+  const resumablePlan = selectResumablePlan(host.snapshot());
+  const resumePending = resumablePlan !== null && isCesarPlanResumeInput(input);
+  if (approvePending || resumePending) {
+    try { host.assertAvailable(approvePending ? '/approve' : '/plan'); }
+    catch (error) {
+      host.notify('error', error instanceof Error ? error.message : String(error));
+      return true;
+    }
+  }
+  if (approvePending && await host.approve()) return true;
+  if (resumablePlan && resumePending) {
+    await host.resume(resumablePlan);
+    return true;
+  }
+  if (resumablePlan && isCesarPlanStatusInput(input)) {
+    host.notify('info', formatCesarPlanRuntimeStatus(resumablePlan));
+    return true;
+  }
+  return false;
+}
+
+/** Auto emits its own tail event; background tasks have no synchronous tail. */
+export function shouldEmitPlanPostDispatch(request: PlanSessionRequest, result: PlanSessionDispatchResult | null): boolean {
+  return request.type !== 'auto' && result?.handled === true && !result.ranAsJob;
 }
 
 /** Host actions supply UI effects. This owner selects action order and fallback. */

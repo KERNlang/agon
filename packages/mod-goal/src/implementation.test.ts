@@ -814,6 +814,10 @@ describe('physical goal mod', () => {
   it.each([
     ['baseline failure', { ok: false, error: 'tests are red before mutation', report: { baselineOk: false, outcomes: [] } }],
     ['process failure', { ok: false, error: 'process unavailable', report: { baselineOk: false, outcomes: [] } }],
+    ['receipt failure after complete report', { ok: false, error: 'receipt unavailable', report: {
+      baselineOk: true, generated: 1, killed: 1, survived: 0, notRun: 0, invalid: 0,
+      outcomes: [{ status: 'killed', mutant: { file: 'second.ts', class: 'high-signal' } }],
+    } }],
     ['missing report', { ok: true }],
     ['unsuccessful baseline report', { ok: true, report: { baselineOk: false, outcomes: [] } }],
     ['aborted assessment', { ok: true, report: { baselineOk: true, aborted: true, outcomes: [] } }],

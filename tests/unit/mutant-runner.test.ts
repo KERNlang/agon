@@ -46,6 +46,61 @@ afterEach(() => {
 const base = { perMutantTimeoutSec: 20, totalBudgetSec: 120 };
 
 describe('runMutants — kill / survive', () => {
+  it('retains cancellation when lazy generation rejects after abort', async () => {
+    const dir = sandbox(), controller = new AbortController();
+    const report = await runMutants({ ...base, worktree: dir, testCmd: 'node check-real.mjs',
+      signal: controller.signal, mutants: async () => {
+        controller.abort();
+        throw new Error('fixture aborted generation');
+      },
+    });
+    expect(report.aborted).toBe(true);
+    expect(report.baselineOk).toBe(true);
+    expect(report.outcomes).toEqual([]);
+    expect(report.killed).toBe(0);
+    expect(report.baselineError).toContain('fixture aborted generation');
+  });
+
+  it.each(['survived', 'invalid', 'last'] as const)('retains exact %s accounting after a progress failure', async phase => {
+    const dir = sandbox(), mutants = addMutants(dir).slice(0, 2);
+    if (phase === 'invalid') mutants[0] = { ...mutants[0], file: 'missing.ts' };
+    const completed = phase === 'last' ? mutants.length : 1;
+    const report = await runMutants({ ...base, worktree: dir, mutants, testCmd: 'exit 0',
+      onProgress: progress => {
+        if (progress.phase === 'mutant' && progress.index === completed) throw new Error('fixture progress stopped');
+      },
+    });
+    expect(report.outcomes.map(item => item.status)).toEqual(phase === 'invalid' ? ['invalid'] : Array(completed).fill('survived'));
+    expect(report.invalid).toBe(phase === 'invalid' ? 1 : 0);
+    expect(report.survived).toBe(phase === 'invalid' ? 0 : completed);
+    expect(report.killed).toBe(0);
+    expect(report.score).toBe(phase === 'invalid' ? null : 0);
+    expect(report.notRun).toBe(mutants.length - completed);
+    expect(report.baselineError).toContain('fixture progress stopped');
+  });
+
+  it.each(['generation', 'progress', 'placement'] as const)('preserves earned verdicts when %s fails', async phase => {
+    const dir = sandbox(), mutants = addMutants(dir);
+    const path = join(dir, 'src/add.ts'), original = readFileSync(path, 'utf8');
+    const report = await runMutants({ ...base, worktree: dir, testCmd: 'node check-real.mjs',
+      mutants: phase === 'generation' ? async () => { throw new Error('fixture generation failure'); } : mutants,
+      onProgress: progress => {
+        if (progress.phase !== 'mutant' || progress.index !== 1) return;
+        if (phase === 'progress') throw new Error('fixture progress failure');
+        if (phase === 'placement') { rmSync(path); mkdirSync(path); }
+      },
+    });
+    const completed = phase === 'generation' ? 0 : 1;
+    expect(report.baselineOk).toBe(true);
+    expect(report.outcomes).toHaveLength(completed);
+    expect(report.killed).toBe(completed);
+    expect(report.generated).toBe(phase === 'generation' ? 0 : mutants.length);
+    expect(report.notRun).toBe(report.generated - completed);
+    expect(report.budgetExhausted).toBe(false);
+    expect(report.baselineError).toMatch(phase === 'placement' ? /EISDIR/ : new RegExp(`fixture ${phase} failure`));
+    if (phase !== 'placement') expect(readFileSync(path, 'utf8')).toBe(original);
+  });
+
   it.each(['baseline', 'mutant', 'after-verdict', 'rejected'])('does not turn a %s process spawn error into a killed mutant', async phase => {
     const dir = sandbox(), mutants = addMutants(dir);
     const spawn = vi.spyOn(processRuntime, 'spawnWithTimeout');

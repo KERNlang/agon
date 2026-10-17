@@ -354,6 +354,12 @@ export async function runMutants(opts: RunMutantsOptions): Promise<MutationRepor
     }
 
     return build();
+  } catch (error) {
+    // An operational failure does not erase earlier verdicts or prove a kill.
+    aborted = opts.signal?.aborted === true;
+    notRun = mutants.length - outcomes.length;
+    baselineError = `mutation execution failed: ${error instanceof Error ? error.message : String(error)}`;
+    return build();
   } finally {
     for (const [absPath, content] of originals) {
       try { writeFileSync(absPath, content); } catch { /* best effort — the sandbox is disposable */ }

@@ -23,6 +23,33 @@ function services(response = '') {
 }
 const context = (cwd: string) => ({ invocationId: 'm', cwd, platform: 'darwin-arm64' as const, signal: new AbortController().signal, config: {} });
 describe('physical mutate mod', () => {
+  it('returns failure with the completed report when receipt storage rejects', async () => {
+    const cwd = repo(), svc = services();
+    vi.mocked(svc.receipts.record).mockRejectedValue(new Error('fixture receipt unavailable'));
+    const out = await runMutate({ path: 'value.cjs', test: 'node test.cjs', maxMutants: 1 }, context(cwd), svc);
+    expect(out.exitCode).toBe(1);
+    expect(out.stderr).toContain('fixture receipt unavailable');
+    expect(out.result).toMatchObject({ ok: false, report: { baselineOk: true, generated: 1, killed: 1, notRun: 0 } });
+  });
+
+  it.each(['artifact', 'write', 'receipt'] as const)('preserves completed evidence when %s persistence fails', async phase => {
+    const cwd = repo(), source = readFileSync(join(cwd, 'value.cjs'), 'utf8');
+    const outputDir = join(cwd, 'evidence');
+    if (phase === 'artifact') writeFileSync(outputDir, 'not a directory');
+    if (phase === 'write') mkdirSync(join(outputDir, 'mutation-report.json'), { recursive: true });
+    const recordReceipt = vi.fn(async () => { throw new Error('fixture receipt failure'); });
+    const result = await runMutationAssessment({ repoRoot: cwd, files: ['value.cjs'], testCmd: 'node test.cjs',
+      outputDir, maxMutants: 1 }, context(cwd), { engines: services().engines, recordReceipt });
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(phase === 'receipt' ? /fixture receipt failure/ : /EEXIST|ENOTDIR|EISDIR/);
+    expect(result.report).toMatchObject({ baselineOk: true, generated: 1, killed: 1, survived: 0, notRun: 0 });
+    expect((result.report as { outcomes: unknown[] }).outcomes).toHaveLength(1);
+    expect(recordReceipt).toHaveBeenCalledTimes(phase === 'receipt' ? 1 : 0);
+    if (phase === 'receipt') expect(JSON.parse(readFileSync(join(outputDir, 'mutation-report.json'), 'utf8'))).toEqual(result.report);
+    expect(readFileSync(join(cwd, 'value.cjs'), 'utf8')).toBe(source);
+    expect(execFileSync('git', ['worktree', 'list'], { cwd, encoding: 'utf8' }).trim().split('\n')).toHaveLength(1);
+  });
+
   it.each([undefined, 1, 2000, 'all'] as const)('preserves explicit mutation selection (%s)', async maxMutants => {
     const cwd = repo();
     const source = Array.from({ length: 510 }, (_, index) => `const flag${index} = true;`).join('\n') + '\n';

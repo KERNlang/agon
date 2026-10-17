@@ -3,6 +3,7 @@ import { cpSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } 
 import { dirname, extname, join, relative, resolve } from 'node:path';
 
 import { runMutants } from './mutant-runner.js';
+import type { MutationReport } from './mutant-runner.js';
 import { clearShadowingDist, prepareSandboxNodeModules, workspacePackageDirs } from './mutation-sandbox.js';
 import { createForgeArena } from './forge-arena.js';
 import { generateMutants } from './mutant-generator.js';
@@ -212,13 +213,14 @@ export async function runMutationAssessment(
   const arena = createForgeArena(repoRoot);
   const candidate = arena.create('mutation-assessment');
   let engineCalls = 0;
+  let report: MutationReport | undefined;
   try {
     hydrateAmbientChanges(repoRoot, candidate.path, Object.keys(targets));
     const workspaces = workspacePackageDirs(repoRoot);
     const links = prepareSandboxNodeModules(repoRoot, candidate.path, workspaces);
     if (links.failed > 0) throw new Error(`Mutation sandbox dependency setup failed: ${links.note ?? `${links.failed} workspace links could not be repaired`}`);
     const cleared = clearShadowingDist(repoRoot, candidate.path, Object.keys(targets), workspaces, { throwOnError: true });
-    const report = await runMutants({
+    report = await runMutants({
       worktree: candidate.path, testCmd,
       buildCmd: options.buildCmd?.trim() || undefined,
       typecheckCmd: options.typecheckCmd?.trim() || undefined,
@@ -268,6 +270,7 @@ export async function runMutationAssessment(
         : report.killed ? 'all executed mutations were killed' : 'no valid mutations were executed', engineCalls, costUsd: 0,
       outputDir: options.outputDir, ...(options.lens ? { lens: options.lens } : {}), ...(receiptId ? { receiptId } : {}) };
   } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : String(error), report: { baselineOk: false, outcomes: [] } };
+    return { ok: false, error: error instanceof Error ? error.message : String(error),
+      report: report ?? { baselineOk: false, outcomes: [] } };
   } finally { arena.cleanup(); }
 }

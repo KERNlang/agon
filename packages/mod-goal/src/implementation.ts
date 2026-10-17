@@ -14,7 +14,7 @@ import type {
 import { runAgentTask } from "@kernlang/agon-mod-agent";
 import { runReview } from "@kernlang/agon-mod-review";
 import { runGitAction } from "@kernlang/agon-mod-git-actions";
-import { readWorktreePatch, runMutationAssessment, preparePullRequest, defaultBaseBranch, githubRepoUrl } from "@kernlang/agon-support-worktree";
+import { readWorktreePatch, runMutationAssessment, changedLinesFromDiff, preparePullRequest, defaultBaseBranch, githubRepoUrl } from "@kernlang/agon-support-worktree";
 import type { PreparedPullRequest } from '@kernlang/agon-support-worktree';
 import type { GoalModServices, GoalWorktree } from './host.js';
 import { runFitnessCommand } from "@kernlang/agon-support-verification";
@@ -729,8 +729,8 @@ export async function runGoal(
               continue;
             }
           }
-          if (run && taskDiff.trim()) {
-            const mutation = (await runMutationAssessment(
+          if (Object.keys(changedLinesFromDiff(taskDiff)).length > 0) {
+            const mutation = run ? (await runMutationAssessment(
               {
                 repoRoot: worktree.path,
                 diff: taskDiff,
@@ -745,8 +745,19 @@ export async function runGoal(
                 recordReceipt: (kind, payload) =>
                   services.receipts.record(kind, payload as Json),
               },
-            )) as any;
+            )) as any : { ok: false, error: 'Goal mutation verification requires run artifact storage. Restart with a compatible host.' };
             await assertExecution();
+            // Missing or incomplete execution is not evidence that mutations were killed.
+            const report = mutation.report;
+            if (mutation.ok !== true || report?.baselineOk !== true || report.aborted === true ||
+                report.budgetExhausted === true || report.notRun > 0 || report.invalid > 0) {
+              runnable.status = "queued";
+              runnable.error = `mutation assessment failed: ${String(mutation.error ?? 'incomplete verification evidence')}`;
+              state.noProgressStreak += 1;
+              state = event(state, "mutation-assessment-failed", runnable.id, runnable.error);
+              await save();
+              continue;
+            }
             const outcomes = (mutation.report?.outcomes ?? mutation.outcomes ?? []) as Array<any>;
             const highSignalSurvivors = outcomes.filter(
               (outcome) =>

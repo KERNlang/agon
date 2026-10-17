@@ -90,6 +90,87 @@ const context = (cwd: string) => ({
 });
 
 describe('physical goal mod', () => {
+  it.each([
+    ['baseline failure', { ok: false, error: 'tests are red before mutation', report: { baselineOk: false, outcomes: [] } }],
+    ['process failure', { ok: false, error: 'process unavailable', report: { baselineOk: false, outcomes: [] } }],
+    ['missing report', { ok: true }],
+    ['unsuccessful baseline report', { ok: true, report: { baselineOk: false, outcomes: [] } }],
+    ['aborted assessment', { ok: true, report: { baselineOk: true, aborted: true, outcomes: [] } }],
+    ['budget exhausted', { ok: true, report: { baselineOk: true, budgetExhausted: true, outcomes: [] } }],
+    ['unexecuted mutants', { ok: true, report: { baselineOk: true, notRun: 1, outcomes: [] } }],
+    ['invalid mutant', { ok: true, report: { baselineOk: true, invalid: 1, outcomes: [] } }],
+  ])('does not review or commit after mutation %s', async (_label, assessment) => {
+    const cwd = repo(); const h = harness();
+    const mutation = vi.spyOn(worktreeSupport, 'runMutationAssessment').mockResolvedValue(assessment as Record<string, unknown>);
+    const out = await runGoal({ intent: 'failed mutation', gate: 'test -f base.txt',
+      engine: 'builder', reviewEngines: 'reviewer', requireTests: false, maxAttempts: 1 }, context(cwd), h.services);
+    expect(mutation).toHaveBeenCalledOnce();
+    expect(out.exitCode).toBe(1);
+    expect(h.dispatch).toHaveBeenCalledOnce();
+    expect((out.result as any).state.events).toContainEqual(expect.objectContaining({ type: 'mutation-assessment-failed' }));
+    expect(execFileSync('git', ['rev-list', '--count', 'main..goal/failed-mutation'], { cwd, encoding: 'utf8' }).trim()).toBe('0');
+    expect(readFileSync(join((out.result as any).worktree.path, 'second.ts'), 'utf8')).toContain('export const second');
+    mutation.mockRestore();
+    const reassessment = vi.spyOn(worktreeSupport, 'runMutationAssessment');
+    h.dispatch.mockImplementation(async (_id: string, _prompt: string, invocation: any, options: any) => {
+      if (options.mode === 'agent') {
+        expect(invocation.cwd).toBe((out.result as any).worktree.path);
+        expect(readFileSync(join(invocation.cwd, 'second.ts'), 'utf8')).toBe('export const second = true;\n');
+      }
+      return { exitCode: 0, stdout: '<!--AGON_REVIEW_FINDINGS_v1-->\n```json\n[]\n```', stderr: '', timedOut: false };
+    });
+    const resumed = await runGoal({ id: 'failed-mutation', resume: true, engine: 'builder',
+      reviewEngines: 'reviewer', requireTests: false, maxAttempts: 2 }, context(cwd), h.services);
+    expect(resumed.exitCode).toBe(0);
+    expect(reassessment).toHaveBeenCalledOnce();
+    expect((resumed.result as any).worktree.path).toBe((out.result as any).worktree.path);
+  });
+
+  it('does not require mutation evidence for documentation-only changes', async () => {
+    const cwd = repo(); const h = harness();
+    h.dispatch.mockImplementation(async (_id: string, _prompt: string, invocation: any, options: any) => {
+      if (options.mode === 'agent') writeFileSync(join(invocation.cwd, 'notes.md'), 'Documentation only.\n');
+      return { exitCode: 0, stdout: '<!--AGON_REVIEW_FINDINGS_v1-->\n```json\n[]\n```', stderr: '', timedOut: false };
+    });
+    const mutation = vi.spyOn(worktreeSupport, 'runMutationAssessment');
+    const out = await runGoal({ intent: 'docs only', gate: 'test -f base.txt', requireTests: false }, context(cwd), h.services);
+    expect(out.exitCode).toBe(0);
+    expect(mutation).not.toHaveBeenCalled();
+    expect((out.result as any).patch).toContain('+Documentation only.');
+  });
+
+  it('does not silently skip required mutation verification without run storage', async () => {
+    const cwd = repo(); const h = harness();
+    const out = await runGoal({ intent: 'missing run storage', gate: 'test -f base.txt',
+      engine: 'builder', reviewEngines: 'reviewer', requireTests: false, maxAttempts: 1 },
+    context(cwd), { ...h.services, runs: undefined });
+    expect(out.exitCode).toBe(1);
+    expect(h.dispatch).toHaveBeenCalledOnce();
+    expect((out.result as any).state.tasks[0].error).toContain('run artifact storage');
+    expect(execFileSync('git', ['rev-list', '--count', 'main..goal/missing-run-storage'], { cwd, encoding: 'utf8' }).trim()).toBe('0');
+    expect(existsSync(join((out.result as any).worktree.path, 'second.ts'))).toBe(true);
+  });
+
+  it('blocks a real mutation baseline failure even when the candidate gate passes', async () => {
+    const cwd = repo(); const h = harness();
+    writeFileSync(join(cwd, '.gitignore'), 'local-proof\n');
+    execFileSync('git', ['add', '.gitignore'], { cwd });
+    execFileSync('git', ['commit', '-m', 'ignore local proof'], { cwd });
+    h.dispatch.mockImplementation(async (_id: string, _prompt: string, invocation: any) => {
+      writeFileSync(join(invocation.cwd, 'second.ts'), 'export const second = true;\n');
+      writeFileSync(join(invocation.cwd, 'local-proof'), 'not part of the patch\n');
+      return { exitCode: 0, stdout: 'done', stderr: '', timedOut: false };
+    });
+    const out = await runGoal({ intent: 'real mutation failure',
+      gate: 'test ! -f second.ts || test -f local-proof',
+      engine: 'builder', reviewEngines: 'reviewer', requireTests: false, maxAttempts: 1 }, context(cwd), h.services);
+    expect(out.exitCode).toBe(1);
+    expect(h.dispatch).toHaveBeenCalledOnce();
+    expect((out.result as any).state.tasks[0].error).toContain('tests are red before mutation');
+    expect(execFileSync('git', ['rev-list', '--count', 'main..goal/real-mutation-failure'], { cwd, encoding: 'utf8' }).trim()).toBe('0');
+    expect(readFileSync(join((out.result as any).worktree.path, 'second.ts'), 'utf8')).toContain('second = true');
+  });
+
   it('runs dependency-ordered work, gates/mutates/reviews it, commits on goal branch, and leaves source untouched', async () => {
     const cwd = repo(); const h = harness();
     const out = await runGoal({

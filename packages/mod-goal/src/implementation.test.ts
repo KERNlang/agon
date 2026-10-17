@@ -721,6 +721,7 @@ describe('physical goal mod', () => {
       engine: 'builder', reviewEngines: 'reviewer', requireTests: false, maxAttempts: 1 }, context(cwd), h.services);
     expect(assessment).toHaveBeenCalledOnce();
     expect(assessment.mock.calls[0][0].testCmd).toBe(witnessCmd ?? gate);
+    expect(assessment.mock.calls[0][0].maxMutants).toBe('all');
     expect(out.exitCode).toBe(witnessCmd ? 1 : 0);
     if (witnessCmd) {
       expect(h.dispatch).toHaveBeenCalledOnce();

@@ -44,7 +44,8 @@ export interface MutationAssessmentOptions {
   readonly engines?: readonly string[];
   readonly semantic?: boolean;
   readonly lens?: string;
-  readonly maxMutants?: number;
+  /** Goal verifies the full pool; interactive assessments may select a sample. */
+  readonly maxMutants?: number | 'all';
   readonly semanticPerEngine?: number;
   readonly perMutantTimeoutSec?: number;
   readonly totalBudgetSec?: number;
@@ -244,7 +245,7 @@ export async function runMutationAssessment(
           seen.add(key);
           return true;
         }).sort((left, right) => Number(right.class === 'high-signal') - Number(left.class === 'high-signal'))
-          .slice(0, Math.max(1, Math.min(500, options.maxMutants ?? 25)));
+          .slice(0, options.maxMutants === 'all' ? undefined : Math.max(1, Math.min(500, options.maxMutants ?? 25)));
       },
     });
     if (!report.baselineOk && cleared.length > 0 && !options.buildCmd?.trim()) {

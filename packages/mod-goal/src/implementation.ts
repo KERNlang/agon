@@ -1010,6 +1010,7 @@ export async function runGoal(
                 engines: reviewEngines ? reviewEngines.split(",").filter(Boolean) : [],
                 semantic: false,
                 testCmd: witnessCmd,
+                maxMutants: 'all',
               },
               { ...context, cwd: worktree.path },
               {

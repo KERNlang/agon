@@ -4,11 +4,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ModServices } from '@kernlang/agon-mod-api';
-import { generateSemanticMutationCandidates } from '@kernlang/agon-support-worktree';
+import { generateSemanticMutationCandidates, generateMechanicalMutants, runMutationAssessment } from '@kernlang/agon-support-worktree';
+import * as engineRuntime from '@kernlang/agon-support-engine-runtime';
 import { generateMutants, generateSemanticMutants, runMutate, runSemanticMutate } from './implementation.js';
 
 const roots: string[] = [];
-afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
+afterEach(() => { vi.restoreAllMocks(); for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 function repo() {
   const cwd = mkdtempSync(join(tmpdir(), 'agon-mutate-')); roots.push(cwd); execFileSync('git', ['init', '-b', 'main'], { cwd });
   execFileSync('git', ['config', 'user.email', 'm@example.invalid'], { cwd }); execFileSync('git', ['config', 'user.name', 'M'], { cwd });
@@ -22,6 +23,87 @@ function services(response = '') {
 }
 const context = (cwd: string) => ({ invocationId: 'm', cwd, platform: 'darwin-arm64' as const, signal: new AbortController().signal, config: {} });
 describe('physical mutate mod', () => {
+  it.each([undefined, 1, 2000, 'all'] as const)('preserves explicit mutation selection (%s)', async maxMutants => {
+    const cwd = repo();
+    const source = Array.from({ length: 510 }, (_, index) => `const flag${index} = true;`).join('\n') + '\n';
+    writeFileSync(join(cwd, 'value.cjs'), source);
+    const generated = generateMechanicalMutants(source, 'value.cjs');
+    expect(generated.length).toBeGreaterThan(500);
+    const seen = new Set<string>();
+    const survivors = generated.slice(500);
+    const process = vi.spyOn(engineRuntime, 'spawnWithTimeout').mockImplementation(async options => {
+      const current = readFileSync(join(options.cwd!, 'value.cjs'), 'utf8');
+      let exitCode = 0;
+      if (current !== source) {
+        const lines = current.split('\n'), original = source.split('\n');
+        const changed = lines.flatMap((line, index) => line === original[index] ? [] : [index]);
+        expect(changed).toHaveLength(1);
+        const mutant = generated.find(item => item.line === changed[0] + 1 && item.after === lines[changed[0]])!;
+        expect(mutant).toBeDefined();
+        expect(seen.has(mutant.id)).toBe(false);
+        seen.add(mutant.id);
+        exitCode = survivors.includes(mutant) ? 0 : 1;
+      }
+      return { exitCode, stdout: '', stderr: '', timedOut: false, durationMs: 0 };
+    });
+    const result = await runMutationAssessment({ repoRoot: cwd, files: ['value.cjs'], testCmd: 'fixture mutation test',
+      maxMutants, outputDir: join(cwd, 'evidence') }, context(cwd), { engines: services().engines });
+    const selected = maxMutants === 'all' ? generated.length : maxMutants === undefined ? 25 : Math.min(500, maxMutants);
+    const survived = maxMutants === 'all' ? survivors.length : 0;
+    expect(result.ok).toBe(true);
+    expect(result.report).toMatchObject({ generated: selected, killed: selected - survived, survived, notRun: 0, budgetExhausted: false });
+    expect([...seen]).toEqual(generated.slice(0, selected).map(item => item.id));
+    expect((result.survivors as Array<{ id: string }>).map(item => item.id)).toEqual(maxMutants === 'all' ? survivors.map(item => item.id) : []);
+    if (survived) expect(result.byFile).toEqual({ 'value.cjs': survivors });
+    expect(process).toHaveBeenCalledTimes(selected + 1);
+    expect(readFileSync(join(cwd, 'value.cjs'), 'utf8')).toBe(source);
+    expect(execFileSync('git', ['worktree', 'list'], { cwd, encoding: 'utf8' }).trim().split('\n')).toHaveLength(1);
+  });
+
+  it('selects every changed-line mutant across files without selecting unchanged lines', async () => {
+    const cwd = repo(); const source = 'const unchanged = false;\n';
+    for (const file of ['a.cjs', 'b.cjs']) writeFileSync(join(cwd, file), source);
+    execFileSync('git', ['add', 'a.cjs', 'b.cjs'], { cwd });
+    execFileSync('git', ['commit', '-qm', 'unchanged lines'], { cwd });
+    const changed = source + Array.from({ length: 260 }, (_, index) => `const flag${index} = true;`).join('\n') + '\n';
+    for (const file of ['a.cjs', 'b.cjs']) writeFileSync(join(cwd, file), changed);
+    const expected = ['a.cjs', 'b.cjs'].flatMap(file => generateMechanicalMutants(changed, file,
+      Array.from({ length: 260 }, (_, index) => index + 2)));
+    vi.spyOn(engineRuntime, 'spawnWithTimeout').mockImplementation(async options => ({
+      exitCode: ['a.cjs', 'b.cjs'].every(file => readFileSync(join(options.cwd!, file), 'utf8') === changed) ? 0 : 1,
+      stdout: '', stderr: '', timedOut: false, durationMs: 0,
+    }));
+    const diff = execFileSync('git', ['diff', 'HEAD'], { cwd, encoding: 'utf8' });
+    const result = await runMutationAssessment({ repoRoot: cwd, diff, testCmd: 'fixture mutation test', maxMutants: 'all',
+      outputDir: join(cwd, 'evidence') }, context(cwd), { engines: services().engines });
+    expect(result.ok).toBe(true);
+    const report = result.report as { generated: number; outcomes: Array<{ mutant: { id: string; line: number } }> };
+    expect(report.generated).toBeGreaterThan(500);
+    expect(report.outcomes.map(item => item.mutant.id)).toEqual(expected.map(item => item.id));
+    expect(report.outcomes.every(item => item.mutant.line > 1)).toBe(true);
+    for (const file of ['a.cjs', 'b.cjs']) expect(readFileSync(join(cwd, file), 'utf8')).toBe(changed);
+    expect(execFileSync('git', ['worktree', 'list'], { cwd, encoding: 'utf8' }).trim().split('\n')).toHaveLength(1);
+  });
+
+  it('retains the full selected pool and no kill verdict when exhaustive execution is cancelled', async () => {
+    const cwd = repo(); const abort = new AbortController();
+    const source = Array.from({ length: 510 }, (_, index) => `const flag${index} = true;`).join('\n') + '\n';
+    writeFileSync(join(cwd, 'value.cjs'), source);
+    const expected = generateMechanicalMutants(source, 'value.cjs').length;
+    let calls = 0;
+    vi.spyOn(engineRuntime, 'spawnWithTimeout').mockImplementation(async () => {
+      if (++calls === 2) abort.abort();
+      return { exitCode: 0, stdout: '', stderr: '', timedOut: false, durationMs: 0 };
+    });
+    const result = await runMutationAssessment({ repoRoot: cwd, files: ['value.cjs'], testCmd: 'fixture mutation test',
+      maxMutants: 'all', outputDir: join(cwd, 'evidence') }, { ...context(cwd), signal: abort.signal }, { engines: services().engines });
+    expect(result.ok).toBe(false);
+    expect(result.report).toMatchObject({ generated: expected, killed: 0, outcomes: [], notRun: expected, aborted: true });
+    expect(calls).toBe(2);
+    expect(readFileSync(join(cwd, 'value.cjs'), 'utf8')).toBe(source);
+    expect(execFileSync('git', ['worktree', 'list'], { cwd, encoding: 'utf8' }).trim().split('\n')).toHaveLength(1);
+  });
+
   it.each(['no-build', 'rebuild', 'unsafe-overlay'])('does not test stale workspace artifacts (%s)', async mode => {
     const cwd = repo();
     const rebuild = mode === 'rebuild';

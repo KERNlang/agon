@@ -85,8 +85,10 @@ export async function runBrainstormSession(
     const result = parseBrainstormResult(output.result ?? output);
     signal.throwIfAborted();
     const summary = sessionRecord?.complete(result);
-    presentation.complete(result);
-    if (summary && host.summaryEnabled()) host.notify('info', summary);
+    try { presentation.complete(result); }
+    catch { warn('Brainstorm completed, but its result display could not be updated.'); }
+    try { if (summary && host.summaryEnabled()) host.notify('info', summary); }
+    catch { warn('Brainstorm completed, but its summary could not be displayed.'); }
     return result;
   } catch (error) {
     const failure = signal.aborted ? signal.reason : error;

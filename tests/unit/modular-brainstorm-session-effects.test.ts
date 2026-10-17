@@ -175,6 +175,38 @@ it('does not mask the original failure when disposal and diagnostics throw', asy
   expect(record.fail).toHaveBeenCalledOnce();
 });
 
+it.each(['display', 'summary-setting', 'summary-notification', 'diagnostic'])('preserves recorded success when %s fails', async effect => {
+  const { host, presentation } = fixture();
+  const controller = new AbortController();
+  const receipt = vi.fn(() => 'receipt');
+  const appendMessage = vi.fn();
+  const addResult = vi.fn();
+  host.createRecord = () => createBrainstormSessionRecord({
+    question: 'fixture', engines: ['fixture'], signal: controller.signal,
+  }, {
+    now: () => 1000, checkpoint: vi.fn(), appendMessage,
+    track: vi.fn(), addResult, recordRun: receipt, formatSummary: () => 'saved summary',
+  });
+  if (effect === 'display' || effect === 'diagnostic') {
+    presentation.complete.mockImplementation(() => { throw new Error('display failed'); });
+  }
+  if (effect === 'summary-setting') host.summaryEnabled = () => { throw new Error('settings failed'); };
+  if (effect === 'summary-notification') {
+    host.notify = vi.fn(level => { if (level === 'info') throw new Error('notification failed'); });
+  }
+  if (effect === 'diagnostic') host.notify = vi.fn(() => { throw new Error('diagnostic failed'); });
+  const result = { question: 'fixture', winner: 'fixture', response: 'answer', bids: [] };
+  await expect(runBrainstormSession({ question: 'fixture' }, controller.signal, host,
+    async () => ({ result }))).resolves.toBe(result);
+  expect(receipt).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ success: true, completionState: 'completed' }));
+  expect(appendMessage).toHaveBeenCalledTimes(2);
+  expect(addResult).toHaveBeenCalledOnce();
+  expect(presentation.fail).not.toHaveBeenCalled();
+  expect(presentation.dispose).toHaveBeenCalledOnce();
+  expect(host.notify).toHaveBeenCalledWith('warning', expect.stringContaining('Brainstorm completed'));
+  if (effect === 'display') expect(host.notify).toHaveBeenCalledWith('info', 'saved summary');
+});
+
 it('does not turn a recorded success into failure when disposal throws', async () => {
   const { host, presentation, record } = fixture();
   const result = { question: 'fixture', winner: 'fixture', response: 'answer', bids: [] };

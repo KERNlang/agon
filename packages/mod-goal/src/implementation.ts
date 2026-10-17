@@ -17,6 +17,7 @@ import { runGitAction } from "@kernlang/agon-mod-git-actions";
 import { readWorktreePatch, runMutationAssessment, changedLinesFromDiff, preparePullRequest, defaultBaseBranch, githubRepoUrl } from "@kernlang/agon-support-worktree";
 import type { PreparedPullRequest } from '@kernlang/agon-support-worktree';
 import type { GoalModServices, GoalWorktree } from './host.js';
+import { mutationGateDecision, foldMutationVerdicts } from './policy.js';
 import { runFitnessCommand } from "@kernlang/agon-support-verification";
 import { spawnWithTimeout } from '@kernlang/agon-support-engine-runtime';
 import {
@@ -729,6 +730,7 @@ export async function runGoal(
               continue;
             }
           }
+          let mutationEvidence: string | undefined;
           if (Object.keys(changedLinesFromDiff(taskDiff)).length > 0) {
             const mutation = run ? (await runMutationAssessment(
               {
@@ -749,8 +751,13 @@ export async function runGoal(
             await assertExecution();
             // Missing or incomplete execution is not evidence that mutations were killed.
             const report = mutation.report;
+            const outcomes = Array.isArray(report?.outcomes) ? report.outcomes as Array<any> : [];
             if (mutation.ok !== true || report?.baselineOk !== true || report.aborted === true ||
-                report.budgetExhausted === true || report.notRun > 0 || report.invalid > 0) {
+                report.budgetExhausted === true || report.notRun > 0 || report.invalid > 0 ||
+                !Array.isArray(report.outcomes) || report.generated !== outcomes.length || outcomes.some(outcome =>
+                  !['killed', 'survived', 'timeout'].includes(outcome?.status) ||
+                  typeof outcome?.mutant?.file !== 'string' || !outcome.mutant.file.trim() ||
+                  !['high-signal', 'equiv-prone'].includes(outcome?.mutant?.class))) {
               runnable.status = "queued";
               runnable.error = `mutation assessment failed: ${String(mutation.error ?? 'incomplete verification evidence')}`;
               state.noProgressStreak += 1;
@@ -758,36 +765,46 @@ export async function runGoal(
               await save();
               continue;
             }
-            const outcomes = (mutation.report?.outcomes ?? mutation.outcomes ?? []) as Array<any>;
-            const highSignalSurvivors = outcomes.filter(
-              (outcome) =>
-                outcome?.status === "survived" &&
-                outcome?.mutant?.class === "high-signal",
-            ).length;
-            const highSignalGenerated = outcomes.filter(
-              (outcome) => outcome?.mutant?.class === "high-signal",
-            ).length;
-            const totalSurvivors = outcomes.filter((outcome) => outcome?.status === "survived").length;
-            const generated = Number(mutation.report?.generated ?? mutation.generated ?? outcomes.length) || outcomes.length;
-            const threshold = Math.max(0, Number(input.mutationHighSignalMax ?? 2) || 0);
-            const survivorRatio = Math.max(0, Math.min(1, Number(input.mutationSurvivorRatio ?? 0.15) || 0));
-            const mutationFloor = Math.max(0, Math.floor(Number(input.mutationFloor ?? 3) || 0));
-            state = event(
-              state,
-              "mutation-gate",
-              runnable.id,
-              `${highSignalSurvivors} high-signal survivor(s); threshold ${threshold}`,
-            );
-            const fallbackBlocked = highSignalGenerated === 0 && totalSurvivors >= mutationFloor && generated > 0 && totalSurvivors / generated > survivorRatio;
-            if (highSignalSurvivors > threshold || fallbackBlocked) {
-              runnable.status = "queued";
-              runnable.error = `mutation gate: ${highSignalSurvivors} high-signal survivors`;
+            const files = new Map<string, typeof outcomes>();
+            for (const outcome of outcomes) {
+              const file = outcome.mutant.file as string;
+              files.set(file, [...(files.get(file) ?? []), outcome]);
+            }
+            const grades = [...files].map(([file, records]) => {
+              const survivors = records.filter(record => record.status === 'survived').map(record => record.mutant);
+              return { file, survivors, ...mutationGateDecision(survivors, records.map(record => record.mutant), {
+                highSignalReviewMax: input.mutationHighSignalMax === undefined ? undefined : Number(input.mutationHighSignalMax),
+                survivorRatioCap: input.mutationSurvivorRatio === undefined ? undefined : Number(input.mutationSurvivorRatio),
+                floor: input.mutationFloor === undefined ? undefined : Number(input.mutationFloor),
+              }) };
+            });
+            const verdict = foldMutationVerdicts(grades.map(grade => grade.verdict));
+            const detail = grades.map(grade => `${grade.file}: ${grade.verdict} (${grade.reason})`).join('; ');
+            state = event(state, 'mutation-gate', runnable.id, detail);
+            if (verdict === 'park') {
+              runnable.status = 'queued';
+              runnable.error = `mutation gate: ${detail}`;
               state.noProgressStreak += 1;
-              state = event(state, "task-retry", runnable.id, runnable.error);
+              state = event(state, 'task-retry', runnable.id, runnable.error);
               continue;
+            }
+            const flagged = grades.filter(grade => grade.verdict === 'review');
+            if (flagged.length) {
+              mutationEvidence = flagged.map(grade => `${grade.file}: ${grade.reason}; survivors ${
+                grade.survivors.slice(0, 12).map(mutant => `${mutant.operator}@L${mutant.line}`).join(', ')
+              }${grade.survivors.length > 12 ? `, +${grade.survivors.length - 12} more` : ''}`).join('\n') +
+                '\nA high-signal survivor indicates weak test coverage unless it is provably equivalent on this diff. Boundary, guard, and return-undefined survivors may be equivalent noise. Verify the evidence against this diff.';
             }
           }
           await assertExecution();
+          if (mutationEvidence && !reviewEngines) {
+            runnable.status = 'queued';
+            runnable.error = 'Mutation evidence requires a reviewer. Configure an available review engine; work remains in the retained worktree.';
+            state.noProgressStreak += 1;
+            state = event(state, 'mutation-review-unavailable', runnable.id, runnable.error);
+            await save();
+            continue;
+          }
           const review = reviewEngines
             ? await runReview(
                 {
@@ -797,6 +814,7 @@ export async function runGoal(
                 },
                 { ...context, cwd: worktree.path },
                 services,
+                { mutationEvidence },
               )
             : { exitCode: 0 };
           await assertExecution();

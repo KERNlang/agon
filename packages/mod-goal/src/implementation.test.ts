@@ -90,6 +90,83 @@ const context = (cwd: string) => ({
 });
 
 describe('physical goal mod', () => {
+  it('blocks flagged mutations when no reviewer is available', async () => {
+    const cwd = repo(); const h = harness();
+    vi.mocked(h.services.engines.listActive!).mockResolvedValue(['builder']);
+    const outcomes = Array.from({ length: 3 }, (_, index) => ({ status: 'survived', mutant: {
+      file: 'second.ts', class: 'equiv-prone', id: `m${index}`, line: index + 1, operator: 'return', before: 'before', after: 'after',
+    } }));
+    vi.spyOn(worktreeSupport, 'runMutationAssessment').mockResolvedValue({ ok: true,
+      report: { baselineOk: true, generated: outcomes.length, outcomes } });
+    const out = await runGoal({ intent: 'no reviewer', gate: 'test -f base.txt', engine: 'builder',
+      requireTests: false, maxAttempts: 1 }, context(cwd), h.services);
+    expect(out.exitCode).toBe(1);
+    expect((out.result as any).state.tasks[0].error).toContain('requires a reviewer');
+    expect(h.dispatch).toHaveBeenCalledOnce();
+    expect(execFileSync('git', ['rev-list', '--count', 'main..goal/no-reviewer'], { cwd, encoding: 'utf8' }).trim()).toBe('0');
+  });
+
+  it('does not carry survivor evidence into a new attempt after tests are strengthened', async () => {
+    const cwd = repo(); const h = harness();
+    const mutant = { file: 'second.ts', class: 'high-signal', id: 'm1', line: 1, operator: 'bool:true→false', before: 'true', after: 'false' };
+    vi.spyOn(worktreeSupport, 'runMutationAssessment')
+      .mockResolvedValueOnce({ ok: true, report: { baselineOk: true, generated: 1, outcomes: [{ status: 'survived', mutant }] } })
+      .mockResolvedValueOnce({ ok: true, report: { baselineOk: true, generated: 1, outcomes: [{ status: 'killed', mutant }] } });
+    let reviews = 0;
+    h.dispatch.mockImplementation(async (_id: string, prompt: string, invocation: any, options: any) => {
+      let stdout = '<!--AGON_REVIEW_FINDINGS_v1-->\n```json\n[]\n```';
+      if (options.mode === 'agent') writeFileSync(join(invocation.cwd, 'second.ts'), 'export const second = true;\n');
+      else if (prompt.startsWith('Adjudicate')) {
+        stdout = JSON.stringify({ blocking: true, reason: 'Strengthen tests' });
+      } else if (++reviews === 1) {
+        stdout = '<!--AGON_REVIEW_FINDINGS_v1-->\n```json\n[{"file":"second.ts","problem":"Weak tests","blocking":true,"confidence":1}]\n```';
+      }
+      return { exitCode: 0, stdout, stderr: '', timedOut: false };
+    });
+    const out = await runGoal({ intent: 'fresh evidence', gate: 'test -f base.txt', engine: 'builder',
+      reviewEngines: 'reviewer', requireTests: false, maxAttempts: 2 }, context(cwd), h.services);
+    expect(out.exitCode).toBe(0);
+    const adjudications = h.dispatch.mock.calls.map(call => call[1]).filter(prompt => prompt.startsWith('Adjudicate'));
+    expect(adjudications).toHaveLength(1);
+    expect(adjudications[0]).toContain('mutationEvidence');
+    expect(adjudications[0]).toContain('bool:true→false@L1');
+    const prompts = h.dispatch.mock.calls.map(call => call[1]).filter(prompt => prompt.includes('REVIEW TARGET:'));
+    expect(prompts).toHaveLength(2);
+    expect(prompts[0]).toContain('MUTATION EVIDENCE');
+    expect(prompts[1]).not.toContain('MUTATION EVIDENCE');
+    expect(h.writeArtifact.mock.calls.filter(call => (call as unknown[])[1] === 'mutation-evidence.txt')).toHaveLength(1);
+  });
+
+  it.each([
+    ['masked sibling', [['a.ts', 'high-signal', 'killed', 1], ['b.ts', 'equiv-prone', 'survived', 3]]],
+    ['per-file survivor limits', [['a.ts', 'high-signal', 'survived', 2], ['b.ts', 'high-signal', 'survived', 2]]],
+    ['equivalence fallback', [['b.ts', 'equiv-prone', 'survived', 3]]],
+  ] as const)('routes %s to review with file-scoped mutation evidence', async (_name, groups) => {
+    const cwd = repo(); const h = harness();
+    const outcomes = groups.flatMap(([file, kind, status, count]) => Array.from({ length: count }, (_, index) => ({
+      status, mutant: { file, class: kind, id: `${file}:${index}`, line: index + 1, operator: 'test-operator', before: 'before', after: 'after' },
+    })));
+    vi.spyOn(worktreeSupport, 'runMutationAssessment').mockResolvedValue({ ok: true,
+      report: { baselineOk: true, generated: outcomes.length, outcomes, notRun: 0, invalid: 0 } });
+    h.dispatch.mockImplementation(async (_id: string, _prompt: string, invocation: any, options: any) => {
+      if (options.mode === 'agent') {
+        writeFileSync(join(invocation.cwd, 'a.ts'), 'export const a = true;\n');
+        writeFileSync(join(invocation.cwd, 'b.ts'), 'export const b = false;\n');
+      }
+      return { exitCode: 0, stdout: '<!--AGON_REVIEW_FINDINGS_v1-->\n```json\n[]\n```', stderr: '', timedOut: false };
+    });
+    const out = await runGoal({ intent: 'file grading', gate: 'test -f base.txt', engine: 'builder',
+      reviewEngines: 'reviewer', requireTests: false, maxAttempts: 1 }, context(cwd), h.services);
+    expect(out.exitCode).toBe(0);
+    const reviewCalls = h.dispatch.mock.calls.filter(call => call[3].mode === 'review');
+    expect(reviewCalls).toHaveLength(1);
+    expect(reviewCalls[0][1]).toContain('MUTATION EVIDENCE');
+    expect(reviewCalls[0][1]).toContain('b.ts');
+    expect(reviewCalls[0][1]).toContain('test-operator@L1');
+    expect(h.writeArtifact).toHaveBeenCalledWith(expect.anything(), 'mutation-evidence.txt',
+      expect.stringContaining('b.ts'), expect.anything());
+  });
+
   it.each([
     ['baseline failure', { ok: false, error: 'tests are red before mutation', report: { baselineOk: false, outcomes: [] } }],
     ['process failure', { ok: false, error: 'process unavailable', report: { baselineOk: false, outcomes: [] } }],
@@ -99,6 +176,9 @@ describe('physical goal mod', () => {
     ['budget exhausted', { ok: true, report: { baselineOk: true, budgetExhausted: true, outcomes: [] } }],
     ['unexecuted mutants', { ok: true, report: { baselineOk: true, notRun: 1, outcomes: [] } }],
     ['invalid mutant', { ok: true, report: { baselineOk: true, invalid: 1, outcomes: [] } }],
+    ['missing outcomes', { ok: true, report: { baselineOk: true, generated: 0 } }],
+    ['missing file identity', { ok: true, report: { baselineOk: true, generated: 1, outcomes: [{ status: 'killed', mutant: { class: 'high-signal' } }] } }],
+    ['inconsistent count', { ok: true, report: { baselineOk: true, generated: 1, outcomes: [] } }],
   ])('does not review or commit after mutation %s', async (_label, assessment) => {
     const cwd = repo(); const h = harness();
     const mutation = vi.spyOn(worktreeSupport, 'runMutationAssessment').mockResolvedValue(assessment as Record<string, unknown>);

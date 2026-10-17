@@ -12,4 +12,7 @@ export { runGoal } from './implementation.js';
 export { createGoalHostServices } from './host.js';
 export type { GoalHostServices, GoalModServices, GoalWorktree, GoalWorktreeEffects } from './host.js';
 export type { GoalSpec, AttemptRecord, GoalTask, GoalEvent, JournalState } from './journal-types.js';
+export { createGoalJournalStore, createJournal, addTasks, requeueInflightTasks, nextTask, markStatus, recordAttempt, remainingCount, isDone, logEvent, boundEvents, GOAL_EVENT_CAP } from './journal.js';
+export type { GoalJournalEffects } from './journal.js';
+export { assertSafeGoalId, safePathSegment } from './paths.js';
 export { gateFailureSignature, taskParkDecision, pushRecentOutcome, globalBreaker, pickImplementWinner, chooseImplementRoster, mutationGateDecision, foldMutationVerdicts, budgetExceeded, timeExceeded } from './policy.js';

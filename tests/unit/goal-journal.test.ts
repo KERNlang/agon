@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, existsSync } from 'node:fs';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -8,6 +8,15 @@ import {
 } from '../../packages/forge/src/goal/journal.js';
 import { pushRecentOutcome, globalBreaker } from '../../packages/forge/src/goal/policy.js';
 import type { GoalSpec } from '../../packages/forge/src/goal/types.js';
+import * as physicalGoal from '@kernlang/agon-mod-goal';
+import * as legacyJournal from '../../packages/forge/src/goal/journal.js';
+
+it('keeps all journal transforms in the physical Goal owner', () => {
+  for (const name of ['createJournal', 'addTasks', 'requeueInflightTasks', 'nextTask',
+    'markStatus', 'recordAttempt', 'remainingCount', 'isDone', 'logEvent', 'boundEvents', 'GOAL_EVENT_CAP'] as const) {
+    expect(physicalGoal).toHaveProperty(name, legacyJournal[name]);
+  }
+});
 
 const spec = (): GoalSpec => ({
   goalId: 'g-test',
@@ -199,6 +208,7 @@ describe('goal journal — persistence (sandboxed AGON_HOME)', () => {
     process.env.AGON_HOME = home;
   });
   afterEach(() => {
+    vi.restoreAllMocks();
     if (prev === undefined) delete process.env.AGON_HOME;
     else process.env.AGON_HOME = prev;
     rmSync(home, { recursive: true, force: true });
@@ -213,6 +223,60 @@ describe('goal journal — persistence (sandboxed AGON_HOME)', () => {
     const loaded = loadJournal('g-test');
     expect(loaded).not.toBeNull();
     expect(loaded!.tasks[0]).toMatchObject({ id: 'a', status: 'done', commitSha: 'abc' });
+  });
+
+  it('shares persisted bytes with the physical store without an ambient home dependency', () => {
+    const store = physicalGoal.createGoalJournalStore({
+      path: (...parts) => join(home, ...parts),
+      ensureHome: () => { mkdirSync(home, { recursive: true }); },
+    });
+    const j = addTasks(createJournal(spec()), [{ id: 'a', source: 'gap-a', verify: 'node check.mjs' }]);
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(101);
+    saveJournal(j);
+    expect(j.heartbeatAt).toBe(101);
+    expect(store.loadJournal('g-test')).toEqual(j);
+    expect(store.journalPath('g-test')).toBe(journalPath('g-test'));
+    expect(store.goalDir('g-test')).toBe(join(home, 'goals', 'g-test'));
+    j.spentUsd = 2;
+    clock.mockReturnValue(202);
+    const originalHome = process.env.AGON_HOME;
+    try {
+      process.env.AGON_HOME = join(home, 'wrong-home');
+      store.saveJournal(j);
+      expect(existsSync(join(home, 'wrong-home'))).toBe(false);
+    } finally { process.env.AGON_HOME = originalHome; }
+    expect(loadJournal('g-test')).toEqual(j);
+    expect(j.heartbeatAt).toBe(202);
+    expect(readFileSync(journalPath('g-test'), 'utf8')).toBe(JSON.stringify(j, null, 2));
+    expect(existsSync(journalPath('g-test') + '.tmp')).toBe(false);
+    writeFileSync(journalPath('g-test'), '{broken');
+    expect(store.loadJournal('g-test')).toBeNull();
+    expect(loadJournal('g-test')).toBeNull();
+    expect(store.loadJournal('missing')).toBeNull();
+    expect(() => store.saveJournal(createJournal({ ...spec(), goalId: '../escape' }))).toThrow('Invalid goalId');
+    expect(() => store.loadJournal('../escape')).toThrow('Invalid goalId');
+  });
+
+  it('propagates host and write failures without replacing a saved journal', () => {
+    const failure = new Error('host unavailable');
+    const blocked = physicalGoal.createGoalJournalStore({
+      path: (...parts) => join(home, ...parts),
+      ensureHome: () => { throw failure; },
+    });
+    expect(() => blocked.saveJournal(createJournal(spec()))).toThrow(failure);
+    expect(existsSync(join(home, 'goals'))).toBe(false);
+    const store = physicalGoal.createGoalJournalStore({
+      path: (...parts) => join(home, ...parts),
+      ensureHome: () => { mkdirSync(home, { recursive: true }); },
+    });
+    const j = createJournal(spec());
+    store.saveJournal(j);
+    const bytes = readFileSync(store.journalPath('g-test'), 'utf8');
+    mkdirSync(store.journalPath('g-test') + '.tmp');
+    j.spentUsd = 3;
+    expect(() => store.saveJournal(j)).toThrow();
+    expect(readFileSync(store.journalPath('g-test'), 'utf8')).toBe(bytes);
+    expect(store.loadJournal('g-test')?.spentUsd).toBe(0);
   });
 
   it('persists the recentOutcomes breaker ring across save/load and feeds the window on resume', () => {

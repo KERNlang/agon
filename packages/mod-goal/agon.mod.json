@@ -170,6 +170,8 @@
       "dist/host.d.ts",
       "dist/journal-types.d.ts",
       "dist/policy.d.ts",
+      "dist/journal.d.ts",
+      "dist/paths.d.ts",
       "ownership.json",
       "schemas/config.schema.json"
     ],

@@ -21,4 +21,6 @@ export { createGoalOracleProbe } from './oracle-probe.js';
 export type { GoalOracleProbeEffects } from './oracle-probe.js';
 export { buildOracleCheatPrompt, oracleGateDecision, oracleProbeConclusive, DEFAULT_ORACLE_GATE } from './oracle-redteam.js';
 export type { OracleHole } from './oracle-redteam.js';
+export { createGoalMutationRunner } from './mutation.js';
+export type { GoalMutationEffects } from './mutation.js';
 export { gateFailureSignature, taskParkDecision, pushRecentOutcome, globalBreaker, pickImplementWinner, chooseImplementRoster, mutationGateDecision, foldMutationVerdicts, budgetExceeded, timeExceeded } from './policy.js';

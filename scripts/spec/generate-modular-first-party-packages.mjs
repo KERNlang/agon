@@ -163,7 +163,7 @@ function expectedFiles(packageRecord) {
     : short === 'think' ? ['dist/thinking.d.ts']
     : short === 'conquer' ? ['dist/completion-policy.d.ts', 'dist/workflow.d.ts', 'dist/falsifier.d.ts', 'dist/host.d.ts', 'dist/isolation.d.ts', 'dist/publication.d.ts']
     : short === 'nero' ? ['dist/verdict.d.ts', 'dist/critic-cascade.d.ts']
-    : short === 'goal' ? ['dist/host.d.ts', 'dist/journal-types.d.ts', 'dist/policy.d.ts', 'dist/journal.d.ts', 'dist/paths.d.ts', 'dist/oracle.d.ts', 'dist/oracle-probe.d.ts', 'dist/oracle-redteam.d.ts']
+    : short === 'goal' ? ['dist/host.d.ts', 'dist/journal-types.d.ts', 'dist/policy.d.ts', 'dist/journal.d.ts', 'dist/paths.d.ts', 'dist/oracle.d.ts', 'dist/oracle-probe.d.ts', 'dist/oracle-redteam.d.ts', 'dist/mutation.d.ts']
     : short === 'forge' ? ['dist/result-policy.d.ts', 'dist/apply.d.ts', ...['competition', 'corpus', 'errors', 'fitness', 'gauntlet', 'host', 'manifest', 'pr-text', 'prompts', 'quality', 'scoring', 'stage-context', 'stages', 'synth-plan', 'synthesis', 'types', 'workflow'].map(name => `dist/${name}.d.ts`)]
     : short === 'plan' ? ['dist/agent-review-step-execution.d.ts', 'dist/forge-step-execution.d.ts', 'dist/pipeline-step-execution.d.ts', 'dist/self-step-execution.d.ts', 'dist/step-executors.d.ts', 'dist/approval-policy.d.ts', 'dist/cost-estimator.d.ts', 'dist/execution-callbacks.d.ts', 'dist/execution-coordinator.d.ts', 'dist/execution-model.d.ts', 'dist/execution-state.d.ts', 'dist/execution-store.d.ts', 'dist/executor.d.ts', 'dist/formatter.d.ts', 'dist/panel-step-execution.d.ts', 'dist/proposal-workflow.d.ts', 'dist/resume-policy.d.ts', 'dist/resume-workflow.d.ts', 'dist/runtime.d.ts', 'dist/session-scope.d.ts', 'dist/session-selection.d.ts', 'dist/session-workflow.d.ts', 'dist/session.d.ts', 'dist/step-validation.d.ts', 'dist/worktree-workflow.d.ts']
     : short === 'brainstorm' ? ['dist/collector.d.ts', 'dist/host.d.ts', 'dist/policy.d.ts', 'dist/presentation.d.ts', 'dist/result.d.ts', 'dist/runtime.d.ts', 'dist/scout.d.ts', 'dist/session-record.d.ts', 'dist/session-workflow.d.ts', 'dist/workflow.d.ts']
@@ -276,6 +276,8 @@ export { createGoalOracleProbe } from './oracle-probe.js';
 export type { GoalOracleProbeEffects } from './oracle-probe.js';
 export { buildOracleCheatPrompt, oracleGateDecision, oracleProbeConclusive, DEFAULT_ORACLE_GATE } from './oracle-redteam.js';
 export type { OracleHole } from './oracle-redteam.js';
+export { createGoalMutationRunner } from './mutation.js';
+export type { GoalMutationEffects } from './mutation.js';
 export { gateFailureSignature, taskParkDecision, pushRecentOutcome, globalBreaker, pickImplementWinner, chooseImplementRoster, mutationGateDecision, foldMutationVerdicts, budgetExceeded, timeExceeded } from './policy.js';
 ` : short === 'plan' ? `export { createPersistenceEnvelope, unwrapPersistenceEnvelope } from './implementation.js';
 export { showWorktreePlan, listWorktreePlans, approveWorktreePlan, retryWorktreePlan, cancelWorktreePlan } from './worktree-workflow.js';

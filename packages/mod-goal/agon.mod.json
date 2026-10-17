@@ -175,6 +175,7 @@
       "dist/oracle.d.ts",
       "dist/oracle-probe.d.ts",
       "dist/oracle-redteam.d.ts",
+      "dist/mutation.d.ts",
       "ownership.json",
       "schemas/config.schema.json"
     ],

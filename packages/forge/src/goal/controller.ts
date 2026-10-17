@@ -8,7 +8,7 @@ import { assertSafeGoalId, resolveWithin, safePathSegment } from './paths.js';
 
 import { createJournal, loadJournal, saveJournal, addTasks, requeueInflightTasks, nextTask, markStatus, recordAttempt, remainingCount, isDone, logEvent, goalDir } from './journal.js';
 
-import { snapshotOracle, witnessTest, witnessVerifyCommand } from './oracle.js';
+import { hashOracleInputs, snapshotOracle, witnessTest, witnessVerifyCommand } from './oracle.js';
 
 import { probeTaskOracle } from './oracle-probe.js';
 
@@ -196,15 +196,20 @@ export async function runGoalController(opts: { spec: GoalSpec, repoRoot: string
   // 2. Freeze the oracle (gate string + oracle files) and record its hash.
   //    On resume, refuse if the oracle no longer matches the frozen hash —
   //    resuming with a different gate would silently move the goalposts.
-  const oracle = snapshotOracle({ goalId: spec.goalId, gate: spec.gate, files: opts.oracleFiles ?? [] });
-  if (state.oracleHash && state.oracleHash !== oracle.hash) {
+  const oracleFiles = opts.oracleFiles ?? [];
+  const oracleHash = hashOracleInputs(spec.gate, oracleFiles);
+  if (state.oracleHash && state.oracleHash !== oracleHash) {
     state = logEvent(state, 'error', undefined, 'oracle changed since the run was frozen — refusing to resume with a different gate (restore the original gate, or start a new goal id)');
     saveJournal(state);
     try { writeGoalArtifacts(state); } catch { /* artifact write is best-effort */ }
     emit('stop', undefined, 'oracle-tampered');
     return state;
   }
-  state = { ...state, oracleHash: oracle.hash };
+  // A resume must not replace the original evidence, even when its inputs match.
+  if (!state.oracleHash) {
+    const oracle = snapshotOracle({ goalId: spec.goalId, gate: spec.gate, files: oracleFiles });
+    state = { ...state, oracleHash: oracle.hash };
+  }
   if (!state.startedAt) state = { ...state, startedAt: Date.now() };
   saveJournal(state);
   emit('run-start', undefined, spec.intent);

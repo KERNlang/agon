@@ -1,8 +1,9 @@
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { InvocationContext, ModServices } from '@kernlang/agon-mod-api';
-import { readWorktreeSource } from '@kernlang/agon-support-worktree';
+import { readWorktreeSource, readWorktreePatch, applyPatchToTree } from '@kernlang/agon-support-worktree';
 import type { PullRequestDraft } from '@kernlang/agon-support-worktree';
 import { createGoalOracle } from './oracle.js';
 import type { GoalOracleEffects } from './oracle.js';
@@ -12,6 +13,15 @@ export interface GoalWorktree {
   readonly branch: string;
   readonly path: string;
   readonly baseSha: string;
+}
+
+/** Persist before accepting a verified candidate; replay after interruption. */
+export interface GoalTaskAcceptance {
+  readonly baseSha: string;
+  readonly basePatch: string;
+  readonly patch: string;
+  readonly resultPatchHash: string;
+  readonly commit?: string;
 }
 
 export interface GoalWorktreeEffects {
@@ -26,6 +36,8 @@ export interface GoalHostServices {
     assertCurrent(): void;
     acquire(id: string): Promise<{ assertOwned(): Promise<void>; release(): Promise<void> }>;
     openWorktree(branch: string, resumeBase?: string, expectedRepoRoot?: string): GoalWorktree;
+    prepareTaskWorktree?(branch: string, baseline: { repoRoot: string; sha: string; patch: string }): GoalWorktree;
+    acceptTaskWorktree?(accepted: GoalWorktree, candidate: GoalWorktree, acceptance: GoalTaskAcceptance): void;
     verification?(assertOwned: () => Promise<void>): Pick<ReturnType<typeof createGoalOracle>, 'witnessTest' | 'witnessVerifyCommand'>;
     draftPullRequest?(input: PullRequestDraft, dispatch: (prompt: string) => Promise<string>): Promise<{ ok: boolean; title: string; body: string }>;
     formatPullRequestBody?(body: string): string;
@@ -52,7 +64,7 @@ export function createGoalHostServices(options: {
       const authority = options.captureAuthority();
       const assertCurrent = () => { context.signal.throwIfAborted(); authority(); };
       assertCurrent();
-      return {
+      const host = {
         assertCurrent,
         ...(options.oracleEffects ? { verification: (assertOwned: () => Promise<void>) => {
           const effects = options.oracleEffects!;
@@ -83,13 +95,66 @@ export function createGoalHostServices(options: {
         ...(options.formatPullRequestBody ? { formatPullRequestBody: (body: string) => {
           assertCurrent(); return options.formatPullRequestBody!(body, context);
         } } : {}),
-        async acquire(id) {
+        async acquire(id: string) {
           assertCurrent();
           const lease = await options.acquireWriter(id);
           try { assertCurrent(); return lease; }
           catch (error) { await lease.release(); throw error; }
         },
-        openWorktree(branch, resumeBase, expectedRepoRoot) {
+        prepareTaskWorktree(branch: string, baseline: { repoRoot: string; sha: string; patch: string }): GoalWorktree {
+          return host.openWorktree(branch, undefined, baseline.repoRoot, baseline);
+        },
+        acceptTaskWorktree(accepted: GoalWorktree, candidate: GoalWorktree, acceptance: GoalTaskAcceptance): void {
+          assertCurrent();
+          const target = host.openWorktree(accepted.branch, accepted.baseSha, accepted.repoRoot, undefined, true);
+          const source = host.openWorktree(candidate.branch, candidate.baseSha, candidate.repoRoot, undefined, true);
+          if (target.path !== accepted.path || source.path !== candidate.path || target.path === source.path) {
+            throw new Error('Goal task acceptance worktree identity changed.');
+          }
+          const hash = (patch: string) => createHash('sha256').update(patch).digest('hex');
+          if (hash(readWorktreePatch(source.path, acceptance.baseSha)) !== acceptance.resultPatchHash ||
+              readWorktreePatch(source.path, acceptance.baseSha, acceptance.basePatch) !== acceptance.patch ||
+              (acceptance.commit && (git(source.path, ['rev-parse', 'HEAD']) !== acceptance.commit ||
+                readWorktreePatch(source.path, acceptance.commit) !== ''))) {
+            throw new Error('Goal task candidate changed after verification. Retained work was not accepted.');
+          }
+          const head = git(target.path, ['rev-parse', 'HEAD']);
+          const patch = readWorktreePatch(target.path, acceptance.baseSha);
+          const finalHead = acceptance.commit ?? acceptance.baseSha;
+          if (head === finalHead && hash(patch) === acceptance.resultPatchHash) return;
+          const clearedBaseline = !!acceptance.commit && acceptance.basePatch !== '' && patch === '';
+          if (head !== acceptance.baseSha || (patch !== acceptance.basePatch && !clearedBaseline)) {
+            throw new Error('Accepted Goal work changed while the task was running. Retained work was not overwritten.');
+          }
+          assertCurrent();
+          if (acceptance.commit) {
+            // The durable acceptance and candidate commit retain the dirty baseline.
+            if (patch) {
+              const cleared = applyPatchToTree(target.path, acceptance.basePatch, { reverse: true });
+              if (!cleared.ok) throw new Error(`Cannot prepare Goal fast-forward: ${cleared.error}`);
+              if (readWorktreePatch(target.path, acceptance.baseSha) !== '') throw new Error('Goal baseline changed during fast-forward preparation.');
+            }
+            try {
+              git(target.path, ['merge', '--ff-only', '--no-edit', '--no-overwrite-ignore', '--', acceptance.commit]);
+            } catch (error) {
+              if (acceptance.basePatch && git(target.path, ['rev-parse', 'HEAD']) === acceptance.baseSha &&
+                  readWorktreePatch(target.path, acceptance.baseSha) === '') {
+                const restored = applyPatchToTree(target.path, acceptance.basePatch);
+                if (!restored.ok) throw new AggregateError([error, new Error(restored.error)],
+                  'Goal fast-forward and baseline restoration failed. Candidate and acceptance journal are retained.');
+              }
+              throw error;
+            }
+          } else if (acceptance.patch) {
+            const applied = applyPatchToTree(target.path, acceptance.patch);
+            if (!applied.ok) throw new Error(`Cannot accept verified Goal task: ${applied.error}`);
+          }
+          if (git(target.path, ['rev-parse', 'HEAD']) !== finalHead ||
+              hash(readWorktreePatch(target.path, acceptance.baseSha)) !== acceptance.resultPatchHash) {
+            throw new Error('Goal task acceptance did not reproduce the verified result. Inspect both retained worktrees.');
+          }
+        },
+        openWorktree(branch: string, resumeBase?: string, expectedRepoRoot?: string, initial?: { sha: string; patch: string }, inspectOnly = false): GoalWorktree {
           assertCurrent();
           if (!/^goal\/[a-z0-9._/-]+$/i.test(branch)) throw new Error('Goal requires a goal/* branch.');
           git(context.cwd, ['check-ref-format', '--branch', branch]);
@@ -97,13 +162,27 @@ export function createGoalHostServices(options: {
           if (expectedRepoRoot && realpathSync(expectedRepoRoot) !== realpathSync(source.repoRoot)) {
             throw new Error('Goal belongs to a different repository; resume from its recorded repository.');
           }
-          const baseSha = resumeBase ?? source.baseSha;
+          const baseSha = initial?.sha ?? resumeBase ?? source.baseSha;
           if (!/^[a-f0-9]{40,64}$/i.test(baseSha)) throw new Error('Goal resume base must be a commit hash.');
           git(source.repoRoot, ['cat-file', '-e', `${baseSha}^{commit}`]);
           const effects = options.worktrees;
           const expectedPath = effects.worktreePathFor(source.repoRoot, branch);
           const recorded = effects.findSessionWorktree(source.repoRoot, branch);
-          if (recorded && !resumeBase) throw new Error(`Goal branch already exists: ${branch}; pass resume=true.`);
+          if (inspectOnly && !recorded) throw new Error('Goal task worktree is no longer recorded; refusing acceptance.');
+          if (recorded && !resumeBase && !initial) throw new Error(`Goal branch already exists: ${branch}; pass resume=true.`);
+          const initialize = (path: string) => {
+            if (!initial) return;
+            if (git(path, ['rev-parse', 'HEAD']) !== baseSha) {
+              throw new Error('Goal task candidate moved from its initialization baseline. Retained work was not changed.');
+            }
+            const patch = readWorktreePatch(path, baseSha);
+            if (patch === initial.patch) return;
+            if (patch !== '') throw new Error('Goal task candidate differs from its initialization baseline. Retained work was not changed.');
+            assertCurrent();
+            const applied = applyPatchToTree(path, initial.patch);
+            if (!applied.ok) throw new Error(`Cannot prepare Goal task baseline: ${applied.error}`);
+            if (readWorktreePatch(path, baseSha) !== initial.patch) throw new Error('Goal task baseline did not reproduce exactly. Retained work was not changed further.');
+          };
           if (recorded) {
             if (resolve(recorded.path) !== resolve(expectedPath) || recorded.branch !== branch ||
                 realpathSync(recorded.repoRoot) !== realpathSync(source.repoRoot)) {
@@ -117,7 +196,8 @@ export function createGoalHostServices(options: {
             // Verify ancestry before overlays or execution can modify retained work.
             git(recorded.path, ['merge-base', '--is-ancestor', baseSha, 'HEAD']);
             assertCurrent();
-            if (!effects.rehydrateSessionWorktree(source.repoRoot, branch)) throw new Error('Goal worktree disappeared during resume.');
+            initialize(recorded.path);
+            if (!inspectOnly && !effects.rehydrateSessionWorktree(source.repoRoot, branch)) throw new Error('Goal worktree disappeared during resume.');
             return { repoRoot: source.repoRoot, branch, path: recorded.path, baseSha };
           }
           if (resumeBase) {
@@ -128,9 +208,11 @@ export function createGoalHostServices(options: {
           assertCurrent();
           const worktree = effects.createSessionWorktree({ repoRoot: source.repoRoot, branch,
             base: baseSha, link: true, fresh: !resumeBase });
+          initialize(worktree.path);
           return { repoRoot: source.repoRoot, branch, path: worktree.path, baseSha };
         },
       };
+      return host;
     },
   };
 }

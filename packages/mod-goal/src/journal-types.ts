@@ -19,6 +19,8 @@ export interface GoalSpec {
  */
 export interface AttemptRecord {
   at: number;
+  /** Present when the controller counted the attempt before dispatch. */
+  attempt?: number;
   outcome: 'gate-pass'|'gate-fail'|'witness-fail'|'verify-fail'|'mutation-survived'|'review-block'|'error';
   gateFailureSignature?: string;
   mutantsSurvived?: number;

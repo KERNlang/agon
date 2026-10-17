@@ -132,6 +132,16 @@ describe('goal journal — pure transforms', () => {
     expect(j.tasks[0].attemptLog.map((a) => a.outcome)).toEqual(['gate-fail', 'mutation-survived']);
   });
 
+  it('records an already-counted attempt without counting it twice', () => {
+    const original = { tasks: [{ id: 'a', attempts: 2, retained: 'state' }] };
+    const recorded = recordAttempt(original, 'a', { at: 1, outcome: 'gate-fail', error: 'broken' }, 2);
+    expect(recorded.tasks[0]).toMatchObject({ attempts: 2, retained: 'state',
+      attemptLog: [{ at: 1, attempt: 2, outcome: 'gate-fail', error: 'broken' }] });
+    expect(original.tasks[0]).toEqual({ id: 'a', attempts: 2, retained: 'state' });
+    expect(() => recordAttempt(original, 'a', { at: 1, outcome: 'error' }, 1)).toThrow('backwards');
+    expect(() => recordAttempt(original, 'a', { at: 1, outcome: 'error' }, Number.NaN)).toThrow('positive integer');
+  });
+
   it('remainingCount / isDone reflect queued + inflight', () => {
     let j = createJournal(spec());
     j = addTasks(j, [{ id: 'a', source: 'a' }, { id: 'b', source: 'b' }]);

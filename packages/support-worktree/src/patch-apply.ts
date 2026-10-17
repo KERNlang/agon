@@ -108,10 +108,12 @@ export function dryRunApply(cwd: string, patchContent: string): { ok:boolean, er
   }
 }
 
-export function applyPatchToTree(cwd: string, patchContent: string): { ok:boolean, error?:string } {
+export function applyPatchToTree(cwd: string, patchContent: string, options: { reverse?: boolean } = {}): { ok:boolean, error?:string } {
   try {
     cwd = patchWorkspace(cwd);
-    execSync('git apply --allow-empty -', { cwd, input: normalizePatchContent(patchContent), encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
+    execFileSync('git', ['apply', '--allow-empty', ...(options.reverse ? ['--reverse'] : []), '-'], {
+      cwd, input: normalizePatchContent(patchContent), encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'],
+    });
     return { ok: true };
   } catch (err) {
     const msg = err instanceof Error ? (err as any).stderr || err.message : String(err);

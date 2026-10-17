@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { existsSync, mkdtempSync, writeFileSync, readFileSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -98,6 +99,161 @@ const context = (cwd: string) => ({
 });
 
 describe('physical goal mod', () => {
+  it('prepares a retained task candidate from the accepted commit and uncommitted patch', () => {
+    const cwd = repo(); const h = harness(); const host = h.goal.open(context(cwd));
+    const accepted = host.openWorktree('goal/task-preparation');
+    writeFileSync(join(accepted.path, 'accepted.txt'), 'accepted predecessor\n');
+    execFileSync('git', ['add', 'accepted.txt'], { cwd: accepted.path });
+    execFileSync('git', ['commit', '-m', 'accepted predecessor'], { cwd: accepted.path });
+    const sha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: accepted.path, encoding: 'utf8' }).trim();
+    writeFileSync(join(accepted.path, 'uncommitted.txt'), 'accepted without commit\n');
+    const patch = worktreeSupport.readWorktreePatch(accepted.path, sha);
+    const baseline = { repoRoot: cwd, sha, patch };
+    const candidate = (host as any).prepareTaskWorktree('goal/task-preparation-candidate', baseline);
+    expect(candidate.path).not.toBe(accepted.path);
+    expect(readFileSync(join(candidate.path, 'accepted.txt'), 'utf8')).toBe('accepted predecessor\n');
+    expect(readFileSync(join(candidate.path, 'uncommitted.txt'), 'utf8')).toBe('accepted without commit\n');
+    expect(worktreeSupport.readWorktreePatch(candidate.path, sha)).toBe(patch);
+    expect((host as any).prepareTaskWorktree(candidate.branch, baseline)).toEqual(candidate);
+    writeFileSync(join(candidate.path, 'failed.txt'), 'preserve candidate work\n');
+    expect(() => (host as any).prepareTaskWorktree(candidate.branch, baseline)).toThrow('baseline');
+    expect(readFileSync(join(candidate.path, 'failed.txt'), 'utf8')).toBe('preserve candidate work\n');
+    expect(existsSync(join(accepted.path, 'failed.txt'))).toBe(false);
+    expect(existsSync(join(cwd, 'accepted.txt'))).toBe(false);
+  });
+
+  it.each([[true, false], [false, false], [true, true], [false, true]] as const)('accepts only the recorded task candidate and replays acceptance safely (commit=%s, dirty base=%s)', (commit, dirtyBase) => {
+    const cwd = repo(); const h = harness(); const host = h.goal.open(context(cwd));
+    const accepted = host.openWorktree('goal/task-acceptance');
+    const baseline = { repoRoot: cwd, sha: accepted.baseSha, patch: '' };
+    if (dirtyBase) {
+      writeFileSync(join(accepted.path, 'predecessor.txt'), 'accepted without commit\n');
+      baseline.patch = worktreeSupport.readWorktreePatch(accepted.path, baseline.sha);
+    }
+    const candidate = host.prepareTaskWorktree!('goal/task-acceptance-candidate', baseline);
+    writeFileSync(join(candidate.path, 'winner.txt'), 'verified candidate\n');
+    const patch = worktreeSupport.readWorktreePatch(candidate.path, baseline.sha, baseline.patch);
+    const resultPatch = worktreeSupport.readWorktreePatch(candidate.path, baseline.sha);
+    let head: string | undefined;
+    if (commit) {
+      execFileSync('git', ['add', '.'], { cwd: candidate.path });
+      execFileSync('git', ['commit', '-m', 'verified task'], { cwd: candidate.path });
+      head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: candidate.path, encoding: 'utf8' }).trim();
+    }
+    const acceptance = { baseSha: baseline.sha, basePatch: baseline.patch, patch,
+      resultPatchHash: createHash('sha256').update(resultPatch).digest('hex'), ...(head ? { commit: head } : {}) };
+    (host as any).acceptTaskWorktree(accepted, candidate, acceptance);
+    expect(readFileSync(join(accepted.path, 'winner.txt'), 'utf8')).toBe('verified candidate\n');
+    expect(execFileSync('git', ['rev-parse', 'HEAD'], { cwd: accepted.path, encoding: 'utf8' }).trim()).toBe(head ?? baseline.sha);
+    (host as any).acceptTaskWorktree(accepted, candidate, acceptance);
+    expect(worktreeSupport.readWorktreePatch(accepted.path, baseline.sha)).toBe(resultPatch);
+    writeFileSync(join(accepted.path, 'operator.txt'), 'do not overwrite\n');
+    expect(() => (host as any).acceptTaskWorktree(accepted, candidate, acceptance)).toThrow('changed');
+    expect(readFileSync(join(accepted.path, 'operator.txt'), 'utf8')).toBe('do not overwrite\n');
+    expect(existsSync(join(cwd, 'winner.txt'))).toBe(false);
+  });
+
+  it.each([false, true])('does not overwrite an ignored file while accepting a task commit (dirty base=%s)', dirtyBase => {
+    const cwd = repo(); const h = harness(); const host = h.goal.open(context(cwd));
+    const accepted = host.openWorktree('goal/ignored-acceptance');
+    if (dirtyBase) writeFileSync(join(accepted.path, 'predecessor.txt'), 'restore accepted work\n');
+    const basePatch = worktreeSupport.readWorktreePatch(accepted.path, accepted.baseSha);
+    const candidate = host.prepareTaskWorktree!('goal/ignored-acceptance-candidate',
+      { repoRoot: cwd, sha: accepted.baseSha, patch: basePatch });
+    writeFileSync(join(candidate.path, 'ignored.txt'), 'candidate\n');
+    execFileSync('git', ['add', '.'], { cwd: candidate.path });
+    execFileSync('git', ['commit', '-m', 'candidate'], { cwd: candidate.path });
+    const commit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: candidate.path, encoding: 'utf8' }).trim();
+    const patch = worktreeSupport.readWorktreePatch(candidate.path, accepted.baseSha, basePatch);
+    const resultPatch = worktreeSupport.readWorktreePatch(candidate.path, accepted.baseSha);
+    writeFileSync(join(cwd, '.git', 'info', 'exclude'), 'ignored.txt\n');
+    writeFileSync(join(accepted.path, 'ignored.txt'), 'operator artifact\n');
+    expect(() => host.acceptTaskWorktree!(accepted, candidate, {
+      baseSha: accepted.baseSha, basePatch, patch, commit,
+      resultPatchHash: createHash('sha256').update(resultPatch).digest('hex'),
+    })).toThrow();
+    expect(readFileSync(join(accepted.path, 'ignored.txt'), 'utf8')).toBe('operator artifact\n');
+    expect(execFileSync('git', ['rev-parse', 'HEAD'], { cwd: accepted.path, encoding: 'utf8' }).trim()).toBe(accepted.baseSha);
+    expect(worktreeSupport.readWorktreePatch(accepted.path, accepted.baseSha)).toBe(basePatch);
+    if (dirtyBase) expect(readFileSync(join(accepted.path, 'predecessor.txt'), 'utf8')).toBe('restore accepted work\n');
+  });
+
+  it.each(['before', 'after'].flatMap(phase => ['none', 'budget', 'time', 'engines'].map(limit => ({ phase, limit }))))('resumes task acceptance $phase its commit point with $limit limit without rebuilding', async ({ phase, limit }) => {
+    const cwd = repo(); const h = harness(); let interrupted = false;
+    const remote = mkdtempSync(join(tmpdir(), 'agon-goal-recovery-remote-'));
+    execFileSync('git', ['init', '--bare', remote], { stdio: 'ignore' });
+    execFileSync('git', ['remote', 'add', 'origin', remote], { cwd });
+    const services = { ...h.services, goal: { open(invocation: Parameters<typeof h.goal.open>[0]) {
+      const host = h.goal.open(invocation);
+      return { ...host, acceptTaskWorktree: (...args: Parameters<NonNullable<typeof host.acceptTaskWorktree>>) => {
+        if (!interrupted && phase === 'before') { interrupted = true; throw new Error('acceptance interrupted'); }
+        host.acceptTaskWorktree!(...args);
+        if (!interrupted) { interrupted = true; throw new Error('acceptance interrupted'); }
+      } };
+    } } };
+    await expect(runGoal({ intent: 'acceptance recovery', gate: 'test -f base.txt', requireTests: false, maxAttempts: 1, push: true },
+      context(cwd), services)).rejects.toThrow('acceptance interrupted');
+    const saved = h.state.get('goals/acceptance-recovery').payload;
+    expect(saved.tasks[0].acceptance.commit).toMatch(/^[a-f0-9]{40}$/);
+    if (limit === 'budget') saved.spentUsd = 1;
+    if (limit === 'time') saved.createdAt = '2000-01-01T00:00:00Z';
+    if (limit === 'engines') h.services.engines.listActive = async () => [];
+    h.dispatch.mockClear();
+    const resumed = await runGoal({ id: 'acceptance-recovery', resume: true, maxAttempts: 1, push: true,
+      budget: limit === 'budget' ? 0.5 : 0, maxHours: limit === 'time' ? 1 : 0,
+    }, context(cwd), services);
+    expect(resumed.exitCode, JSON.stringify(resumed)).toBe(0);
+    expect(h.dispatch).not.toHaveBeenCalled();
+    expect((resumed.result as any).state.tasks[0].attemptLog).toEqual([
+      expect.objectContaining({ attempt: 1, outcome: 'gate-pass' }),
+    ]);
+    expect(execFileSync('git', ['rev-list', '--count', 'main..goal/acceptance-recovery'], { cwd, encoding: 'utf8' }).trim()).toBe('1');
+    expect(readFileSync(join((resumed.result as any).worktree.path, 'second.ts'), 'utf8')).toContain('second');
+    expect(execFileSync('git', ['rev-parse', 'refs/heads/goal/acceptance-recovery'], { cwd: remote, encoding: 'utf8' }).trim())
+      .toBe(saved.tasks[0].acceptance.commit);
+    expect((resumed.result as any).publication.succeeded).toBe(1);
+  });
+
+  it.each(['before', 'after', 'changed-tree', 'changed-message'] as const)('recovers only the recorded commit intent after interruption (%s)', async phase => {
+    const cwd = repo(); const h = harness(); const abort = new AbortController();
+    const record = h.services.receipts.record as ReturnType<typeof vi.fn>;
+    record.mockImplementation(async kind => {
+      if (kind === 'git-commit' && phase !== 'before') abort.abort();
+      return 'fixture-receipt';
+    });
+    const write = h.services.state.write as ReturnType<typeof vi.fn>;
+    write.mockImplementation(async (key, value) => {
+      h.state.set(key, structuredClone(value));
+      if (phase === 'before' && value.payload.tasks[0]?.preparedCommit) abort.abort();
+    });
+    await expect(runGoal({ intent: 'commit recovery', gate: 'true', requireTests: false, maxAttempts: 1 },
+      { ...context(cwd), signal: abort.signal }, h.services)).rejects.toThrow();
+    const saved = h.state.get('goals/commit-recovery').payload;
+    const candidate = saved.tasks[0].worktree.path;
+    expect(execFileSync('git', ['rev-list', '--count', 'main..HEAD'], { cwd: candidate, encoding: 'utf8' }).trim()).toBe(phase === 'before' ? '0' : '1');
+    h.dispatch.mockClear();
+    record.mockResolvedValue('fixture-receipt');
+    if (phase === 'changed-tree' || phase === 'changed-message') {
+      if (phase === 'changed-tree') {
+        writeFileSync(join(candidate, 'unreviewed.txt'), 'not approved\n');
+        execFileSync('git', ['add', 'unreviewed.txt'], { cwd: candidate });
+      }
+      execFileSync('git', ['commit', '--amend', ...(phase === 'changed-tree' ? ['--no-edit'] : ['-m', 'unrecorded message'])], { cwd: candidate });
+      const changedHead = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: candidate, encoding: 'utf8' }).trim();
+      await expect(runGoal({ id: 'commit-recovery', resume: true, maxAttempts: 1 }, context(cwd), h.services))
+        .rejects.toThrow('differs from its recorded intent');
+      expect(h.dispatch).not.toHaveBeenCalled();
+      expect(execFileSync('git', ['rev-parse', 'HEAD'], { cwd: candidate, encoding: 'utf8' }).trim()).toBe(changedHead);
+      expect(execFileSync('git', ['rev-list', '--count', 'main..goal/commit-recovery'], { cwd, encoding: 'utf8' }).trim()).toBe('0');
+      return;
+    }
+    const resumed = await runGoal({ id: 'commit-recovery', resume: true, maxAttempts: 1 }, context(cwd), h.services);
+    expect(resumed.exitCode, JSON.stringify(resumed)).toBe(0);
+    expect(h.dispatch).not.toHaveBeenCalled();
+    expect((resumed.result as any).state.tasks[0]).toMatchObject({ status: 'done', attempts: 1 });
+    expect(execFileSync('git', ['rev-list', '--count', 'main..goal/commit-recovery'], { cwd, encoding: 'utf8' }).trim()).toBe('1');
+  });
+
   it('honors a separate witness cancellation signal', async () => {
     const cwd = repo(); const h = harness(); let spawned = 0;
     h.oracleEffects.spawnWithTimeout = options => engineRuntime.spawnWithTimeout({ ...options, onSpawn: () => { spawned++; } });
@@ -130,7 +286,7 @@ describe('physical goal mod', () => {
         { id: 'second', source: 'second', dependsOn: ['first'], verify: 'test -f first.ts' }],
       commit, oracleGate: 'off', requireTests: false, maxAttempts: 1 }, context(cwd), h.services);
     expect(out.exitCode).toBe(1);
-    expect((out.result as any).state.tasks.map((task: any) => task.status)).toEqual(['done', 'failed']);
+    expect((out.result as any).state.tasks.map((task: any) => task.status)).toEqual(['done', 'parked']);
     expect((out.result as any).state.tasks[1].error).toContain('base exit 0');
     expect(execFileSync('git', ['rev-list', '--count', 'main..goal/task-bases'], { cwd, encoding: 'utf8' }).trim()).toBe(commit ? '1' : '0');
   });
@@ -209,7 +365,9 @@ describe('physical goal mod', () => {
     expect(out.exitCode).toBe(1);
     expect((out.result as any).state.tasks[0].error).toContain('timed out');
     expect(h.dispatch).toHaveBeenCalledOnce();
-    expect(execFileSync('git', ['worktree', 'list', '--porcelain'], { cwd, encoding: 'utf8' }).match(/^worktree /gm)).toHaveLength(2);
+    const retained = execFileSync('git', ['worktree', 'list', '--porcelain'], { cwd, encoding: 'utf8' });
+    expect(retained.match(/^worktree /gm)).toHaveLength(3);
+    expect(retained).not.toContain('\ndetached\n');
   });
 
   it.each(['cancellation', 'generation', 'fence'])('stops between witness commands after %s changes', async change => {
@@ -228,7 +386,9 @@ describe('physical goal mod', () => {
       oracleGate: 'off', requireTests: false, maxAttempts: 1 }, { ...context(cwd), signal: abort.signal }, h.services)).rejects.toThrow(`${change} changed`);
     expect(spawned).toBe(1);
     expect(h.dispatch).toHaveBeenCalledOnce();
-    expect(execFileSync('git', ['worktree', 'list', '--porcelain'], { cwd, encoding: 'utf8' }).match(/^worktree /gm)).toHaveLength(2);
+    const retained = execFileSync('git', ['worktree', 'list', '--porcelain'], { cwd, encoding: 'utf8' });
+    expect(retained.match(/^worktree /gm)).toHaveLength(3);
+    expect(retained).not.toContain('\ndetached\n');
     expect(existsSync(join(cwd, 'second.ts'))).toBe(false);
   });
 
@@ -251,7 +411,9 @@ describe('physical goal mod', () => {
       oracleGate: 'off', requireTests: false, maxAttempts: 1 }, { ...context(cwd), signal: abort.signal }, h.services)).rejects.toThrow(`${change} changed`);
     expect(spawned).toBe(0);
     expect(h.dispatch).toHaveBeenCalledOnce();
-    expect(execFileSync('git', ['worktree', 'list', '--porcelain'], { cwd, encoding: 'utf8' }).match(/^worktree /gm)).toHaveLength(2);
+    const retained = execFileSync('git', ['worktree', 'list', '--porcelain'], { cwd, encoding: 'utf8' });
+    expect(retained.match(/^worktree /gm)).toHaveLength(3);
+    expect(retained).not.toContain('\ndetached\n');
   });
 
   it.each([
@@ -374,6 +536,9 @@ describe('physical goal mod', () => {
       requireTests: false, maxAttempts: 1 }, context(cwd), h.services);
     expect(out.exitCode).toBe(1);
     expect((out.result as any).state.tasks[0].error).toContain('requires a reviewer');
+    expect((out.result as any).state.tasks[0].attemptLog).toEqual([
+      expect.objectContaining({ attempt: 1, outcome: 'review-block', error: expect.stringContaining('requires a reviewer') }),
+    ]);
     expect(h.dispatch).toHaveBeenCalledOnce();
     expect(execFileSync('git', ['rev-list', '--count', 'main..goal/no-reviewer'], { cwd, encoding: 'utf8' }).trim()).toBe('0');
   });
@@ -461,12 +626,14 @@ describe('physical goal mod', () => {
     expect(h.dispatch).toHaveBeenCalledOnce();
     expect((out.result as any).state.events).toContainEqual(expect.objectContaining({ type: 'mutation-assessment-failed' }));
     expect(execFileSync('git', ['rev-list', '--count', 'main..goal/failed-mutation'], { cwd, encoding: 'utf8' }).trim()).toBe('0');
-    expect(readFileSync(join((out.result as any).worktree.path, 'second.ts'), 'utf8')).toContain('export const second');
+    const candidate = (out.result as any).state.tasks[0].worktree.path;
+    expect(readFileSync(join(candidate, 'second.ts'), 'utf8')).toContain('export const second');
+    expect(existsSync(join((out.result as any).worktree.path, 'second.ts'))).toBe(false);
     mutation.mockRestore();
     const reassessment = vi.spyOn(worktreeSupport, 'runMutationAssessment');
     h.dispatch.mockImplementation(async (_id: string, _prompt: string, invocation: any, options: any) => {
       if (options.mode === 'agent') {
-        expect(invocation.cwd).toBe((out.result as any).worktree.path);
+        expect(invocation.cwd).toBe(candidate);
         expect(readFileSync(join(invocation.cwd, 'second.ts'), 'utf8')).toBe('export const second = true;\n');
       }
       return { exitCode: 0, stdout: '<!--AGON_REVIEW_FINDINGS_v1-->\n```json\n[]\n```', stderr: '', timedOut: false };
@@ -476,6 +643,7 @@ describe('physical goal mod', () => {
     expect(resumed.exitCode).toBe(0);
     expect(reassessment).toHaveBeenCalledOnce();
     expect((resumed.result as any).worktree.path).toBe((out.result as any).worktree.path);
+    expect((resumed.result as any).state.tasks[0].worktree.path).toBe(candidate);
   });
 
   it('does not require mutation evidence for documentation-only changes', async () => {
@@ -500,7 +668,8 @@ describe('physical goal mod', () => {
     expect(h.dispatch).toHaveBeenCalledOnce();
     expect((out.result as any).state.tasks[0].error).toContain('run artifact storage');
     expect(execFileSync('git', ['rev-list', '--count', 'main..goal/missing-run-storage'], { cwd, encoding: 'utf8' }).trim()).toBe('0');
-    expect(existsSync(join((out.result as any).worktree.path, 'second.ts'))).toBe(true);
+    expect(existsSync(join((out.result as any).state.tasks[0].worktree.path, 'second.ts'))).toBe(true);
+    expect(existsSync(join((out.result as any).worktree.path, 'second.ts'))).toBe(false);
   });
 
   it('blocks a real mutation baseline failure even when the candidate gate passes', async () => {
@@ -520,7 +689,8 @@ describe('physical goal mod', () => {
     expect(h.dispatch).toHaveBeenCalledOnce();
     expect((out.result as any).state.tasks[0].error).toContain('tests are red before mutation');
     expect(execFileSync('git', ['rev-list', '--count', 'main..goal/real-mutation-failure'], { cwd, encoding: 'utf8' }).trim()).toBe('0');
-    expect(readFileSync(join((out.result as any).worktree.path, 'second.ts'), 'utf8')).toContain('second = true');
+    expect(readFileSync(join((out.result as any).state.tasks[0].worktree.path, 'second.ts'), 'utf8')).toContain('second = true');
+    expect(existsSync(join((out.result as any).worktree.path, 'second.ts'))).toBe(false);
   });
 
   it('runs dependency-ordered work, gates/mutates/reviews it, commits on goal branch, and leaves source untouched', async () => {
@@ -557,10 +727,11 @@ describe('physical goal mod', () => {
       engine: 'builder', requireTests: false, maxAttempts: 1 }, context(cwd), h.services);
     expect(out.exitCode).toBe(1);
     expect(existsSync(join(candidate, 'partial.txt'))).toBe(true);
-    expect((out.result as any).worktree.path).toBe(candidate);
-    expect((out.result as any).patch).toContain('+keep this work');
+    expect((out.result as any).state.tasks[0].worktree.path).toBe(candidate);
+    expect((out.result as any).patch).toBe('');
+    expect(worktreeSupport.readWorktreePatch(candidate, (out.result as any).state.baseSha)).toContain('+keep this work');
     expect(existsSync(join(cwd, 'partial.txt'))).toBe(false);
-    const reopened = h.goal.open(context(cwd)).openWorktree('goal/retain-failed-work', (out.result as any).state.baseSha);
+    const reopened = h.goal.open(context(cwd)).openWorktree((out.result as any).state.tasks[0].worktree.branch, (out.result as any).state.baseSha);
     expect(reopened.path).toBe(candidate);
     expect(readFileSync(join(reopened.path, 'partial.txt'), 'utf8')).toBe('keep this work\n');
     h.dispatch.mockImplementation(async (_id: string, _prompt: string, invocation: any, options: any) => {
@@ -574,9 +745,152 @@ describe('physical goal mod', () => {
     const resumed = await runGoal({ id: 'retain-failed-work', resume: true,
       engine: 'builder', requireTests: false, maxAttempts: 2 }, context(cwd), h.services);
     expect(resumed.exitCode).toBe(0);
-    expect((resumed.result as any).worktree.path).toBe(candidate);
+    expect((resumed.result as any).state.tasks[0].worktree.path).toBe(candidate);
     expect((resumed.result as any).patch).toContain('+keep this work');
     expect((resumed.result as any).patch).toContain('+finished');
+  });
+
+  it('records each gate attempt and its diagnostic before a successful retry', async () => {
+    const cwd = repo(); const h = harness(); let builds = 0;
+    h.dispatch.mockImplementation(async (_id: string, _prompt: string, invocation: any, options: any) => {
+      if (options.mode === 'agent') {
+        builds++;
+        const failure = join(invocation.cwd, 'gate-failure.txt');
+        if (builds === 1) writeFileSync(failure, 'broken\n');
+        else unlinkSync(failure);
+        writeFileSync(join(invocation.cwd, 'second.ts'), 'export const second = true;\n');
+      }
+      return { exitCode: 0, stdout: '<!--AGON_REVIEW_FINDINGS_v1-->\n```json\n[]\n```', stderr: '', timedOut: false };
+    });
+    const out = await runGoal({ intent: 'attempt history',
+      gate: 'if test -f gate-failure.txt; then echo "actual gate failure" >&2; exit 1; fi',
+      requireTests: false, maxAttempts: 2 }, context(cwd), h.services);
+    expect(out.exitCode, JSON.stringify(out)).toBe(0);
+    const task = (out.result as any).state.tasks[0];
+    expect(task.attempts).toBe(2);
+    expect(task.attemptLog?.map((record: any) => record.outcome)).toEqual(['gate-fail', 'gate-pass']);
+    expect(task.attemptLog[0].error).toContain('actual gate failure');
+    expect(task.attemptLog[0].gateFailureSignature).toMatch(/^[a-f0-9]{16}$/);
+  });
+
+  it.each([0, 1])('parks exhausted work and completes an independent task without committing failed edits (maxParkStreak=%s)', async maxParkStreak => {
+    const cwd = repo(); const h = harness();
+    writeFileSync(join(cwd, '.gitignore'), 'generated.marker\n');
+    execFileSync('git', ['add', '.gitignore'], { cwd });
+    execFileSync('git', ['commit', '-m', 'ignore generated artifact'], { cwd });
+    let failedCandidate = '';
+    h.dispatch.mockImplementation(async (_id: string, prompt: string, invocation: any, options: any) => {
+      if (options.mode === 'agent') {
+        if (prompt.includes('TASK first')) {
+          failedCandidate = invocation.cwd;
+          writeFileSync(join(invocation.cwd, 'failed-attempt.txt'), 'retain this failed attempt\n');
+          writeFileSync(join(invocation.cwd, 'generated.marker'), 'failed generated state\n');
+          return { exitCode: 1, stdout: '', stderr: 'first task failed', timedOut: false };
+        }
+        expect(existsSync(join(invocation.cwd, 'failed-attempt.txt'))).toBe(false);
+        expect(existsSync(join(invocation.cwd, 'generated.marker'))).toBe(false);
+        expect(invocation.cwd).not.toBe(failedCandidate);
+        writeFileSync(join(invocation.cwd, 'second.ts'), 'export const second = true;\n');
+      }
+      return { exitCode: 0, stdout: '<!--AGON_REVIEW_FINDINGS_v1-->\n```json\n[]\n```', stderr: '', timedOut: false };
+    });
+    const out = await runGoal({ intent: 'park independent work', gate: 'test -f base.txt',
+      tasks: [{ id: 'first', source: 'hard task' }, { id: 'second', source: 'independent task' },
+        { id: 'blocked', source: 'requires first', dependsOn: ['first'] }],
+      requireTests: false, maxAttempts: 1, maxParkStreak }, context(cwd), h.services);
+    expect(out.exitCode).toBe(1);
+    expect((out.result as any).state.tasks.map((task: any) => task.status)).toEqual(['parked', maxParkStreak ? 'queued' : 'done', 'queued']);
+    if (maxParkStreak) {
+      expect((out.result as any).state).toMatchObject({ status: 'stopped', stopReason: 'park-streak >= 1' });
+      expect(() => execFileSync('git', ['show', 'goal/park-independent-work:second.ts'], { cwd, stdio: 'pipe' })).toThrow();
+    } else {
+      expect(execFileSync('git', ['show', 'goal/park-independent-work:second.ts'], { cwd, encoding: 'utf8' })).toContain('second');
+    }
+    expect(() => execFileSync('git', ['show', 'goal/park-independent-work:failed-attempt.txt'], { cwd, stdio: 'pipe' })).toThrow();
+    expect(readFileSync(join(failedCandidate, 'failed-attempt.txt'), 'utf8')).toBe('retain this failed attempt\n');
+    expect(readFileSync(join(failedCandidate, 'generated.marker'), 'utf8')).toBe('failed generated state\n');
+    expect(existsSync(join(cwd, 'failed-attempt.txt'))).toBe(false);
+  });
+
+  it('parks repeated gate failures using the canonical oscillation policy', async () => {
+    const cwd = repo(); const h = harness();
+    h.dispatch.mockImplementation(async (_id, _prompt, invocation: any) => {
+      writeFileSync(join(invocation.cwd, 'broken.txt'), 'broken\n');
+      return { exitCode: 0, stdout: '', stderr: '', timedOut: false };
+    });
+    const out = await runGoal({ intent: 'oscillation',
+      gate: 'if test -f broken.txt; then echo "same gate failure" >&2; exit 1; fi',
+      maxAttempts: 4, requireTests: false }, context(cwd), h.services);
+    expect(out.exitCode).toBe(1);
+    expect(h.dispatch).toHaveBeenCalledTimes(2);
+    expect((out.result as any).state.tasks[0]).toMatchObject({ status: 'parked', attempts: 2 });
+    expect((out.result as any).state.events).toContainEqual(expect.objectContaining({
+      type: 'task-parked', detail: expect.stringContaining('oscillation'),
+    }));
+  });
+
+  it.each([true, false])('resumes parked work after independent accepted work advances (commit=%s)', async commit => {
+    const cwd = repo(); const h = harness(); let failedCandidate = ''; let resumed = false;
+    h.dispatch.mockImplementation(async (_id, prompt, invocation: any, options: any) => {
+      if (options.mode === 'agent') {
+        if (prompt.includes('TASK first')) {
+          if (!resumed) {
+            failedCandidate = invocation.cwd;
+            writeFileSync(join(invocation.cwd, 'partial.txt'), 'recover this work\n');
+            return { exitCode: 1, stdout: '', stderr: 'first task failed', timedOut: false };
+          }
+          expect(readFileSync(join(invocation.cwd, 'second.txt'), 'utf8')).toBe('accepted independent task\n');
+          expect(readFileSync(join(invocation.cwd, 'partial.txt'), 'utf8')).toBe('recover this work\n');
+          writeFileSync(join(invocation.cwd, 'first.txt'), 'repaired task\n');
+        } else writeFileSync(join(invocation.cwd, 'second.txt'), 'accepted independent task\n');
+      }
+      return { exitCode: 0, stdout: '<!--AGON_REVIEW_FINDINGS_v1-->\n```json\n[]\n```', stderr: '', timedOut: false };
+    });
+    const initial = await runGoal({ intent: 'advanced acceptance', gate: 'test -f base.txt', commit,
+      tasks: [{ id: 'first', source: 'first' }, { id: 'second', source: 'second' }],
+      requireTests: false, maxAttempts: 1 }, context(cwd), h.services);
+    expect((initial.result as any).state.tasks.map((task: any) => task.status)).toEqual(['parked', 'done']);
+    resumed = true;
+    const out = await runGoal({ id: 'advanced-acceptance', resume: true, commit, requireTests: false, maxAttempts: 2 }, context(cwd), h.services);
+    expect(out.exitCode, JSON.stringify(out)).toBe(0);
+    expect((out.result as any).state.tasks.map((task: any) => task.status)).toEqual(['done', 'done']);
+    expect(readFileSync(join((out.result as any).worktree.path, 'first.txt'), 'utf8')).toBe('repaired task\n');
+    expect(readFileSync(join((out.result as any).worktree.path, 'second.txt'), 'utf8')).toBe('accepted independent task\n');
+    expect(readFileSync(join(failedCandidate, 'partial.txt'), 'utf8')).toBe('recover this work\n');
+    expect(existsSync(join(cwd, 'first.txt'))).toBe(false);
+  });
+
+  it('parks a conflicting retained candidate and continues independent work', async () => {
+    const cwd = repo(); const h = harness(); let failedCandidate = '';
+    h.dispatch.mockImplementation(async (_id, prompt, invocation: any, options: any) => {
+      if (options.mode === 'agent') {
+        if (prompt.includes('TASK first')) {
+          failedCandidate = invocation.cwd;
+          writeFileSync(join(invocation.cwd, 'base.txt'), 'failed first edit\n');
+          return { exitCode: 1, stdout: '', stderr: 'failed candidate', timedOut: false };
+        }
+        if (prompt.includes('TASK second')) writeFileSync(join(invocation.cwd, 'base.txt'), 'accepted second edit\n');
+        else writeFileSync(join(invocation.cwd, 'third.txt'), 'independent third edit\n');
+      }
+      return { exitCode: 0, stdout: '<!--AGON_REVIEW_FINDINGS_v1-->\n```json\n[]\n```', stderr: '', timedOut: false,
+        costUsd: options.mode === 'agent' ? 1 : 0 };
+    });
+    const initial = await runGoal({ intent: 'conflicting resume', gate: 'test -f base.txt', budget: 1,
+      maxAttempts: 1, requireTests: false,
+      tasks: [{ id: 'first', source: 'first' }, { id: 'second', source: 'second' }, { id: 'third', source: 'third' }],
+    }, context(cwd), h.services);
+    expect((initial.result as any).state.tasks.map((task: any) => task.status)).toEqual(['parked', 'done', 'queued']);
+    h.dispatch.mockClear();
+    const out = await runGoal({ id: 'conflicting-resume', resume: true, budget: 0, maxAttempts: 2,
+      requireTests: false }, context(cwd), h.services);
+    const result = out.result as any;
+    expect(result.state.tasks.map((task: any) => task.status)).toEqual(['parked', 'done', 'done']);
+    expect(result.state.tasks[0].error).toContain('Cannot refresh retained task');
+    expect(h.dispatch.mock.calls.filter(([, , , options]) => options.mode === 'agent')).toHaveLength(1);
+    expect(readFileSync(join(failedCandidate, 'base.txt'), 'utf8')).toBe('failed first edit\n');
+    expect(readFileSync(join(result.worktree.path, 'base.txt'), 'utf8')).toBe('accepted second edit\n');
+    expect(readFileSync(join(result.worktree.path, 'third.txt'), 'utf8')).toBe('independent third edit\n');
+    expect(readFileSync(join(cwd, 'base.txt'), 'utf8')).toBe('base\n');
   });
 
   it('refuses resume after the retained worktree switches branches', async () => {
@@ -634,7 +948,7 @@ describe('physical goal mod', () => {
     expect(execFileSync('git', ['branch', '--list', 'goal/*'], { cwd, encoding: 'utf8' }).trim()).toBe('');
   });
 
-  it('retains interrupted work and records its location before propagating cancellation', async () => {
+  it.each([false, true])('retains interrupted work and records its location before propagating cancellation (missing outcome=%s)', async missingOutcome => {
     const cwd = repo(); const h = harness(); const controller = new AbortController();
     let candidate = '';
     h.dispatch.mockImplementation(async (_id, _prompt, invocation: any) => {
@@ -647,9 +961,36 @@ describe('physical goal mod', () => {
       { ...context(cwd), signal: controller.signal }, h.services)).rejects.toThrow('fixture interruption');
     expect(readFileSync(join(candidate, 'interrupted.txt'), 'utf8')).toBe('recover me\n');
     const status = await runGoal({ id: 'interrupted', status: true }, context(cwd), h.services);
-    expect(status.result).toMatchObject({ state: { status: 'cancelled', worktree: { path: candidate } } });
+    expect(status.result).toMatchObject({ state: { status: 'cancelled', tasks: [{ worktree: { path: candidate } }] } });
+    expect((status.result as any).state.tasks[0].attemptLog).toEqual([
+      expect.objectContaining({ attempt: 1, outcome: 'error', error: 'fixture interruption' }),
+    ]);
     expect(h.dispatch).toHaveBeenCalledTimes(1);
     expect(execFileSync('git', ['rev-list', '--count', 'main..goal/interrupted'], { cwd, encoding: 'utf8' }).trim()).toBe('0');
+    if (missingOutcome) {
+      // Simulate a process exit after dispatch was saved but before its outcome.
+      const persisted = structuredClone(h.state.get('goals/interrupted'));
+      delete persisted.payload.tasks[0].attemptLog;
+      persisted.payload.status = 'running';
+      h.state.set('goals/interrupted', persisted);
+    }
+    h.dispatch.mockImplementation(async (_id, _prompt, invocation: any, options: any) => {
+      if (options.mode === 'agent') {
+        expect(readFileSync(join(invocation.cwd, 'interrupted.txt'), 'utf8')).toBe('recover me\n');
+      }
+      return { exitCode: 0, stdout: '<!--AGON_REVIEW_FINDINGS_v1-->\n```json\n[]\n```', stderr: '', timedOut: false };
+    });
+    const resumed = await runGoal({ id: 'interrupted', resume: true, maxAttempts: 2 }, context(cwd), h.services);
+    expect(resumed.exitCode, JSON.stringify(resumed)).toBe(0);
+    const task = (resumed.result as any).state.tasks[0];
+    expect(task.attempts).toBe(2);
+    expect(task.attemptLog).toEqual([
+      expect.objectContaining({ attempt: 1, outcome: 'error', error: missingOutcome
+        ? 'Previous execution stopped before recording the attempt outcome.' : 'fixture interruption' }),
+      expect.objectContaining({ attempt: 2, outcome: 'gate-pass' }),
+    ]);
+    const again = await runGoal({ id: 'interrupted', resume: true, maxAttempts: 2 }, context(cwd), h.services);
+    expect((again.result as any).state.tasks[0].attemptLog).toEqual(task.attemptLog);
   });
 
   it('refuses a second execution while a retained goal is running', async () => {
@@ -816,6 +1157,32 @@ describe('physical goal mod', () => {
     expect(execFileSync('git', ['for-each-ref', '--format=%(refname)'], { cwd: remote, encoding: 'utf8' }).trim()).toBe('');
     if (dryRun) expect(h.dispatch).not.toHaveBeenCalled();
     else expect((out.result as any).state.tasks[0].status).toBe('done');
+  });
+
+  it('resumes publication after task completion was saved but before push was started', async () => {
+    const cwd = repo(); const h = harness();
+    const remote = mkdtempSync(join(tmpdir(), 'goal-prepared-push-'));
+    execFileSync('git', ['init', '--bare', remote], { stdio: 'ignore' });
+    execFileSync('git', ['remote', 'add', 'origin', remote], { cwd });
+    let interrupted = false;
+    const write = h.services.state.write as ReturnType<typeof vi.fn>;
+    write.mockImplementation(async (key, value) => {
+      h.state.set(key, structuredClone(value));
+      if (!interrupted && value.payload.events.at(-1)?.type === 'task-done') {
+        interrupted = true;
+        throw new Error('fixture stopped after durable task completion');
+      }
+    });
+    await expect(runGoal({ intent: 'prepared push', gate: 'true', requireTests: false, push: true },
+      context(cwd), h.services)).rejects.toThrow('durable task completion');
+    expect(execFileSync('git', ['for-each-ref', '--format=%(refname)'], { cwd: remote, encoding: 'utf8' }).trim()).toBe('');
+    h.dispatch.mockClear();
+    const resumed = await runGoal({ id: 'prepared-push', resume: true, push: true }, context(cwd), h.services);
+    expect(resumed.exitCode).toBe(0);
+    expect(h.dispatch).not.toHaveBeenCalled();
+    expect((resumed.result as any).publication.succeeded).toBe(1);
+    expect(execFileSync('git', ['rev-parse', 'refs/heads/goal/prepared-push'], { cwd: remote, encoding: 'utf8' }).trim())
+      .toBe((resumed.result as any).state.tasks[0].commit);
   });
 
   it('recovers an interrupted push response as unknown without rerunning the completed task', async () => {
@@ -1123,6 +1490,23 @@ describe('physical goal mod', () => {
     expect(h.dispatch.mock.calls.filter(([, , , options]) => options.mode === 'agent')).toHaveLength(1);
   });
 
+  it.each(['budget', 'no-progress'] as const)('checks %s before retrying a failed task', async limit => {
+    const cwd = repo(); const h = harness();
+    h.dispatch.mockImplementation(async (_id: string, _prompt: string, invocation: any) => {
+      writeFileSync(join(invocation.cwd, 'failed.txt'), 'retain failed work\n');
+      return { exitCode: 1, stdout: '', stderr: 'builder failed', timedOut: false, costUsd: 0.6 };
+    });
+    const out = await runGoal({ intent: 'retry limits', gate: 'true', requireTests: false,
+      maxAttempts: 5, breakerWindow: 0, budget: limit === 'budget' ? 0.5 : 0,
+      maxNoProgress: limit === 'no-progress' ? 1 : 10,
+    }, context(cwd), h.services);
+    const saved = (out.result as any).state;
+    expect(saved).toMatchObject({ status: 'stopped', stopReason: limit === 'budget' ? 'budget' : 'no-progress-streak >= 1' });
+    expect(h.dispatch).toHaveBeenCalledTimes(1);
+    expect(saved.tasks[0]).toMatchObject({ status: 'queued', attempts: 1 });
+    expect(readFileSync(join(saved.tasks[0].worktree.path, 'failed.txt'), 'utf8')).toBe('retain failed work\n');
+  });
+
   it('owns bounded supervised re-exec and resumes after a transient crash', async () => {
     const h = harness();
     const runChild = vi.fn()
@@ -1185,7 +1569,7 @@ describe('physical goal mod', () => {
         engine: 'builder', reviewEngines: 'reviewer', maxAttempts: 1 }, context(cwd), h.services);
       expect(out.exitCode).toBe(1);
       expect((out.result as any).state.spentUsd).toBeCloseTo(0.3);
-      expect((out.result as any).state.tasks[0].status).toBe('failed');
+      expect((out.result as any).state.tasks[0].status).toBe('parked');
       const saved = await runGoal({ id: 'invalid-judge-cost', status: true }, context(cwd), h.services);
       expect((saved.result as any).state.spentUsd).toBeCloseTo(0.3);
     },

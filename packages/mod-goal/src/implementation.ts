@@ -1,5 +1,5 @@
 import { execFileSync, spawn } from "node:child_process";
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, readFileSync, statSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type {
@@ -14,10 +14,12 @@ import type {
 import { runAgentTask } from "@kernlang/agon-mod-agent";
 import { runReview } from "@kernlang/agon-mod-review";
 import { runGitAction } from "@kernlang/agon-mod-git-actions";
-import { readWorktreePatch, runMutationAssessment, changedLinesFromDiff, preparePullRequest, defaultBaseBranch, githubRepoUrl, parsePatch, resolveWithinRoot } from "@kernlang/agon-support-worktree";
+import { readWorktreePatch, composeWorktreePatch, runMutationAssessment, changedLinesFromDiff, preparePullRequest, defaultBaseBranch, githubRepoUrl, parsePatch, resolveWithinRoot } from "@kernlang/agon-support-worktree";
 import type { PreparedPullRequest } from '@kernlang/agon-support-worktree';
-import type { GoalModServices, GoalWorktree } from './host.js';
-import { mutationGateDecision, foldMutationVerdicts } from './policy.js';
+import type { GoalModServices, GoalWorktree, GoalTaskAcceptance } from './host.js';
+import { mutationGateDecision, foldMutationVerdicts, gateFailureSignature, taskParkDecision, globalBreaker } from './policy.js';
+import { recordAttempt } from './journal.js';
+import type { AttemptRecord } from './journal-types.js';
 import { runFitnessCommand } from "@kernlang/agon-support-verification";
 import { spawnWithTimeout } from '@kernlang/agon-support-engine-runtime';
 import {
@@ -30,15 +32,22 @@ type Task = {
   source: string;
   dependsOn: string[];
   verify?: string;
-  status: "queued" | "running" | "done" | "failed";
+  status: "queued" | "running" | "done" | "failed" | "parked";
   attempts: number;
+  attemptLog?: AttemptRecord[];
   verificationBase?: { sha: string; patch: string };
+  candidateBranch?: string;
+  initialPatch?: string;
+  previousWorktrees?: GoalWorktree[];
+  worktree?: GoalWorktree;
+  acceptance?: GoalTaskAcceptance;
+  preparedCommit?: { head: string; tree: string; message: string; acceptance: GoalTaskAcceptance };
   commit?: string;
   publication?: {
     commit: string;
     remote: string;
     destinationHash?: string;
-    status: 'pending' | 'succeeded' | 'unknown';
+    status: 'prepared' | 'pending' | 'succeeded' | 'unknown';
     message?: string;
   };
   error?: string;
@@ -63,6 +72,7 @@ type GoalState = {
   budgetUsd: number;
   maxHours: number;
   noProgressStreak: number;
+  parkedStreak?: number;
   recentOutcomes: Array<"done" | "failed">;
   stopReason?: string;
   tasks: Task[];
@@ -425,7 +435,7 @@ export async function runGoal(
     if (!prior)
       return { exitCode: 1, stderr: `No persisted goal '${id}' was found.\n` };
     const counts = Object.fromEntries(
-      ["queued", "running", "done", "failed"].map((status) => [
+      ["queued", "running", "done", "failed", "parked"].map((status) => [
         status,
         prior.tasks.filter((task) => task.status === status).length,
       ]),
@@ -491,6 +501,7 @@ export async function runGoal(
   const budgetUsd = Math.max(0, Number(input.budget ?? prior?.budgetUsd ?? 0) || 0);
   const maxHours = Math.max(0, Number(input.maxHours ?? prior?.maxHours ?? 0) || 0);
   const maxNoProgress = Math.max(1, Number(input.maxNoProgress ?? Math.max(5, maxAttempts + 2)) || Math.max(5, maxAttempts + 2));
+  const maxParkStreak = Math.max(0, Math.floor(Number(input.maxParkStreak ?? 0) || 0));
   const breakerWindow = Math.max(0, Math.floor(Number(input.breakerWindow ?? 8) || 0));
   const breakerMinSuccessRate = Math.max(0, Math.min(1, Number(input.breakerMinSuccessRate ?? 0.125) || 0));
   const oracleGate = String(input.oracleGate ?? "warn").trim().toLowerCase();
@@ -521,6 +532,7 @@ export async function runGoal(
         stderr: `${error instanceof Error ? error.message : String(error)}\n`,
       };
     }
+    const acceptedWorktree = worktree;
     const remote = String(input.remote ?? 'origin');
     if (input.push === true && input.dryRun !== true) {
       if (input.commit === false) return { exitCode: 1, stderr: 'Goal --push requires task commits; remove commit=false.\n' };
@@ -557,7 +569,7 @@ export async function runGoal(
           budgetUsd,
           maxHours,
           tasks: prior.tasks.map((t) => {
-            const resumed: Task = t.status === 'running' || (t.status === 'failed' && t.attempts < maxAttempts)
+            const resumed: Task = t.status === 'running' || ((t.status === 'failed' || t.status === 'parked') && t.attempts < maxAttempts)
               ? { ...t, status: 'queued' } : t;
             return resumed.publication?.status === 'pending'
               ? { ...resumed, publication: { ...resumed.publication, status: 'unknown',
@@ -565,6 +577,12 @@ export async function runGoal(
               : resumed;
           }),
         };
+        for (const task of prior.tasks) {
+          if (task.status === 'running' && !task.acceptance && !task.preparedCommit && task.attempts > 0 && !task.attemptLog?.some(record => record.attempt === task.attempts)) {
+            state = recordAttempt(state, task.id, { at: Date.now(), outcome: 'error',
+              error: 'Previous execution stopped before recording the attempt outcome.' }, task.attempts);
+          }
+        }
       }
       await save();
       await assertExecution();
@@ -611,8 +629,6 @@ export async function runGoal(
       }
       const active = [...((await services.engines.listActive?.(context)) ?? [])];
       const engine = String(input.engine ?? "").trim() || active[0];
-      if (!engine)
-        return { exitCode: 1, stderr: "No active implementation engine.\n" };
       const reviewEngines =
         String(input.reviewEngines ?? "").trim() ||
         active
@@ -620,38 +636,109 @@ export async function runGoal(
           .slice(0, 3)
           .join(",");
       const judge = String(input.judge ?? "").trim() || reviewEngines.split(",").filter(Boolean)[0] || engine;
-      if (active.length && !active.includes(judge))
-        return { exitCode: 1, stderr: `Unknown or inactive Goal judge: ${judge}\n` };
-      while (true) {
+      const preparePublication = (task: Task) => {
+        if (input.push === true && task.commit && !task.publication) {
+          task.publication = { commit: task.commit, remote,
+            destinationHash: pushDestination(acceptedWorktree.path, remote)?.hash, status: 'prepared' };
+        }
+      };
+      const publishTask = async (task: Task) => {
+        if (input.push !== true || !task.commit || task.publication?.status !== 'prepared') return;
+        const { destinationHash } = task.publication;
+        if (task.publication.commit !== task.commit || task.publication.remote !== remote ||
+            pushDestination(acceptedWorktree.path, remote)?.hash !== destinationHash) {
+          throw new Error('Prepared Goal publication target changed; inspect the recorded remote and commit.');
+        }
+        task.publication = { commit: task.commit, remote, destinationHash, status: 'pending' };
+        state = event(state, 'push-prepared', task.id, remote);
+        await save();
+        const permission = await services.permissions.check('git.write', acceptedWorktree.repoRoot);
         await assertExecution();
+        if (permission !== 'allow') throw new Error(`Goal publication stopped: git.write permission is ${permission}`);
+        if (git(acceptedWorktree.path, ['symbolic-ref', '--short', 'HEAD']) !== branch ||
+            git(acceptedWorktree.path, ['rev-parse', 'HEAD']) !== task.commit ||
+            pushDestination(acceptedWorktree.path, remote)?.hash !== destinationHash) {
+          throw new Error('Goal branch or commit changed before publication; inspect the retained worktree.');
+        }
+        let pushed: Pick<Awaited<ReturnType<typeof spawnWithTimeout>>, 'exitCode' | 'stderr' | 'timedOut' | 'aborted'>;
+        try {
+          pushed = await spawnWithTimeout({ command: 'git',
+            args: ['push', '--no-follow-tags', '--', remote, `${task.commit}:refs/heads/${branch}`],
+            cwd: acceptedWorktree.path, timeout: 120_000, signal: context.signal });
+        } catch (error) {
+          pushed = { exitCode: 1, stderr: String(error), timedOut: false };
+        }
+        const succeeded = pushed.exitCode === 0 && !pushed.timedOut && !pushed.aborted &&
+          pushDestination(acceptedWorktree.path, remote)?.hash === destinationHash;
+        const message = succeeded ? remote : `Remote outcome unknown; inspect ${remote} before retrying. Local commit ${task.commit} is retained. ${pushed.stderr.trim().slice(0, 500)}`;
+        task.publication = { commit: task.commit, remote, destinationHash,
+          status: succeeded ? 'succeeded' : 'unknown', ...(!succeeded ? { message } : {}) };
+        state = event(state, succeeded ? 'task-pushed' : 'push-failed', task.id, message);
+        await save();
+        await assertExecution();
+      };
+      for (const task of state.tasks) {
+        if (task.status === 'done' && task.publication?.status === 'prepared') await publishTask(task);
+      }
+      const stopAtLimit = (): boolean => {
         const elapsedHours = (Date.now() - Date.parse(state.createdAt)) / 3_600_000;
         if (state.budgetUsd > 0 && state.spentUsd >= state.budgetUsd) {
           state = { ...event(state, "goal-stop", undefined, "budget"), status: "stopped", stopReason: "budget" };
-          break;
+          return true;
         }
         if (state.maxHours > 0 && elapsedHours >= state.maxHours) {
           state = { ...event(state, "goal-stop", undefined, "time"), status: "stopped", stopReason: "time" };
-          break;
+          return true;
         }
-        if (state.noProgressStreak >= maxNoProgress) {
-          state = { ...event(state, "goal-stop", undefined, "no-progress-breaker"), status: "stopped", stopReason: "no-progress-breaker" };
-          break;
+        const breaker = globalBreaker({ ...state, parkedStreak: state.parkedStreak ?? 0 }, maxParkStreak, maxNoProgress,
+          { size: breakerWindow, minSuccessRate: breakerMinSuccessRate });
+        if (breaker.stop) {
+          state = { ...event(state, 'goal-stop', undefined, breaker.reason), status: 'stopped', stopReason: breaker.reason };
+          return true;
         }
-        if (breakerWindow > 0 && state.recentOutcomes.length >= breakerWindow) {
-          const recent = state.recentOutcomes.slice(-breakerWindow);
-          const successRate = recent.filter((outcome) => outcome === "done").length / recent.length;
-          if (successRate < breakerMinSuccessRate) {
-            state = { ...event(state, "goal-stop", undefined, `success-rate-breaker:${successRate}`), status: "stopped", stopReason: "success-rate-breaker" };
-            break;
+        return false;
+      };
+      const finishPreparedCommit = async (task: Task): Promise<CommandResult> => {
+        const prepared = task.preparedCommit;
+        if (!prepared || !task.worktree) throw new Error('Goal commit intent has no retained candidate.');
+        await assertExecution();
+        const patchHash = () => createHash('sha256').update(readWorktreePatch(worktree.path, prepared.acceptance.baseSha)).digest('hex');
+        let head = git(worktree.path, ['rev-parse', 'HEAD']);
+        if (head === prepared.head) {
+          if (git(worktree.path, ['write-tree']) !== prepared.tree || patchHash() !== prepared.acceptance.resultPatchHash) {
+            throw new Error('Prepared Goal commit contents changed; retained candidate was not committed.');
           }
+          const committed = await runGitAction({ approved: true, message: prepared.message, expectedHead: prepared.head },
+            { ...context, cwd: worktree.path }, services, 'commit');
+          await assertExecution();
+          head = git(worktree.path, ['rev-parse', 'HEAD']);
+          if (committed.exitCode !== 0 && head === prepared.head) return committed;
         }
-        const runnable = state.tasks.find(
+        if (git(worktree.path, ['rev-list', '--parents', '-n', '1', head]) !== `${head} ${prepared.head}` ||
+            git(worktree.path, ['rev-parse', `${head}^{tree}`]) !== prepared.tree ||
+            git(worktree.path, ['show', '-s', '--format=%B', head]) !== prepared.message ||
+            git(worktree.path, ['status', '--porcelain']) || patchHash() !== prepared.acceptance.resultPatchHash) {
+          throw new Error('Goal candidate commit differs from its recorded intent; retained work was not accepted.');
+        }
+        task.commit = head;
+        task.acceptance = { ...prepared.acceptance, commit: head };
+        delete task.preparedCommit;
+        await save();
+        return { exitCode: 0, result: { head } };
+      };
+      while (true) {
+        await assertExecution();
+        worktree = acceptedWorktree;
+        const pendingAcceptance = state.tasks.find(t => t.status === 'queued' && (t.acceptance || t.preparedCommit));
+        let runnable = pendingAcceptance ?? state.tasks.find(
           (t) =>
             t.status === "queued" &&
             t.dependsOn.every(
               (dep) => state.tasks.find((x) => x.id === dep)?.status === "done",
             ),
         );
+        // Recovery finishes recorded effects; limits govern new implementation work.
+        if (!pendingAcceptance && state.tasks.some(t => t.status !== 'done') && stopAtLimit()) break;
         if (!runnable) break;
         if (!runnable.verificationBase) {
           await assertExecution();
@@ -663,13 +750,101 @@ export async function runGoal(
           runnable.verificationBase = { sha, patch: runnable.attempts > 0 ? '' : readWorktreePatch(worktree.path, sha) };
           await save();
         }
+        if (runnable.worktree && !runnable.acceptance && !runnable.preparedCommit) {
+          await assertExecution();
+          const sha = git(acceptedWorktree.path, ['rev-parse', 'HEAD']);
+          const patch = readWorktreePatch(acceptedWorktree.path, sha);
+          if (sha !== runnable.verificationBase.sha || patch !== runnable.verificationBase.patch) {
+            const previous = capabilities.openWorktree(runnable.worktree.branch, runnable.worktree.baseSha, runnable.worktree.repoRoot);
+            if (previous.path !== runnable.worktree.path) throw new Error('Retained Goal task worktree changed.');
+            const carried = readWorktreePatch(previous.path, runnable.verificationBase.sha, runnable.verificationBase.patch);
+            let initialPatch: string;
+            try {
+              initialPatch = composeWorktreePatch(acceptedWorktree.path, sha, [patch, carried]);
+            } catch (error) {
+              runnable.status = 'parked';
+              runnable.error = `Cannot refresh retained task onto accepted work. Candidate retained at ${previous.path}. Resolve the patch conflict or Git error before resuming: ${error instanceof Error ? error.message : String(error)}`;
+              state.parkedStreak = (state.parkedStreak ?? 0) + 1;
+              state.noProgressStreak = 0;
+              state.recentOutcomes = [...state.recentOutcomes, 'failed' as const].slice(-100);
+              state = event(state, 'task-base-blocked', runnable.id, runnable.error);
+              await save();
+              continue;
+            }
+            runnable.previousWorktrees = [...(runnable.previousWorktrees ?? []), previous];
+            runnable.verificationBase = { sha, patch };
+            runnable.initialPatch = initialPatch;
+            runnable.candidateBranch = `goal/${id}-task-${randomUUID()}`;
+            delete runnable.worktree;
+            state = event(state, 'task-base-refreshed', runnable.id, previous.path);
+            await save();
+          }
+        }
         const { sha: taskBaseSha, patch: taskBasePatch } = runnable.verificationBase;
         const basePatchHash = createHash('sha256').update(taskBasePatch).digest('hex');
+        if (!runnable.worktree && (runnable.attempts === 0 || runnable.candidateBranch)) {
+          if (!capabilities.prepareTaskWorktree || !capabilities.acceptTaskWorktree) {
+            throw new Error('Goal task isolation capabilities are unavailable. Restart with a compatible modular host.');
+          }
+          runnable.candidateBranch ??= `goal/${id}-task-${randomUUID()}`;
+          await save();
+          await assertExecution();
+          runnable.worktree = capabilities.prepareTaskWorktree(runnable.candidateBranch,
+            { repoRoot: acceptedWorktree.repoRoot, sha: taskBaseSha, patch: runnable.initialPatch ?? taskBasePatch });
+          await save();
+        }
+        if (runnable.worktree) {
+          worktree = capabilities.openWorktree(runnable.worktree.branch, runnable.worktree.baseSha, runnable.worktree.repoRoot);
+          if (worktree.path !== runnable.worktree.path) throw new Error('Retained Goal task worktree changed.');
+        }
+        if (runnable.preparedCommit) {
+          const committed = await finishPreparedCommit(runnable);
+          if (committed.exitCode !== 0) throw new Error(`Prepared Goal commit failed; candidate retained: ${committed.stderr}`);
+        }
+        if (runnable.acceptance) {
+          if (!capabilities.acceptTaskWorktree) throw new Error('Goal task acceptance capabilities are unavailable.');
+          await assertExecution();
+          capabilities.acceptTaskWorktree(acceptedWorktree, worktree, runnable.acceptance);
+          runnable.commit = runnable.acceptance.commit;
+          runnable.status = 'done';
+          const acceptedAttempt = runnable.attempts;
+          if (!runnable.attemptLog?.some(record => record.attempt === acceptedAttempt && record.outcome === 'gate-pass')) {
+            state = recordAttempt(state, runnable.id, { at: Date.now(), outcome: 'gate-pass' }, acceptedAttempt);
+          }
+          state.noProgressStreak = 0;
+          state.parkedStreak = 0;
+          state.recentOutcomes = [...state.recentOutcomes, 'done' as const].slice(-100);
+          state = event(state, 'task-done', runnable.id, runnable.commit);
+          const acceptedTask = state.tasks.find(task => task.id === runnable?.id);
+          if (!acceptedTask) throw new Error('Accepted Goal task disappeared.');
+          preparePublication(acceptedTask);
+          await save();
+          await publishTask(acceptedTask);
+          continue;
+        }
+        if (!engine)
+          return { exitCode: 1, stderr: "No active implementation engine.\n" };
+        if (active.length && !active.includes(judge))
+          return { exitCode: 1, stderr: `Unknown or inactive Goal judge: ${judge}\n` };
         for (
           let attempt = runnable.attempts + 1;
           attempt <= maxAttempts;
           attempt++
         ) {
+          await assertExecution();
+          if (stopAtLimit()) break;
+          const park = taskParkDecision({ attempts: runnable.attempts, attemptLog: runnable.attemptLog ?? [] }, maxAttempts);
+          if (park.park) {
+            runnable.error = park.reason;
+            break;
+          }
+          const taskId = runnable.id;
+          const concludeAttempt = (record: Omit<AttemptRecord, 'at'>) => {
+            state = recordAttempt(state, taskId, { at: Date.now(), ...record }, attempt);
+            const updated = state.tasks.find(task => task.id === taskId);
+            if (!updated) throw new Error(`Goal task disappeared while recording its outcome: ${taskId}`);
+            runnable = updated;
+          };
           runnable.status = "running";
           runnable.attempts = attempt;
           state = event(state, "task-start", runnable.id, `attempt ${attempt}`);
@@ -687,6 +862,7 @@ export async function runGoal(
               if (oracleGate === "strict") {
                 runnable.status = "failed";
                 runnable.error = detail;
+                concludeAttempt({ outcome: 'verify-fail', error: detail });
                 state = { ...event(state, "goal-stop", runnable.id, "strict-oracle"), status: "stopped", stopReason: "strict-oracle" };
                 await save();
                 break;
@@ -718,6 +894,10 @@ export async function runGoal(
             runnable.status = "queued";
             state.noProgressStreak += 1;
             runnable.error = `builder=${built.exitCode} gate=${gateResult.exitCode}${gateResult.timedOut ? ' (timed out)' : ''}`;
+            concludeAttempt(built.exitCode !== 0
+              ? { outcome: 'error', error: built.stderr || runnable.error }
+              : { outcome: 'gate-fail', error: `${gateResult.stdout}\n${gateResult.stderr}`.trim(),
+                gateFailureSignature: gateFailureSignature(`${gateResult.stdout}\n${gateResult.stderr}`) });
             state = event(state, "task-retry", runnable.id, runnable.error);
             continue;
           }
@@ -731,6 +911,7 @@ export async function runGoal(
             if (sourceChanged && !testChanged) {
               runnable.status = "queued";
               runnable.error = "source changed without a test change while requireTests is enabled";
+              concludeAttempt({ outcome: 'witness-fail', error: runnable.error });
               state.noProgressStreak += 1;
               state = event(state, "witness-failed", runnable.id, runnable.error);
               continue;
@@ -770,6 +951,7 @@ export async function runGoal(
           if (verificationFailure) {
             runnable.status = 'queued';
             runnable.error = verificationFailure.detail;
+            concludeAttempt({ outcome: verificationFailure.type === 'witness-failed' ? 'witness-fail' : 'verify-fail', error: runnable.error });
             state.noProgressStreak += 1;
             state = event(state, verificationFailure.type, runnable.id, runnable.error);
             await save();
@@ -805,6 +987,7 @@ export async function runGoal(
                   !['high-signal', 'equiv-prone'].includes(outcome?.mutant?.class))) {
               runnable.status = "queued";
               runnable.error = `mutation assessment failed: ${String(mutation.error ?? 'incomplete verification evidence')}`;
+              concludeAttempt({ outcome: 'error', error: runnable.error });
               state.noProgressStreak += 1;
               state = event(state, "mutation-assessment-failed", runnable.id, runnable.error);
               await save();
@@ -829,6 +1012,8 @@ export async function runGoal(
             if (verdict === 'park') {
               runnable.status = 'queued';
               runnable.error = `mutation gate: ${detail}`;
+              concludeAttempt({ outcome: 'mutation-survived', error: runnable.error,
+                mutantsSurvived: outcomes.filter(outcome => outcome.status === 'survived').length });
               state.noProgressStreak += 1;
               state = event(state, 'task-retry', runnable.id, runnable.error);
               continue;
@@ -845,6 +1030,7 @@ export async function runGoal(
           if (mutationEvidence && !reviewEngines) {
             runnable.status = 'queued';
             runnable.error = 'Mutation evidence requires a reviewer. Configure an available review engine; work remains in the retained worktree.';
+            concludeAttempt({ outcome: 'review-block', error: runnable.error });
             state.noProgressStreak += 1;
             state = event(state, 'mutation-review-unavailable', runnable.id, runnable.error);
             await save();
@@ -891,13 +1077,21 @@ export async function runGoal(
           if (reviewBlocked) {
             runnable.status = "queued";
             runnable.error = `review=${review.exitCode}`;
+            concludeAttempt({ outcome: 'review-block', error: review.stderr || runnable.error });
             state = event(state, "review-block", runnable.id, review.stderr);
             continue;
           }
           if (input.commit !== false) {
             await assertExecution();
             git(worktree.path, ["add", "-A"]);
-            const committed = await runGitAction(
+            if (runnable.worktree) {
+              runnable.preparedCommit = { head: git(worktree.path, ['rev-parse', 'HEAD']),
+                tree: git(worktree.path, ['write-tree']), message: `goal(${id}): ${runnable.id}`,
+                acceptance: { baseSha: taskBaseSha, basePatch: taskBasePatch, patch: taskDiff,
+                  resultPatchHash: createHash('sha256').update(readWorktreePatch(worktree.path, taskBaseSha)).digest('hex') } };
+              await save();
+            }
+            const committed = runnable.preparedCommit ? await finishPreparedCommit(runnable) : await runGitAction(
               {
                 approved: true,
                 message: `goal(${id}): ${runnable.id}`,
@@ -909,8 +1103,10 @@ export async function runGoal(
             );
             await assertExecution();
             if (committed.exitCode !== 0) {
+              delete runnable.preparedCommit;
               runnable.status = "queued";
               runnable.error = committed.stderr;
+              concludeAttempt({ outcome: 'error', error: runnable.error });
               state = event(
                 state,
                 "commit-failed",
@@ -921,51 +1117,46 @@ export async function runGoal(
             }
             runnable.commit = String((committed.result as any)?.head ?? "");
           }
+          if (runnable.worktree) {
+            if (!capabilities.acceptTaskWorktree) throw new Error('Goal task acceptance capabilities are unavailable.');
+            runnable.acceptance ??= { baseSha: taskBaseSha, basePatch: taskBasePatch, patch: taskDiff,
+              resultPatchHash: createHash('sha256').update(readWorktreePatch(worktree.path, taskBaseSha)).digest('hex'),
+              ...(runnable.commit ? { commit: runnable.commit } : {}) };
+            await save();
+            await assertExecution();
+            capabilities.acceptTaskWorktree(acceptedWorktree, worktree, runnable.acceptance);
+            await assertExecution();
+          }
           runnable.status = "done";
+          concludeAttempt({ outcome: 'gate-pass' });
           state.noProgressStreak = 0;
+          state.parkedStreak = 0;
           state.recentOutcomes = [...state.recentOutcomes, "done" as const].slice(-100);
           delete runnable.error;
           state = event(state, "task-done", runnable.id, runnable.commit);
+          preparePublication(runnable);
           await save();
-          if (input.push === true && runnable.commit) {
-            const destinationHash = pushDestination(worktree.path, remote)?.hash;
-            runnable.publication = { commit: runnable.commit, remote, destinationHash, status: 'pending' };
-            state = event(state, 'push-prepared', runnable.id, remote);
-            await save();
-            const permission = await services.permissions.check('git.write', worktree.repoRoot);
-            await assertExecution();
-            if (permission !== 'allow') throw new Error(`Goal publication stopped: git.write permission is ${permission}`);
-            if (git(worktree.path, ['symbolic-ref', '--short', 'HEAD']) !== branch ||
-                git(worktree.path, ['rev-parse', 'HEAD']) !== runnable.commit ||
-                pushDestination(worktree.path, remote)?.hash !== destinationHash) {
-              throw new Error('Goal branch or commit changed before publication; inspect the retained worktree.');
-            }
-            let pushed: Pick<Awaited<ReturnType<typeof spawnWithTimeout>>, 'exitCode' | 'stderr' | 'timedOut' | 'aborted'>;
-            try {
-              pushed = await spawnWithTimeout({ command: 'git',
-                args: ['push', '--no-follow-tags', '--', remote, `${runnable.commit}:refs/heads/${branch}`],
-                cwd: worktree.path, timeout: 120_000, signal: context.signal });
-            } catch (error) {
-              pushed = { exitCode: 1, stderr: String(error), timedOut: false };
-            }
-            const succeeded = pushed.exitCode === 0 && !pushed.timedOut && !pushed.aborted &&
-              pushDestination(worktree.path, remote)?.hash === destinationHash;
-            const message = succeeded ? remote : `Remote outcome unknown; inspect ${remote} before retrying. Local commit ${runnable.commit} is retained. ${pushed.stderr.trim().slice(0, 500)}`;
-            runnable.publication = { commit: runnable.commit, remote, destinationHash,
-              status: succeeded ? 'succeeded' : 'unknown', ...(!succeeded ? { message } : {}) };
-            state = event(state, succeeded ? 'task-pushed' : 'push-failed', runnable.id, message);
-            await save();
-            await assertExecution();
-          }
+          worktree = acceptedWorktree;
+          await publishTask(runnable);
+          break;
+        }
+        if (state.status === 'stopped' && runnable.status === 'queued') {
+          await save();
           break;
         }
         if (runnable.status !== "done") {
-          runnable.status = "failed";
+          runnable.status = runnable.worktree && state.status !== 'stopped' ? 'parked' : 'failed';
           state.recentOutcomes = [...state.recentOutcomes, "failed" as const].slice(-100);
-          state = event(state, "task-failed", runnable.id, runnable.error);
-          break;
+          state = event(state, runnable.status === 'parked' ? 'task-parked' : 'task-failed', runnable.id, runnable.error);
+          if (runnable.status === 'parked') {
+            state.parkedStreak = (state.parkedStreak ?? 0) + 1;
+            state.noProgressStreak = 0;
+          }
+          await save();
+          if (runnable.status !== 'parked') break;
         }
       }
+      worktree = acceptedWorktree;
       const incomplete = state.tasks.filter((t) => t.status !== "done");
       if (state.status !== "stopped")
         state = {
@@ -1088,6 +1279,12 @@ export async function runGoal(
         result: { ...result, receiptId } as unknown as Json,
       };
     } catch (error) {
+      for (const task of state.tasks) {
+        if (task.status === 'running' && !task.acceptance && !task.preparedCommit && task.attempts > 0 && !task.attemptLog?.some(record => record.attempt === task.attempts)) {
+          state = recordAttempt(state, task.id, { at: Date.now(), outcome: 'error',
+            error: error instanceof Error ? error.message : String(error) }, task.attempts);
+        }
+      }
       state = { ...event(state, 'goal-interrupted', undefined, error instanceof Error ? error.message : String(error)),
         status: context.signal.aborted ? 'cancelled' : 'failed' };
       try { await lease.assertOwned(); }

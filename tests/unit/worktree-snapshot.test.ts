@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it } from 'vitest';
-import { readWorktreePatch } from '../../packages/support-worktree/src/forge-arena.js';
+import { readWorktreePatch, composeWorktreePatch } from '../../packages/support-worktree/src/forge-arena.js';
 import { applyPatchToTree } from '../../packages/support-worktree/src/patch-apply.js';
 
 it('diffs from a saved dirty baseline without committing or replacing the live index', () => {
@@ -33,6 +33,11 @@ it('diffs from a saved dirty baseline without committing or replacing the live i
     expect(git('diff', '--cached', '--binary')).toBe(indexBefore);
     expect(git('rev-parse', 'HEAD')).toBe(base);
     expect(readFileSync(join(root, 'über.txt'), 'utf8')).toBe('accepted\n');
+    const composed = composeWorktreePatch(root, base, [snapshot, patch]);
+    expect(composed).toBe(readWorktreePatch(root, base));
+    expect(git('diff', '--cached', '--binary')).toBe(indexBefore);
+    expect(() => composeWorktreePatch(root, base, [snapshot, snapshot])).toThrow();
+    expect(git('diff', '--cached', '--binary')).toBe(indexBefore);
     const replay = join(root, 'replay');
     git('worktree', 'add', '--detach', replay, base);
     expect(applyPatchToTree(replay, snapshot)).toEqual({ ok: true });

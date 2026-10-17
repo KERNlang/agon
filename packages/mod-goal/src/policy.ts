@@ -23,7 +23,7 @@ export function gateFailureSignature(output: string): string {
 /**
  * Park a task when it has burned its attempts OR is oscillating — the same gate-failure signature recurring means the agent keeps producing the same broken fix, so more attempts only waste budget.
  */
-export function taskParkDecision(task: GoalTask, maxAttempts: number): {park:boolean, reason:string} {
+export function taskParkDecision(task: Pick<GoalTask, 'attempts' | 'attemptLog'>, maxAttempts: number): {park:boolean, reason:string} {
   // Guard against a NaN / non-positive cap (which would make every >= compare
   // false and grind a task forever) by collapsing it to 1.
   const cap = Number.isFinite(maxAttempts) && maxAttempts >= 1 ? Math.floor(maxAttempts) : 1;
@@ -54,7 +54,7 @@ export function pushRecentOutcome(recent: string[], outcome: string, cap: number
 /**
  * Abort the whole run only when it is genuinely thrashing — NOT when it merely hit a cluster of hard tasks. The PRIMARY long-run signal is the sliding-window success rate (`window`): over the last `window.size` terminal outcomes, if the fraction that are 'done' is below `window.minSuccessRate`, the gate/env is likely broken or the queue is uniformly too hard, so stop. The legacy consecutive park-streak (`maxParkStreak`) is kept only as an opt-in hard cap (0 = off, the new default) because a park DECREASES remaining work, so it never trips the no-progress breaker on its own. `maxNoProgress` still catches retry-thrash with no net progress.
  */
-export function globalBreaker(state: JournalState, maxParkStreak: number, maxNoProgress: number, window?: {size:number, minSuccessRate:number}): {stop:boolean, reason:string} {
+export function globalBreaker(state: Pick<JournalState, 'recentOutcomes' | 'parkedStreak' | 'noProgressStreak'>, maxParkStreak: number, maxNoProgress: number, window?: {size:number, minSuccessRate:number}): {stop:boolean, reason:string} {
   const recent = state.recentOutcomes ?? [];
   if (window && window.size > 0 && recent.length >= window.size) {
     const windowEntries = recent.slice(-window.size);

@@ -129,12 +129,21 @@ export function markStatus(state: JournalState, taskId: string, status: GoalTask
 }
 
 /**
- * Append an attempt record and bump the task's attempt count.
+ * Append an outcome. An explicit count preserves attempts counted before dispatch.
  */
-export function recordAttempt(state: JournalState, taskId: string, rec: AttemptRecord): JournalState {
+export function recordAttempt<S extends { tasks: Array<{ id: string; attempts: number; attemptLog?: AttemptRecord[] }> }>(
+  state: S, taskId: string, rec: AttemptRecord, countedAttempt?: number,
+): S {
+  if (countedAttempt !== undefined && (!Number.isSafeInteger(countedAttempt) || countedAttempt < 1)) {
+    throw new Error('Goal attempt number must be a positive integer.');
+  }
+  if (countedAttempt !== undefined && state.tasks.some(task => task.id === taskId && task.attempts > countedAttempt)) {
+    throw new Error('Goal attempt count cannot move backwards.');
+  }
   const tasks = state.tasks.map((t) =>
     t.id === taskId
-      ? { ...t, attempts: t.attempts + 1, attemptLog: [...t.attemptLog, rec] }
+      ? { ...t, attempts: countedAttempt ?? t.attempts + 1,
+        attemptLog: [...(t.attemptLog ?? []), countedAttempt === undefined ? rec : { ...rec, attempt: countedAttempt }] }
       : t
   );
   return { ...state, tasks };

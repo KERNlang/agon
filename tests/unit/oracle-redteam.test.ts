@@ -1,9 +1,42 @@
 // Unit tests for the oracle red-team pre-flight core — the pure cheat prompt and
 // the warn/strict gate decision. The orchestration (running an adversarial forge
 // per task) lives in the goal CLI command and is exercised end-to-end there.
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+import { createGoalOracleProbe, createJournal } from '@kernlang/agon-mod-goal';
 import { buildOracleCheatPrompt, oracleGateDecision, oracleProbeConclusive, safePathSegment, DEFAULT_ORACLE_GATE } from '@kernlang/agon-forge';
 import type { OracleHole } from '@kernlang/agon-forge';
+
+describe('physical oracle probe effects', () => {
+  it.each(['clean', 'hole', 'callback-error', 'create-error'] as const)('journals %s and cleans the exact worktree', async outcome => {
+    const create = vi.fn((_repo: string, path: string) => {
+      if (outcome === 'create-error') throw new Error('cannot create');
+      return path;
+    });
+    const remove = vi.fn();
+    const probe = createGoalOracleProbe({ goalDir: id => `/fixture/goals/${id}`,
+      worktreeCreate: create, worktreeRemoveBestEffort: remove });
+    const state = createJournal({ goalId: 'probe', intent: 'test', branch: 'goal/probe', gate: 'true',
+      queueSource: 'queue', maxAttempts: 3, budgetUsd: 5, maxHours: 1, supervised: false });
+    const signal = new AbortController().signal;
+    const redTeam = vi.fn(async () => {
+      if (outcome === 'callback-error') throw new Error('callback failed');
+      return { holes: outcome === 'hole' ? [{ taskId: '../task', engine: 'fixture', evidence: 'cheated' }] : [], costUsd: 0.25 };
+    });
+    const emit = vi.fn();
+    const result = await probe({ state, task: { id: '../task', source: 'gap', verify: 'true' },
+      mode: 'strict', repoRoot: '/fixture/repo', goalId: 'probe', baseSha: 'base', redTeam, emit, signal });
+    const path = create.mock.calls[0][1];
+    expect(path).toMatch(/^\/fixture\/goals\/probe\/oracle-redteam\/task-\d+$/);
+    expect(remove).toHaveBeenCalledExactlyOnceWith('/fixture/repo', path);
+    expect(result.abort).toBe(outcome === 'hole');
+    expect(result.errored).toBe(outcome.endsWith('error'));
+    expect(result.state.spentUsd).toBe(outcome.endsWith('error') ? 0 : 0.25);
+    expect(result.state.events.at(-1)?.kind).toBe(outcome.endsWith('error') ? 'oracle-gate-error' : outcome === 'hole' ? 'oracle-gameable' : 'oracle-gate-ok');
+    if (outcome === 'create-error') expect(redTeam).not.toHaveBeenCalled();
+    else expect(redTeam).toHaveBeenCalledExactlyOnceWith({ tasks: [{ id: '../task', source: 'gap', verify: 'true' }],
+      baseWorktree: path, repoRoot: '/fixture/repo', signal });
+  });
+});
 
 describe('buildOracleCheatPrompt', () => {
   it('embeds the gap + verify and demands a degenerate cheat, not a real impl', () => {

@@ -15,4 +15,10 @@ export type { GoalSpec, AttemptRecord, GoalTask, GoalEvent, JournalState } from 
 export { createGoalJournalStore, createJournal, addTasks, requeueInflightTasks, nextTask, markStatus, recordAttempt, remainingCount, isDone, logEvent, boundEvents, GOAL_EVENT_CAP } from './journal.js';
 export type { GoalJournalEffects } from './journal.js';
 export { assertSafeGoalId, safePathSegment } from './paths.js';
+export { createGoalOracle, hashOracleInputs, oracleTampered } from './oracle.js';
+export type { GoalOracleEffects, FrozenOracle, WitnessResult } from './oracle.js';
+export { createGoalOracleProbe } from './oracle-probe.js';
+export type { GoalOracleProbeEffects } from './oracle-probe.js';
+export { buildOracleCheatPrompt, oracleGateDecision, oracleProbeConclusive, DEFAULT_ORACLE_GATE } from './oracle-redteam.js';
+export type { OracleHole } from './oracle-redteam.js';
 export { gateFailureSignature, taskParkDecision, pushRecentOutcome, globalBreaker, pickImplementWinner, chooseImplementRoster, mutationGateDecision, foldMutationVerdicts, budgetExceeded, timeExceeded } from './policy.js';

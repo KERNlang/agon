@@ -172,6 +172,9 @@
       "dist/policy.d.ts",
       "dist/journal.d.ts",
       "dist/paths.d.ts",
+      "dist/oracle.d.ts",
+      "dist/oracle-probe.d.ts",
+      "dist/oracle-redteam.d.ts",
       "ownership.json",
       "schemas/config.schema.json"
     ],

@@ -6,7 +6,7 @@ import type { InvocationContext, ModServices } from '@kernlang/agon-mod-api';
 import { readWorktreeSource, readWorktreePatch, applyPatchToTree } from '@kernlang/agon-support-worktree';
 import type { PullRequestDraft } from '@kernlang/agon-support-worktree';
 import { createGoalOracle } from './oracle.js';
-import type { GoalOracleEffects } from './oracle.js';
+import type { GoalOracleEffects, FrozenOracle } from './oracle.js';
 
 export interface GoalWorktree {
   readonly repoRoot: string;
@@ -34,11 +34,15 @@ export interface GoalWorktreeEffects {
 export interface GoalHostServices {
   open(context: InvocationContext): {
     assertCurrent(): void;
+    /** Cancellation may record its outcome; a revoked generation may not. */
+    assertStateCurrent?(): void;
     acquire(id: string): Promise<{ assertOwned(): Promise<void>; release(): Promise<void> }>;
     openWorktree(branch: string, resumeBase?: string, expectedRepoRoot?: string): GoalWorktree;
     prepareTaskWorktree?(branch: string, baseline: { repoRoot: string; sha: string; patch: string }): GoalWorktree;
     acceptTaskWorktree?(accepted: GoalWorktree, candidate: GoalWorktree, acceptance: GoalTaskAcceptance): void;
-    verification?(assertOwned: () => Promise<void>): Pick<ReturnType<typeof createGoalOracle>, 'witnessTest' | 'witnessVerifyCommand'>;
+    verification?(assertOwned: () => Promise<void>): Pick<ReturnType<typeof createGoalOracle>, 'witnessTest' | 'witnessVerifyCommand'> & {
+      snapshotOracle?(options: Parameters<ReturnType<typeof createGoalOracle>['snapshotOracle']>[0]): Promise<FrozenOracle>;
+    };
     draftPullRequest?(input: PullRequestDraft, dispatch: (prompt: string) => Promise<string>): Promise<{ ok: boolean; title: string; body: string }>;
     formatPullRequestBody?(body: string): string;
   };
@@ -66,6 +70,7 @@ export function createGoalHostServices(options: {
       assertCurrent();
       const host = {
         assertCurrent,
+        assertStateCurrent: authority,
         ...(options.oracleEffects ? { verification: (assertOwned: () => Promise<void>) => {
           const effects = options.oracleEffects!;
           const oracle = createGoalOracle({
@@ -79,7 +84,16 @@ export function createGoalHostServices(options: {
               return result;
             },
           });
-          return { witnessTest: oracle.witnessTest, witnessVerifyCommand: oracle.witnessVerifyCommand };
+          return {
+            witnessTest: oracle.witnessTest,
+            witnessVerifyCommand: oracle.witnessVerifyCommand,
+            snapshotOracle: async (input: Parameters<typeof oracle.snapshotOracle>[0]) => {
+              await assertOwned(); assertCurrent();
+              const snapshot = oracle.snapshotOracle(input);
+              await assertOwned(); assertCurrent();
+              return snapshot;
+            },
+          };
         } } : {}),
         ...(options.draftPullRequest ? { draftPullRequest: async (input: PullRequestDraft, dispatch: (prompt: string) => Promise<string>) => {
           assertCurrent();

@@ -17,6 +17,8 @@ import { runGitAction } from "@kernlang/agon-mod-git-actions";
 import { readWorktreePatch, composeWorktreePatch, runMutationAssessment, changedLinesFromDiff, preparePullRequest, defaultBaseBranch, githubRepoUrl, parsePatch, resolveWithinRoot } from "@kernlang/agon-support-worktree";
 import type { PreparedPullRequest } from '@kernlang/agon-support-worktree';
 import type { GoalModServices, GoalWorktree, GoalTaskAcceptance } from './host.js';
+import type { FrozenOracle } from './oracle.js';
+import { GoalOracleInvalidError } from './oracle.js';
 import { mutationGateDecision, foldMutationVerdicts, gateFailureSignature, taskParkDecision, globalBreaker } from './policy.js';
 import { recordAttempt } from './journal.js';
 import type { AttemptRecord } from './journal-types.js';
@@ -60,6 +62,7 @@ type GoalState = {
   baseSha: string;
   worktree?: GoalWorktree;
   baselineVerified?: boolean;
+  oracle?: FrozenOracle;
   pullRequest?: {
     commit: string; remote: string; repoUrl: string; base: string;
     status: 'pending' | 'created' | 'unknown' | 'not-attempted';
@@ -111,7 +114,7 @@ export function goalSupervisorBackoffMs(restarts: number, baseMs = 5_000, capMs 
 
 export function isDeterministicGoalExit(outputTail: string): boolean {
   const lower = outputTail.toLowerCase();
-  return ["oracle changed", "goal requires intent and an explicit gate", "cannot resume unknown goal", "no active engine", "goal/* branch"]
+  return ["oracle changed", "goal_oracle_invalid", "cannot change the recorded branch or gate", "goal requires intent and an explicit gate", "cannot resume unknown goal", "no active engine", "goal/* branch"]
     .some((phrase) => lower.includes(phrase));
 }
 
@@ -468,24 +471,6 @@ export async function runGoal(
       exitCode: 1,
       stderr: "Goal branch must be a safe goal/* branch.\n",
     };
-  if (input.think === true && input.resume !== true && input.dryRun !== true) {
-    const strategy = String(input.thinkStrategy ?? "hypothesis").trim();
-    if (!["linear", "reflexion", "tot", "graph", "hypothesis"].includes(strategy))
-      return { exitCode: 1, stderr: `Unknown goal think strategy: ${strategy}\n` };
-    const steps = Math.max(1, Math.min(20, Number(input.thinkSteps ?? 8) || 8));
-    const active = [...((await services.engines.listActive?.(context)) ?? [])];
-    const thinker = String(input.engine ?? "").trim() || active[0];
-    if (!thinker) return { exitCode: 1, stderr: "No active engine for goal decomposition.\n" };
-    const thought = (await services.engines.dispatch(
-      thinker,
-      `Decompose this long-running goal before implementation. Strategy: ${strategy}; maximum steps: ${steps}. Surface subproblems, dependencies, risks, open questions, and finish with a concrete refined specification. Do not edit files or use tools.\n\nGOAL:\n${intent}`,
-      context,
-      { mode: "exec", timeoutSeconds: Math.max(60, Number(input.timeout ?? 120) || 120), systemPrompt: "Reason about the goal only. Return a grounded decomposition and refined specification." },
-    )) as Record<string, Json>;
-    const refined = String(thought.stdout ?? "").trim();
-    if (thought.exitCode === 0 && refined)
-      intent = `${intent}\n\nPRE-RUN DECOMPOSITION:\n${refined}`;
-  }
   let tasks: Task[];
   try {
     tasks = input.resume === true && prior ? prior.tasks : loadTasks(input, intent);
@@ -559,7 +544,11 @@ export async function runGoal(
       tasks,
       events: [],
     };
-    const save = async () => { await lease.assertOwned(); await persistGoal(services, state); };
+    const assertStateCurrent = () => {
+      if (capabilities.assertStateCurrent) capabilities.assertStateCurrent();
+      else capabilities.assertCurrent();
+    };
+    const save = async () => { await lease.assertOwned(); assertStateCurrent(); await persistGoal(services, state); };
     try {
       if (input.resume === true && prior) {
         state = {
@@ -586,6 +575,60 @@ export async function runGoal(
       }
       await save();
       await assertExecution();
+      try {
+        if (!verification?.snapshotOracle) throw new GoalOracleInvalidError('Goal verification capabilities are unavailable. Restart with a compatible modular host.');
+        const recorded = state.oracle;
+        const hasRecord = Object.prototype.hasOwnProperty.call(state, 'oracle');
+        if (hasRecord && (!recorded || recorded.gate !== gate || !Array.isArray(recorded.files) ||
+            recorded.files.length !== 0 || typeof recorded.hash !== 'string' || typeof recorded.dir !== 'string')) {
+          throw new GoalOracleInvalidError('Frozen Goal oracle record is invalid. Restore the original record or start a new goal.');
+        }
+        const frozen = await verification.snapshotOracle({ goalId: id, gate, files: [], requireExisting: hasRecord });
+        if (hasRecord && (recorded!.hash !== frozen.hash || recorded!.dir !== frozen.dir)) {
+          throw new GoalOracleInvalidError('Frozen Goal oracle record differs from its evidence. Restore the original record or start a new goal.');
+        }
+        state.oracle = frozen;
+      } catch (error) {
+        await assertExecution();
+        if (!(error instanceof GoalOracleInvalidError)) throw error;
+        const message = error.message;
+        const failure = new Error(`GOAL_ORACLE_INVALID: ${message}`, { cause: error });
+        operationError = failure;
+        state.status = 'stopped';
+        state.stopReason = 'oracle-invalid';
+        state.events.push({ at: new Date().toISOString(), type: 'oracle-invalid', detail: message });
+        try { await save(); }
+        catch (storage) { throw new AggregateError([failure, storage], `${failure.message}; rejection could not be saved`); }
+        return { exitCode: 1, stderr: `GOAL_ORACLE_INVALID: ${message}\n`,
+          failure: { code: 'GOAL_ORACLE_INVALID', message, retryable: false }, result: { state } as unknown as Json };
+      }
+      await save();
+      if (input.think === true && input.resume !== true && input.dryRun !== true) {
+        const strategy = String(input.thinkStrategy ?? "hypothesis").trim();
+        if (!["linear", "reflexion", "tot", "graph", "hypothesis"].includes(strategy))
+          return { exitCode: 1, stderr: `Unknown goal think strategy: ${strategy}\n` };
+        const steps = Math.max(1, Math.min(20, Number(input.thinkSteps ?? 8) || 8));
+        const active = [...((await services.engines.listActive?.(context)) ?? [])];
+        const thinker = String(input.engine ?? "").trim() || active[0];
+        if (!thinker) return { exitCode: 1, stderr: "No active engine for goal decomposition.\n" };
+        await assertExecution();
+        const thought = (await services.engines.dispatch(
+          thinker,
+          `Decompose this long-running goal before implementation. Strategy: ${strategy}; maximum steps: ${steps}. Surface subproblems, dependencies, risks, open questions, and finish with a concrete refined specification. Do not edit files or use tools.\n\nGOAL:\n${intent}`,
+          { ...context, cwd: worktree.path },
+          { mode: "exec", textOnly: true, timeoutSeconds: Math.max(60, Number(input.timeout ?? 120) || 120), systemPrompt: "Reason about the goal only. Return a grounded decomposition and refined specification." },
+        )) as Record<string, Json>;
+        await assertExecution();
+        const refined = String(thought.stdout ?? "").trim();
+        if (thought.exitCode === 0 && refined) {
+          intent = `${intent}\n\nPRE-RUN DECOMPOSITION:\n${refined}`;
+          tasks = loadTasks(input, intent);
+          validateTasks(tasks);
+          state.intent = intent;
+          state.tasks = tasks;
+          await save();
+        }
+      }
       // Older state records task attempts only after a successful initial baseline.
       const verifiedBaseline = input.resume === true && prior &&
         (prior.baselineVerified === true || prior.tasks.some(task => task.attempts > 0));
@@ -1287,9 +1330,10 @@ export async function runGoal(
       }
       state = { ...event(state, 'goal-interrupted', undefined, error instanceof Error ? error.message : String(error)),
         status: context.signal.aborted ? 'cancelled' : 'failed' };
-      try { await lease.assertOwned(); }
+      try { await lease.assertOwned(); assertStateCurrent(); }
       catch { throw error; }
-      await save();
+      try { await save(); }
+      catch (storage) { throw new AggregateError([error, storage], `Goal interruption could not be saved: ${error instanceof Error ? error.message : String(error)}`); }
       throw error;
     }
   } catch (error) {
@@ -1298,7 +1342,7 @@ export async function runGoal(
   } finally {
     try { await lease.release(); }
     catch (cleanup) {
-      if (operationError) throw new AggregateError([operationError, cleanup], 'Goal execution and lock release failed');
+      if (operationError) throw new AggregateError([operationError, cleanup], `Goal execution and lock release failed: ${operationError instanceof Error ? operationError.message : String(operationError)}`);
       throw cleanup;
     }
   }

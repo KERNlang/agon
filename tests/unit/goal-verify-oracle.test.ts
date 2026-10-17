@@ -185,6 +185,11 @@ describe.each(['legacy', 'physical'] as const)('%s differential execution oracle
     expect(git(repo, 'worktree', 'list', '--porcelain')).toBe(before);
   });
 
+  it('does not recreate missing evidence in verification-only mode', () => {
+    expect(() => oracle.snapshotOracle({ goalId: 'missing-evidence', gate: verifyOk, files: [], requireExisting: true })).toThrow();
+    expect(existsSync(join(home, 'goals', 'missing-evidence', 'oracle'))).toBe(false);
+  });
+
   it('refuses to replace a frozen oracle with changed input', () => {
     const file = join(repo, 'frozen.txt');
     writeFileSync(file, 'original\n');

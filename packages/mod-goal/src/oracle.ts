@@ -16,6 +16,9 @@ export interface FrozenOracle {
   files: string[];
 }
 
+/** Invalid evidence must not be retried as a transient storage failure. */
+export class GoalOracleInvalidError extends Error {}
+
 /**
  * Result of fail-on-base / pass-on-new witnessing for a new test.
  */
@@ -68,7 +71,7 @@ function hashOracleContents(gate: string, files: ReadonlyArray<{ path: string; c
 function readOracleFile(path: string): Buffer {
   const fd = openSync(path, constants.O_RDONLY | constants.O_NONBLOCK);
   try {
-    if (!fstatSync(fd).isFile()) throw new Error(`Goal oracle input is not a regular file: ${path}`);
+    if (!fstatSync(fd).isFile()) throw new GoalOracleInvalidError(`Goal oracle input is not a regular file: ${path}`);
     return readFileSync(fd);
   } finally { closeSync(fd); }
 }
@@ -119,22 +122,30 @@ export function createGoalOracle(effects: GoalOracleEffects) {
   /**
    * Freeze the gate string + oracle files into ~/.agon/goals/<id>/oracle/ and hash them. FrozenOracle.files holds the ORIGINAL paths (the basis of the hash), not the renamed copies.
    */
-  function snapshotOracle(opts: {goalId:string, gate:string, files:string[]}): FrozenOracle {
+  function snapshotOracle(opts: {goalId:string, gate:string, files:string[], requireExisting?:boolean}): FrozenOracle {
     const { goalId, gate, files } = opts;
     assertSafeGoalId(goalId);
     const captured = files.map(path => ({ path, content: readOracleFile(path) }));
     const hash = hashOracleContents(gate, captured);
-    effects.ensureHome();
     const dir = effects.path('goals', goalId, 'oracle');
     const verifyExisting = () => {
-      if (!snapshotMatches(dir, gate, hash, captured, files)) {
-        throw new Error('Frozen Goal oracle differs from its recorded input. Restore the original input or start a new goal.');
+      try {
+        if (!snapshotMatches(dir, gate, hash, captured, files)) {
+          throw new GoalOracleInvalidError('Frozen Goal oracle differs from its recorded input. Restore the original input or start a new goal.');
+        }
+      } catch (error) {
+        if (error instanceof SyntaxError || ['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? '')) {
+          throw new GoalOracleInvalidError('Frozen Goal oracle evidence is missing or malformed. Restore the original evidence or start a new goal.', { cause: error });
+        }
+        throw error;
       }
     };
     if (existsSync(dir)) {
       verifyExisting();
       return { dir, hash, gate, files: [...files] };
     }
+    if (opts.requireExisting) throw new GoalOracleInvalidError('Frozen Goal oracle evidence is missing. Restore the original evidence or start a new goal.');
+    effects.ensureHome();
     mkdirSync(dirname(dir), { recursive: true });
     const staging = mkdtempSync(join(dirname(dir), '.oracle-'));
     let failure: { error: unknown } | undefined;

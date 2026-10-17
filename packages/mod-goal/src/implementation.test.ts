@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdtempSync, writeFileSync, readFileSync, unlinkSync } from 'node:fs';
+import { existsSync, mkdtempSync, writeFileSync, readFileSync, unlinkSync, renameSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -178,7 +178,7 @@ describe('physical goal mod', () => {
     if (dirtyBase) expect(readFileSync(join(accepted.path, 'predecessor.txt'), 'utf8')).toBe('restore accepted work\n');
   });
 
-  it.each(['before', 'after'].flatMap(phase => ['none', 'budget', 'time', 'engines'].map(limit => ({ phase, limit }))))('resumes task acceptance $phase its commit point with $limit limit without rebuilding', async ({ phase, limit }) => {
+  it.each(['before', 'after'].flatMap(phase => ['none', 'budget', 'time', 'engines', 'oracle'].map(limit => ({ phase, limit }))))('resumes task acceptance $phase its commit point with $limit limit without rebuilding', async ({ phase, limit }) => {
     const cwd = repo(); const h = harness(); let interrupted = false;
     const remote = mkdtempSync(join(tmpdir(), 'agon-goal-recovery-remote-'));
     execFileSync('git', ['init', '--bare', remote], { stdio: 'ignore' });
@@ -198,10 +198,18 @@ describe('physical goal mod', () => {
     if (limit === 'budget') saved.spentUsd = 1;
     if (limit === 'time') saved.createdAt = '2000-01-01T00:00:00Z';
     if (limit === 'engines') h.services.engines.listActive = async () => [];
+    if (limit === 'oracle') writeFileSync(join(saved.oracle.dir, 'gate.txt'), 'changed');
     h.dispatch.mockClear();
     const resumed = await runGoal({ id: 'acceptance-recovery', resume: true, maxAttempts: 1, push: true,
       budget: limit === 'budget' ? 0.5 : 0, maxHours: limit === 'time' ? 1 : 0,
     }, context(cwd), services);
+    if (limit === 'oracle') {
+      expect(resumed.failure?.code).toBe('GOAL_ORACLE_INVALID');
+      expect(h.dispatch).not.toHaveBeenCalled();
+      expect(execFileSync('git', ['rev-list', '--count', 'main..goal/acceptance-recovery'], { cwd, encoding: 'utf8' }).trim()).toBe(phase === 'before' ? '0' : '1');
+      expect(execFileSync('git', ['for-each-ref', '--format=%(refname)'], { cwd: remote, encoding: 'utf8' }).trim()).toBe('');
+      return;
+    }
     expect(resumed.exitCode, JSON.stringify(resumed)).toBe(0);
     expect(h.dispatch).not.toHaveBeenCalled();
     expect((resumed.result as any).state.tasks[0].attemptLog).toEqual([
@@ -269,14 +277,212 @@ describe('physical goal mod', () => {
     expect(execFileSync('git', ['worktree', 'list', '--porcelain'], { cwd, encoding: 'utf8' }).match(/^worktree /gm)).toHaveLength(2);
   });
 
+  it.each(['unchanged', 'gate', 'missing', 'directory', 'record', 'null'] as const)('checks frozen gate evidence before resuming (%s)', async change => {
+    const cwd = repo(); const h = harness();
+    const first = await runGoal({ intent: 'frozen gate', gate: 'test -f base.txt', requireTests: false, dryRun: true }, context(cwd), h.services);
+    expect(first.exitCode).toBe(0);
+    const frozen = (first.result as any).state.oracle;
+    expect(frozen).toMatchObject({ gate: 'test -f base.txt', files: [], hash: expect.any(String), dir: expect.any(String) });
+    expect(readFileSync(join(frozen.dir, 'gate.txt'), 'utf8')).toBe('test -f base.txt');
+    const originalHash = readFileSync(join(frozen.dir, 'hash.txt'), 'utf8');
+    if (change === 'gate') writeFileSync(join(frozen.dir, 'gate.txt'), 'true');
+    if (change === 'missing') unlinkSync(join(frozen.dir, 'hash.txt'));
+    if (change === 'directory') renameSync(frozen.dir, `${frozen.dir}-retained`);
+    if (change === 'record') h.state.get('goals/frozen-gate').payload.oracle.hash = 'changed-record';
+    if (change === 'null') h.state.get('goals/frozen-gate').payload.oracle = null;
+    h.dispatch.mockClear();
+    const resumed = await runGoal({ id: 'frozen-gate', resume: true, requireTests: false }, context(cwd), h.services);
+    if (change === 'unchanged') {
+      expect(resumed.exitCode).toBe(0);
+      expect(h.dispatch).toHaveBeenCalled();
+      expect((resumed.result as any).state.oracle).toEqual(frozen);
+    } else {
+      expect(h.dispatch).not.toHaveBeenCalled();
+      expect(resumed).toMatchObject({ exitCode: 1, failure: { code: 'GOAL_ORACLE_INVALID' } });
+      expect(h.state.get('goals/frozen-gate').payload.status).toBe('stopped');
+    }
+    if (change === 'missing' || change === 'directory') expect(existsSync(join(frozen.dir, 'hash.txt'))).toBe(false);
+    else expect(readFileSync(join(frozen.dir, 'hash.txt'), 'utf8')).toBe(originalHash);
+    if (change === 'gate') expect(readFileSync(join(frozen.dir, 'gate.txt'), 'utf8')).toBe('true');
+  });
+
+  it('captures the recorded gate once for a historical Goal without an oracle record', async () => {
+    const cwd = repo(); const h = harness();
+    const first = await runGoal({ intent: 'historical gate', gate: 'test -f base.txt', requireTests: false }, context(cwd), h.services);
+    expect(first.exitCode).toBe(0);
+    const frozen = (first.result as any).state.oracle;
+    renameSync(frozen.dir, `${frozen.dir}-retained`);
+    delete h.state.get('goals/historical-gate').payload.oracle;
+    h.dispatch.mockClear();
+    const resumed = await runGoal({ id: 'historical-gate', resume: true }, context(cwd), h.services);
+    expect(resumed.exitCode).toBe(0);
+    expect((resumed.result as any).state.oracle).toEqual(frozen);
+    expect(h.dispatch).not.toHaveBeenCalled();
+    renameSync(frozen.dir, `${frozen.dir}-migrated`);
+    const retry = await runGoal({ id: 'historical-gate', resume: true }, context(cwd), h.services);
+    expect(retry.failure?.code).toBe('GOAL_ORACLE_INVALID');
+    expect(existsSync(frozen.dir)).toBe(false);
+  });
+
+  it('does not classify a transient snapshot-record write failure as corrupt evidence', async () => {
+    const cwd = repo(); const h = harness(); let failed = false;
+    const write = h.services.state.write;
+    h.services.state.write = async (key, value) => {
+      if (!failed && (value as any).payload?.oracle) { failed = true; throw new Error('temporary state write failure'); }
+      return write(key, value);
+    };
+    await expect(runGoal({ intent: 'snapshot write', gate: 'true', dryRun: true }, context(cwd), h.services))
+      .rejects.toThrow('temporary state write failure');
+    expect(h.dispatch).not.toHaveBeenCalled();
+    expect(readFileSync(h.oracleEffects.path('goals', 'snapshot-write', 'oracle', 'gate.txt'), 'utf8')).toBe('true');
+    const retry = await runGoal({ id: 'snapshot-write', resume: true, dryRun: true }, context(cwd), h.services);
+    expect(retry.exitCode).toBe(0);
+  });
+
+  it.each(['host', 'lease', 'existing'] as const)('rejects pre-run Think before dispatch when %s is unavailable', async kind => {
+    const cwd = repo(); const h = harness(kind === 'lease' ? {
+      acquireWriter: async () => { throw new Error('lease denied'); },
+    } : {});
+    if (kind === 'existing') {
+      expect((await runGoal({ intent: 'think admission', gate: 'true', dryRun: true }, context(cwd), h.services)).exitCode).toBe(0);
+    }
+    const services = kind === 'host' ? { ...h.services, goal: undefined } : h.services;
+    const result = await runGoal({ intent: 'think admission', gate: 'true', think: true }, context(cwd), services);
+    expect(result.exitCode).toBe(1);
+    expect(h.dispatch).not.toHaveBeenCalled();
+  });
+
+  it.each(['capture', 'save', 'think'] as const)('does not persist after generation loss during %s', async phase => {
+    const cwd = repo(); const seed = harness(); let current = true; let assertions = 0;
+    const h = harness({
+      captureAuthority: () => () => { if (!current) throw new Error('generation revoked'); },
+      oracleEffects: { ...seed.oracleEffects, ensureHome: () => { if (phase === 'capture') current = false; } },
+      acquireWriter: async () => ({
+        assertOwned: async () => { if (phase === 'save' && ++assertions === 1) current = false; },
+        release: async () => undefined,
+      }),
+    });
+    const write = h.services.state.write as ReturnType<typeof vi.fn>;
+    write.mockImplementation(async (key, value) => {
+      expect(current, 'revoked generation must not write').toBe(true);
+      h.state.set(key, structuredClone(value));
+    });
+    h.dispatch.mockImplementation(async () => { current = false; return { exitCode: 0, stdout: 'refined', stderr: '', timedOut: false }; });
+    await expect(runGoal({ intent: 'generation boundary', gate: 'true', think: phase === 'think',
+      dryRun: phase !== 'think' }, context(cwd), h.services)).rejects.toThrow('generation revoked');
+    expect(write).toHaveBeenCalledTimes(phase === 'save' ? 0 : phase === 'capture' ? 1 : 2);
+    expect(h.dispatch).toHaveBeenCalledTimes(phase === 'think' ? 1 : 0);
+  });
+
+  it('keeps oracle storage errors retryable instead of claiming evidence corruption', async () => {
+    const cwd = repo(); const seed = harness();
+    const h = harness({ oracleEffects: { ...seed.oracleEffects,
+      ensureHome: () => { throw new Error('temporary oracle storage failure'); },
+    } });
+    await expect(runGoal({ intent: 'oracle storage', gate: 'true', dryRun: true }, context(cwd), h.services))
+      .rejects.toThrow('temporary oracle storage failure');
+    expect(h.dispatch).not.toHaveBeenCalled();
+  });
+
+  it.each(['save', 'release'] as const)('preserves oracle-invalid classification when rejection %s fails', async phase => {
+    const cwd = repo(); const h = harness();
+    const first = await runGoal({ intent: 'rejection failure', gate: 'true', dryRun: true }, context(cwd), h.services);
+    const frozen = (first.result as any).state.oracle;
+    writeFileSync(join(frozen.dir, 'gate.txt'), 'changed');
+    const write = h.services.state.write;
+    h.services.state.write = async (key, value) => {
+      if (phase === 'save' && (value as any).payload.status === 'stopped') throw new Error('rejection write failed');
+      return write(key, value);
+    };
+    const services = { ...h.services, goal: { open: (invocation: ReturnType<typeof context>) => {
+      const host = h.goal.open(invocation);
+      return { ...host, acquire: async (id: string) => {
+        const lease = await host.acquire(id);
+        return { assertOwned: () => lease.assertOwned(), release: async () => {
+          await lease.release();
+          if (phase === 'release') throw new Error('rejection release failed');
+        } };
+      } };
+    } } };
+    let error: unknown;
+    try { await runGoal({ id: 'rejection-failure', resume: true }, context(cwd), services); }
+    catch (caught) { error = caught; }
+    expect(error).toBeInstanceOf(AggregateError);
+    expect((error as Error).message).toContain('GOAL_ORACLE_INVALID');
+    expect((error as AggregateError).errors.some(item => String(item).includes(phase === 'save' ? 'rejection write failed' : 'rejection release failed'))).toBe(true);
+    const runChild = vi.fn(async () => ({ exitCode: 1, outputTail: String(error) }));
+    const wait = vi.fn(async () => undefined);
+    await runGoalSupervisor({ intent: 'rejection failure', gate: 'true', maxRestarts: 2 }, {
+      nodeExec: '/node', agonEntry: '/agon.js', runChild, wait, interrupted: () => false,
+    });
+    expect(runChild).toHaveBeenCalledOnce();
+    expect(wait).not.toHaveBeenCalled();
+    expect(h.dispatch).not.toHaveBeenCalled();
+  });
+
+  it.each(['cancelled', 'generation', 'lease'] as const)('does not capture evidence after losing %s authority', async kind => {
+    const cwd = repo(); const controller = new AbortController(); let current = true;
+    const h = harness({ captureAuthority: () => () => { if (!current) throw new Error('generation changed'); } });
+    const host = h.goal.open({ ...context(cwd), signal: controller.signal });
+    const verification = host.verification!(async () => { if (kind === 'lease') throw new Error('lease lost'); });
+    if (kind === 'cancelled') controller.abort(new Error('cancelled'));
+    if (kind === 'generation') current = false;
+    await expect(verification.snapshotOracle!({ goalId: 'denied', gate: 'true', files: [] })).rejects.toThrow();
+    expect(existsSync(h.oracleEffects.path('goals', 'denied', 'oracle'))).toBe(false);
+  });
+
+  it('persists frozen evidence before Think and builder dispatch', async () => {
+    const cwd = repo(); const h = harness(); const dispatch = h.dispatch.getMockImplementation()!;
+    h.dispatch.mockImplementation(async (id, prompt, invocation, options) => {
+      const saved = h.state.get('goals/thinking').payload;
+      expect(readFileSync(join(saved.oracle.dir, 'gate.txt'), 'utf8')).toBe(saved.gate);
+      expect(readFileSync(join(saved.oracle.dir, 'hash.txt'), 'utf8')).toBe(saved.oracle.hash);
+      expect(invocation.cwd).not.toBe(cwd);
+      if (options.mode === 'exec') {
+        expect(options.textOnly).toBe(true);
+        return { exitCode: 0, stdout: 'refined task', stderr: '', timedOut: false };
+      }
+      return dispatch(id, prompt, invocation, options);
+    });
+    const result = await runGoal({ intent: 'thinking', gate: 'true', think: true, requireTests: false }, context(cwd), h.services);
+    expect(result.exitCode).toBe(0);
+    expect((result.result as any).state.intent).toContain('PRE-RUN DECOMPOSITION:\nrefined task');
+    expect(h.dispatch.mock.calls.some(call => call[3].mode === 'agent')).toBe(true);
+  });
+
+  it.each([true, false])('reuses only matching orphan evidence (matching=%s)', async matching => {
+    const cwd = repo(); const h = harness();
+    const snapshot = await h.goal.open(context(cwd)).verification!(async () => undefined)
+      .snapshotOracle!({ goalId: 'orphan', gate: matching ? 'true' : 'false', files: [] });
+    const result = await runGoal({ intent: 'orphan', gate: 'true', dryRun: true }, context(cwd), h.services);
+    expect(result.exitCode).toBe(matching ? 0 : 1);
+    expect(readFileSync(join(snapshot.dir, 'gate.txt'), 'utf8')).toBe(snapshot.gate);
+    expect(readFileSync(join(snapshot.dir, 'hash.txt'), 'utf8')).toBe(snapshot.hash);
+    expect(h.dispatch).not.toHaveBeenCalled();
+  });
+
   it('fails closed when a legacy host lacks verification effects', async () => {
     const cwd = repo(); const h = harness({ oracleEffects: undefined });
     const out = await runGoal({ intent: 'missing witness host', gate: 'test -f base.txt',
       tasks: [{ id: 'second', source: 'second', verify: 'test -f second.ts' }],
       oracleGate: 'off', requireTests: false, maxAttempts: 1 }, context(cwd), h.services);
     expect(out.exitCode).toBe(1);
-    expect((out.result as any).state.tasks[0].error).toContain('verification capabilities are unavailable');
-    expect(h.dispatch).toHaveBeenCalledOnce();
+    expect(out.failure).toMatchObject({ code: 'GOAL_ORACLE_INVALID', message: expect.stringContaining('verification capabilities are unavailable') });
+    expect(h.dispatch).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when a witness-capable host lacks snapshot capture', async () => {
+    const cwd = repo(); const h = harness();
+    const services = { ...h.services, goal: { open: (invocation: Parameters<typeof h.goal.open>[0]) => {
+      const host = h.goal.open(invocation);
+      return { ...host, verification: (assertOwned: () => Promise<void>) => {
+        const { witnessTest, witnessVerifyCommand } = host.verification!(assertOwned);
+        return { witnessTest, witnessVerifyCommand };
+      } };
+    } } };
+    const result = await runGoal({ intent: 'old snapshot host', gate: 'true', think: true }, context(cwd), services);
+    expect(result.failure?.code).toBe('GOAL_ORACLE_INVALID');
+    expect(h.dispatch).not.toHaveBeenCalled();
   });
 
   it.each([true, false])('checks the second task against its own accepted base (commit=%s)', async commit => {
@@ -1329,8 +1535,14 @@ describe('physical goal mod', () => {
       stdout: 'https://github.com/fixture/goal/pull/1\n', stderr: 'fixture', timedOut: mode === 'gh-timeout', durationMs: 0,
     }));
     vi.spyOn(engineRuntime, 'spawnWithTimeout').mockImplementation(options => options.command === 'gh' ? create(options) : spawn(options));
-    const out = await runGoal({ intent: 'pr boundary', gate: 'true', requireTests: false, push: mode !== 'no-push', pr: true,
+    const invocation = runGoal({ intent: 'pr boundary', gate: 'true', requireTests: false, push: mode !== 'no-push', pr: true,
       dryRun: mode === 'dry-run' }, { ...context(cwd), signal: abort.signal }, h.services);
+    if (mode === 'draft-retired') {
+      await expect(invocation).rejects.toThrow('generation retired');
+      expect(create).not.toHaveBeenCalled();
+      return;
+    }
+    const out = await invocation;
     expect(out.exitCode).toBe(0);
     const result = out.result as any;
     const allowed = ['no-draft', 'draft-failed', 'gh-failed', 'gh-timeout'].includes(mode);
@@ -1523,6 +1735,17 @@ describe('physical goal mod', () => {
     expect(runChild.mock.calls[0][0]).toEqual(['goal', 'overnight', '--gate', 'true', '--resume']);
     expect(wait).toHaveBeenCalledWith(5000);
     expect(h.dispatch).not.toHaveBeenCalled();
+  });
+
+  it.each(['GOAL_ORACLE_INVALID: evidence missing', 'Goal resume cannot change the recorded branch or gate.'])('does not supervise retries after %s', async outputTail => {
+    const runChild = vi.fn(async () => ({ exitCode: 1, outputTail }));
+    const wait = vi.fn(async () => undefined);
+    const result = await runGoalSupervisor({ intent: 'invalid evidence', gate: 'true', maxRestarts: 3 }, {
+      nodeExec: '/node', agonEntry: '/agon.js', runChild, wait, interrupted: () => false,
+    });
+    expect(result.exitCode).toBe(1);
+    expect(runChild).toHaveBeenCalledOnce();
+    expect(wait).not.toHaveBeenCalled();
   });
 
   it('counts a billed failed seat alongside a usable review without changing the degraded verdict', async () => {

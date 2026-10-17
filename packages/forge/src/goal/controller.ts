@@ -8,7 +8,7 @@ import { assertSafeGoalId, resolveWithin, safePathSegment } from './paths.js';
 
 import { createJournal, loadJournal, saveJournal, addTasks, requeueInflightTasks, nextTask, markStatus, recordAttempt, remainingCount, isDone, logEvent, goalDir } from './journal.js';
 
-import { hashOracleInputs, snapshotOracle, witnessTest, witnessVerifyCommand } from './oracle.js';
+import { hashOracleInputs, oracleTampered, snapshotOracle, witnessTest, witnessVerifyCommand } from './oracle.js';
 
 import { probeTaskOracle } from './oracle-probe.js';
 
@@ -198,7 +198,9 @@ export async function runGoalController(opts: { spec: GoalSpec, repoRoot: string
   //    resuming with a different gate would silently move the goalposts.
   const oracleFiles = opts.oracleFiles ?? [];
   const oracleHash = hashOracleInputs(spec.gate, oracleFiles);
-  if (state.oracleHash && state.oracleHash !== oracleHash) {
+  if (state.oracleHash && (state.oracleHash !== oracleHash || oracleTampered({
+    dir: join(goalDir(spec.goalId), 'oracle'), hash: state.oracleHash, gate: spec.gate, files: oracleFiles,
+  }, oracleFiles))) {
     state = logEvent(state, 'error', undefined, 'oracle changed since the run was frozen — refusing to resume with a different gate (restore the original gate, or start a new goal id)');
     saveJournal(state);
     try { writeGoalArtifacts(state); } catch { /* artifact write is best-effort */ }

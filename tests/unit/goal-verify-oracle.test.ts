@@ -1,5 +1,8 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
+import { createHash } from 'node:crypto';
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, existsSync, unlinkSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -12,8 +15,8 @@ import { worktreeCreate, worktreeRemoveBestEffort } from '../../packages/core/sr
 
 // The differential behavioral oracle is the load-bearing fix for "green ≠ correct":
 // a verify command that EXECUTES the produced artifact must fail on base and pass on
-// head. These tests run the real thing — real git worktrees, real shell commands —
-// because the whole point is that a non-executing assertion cannot fake this signal.
+// head. These tests use real Git worktrees and shell commands. Differential
+// results are evidence of changed behavior, not proof that an assertion ran.
 
 const git = (cwd: string, ...args: string[]) =>
   execFileSync('git', args, { cwd, stdio: 'pipe' }).toString();
@@ -180,6 +183,157 @@ describe.each(['legacy', 'physical'] as const)('%s differential execution oracle
     expect(spawned).toBe(1);
     expect(result).toMatchObject({ witnessed: false, passedOnNew: false, baseExit: 130, newExit: 130 });
     expect(git(repo, 'worktree', 'list', '--porcelain')).toBe(before);
+  });
+
+  it('refuses to replace a frozen oracle with changed input', () => {
+    const file = join(repo, 'frozen.txt');
+    writeFileSync(file, 'original\n');
+    const frozen = oracle.snapshotOracle({ goalId: 'immutable', gate: verifyOk, files: [file] });
+    expect(oracle.snapshotOracle({ goalId: 'immutable', gate: verifyOk, files: [file] })).toEqual(frozen);
+    writeFileSync(file, 'changed\n');
+    expect(() => oracle.snapshotOracle({ goalId: 'immutable', gate: verifyOk, files: [file] })).toThrow();
+    expect(readFileSync(join(frozen.dir, 'files', '0-frozen.txt'), 'utf8')).toBe('original\n');
+    expect(readFileSync(join(frozen.dir, 'hash.txt'), 'utf8')).toBe(frozen.hash);
+    expect(readFileSync(join(frozen.dir, 'gate.txt'), 'utf8')).toBe(verifyOk);
+  });
+
+  it('verifies reordered inputs without replacing their original copies', () => {
+    const a = join(repo, 'a.txt'); const b = join(repo, 'b.txt');
+    writeFileSync(a, 'alpha'); writeFileSync(b, 'beta');
+    const frozen = oracle.snapshotOracle({ goalId: 'ordered', gate: verifyOk, files: [a, b] });
+    expect(oracle.snapshotOracle({ goalId: 'ordered', gate: verifyOk, files: [b, a] }).hash).toBe(frozen.hash);
+    expect(readFileSync(join(frozen.dir, 'files', '0-a.txt'), 'utf8')).toBe('alpha');
+    expect(readFileSync(join(frozen.dir, 'files', '1-b.txt'), 'utf8')).toBe('beta');
+  });
+
+  it('detects tampering even when legacy newline framing collides', () => {
+    const a = join(repo, 'a.txt'); const b = join(repo, 'b.txt');
+    writeFileSync(a, 'X'); writeFileSync(b, `Y\nfile\n${b}\nZ`);
+    const frozen = oracle.snapshotOracle({ goalId: 'framing', gate: verifyOk, files: [a, b] });
+    writeFileSync(a, `X\nfile\n${b}\nY`); writeFileSync(b, 'Z');
+    expect(legacyOracle.hashOracleInputs(verifyOk, [a, b])).toBe(frozen.hash);
+    expect(legacyOracle.oracleTampered(frozen, [a, b])).toBe(true);
+  });
+
+  it.each([true, false])('verifies a concurrent snapshot winner (identical=%s)', identical => {
+    const file = join(repo, 'race.txt'); writeFileSync(file, 'proof');
+    const rename = fs.renameSync;
+    const spy = vi.spyOn(fs, 'renameSync').mockImplementation((source, destination) => {
+      fs.cpSync(source, destination, { recursive: true });
+      if (!identical) writeFileSync(join(String(destination), 'gate.txt'), 'different gate');
+      return rename(source, destination);
+    });
+    syncBuiltinESMExports();
+    try {
+      const capture = () => oracle.snapshotOracle({ goalId: 'racing', gate: verifyOk, files: [file] });
+      if (identical) expect(capture().gate).toBe(verifyOk);
+      else expect(capture).toThrow();
+      const parent = join(home, 'goals', 'racing');
+      expect(fs.readdirSync(parent)).toEqual(['oracle']);
+      expect(readFileSync(join(parent, 'oracle', 'gate.txt'), 'utf8')).toBe(identical ? verifyOk : 'different gate');
+    } finally { spy.mockRestore(); syncBuiltinESMExports(); }
+  });
+
+  it('rejects a FIFO substituted immediately before opening an oracle input', () => {
+    const file = join(repo, 'swapped.txt'); writeFileSync(file, 'regular file');
+    const open = fs.openSync;
+    const spy = vi.spyOn(fs, 'openSync').mockImplementation((path, flags, mode) => {
+      if (String(path) === file) {
+        unlinkSync(file);
+        execFileSync('mkfifo', [file]);
+        // Refuse unsafe reads in the fixture instead of hanging the test process.
+        if (!(Number(flags) & fs.constants.O_NONBLOCK)) throw new Error('unsafe blocking oracle open');
+      }
+      return open(path, flags, mode);
+    });
+    syncBuiltinESMExports();
+    try {
+      expect(() => oracle.snapshotOracle({ goalId: 'fifo', gate: verifyOk, files: [file] }))
+        .toThrow('not a regular file');
+      expect(existsSync(join(home, 'goals', 'fifo', 'oracle'))).toBe(false);
+    } finally { spy.mockRestore(); syncBuiltinESMExports(); }
+  });
+
+  it.each(['write', 'rename'] as const)('cleans staging after a snapshot %s failure', phase => {
+    const file = join(repo, 'cleanup.txt'); writeFileSync(file, 'proof');
+    const write = fs.writeFileSync;
+    const spy = phase === 'write' ? vi.spyOn(fs, 'writeFileSync').mockImplementation((path, data, options) => {
+      if (String(path).includes('.oracle-') && String(path).endsWith('/hash.txt')) throw new Error('fixture write failure');
+      return write(path, data, options);
+    }) : vi.spyOn(fs, 'renameSync').mockImplementation(() => { throw new Error('fixture rename failure'); });
+    syncBuiltinESMExports();
+    try {
+      expect(() => oracle.snapshotOracle({ goalId: 'cleanup', gate: verifyOk, files: [file] })).toThrow(`fixture ${phase} failure`);
+      expect(fs.readdirSync(join(home, 'goals', 'cleanup'))).toEqual([]);
+    } finally { spy.mockRestore(); syncBuiltinESMExports(); }
+  });
+
+  it('reports both snapshot and staging-cleanup failures', () => {
+    const file = join(repo, 'failed-cleanup.txt'); writeFileSync(file, 'proof');
+    const write = fs.writeFileSync;
+    const remove = fs.rmSync;
+    const writeSpy = vi.spyOn(fs, 'writeFileSync').mockImplementation((path, data, options) => {
+      if (String(path).endsWith('/hash.txt')) throw new Error('snapshot write failed');
+      return write(path, data, options);
+    });
+    const removeSpy = vi.spyOn(fs, 'rmSync').mockImplementation((path, options) => {
+      if (String(path).includes('.oracle-')) throw new Error('staging cleanup failed');
+      return remove(path, options);
+    });
+    syncBuiltinESMExports();
+    try {
+      let failure: unknown;
+      try { oracle.snapshotOracle({ goalId: 'failed-cleanup', gate: verifyOk, files: [file] }); }
+      catch (error) { failure = error; }
+      expect(failure).toBeInstanceOf(AggregateError);
+      expect((failure as AggregateError).errors.map(error => error.message)).toEqual(['snapshot write failed', 'staging cleanup failed']);
+      expect(existsSync(join(home, 'goals', 'failed-cleanup', 'oracle'))).toBe(false);
+    } finally { writeSpy.mockRestore(); removeSpy.mockRestore(); syncBuiltinESMExports(); }
+  });
+
+  it.each(['missing', 'directory'])('rejects %s oracle inputs before leaving snapshot evidence', kind => {
+    const file = join(repo, 'available.txt');
+    writeFileSync(file, 'available\n');
+    const unavailable = kind === 'missing' ? join(repo, 'missing.txt') : repo;
+    expect(() => oracle.snapshotOracle({ goalId: 'unavailable', gate: verifyOk, files: [file, unavailable] })).toThrow();
+    expect(existsSync(join(home, 'goals', 'unavailable', 'oracle'))).toBe(false);
+  });
+
+  it('detects a deleted empty oracle file and distinct binary bytes', () => {
+    const empty = join(repo, 'empty.txt');
+    writeFileSync(empty, '');
+    const frozen = oracle.snapshotOracle({ goalId: 'empty', gate: verifyOk, files: [empty] });
+    unlinkSync(empty);
+    expect(legacyOracle.oracleTampered(frozen, [empty])).toBe(true);
+    const binary = join(repo, 'binary.dat');
+    writeFileSync(binary, Buffer.from([0x80]));
+    const captured = oracle.snapshotOracle({ goalId: 'binary', gate: verifyOk, files: [binary] });
+    expect(readFileSync(join(captured.dir, 'files', '0-binary.dat'))).toEqual(Buffer.from([0x80]));
+    writeFileSync(binary, Buffer.from([0x81]));
+    expect(legacyOracle.oracleTampered(captured, [binary])).toBe(true);
+    expect(legacyOracle.hashOracleInputs(verifyOk, [binary])).toBe(captured.hash);
+  });
+
+  it.each([Buffer.from('UTF-8 snowman: ☃\n'), Buffer.from([0x80])])('preserves legacy digest compatibility for %j', bytes => {
+    const file = join(repo, 'legacy.dat'); writeFileSync(file, bytes);
+    const expected = createHash('sha256').update(`gate\n${verifyOk}\nfile\n${file}\n${bytes.toString('utf8')}\n`).digest('hex');
+    expect(legacyOracle.hashOracleInputs(verifyOk, [file])).toBe(expected);
+    const frozen = oracle.snapshotOracle({ goalId: 'legacy-compatible', gate: verifyOk, files: [file] });
+    expect(frozen.hash).toBe(expected);
+    unlinkSync(join(frozen.dir, 'files.json'));
+    expect(legacyOracle.oracleTampered(frozen, [file])).toBe(false);
+    expect(oracle.snapshotOracle({ goalId: 'legacy-compatible', gate: verifyOk, files: [file] })).toEqual(frozen);
+  });
+
+  it('refuses to repair corrupted snapshot evidence implicitly', () => {
+    const file = join(repo, 'proof.txt');
+    writeFileSync(file, 'source proof\n');
+    const frozen = oracle.snapshotOracle({ goalId: 'corrupted', gate: verifyOk, files: [file] });
+    const copied = join(frozen.dir, 'files', '0-proof.txt');
+    writeFileSync(copied, 'changed evidence\n');
+    expect(() => oracle.snapshotOracle({ goalId: 'corrupted', gate: verifyOk, files: [file] })).toThrow();
+    expect(readFileSync(copied, 'utf8')).toBe('changed evidence\n');
+    expect(readFileSync(file, 'utf8')).toBe('source proof\n');
   });
 
   it('retains gate, file identity, copies and tamper detection', () => {

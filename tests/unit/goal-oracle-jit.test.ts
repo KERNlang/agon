@@ -122,6 +122,20 @@ describe('goal controller — JIT per-task oracle red-team', () => {
     expect(paths.map((path) => readFileSync(join(oracleDir, path)))).toEqual(frozen);
   });
 
+  it('checks frozen bytes on resume even when the legacy hash collides', async () => {
+    const a = join(repo, 'a.txt'); const b = join(repo, 'b.txt');
+    writeFileSync(a, 'X'); writeFileSync(b, `Y\nfile\n${b}\nZ`);
+    const initial = await run({ tasks: [], oracleFiles: [a, b] });
+    writeFileSync(a, `X\nfile\n${b}\nY`); writeFileSync(b, 'Z');
+    const implement = vi.fn(goodImplement);
+    const resumed = await run({ resume: true, tasks: [{ id: 't1', source: 'new work' }],
+      oracleFiles: [a, b], implement });
+    expect(resumed.events.some(event => event.detail?.includes('oracle changed'))).toBe(true);
+    expect(implement).not.toHaveBeenCalled();
+    expect(resumed.oracleHash).toBe(initial.oracleHash);
+    expect(readFileSync(join(home, 'goals', GOAL_ID, 'oracle', 'files', '0-a.txt'), 'utf8')).toBe('X');
+  });
+
   it('probes EVERY runnable task exactly once, incl. one whose deps unblock mid-run, and journals the clean pass', async () => {
     const probes: string[] = [];
     const state = await run({ oracleRedTeam: recordingRedTeam(probes) }) as JournalState;

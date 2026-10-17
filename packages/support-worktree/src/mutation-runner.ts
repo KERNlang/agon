@@ -4,6 +4,7 @@ import { dirname, extname, join, relative, resolve, sep } from 'node:path';
 
 import { runFitnessCommand } from '@kernlang/agon-support-verification';
 import { createForgeArena } from './forge-arena.js';
+import { generateMutants } from './mutant-generator.js';
 
 export interface MutationCandidate {
   readonly id: string;
@@ -66,30 +67,16 @@ export function discoverMutationGate(repoRoot: string): string {
   return '';
 }
 
-const OPERATORS = [
-  ['arith:+→-', /\+(?!=)/, '-', 'high-signal'],
-  ['arith:-→+', /-(?![=>-])/, '+', 'high-signal'],
-  ['eq:===→!==', /===/, '!==', 'high-signal'],
-  ['eq:!==→===', /!==/, '===', 'high-signal'],
-  ['logic:&&→||', /&&/, '||', 'high-signal'],
-  ['logic:||→&&', /\|\|/, '&&', 'high-signal'],
-  ['rel:<→>=', /(?<![<>=])<(?![<=])/, '>=', 'equiv-prone'],
-  ['rel:>→<=', /(?<![<>=-])>(?![>=])/, '<=', 'equiv-prone'],
-  ['bool:true→false', /\btrue\b/, 'false', 'high-signal'],
-  ['bool:false→true', /\bfalse\b/, 'true', 'high-signal'],
-] as const;
 const MUTABLE = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.mts', '.cts']);
 
 export function generateMechanicalMutants(source: string, file: string, onlyLines?: readonly number[]): MutationCandidate[] {
   const allowed = onlyLines ? new Set(onlyLines) : undefined;
-  return source.split('\n').flatMap((before, index) => {
-    const line = index + 1;
-    if ((allowed && !allowed.has(line)) || /^\s*(?:\/\/|\*|#)/.test(before)) return [];
-    return OPERATORS.flatMap(([operator, pattern, replacement, className]) => {
-      const after = before.replace(pattern, replacement);
-      return after === before ? [] : [{ id: `${file}:${operator}@L${line}`, file, line, before, after, operator, class: className, origin: 'mechanical' as const }];
-    });
-  });
+  // Preserve the runner's hash-prefixed-line exclusion, including executable hashbangs.
+  const lines = source.split('\n').flatMap((text, index) =>
+    (!allowed || allowed.has(index + 1)) && !/^\s*#/.test(text) ? [index + 1] : []);
+  return generateMutants(source, lines).map(mutant => ({
+    ...mutant, id: `${file}:${mutant.id}`, file, origin: 'mechanical',
+  }));
 }
 
 export function changedLinesFromDiff(diff: string): Record<string, number[]> {

@@ -90,6 +90,25 @@ const context = (cwd: string) => ({
 });
 
 describe('physical goal mod', () => {
+  it.each([undefined, 'exit 1'])('uses the configured mutation witness command (%s)', async witnessCmd => {
+    const cwd = repo(); const h = harness();
+    const assessment = vi.spyOn(worktreeSupport, 'runMutationAssessment');
+    const gate = 'test -f base.txt';
+    const out = await runGoal({ intent: 'witness command', gate,
+      ...(witnessCmd ? { witnessCmd } : {}),
+      tasks: [{ id: 'second', source: 'make second', verify: 'test -f second.ts' }],
+      engine: 'builder', reviewEngines: 'reviewer', requireTests: false, maxAttempts: 1 }, context(cwd), h.services);
+    expect(assessment).toHaveBeenCalledOnce();
+    expect(assessment.mock.calls[0][0].testCmd).toBe(witnessCmd ?? gate);
+    expect(out.exitCode).toBe(witnessCmd ? 1 : 0);
+    if (witnessCmd) {
+      expect(h.dispatch).toHaveBeenCalledOnce();
+      expect((out.result as any).state.tasks[0].error).toContain('tests are red before mutation');
+      expect(execFileSync('git', ['rev-list', '--count', 'main..goal/witness-command'], { cwd, encoding: 'utf8' }).trim()).toBe('0');
+    }
+    expect(existsSync(join(cwd, 'second.ts'))).toBe(false);
+  });
+
   it('blocks flagged mutations when no reviewer is available', async () => {
     const cwd = repo(); const h = harness();
     vi.mocked(h.services.engines.listActive!).mockResolvedValue(['builder']);

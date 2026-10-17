@@ -440,6 +440,7 @@ export async function runGoal(
   let intent = requestedIntent || prior?.intent || "";
   const branch = String(input.branch ?? prior?.branch ?? `goal/${id}`).trim();
   const gate = String(input.gate ?? prior?.gate ?? "").trim();
+  const witnessCmd = String(input.witnessCmd ?? gate);
   if (input.resume === true && prior && (branch !== prior.branch || gate !== prior.gate))
     return { exitCode: 1, stderr: 'Goal resume cannot change the recorded branch or gate. Start a new goal instead.\n' };
   if (!intent || !gate)
@@ -739,7 +740,7 @@ export async function runGoal(
                 outputDir: join(run.path, "mutation", runnable.id),
                 engines: reviewEngines ? reviewEngines.split(",").filter(Boolean) : [],
                 semantic: false,
-                testCmd: runnable.verify ?? gate,
+                testCmd: witnessCmd,
               },
               { ...context, cwd: worktree.path },
               {

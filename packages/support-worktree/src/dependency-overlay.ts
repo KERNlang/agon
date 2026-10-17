@@ -1,5 +1,6 @@
-import { readdirSync, statSync, lstatSync, existsSync, symlinkSync, mkdirSync, cpSync, realpathSync, mkdtempSync, renameSync, rmSync } from 'node:fs';
+import { readdirSync, statSync, lstatSync, existsSync, symlinkSync, mkdirSync, cpSync, realpathSync, mkdtempSync, renameSync, rmSync, chmodSync } from 'node:fs';
 import { join, relative, sep, isAbsolute, dirname } from 'node:path';
+import { isInsideRealpath } from './paths.js';
 
 function symlinkNodeModuleEntry(sourcePath: string, targetPath: string): void {
   if (existsSync(targetPath)) return;
@@ -142,6 +143,17 @@ function copyBuildArtifacts(source: string, target: string): void {
   const scratch = mkdtempSync(join(dirname(target), '.agon-hydrate-'));
   const staged = join(scratch, 'dist');
   const directories = new Map<string, string>();
+  const makeCopyRemovable = (): void => {
+    for (const path of directories.keys()) {
+      const info = lstatSync(path, { throwIfNoEntry: false });
+      if (!info) continue;
+      if (!info.isDirectory() || !isInsideRealpath(scratch, path)) {
+        throw new Error(`Artifact staging directory changed: ${path}`);
+      }
+      // Copied directories must permit publication, rebuild and cleanup.
+      chmodSync(path, info.mode | 0o700);
+    }
+  };
   let failed = false;
   let failure: unknown;
   try {
@@ -163,13 +175,14 @@ function copyBuildArtifacts(source: string, target: string): void {
         return true;
       },
     });
+    makeCopyRemovable();
     if (!lstatSync(target, { throwIfNoEntry: false })) renameSync(staged, target);
   } catch (error) {
     failed = true;
     failure = error;
     throw error;
   } finally {
-    try { rmSync(scratch, { recursive: true, force: true }); }
+    try { makeCopyRemovable(); rmSync(scratch, { recursive: true, force: true }); }
     catch (cleanupError) {
       if (failed) {
         const details = [failure, cleanupError].map(error => error instanceof Error ? error.message : String(error)).join('; ');

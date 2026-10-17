@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import {
   mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync,
-  existsSync, realpathSync, readFileSync, readdirSync, lstatSync, unlinkSync,
+  existsSync, realpathSync, readFileSync, readdirSync, lstatSync, unlinkSync, chmodSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -197,6 +197,54 @@ describe.each([
     hydrate(repo, wt);
     expect(readFileSync(join(target, 'index.js'), 'utf8')).toBe('candidate');
     expect(readFileSync(join(source, 'index.js'), 'utf8')).toBe('source');
+  });
+
+  it.each([false, true])('cleans read-only artifact copies (copy failure=%s)', (failCopy) => {
+    const source = join(repo, 'packages', 'core', 'dist');
+    const target = join(wt, 'packages', 'core', 'dist');
+    mkdirSync(join(source, 'nested'), { recursive: true });
+    writeFileSync(join(source, 'nested', 'index.js'), 'source');
+    chmodSync(join(source, 'nested'), 0o555);
+    chmodSync(source, 0o555);
+    try {
+      const result = spawnSync(process.execPath, ['--input-type=module', '-e', `
+        import fs from 'node:fs';
+        import { syncBuiltinESMExports } from 'node:module';
+        const copy = fs.cpSync;
+        if (${failCopy}) fs.cpSync = (...args) => { copy(...args); throw new Error('COPY_AFTER_READONLY'); };
+        syncBuiltinESMExports();
+        const { hydrateWorktreeBuildArtifacts } = await import(${JSON.stringify(new URL('../../packages/support-worktree/dist/index.js', import.meta.url).href)});
+        let outcome = { kind: 'success' };
+        console.warn = message => { outcome = { kind: 'warning', message }; };
+        try { hydrateWorktreeBuildArtifacts(${JSON.stringify(repo)}, ${JSON.stringify(wt)}, { throwOnSetupError: ${strict} }); }
+        catch (error) { outcome = { kind: 'throw', message: error.message }; }
+        console.log(JSON.stringify(outcome));
+      `], { encoding: 'utf8', timeout: 5000 });
+      expect(result.status, result.stderr).toBe(0);
+      expect(JSON.parse(result.stdout)).toEqual(failCopy
+        ? { kind: strict ? 'throw' : 'warning', message: strict ? 'COPY_AFTER_READONLY' : `[agon] worktree artifact hydration failed for ${wt}: COPY_AFTER_READONLY` }
+        : { kind: 'success' });
+      expect(readdirSync(join(wt, 'packages', 'core')).filter(name => name.startsWith('.agon-hydrate-'))).toEqual([]);
+      expect(lstatSync(source).mode & 0o777).toBe(0o555);
+      expect(lstatSync(join(source, 'nested')).mode & 0o777).toBe(0o555);
+      expect(readFileSync(join(source, 'nested', 'index.js'), 'utf8')).toBe('source');
+      if (failCopy) expect(existsSync(target)).toBe(false);
+      else {
+        expect(lstatSync(target).mode & 0o700).toBe(0o700);
+        expect(lstatSync(join(target, 'nested')).mode & 0o700).toBe(0o700);
+        expect(readFileSync(join(target, 'nested', 'index.js'), 'utf8')).toBe('source');
+        rmSync(target, { recursive: true });
+      }
+    } finally {
+      // Restore permissions only in this fixture; never follow dependency links.
+      const unlock = (path: string): void => {
+        const info = lstatSync(path);
+        if (!info.isDirectory() || info.isSymbolicLink()) return;
+        chmodSync(path, info.mode | 0o700);
+        for (const entry of readdirSync(path)) unlock(join(path, entry));
+      };
+      unlock(join(repo, '..'));
+    }
   });
 
   it('preserves a dangling candidate dist link', () => {

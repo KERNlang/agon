@@ -217,7 +217,7 @@ describe('session worktrees', () => {
       expect(existsSync(m.path)).toBe(false);
     });
 
-    it('worktreePruneOrphaned removes worktrees registered in git pointing to runs or agent-worktrees', async () => {
+    it('worktreePruneOrphaned preserves existing ephemeral worktrees and removes only missing registrations', async () => {
       const { worktreePruneOrphaned } = await import('../../packages/core/src/blocks/git.js');
 
       const fakeAgentWtDir = join(repo, '.agon', 'agent-worktrees', 'run-xyz', 'scout');
@@ -231,8 +231,11 @@ describe('session worktrees', () => {
       worktreePruneOrphaned(repo);
 
       const wtListAfter = git(['worktree', 'list', '--porcelain'], repo);
-      expect(wtListAfter.includes('.agon/agent-worktrees')).toBe(false);
-      expect(existsSync(fakeAgentWtDir)).toBe(false);
+      expect(wtListAfter.includes('.agon/agent-worktrees')).toBe(true);
+      expect(existsSync(fakeAgentWtDir)).toBe(true);
+      rmSync(fakeAgentWtDir, { recursive: true, force: true });
+      worktreePruneOrphaned(repo);
+      expect(git(['worktree', 'list', '--porcelain'], repo)).not.toContain('.agon/agent-worktrees');
     });
 
     it('worktreePruneOrphaned does NOT remove persistent session worktrees under ~/.agon/worktrees', async () => {
@@ -255,6 +258,15 @@ describe('session worktrees', () => {
       git(['worktree', 'remove', '--force', sessionWtDir], repo);
     });
 
+    it('worktreePruneOrphaned preserves missing unrelated registrations', async () => {
+      const { worktreePruneOrphaned } = await import('../../packages/core/src/blocks/git.js');
+      const unrelated = join(base, 'temporarily-unavailable');
+      git(['worktree', 'add', '--detach', unrelated, 'HEAD'], repo);
+      rmSync(unrelated, { recursive: true, force: true });
+      worktreePruneOrphaned(repo);
+      expect(git(['worktree', 'list', '--porcelain'], repo)).toContain('temporarily-unavailable');
+    });
+
     it('worktreePruneAll removes aged engine worktrees under .agon/agent-worktrees', async () => {
       const { worktreePruneAll } = await import('../../packages/core/src/blocks/git.js');
 
@@ -267,10 +279,17 @@ describe('session worktrees', () => {
       const recentEngineWtDir = join(recentDir, 'claude');
       mkdirSync(recentEngineWtDir, { recursive: true });
       git(['worktree', 'add', '--detach', recentEngineWtDir, 'HEAD'], repo);
+      const goalPath = join(repo, '.agon', 'goals', 'retained');
+      git(['worktree', 'add', '--detach', goalPath, 'HEAD'], repo);
+      const unregistered = join(runDir, 'unregistered');
+      mkdirSync(unregistered);
+      writeFileSync(join(unregistered, 'keep.txt'), 'not a registered worktree\n');
 
-      // Backdate only the old run directory
+      // Both the run and its worktree are stale.
       const old = new Date('2020-01-01T00:00:00.000Z');
       utimesSync(runDir, old, old);
+      utimesSync(engineWtDir, old, old);
+      utimesSync(goalPath, old, old);
 
       const wtListBefore = git(['worktree', 'list', '--porcelain'], repo);
       expect(wtListBefore.includes('agent-worktrees/run-old/codex')).toBe(true);
@@ -283,6 +302,22 @@ describe('session worktrees', () => {
       expect(wtListAfter.includes('agent-worktrees/run-recent/claude')).toBe(true);
       expect(existsSync(engineWtDir)).toBe(false);
       expect(existsSync(recentEngineWtDir)).toBe(true);
+      expect(existsSync(goalPath)).toBe(true);
+      expect(existsSync(join(unregistered, 'keep.txt'))).toBe(true);
+    });
+
+    it('worktreePruneAll preserves known active worktrees even when old and clean', async () => {
+      const { worktreeCreate, worktreePruneAll, worktreeRemoveBestEffort } = await import('../../packages/core/src/blocks/git.js');
+      const path = join(repo, '.agon', 'agent-worktrees', 'active', 'engine');
+      worktreeCreate(repo, path, 'HEAD');
+      try {
+        const old = new Date('2020-01-01T00:00:00Z');
+        utimesSync(path, old, old);
+        worktreePruneAll(repo, 1000);
+        expect(existsSync(path)).toBe(true);
+      } finally {
+        worktreeRemoveBestEffort(repo, path);
+      }
     });
   });
 });

@@ -1,9 +1,10 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { existsSync, mkdirSync, rmSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 import type { WorktreeSessionRuntime } from '@kernlang/agon-support-worktree';
 import { linkWorktreeNodeModules, hydrateWorktreeBuildArtifacts } from '@kernlang/agon-support-worktree';
+export { pruneEphemeralWorktrees } from '@kernlang/agon-support-worktree';
 
 function git(cwd: string, args: readonly string[]): string {
   return execFileSync('git', [...args], {
@@ -70,39 +71,4 @@ export function parseDuration(value: string): number | null {
   if (!match) return null;
   const amount = Number.parseInt(match[1], 10);
   return match[2] === 'd' ? amount * 86_400_000 : match[2] === 'h' ? amount * 3_600_000 : amount * 60_000;
-}
-
-export function pruneEphemeralWorktrees(repoRoot: string, olderThanMs: number, dryRun: boolean): string[] {
-  const removed: string[] = [];
-  const base = join(repoRoot, '.agon', 'agent-worktrees');
-  if (existsSync(base)) {
-    for (const runId of readdirSync(base)) {
-      const runPath = join(base, runId);
-      let old = false;
-      try { const stat = statSync(runPath); old = stat.isDirectory() && Date.now() - stat.mtimeMs >= olderThanMs; } catch { /* vanished */ }
-      if (!old) continue;
-      removed.push(runPath);
-      if (!dryRun) {
-        try {
-          for (const entry of readdirSync(runPath, { withFileTypes: true })) {
-            if (entry.isDirectory()) sessionRuntime.worktreeRemoveBestEffort(repoRoot, join(runPath, entry.name));
-          }
-          rmSync(runPath, { recursive: true, force: true });
-        } catch { /* a later prune can retry retained paths */ }
-      }
-    }
-  }
-  if (!dryRun) {
-    try {
-      const output = git(repoRoot, ['worktree', 'list', '--porcelain']);
-      for (const line of output.split('\n')) {
-        if (!line.startsWith('worktree ')) continue;
-        const path = line.slice(9).trim();
-        if (['.agon/agent-worktrees', '.agon/speculate-worktrees', '.agon/runs', '.agon/goals'].some((fragment) => path.includes(fragment))) {
-          sessionRuntime.worktreeRemoveBestEffort(repoRoot, path);
-        }
-      }
-    } catch { /* diagnostic receipt reports only paths actually selected */ }
-  }
-  return removed;
 }

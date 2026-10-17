@@ -1,12 +1,12 @@
 import { execFileSync } from 'node:child_process';
 
-import { readdirSync, statSync, existsSync, rmSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 
 import { join } from 'node:path';
 
 import { GitError, WorktreeError } from '../models/errors.js';
 
-import { normalizePatchContent, linkWorktreeNodeModules, hydrateWorktreeBuildArtifacts } from '@kernlang/agon-support-worktree';
+import { normalizePatchContent, linkWorktreeNodeModules, hydrateWorktreeBuildArtifacts, pruneEphemeralWorktrees, pruneMissingWorktreeRegistrations } from '@kernlang/agon-support-worktree';
 export { linkWorktreeNodeModules, hydrateWorktreeBuildArtifacts };
 
 import { hostCreateSet, hostRegexSplit } from './host-runtime.js';
@@ -226,56 +226,22 @@ export function worktreeRemoveBestEffort(repoDir: string, worktreePath: string):
   }
 }
 
-/**
- * Janitor: scan .agon/agent-worktrees/<runId>/ and remove any directories whose mtime is older than threshold. Called at startup of every team run to clean up after cancelled/crashed runs that left worktrees behind.
- */
+/** Remove stale, clean agent worktrees without touching known active work. */
 export function worktreePruneAll(repoDir: string, olderThanMs: number): void {
-  const baseDir = join(repoDir, '.agon', 'agent-worktrees');
-  if (!existsSync(baseDir)) return;
-  let runIds: string[];
-  try { runIds = readdirSync(baseDir); } catch { return; }
-  const now = Date.now();
-  for (const runId of runIds) {
-    const runPath = join(baseDir, runId);
-    let runStat: { isDirectory: () => boolean; mtimeMs: number };
-    try { runStat = statSync(runPath); } catch { continue; }
-    if (!runStat.isDirectory()) continue;
-    if (now - runStat.mtimeMs < olderThanMs) continue;
-    // Old enough — clean up each engine worktree under this runId
-    let engineIds: string[];
-    try { engineIds = readdirSync(runPath); } catch { continue; }
-    for (const engineId of engineIds) {
-      const wtPath = join(runPath, engineId);
-      try { worktreeRemove(repoDir, wtPath); } catch { /* swallow during janitor */ }
-    }
-    // Try to remove the empty runId dir
-    try { rmSync(runPath, { recursive: true, force: true }); } catch { /* leave it */ }
+  try {
+    const removed = pruneEphemeralWorktrees(repoDir, { olderThanMs, agentOnly: true, activePaths: activeWorktrees.keys() });
+    const missing = pruneMissingWorktreeRegistrations(repoDir);
+    for (const error of [...removed.errors, ...missing.errors]) console.warn(`[agon] worktree prune retained ${error.path}: ${error.message}`);
+  } catch (err) {
+    console.warn(`[agon] worktreePruneAll failed: ${err instanceof Error ? err.message : String(err)}`);
   }
-  // Prune git's internal worktree registry
-  try { git(['worktree', 'prune'], repoDir); } catch { /* non-fatal */ }
 }
 
-/**
- * Prune any registered git worktrees that point to ephemeral Agon roots: repo-local .agon/agent-worktrees/, .agon/speculate-worktrees/, .agon/runs/, or .agon/goals/. Explicitly excludes persistent session worktrees under ~/.agon/worktrees/.
- */
+/** Remove missing Git registrations. Existing directories remain owner-managed. */
 export function worktreePruneOrphaned(repoDir: string): void {
   try {
-    const output = git(['worktree', 'list', '--porcelain'], repoDir);
-    const lines = output.split('\n');
-    for (const line of lines) {
-      if (line.startsWith('worktree ')) {
-        const wtPath = line.slice(9).trim();
-        // Only match ephemeral Agon worktree roots. Session worktrees live
-        // under ~/.agon/worktrees/ and must NOT be caught here.
-        const isAgentWt = wtPath.includes('.agon/agent-worktrees') ||
-                          wtPath.includes('.agon/speculate-worktrees') ||
-                          wtPath.includes('.agon/runs') ||
-                          wtPath.includes('.agon/goals');
-        if (isAgentWt) {
-          worktreeRemoveBestEffort(repoDir, wtPath);
-        }
-      }
-    }
+    const result = pruneMissingWorktreeRegistrations(repoDir);
+    for (const error of result.errors) console.warn(`[agon] worktree registration retained ${error.path}: ${error.message}`);
   } catch (err) {
     console.warn(`[agon] worktreePruneOrphaned failed: ${err instanceof Error ? err.message : String(err)}`);
   }

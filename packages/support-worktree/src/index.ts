@@ -2,6 +2,7 @@ export { SUPPORT_PACKAGE } from './package-metadata.js';
 export * from './plan.js';
 export * from './worktree-lock.js';
 export * from './worktree-session.js';
+export * from './ephemeral-prune.js';
 export * from './forge-arena.js';
 export * from './pr-links.js';
 export * from './pull-request.js';

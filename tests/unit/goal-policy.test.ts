@@ -1,8 +1,72 @@
 import { describe, it, expect } from 'vitest';
+import ts from 'typescript';
+import { fileURLToPath } from 'node:url';
+import * as physicalGoal from '@kernlang/agon-mod-goal';
+import * as legacyPolicy from '../../packages/forge/src/goal/policy.js';
 import {
   gateFailureSignature, taskParkDecision, globalBreaker, budgetExceeded, timeExceeded, pickImplementWinner, chooseImplementRoster,
 } from '../../packages/forge/src/goal/policy.js';
 import type { JournalState, GoalTask, GoalSpec } from '../../packages/forge/src/goal/types.js';
+
+it('uses one physical Goal policy owner through legacy imports', () => {
+  expect(Object.keys(legacyPolicy).sort()).toEqual([
+    'budgetExceeded', 'chooseImplementRoster', 'foldMutationVerdicts', 'gateFailureSignature',
+    'globalBreaker', 'mutationGateDecision', 'pickImplementWinner', 'pushRecentOutcome',
+    'taskParkDecision', 'timeExceeded',
+  ]);
+  for (const [name, implementation] of Object.entries(legacyPolicy)) {
+    expect(physicalGoal).toHaveProperty(name, implementation);
+  }
+});
+
+it('preserves public journal types and accepts class-only mutation candidates', () => {
+  const names = ['GoalSpec', 'AttemptRecord', 'GoalTask', 'GoalEvent', 'JournalState'];
+  const path = fileURLToPath(new URL('../goal-compile-only.ts', import.meta.url));
+  const source = `
+    import type { ${names.map(name => `${name} as Old${name}`).join(', ')}, Mutant } from '@kernlang/agon-forge';
+    import type { ${names.map(name => `${name} as Owned${name}`).join(', ')} } from '@kernlang/agon-mod-goal';
+    import { mutationGateDecision as owned } from '@kernlang/agon-mod-goal';
+    import { mutationGateDecision as legacy } from '../packages/forge/src/goal/policy.js';
+    declare const mutants: Mutant[];
+    owned(mutants, mutants);
+    legacy(mutants, mutants);
+    owned([{ class: 'high-signal' }], [{ class: 'equiv-prone' }]);
+    legacy([{ class: 'equiv-prone' }], [{ class: 'high-signal' }]);
+    // @ts-expect-error Mutation classes stay closed.
+    owned([{ class: 'unknown' }], []);
+    // @ts-expect-error Legacy callers must supply a mutation class.
+    legacy([{}], []);
+    ${names.map(name => `declare const old${name}: Old${name}; const owned${name}: Owned${name} = old${name}; const back${name}: Old${name} = owned${name};`).join('\n')}
+  `;
+  const options: ts.CompilerOptions = {
+    strict: true, noEmit: true, skipLibCheck: true, types: [],
+    target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.NodeNext,
+    moduleResolution: ts.ModuleResolutionKind.NodeNext,
+  };
+  const host = ts.createCompilerHost(options);
+  const original = host.getSourceFile.bind(host);
+  host.getSourceFile = (name, version, onError, fresh) => name === path
+    ? ts.createSourceFile(name, source, version, true)
+    : original(name, version, onError, fresh);
+  const program = ts.createProgram([path], options, host);
+  expect(ts.getPreEmitDiagnostics(program).map(diagnostic =>
+    ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n'))).toEqual([]);
+  const checker = program.getTypeChecker();
+  const imported = new Map<string, ts.Symbol>();
+  for (const statement of program.getSourceFile(path)!.statements) {
+    if (!ts.isImportDeclaration(statement)) continue;
+    const bindings = statement.importClause?.namedBindings;
+    if (!bindings || !ts.isNamedImports(bindings)) continue;
+    for (const element of bindings.elements) {
+      imported.set(element.name.text, checker.getAliasedSymbol(checker.getSymbolAtLocation(element.name)!));
+    }
+  }
+  for (const name of names) {
+    expect(imported.get(`Old${name}`), name).toBe(imported.get(`Owned${name}`));
+    expect(imported.get(`Owned${name}`)?.declarations?.map(declaration => declaration.getSourceFile().fileName), name)
+      .toEqual([expect.stringMatching(/packages\/mod-goal\/dist\/journal-types\.d\.ts$/)]);
+  }
+});
 
 const spec = (over: Partial<GoalSpec> = {}): GoalSpec => ({
   goalId: 'g', intent: 'x', branch: 'goal/x', gate: 'npm test', queueSource: '.kern-gaps/',

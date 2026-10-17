@@ -290,7 +290,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.goal",
       "version": "1.0.0",
-      "contentHash": "sha256:faccd3743295a92ed07bdc3d69e606c289e43559ed103499ad85848d7ea411f3"
+      "contentHash": "sha256:43d50e351b17832391151c973584ec852b5f8f50a32ae370be3d10f989e463cd"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "Goal",
@@ -1394,7 +1394,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.goal",
       "version": "1.0.0",
-      "contentHash": "sha256:faccd3743295a92ed07bdc3d69e606c289e43559ed103499ad85848d7ea411f3"
+      "contentHash": "sha256:43d50e351b17832391151c973584ec852b5f8f50a32ae370be3d10f989e463cd"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "goal",
@@ -2843,7 +2843,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.goal",
       "version": "1.0.0",
-      "contentHash": "sha256:faccd3743295a92ed07bdc3d69e606c289e43559ed103499ad85848d7ea411f3"
+      "contentHash": "sha256:43d50e351b17832391151c973584ec852b5f8f50a32ae370be3d10f989e463cd"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "goal",
@@ -9496,7 +9496,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.goal",
       "version": "1.0.0",
-      "contentHash": "sha256:faccd3743295a92ed07bdc3d69e606c289e43559ed103499ad85848d7ea411f3"
+      "contentHash": "sha256:43d50e351b17832391151c973584ec852b5f8f50a32ae370be3d10f989e463cd"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "<intent> --queue <dir> --gate \"<cmd>\" [--push] — autonomous queue: build→review(all)→judge→fix→commit→push per task (background job)",

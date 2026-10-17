@@ -3,6 +3,7 @@ import { defineCommand } from 'citty';
 import { execFileSync } from 'node:child_process';
 
 import { ensureAgonHome, repoRoot, createSessionWorktree, listSessionWorktrees, removeSessionWorktree, pruneSessionWorktrees, rehydrateSessionWorktree, worktreePruneAll, worktreePruneOrphaned } from '@kernlang/agon-core';
+import type { SessionWorktreePruneFailure } from '@kernlang/agon-support-worktree';
 
 import { header, success, fail, warn, info, table, bold, dim } from '../blocks/output-format.js';
 
@@ -166,14 +167,19 @@ export const worktreeCommand: any = defineCommand({
           return;
         }
         const dryRun = !!args['dry-run'];
-        const removed = pruneSessionWorktrees(root, ms, dryRun, !!args.force);
-        if (removed.length === 0) {
+        const errors: SessionWorktreePruneFailure[] = [];
+        const removed = pruneSessionWorktrees(root, ms, dryRun, !!args.force, (error) => errors.push(error));
+        if (removed.length === 0 && errors.length > 0) {
+          warn('No session worktrees removed; failed removals are listed below.');
+        } else if (removed.length === 0) {
           info(`No session worktrees older than ${olderThan} (dirty worktrees are skipped unless --force).`);
         } else if (dryRun) {
           info(`Would prune ${removed.length} session worktree(s): ${removed.join(', ')}`);
         } else {
           success(`Pruned ${removed.length} session worktree(s): ${removed.join(', ')}`);
         }
+        for (const error of errors) warn(`Retained ${error.branch} at ${error.path}: ${error.message}`);
+        if (errors.length > 0) process.exitCode = 1;
 
         if (!dryRun) {
           try {

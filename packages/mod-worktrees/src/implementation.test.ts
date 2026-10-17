@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, mkdirSync, realpathSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -88,6 +88,78 @@ describe('physical worktrees mod', () => {
     (denied.permissions.check as ReturnType<typeof vi.fn>).mockImplementation(async (capability: string) => capability === 'network' ? 'deny' : 'allow');
     const result = await runWorktree({ action: 'new', branch: 'feature/install', deps: 'install' }, context(repo), denied);
     expect(result).toMatchObject({ exitCode: 1, stderr: expect.stringContaining('network') });
+  });
+
+  it.each(['rm', 'prune'])('preserves a locked session and its manifest when %s is refused by Git', async (action) => {
+    const { repo } = fixture();
+    const made = await runWorktree({ action: 'new', branch: 'feature/locked', deps: 'none' }, context(repo), services());
+    const path = (made.result as any).path;
+    execFileSync('git', ['worktree', 'lock', path], { cwd: repo });
+    const old = new Date('2020-01-01T00:00:00Z');
+    utimesSync(path, old, old);
+    const result = await runWorktree({ action, branch: 'feature/locked', 'older-than': '7d', force: true }, context(repo), services());
+    expect(result.exitCode).toBe(1);
+    expect(existsSync(join(path, 'a'))).toBe(true);
+    const listed = await runWorktree({ action: 'list' }, context(repo), services());
+    expect((listed.result as any).worktrees).toEqual([expect.objectContaining({ branch: 'feature/locked', path })]);
+  });
+
+  it('reports successful session removals and retained failures in one receipt', async () => {
+    const { repo } = fixture();
+    const paths: string[] = [];
+    for (const branch of ['a-clean', 'b-locked']) {
+      const made = await runWorktree({ action: 'new', branch, deps: 'none' }, context(repo), services());
+      paths.push((made.result as any).path);
+    }
+    execFileSync('git', ['worktree', 'lock', paths[1]], { cwd: repo });
+    const old = new Date('2020-01-01T00:00:00Z');
+    for (const path of paths) utimesSync(path, old, old);
+    const host = services();
+    const result = await runWorktree({ action: 'prune', 'older-than': '7d' }, context(repo), host);
+    expect(result.exitCode).toBe(1);
+    expect((result.result as any).session).toEqual(['a-clean']);
+    expect((result.result as any).sessionErrors).toEqual([expect.objectContaining({ branch: 'b-locked', path: paths[1] })]);
+    expect(host.receipts.record).toHaveBeenCalledWith('worktrees-pruned', expect.objectContaining({ session: ['a-clean'], sessionErrors: expect.any(Array) }));
+    expect(existsSync(paths[0])).toBe(false);
+    expect(existsSync(paths[1])).toBe(true);
+  });
+
+  it('keeps partial results and continues after a session status failure', async () => {
+    const { repo } = fixture();
+    const paths: string[] = [];
+    for (const [index, branch] of ['first', 'broken', 'last'].entries()) {
+      const made = await runWorktree({ action: 'new', branch, deps: 'none' }, context(repo), services());
+      const path = (made.result as any).path;
+      paths.push(path);
+      const manifest = JSON.parse(readFileSync(`${path}.json`, 'utf8'));
+      manifest.createdAt = `${2022 - index}-01-01T00:00:00Z`;
+      writeFileSync(`${path}.json`, JSON.stringify(manifest));
+      utimesSync(path, new Date('2020-01-01'), new Date('2020-01-01'));
+    }
+    writeFileSync(join(paths[1], '.git'), 'gitdir: missing-metadata\n');
+    const host = services();
+    const result = await runWorktree({ action: 'prune', 'older-than': '7d' }, context(repo), host);
+    expect(result.exitCode).toBe(1);
+    expect((result.result as any).session).toEqual(['first', 'last']);
+    expect((result.result as any).sessionErrors).toEqual([expect.objectContaining({ branch: 'broken' })]);
+    expect(host.receipts.record).toHaveBeenCalledWith('worktrees-pruned', expect.objectContaining({ session: ['first', 'last'] }));
+    expect(existsSync(paths[0])).toBe(false);
+    expect(existsSync(paths[1])).toBe(true);
+    expect(existsSync(paths[2])).toBe(false);
+  });
+
+  it('cleans a missing session manifest without requiring force', async () => {
+    const { repo } = fixture();
+    const made = await runWorktree({ action: 'new', branch: 'missing', deps: 'none' }, context(repo), services());
+    const path = (made.result as any).path;
+    const manifest = JSON.parse(readFileSync(`${path}.json`, 'utf8'));
+    manifest.createdAt = '2020-01-01T00:00:00Z';
+    writeFileSync(`${path}.json`, JSON.stringify(manifest));
+    rmSync(path, { recursive: true, force: true });
+    const result = await runWorktree({ action: 'prune', 'older-than': '7d' }, context(repo), services());
+    expect(result.exitCode).toBe(0);
+    expect((result.result as any).session).toEqual(['missing']);
+    expect(existsSync(`${path}.json`)).toBe(false);
   });
 
   it.each(['clean', 'dirty'])('does not prune a young %s ephemeral worktree omitted from the preview', async (state) => {

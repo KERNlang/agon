@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, rmSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import type { WorktreeSessionRuntime } from '@kernlang/agon-support-worktree';
@@ -45,9 +45,8 @@ export const sessionRuntime: WorktreeSessionRuntime = Object.freeze({
     return path;
   },
   worktreeRemoveBestEffort(repoRoot: string, path: string): void {
-    try { git(repoRoot, ['worktree', 'remove', '--force', path]); } catch { /* exact managed path cleanup below */ }
-    try { if (existsSync(path)) rmSync(path, { recursive: true, force: true }); } catch { /* caller reports retained manifest/path */ }
-    try { git(repoRoot, ['worktree', 'prune']); } catch { /* best effort */ }
+    try { git(repoRoot, ['worktree', 'remove', '--force', '--', path]); }
+    catch (error) { console.warn(`[agon] session worktree retained: ${error instanceof Error ? error.message : String(error)}`); }
   },
   linkWorktreeNodeModules: linkDependencies,
   hydrateWorktreeBuildArtifacts: hydrateArtifacts,

@@ -1,5 +1,5 @@
 import type { AgonModFactory, CommandResult, Dispose, InvocationContext, Json, ModServices, Registrar } from '@kernlang/agon-mod-api';
-import { createSessionWorktree, listSessionWorktrees, pruneSessionWorktrees, rehydrateSessionWorktree, removeSessionWorktree, sessionWorktreesDir } from '@kernlang/agon-support-worktree';
+import { createSessionWorktree, listSessionWorktrees, pruneSessionWorktrees, rehydrateSessionWorktree, removeSessionWorktree, sessionWorktreesDir, type SessionWorktreePruneFailure } from '@kernlang/agon-support-worktree';
 
 import { parseDuration, pruneEphemeralWorktrees, repositoryRoot, runDependencyInstall, sessionRuntime } from './runtime.js';
 import { addWorkspace, getActiveWorkspace, listWorkspaces, removeWorkspace, switchWorkspace } from './workspaces.js';
@@ -58,16 +58,18 @@ export async function runWorktree(raw: Json, context: InvocationContext, service
     const olderThanMs = parseDuration(olderThan);
     if (olderThanMs === null) return { exitCode: 1, stderr: `Invalid --older-than "${olderThan}". Use e.g. 7d, 24h, 30m.\n` };
     const dryRun = input['dry-run'] === true;
-    const session = pruneSessionWorktrees(repoRoot, olderThanMs, dryRun, input.force === true, sessionRuntime);
+    const sessionErrors: SessionWorktreePruneFailure[] = [];
+    const session = pruneSessionWorktrees(repoRoot, olderThanMs, dryRun, input.force === true, sessionRuntime, (error) => sessionErrors.push(error));
     let outcome;
     try { outcome = pruneEphemeralWorktrees(repoRoot, { olderThanMs, dryRun, force: input.force === true }); }
     catch (error) { outcome = { paths: [], errors: [{ path: repoRoot, message: error instanceof Error ? error.message : String(error) }] }; }
     const ephemeral = outcome.paths;
     const ephemeralErrors = outcome.errors;
-    const receiptId = await services.receipts.record('worktrees-pruned', json({ olderThan, dryRun, force: input.force === true, session, ephemeral, ephemeralErrors }));
-    const result = { olderThan, dryRun, session, ephemeral, ephemeralErrors, receiptId };
-    return { exitCode: ephemeralErrors.length ? 1 : 0, stdout: `${JSON.stringify(result, null, 2)}\n`,
-      stderr: ephemeralErrors.length ? 'Some worktrees could not be pruned. Inspect ephemeralErrors; no forced fallback deletion was attempted.\n' : undefined,
+    const receiptId = await services.receipts.record('worktrees-pruned', json({ olderThan, dryRun, force: input.force === true, session, sessionErrors, ephemeral, ephemeralErrors }));
+    const result = { olderThan, dryRun, session, sessionErrors, ephemeral, ephemeralErrors, receiptId };
+    const failed = sessionErrors.length > 0 || ephemeralErrors.length > 0;
+    return { exitCode: failed ? 1 : 0, stdout: `${JSON.stringify(result, null, 2)}\n`,
+      stderr: failed ? 'Some worktrees could not be pruned. Inspect sessionErrors and ephemeralErrors; no forced fallback deletion was attempted.\n' : undefined,
       result: json(result) };
   }
 

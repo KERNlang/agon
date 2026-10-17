@@ -9,6 +9,7 @@ import {
   sessionWorktreesDir as modularSessionWorktreesDir,
   worktreePathFor as modularWorktreePathFor,
   type SessionWorktree,
+  type SessionWorktreePruneFailure,
   type WorktreeSessionRuntime,
 } from "@kernlang/agon-support-worktree";
 
@@ -59,8 +60,8 @@ export function removeSessionWorktree(repoRoot: string, branch: string, force?: 
   return removeModularSessionWorktree(repoRoot, branch, force, compatibilityRuntime);
 }
 
-export function pruneSessionWorktrees(repoRoot: string, olderThanMs: number, dryRun?: boolean, force?: boolean): string[] {
-  return pruneModularSessionWorktrees(repoRoot, olderThanMs, dryRun, force, compatibilityRuntime);
+export function pruneSessionWorktrees(repoRoot: string, olderThanMs: number, dryRun?: boolean, force?: boolean, onError?: (failure: SessionWorktreePruneFailure) => void): string[] {
+  return pruneModularSessionWorktrees(repoRoot, olderThanMs, dryRun, force, compatibilityRuntime, onError);
 }
 
 export function rehydrateSessionWorktree(repoRoot: string, branch: string): boolean {

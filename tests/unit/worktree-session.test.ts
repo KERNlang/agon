@@ -238,6 +238,21 @@ describe('session worktrees', () => {
       expect(git(['worktree', 'list', '--porcelain'], repo)).not.toContain('.agon/agent-worktrees');
     });
 
+    it('preserves locked session files and manifests through Core compatibility removal', () => {
+      const m = createSessionWorktree({ repoRoot: repo, branch: 'feat/locked', link: false });
+      git(['worktree', 'lock', m.path], repo);
+      expect(() => removeSessionWorktree(repo, m.branch, true)).toThrow(/retained/);
+      expect(existsSync(m.path)).toBe(true);
+      expect(findSessionWorktree(repo, m.branch)?.path).toBe(m.path);
+      const old = new Date('2020-01-01T00:00:00Z');
+      utimesSync(m.path, old, old);
+      expect(() => pruneSessionWorktrees(repo, 1000, false, true)).toThrow(/retained/);
+      const errors: Array<{ branch: string; path: string; message: string }> = [];
+      expect(pruneSessionWorktrees(repo, 1000, false, true, (error) => errors.push(error))).toEqual([]);
+      expect(errors).toEqual([expect.objectContaining({ branch: m.branch, path: m.path })]);
+      expect(findSessionWorktree(repo, m.branch)?.path).toBe(m.path);
+    });
+
     it('worktreePruneOrphaned does NOT remove persistent session worktrees under ~/.agon/worktrees', async () => {
       const { worktreePruneOrphaned } = await import('../../packages/core/src/blocks/git.js');
 

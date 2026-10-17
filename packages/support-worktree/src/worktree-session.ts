@@ -25,6 +25,12 @@ export interface SessionWorktree {
   packageManager: string | null;
 }
 
+export interface SessionWorktreePruneFailure {
+  branch: string;
+  path: string;
+  message: string;
+}
+
 function sha256hex(value: string): string {
   return createHash('sha256').update(value).digest('hex');
 }
@@ -174,11 +180,13 @@ function isInsideStore(repoRoot: string, p: string, runtime: WorktreeSessionRunt
 }
 
 /**
- * Force-remove a session worktree's directory + manifest, then prune git's registry so no stale .git/worktrees/<name> entry is left behind. Only ever called on store-validated paths.
+ * Remove the manifest only after Git removes the validated worktree.
  */
 function destroyWorktree(repoRoot: string, m: SessionWorktree, runtime: WorktreeSessionRuntime): void {
   runtime.worktreeRemoveBestEffort(repoRoot, m.path);
-  try { if (existsSync(m.path)) rmSync(m.path, { recursive: true, force: true }); } catch { /* already gone or permission denied */ }
+  if (existsSync(m.path)) {
+    throw new Error(`Git did not remove worktree ${m.path}. Its files and manifest are retained; inspect Git locks and permissions.`);
+  }
   try { rmSync(manifestPathFor(repoRoot, m.branch, runtime), { force: true }); } catch { /* non-fatal */ }
   try { runtime.worktreePrune(repoRoot); } catch { /* keep git's worktree registry tidy; non-fatal */ }
 }
@@ -192,7 +200,7 @@ export function removeSessionWorktree(repoRoot: string, branch: string, force: b
   if (!isInsideStore(repoRoot, m.path, runtime)) {
     throw new Error(`Refusing to remove ${m.path}: it is outside this repo's session-worktree store`);
   }
-  if (force !== true && runtime.isDirty(m.path)) {
+  if (force !== true && existsSync(m.path) && runtime.isDirty(m.path)) {
     throw new Error(`Worktree for "${branch}" has uncommitted changes. Commit them, or pass --force to discard them.`);
   }
   destroyWorktree(repoRoot, m, runtime);
@@ -202,24 +210,31 @@ export function removeSessionWorktree(repoRoot: string, branch: string, force: b
 /**
  * Remove session worktrees not touched (dir mtime) within the threshold. Dirty worktrees are SKIPPED (uncommitted work is never discarded automatically) unless force=true. Returns the branches removed — or that WOULD be removed under dryRun.
  */
-export function pruneSessionWorktrees(repoRoot: string, olderThanMs: number, dryRun: boolean | undefined, force: boolean | undefined, runtime: WorktreeSessionRuntime): string[] {
+export function pruneSessionWorktrees(repoRoot: string, olderThanMs: number, dryRun: boolean | undefined, force: boolean | undefined, runtime: WorktreeSessionRuntime, onError?: (failure: SessionWorktreePruneFailure) => void): string[] {
   const now = Date.now();
   const removed: string[] = [];
   for (const m of listSessionWorktrees(repoRoot, runtime)) {
     if (!isInsideStore(repoRoot, m.path, runtime)) continue;
-    // Age by last activity (dir mtime), not creation — an actively edited
-    // worktree must not be reaped just for being old. Falls back to the
-    // manifest timestamp if the dir is already gone.
-    let lastTouch: number;
-    try { lastTouch = statSync(m.path).mtimeMs; } catch { lastTouch = new Date(m.createdAt).getTime(); }
-    if (!(now - lastTouch > olderThanMs)) continue;
-    if (force !== true && runtime.isDirty(m.path)) {
-      console.warn(`[agon] worktree prune: skipping "${m.branch}" — it has uncommitted changes (pass --force to prune anyway).`);
-      continue;
+    try {
+      let present = true;
+      let lastTouch: number;
+      try { lastTouch = statSync(m.path).mtimeMs; }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+        present = false;
+        lastTouch = new Date(m.createdAt).getTime();
+      }
+      if (!(now - lastTouch > olderThanMs)) continue;
+      if (force !== true && present && runtime.isDirty(m.path)) {
+        console.warn(`[agon] worktree prune: skipping "${m.branch}" — it has uncommitted changes (pass --force to prune anyway).`);
+        continue;
+      }
+      if (!dryRun) destroyWorktree(repoRoot, m, runtime);
+      removed.push(m.branch);
+    } catch (error) {
+      if (!onError) throw error;
+      onError({ branch: m.branch, path: m.path, message: error instanceof Error ? error.message : String(error) });
     }
-    removed.push(m.branch);
-    if (dryRun) continue;
-    destroyWorktree(repoRoot, m, runtime);
   }
   return removed;
 }

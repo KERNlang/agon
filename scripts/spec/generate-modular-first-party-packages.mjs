@@ -311,6 +311,8 @@ export { createPlanCallbacks } from './execution-callbacks.js';
 export type { PlanCallbackEvent, PlanCallbackHost, PlanCallbacks } from './execution-callbacks.js';
 export { createPlanCoordinator, failedPlanStepIsFallbackRetryable, preparePlanFallbackRetry } from './execution-coordinator.js';
 export type { PlanCoordinatorHost } from './execution-coordinator.js';
+export { createPlanExecutionSession } from './execution-session.js';
+export type { PlanExecutionSessionHost } from './execution-session.js';
 export { getCesarPlansDir, cesarPlanJsonPath, cesarPlanMarkdownPath, saveCesarPlan, loadCesarPlan, listCesarPlans } from './execution-store.js';
 ` : short === 'jobs' ? `export { ModularJobService } from './implementation.js';
 export { JOB_TOOLS, isJobTool, requiredString, optionalInteger, buildMcpJobCommand } from './mcp-contract.js';

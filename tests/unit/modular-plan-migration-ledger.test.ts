@@ -9,7 +9,8 @@ import { collectPlanSourceRelocations } from '../../scripts/spec/modular-plan-so
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const definitionPath = 'packages/mod-plan/src/execution-model.ts';
 const evidencePath = 'tests/unit/modular-plan-facade-retirement.test.ts';
-const bindings = ['packages/cli/src/handlers/plan-mode.ts', 'packages/cli/src/signals/dispatch/plan-execution.ts'];
+const bindings = ['packages/cli/src/handlers/plan-mode.ts', 'packages/cli/src/signals/dispatch/plan-execution.ts',
+  'packages/cli/src/blocks/plan-execution-effects.ts'];
 const rows = JSON.parse(readFileSync(join(root, 'docs/specs/evidence/modular-agon-ownership.json'), 'utf8')).assignments;
 const temporary: string[] = [];
 afterEach(() => { for (const path of temporary.splice(0)) rmSync(path, { recursive: true, force: true }); });

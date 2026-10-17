@@ -36,7 +36,7 @@ import type { DispatchCallbacks, DispatchResult } from '../dispatch.js';
 
 import { findResumableCesarPlan } from './plan-queries.js';
 
-import { resumeCesarPlan, approvePendingCesarPlan, cancelPendingCesarPlan, handleProposedCesarPlan } from './plan-execution.js';
+import { createPlanExecutionSession } from '../../blocks/plan-execution-effects.js';
 
 import { routeWithCesar } from './cesar-router.js';
 
@@ -44,6 +44,7 @@ import { emitPostDispatch } from './utils.js';
 
 /** Bind terminal effects without supplying another session dispatcher. */
 function interactivePlanActions(cb: DispatchCallbacks): PlanSessionActions {
+  const execution = createPlanExecutionSession(cb);
   return createPlanSessionActions({
     worktree: () => worktreePlanHost(cb.dispatch, cb.ctx),
     taskSession: {
@@ -60,16 +61,16 @@ function interactivePlanActions(cb: DispatchCallbacks): PlanSessionActions {
       },
       route: value => routeWithCesar(value, [], cb),
       proposed: () => cb.ctx.cesar?.proposedPlan,
-      acceptProposal: plan => handleProposedCesarPlan(plan, cb),
+      acceptProposal: plan => execution.propose(plan),
     },
     resumeSession: {
       load: loadCesarPlan,
       current: () => findResumableCesarPlan(cb.ctx),
-      resume: plan => resumeCesarPlan(plan, cb),
+      resume: plan => execution.resume(plan),
       notify: (type, message) => cb.dispatch({ type, message }),
     },
-    approvePending: () => approvePendingCesarPlan(cb),
-    cancelPending: () => cancelPendingCesarPlan(cb),
+    approvePending: () => execution.approvePending(),
+    cancelPending: () => execution.cancelPending(),
     auto: async intent => (await import('./intent-skills.js')).dispatchSkillsUiIntent(intent, '', cb),
   });
 }

@@ -13,7 +13,13 @@ afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 const scenarios = ['debounce', 'terminal', 'paused', 'cancelled', 'success', 'failure', 'save-error', 'write-error', 'missing-step'];
 it('keeps callback policy in the physical Plan owner', () => {
   const cli = readFileSync(new URL('../../packages/cli/src/signals/dispatch/plan-execution.ts', import.meta.url), 'utf8');
-  expect(cli).toContain('return createPlanCallbacks(initialPlan, {');
+  const owner = readFileSync(new URL('../../packages/mod-plan/src/execution-session.ts', import.meta.url), 'utf8');
+  const effects = readFileSync(new URL('../../packages/cli/src/blocks/plan-execution-effects.ts', import.meta.url), 'utf8');
+  expect(cli).toContain('return createPlanExecutionSession(cb).callbacks(initialPlan)');
+  expect(effects).toContain("createPlanExecutionSession as createSession, listCesarPlans } from '@kernlang/agon-mod-plan'");
+  expect(owner).toContain('createPlanCallbacks(plan, host.callbacks)');
+  expect(effects).not.toContain('const DEBOUNCE_MS');
+  expect(effects).not.toContain('const markStepRunning');
   expect(cli).not.toContain('const DEBOUNCE_MS');
   expect(cli).not.toContain('const markStepRunning');
 });

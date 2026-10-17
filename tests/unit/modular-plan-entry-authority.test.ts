@@ -19,7 +19,12 @@ vi.mock('@kernlang/agon-core', async original => ({
 vi.mock('../../packages/cli/src/handlers/plan-mode.js', () => ({ buildStepExecutors: effects.executors }));
 vi.mock('../../packages/cli/src/handlers/forge.js', () => ({ handleForge: effects.forge }));
 import { executeApprovedPlan, resumeCesarPlan, handleProposedCesarPlan, approvePendingCesarPlan } from '../../packages/cli/src/signals/dispatch/plan-execution.js';
-import { dispatchSessionInfoIntent } from '../../packages/cli/src/signals/dispatch/intent-session.js';
+import { dispatchSessionInfoIntent, runPhysicalTuiContribution } from '../../packages/cli/src/signals/dispatch/intent-session.js';
+import { createPlanExecutionSession } from '../../packages/cli/src/blocks/plan-execution-effects.js';
+import { createTaskExecutionLease } from '../../packages/cli/src/cesar/task-execution-lease.js';
+import { createMod } from '../../packages/mod-plan/src/implementation.js';
+import { planSessionHost } from '@kernlang/agon-mod-plan';
+import type { IntentContribution, ModServices, Registrar } from '@kernlang/agon-mod-api';
 
 const NOW = '2026-10-09T00:00:00.000Z';
 let root: string;
@@ -51,6 +56,84 @@ function callbacks(dispatch = vi.fn()): DispatchCallbacks {
 function proposal() {
   return { ...createCesarPlan('fixture', []), state: 'awaiting_approval' as const, selfReview: false, autoApprove: true };
 }
+
+async function physicalResume(cb: DispatchCallbacks) {
+  const intents: IntentContribution[] = [];
+  const registrar = new Proxy({}, { get: (_, method) => (value: unknown) => {
+    if (method === 'intent') intents.push(value as IntentContribution);
+    return () => {};
+  } }) as Registrar;
+  await (await createMod({ planSession: planSessionHost } as ModServices)).activate(registrar);
+  const command = '/plan resume';
+  const contribution = intents.find(entry => entry.parse(command) !== undefined)!;
+  await runPhysicalTuiContribution({ payload: contribution }, contribution.parse(command)!, command, cb, new AbortController().signal);
+}
+
+it('reads replacement proposal state when an existing execution session is invoked', async () => {
+  await install(false);
+  await initializeProcessSurfaceAuthority(root);
+  const cb = callbacks();
+  const previous = proposal();
+  const replacement = proposal();
+  cb.ctx.cesar!.proposedPlan = previous;
+  const session = createPlanExecutionSession(cb);
+  cb.ctx.cesar!.proposedPlan = replacement;
+  expect(await session.approvePending()).toBe(true);
+  expect(effects.execute).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ id: replacement.id }),
+    expect.anything(), expect.anything(), expect.any(AbortSignal));
+  expect(previous.state).toBe('awaiting_approval');
+});
+
+it.each(['approvePending', 'cancelPending'] as const)('propagates live selection failures through real %s composition', async method => {
+  const cb = callbacks();
+  const session = createPlanExecutionSession(cb);
+  const failure = new Error('session read failed');
+  Object.defineProperty(cb.ctx, 'cesar', { get() { throw failure; } });
+  await expect(Promise.resolve().then(() => session[method]())).rejects.toBe(failure);
+  expect(effects.save).not.toHaveBeenCalled();
+  expect(effects.execute).not.toHaveBeenCalled();
+});
+
+it('reads current approval config, AUTO mode and lease on every proposal', async () => {
+  await install(false);
+  await initializeProcessSurfaceAuthority(root);
+  const cb = callbacks();
+  cb.ctx.config = { ...cb.ctx.config, cesarAutoApproveMode: 'off' };
+  const session = createPlanExecutionSession(cb);
+  cb.ctx.config = { ...cb.ctx.config, cesarAutoApproveMode: 'always' };
+  cb.ctx.autoModeQueued = true;
+  const plan = { ...proposal(), steps: [{ id: 's', type: 'self' as const, description: 'build parser',
+    estimatedTokens: 0, estimatedCostUsd: 0, state: 'pending' as const }] };
+  await session.propose(plan);
+  expect(effects.execute).not.toHaveBeenCalled();
+  cb.ctx.cesar!.taskExecutionLease = createTaskExecutionLease('build parser', true, root, undefined, 'agentic');
+  await session.propose(plan);
+  expect(effects.execute).toHaveBeenCalledOnce();
+  cb.ctx.cesar!.taskExecutionLease = undefined;
+  await session.propose(plan);
+  expect(effects.execute).toHaveBeenCalledOnce();
+  expect(cb.dispatch).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('task lease unavailable') }));
+});
+
+it.each(['1', '2'])('blocks physical resume choice %s after generation changes during its prompt', async choice => {
+  await install(false);
+  await initializeProcessSurfaceAuthority(root);
+  let answer!: (value: string) => void;
+  let prompted!: () => void;
+  const prompt = new Promise<void>(resolve => { prompted = resolve; });
+  const cb = callbacks(vi.fn(event => {
+    if (event.type === 'question') { answer = event.resolve; prompted(); }
+  }));
+  cb.ctx.activePlan = { ...proposal(), state: 'paused' };
+  const pending = physicalResume(cb);
+  await prompt;
+  await install(true);
+  answer(choice);
+  await pending;
+  expect(effects.save).not.toHaveBeenCalled();
+  expect(effects.execute).not.toHaveBeenCalled();
+  expect(cb.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'error', message: expect.stringContaining('restart Agon') }));
+});
 
 it.each((['approve', 'retry', 'plan'] as const).flatMap(type => [true, false].map(disabled => ({ type, disabled }))))('checks Forge through worktree Plan $type (disabled=$disabled)', async ({ type, disabled }) => {
   await install(disabled, 'agon.forge');

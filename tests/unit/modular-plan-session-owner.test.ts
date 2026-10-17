@@ -10,6 +10,7 @@ it('exports the session scope from the physical Plan package', () => {
   expect(plan).toHaveProperty('planSessionHost.run', expect.any(Function));
   expect(plan).toHaveProperty('dispatchPlanSession', expect.any(Function));
   expect(plan).toHaveProperty('createPlanSessionActions', expect.any(Function));
+  expect(plan).toHaveProperty('createPlanExecutionSession', expect.any(Function));
 });
 
 it('binds physical and legacy-shaped requests to one Plan dispatcher', () => {
@@ -20,6 +21,8 @@ it('binds physical and legacy-shaped requests to one Plan dispatcher', () => {
   expect(content).not.toContain('await runInteractivePlanRequest(request,');
   expect(content).toContain('actions: interactivePlanActions(cb)');
   expect(content).toContain('createPlanSessionActions(');
+  expect(content).toContain('createPlanExecutionSession(cb)');
+  expect(content).not.toContain("from './plan-execution.js'");
   expect(content).not.toMatch(/\bhandle(?:PlanShow|PlansList|Approve|Retry|Cancel)\b/);
 });
 

@@ -10,10 +10,13 @@ const actions = vi.hoisted(() => ({
   readWorktree: vi.fn<() => Plan | null>(() => null), saveWorktree: vi.fn(),
   auto: vi.fn<(request: unknown, input: string, cb: DispatchCallbacks) => Promise<DispatchResult | null>>(),
 }));
-vi.mock('../../packages/cli/src/signals/dispatch/plan-execution.js', async importOriginal => ({
-  ...await importOriginal<typeof import('../../packages/cli/src/signals/dispatch/plan-execution.js')>(),
-  approvePendingCesarPlan: actions.approvePending, cancelPendingCesarPlan: actions.cancelPending,
-}));
+vi.mock('../../packages/cli/src/blocks/plan-execution-effects.js', async importOriginal => {
+  const original = await importOriginal<typeof import('../../packages/cli/src/blocks/plan-execution-effects.js')>();
+  return { ...original, createPlanExecutionSession: (cb: DispatchCallbacks) => ({
+    ...original.createPlanExecutionSession(cb),
+    approvePending: actions.approvePending, cancelPending: actions.cancelPending,
+  }) };
+});
 vi.mock('../../packages/cli/src/blocks/worktree-plan-effects.js', () => ({
   worktreePlanHost: () => ({ available: () => true, current: actions.readWorktree, emit: vi.fn(),
     setCurrent: (plan: Plan) => actions.readWorktree.mockReturnValue(plan), save: actions.saveWorktree }),

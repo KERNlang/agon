@@ -9,6 +9,7 @@ const evidencePath = 'tests/unit/modular-plan-facade-retirement.test.ts';
 const runtimeBindings = [
   'packages/cli/src/handlers/plan-mode.ts',
   'packages/cli/src/signals/dispatch/plan-execution.ts',
+  'packages/cli/src/blocks/plan-execution-effects.ts',
 ];
 const sha256 = bytes => `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
 

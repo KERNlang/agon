@@ -15,6 +15,12 @@ vi.mock('../../packages/cli/src/signals/dispatch/plan-execution.js', async origi
   resumeCesarPlan: effects.resume,
 }));
 import { dispatchIntent } from '../../packages/cli/src/signals/dispatch/intent-router.js';
+vi.mock('../../packages/cli/src/blocks/plan-execution-effects.js', async importOriginal => {
+  const original = await importOriginal<typeof import('../../packages/cli/src/blocks/plan-execution-effects.js')>();
+  return { ...original, createPlanExecutionSession: (cb: DispatchCallbacks) => ({
+    ...original.createPlanExecutionSession(cb), approvePending: effects.approve, resume: effects.resume,
+  }) };
+});
 
 const NOW = '2026-10-09T00:00:00.000Z';
 

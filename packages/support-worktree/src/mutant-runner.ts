@@ -40,6 +40,7 @@ export interface MutationReport {
   baselineMs: number;
   baselineOk: boolean;
   baselineError?: string;
+  baselinePhase?: 'build' | 'typecheck' | 'test';
 }
 
 export interface MutantProgress {
@@ -53,7 +54,8 @@ export interface MutantProgress {
 
 export interface RunMutantsOptions {
   worktree: string;
-  mutants: Mutant[];
+  /** Generate after a green baseline. The callback must honor the deadline and signal. */
+  mutants: Mutant[] | ((context: { deadline: number; signal?: AbortSignal }) => Promise<Mutant[]>);
   testCmd: string;
   perMutantTimeoutSec: number;
   totalBudgetSec: number;
@@ -67,7 +69,8 @@ export interface RunMutantsOptions {
  * Run every mutant in an already-isolated sandbox under a total wall-clock budget that is actually enforced (every subprocess is capped by the time left). Never throws: a red baseline returns baselineOk:false + baselineError with zero outcomes, and an unplaceable mutant is graded 'invalid'. Restores every touched file in finally.
  */
 export async function runMutants(opts: RunMutantsOptions): Promise<MutationReport> {
-  const { worktree, mutants, testCmd } = opts;
+  const { worktree, testCmd } = opts;
+  let mutants = Array.isArray(opts.mutants) ? opts.mutants : [];
   const perMutantMs = Math.max(1, Math.round(opts.perMutantTimeoutSec * 1000));
   const budgetMs = Math.max(1, Math.round(opts.totalBudgetSec * 1000));
   const startedAt = Date.now();
@@ -84,6 +87,7 @@ export async function runMutants(opts: RunMutantsOptions): Promise<MutationRepor
   let baselineMs = 0;
   let baselineOk = false;
   let baselineError: string | undefined;
+  let baselinePhase: MutationReport['baselinePhase'];
   // Set when a subprocess could not be SPAWNED at all (never a test verdict).
   let spawnFailure: string | undefined;
 
@@ -97,13 +101,16 @@ export async function runMutants(opts: RunMutantsOptions): Promise<MutationRepor
     const capped = Math.max(1, Math.min(timeoutMs, left));
     let res: { exitCode: number; stdout: string; stderr: string; timedOut: boolean };
     try {
-      res = await spawnWithTimeout({
+      const result = await spawnWithTimeout({
         command: '/bin/sh',
         args: ['-c', cmd],
         cwd: worktree,
         timeout: capped,
         signal: opts.signal,
+        maxCapturedBytesPerStream: 1024 * 1024,
       });
+      if (result.spawnError) throw result.spawnError;
+      res = result;
     } catch (err) {
       // spawnWithTimeout is expected to RESOLVE, but a spawn-level failure
       // (EMFILE, no /bin/sh, a signal error) must never throw out of
@@ -143,15 +150,17 @@ export async function runMutants(opts: RunMutantsOptions): Promise<MutationRepor
       allSurvived: survived > 0 && killed === 0,
       baselineMs,
       baselineOk,
+      ...(!baselineOk && baselinePhase ? { baselinePhase } : {}),
       baselineError: baselineError ?? (spawnFailure
         ? `a sandbox command could not be spawned (${spawnFailure}) — the mutants after it reached no verdict`
         : undefined),
     };
   };
   const budgetStop = (phase: string): MutationReport => {
-    budgetExhausted = true;
+    budgetExhausted = !spawnFailure;
     notRun = mutants.length;
-    baselineError = `the total budget (${opts.totalBudgetSec}s) ran out during the sandbox ${phase}, before any mutant could run — raise the budget or narrow the target`;
+    baselineError = spawnFailure ? `sandbox ${phase} could not be spawned: ${spawnFailure}`
+      : `the total budget (${opts.totalBudgetSec}s) ran out during the sandbox ${phase}, before any mutant could run — raise the budget or narrow the target`;
     return build();
   };
   const abortStop = (phase: string): MutationReport => {
@@ -190,6 +199,7 @@ export async function runMutants(opts: RunMutantsOptions): Promise<MutationRepor
       if (!r.res || r.budgetCut) return budgetStop('build');
       if (opts.signal?.aborted) return abortStop('build');
       if (r.res.exitCode !== 0 || r.res.timedOut) {
+        baselinePhase = 'build';
         const why = r.res.timedOut ? 'timed out' : `exit ${r.res.exitCode}`;
         baselineError = `build command fails before any mutation in the sandbox (${why}) — check deps/build; stderr tail:\n${tail(r.res.stderr || r.res.stdout)}`;
         notRun = mutants.length;
@@ -204,6 +214,7 @@ export async function runMutants(opts: RunMutantsOptions): Promise<MutationRepor
       if (!r.res || r.budgetCut) return budgetStop('typecheck');
       if (opts.signal?.aborted) return abortStop('typecheck');
       if (r.res.exitCode !== 0 || r.res.timedOut) {
+        baselinePhase = 'typecheck';
         const why = r.res.timedOut ? 'timed out' : `exit ${r.res.exitCode}`;
         baselineError = `typecheck command fails before any mutation in the sandbox (${why}) — a pre-existing type error would mark EVERY mutant invalid and report a run that measured nothing; stderr tail:\n${tail(r.res.stderr || r.res.stdout)}`;
         notRun = mutants.length;
@@ -219,12 +230,21 @@ export async function runMutants(opts: RunMutantsOptions): Promise<MutationRepor
     const baseRes = baseRun.res;
     opts.onProgress?.({ phase: 'baseline', index: 0, total: mutants.length, durationMs: baselineMs, status: baseRes.exitCode === 0 ? 'ok' : 'failed' });
     if (baseRes.timedOut || baseRes.exitCode !== 0) {
+      baselinePhase = 'test';
       const why = baseRes.timedOut ? 'timed out' : `exit ${baseRes.exitCode}`;
       baselineError = `test command fails before any mutation in the sandbox (${why}) — check deps/build; stderr tail:\n${tail(baseRes.stderr || baseRes.stdout)}`;
       notRun = mutants.length;
       return build();
     }
     baselineOk = true;
+
+    if (typeof opts.mutants === 'function') {
+      if (opts.signal?.aborted) return abortStop('mutant generation');
+      if (Date.now() >= deadline) return budgetStop('mutant generation');
+      mutants = await opts.mutants({ deadline, signal: opts.signal });
+      if (opts.signal?.aborted) return abortStop('mutant generation');
+      if (Date.now() >= deadline) return budgetStop('mutant generation');
+    }
 
     // A suite that takes 40s unmutated needs more than a 120s cap when the
     // mutation makes it slower; a suite that takes 20ms should not wait 120s
@@ -322,7 +342,7 @@ export async function runMutants(opts: RunMutantsOptions): Promise<MutationRepor
       // Neither an abort nor a budget cut is evidence about the tests: this
       // mutant reached no verdict, so it and every mutant after it are notRun.
       if (opts.signal?.aborted) { aborted = true; notRun = mutants.length - i; break; }
-      if (cutByBudget) { budgetExhausted = true; notRun = mutants.length - i; break; }
+      if (cutByBudget) { budgetExhausted = !spawnFailure; notRun = mutants.length - i; break; }
 
       const durationMs = Date.now() - t0;
       outcomes.push({ mutant, status, durationMs, exitCode, reason });

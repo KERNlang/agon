@@ -5,7 +5,7 @@
 // `expect(true).toBe(true)`) make kill/survive deterministic. The fixture's
 // checks are `.mjs` scripts on purpose so the repo's own vitest run never
 // collects them.
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { generateMutants } from '../../packages/core/src/tools/mutant-generator.js';
 import { runMutants } from '../../packages/core/src/tools/mutant-runner.js';
 import { runMutants as sharedRunMutants } from '@kernlang/agon-support-worktree';
+import * as processRuntime from '@kernlang/agon-support-engine-runtime';
 import type { Mutant } from '../../packages/core/src/tools/mutant-generator.js';
 
 const FIXTURE = fileURLToPath(new URL('../fixtures/mutate-tautology', import.meta.url));
@@ -45,6 +46,62 @@ afterEach(() => {
 const base = { perMutantTimeoutSec: 20, totalBudgetSec: 120 };
 
 describe('runMutants — kill / survive', () => {
+  it.each(['baseline', 'mutant', 'after-verdict', 'rejected'])('does not turn a %s process spawn error into a killed mutant', async phase => {
+    const dir = sandbox(), mutants = addMutants(dir);
+    const spawn = vi.spyOn(processRuntime, 'spawnWithTimeout');
+    if (phase !== 'baseline') spawn.mockResolvedValueOnce({ exitCode: 0, stdout: '', stderr: '', timedOut: false, durationMs: 1, pid: null });
+    if (phase === 'after-verdict') spawn.mockResolvedValueOnce({ exitCode: 1, stdout: '', stderr: 'test failed', timedOut: false, durationMs: 1, pid: null });
+    if (phase === 'rejected') spawn.mockRejectedValue(new Error('fixture spawn failure'));
+    else spawn.mockResolvedValue({ exitCode: 1, stdout: '', stderr: 'spawn failed', timedOut: false, durationMs: 1,
+      pid: null, spawnError: new Error('fixture spawn failure') });
+    let report;
+    try {
+      report = await runMutants({ ...base, worktree: dir, mutants, testCmd: 'node check-real.mjs' });
+      expect(report.killed).toBe(phase === 'after-verdict' ? 1 : 0);
+      expect(spawn.mock.calls.every(([options]) => options.maxCapturedBytesPerStream === 1024 * 1024)).toBe(true);
+    } finally { spawn.mockRestore(); }
+    expect(report.outcomes).toHaveLength(phase === 'after-verdict' ? 1 : 0);
+    expect(report.notRun).toBe(mutants.length - report.outcomes.length);
+    expect(report.baselineError).toContain('fixture spawn failure');
+    expect(report.budgetExhausted).toBe(false);
+    expect(report.baselinePhase).toBeUndefined();
+  });
+
+  it('keeps successful verbose commands successful when capture is truncated', async () => {
+    const dir = sandbox();
+    const report = await runMutants({ ...base, worktree: dir, mutants: addMutants(dir).slice(0, 1),
+      testCmd: `node -e "process.stdout.write('x'.repeat(2*1024*1024));process.stderr.write('y'.repeat(2*1024*1024))"` });
+    expect(report.baselineOk).toBe(true);
+    expect(report.survived).toBe(1);
+    expect(report.killed).toBe(0);
+    expect(report.notRun).toBe(0);
+    expect(report.baselineError).toBeUndefined();
+  });
+
+  it('does not prepare lazy mutants before a green baseline', async () => {
+    const dir = sandbox(), prepare = vi.fn(async () => addMutants(dir));
+    const report = await runMutants({ ...base, worktree: dir, mutants: prepare, testCmd: 'exit 7' });
+    expect(prepare).not.toHaveBeenCalled();
+    expect(report.baselineOk).toBe(false);
+    expect(report.baselinePhase).toBe('test');
+  });
+
+  it('charges lazy generation to the same deadline without fabricating kills', async () => {
+    const dir = sandbox(), mutants = addMutants(dir);
+    const now = vi.spyOn(Date, 'now');
+    let report;
+    try {
+      report = await runMutants({ ...base, worktree: dir, testCmd: 'node check-real.mjs',
+        mutants: async ({ deadline }) => { now.mockReturnValue(deadline + 1); return mutants; } });
+    } finally { now.mockRestore(); }
+    expect(report.baselineOk).toBe(true);
+    expect(report.budgetExhausted).toBe(true);
+    expect(report.generated).toBe(mutants.length);
+    expect(report.notRun).toBe(mutants.length);
+    expect(report.killed).toBe(0);
+    expect(report.outcomes).toEqual([]);
+  });
+
   it('uses one runner through the shared owner and legacy export', () => {
     expect(runMutants).toBe(sharedRunMutants);
   });

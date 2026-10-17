@@ -15,6 +15,16 @@ import {
   isSafePackageName, pnpmWorkspaceGlobs, repointWorkspaceLinks, gitIgnoredPaths,
   expandWorkspaceGlob, workspaceGlobToRegExp,
 } from '../../packages/forge/src/mutate-sandbox.js';
+import * as sharedSandbox from '@kernlang/agon-support-worktree';
+
+it('keeps legacy sandbox exports bound to the shared owner', () => {
+  expect(typeof prepareSandboxNodeModules).toBe('function');
+  expect(typeof clearShadowingDist).toBe('function');
+  expect(typeof workspacePackageDirs).toBe('function');
+  expect(prepareSandboxNodeModules).toBe(sharedSandbox.prepareSandboxNodeModules);
+  expect(clearShadowingDist).toBe(sharedSandbox.clearShadowingDist);
+  expect(workspacePackageDirs).toBe(sharedSandbox.workspacePackageDirs);
+});
 
 const write = (path: string, content: string): void => {
   mkdirSync(join(path, '..'), { recursive: true });

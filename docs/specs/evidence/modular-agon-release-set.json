@@ -243,16 +243,16 @@
         "range": "^19.2.0"
       }
     ],
-    "packedBytes": 1371594,
-    "unpackedBytes": 6176123,
+    "packedBytes": 1365256,
+    "unpackedBytes": 6150838,
     "fileCount": 113,
     "files": [
       {
-        "path": "dist/app-C3RQXSTI.js",
+        "path": "dist/app-4EN6QJVL.js",
         "size": 410182
       },
       {
-        "path": "dist/app-C3RQXSTI.js.map",
+        "path": "dist/app-4EN6QJVL.js.map",
         "size": 276040
       },
       {
@@ -286,6 +286,14 @@
       {
         "path": "dist/chunk-24WGWBAO.js.map",
         "size": 3129
+      },
+      {
+        "path": "dist/chunk-2WO7RDJY.js",
+        "size": 885524
+      },
+      {
+        "path": "dist/chunk-2WO7RDJY.js.map",
+        "size": 526128
       },
       {
         "path": "dist/chunk-37LCQRNC.js",
@@ -328,12 +336,12 @@
         "size": 55421
       },
       {
-        "path": "dist/chunk-67RVRC4B.js",
-        "size": 46698
+        "path": "dist/chunk-6ENHJ5R5.js",
+        "size": 295563
       },
       {
-        "path": "dist/chunk-67RVRC4B.js.map",
-        "size": 28844
+        "path": "dist/chunk-6ENHJ5R5.js.map",
+        "size": 190519
       },
       {
         "path": "dist/chunk-6SX4NWMW.js",
@@ -376,6 +384,22 @@
         "size": 140
       },
       {
+        "path": "dist/chunk-EBCNKLR7.js",
+        "size": 46698
+      },
+      {
+        "path": "dist/chunk-EBCNKLR7.js.map",
+        "size": 28844
+      },
+      {
+        "path": "dist/chunk-ESK57NSJ.js",
+        "size": 53019
+      },
+      {
+        "path": "dist/chunk-ESK57NSJ.js.map",
+        "size": 31205
+      },
+      {
         "path": "dist/chunk-JGQO2IQQ.js",
         "size": 12644
       },
@@ -390,14 +414,6 @@
       {
         "path": "dist/chunk-KVLLDIIZ.js.map",
         "size": 38419
-      },
-      {
-        "path": "dist/chunk-MVSNVVMU.js",
-        "size": 295563
-      },
-      {
-        "path": "dist/chunk-MVSNVVMU.js.map",
-        "size": 190519
       },
       {
         "path": "dist/chunk-NIZVRCIJ.js",
@@ -462,22 +478,6 @@
       {
         "path": "dist/chunk-VCCEK5PA.js.map",
         "size": 14454
-      },
-      {
-        "path": "dist/chunk-X3DATPZY.js",
-        "size": 899676
-      },
-      {
-        "path": "dist/chunk-X3DATPZY.js.map",
-        "size": 537261
-      },
-      {
-        "path": "dist/chunk-XHQCSKPR.js",
-        "size": 53019
-      },
-      {
-        "path": "dist/chunk-XHQCSKPR.js.map",
-        "size": 31205
       },
       {
         "path": "dist/chunk-XMNR5BLP.js",
@@ -568,11 +568,11 @@
         "size": 24517
       },
       {
-        "path": "dist/forge-3JB5IQG3.js",
+        "path": "dist/forge-ZJI2YYYM.js",
         "size": 1297
       },
       {
-        "path": "dist/forge-3JB5IQG3.js.map",
+        "path": "dist/forge-ZJI2YYYM.js.map",
         "size": 51
       },
       {
@@ -584,11 +584,11 @@
         "size": 11368
       },
       {
-        "path": "dist/intent-skills-BR6R7YO3.js",
+        "path": "dist/intent-skills-DPVMMCZA.js",
         "size": 801
       },
       {
-        "path": "dist/intent-skills-BR6R7YO3.js.map",
+        "path": "dist/intent-skills-DPVMMCZA.js.map",
         "size": 51
       },
       {
@@ -632,11 +632,11 @@
         "size": 3694
       },
       {
-        "path": "dist/plan-mode-LSILTAJ6.js",
+        "path": "dist/plan-mode-CUMAO3I7.js",
         "size": 665
       },
       {
-        "path": "dist/plan-mode-LSILTAJ6.js.map",
+        "path": "dist/plan-mode-CUMAO3I7.js.map",
         "size": 51
       },
       {
@@ -700,10 +700,10 @@
         "size": 126904
       }
     ],
-    "payloadHash": "sha256:149d8df52419aee138682e0aef5f2b2256fe0b08a637a2131b54f7e84375183d",
-    "integrity": "sha512-JtRizr4V9lcFY4UBfx3c/eFWoDMzrhtAUPBbgna1mksNuwJGuV7LSA3s6Xo16nxWt5ImJOWwOrMrr3rsjG0rWg==",
-    "shasum": "354c30b2316c58cbafeaac1351cc893fb60567a7",
-    "tarballHash": "sha256:4033d329abc639edaeec216c5d8705029bcb6d11d0d29c8456e63b64944b11f0",
+    "payloadHash": "sha256:93d1a6979a14838fb0d336531e97562e0bde29d713e1b3cd339d8bab02fa23da",
+    "integrity": "sha512-BoOFQrbyveaLIpJ4sD7vvk81dCkSGtalVrB77IntKRUiZUoeJ2lG5+uRj0KJ7UEeDM/HIJHdMPS8aOtuw0iDZg==",
+    "shasum": "04a9127c4ffe05d3c5990bb2e2ffdc4892bc6c5d",
+    "tarballHash": "sha256:950df9b655910de8426186fabf937987d2b258da758cc4ac8d7563845c917ce4",
     "packageJsonHash": "sha256:28e901652911437b0e49a15bf3be184c09f24652c51bdf68ef3055b27494ced1"
   },
   "packages": [
@@ -1636,9 +1636,9 @@
       "peerDependencies": {
         "@kernlang/agon-kernel": ">=0.0.0-0 <2"
       },
-      "packedBytes": 32648,
-      "unpackedBytes": 120319,
-      "fileCount": 24,
+      "packedBytes": 38818,
+      "unpackedBytes": 142785,
+      "fileCount": 25,
       "files": [
         {
           "path": "dist/dependency-overlay.d.ts",
@@ -1662,11 +1662,11 @@
         },
         {
           "path": "dist/index.d.ts",
-          "size": 705
+          "size": 744
         },
         {
           "path": "dist/index.js",
-          "size": 91772
+          "size": 106647
         },
         {
           "path": "dist/mutant-generator.d.ts",
@@ -1679,6 +1679,10 @@
         {
           "path": "dist/mutation-runner.d.ts",
           "size": 2286
+        },
+        {
+          "path": "dist/mutation-sandbox.d.ts",
+          "size": 7552
         },
         {
           "path": "dist/package-metadata.d.ts",
@@ -1737,10 +1741,10 @@
           "size": 674
         }
       ],
-      "payloadHash": "sha256:7b244a82b991a12cd4bcaa8db66e269dc6fde8de81b24a31946344049b1307ff",
-      "integrity": "sha512-d9FZ/r9rAtC8PB5C/AQXg1tzIxorsCyyG1K6t7Pefclskr0i7B94kkTFtWdxDsktk8+k73V16UcnzSmKjbn3oA==",
-      "shasum": "5cedb55809359a03eb57e712463c66c6279d1de3",
-      "tarballHash": "sha256:f7289aff4e503520742dc2621076ddbac4eef6b6e67526021a27eb04622fc18d",
+      "payloadHash": "sha256:da8ca4370ab101e1059acbef221b974d37119ca9c1a2d2642a0eb3a19288ddd2",
+      "integrity": "sha512-ZpFpCqNbtAG5TKIh3XamJhuaQgPMQNvhTpnWGjCMPekqWBj7mJ0ElfgQDPn6Lks+u+YsPJ8rB139U41kW9gq6g==",
+      "shasum": "c071b48729cc9da469fe5a64336f8c95b8142131",
+      "tarballHash": "sha256:bde4988f6b72869935280a29220560a4cacaefaec0cfb254ca44e9724a7ff5a5",
       "packageJsonHash": "sha256:a1ba1f2bcc1d926cada4936611cf417f60a44f121ee74be550a0df1694ef83e3",
       "manifestHash": "sha256:a1ba1f2bcc1d926cada4936611cf417f60a44f121ee74be550a0df1694ef83e3"
     },

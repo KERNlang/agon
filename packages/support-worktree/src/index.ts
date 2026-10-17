@@ -11,6 +11,7 @@ export * from './workspace-bookmarks.js';
 export * from './mutation-runner.js';
 export * from './mutant-generator.js';
 export * from './mutant-runner.js';
+export * from './mutation-sandbox.js';
 export * from './paths.js';
 export * from './patch-apply.js';
 export * from './patch-parser.js';

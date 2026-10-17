@@ -789,6 +789,8 @@ export async function runGoal(
               )
             : { exitCode: 0 };
           await assertExecution();
+          const reviewSeats = (review.result as { reviews?: Array<{ costUsd: number }> } | undefined)?.reviews ?? [];
+          state.spentUsd += reviewSeats.reduce((sum, seat) => sum + seat.costUsd, 0);
           let reviewBlocked = review.exitCode !== 0;
           if (reviewBlocked && review.result) {
             try {
@@ -799,13 +801,14 @@ export async function runGoal(
                 { mode: "review", timeoutSeconds: gateTimeout, systemPrompt: "Adjudicate evidence only. Do not modify files or use tools. Return strict JSON." },
               )) as Record<string, Json>;
               await assertExecution();
+              if (typeof adjudicated.costUsd === 'number' && Number.isFinite(adjudicated.costUsd) && adjudicated.costUsd >= 0)
+                state.spentUsd += adjudicated.costUsd;
               const rawVerdict = String(adjudicated.stdout ?? "").trim().replace(/^```(?:json)?\s*|\s*```$/g, "");
               const verdict = JSON.parse(rawVerdict) as { blocking?: unknown; reason?: unknown };
               if (typeof verdict.blocking === "boolean") {
                 reviewBlocked = verdict.blocking;
                 state = event(state, "review-adjudicated", runnable.id, `${reviewBlocked ? "blocking" : "cleared"}: ${String(verdict.reason ?? "")}`);
               }
-              state.spentUsd += Number(adjudicated.costUsd ?? 0) || 0;
             } catch (error) {
               state = event(state, "review-adjudication-failed", runnable.id, error instanceof Error ? error.message : String(error));
             }

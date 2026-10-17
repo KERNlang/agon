@@ -319,7 +319,8 @@ describe('physical goal mod', () => {
     expect(resumed.exitCode).toBe(0);
     expect((resumed.result as any).patch).toBe((first.result as any).patch);
     expect(h.dispatch).not.toHaveBeenCalled();
-    for (const changed of [{ gate: 'true' }, { branch: 'goal/other' }]) {
+    const changes: Array<Record<string, string>> = [{ gate: 'true' }, { branch: 'goal/other' }];
+    for (const changed of changes) {
       const refused = await runGoal({ id: 'stable-identity', resume: true, ...changed }, context(cwd), h.services);
       expect(refused).toMatchObject({ exitCode: 1, stderr: expect.stringContaining('cannot change') });
     }
@@ -674,17 +675,19 @@ describe('physical goal mod', () => {
     expect(h.dispatch).not.toHaveBeenCalled();
   });
 
-  it('honors the metered budget before starting the next task', async () => {
+  it.each(['builder', 'reviewer'])('counts %s costs before starting the next task', async (charged) => {
     const cwd = repo(); const h = harness();
     h.dispatch.mockImplementation(async (_id: string, _prompt: string, invocation: any, options: any) => {
       if (options.mode === 'agent') writeFileSync(join(invocation.cwd, 'first.txt'), 'yes\n');
       return options.mode === 'agent'
-        ? { exitCode: 0, stdout: 'done', stderr: '', timedOut: false, costUsd: 0.6 }
-        : { exitCode: 0, stdout: '<!--AGON_REVIEW_FINDINGS_v1-->\n```json\n[]\n```', stderr: '', timedOut: false };
+        ? { exitCode: 0, stdout: 'done', stderr: '', timedOut: false, costUsd: charged === 'builder' ? 0.6 : 0.1 }
+        : { exitCode: 0, stdout: '<!--AGON_REVIEW_FINDINGS_v1-->\n```json\n[]\n```', stderr: '', timedOut: false, costUsd: charged === 'reviewer' ? 0.5 : 0 };
     });
     const out = await runGoal({ intent: 'budgeted', gate: 'true', budget: 0.5, requireTests: false, tasks: [{ id: 'first', source: 'one' }, { id: 'second', source: 'two', dependsOn: ['first'] }] }, context(cwd), h.services);
     expect((out.result as any).state).toMatchObject({ status: 'stopped', stopReason: 'budget' });
     expect((out.result as any).state.tasks.map((task: any) => task.status)).toEqual(['done', 'queued']);
+    expect((out.result as any).state.spentUsd).toBeCloseTo(0.6);
+    expect(h.dispatch.mock.calls.filter(([, , , options]) => options.mode === 'agent')).toHaveLength(1);
   });
 
   it('owns bounded supervised re-exec and resumes after a transient crash', async () => {
@@ -705,18 +708,76 @@ describe('physical goal mod', () => {
     expect(h.dispatch).not.toHaveBeenCalled();
   });
 
-  it('lets an independent judge clear a panel finding before commit', async () => {
+  it('counts a billed failed seat alongside a usable review without changing the degraded verdict', async () => {
+    const cwd = repo(); const h = harness();
+    h.services.engines.listActive = async () => ['builder', 'reviewer', 'failed'];
+    h.dispatch.mockImplementation(async (engine: string, _prompt: string, invocation: any, options: any) => {
+      if (options.mode === 'agent') {
+        writeFileSync(join(invocation.cwd, 'first.txt'), 'yes\n');
+        return { exitCode: 0, stdout: 'done', stderr: '', timedOut: false, costUsd: 0.1 };
+      }
+      return { exitCode: engine === 'failed' ? 1 : 0,
+        stdout: '<!--AGON_REVIEW_FINDINGS_v1-->\n```json\n[]\n```',
+        stderr: '', timedOut: false, costUsd: engine === 'failed' ? 0.3 : 0.2 };
+    });
+    const out = await runGoal({ intent: 'mixed costs', gate: 'true', budget: 0.5, requireTests: false,
+      engine: 'builder', reviewEngines: 'reviewer,failed',
+      tasks: [{ id: 'first', source: 'one' }, { id: 'second', source: 'two', dependsOn: ['first'] }],
+    }, context(cwd), h.services);
+    expect((out.result as any).state).toMatchObject({ status: 'stopped', stopReason: 'budget' });
+    expect((out.result as any).state.spentUsd).toBeCloseTo(0.6);
+    expect((out.result as any).state.tasks.map((task: any) => task.status)).toEqual(['done', 'queued']);
+    expect(h.dispatch).toHaveBeenCalledTimes(3);
+    expect(h.finish).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      mode: 'review', ok: true, summary: '1/2 reviewers produced machine-readable evidence',
+    }), expect.anything());
+  });
+
+  it.each([true, false].flatMap(valid => [undefined, -1, Number.NaN, Number.POSITIVE_INFINITY].map(costUsd => ({ valid, costUsd }))))(
+    'rejects invalid adjudication cost $costUsd with valid verdict=$valid', async ({ valid, costUsd }) => {
+      const cwd = repo(); const h = harness();
+      h.dispatch.mockImplementation(async (_id: string, prompt: string, invocation: any, options: any) => {
+        if (options.mode === 'agent') {
+          writeFileSync(join(invocation.cwd, 'first.txt'), 'yes\n');
+          return { exitCode: 0, stdout: 'done', stderr: '', timedOut: false, costUsd: 0.1 };
+        }
+        if (prompt.startsWith('Adjudicate')) return { exitCode: 0,
+          stdout: valid ? '{"blocking":true,"reason":"still blocked"}' : 'not JSON',
+          stderr: '', timedOut: false, costUsd };
+        return { exitCode: 0,
+          stdout: '<!--AGON_REVIEW_FINDINGS_v1-->\n```json\n[{"file":"first.txt","lines":"1","severity":"blocking","blocking":true,"confidence":0.9,"problem":"issue","minimalFix":"fix it"}]\n```',
+          stderr: '', timedOut: false, costUsd: 0.2 };
+      });
+      const out = await runGoal({ intent: 'invalid judge cost', gate: 'true', requireTests: false,
+        engine: 'builder', reviewEngines: 'reviewer', maxAttempts: 1 }, context(cwd), h.services);
+      expect(out.exitCode).toBe(1);
+      expect((out.result as any).state.spentUsd).toBeCloseTo(0.3);
+      expect((out.result as any).state.tasks[0].status).toBe('failed');
+      const saved = await runGoal({ id: 'invalid-judge-cost', status: true }, context(cwd), h.services);
+      expect((saved.result as any).state.spentUsd).toBeCloseTo(0.3);
+    },
+  );
+
+  it.each([true, false])('counts panel and adjudication costs with valid verdict=%s', async (valid) => {
     const cwd = repo(); const h = harness();
     h.dispatch.mockImplementation(async (_id: string, prompt: string, invocation: any, options: any) => {
       if (options.mode === 'agent') {
         writeFileSync(join(invocation.cwd, 'first.txt'), 'yes\n');
-        return { exitCode: 0, stdout: 'done', stderr: '', timedOut: false };
+        return { exitCode: 0, stdout: 'done', stderr: '', timedOut: false, costUsd: 0.1 };
       }
-      if (prompt.startsWith('Adjudicate')) return { exitCode: 0, stdout: '{"blocking":false,"reason":"false positive"}', stderr: '', timedOut: false };
-      return { exitCode: 0, stdout: '<!--AGON_REVIEW_FINDINGS_v1-->\n```json\n[{"file":"first.txt","lines":"1","severity":"blocking","blocking":true,"confidence":0.9,"problem":"claimed issue","minimalFix":"none"}]\n```', stderr: '', timedOut: false };
+      if (prompt.startsWith('Adjudicate')) return { exitCode: 0, stdout: valid ? '{"blocking":false,"reason":"false positive"}' : 'not JSON', stderr: '', timedOut: false, costUsd: 0.3 };
+      return { exitCode: 0, stdout: '<!--AGON_REVIEW_FINDINGS_v1-->\n```json\n[{"file":"first.txt","lines":"1","severity":"blocking","blocking":true,"confidence":0.9,"problem":"claimed issue","minimalFix":"none"}]\n```', stderr: '', timedOut: false, costUsd: 0.2 };
     });
-    const out = await runGoal({ intent: 'judge review', gate: 'true', requireTests: false, engine: 'builder', reviewEngines: 'reviewer', judge: 'reviewer' }, context(cwd), h.services);
-    expect(out.exitCode).toBe(0);
-    expect((out.result as any).state.events.some((entry: any) => entry.type === 'review-adjudicated' && entry.detail.includes('cleared'))).toBe(true);
+    const out = await runGoal({ intent: 'judge review', gate: 'true', requireTests: false, engine: 'builder', reviewEngines: 'reviewer', judge: 'reviewer', maxAttempts: 1 }, context(cwd), h.services);
+    expect(out.exitCode).toBe(valid ? 0 : 1);
+    expect((out.result as any).state.events.some((entry: any) => entry.type === 'review-adjudicated' && entry.detail.includes('cleared'))).toBe(valid);
+    expect((out.result as any).state.spentUsd).toBeCloseTo(0.6);
+    const saved = await runGoal({ id: 'judge-review', status: true }, context(cwd), h.services);
+    expect((saved.result as any).state.spentUsd).toBeCloseTo(0.6);
+    const calls = h.dispatch.mock.calls.length;
+    const resumed = await runGoal({ id: 'judge-review', resume: true, maxAttempts: 2, requireTests: false,
+      engine: 'builder', reviewEngines: 'reviewer', judge: 'reviewer' }, context(cwd), h.services);
+    expect((resumed.result as any).state.spentUsd).toBeCloseTo(valid ? 0.6 : 1.2);
+    expect(h.dispatch).toHaveBeenCalledTimes(calls + (valid ? 0 : 3));
   });
 });

@@ -232,6 +232,7 @@ export async function runReview(
         const parsed = parseFindings(output);
         return {
           ...seat,
+          costUsd: typeof out.costUsd === 'number' && Number.isFinite(out.costUsd) && out.costUsd >= 0 ? out.costUsd : 0,
           ok: Boolean(output) && parsed.valid,
           output,
           findings: parsed.findings,
@@ -243,6 +244,7 @@ export async function runReview(
       } catch (error) {
         return {
           ...seat,
+          costUsd: 0,
           ok: false,
           output: "",
           findings: [] as Finding[],

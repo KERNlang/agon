@@ -264,6 +264,7 @@ export { runRag, buildRagIndex, queryRag, collectCorpusFiles, chunkMarkdown } fr
 ` : short === 'naturalize' ? `export { runNaturalize } from './implementation.js';
 ` : short === 'sanitize' ? `export { runSanitize, scanText, cleanText } from './implementation.js';
 ` : short === 'goal' ? `export { runGoal } from './implementation.js';
+export { summarizeGoal, createGoalResult } from './artifacts.js';
 export { createGoalHostServices } from './host.js';
 export type { GoalHostServices, GoalModServices, GoalWorktree, GoalWorktreeEffects, GoalTaskAcceptance } from './host.js';
 export type { GoalSpec, AttemptRecord, GoalTask, GoalEvent, JournalState } from './journal-types.js';

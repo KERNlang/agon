@@ -9,6 +9,7 @@ export const IMPLEMENTATION_KIND = 'physical' as const;
 export { createMod } from './implementation.js';
 export { createMod as default } from './implementation.js';
 export { runGoal } from './implementation.js';
+export { summarizeGoal, createGoalResult } from './artifacts.js';
 export { createGoalHostServices } from './host.js';
 export type { GoalHostServices, GoalModServices, GoalWorktree, GoalWorktreeEffects, GoalTaskAcceptance } from './host.js';
 export type { GoalSpec, AttemptRecord, GoalTask, GoalEvent, JournalState } from './journal-types.js';

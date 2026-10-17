@@ -10,8 +10,10 @@ import { pushRecentOutcome, globalBreaker } from '../../packages/forge/src/goal/
 import type { GoalSpec } from '../../packages/forge/src/goal/types.js';
 import * as physicalGoal from '@kernlang/agon-mod-goal';
 import * as legacyJournal from '../../packages/forge/src/goal/journal.js';
+import { summarizeGoal, writeGoalArtifacts } from '../../packages/forge/src/goal/controller.js';
 
 it('keeps all journal transforms in the physical Goal owner', () => {
+  expect(summarizeGoal).toBe(physicalGoal.summarizeGoal);
   for (const name of ['createJournal', 'addTasks', 'requeueInflightTasks', 'nextTask',
     'markStatus', 'recordAttempt', 'remainingCount', 'isDone', 'logEvent', 'boundEvents', 'GOAL_EVENT_CAP'] as const) {
     expect(physicalGoal).toHaveProperty(name, legacyJournal[name]);
@@ -31,6 +33,40 @@ const spec = (): GoalSpec => ({
 });
 
 describe('goal journal — pure transforms', () => {
+  it('preserves the historical human summary for mixed task states', () => {
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(600_000);
+    try {
+      let j = addTasks(createJournal(spec()), ['done', 'inflight', 'parked', 'failed', 'queued'].map(id => ({ id, source: `source-${id}` })));
+      for (const task of j.tasks) j = markStatus(j, task.id, task.id as typeof task.status);
+      j = markStatus(j, 'done', 'done', { commitSha: '123456789abcdef' });
+      j = markStatus(j, 'parked', 'parked', { notes: 'needs decision', lastError: 'older failure' });
+      Object.assign(j, { startedAt: 60_000, heartbeatAt: 540_000, spentUsd: 1.234 });
+      const before = structuredClone(j);
+      expect(summarizeGoal(j)).toBe([
+        '# Goal g-test — running', '', 'Intent: close all gaps', 'Branch: goal/test',
+        'Tasks: 1 done · 1 in progress · 1 parked · 1 failed · 1 remaining',
+        'Spend: $1.23 / $50 · 9m elapsed', '', '## In progress',
+        '- ▶ implementing inflight — source-inflight (updated 1m ago)', '',
+        '## Closed', '- done — source-done (12345678)', '',
+        '## Parked (needs a human)', '- parked — needs decision',
+      ].join('\n'));
+      expect(j).toEqual(before);
+    } finally { clock.mockRestore(); }
+  });
+
+  it.each(['queued', 'inflight', 'done', 'parked', 'failed'] as const)('preserves summary phase and absent timestamp behavior for %s', status => {
+    let j = addTasks(createJournal(spec()), [{ id: 'a', source: 'gap-a' }]);
+    j = markStatus(j, 'a', status);
+    const summary = summarizeGoal(j);
+    expect(summary.split('\n')[0]).toBe(`# Goal g-test — ${status === 'queued' ? 'stopped' : status === 'inflight' ? 'running' : 'complete'}`);
+    expect(summary).toContain('0m elapsed');
+    expect(summary).not.toContain('updated');
+    if (status === 'parked') {
+      expect(summary).toContain('- a — parked');
+      expect(summarizeGoal(markStatus(j, 'a', 'parked', { lastError: 'last failure' }))).toContain('- a — last failure');
+    }
+  });
+
   it('creates a journal with a created event and zeroed counters', () => {
     const j = createJournal(spec());
     expect(j.tasks).toEqual([]);
@@ -313,6 +349,37 @@ describe('goal journal — persistence (sandboxed AGON_HOME)', () => {
 
   it('loadJournal returns null for an unknown goal', () => {
     expect(loadJournal('does-not-exist')).toBeNull();
+  });
+
+  it.each([undefined, 0, 60_000])('preserves raw result bytes and envelope metadata (startedAt=%s)', startedAt => {
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(600_000);
+    try {
+      let j = addTasks(createJournal(spec()), [{ id: 'a', source: 'gap-a' }, { id: 'b', source: 'gap-b' }]);
+      j = markStatus(j, 'a', 'done', { commitSha: 'abc', attempts: 2 });
+      j.spentUsd = 2.5;
+      const completed = startedAt !== undefined;
+      if (completed) {
+        j = markStatus(j, 'b', 'done');
+        j.startedAt = startedAt;
+        j.oracleHash = 'frozen-oracle-hash';
+      }
+      const expected = { goalId: 'g-test', intent: 'close all gaps', branch: 'goal/test', done: completed,
+        remaining: completed ? 0 : 1, spentUsd: 2.5, oracleHash: completed ? 'frozen-oracle-hash' : null,
+        startedAt: startedAt ?? null, endedAt: 600_000,
+        tasks: [{ id: 'a', status: 'done', attempts: 2, commitSha: 'abc' }, { id: 'b', status: completed ? 'done' : 'queued', attempts: 0, commitSha: null }] };
+      const paths = writeGoalArtifacts(j);
+      expect(paths).toEqual({ resultPath: join(home, 'goals/g-test/result.json'), summaryPath: join(home, 'goals/g-test/summary.md') });
+      expect(readFileSync(paths.resultPath, 'utf8')).toBe(JSON.stringify(expected, null, 2));
+      expect(physicalGoal.createGoalResult(j)).toEqual(expected);
+      expect(readFileSync(paths.summaryPath, 'utf8')).toBe(summarizeGoal(j));
+      const envelope = JSON.parse(readFileSync(join(home, 'goals/g-test/result-envelope.json'), 'utf8'));
+      expect(envelope.payload).toEqual(expected);
+      expect(envelope).toMatchObject({ kind: 'result', status: completed ? 'succeeded' : 'partial',
+        ownerModId: 'agon.goal', ownerModVersion: '1.0.0', contributionId: 'agon.goal.persisted-result', payloadVersion: '1.0.0' });
+      if (startedAt) expect(envelope.createdAt).toBe('1970-01-01T00:01:00.000Z');
+      if (startedAt === 0) expect(summarizeGoal(j)).toContain('0m elapsed');
+      expect(existsSync(join(home, 'goals/g-test/result-envelope.json.tmp'))).toBe(false);
+    } finally { clock.mockRestore(); }
   });
 
   it('saveJournal rejects a goalId that would traverse the filesystem', () => {

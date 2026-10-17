@@ -10,6 +10,29 @@ import { conquerCommand } from '../../packages/cli/src/commands/conquer.js';
 import * as authority from '../../packages/cli/src/surface-authority-runtime.js';
 import { decorateCliFirstPartyServices } from '../../packages/cli/src/first-party-services.js';
 
+it.each([
+  { forgeJudgeEngine: 'forge-judge', cesarEngine: 'cesar', expected: 'forge-judge' },
+  { forgeJudgeEngine: '', cesarEngine: 'cesar', expected: 'cesar' },
+  { forgeJudgeEngine: '', cesarEngine: '', expected: undefined },
+])('projects Goal review defaults from target configuration (judge=$expected)', ({ forgeJudgeEngine, cesarEngine, expected }) => {
+  const load = vi.spyOn(core, 'loadConfig').mockReturnValue({
+    goalReviewEngines: ['configured-reviewer'], forgeJudgeEngine, cesarEngine,
+  } as ReturnType<typeof core.loadConfig>);
+  vi.spyOn(core.EngineRegistry.prototype, 'load').mockImplementation(() => {});
+  vi.spyOn(core.EngineRegistry.prototype, 'listIds').mockReturnValue(['remote', 'local']);
+  vi.spyOn(core.EngineRegistry.prototype, 'get').mockImplementation(id => ({ id, isLocal: id === 'local' }) as ReturnType<core.EngineRegistry['get']>);
+  vi.spyOn(authority, 'captureProcessSurfaceAuthority').mockReturnValue(() => {});
+  try {
+    const services = decorateCliFirstPartyServices({ id: 'agon.goal' } as ModManifest, {} as ModServices) as GoalModServices;
+    expect(load).not.toHaveBeenCalled();
+    const opened = services.goal!.open({ invocationId: 'goal-defaults', cwd: '/fixture-target',
+      platform: 'darwin-arm64', signal: new AbortController().signal,
+      config: { goalReviewEngines: ['wrong-owner-decoy'], forgeJudgeEngine: 'wrong-judge' } });
+    expect(opened.reviewDefaults!()).toEqual({ configuredEngines: ['configured-reviewer'], localEngines: ['local'], judge: expected });
+    expect(load).toHaveBeenCalledExactlyOnceWith('/fixture-target');
+  } finally { vi.restoreAllMocks(); }
+});
+
 it('legacy Conquer keeps the successful push but skips prose when Forge is disabled', async () => {
   const previousExit = process.exitCode;
   vi.spyOn(core, 'ensureAgonHome').mockImplementation(() => {});

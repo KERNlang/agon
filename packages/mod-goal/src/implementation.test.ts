@@ -99,6 +99,144 @@ const context = (cwd: string) => ({
 });
 
 describe('physical goal mod', () => {
+  it.each([false, true])('uses the target repository for review defaults and engine resolution (resolver=%s)', async resolver => {
+    const caller = repo(), target = repo();
+    const commonDir = (cwd: string) => execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd, encoding: 'utf8' }).trim();
+    const targetGit = commonDir(target);
+    const h = harness({ reviewDefaults: invocation => {
+      expect(invocation.cwd).toBe(target);
+      return { configuredEngines: ['target-reviewer'], localEngines: [] };
+    } });
+    vi.mocked(h.services.engines.listActive!).mockImplementation(async invocation =>
+      commonDir(invocation.cwd) === targetGit ? ['builder', 'target-reviewer'] : ['builder', 'caller-reviewer']);
+    if (resolver) (h.services.engines as any).resolveRequested = vi.fn(async (ids: string[], invocation: any) => {
+      if (commonDir(invocation.cwd) !== targetGit) throw new Error('wrong resolution repository');
+      return ids;
+    });
+    const out = await runGoal({ intent: 'target configuration', cwd: target, engine: 'builder', gate: 'test -f base.txt',
+      requireTests: false, maxAttempts: 1 }, context(caller), h.services);
+    expect(out.exitCode, out.stderr).toBe(0);
+    expect(vi.mocked(h.services.engines.listActive!).mock.calls[0][0].cwd).toBe(target);
+    expect(h.dispatch.mock.calls.filter(([, , , options]) => options.mode === 'review').map(([id]) => id)).toEqual(['target-reviewer']);
+    expect(execFileSync('git', ['status', '--porcelain'], { cwd: caller, encoding: 'utf8' })).toBe('');
+  });
+
+  it.each(['cancelled', 'generation', 'lease'] as const)('propagates %s loss during engine resolution', async kind => {
+    const cwd = repo(), controller = new AbortController();
+    let current = true, owned = true, writes = 0;
+    const h = harness({ captureAuthority: () => () => { if (!current) throw new Error('fixture authority lost'); },
+      acquireWriter: async () => ({ assertOwned: async () => { if (!owned) throw new Error('fixture authority lost'); }, release: async () => {} }),
+    });
+    (h.services.engines as any).resolveRequested = vi.fn(async (ids: string[]) => {
+      writes = vi.mocked(h.services.state.write).mock.calls.length;
+      if (kind === 'cancelled') controller.abort(new Error('fixture authority lost'));
+      else if (kind === 'generation') current = false;
+      else owned = false;
+      return ids;
+    });
+    await expect(runGoal({ intent: 'resolution authority', engine: 'builder', gate: 'test -f base.txt',
+      requireTests: false, maxAttempts: 1 }, { ...context(cwd), signal: controller.signal }, h.services)).rejects.toThrow('fixture authority lost');
+    expect(h.dispatch).not.toHaveBeenCalled();
+    if (kind === 'cancelled') expect(h.state.get('goals/resolution-authority').payload.status).toBe('cancelled');
+    else expect(vi.mocked(h.services.state.write).mock.calls).toHaveLength(writes);
+  });
+
+  it.each([undefined, 'reviewer-two'] as const)('honors configured review defaults and explicit override (%s)', async reviewEngines => {
+    const cwd = repo();
+    const h = harness({ reviewDefaults: () => ({ configuredEngines: ['reviewer-one'], localEngines: [] }) });
+    vi.mocked(h.services.engines.listActive!).mockResolvedValue(['builder', 'reviewer-one', 'reviewer-two']);
+    await runGoal({ intent: 'configured review panel', engine: 'builder', gate: 'test -f base.txt',
+      requireTests: false, maxAttempts: 1, ...(reviewEngines ? { reviewEngines } : {}) }, context(cwd), h.services);
+    const reviewers = h.dispatch.mock.calls.filter(([, , , options]) => options.mode === 'review').map(([id]) => id);
+    expect([...new Set(reviewers)]).toEqual([reviewEngines ?? 'reviewer-one']);
+  });
+
+  it('excludes local default reviewers but permits explicit local selection', async () => {
+    for (const explicit of [false, true]) {
+      const cwd = repo();
+      const h = harness({ reviewDefaults: () => ({ configuredEngines: [], localEngines: ['local'] }) });
+      vi.mocked(h.services.engines.listActive!).mockResolvedValue(['builder', 'remote', 'local']);
+      await runGoal({ intent: 'local review selection', engine: 'builder', gate: 'test -f base.txt',
+        requireTests: false, maxAttempts: 1, ...(explicit ? { reviewEngines: 'local' } : {}) }, context(cwd), h.services);
+      const reviewers = h.dispatch.mock.calls.filter(([, , , options]) => options.mode === 'review').map(([id]) => id);
+      expect([...new Set(reviewers)].sort()).toEqual(explicit ? ['local'] : ['builder', 'remote']);
+    }
+  });
+
+  it('resolves configured reviewer aliases through the existing engine service', async () => {
+    const cwd = repo(), h = harness({ reviewDefaults: () => ({ configuredEngines: ['alias'], localEngines: [] }) });
+    const resolveRequested = vi.fn(async (ids: readonly string[]) => ids.map(id => id === 'alias' ? 'reviewer' : id));
+    (h.services.engines as any).resolveRequested = resolveRequested;
+    await runGoal({ intent: 'review alias', engine: 'builder', gate: 'test -f base.txt',
+      requireTests: false, maxAttempts: 1 }, context(cwd), h.services);
+    expect(resolveRequested).toHaveBeenCalledWith(['alias'], expect.anything());
+    expect(h.dispatch.mock.calls.filter(([, , , options]) => options.mode === 'review').map(([id]) => id)).toEqual(['reviewer']);
+  });
+
+  it.each(['all-local', 'configured-local', 'explicit-over-missing'] as const)('preserves review selection precedence (%s)', async selection => {
+    const cwd = repo();
+    const h = harness({ reviewDefaults: () => ({
+      configuredEngines: selection === 'configured-local' ? ['local'] : selection === 'explicit-over-missing' ? ['missing'] : [],
+      localEngines: selection === 'all-local' ? ['builder', 'local'] : ['local'],
+    }) });
+    vi.mocked(h.services.engines.listActive!).mockResolvedValue(['builder', 'local']);
+    const out = await runGoal({ intent: 'selection precedence', engine: 'builder', gate: 'test -f base.txt',
+      requireTests: false, maxAttempts: 1, ...(selection === 'explicit-over-missing' ? { reviewEngines: 'local' } : {}) }, context(cwd), h.services);
+    expect(out.exitCode, out.stderr).toBe(0);
+    expect(h.dispatch.mock.calls.filter(([, , , options]) => options.mode === 'review').map(([id]) => id))
+      .toEqual(selection === 'all-local' ? ['builder', 'local'] : ['local']);
+  });
+
+  it.each([undefined, 'builder'] as const)('validates the configured judge unless explicitly overridden (%s)', async judge => {
+    const cwd = repo();
+    const h = harness({ reviewDefaults: () => ({ configuredEngines: ['reviewer'], localEngines: [], judge: 'missing' }) });
+    const out = await runGoal({ intent: 'judge precedence', engine: 'builder', gate: 'test -f base.txt',
+      requireTests: false, maxAttempts: 1, ...(judge ? { judge } : {}) }, context(cwd), h.services);
+    expect(out.exitCode, out.stderr).toBe(judge ? 0 : 1);
+    if (!judge) {
+      expect(out.stderr).toContain('Unknown or inactive Goal judge engines');
+      expect(h.dispatch).not.toHaveBeenCalled();
+    } else expect(h.dispatch).toHaveBeenCalled();
+  });
+
+  it.each(['before', 'during'] as const)('checks captured authority %s reading review defaults', phase => {
+    let revoked = false;
+    const read = vi.fn(() => { if (phase === 'during') revoked = true; return { configuredEngines: [], localEngines: [] }; });
+    const h = harness({ reviewDefaults: read, captureAuthority: () => () => { if (revoked) throw new Error('fixture generation revoked'); } });
+    const host = h.goal.open(context(repo()));
+    if (phase === 'before') revoked = true;
+    expect(() => host.reviewDefaults!()).toThrow('fixture generation revoked');
+    expect(read).toHaveBeenCalledTimes(phase === 'before' ? 0 : 1);
+  });
+
+  it('rejects an unavailable configured reviewer before Think or implementation', async () => {
+    const cwd = repo(), h = harness({ reviewDefaults: () => ({ configuredEngines: ['missing'], localEngines: [] }) });
+    const out = await runGoal({ intent: 'invalid configured reviewer', engine: 'builder', think: true,
+      gate: 'test -f base.txt', requireTests: false, maxAttempts: 1 }, context(cwd), h.services);
+    expect(out.exitCode).toBe(1);
+    expect(out.stderr).toContain('Unknown or inactive Goal review engines');
+    expect(h.dispatch).not.toHaveBeenCalled();
+  });
+
+  it('reviews with the complete default active panel instead of silently capping it', async () => {
+    const cwd = repo(), h = harness();
+    const active = ['builder', 'reviewer-one', 'reviewer-two', 'reviewer-three', 'reviewer-four'];
+    vi.mocked(h.services.engines.listActive!).mockResolvedValue(active);
+    await runGoal({ intent: 'complete review panel', engine: 'builder', gate: 'test -f base.txt',
+      requireTests: false, maxAttempts: 1 }, context(cwd), h.services);
+    const reviewers = h.dispatch.mock.calls.filter(([, , , options]) => options.mode === 'review').map(([id]) => id);
+    expect([...new Set(reviewers)].sort()).toEqual([...active].sort());
+  });
+
+  it.each(['missing-engine', 'builder,missing-engine', ','])('rejects an invalid explicit implementation roster before dispatch (%s)', async engines => {
+    const cwd = repo(), h = harness();
+    const out = await runGoal({ intent: 'explicit roster', engines, gate: 'test -f base.txt',
+      requireTests: false, maxAttempts: 1 }, context(cwd), h.services);
+    expect(h.dispatch).not.toHaveBeenCalled();
+    expect(out.exitCode).toBe(1);
+    expect(out.stderr).toMatch(/engine|roster/i);
+  });
+
   it('prepares a retained task candidate from the accepted commit and uncommitted patch', () => {
     const cwd = repo(); const h = harness(); const host = h.goal.open(context(cwd));
     const accepted = host.openWorktree('goal/task-preparation');
@@ -731,9 +869,14 @@ describe('physical goal mod', () => {
     expect(existsSync(join(cwd, 'second.ts'))).toBe(false);
   });
 
-  it('blocks flagged mutations when no reviewer is available', async () => {
+  it('blocks flagged mutations when the review panel becomes unavailable', async () => {
     const cwd = repo(); const h = harness();
-    vi.mocked(h.services.engines.listActive!).mockResolvedValue(['builder']);
+    const originalDispatch = h.dispatch.getMockImplementation()!;
+    h.dispatch.mockImplementation(async (...args) => {
+      const result = await originalDispatch(...args);
+      if (args[3].mode === 'agent') vi.mocked(h.services.engines.listActive!).mockResolvedValue([]);
+      return result;
+    });
     const outcomes = Array.from({ length: 3 }, (_, index) => ({ status: 'survived', mutant: {
       file: 'second.ts', class: 'equiv-prone', id: `m${index}`, line: index + 1, operator: 'return', before: 'before', after: 'after',
     } }));
@@ -742,9 +885,9 @@ describe('physical goal mod', () => {
     const out = await runGoal({ intent: 'no reviewer', gate: 'test -f base.txt', engine: 'builder',
       requireTests: false, maxAttempts: 1 }, context(cwd), h.services);
     expect(out.exitCode).toBe(1);
-    expect((out.result as any).state.tasks[0].error).toContain('requires a reviewer');
+    expect((out.result as any).state.tasks[0].error).toBe('review=1');
     expect((out.result as any).state.tasks[0].attemptLog).toEqual([
-      expect.objectContaining({ attempt: 1, outcome: 'review-block', error: expect.stringContaining('requires a reviewer') }),
+      expect.objectContaining({ attempt: 1, outcome: 'review-block', error: expect.stringContaining('Unknown or inactive review engines') }),
     ]);
     expect(h.dispatch).toHaveBeenCalledOnce();
     expect(execFileSync('git', ['rev-list', '--count', 'main..goal/no-reviewer'], { cwd, encoding: 'utf8' }).trim()).toBe('0');
@@ -1388,9 +1531,12 @@ describe('physical goal mod', () => {
       context(cwd), h.services)).rejects.toThrow('durable task completion');
     expect(execFileSync('git', ['for-each-ref', '--format=%(refname)'], { cwd: remote, encoding: 'utf8' }).trim()).toBe('');
     h.dispatch.mockClear();
+    vi.mocked(h.services.engines.listActive!).mockImplementation(async () => { throw new Error('publication must not discover providers'); });
+    h.services.engines.resolveRequested = vi.fn(async () => { throw new Error('publication must not resolve providers'); });
     const resumed = await runGoal({ id: 'prepared-push', resume: true, push: true }, context(cwd), h.services);
     expect(resumed.exitCode).toBe(0);
     expect(h.dispatch).not.toHaveBeenCalled();
+    expect(h.services.engines.resolveRequested).not.toHaveBeenCalled();
     expect((resumed.result as any).publication.succeeded).toBe(1);
     expect(execFileSync('git', ['rev-parse', 'refs/heads/goal/prepared-push'], { cwd: remote, encoding: 'utf8' }).trim())
       .toBe((resumed.result as any).state.tasks[0].commit);
@@ -1703,7 +1849,8 @@ describe('physical goal mod', () => {
     const out = await runGoal({ intent: 'budgeted', gate: 'true', budget: 0.5, requireTests: false, tasks: [{ id: 'first', source: 'one' }, { id: 'second', source: 'two', dependsOn: ['first'] }] }, context(cwd), h.services);
     expect((out.result as any).state).toMatchObject({ status: 'stopped', stopReason: 'budget' });
     expect((out.result as any).state.tasks.map((task: any) => task.status)).toEqual(['done', 'queued']);
-    expect((out.result as any).state.spentUsd).toBeCloseTo(0.6);
+    expect((out.result as any).state.spentUsd).toBeCloseTo(charged === 'reviewer' ? 1.1 : 0.6);
+    expect(h.dispatch.mock.calls.filter(([, , , options]) => options.mode === 'review')).toHaveLength(2);
     expect(h.dispatch.mock.calls.filter(([, , , options]) => options.mode === 'agent')).toHaveLength(1);
   });
 

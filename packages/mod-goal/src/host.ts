@@ -31,11 +31,18 @@ export interface GoalWorktreeEffects {
   rehydrateSessionWorktree(repoRoot: string, branch: string): boolean;
 }
 
+export interface GoalReviewDefaults {
+  readonly configuredEngines: readonly string[];
+  readonly localEngines: readonly string[];
+  readonly judge?: string;
+}
+
 export interface GoalHostServices {
   open(context: InvocationContext): {
     assertCurrent(): void;
     /** Cancellation may record its outcome; a revoked generation may not. */
     assertStateCurrent?(): void;
+    reviewDefaults?(): GoalReviewDefaults;
     acquire(id: string): Promise<{ assertOwned(): Promise<void>; release(): Promise<void> }>;
     openWorktree(branch: string, resumeBase?: string, expectedRepoRoot?: string): GoalWorktree;
     prepareTaskWorktree?(branch: string, baseline: { repoRoot: string; sha: string; patch: string }): GoalWorktree;
@@ -60,6 +67,7 @@ export function createGoalHostServices(options: {
   oracleEffects?: GoalOracleEffects;
   captureAuthority(): () => void;
   acquireWriter(id: string): Promise<{ assertOwned(): Promise<void>; release(): Promise<void> }>;
+  reviewDefaults?(context: InvocationContext): GoalReviewDefaults;
   draftPullRequest?(input: PullRequestDraft, dispatch: (prompt: string) => Promise<string>): Promise<{ ok: boolean; title: string; body: string }>;
   formatPullRequestBody?(body: string, context: InvocationContext): string;
 }): GoalHostServices {
@@ -71,6 +79,12 @@ export function createGoalHostServices(options: {
       const host = {
         assertCurrent,
         assertStateCurrent: authority,
+        ...(options.reviewDefaults ? { reviewDefaults: () => {
+          assertCurrent();
+          const defaults = options.reviewDefaults!(context);
+          assertCurrent();
+          return defaults;
+        } } : {}),
         ...(options.oracleEffects ? { verification: (assertOwned: () => Promise<void>) => {
           const effects = options.oracleEffects!;
           const oracle = createGoalOracle({

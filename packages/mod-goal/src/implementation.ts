@@ -494,8 +494,9 @@ export async function runGoal(
     return { exitCode: 1, stderr: "--oracle-gate must be off, warn, or strict.\n" };
   const requireTests = input.requireTests !== false;
   if (!services.goal) return { exitCode: 1, stderr: 'Goal host capabilities are unavailable. Restart with a compatible modular host.\n' };
-  const capabilities = services.goal.open({ ...context,
-    cwd: input.cwd ? resolve(context.cwd, String(input.cwd)) : context.cwd });
+  const configurationContext = { ...context,
+    cwd: input.cwd ? resolve(context.cwd, String(input.cwd)) : context.cwd };
+  const capabilities = services.goal.open(configurationContext);
   let lease: Awaited<ReturnType<typeof capabilities.acquire>>;
   try { lease = await capabilities.acquire(id); }
   catch (error) { return { exitCode: 1, stderr: `Cannot acquire Goal execution: ${error instanceof Error ? error.message : String(error)}\n` }; }
@@ -603,13 +604,49 @@ export async function runGoal(
           failure: { code: 'GOAL_ORACLE_INVALID', message, retryable: false }, result: { state } as unknown as Json };
       }
       await save();
+      let engine = '';
+      let reviewEngines = '';
+      let judge = '';
+      let enginesPrepared = false;
+      const prepareEngines = async (): Promise<CommandResult | undefined> => {
+        if (enginesPrepared) return;
+        try {
+          const active = [...((await services.engines.listActive?.(configurationContext)) ?? [])];
+          await assertExecution();
+          engine = active[0];
+          const resolveEngines = async (value: Json | readonly string[], label: string): Promise<string[]> => {
+            const requested = typeof value === 'string' ? value.split(',').map(id => id.trim())
+              : Array.isArray(value) && value.every(id => typeof id === 'string') ? value.map(id => (id as string).trim()) : [];
+            if (!requested.length || requested.some(id => !id)) throw new Error(`Goal ${label} engine roster cannot be empty.`);
+            const resolved = services.engines.resolveRequested
+              ? [...await services.engines.resolveRequested(requested, configurationContext)] : [...new Set(requested)];
+            await assertExecution();
+            if (!resolved.length || (!services.engines.resolveRequested && resolved.some(id => !active.includes(id))))
+              throw new Error(`Unknown or inactive Goal ${label} engines: ${requested.join(', ')}`);
+            return resolved;
+          };
+          if (input.engines !== undefined) engine = (await resolveEngines(input.engines, 'implementation'))[0];
+          else if (input.engine !== undefined) engine = (await resolveEngines(input.engine, 'implementation'))[0];
+          const defaults = capabilities.reviewDefaults?.();
+          const remote = active.filter(id => !defaults?.localEngines.includes(id));
+          const selected = input.reviewEngines !== undefined ? input.reviewEngines
+            : defaults?.configuredEngines.length ? defaults.configuredEngines : remote.length ? remote : active;
+          reviewEngines = (await resolveEngines(selected, 'review')).join(',');
+          judge = (await resolveEngines(String(input.judge ?? '').trim() || defaults?.judge || reviewEngines.split(',')[0], 'judge'))[0];
+          enginesPrepared = true;
+        } catch (error) {
+          await assertExecution();
+          return { exitCode: 1, stderr: `${error instanceof Error ? error.message : String(error)}\n` };
+        }
+      };
       if (input.think === true && input.resume !== true && input.dryRun !== true) {
+        const engineFailure = await prepareEngines();
+        if (engineFailure) return engineFailure;
         const strategy = String(input.thinkStrategy ?? "hypothesis").trim();
         if (!["linear", "reflexion", "tot", "graph", "hypothesis"].includes(strategy))
           return { exitCode: 1, stderr: `Unknown goal think strategy: ${strategy}\n` };
         const steps = Math.max(1, Math.min(20, Number(input.thinkSteps ?? 8) || 8));
-        const active = [...((await services.engines.listActive?.(context)) ?? [])];
-        const thinker = String(input.engine ?? "").trim() || active[0];
+        const thinker = engine;
         if (!thinker) return { exitCode: 1, stderr: "No active engine for goal decomposition.\n" };
         await assertExecution();
         const thought = (await services.engines.dispatch(
@@ -670,15 +707,6 @@ export async function runGoal(
           result: result as unknown as Json,
         };
       }
-      const active = [...((await services.engines.listActive?.(context)) ?? [])];
-      const engine = String(input.engine ?? "").trim() || active[0];
-      const reviewEngines =
-        String(input.reviewEngines ?? "").trim() ||
-        active
-          .filter((x) => x !== engine)
-          .slice(0, 3)
-          .join(",");
-      const judge = String(input.judge ?? "").trim() || reviewEngines.split(",").filter(Boolean)[0] || engine;
       const preparePublication = (task: Task) => {
         if (input.push === true && task.commit && !task.publication) {
           task.publication = { commit: task.commit, remote,
@@ -865,10 +893,10 @@ export async function runGoal(
           await publishTask(acceptedTask);
           continue;
         }
+        const engineFailure = await prepareEngines();
+        if (engineFailure) return engineFailure;
         if (!engine)
           return { exitCode: 1, stderr: "No active implementation engine.\n" };
-        if (active.length && !active.includes(judge))
-          return { exitCode: 1, stderr: `Unknown or inactive Goal judge: ${judge}\n` };
         for (
           let attempt = runnable.attempts + 1;
           attempt <= maxAttempts;

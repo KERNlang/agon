@@ -128,6 +128,13 @@ export function decorateCliFirstPartyServices(manifest: ModManifest, base: ModSe
   return Object.freeze({ ...base, runs, ...(browser ? { browser } : {}), ...(workspace ? { workspace } : {}),
     ...(brainstorm ? { brainstorm } : {}),
     ...(manifest.id === 'agon.goal' ? { goal: createGoalHostServices({
+      reviewDefaults: context => {
+        const config = loadConfig(context.cwd);
+        const registry = new EngineRegistry(); registry.load(resolveBuiltinEnginesDir());
+        return { configuredEngines: config.goalReviewEngines,
+          localEngines: registry.listIds().filter(id => registry.get(id).isLocal),
+          judge: config.forgeJudgeEngine || config.cesarEngine || undefined };
+      },
       oracleEffects: { path: agonPath, ensureHome: ensureAgonHome, worktreeCreate, worktreeRemoveBestEffort,
         spawnWithTimeout, resolveWithin: resolveWithinRoot },
       draftPullRequest: draftFirstPartyPullRequest,

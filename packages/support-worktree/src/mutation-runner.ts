@@ -1,10 +1,11 @@
 import { execFileSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
-import { dirname, extname, join, relative, resolve, sep } from 'node:path';
+import { dirname, extname, join, relative, resolve } from 'node:path';
 
 import { runFitnessCommand } from '@kernlang/agon-support-verification';
 import { createForgeArena } from './forge-arena.js';
 import { generateMutants } from './mutant-generator.js';
+import { resolveWithinRoot } from './paths.js';
 
 export interface MutationCandidate {
   readonly id: string;
@@ -98,8 +99,8 @@ export function changedLinesFromDiff(diff: string): Record<string, number[]> {
 
 function within(root: string, path: string): string {
   const base = resolve(root);
-  const target = resolve(base, path);
-  if (target === base || !target.startsWith(base + sep)) throw new Error(`mutation target escapes repository: ${path}`);
+  const target = resolveWithinRoot(base, path);
+  if (target === base) throw new Error(`mutation target escapes repository: ${path}`);
   return target;
 }
 

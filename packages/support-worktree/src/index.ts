@@ -10,6 +10,7 @@ export * from './dependency-overlay.js';
 export * from './workspace-bookmarks.js';
 export * from './mutation-runner.js';
 export * from './mutant-generator.js';
+export * from './paths.js';
 export * from './patch-apply.js';
 export * from './patch-parser.js';
 export * from './patch-content.js';

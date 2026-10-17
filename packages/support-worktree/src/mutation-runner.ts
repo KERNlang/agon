@@ -3,6 +3,7 @@ import { cpSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } 
 import { dirname, extname, join, relative, resolve } from 'node:path';
 
 import { runMutants } from './mutant-runner.js';
+import { clearShadowingDist, prepareSandboxNodeModules, workspacePackageDirs } from './mutation-sandbox.js';
 import { createForgeArena } from './forge-arena.js';
 import { generateMutants } from './mutant-generator.js';
 import { resolveWithinRoot } from './paths.js';
@@ -212,6 +213,10 @@ export async function runMutationAssessment(
   let engineCalls = 0;
   try {
     hydrateAmbientChanges(repoRoot, candidate.path, Object.keys(targets));
+    const workspaces = workspacePackageDirs(repoRoot);
+    const links = prepareSandboxNodeModules(repoRoot, candidate.path, workspaces);
+    if (links.failed > 0) throw new Error(`Mutation sandbox dependency setup failed: ${links.note ?? `${links.failed} workspace links could not be repaired`}`);
+    const cleared = clearShadowingDist(repoRoot, candidate.path, Object.keys(targets), workspaces, { throwOnError: true });
     const report = await runMutants({
       worktree: candidate.path, testCmd,
       buildCmd: options.buildCmd?.trim() || undefined,
@@ -242,6 +247,9 @@ export async function runMutationAssessment(
           .slice(0, Math.max(1, Math.min(500, options.maxMutants ?? 25)));
       },
     });
+    if (!report.baselineOk && cleared.length > 0 && !options.buildCmd?.trim()) {
+      report.baselineError = `${report.baselineError ?? 'Mutation baseline failed'}\nRemoved stale compiled output from the sandbox: ${cleared.join(', ')}. Pass --build to rebuild each mutant before testing.`;
+    }
     const { outcomes, survived } = report;
     const ok = report.baselineOk && !report.aborted && !report.budgetExhausted && !report.baselineError;
     const error = report.aborted ? 'mutation assessment was cancelled'

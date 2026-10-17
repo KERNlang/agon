@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -22,6 +22,51 @@ function services(response = '') {
 }
 const context = (cwd: string) => ({ invocationId: 'm', cwd, platform: 'darwin-arm64' as const, signal: new AbortController().signal, config: {} });
 describe('physical mutate mod', () => {
+  it.each(['no-build', 'rebuild', 'unsafe-overlay'])('does not test stale workspace artifacts (%s)', async mode => {
+    const cwd = repo();
+    const rebuild = mode === 'rebuild';
+    const packageName = mode === 'unsafe-overlay' ? '@scope/sample' : 'sample';
+    const source = 'module.exports = n => n === 2;\n';
+    mkdirSync(join(cwd, 'packages/sample/src'), { recursive: true });
+    mkdirSync(join(cwd, 'packages/sample/dist'));
+    mkdirSync(join(cwd, 'node_modules'));
+    writeFileSync(join(cwd, 'package.json'), JSON.stringify({ private: true, workspaces: ['packages/*'] }));
+    writeFileSync(join(cwd, '.gitignore'), 'node_modules/\n**/dist/\nscope-root/\n');
+    writeFileSync(join(cwd, 'packages/sample/package.json'), JSON.stringify({ name: packageName, main: 'dist/index.cjs' }));
+    writeFileSync(join(cwd, 'packages/sample/src/index.cjs'), source);
+    writeFileSync(join(cwd, 'packages/sample/dist/index.cjs'), source);
+    if (mode === 'unsafe-overlay') {
+      mkdirSync(join(cwd, 'scope-root'));
+      symlinkSync('../packages/sample', join(cwd, 'scope-root/sample'), 'dir');
+      symlinkSync('../scope-root', join(cwd, 'node_modules/@scope'), 'dir');
+    } else symlinkSync('../packages/sample', join(cwd, 'node_modules/sample'), 'dir');
+    writeFileSync(join(cwd, 'test.cjs'), `const f=require('${packageName}');if(!f(2)||f(3))process.exit(1);\n`);
+    execFileSync('git', ['add', 'package.json', '.gitignore', 'packages/sample/package.json', 'packages/sample/src/index.cjs', 'test.cjs'], { cwd });
+    execFileSync('git', ['commit', '-qm', 'workspace fixture'], { cwd });
+    const out = await runMutate({ path: 'packages/sample/src/index.cjs', test: 'node test.cjs',
+      ...(rebuild ? { build: 'mkdir -p packages/sample/dist && cp packages/sample/src/index.cjs packages/sample/dist/index.cjs' } : {}) }, context(cwd), services());
+    if (rebuild) {
+      expect(out.exitCode).toBe(0);
+      expect((out.result as any).killed).toBeGreaterThan(0);
+      expect((out.result as any).survived).toBe(0);
+    } else if (mode === 'unsafe-overlay') {
+      expect(out.exitCode).toBe(1);
+      expect(out.stderr).toContain('Mutation sandbox dependency setup failed');
+      expect((out.result as any).report.outcomes).toEqual([]);
+      expect(out.failure).toBeUndefined();
+    } else {
+      expect(out.exitCode).toBe(1);
+      expect(out.failure?.code).toBe('MUTATE_BASELINE_RED');
+      expect(out.stderr).toContain('--build');
+      expect((out.result as any).report.baselineOk).toBe(false);
+      expect((out.result as any).report.outcomes).toEqual([]);
+    }
+    expect(readFileSync(join(cwd, 'packages/sample/dist/index.cjs'), 'utf8')).toBe(source);
+    expect(readFileSync(join(cwd, 'packages/sample/src/index.cjs'), 'utf8')).toBe(source);
+    expect(execFileSync('git', ['status', '--porcelain'], { cwd, encoding: 'utf8' })).toBe('');
+    expect(execFileSync('git', ['worktree', 'list'], { cwd, encoding: 'utf8' }).trim().split('\n')).toHaveLength(1);
+  });
+
   it.each(['deadline', 'abort'])('bounds stalled semantic discovery by %s', async reason => {
     const abort = new AbortController();
     let release!: (ids: string[]) => void;

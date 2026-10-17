@@ -256,7 +256,11 @@ export function repointWorkspaceLinks(worktree: string, workspaces: Record<strin
       notes.push(`${name}: the node_modules entry does not canonically live inside the sandbox`);
       continue;
     }
-    if (!existsSync(sandboxPkg)) continue;
+    if (!existsSync(sandboxPkg)) {
+      failed += 1;
+      notes.push(`${name}: the workspace package is missing from the sandbox`);
+      continue;
+    }
     try {
       let present = true;
       try { lstatSync(linkPath); } catch { present = false; }
@@ -371,7 +375,7 @@ export function prepareSandboxNodeModules(repoRoot: string, worktree: string, wo
       } catch { failed += 1; }
     }
   } catch (err) {
-    return { mode: 'skipped', links, workspaceLinks, failed, note: err instanceof Error ? err.message : String(err) };
+    return { mode: 'skipped', links, workspaceLinks, failed: failed + 1, note: err instanceof Error ? err.message : String(err) };
   }
   const note = failed > 0
     ? `${failed} entr${failed === 1 ? 'y' : 'ies'} could not be linked (no symlink privilege, a locked path, or a refused target)${notes.length > 0 ? `: ${notes.slice(0, 5).join('; ')}` : ''} — an incomplete node_modules usually shows up as a red baseline`
@@ -435,9 +439,12 @@ export function gitIgnoredPaths(repoRoot: string, candidates: string[]): string[
 }
 
 /**
- * Delete the hydrated build output of every workspace package whose SOURCE is being mutated, so a test that imports the package by name cannot load a prebuilt bundle the mutation never reached. Only git-IGNORED output directories are touched (a committed dist belongs to HEAD), and never one that contains a target file. Pass `workspaces` to reuse an already-computed map. Returns the repo-relative directories cleared. Never throws.
+ * Clear ignored build output for workspace packages under mutation.
+ * Preserve committed output and directories that contain a target file.
+ * Return cleared paths relative to the repository. Reuse the supplied workspace map.
+ * Strict callers receive containment and deletion errors; other callers use best effort.
  */
-export function clearShadowingDist(repoRoot: string, worktree: string, targetFiles: string[], workspaces?: Record<string, string>): string[] {
+export function clearShadowingDist(repoRoot: string, worktree: string, targetFiles: string[], workspaces?: Record<string, string>, options: { throwOnError?: boolean } = {}): string[] {
   const map = workspaces ?? workspacePackageDirs(repoRoot);
   if (Object.keys(map).length === 0) return [];
   const normalized = targetFiles.map((f) => f.split(sep).join('/'));
@@ -463,8 +470,14 @@ export function clearShadowingDist(repoRoot: string, worktree: string, targetFil
     const abs = join(worktree, rel);
     // Lexical first (cheap), then CANONICAL — a symlinked intermediate
     // component would otherwise let this recursive delete leave the sandbox.
-    if (!isInside(worktree, abs) || !isInsideRealpath(worktree, abs)) continue;
-    try { rmSync(abs, { recursive: true, force: true }); cleared.push(rel); } catch { /* best effort */ }
+    if (!isInside(worktree, abs) || !isInsideRealpath(worktree, abs)) {
+      if (options.throwOnError) throw new Error(`Mutation sandbox could not clear ${rel}: output is outside the sandbox`);
+      continue;
+    }
+    try { rmSync(abs, { recursive: true, force: true }); cleared.push(rel); }
+    catch (error) {
+      if (options.throwOnError) throw new Error(`Mutation sandbox could not clear ${rel}: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+    }
   }
   return cleared;
 }

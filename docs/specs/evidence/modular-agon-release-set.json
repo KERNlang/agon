@@ -243,7 +243,7 @@
         "range": "^19.2.0"
       }
     ],
-    "packedBytes": 1365256,
+    "packedBytes": 1365254,
     "unpackedBytes": 6150838,
     "fileCount": 113,
     "files": [
@@ -700,10 +700,10 @@
         "size": 126904
       }
     ],
-    "payloadHash": "sha256:93d1a6979a14838fb0d336531e97562e0bde29d713e1b3cd339d8bab02fa23da",
-    "integrity": "sha512-BoOFQrbyveaLIpJ4sD7vvk81dCkSGtalVrB77IntKRUiZUoeJ2lG5+uRj0KJ7UEeDM/HIJHdMPS8aOtuw0iDZg==",
-    "shasum": "04a9127c4ffe05d3c5990bb2e2ffdc4892bc6c5d",
-    "tarballHash": "sha256:950df9b655910de8426186fabf937987d2b258da758cc4ac8d7563845c917ce4",
+    "payloadHash": "sha256:46a28ee6d1831d1ce28cd703f1eb7f04edcc7c13a69a12f048dd8a72b35c8326",
+    "integrity": "sha512-BBUAhL0i+ngGzW6hf7ywF2vx8hxjouV2i3FmGDsIyd/rT4KJ65snpeBMHK4EAcPgOqcw/R6pGF5CMZ77mYuwQg==",
+    "shasum": "7dc547c7137b732871364db1fd33d872eb91e77f",
+    "tarballHash": "sha256:db43b5d33c30a3e2e15fedf7ab4906c0fd54471cce920b142f69a6d0d4d61a87",
     "packageJsonHash": "sha256:28e901652911437b0e49a15bf3be184c09f24652c51bdf68ef3055b27494ced1"
   },
   "packages": [
@@ -1636,8 +1636,8 @@
       "peerDependencies": {
         "@kernlang/agon-kernel": ">=0.0.0-0 <2"
       },
-      "packedBytes": 38818,
-      "unpackedBytes": 142785,
+      "packedBytes": 39087,
+      "unpackedBytes": 143883,
       "fileCount": 25,
       "files": [
         {
@@ -1666,7 +1666,7 @@
         },
         {
           "path": "dist/index.js",
-          "size": 106647
+          "size": 107819
         },
         {
           "path": "dist/mutant-generator.d.ts",
@@ -1682,7 +1682,7 @@
         },
         {
           "path": "dist/mutation-sandbox.d.ts",
-          "size": 7552
+          "size": 7478
         },
         {
           "path": "dist/package-metadata.d.ts",
@@ -1741,10 +1741,10 @@
           "size": 674
         }
       ],
-      "payloadHash": "sha256:da8ca4370ab101e1059acbef221b974d37119ca9c1a2d2642a0eb3a19288ddd2",
-      "integrity": "sha512-ZpFpCqNbtAG5TKIh3XamJhuaQgPMQNvhTpnWGjCMPekqWBj7mJ0ElfgQDPn6Lks+u+YsPJ8rB139U41kW9gq6g==",
-      "shasum": "c071b48729cc9da469fe5a64336f8c95b8142131",
-      "tarballHash": "sha256:bde4988f6b72869935280a29220560a4cacaefaec0cfb254ca44e9724a7ff5a5",
+      "payloadHash": "sha256:094d570303794c93eab9dfd1db1a075fba74a34f51f30d35370d5ee841feac9f",
+      "integrity": "sha512-Shrp+VOQnALCWsk1EGJqBkZ77SkUoXK5ooyU4V12kUvoA9UT7f4rGRv96I8HV7ImdcKW8l2K4pbov5ryS1T1sA==",
+      "shasum": "15a6dfa9bc0cdfb4462e2ad67411e6be3eab6e8f",
+      "tarballHash": "sha256:9e835dc92ae016a4723b236717238684aa2a6e6ffa6279d13179b6c056100856",
       "packageJsonHash": "sha256:a1ba1f2bcc1d926cada4936611cf417f60a44f121ee74be550a0df1694ef83e3",
       "manifestHash": "sha256:a1ba1f2bcc1d926cada4936611cf417f60a44f121ee74be550a0df1694ef83e3"
     },
@@ -3823,8 +3823,8 @@
       "peerDependencies": {
         "@kernlang/agon-kernel": ">=0.0.0-0 <2"
       },
-      "packedBytes": 5974,
-      "unpackedBytes": 22007,
+      "packedBytes": 6025,
+      "unpackedBytes": 22156,
       "fileCount": 8,
       "files": [
         {
@@ -3841,7 +3841,7 @@
         },
         {
           "path": "dist/index.js",
-          "size": 11466
+          "size": 11615
         },
         {
           "path": "LICENSE",
@@ -3860,10 +3860,10 @@
           "size": 382
         }
       ],
-      "payloadHash": "sha256:e7f2b35a5fd8ded7c95c8cf9bd44da56dc6a11eb12b38386e7385461ac6a4688",
-      "integrity": "sha512-bBq1dQM9nhK40nUn2CmLr1sSKScRqoUWGtS5SqYIFRDA6D2bNhT14qOl4PDyby7HWyB34eH3HKVKuU5f5ad3+w==",
-      "shasum": "1574df4949f3f52a615fce2bfbf9d0ec0a9eb97e",
-      "tarballHash": "sha256:cba46119a8e3fbc069083f4fbe11625c854a59ecf38fa794cf75dbe41d8c90ed",
+      "payloadHash": "sha256:da124153a3e1f21c8a54701f21599181b702618e309d099332ea1bb785aa3e8c",
+      "integrity": "sha512-c+qGEN2PQtaKgMFhjVMPxi/EgTWr9WYy0LxpqG1BEkbaDIA1awLAFAClpGBJNTmvSAExX/xrXkOtulQAt8SAKQ==",
+      "shasum": "e751dcf2858a79d9f1fcfee6911ece28e6f3e514",
+      "tarballHash": "sha256:06e9ba75bca3bb5532ccb5ad06883a1c2189fa134cb282f52817793520330ce1",
       "packageJsonHash": "sha256:0381c685fcd249b39ab2b25c48dd518a5eec5d3dbec5d7c9ae11b578969ea033",
       "manifestHash": "sha256:72b48f344d3f0dffa823039ec7f69713f1e71383a60fa76fc4cbc962a4403810"
     },

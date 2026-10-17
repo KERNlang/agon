@@ -133,9 +133,11 @@ async function executeMutation(raw: Json, context: InvocationContext, services: 
   if (run) await services.runs?.finish(run, { ok: assessment.ok === true, report: report as Json }, context);
   if (assessment.ok !== true) {
     const baselineRed = assessment.error === 'tests are red before mutation';
+    const detail = typeof report.baselineError === 'string' && report.baselineError !== assessment.error
+      ? `\n${report.baselineError}` : '';
     return {
       exitCode: 1,
-      stderr: `${String(assessment.error ?? 'Mutation assessment failed')}\n`,
+      stderr: `${String(assessment.error ?? 'Mutation assessment failed')}${detail}\n`,
       ...(baselineRed ? { failure: { code: 'MUTATE_BASELINE_RED', message: 'Baseline must pass', retryable: false } } : {}),
       result: assessment as Json,
     };

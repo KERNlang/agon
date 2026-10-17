@@ -32,6 +32,7 @@ export function formatMutationReportLines(report: MutationReport, survivors: Mut
     out.push(grouped ? `  skipped — ${why}` : `mutation run aborted — ${why}`);
     return out;
   }
+  if (report.baselineError) out.push(`${grouped ? '  ' : ''}mutation run failed — ${report.baselineError}`);
   const ran = report.killed + report.survived;
   // The warning LEADS: when nothing was killed the score is not a measurement.
   const warning = `⚠ ${MUTATE_ALL_SURVIVED_WARNING}`;
@@ -44,14 +45,15 @@ export function formatMutationReportLines(report: MutationReport, survivors: Mut
   if (report.invalid > 0) out.push(`  ${report.invalid} invalid (did not typecheck/build) — excluded from the score`);
   if (report.notRun > 0) {
     let why = 'aborted';
-    if (report.budgetExhausted) why = 'budget';
+    if (report.baselineError) why = 'operational error';
+    else if (report.budgetExhausted) why = 'budget';
     out.push(`  ${report.notRun} mutants not run (${why})`);
   }
   if (survivors.length === 0) {
     // Same honesty rule as mutateVerdictLine: "kills every mutant" is a claim
     // about the whole pool, so it needs the whole pool to have run.
     if (ran === 0) out.push(`  ⚠ ${noMutantsRanLine(report)}`);
-    else if (report.invalid === 0 && report.notRun === 0) out.push('  ✓ no survivors — the tests kill every mutant on the mutated lines');
+    else if (!report.baselineError && report.invalid === 0 && report.notRun === 0) out.push('  ✓ no survivors — the tests kill every mutant on the mutated lines');
     else out.push(`  ⚠ no survivors among the ${ran} mutant(s) that ran — ${report.invalid} invalid, ${report.notRun} not run, so this is not a clean sweep`);
     return out;
   }
@@ -106,6 +108,7 @@ export function mutateLensSuffix(survivors: Mutant[]): string {
  * The single headline every surface prints after the findings — the CLI's `Verdict:` line, the REPL's dispatch and `agon call mutate`. All-survived outranks the survivor count (a 0% score is a broken RUN before it is a weak suite), a run where nothing executed can never claim success, and a CLEAN SWEEP (`your tests kill every mutant`) is only claimed when every generated mutant reached a verdict — invalid or not-run mutants downgrade it to `no survivors among the N that ran`. Pure.
  */
 export function mutateVerdictLine(report: MutationReport, survivors: Mutant[]): {level:'success'|'warning', text:string} {
+  if (report.baselineError) return { level: 'warning', text: `mutation run failed — ${report.baselineError}` };
   if (allMutantsSurvived(report)) {
     return { level: 'warning', text: `${MUTATE_ALL_SURVIVED_WARNING} (${survivors.length} survivor(s) listed above)` };
   }

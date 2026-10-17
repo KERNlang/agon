@@ -7,6 +7,7 @@ import type { Plan } from '@kernlang/agon-support-worktree';
 const router = vi.hoisted(() => ({ run: vi.fn(async () => false), post: vi.fn() }));
 const actions = vi.hoisted(() => ({
   approvePending: vi.fn(async () => false), cancelPending: vi.fn(() => false),
+  resume: vi.fn(async (_plan: unknown) => {}),
   readWorktree: vi.fn<() => Plan | null>(() => null), saveWorktree: vi.fn(),
   auto: vi.fn<(request: unknown, input: string, cb: DispatchCallbacks) => Promise<DispatchResult | null>>(),
 }));
@@ -14,7 +15,7 @@ vi.mock('../../packages/cli/src/blocks/plan-execution-effects.js', async importO
   const original = await importOriginal<typeof import('../../packages/cli/src/blocks/plan-execution-effects.js')>();
   return { ...original, createPlanExecutionSession: (cb: DispatchCallbacks) => ({
     ...original.createPlanExecutionSession(cb),
-    approvePending: actions.approvePending, cancelPending: actions.cancelPending,
+    approvePending: actions.approvePending, cancelPending: actions.cancelPending, resume: actions.resume,
   }) };
 });
 vi.mock('../../packages/cli/src/blocks/worktree-plan-effects.js', () => ({
@@ -32,12 +33,14 @@ vi.mock('../../packages/cli/src/signals/dispatch/utils.js', async importOriginal
 }));
 import { createMod } from '../../packages/mod-plan/src/implementation.js';
 import { planSessionHost } from '@kernlang/agon-mod-plan';
+import { createPlanProposal } from '@kernlang/agon-mod-plan';
 import { dispatchSessionInfoIntent, runPhysicalTuiContribution } from '../../packages/cli/src/signals/dispatch/intent-session.js';
 
 beforeEach(() => {
   vi.clearAllMocks();
   actions.approvePending.mockReset().mockResolvedValue(false);
   actions.cancelPending.mockReset().mockReturnValue(false);
+  actions.resume.mockReset().mockResolvedValue(undefined);
   actions.readWorktree.mockReset().mockReturnValue(null);
   actions.auto.mockReset().mockResolvedValue(null);
 });
@@ -52,6 +55,34 @@ async function invokePhysical(command: string, cb: DispatchCallbacks) {
   const contribution = intents.find(entry => entry.parse(command) !== undefined)!;
   await runPhysicalTuiContribution({ payload: contribution }, contribution.parse(command)!, command, cb, new AbortController().signal);
 }
+
+it.each(['paused', 'running', 'done'] as const)('reads the replacement %s plan after physical session binding', async state => {
+  const previous = { ...createPlanProposal('old', []), state: 'paused' as const };
+  const replacement = { ...createPlanProposal('replacement', []), state };
+  const cb = { dispatch: vi.fn(), ctx: { config: {}, activePlan: previous } } as unknown as DispatchCallbacks;
+  const intents: IntentContribution[] = [];
+  const registrar = new Proxy({}, { get: (_, method) => (value: unknown) => {
+    if (method === 'intent') intents.push(value as IntentContribution);
+    return () => {};
+  } }) as Registrar;
+  await (await createMod({ planSession: planSessionHost } as ModServices)).activate(registrar);
+  const command = '/plan resume';
+  const contribution = intents.find(entry => entry.parse(command) !== undefined)!;
+  const delayed = { ...contribution, run: (...args: Parameters<IntentContribution['run']>) => {
+    cb.ctx.activePlan = replacement;
+    return contribution.run(...args);
+  } };
+  await runPhysicalTuiContribution({ payload: delayed }, contribution.parse(command)!, command, cb, new AbortController().signal);
+  if (state === 'done') {
+    expect(actions.resume).not.toHaveBeenCalled();
+    expect(cb.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'info',
+      message: expect.stringContaining('No active plan in this session') }));
+  } else {
+    expect(actions.resume).toHaveBeenCalledExactlyOnceWith(replacement);
+    expect(actions.resume.mock.calls[0][0]).toBe(replacement);
+  }
+  expect(cb.ctx.activePlan).toBe(replacement);
+});
 
 it.each(['physical', 'legacy'] as const)('preserves approval and cancellation precedence through the %s route', async route => {
   const cb = { dispatch: vi.fn(), ctx: { config: {} } } as unknown as DispatchCallbacks;

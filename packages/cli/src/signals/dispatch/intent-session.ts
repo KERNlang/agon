@@ -2,7 +2,7 @@ import { dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { createPatchApplicationUi, withPatchApplication } from '../../patch-application-host.js';
 import { escapeLiteralText } from '../../blocks/literal-text.js';
-import { withPlanSession, dispatchPlanSession, createPlanSessionActions, loadCesarPlan, shouldEmitPlanPostDispatch } from '@kernlang/agon-mod-plan';
+import { withPlanSession, dispatchPlanSession, createPlanSessionActions, loadCesarPlan, shouldEmitPlanPostDispatch, selectResumablePlan } from '@kernlang/agon-mod-plan';
 import type { PlanSessionActions, PlanSessionDispatchResult } from '@kernlang/agon-mod-plan';
 import type { SessionJobsInvocationContext } from '@kernlang/agon-mod-jobs';
 import { runBrainstormSession } from '../../blocks/brainstorm-session.js';
@@ -34,8 +34,6 @@ import type { TelemetrySnapshot } from '../../cesar/telemetry.js';
 
 import type { DispatchCallbacks, DispatchResult } from '../dispatch.js';
 
-import { findResumableCesarPlan } from './plan-queries.js';
-
 import { createPlanExecutionSession } from '../../blocks/plan-execution-effects.js';
 
 import { routeWithCesar } from './cesar-router.js';
@@ -65,7 +63,7 @@ function interactivePlanActions(cb: DispatchCallbacks): PlanSessionActions {
     },
     resumeSession: {
       load: loadCesarPlan,
-      current: () => findResumableCesarPlan(cb.ctx),
+      current: () => selectResumablePlan({ proposedPlan: cb.ctx.cesar?.proposedPlan, activePlan: cb.ctx.activePlan }),
       resume: plan => execution.resume(plan),
       notify: (type, message) => cb.dispatch({ type, message }),
     },

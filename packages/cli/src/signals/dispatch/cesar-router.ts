@@ -38,7 +38,7 @@ import { announceCesarAutoOrchestration, withThreadOutcome, buildDelegatedContin
 
 import { askChoiceQuestion } from './plan-queries.js';
 
-import { handleProposedCesarPlan } from './plan-execution.js';
+import { createPlanExecutionSession } from '../../blocks/plan-execution-effects.js';
 
 import { executeProcessCesarRoute } from '../../surface-authority-runtime.js';
 
@@ -808,7 +808,7 @@ export async function runCesarBrainFallback(input: string, cb: DispatchCallbacks
       const retriedPlan: CesarPlan | undefined = cb.ctx.cesar?.proposedPlan;
       if (retriedPlan && retriedPlan.state === 'awaiting_approval') {
         cb.setActivePlan(retriedPlan);
-        await handleProposedCesarPlan(retriedPlan, cb);
+        await createPlanExecutionSession(cb).propose(retriedPlan);
         return false;
       }
       if (retried.delegated && retried.responded) return true;
@@ -836,7 +836,7 @@ export async function runCesarBrainFallback(input: string, cb: DispatchCallbacks
       const retriedPlan: CesarPlan | undefined = cb.ctx.cesar?.proposedPlan;
       if (retriedPlan && retriedPlan.state === 'awaiting_approval') {
         cb.setActivePlan(retriedPlan);
-        await handleProposedCesarPlan(retriedPlan, cb);
+        await createPlanExecutionSession(cb).propose(retriedPlan);
         return false;
       }
       if (retried.delegated && retried.responded) {
@@ -1160,7 +1160,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
     if (proposedPlan && proposedPlan.state === 'awaiting_approval') {
       emitRecap();
       cb.setActivePlan(proposedPlan);
-      await handleProposedCesarPlan(proposedPlan, cb);
+      await createPlanExecutionSession(cb).propose(proposedPlan);
       return false;
     }
     try {

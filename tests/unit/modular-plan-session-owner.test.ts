@@ -37,6 +37,16 @@ it('keeps natural-input ordering in the physical session owner', () => {
   expect(router).not.toContain('shouldApprovePendingCesarPlanInput');
 });
 
+it('binds Cesar proposals and session resume without legacy execution adapters', () => {
+  const cesar = source('packages/cli/src/signals/dispatch/cesar-router.ts');
+  expect(cesar).not.toContain("from './plan-execution.js'");
+  expect(cesar).not.toContain('handleProposedCesarPlan');
+  expect(cesar.match(/createPlanExecutionSession\(cb\)\.propose\(/g)).toHaveLength(3);
+  const interactive = source('packages/cli/src/signals/dispatch/intent-session.ts');
+  expect(interactive).not.toContain('findResumableCesarPlan');
+  expect(interactive).toContain('selectResumablePlan(');
+});
+
 it('removes the CLI-owned session scope instead of retaining a second owner', () => {
   expect(existsSync(fileURLToPath(new URL('../../packages/cli/src/plan-session-host.ts', import.meta.url)))).toBe(false);
   for (const path of ['packages/cli/src/first-party-services.ts', 'packages/cli/src/signals/dispatch/intent-session.ts']) {

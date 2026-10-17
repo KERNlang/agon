@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { startChatSession } from '@kernlang/agon-core';
+import { createPlanProposal } from '@kernlang/agon-mod-plan';
 import { handleRecoveredDelegation, routeWithCesar, runCesarBrainFallback } from '../../packages/cli/src/signals/dispatch/cesar-router.js';
 import { markSessionCleanupFailed, sessionCleanupFailed } from '../../packages/cli/src/cesar/session-health.js';
 
@@ -27,6 +28,37 @@ beforeEach(() => {
   prepareFitness.mockReset();
   brain.mockReset().mockResolvedValue({ responded: true, delegated: false });
   backend.mockReset().mockReturnValue({ backend: 'cli', engine: { id: 'fixture' } });
+});
+
+it.each(['initial', 'cli-retry', 'api-retry'])('publishes the exact proposal through the physical owner after %s', async route => {
+  backend.mockReturnValue({ backend: route === 'api-retry' ? 'api' : 'cli', engine: { id: 'fixture' } });
+  const proposal = createPlanProposal('fixture proposal', [], { autoApprove: true });
+  const adapter = { dispatch: vi.fn() };
+  const ctx = { config: { cesarAutoApproveMode: 'off' }, cesar: {}, adapter,
+    activeEngines: () => [], chatSession: startChatSession() } as any;
+  brain.mockImplementation(async () => {
+    ctx.cesar.proposedPlan = proposal;
+    return { responded: true, delegated: false };
+  });
+  const dispatch = vi.fn();
+  const setActivePlan = vi.fn();
+  const runAsJob = vi.fn();
+  const cb = { ctx, dispatch, setActivePlan, runAsJob, setPendingImages: vi.fn() } as any;
+  const result = route === 'initial'
+    ? await routeWithCesar('prompt', [], cb)
+    : await runCesarBrainFallback('prompt', cb, null, false);
+  expect(result).toBe(false);
+  expect(brain).toHaveBeenCalledOnce();
+  expect(setActivePlan).toHaveBeenCalledTimes(2);
+  expect(setActivePlan.mock.calls.every(([plan]) => plan === proposal)).toBe(true);
+  expect(ctx.cesar.proposedPlan).toBeUndefined();
+  expect(proposal.state).toBe('awaiting_approval');
+  expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'info',
+    message: expect.stringContaining('Plan awaiting approval') }));
+  expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'info',
+    message: expect.stringContaining('autoApprove disabled') }));
+  expect(adapter.dispatch).not.toHaveBeenCalled();
+  expect(runAsJob).not.toHaveBeenCalled();
 });
 
 it.each([

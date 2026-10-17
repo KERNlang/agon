@@ -19,6 +19,40 @@ function fixture(answer = 'y', kind: 'build' | 'forge' = 'forge') {
   return { host, initial: current };
 }
 
+it.each(['show', 'list', 'approveLegacy', 'retry', 'cancelLegacy'] as const)('composes %s with fresh host effects and the existing workflow', async action => {
+  const fixtures = [fixture('yes', 'build'), fixture('yes', 'build')];
+  for (const { initial } of fixtures) {
+    if (action === 'retry') {
+      initial.state = 'failed';
+      initial.steps[0].result.state = 'failed';
+    }
+  }
+  const worktree = vi.fn().mockReturnValueOnce(fixtures[0].host).mockReturnValueOnce(fixtures[1].host);
+  const actions = owner.createPlanSessionActions({
+    worktree,
+    taskSession: { setActive: vi.fn(), prepare: vi.fn(), route: async () => false,
+      proposed: () => undefined, acceptProposal: async () => {} },
+    resumeSession: { load: () => null, current: () => null, resume: async () => {}, notify: vi.fn() },
+    approvePending: async () => false, cancelPending: () => false, auto: async () => null,
+  });
+  expect(worktree).not.toHaveBeenCalled();
+  for (const { host, initial } of fixtures) {
+    if (action === 'show') await actions.show('selected');
+    else await actions[action]();
+    if (action === 'show') expect(host.load).toHaveBeenCalledExactlyOnceWith('selected');
+    if (action === 'list') {
+      expect(host.list).toHaveBeenCalledExactlyOnceWith(20);
+      expect(host.emit).toHaveBeenCalledExactlyOnceWith({ type: 'plan-list', plans: [initial] });
+      expect(host.save).not.toHaveBeenCalled();
+    } else {
+      expect(host.current()?.state).toBe(action === 'cancelLegacy' ? 'cancelled' : 'approved');
+      expect(host.save).toHaveBeenCalledExactlyOnceWith(host.current());
+    }
+    expect(host.forge).not.toHaveBeenCalled();
+  }
+  expect(worktree).toHaveBeenCalledTimes(2);
+});
+
 it('refuses an answer when the same draft object changes state', async () => {
   const { host, initial } = fixture();
   host.ask.mockImplementation(async () => { initial.state = 'cancelled'; return 'y'; });

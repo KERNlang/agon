@@ -9,6 +9,7 @@ it('exports the session scope from the physical Plan package', () => {
   expect(plan).toHaveProperty('withPlanSession', expect.any(Function));
   expect(plan).toHaveProperty('planSessionHost.run', expect.any(Function));
   expect(plan).toHaveProperty('dispatchPlanSession', expect.any(Function));
+  expect(plan).toHaveProperty('createPlanSessionActions', expect.any(Function));
 });
 
 it('binds physical and legacy-shaped requests to one Plan dispatcher', () => {
@@ -18,6 +19,8 @@ it('binds physical and legacy-shaped requests to one Plan dispatcher', () => {
   expect(content).toContain('return runInteractivePlanRequest(intent, input, cb)');
   expect(content).not.toContain('await runInteractivePlanRequest(request,');
   expect(content).toContain('actions: interactivePlanActions(cb)');
+  expect(content).toContain('createPlanSessionActions(');
+  expect(content).not.toMatch(/\bhandle(?:PlanShow|PlansList|Approve|Retry|Cancel)\b/);
 });
 
 it('removes the CLI-owned session scope instead of retaining a second owner', () => {

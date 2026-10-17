@@ -1,20 +1,22 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 import type { IntentContribution, ModServices, Registrar } from '@kernlang/agon-mod-api';
 import type { DispatchCallbacks, DispatchResult } from '../../packages/cli/src/signals/dispatch.js';
+import { createPlan } from '@kernlang/agon-support-worktree';
+import type { Plan } from '@kernlang/agon-support-worktree';
 
 const router = vi.hoisted(() => ({ run: vi.fn(async () => false), post: vi.fn() }));
 const actions = vi.hoisted(() => ({
   approvePending: vi.fn(async () => false), cancelPending: vi.fn(() => false),
-  approveLegacy: vi.fn(async () => {}), cancelLegacy: vi.fn(),
+  readWorktree: vi.fn<() => Plan | null>(() => null), saveWorktree: vi.fn(),
   auto: vi.fn<(request: unknown, input: string, cb: DispatchCallbacks) => Promise<DispatchResult | null>>(),
 }));
 vi.mock('../../packages/cli/src/signals/dispatch/plan-execution.js', async importOriginal => ({
   ...await importOriginal<typeof import('../../packages/cli/src/signals/dispatch/plan-execution.js')>(),
   approvePendingCesarPlan: actions.approvePending, cancelPendingCesarPlan: actions.cancelPending,
 }));
-vi.mock('../../packages/cli/src/handlers/index.js', async importOriginal => ({
-  ...await importOriginal<typeof import('../../packages/cli/src/handlers/index.js')>(),
-  handleApprove: actions.approveLegacy, handleCancel: actions.cancelLegacy,
+vi.mock('../../packages/cli/src/blocks/worktree-plan-effects.js', () => ({
+  worktreePlanHost: () => ({ available: () => true, current: actions.readWorktree, emit: vi.fn(),
+    setCurrent: (plan: Plan) => actions.readWorktree.mockReturnValue(plan), save: actions.saveWorktree }),
 }));
 vi.mock('../../packages/cli/src/signals/dispatch/intent-skills.js', async importOriginal => ({
   ...await importOriginal<typeof import('../../packages/cli/src/signals/dispatch/intent-skills.js')>(),
@@ -33,8 +35,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   actions.approvePending.mockReset().mockResolvedValue(false);
   actions.cancelPending.mockReset().mockReturnValue(false);
-  actions.approveLegacy.mockReset().mockResolvedValue(undefined);
-  actions.cancelLegacy.mockReset();
+  actions.readWorktree.mockReset().mockReturnValue(null);
   actions.auto.mockReset().mockResolvedValue(null);
 });
 
@@ -57,8 +58,7 @@ it.each(['physical', 'legacy'] as const)('preserves approval and cancellation pr
       router.post.mockClear();
       actions.approvePending.mockImplementation(async () => { trace.push('pending'); return pending; });
       actions.cancelPending.mockImplementation(() => { trace.push('pending'); return pending; });
-      actions.approveLegacy.mockImplementation(async () => { trace.push('legacy'); });
-      actions.cancelLegacy.mockImplementation(() => { trace.push('legacy'); });
+      actions.readWorktree.mockImplementation(() => { trace.push('legacy'); return null; });
       if (route === 'physical') await invokePhysical(`/${type}`, cb);
       else await expect(dispatchSessionInfoIntent({ type }, 'original input', cb)).resolves.toEqual({ handled: true, ranAsJob: false });
       expect(trace).toEqual(pending ? ['pending'] : ['pending', 'legacy']);
@@ -78,13 +78,30 @@ it.each(['physical', 'legacy'] as const)('propagates action failures without fal
       const legacy = () => { trace.push('legacy'); throw failure; };
       actions.approvePending.mockImplementation(async () => pending());
       actions.cancelPending.mockImplementation(pending);
-      actions.approveLegacy.mockImplementation(async () => legacy());
-      actions.cancelLegacy.mockImplementation(legacy);
+      actions.readWorktree.mockImplementation(legacy);
       const operation = route === 'physical' ? invokePhysical(`/${type}`, cb) : dispatchSessionInfoIntent({ type }, 'original input', cb);
       await expect(operation).rejects.toBe(failure);
       expect(trace).toEqual(failAt === 'pending' ? ['pending'] : ['pending', 'legacy']);
       expect(router.post).not.toHaveBeenCalled();
     }
+  }
+});
+
+it.each(['physical', 'legacy'] as const)('persists distinct approval and cancellation outcomes through %s', async route => {
+  const cb = { dispatch: vi.fn(), ctx: { config: {} } } as unknown as DispatchCallbacks;
+  for (const type of ['approve', 'cancel'] as const) {
+    const draft = createPlan({ type: 'build', task: 'fixture' },
+      { id: 'fixture', path: '/fixture', headSha: 'abc', branch: 'fixture', dirty: false }, []);
+    actions.readWorktree.mockReturnValue(draft);
+    actions.saveWorktree.mockClear();
+    router.post.mockClear();
+    if (route === 'physical') await invokePhysical(`/${type}`, cb);
+    else await dispatchSessionInfoIntent({ type }, 'original input', cb);
+    expect(actions.saveWorktree).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+      id: draft.id, state: type === 'approve' ? 'approved' : 'cancelled',
+    }));
+    expect(draft.state).toBe('draft');
+    expect(router.post).toHaveBeenCalledOnce();
   }
 });
 

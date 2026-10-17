@@ -1,4 +1,8 @@
 import type { Awaitable, CommandResult, InvocationContext, Json, ModServices, PlanSessionRequest } from '@kernlang/agon-mod-api';
+import { showWorktreePlan, listWorktreePlans, approveWorktreePlan, retryWorktreePlan, cancelWorktreePlan } from './worktree-workflow.js';
+import type { WorktreePlanHost } from './worktree-workflow.js';
+import { startPlanTaskSession, resumePlanSession } from './session-workflow.js';
+import type { PlanTaskSessionEffects, PlanResumeSessionEffects } from './session-workflow.js';
 
 export interface PlanSessionDispatchResult {
   readonly handled: boolean;
@@ -17,6 +21,28 @@ export interface PlanSessionActions {
   cancelPending(): boolean;
   cancelLegacy(): void;
   auto(request: Extract<PlanSessionRequest, { type: 'auto' }>): Promise<PlanSessionDispatchResult | null>;
+}
+
+export interface PlanSessionEffects extends Pick<PlanSessionActions, 'approvePending' | 'cancelPending' | 'auto'> {
+  worktree(): WorktreePlanHost;
+  taskSession: PlanTaskSessionEffects;
+  resumeSession: PlanResumeSessionEffects;
+}
+
+/** Compose the existing workflows without importing host command handlers. */
+export function createPlanSessionActions(host: PlanSessionEffects): PlanSessionActions {
+  return {
+    show: planId => showWorktreePlan(host.worktree(), planId),
+    list: () => listWorktreePlans(host.worktree()),
+    approveLegacy: () => approveWorktreePlan(host.worktree()),
+    retry: () => retryWorktreePlan(host.worktree()),
+    cancelLegacy: () => cancelWorktreePlan(host.worktree()),
+    task: task => startPlanTaskSession(task, host.taskSession),
+    resume: planId => resumePlanSession(planId, host.resumeSession),
+    approvePending: () => host.approvePending(),
+    cancelPending: () => host.cancelPending(),
+    auto: request => host.auto(request),
+  };
 }
 
 /** Both generated contributions and legacy-shaped requests use this owner. */

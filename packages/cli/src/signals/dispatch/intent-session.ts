@@ -2,10 +2,11 @@ import { dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { createPatchApplicationUi, withPatchApplication } from '../../patch-application-host.js';
 import { escapeLiteralText } from '../../blocks/literal-text.js';
-import { withPlanSession, dispatchPlanSession, startPlanTaskSession, resumePlanSession, loadCesarPlan } from '@kernlang/agon-mod-plan';
+import { withPlanSession, dispatchPlanSession, createPlanSessionActions, loadCesarPlan } from '@kernlang/agon-mod-plan';
 import type { PlanSessionActions, PlanSessionDispatchResult } from '@kernlang/agon-mod-plan';
 import type { SessionJobsInvocationContext } from '@kernlang/agon-mod-jobs';
 import { runBrainstormSession } from '../../blocks/brainstorm-session.js';
+import { worktreePlanHost } from '../../blocks/worktree-plan-effects.js';
 
 import { resolveWorkingDir, buildImageAttachment, sessionContext, visionSupportNote } from '@kernlang/agon-core';
 
@@ -19,7 +20,7 @@ import { assertProcessSurfaceAvailable, modularHostRoot, processSurfaceCatalog, 
 
 import { ENGINE_COLORS } from '../../blocks/output-format.js';
 
-import { handleLeaderboard, handleCesarReport, handleCesarHints, handleHistory, handleEngines, handleDiscover, handleConfig, handlePermissions, handleUse, handleCesar, handleTokens, handleRaw, handleWorkspace, handleChats, handlePlanShow, handlePlansList, handleApprove, handleRetry, handleCancel, handleCp, handleCpLast, handleCommit, handleFlowReport, handleFlowAnalysis, handleRun } from '../../handlers/index.js';
+import { handleLeaderboard, handleCesarReport, handleCesarHints, handleHistory, handleEngines, handleDiscover, handleConfig, handlePermissions, handleUse, handleCesar, handleTokens, handleRaw, handleWorkspace, handleChats, handleCp, handleCpLast, handleCommit, handleFlowReport, handleFlowAnalysis, handleRun } from '../../handlers/index.js';
 
 import { handleProvider } from '../../handlers/provider.js';
 
@@ -43,9 +44,9 @@ import { emitPostDispatch } from './utils.js';
 
 /** Bind terminal effects without supplying another session dispatcher. */
 function interactivePlanActions(cb: DispatchCallbacks): PlanSessionActions {
-  return {
-    show: planId => handlePlanShow(cb.dispatch, cb.ctx, planId),
-    task: task => startPlanTaskSession(task, {
+  return createPlanSessionActions({
+    worktree: () => worktreePlanHost(cb.dispatch, cb.ctx),
+    taskSession: {
       setActive: plan => cb.setActivePlan(plan),
       prepare: () => {
         if (!cb.ctx.cesar) cb.ctx.cesar = {
@@ -60,21 +61,17 @@ function interactivePlanActions(cb: DispatchCallbacks): PlanSessionActions {
       route: value => routeWithCesar(value, [], cb),
       proposed: () => cb.ctx.cesar?.proposedPlan,
       acceptProposal: plan => handleProposedCesarPlan(plan, cb),
-    }),
-    resume: planId => resumePlanSession(planId, {
+    },
+    resumeSession: {
       load: loadCesarPlan,
       current: () => findResumableCesarPlan(cb.ctx),
       resume: plan => resumeCesarPlan(plan, cb),
       notify: (type, message) => cb.dispatch({ type, message }),
-    }),
-    list: () => handlePlansList(cb.dispatch),
+    },
     approvePending: () => approvePendingCesarPlan(cb),
-    approveLegacy: () => handleApprove(cb.dispatch, cb.ctx),
-    retry: () => handleRetry(cb.dispatch, cb.ctx),
     cancelPending: () => cancelPendingCesarPlan(cb),
-    cancelLegacy: () => handleCancel(cb.dispatch, cb.ctx),
     auto: async intent => (await import('./intent-skills.js')).dispatchSkillsUiIntent(intent, '', cb),
-  };
+  });
 }
 
 function finishPlanDispatch(request: PlanSessionRequest, input: string, cb: DispatchCallbacks, result: PlanSessionDispatchResult | null): void {

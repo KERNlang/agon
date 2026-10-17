@@ -24,7 +24,7 @@ const packages = [
   { id: '@kernlang/agon-support-engine-catalog', class: SUPPORT, defaultEnabled: true, dependencies: ['@kernlang/agon-support-engine-runtime'] },
   { id: '@kernlang/agon-support-persistence', class: SUPPORT, defaultEnabled: true, dependencies: ['@kernlang/agon-kernel'] },
   { id: '@kernlang/agon-support-verification', class: SUPPORT, defaultEnabled: true, dependencies: ['@kernlang/agon-kernel', '@kernlang/agon-support-persistence', '@kernlang/agon-support-engine-runtime'] },
-  { id: '@kernlang/agon-support-worktree', class: SUPPORT, defaultEnabled: true, dependencies: ['@kernlang/agon-kernel', '@kernlang/agon-support-verification'] },
+  { id: '@kernlang/agon-support-worktree', class: SUPPORT, defaultEnabled: true, dependencies: ['@kernlang/agon-kernel', '@kernlang/agon-support-verification', '@kernlang/agon-support-engine-runtime'] },
   { id: '@kernlang/agon-support-panel', class: SUPPORT, defaultEnabled: true, dependencies: ['@kernlang/agon-support-engine-runtime'] },
   { id: '@kernlang/agon-support-judge', class: SUPPORT, defaultEnabled: true, dependencies: ['@kernlang/agon-support-panel', '@kernlang/agon-support-verification'] },
   { id: '@kernlang/agon-support-agent-runtime', class: SUPPORT, defaultEnabled: true, dependencies: ['@kernlang/agon-support-engine-runtime', '@kernlang/agon-support-persistence', '@kernlang/agon-support-verification'] },

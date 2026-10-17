@@ -56,7 +56,8 @@ export const FIRST_PARTY_PACKAGE_GRAPH = {
       "defaultEnabled": true,
       "dependencies": [
         "@kernlang/agon-kernel",
-        "@kernlang/agon-support-verification"
+        "@kernlang/agon-support-verification",
+        "@kernlang/agon-support-engine-runtime"
       ]
     },
     {
@@ -543,6 +544,11 @@ export const FIRST_PARTY_PACKAGE_GRAPH = {
     {
       "from": "@kernlang/agon-support-worktree",
       "to": "@kernlang/agon-support-verification",
+      "kind": "hard"
+    },
+    {
+      "from": "@kernlang/agon-support-worktree",
+      "to": "@kernlang/agon-support-engine-runtime",
       "kind": "hard"
     },
     {

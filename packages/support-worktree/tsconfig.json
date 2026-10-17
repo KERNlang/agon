@@ -20,6 +20,9 @@
     },
     {
       "path": "../support-verification"
+    },
+    {
+      "path": "../support-engine-runtime"
     }
   ],
   "include": [

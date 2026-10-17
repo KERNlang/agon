@@ -1,4 +1,4 @@
-// Pins the shared, budgeted mutant runner (packages/core/src/tools/mutant-runner.ts).
+// Pins the shared runner and its legacy public export.
 //
 // Every case runs against a disposable COPY of tests/fixtures/mutate-tautology,
 // a dependency-free mini-repo whose two test variants (real assertions vs.
@@ -12,6 +12,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { generateMutants } from '../../packages/core/src/tools/mutant-generator.js';
 import { runMutants } from '../../packages/core/src/tools/mutant-runner.js';
+import { runMutants as sharedRunMutants } from '@kernlang/agon-support-worktree';
 import type { Mutant } from '../../packages/core/src/tools/mutant-generator.js';
 
 const FIXTURE = fileURLToPath(new URL('../fixtures/mutate-tautology', import.meta.url));
@@ -44,6 +45,10 @@ afterEach(() => {
 const base = { perMutantTimeoutSec: 20, totalBudgetSec: 120 };
 
 describe('runMutants — kill / survive', () => {
+  it('uses one runner through the shared owner and legacy export', () => {
+    expect(runMutants).toBe(sharedRunMutants);
+  });
+
   it('kills every mutant when the test asserts real values', async () => {
     const dir = sandbox();
     const mutants = addMutants(dir);

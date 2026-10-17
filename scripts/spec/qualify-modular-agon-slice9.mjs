@@ -145,7 +145,7 @@ if (process.argv.includes('--self-test')) {
 }
 const receipt = { schemaVersion: 1, qualification: 'modular-agon-slice9-release-candidate', subject: { ...(subjectKind === 'index' ? indexSubject : commitSubject), hash: expectedHash, indexHash, commitHash, indexEqualsCommit: indexHash === commitHash }, contamination, graph, coverage, reviewEvidence, cleanCheckoutSteps: steps };
 receipt.passed = Object.values(contamination).every((paths) => paths.length === 0) && (subjectKind === 'index' || indexHash === commitHash) && reviewEvidence.passed
-  && graph.duplicateEdges.length === 0 && graph.uniqueEdges === 154 && coveragePasses(coverage) && freshPlatformPassed
+  && graph.duplicateEdges.length === 0 && graph.uniqueEdges === 155 && coveragePasses(coverage) && freshPlatformPassed
   && freshPerformancePassed && performances.every(performancePasses) && freshLoadPassed
   && steps.length > 0 && steps.every(({ passed }) => passed);
 console.log(JSON.stringify(receipt, null, 2));

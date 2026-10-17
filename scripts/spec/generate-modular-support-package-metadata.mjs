@@ -12,7 +12,7 @@ const packages = [
   ['engine-catalog', ['engine-runtime']],
   ['verification', ['engine-runtime', 'persistence']],
   ['panel', ['engine-runtime']],
-  ['worktree', ['verification']],
+  ['worktree', ['verification', 'engine-runtime']],
   ['agent-runtime', ['engine-runtime', 'persistence', 'verification']],
   ['judge', ['panel', 'verification']],
 ];

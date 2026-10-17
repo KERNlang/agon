@@ -144,9 +144,12 @@ describe('frozen first-party package graph', () => {
     },
   );
 
-  it('contains the complete 49-package/154-edge target map without dangling dependencies', () => {
+  it('contains the complete 49-package/155-edge target map without dangling dependencies', () => {
     expect(FIRST_PARTY_PACKAGE_GRAPH.packages).toHaveLength(49);
-    expect(FIRST_PARTY_PACKAGE_GRAPH.dependencyEdges).toHaveLength(154);
+    expect(FIRST_PARTY_PACKAGE_GRAPH.dependencyEdges).toHaveLength(155);
+    expect(FIRST_PARTY_PACKAGE_GRAPH.dependencyEdges.filter(({ from, to }) =>
+      from === '@kernlang/agon-support-worktree' && to === '@kernlang/agon-support-engine-runtime',
+    )).toEqual([{ from: '@kernlang/agon-support-worktree', to: '@kernlang/agon-support-engine-runtime', kind: 'hard' }]);
     expect(FIRST_PARTY_PACKAGE_GRAPH.dependencyEdges.filter(({ from, to }) =>
       from === '@kernlang/agon-mod-conquer' && to === '@kernlang/agon-mod-brainstorm',
     )).toEqual([{ from: '@kernlang/agon-mod-conquer', to: '@kernlang/agon-mod-brainstorm', kind: 'hard' }]);

@@ -105,6 +105,77 @@ const context = (cwd: string) => ({
 });
 
 describe('physical goal mod', () => {
+  it.each(['override', 'historical'] as const)('resolves the saved attempt limit: %s', async kind => {
+    const cwd = repo(); const h = harness();
+    const input = { intent: 'retry policy', gate: 'true', engine: 'builder', reviewEngines: 'reviewer',
+      oracleGate: 'off', requireTests: false };
+    expect((await runGoal({ ...input, maxAttempts: 1, dryRun: true }, context(cwd), h.services)).exitCode).toBe(0);
+    if (kind === 'historical') delete h.state.get('goals/retry-policy').payload.maxAttempts;
+    else expect((await runGoal({ ...input, resume: true, maxAttempts: 2, dryRun: true }, context(cwd), h.services)).exitCode).toBe(0);
+    h.dispatch.mockResolvedValue({ exitCode: 1, stdout: '', stderr: 'fixture implementation failure', timedOut: false });
+    const resumed = await runGoal({ ...input, resume: true }, context(cwd), h.services);
+    const expected = kind === 'historical' ? 3 : 2;
+    expect((resumed.result as any).state.tasks[0].attempts).toBe(expected);
+    expect(h.dispatch).toHaveBeenCalledTimes(expected);
+    expect(h.state.get('goals/retry-policy').payload.maxAttempts).toBe(expected);
+  });
+
+  it.each([null, '2', 0, -1, 1.5, 21])('rejects malformed saved attempt limit %j without dispatch', async maxAttempts => {
+    const cwd = repo(); const h = harness();
+    const input = { intent: 'bad retry policy', gate: 'true', engine: 'builder' };
+    expect((await runGoal({ ...input, dryRun: true }, context(cwd), h.services)).exitCode).toBe(0);
+    h.state.get('goals/bad-retry-policy').payload.maxAttempts = maxAttempts;
+    const before = JSON.stringify(h.state.get('goals/bad-retry-policy'));
+    const open = vi.spyOn(h.goal, 'open');
+    vi.mocked(h.services.state.write).mockClear();
+    for (const override of [{}, { maxAttempts: 2, supervised: true }]) {
+      const resumed = await runGoal({ ...input, ...override, resume: true }, context(cwd), h.services);
+      expect(resumed.exitCode).toBe(1);
+      expect(resumed.stderr).toContain('saved maxAttempts');
+    }
+    expect(open).not.toHaveBeenCalled();
+    expect(h.services.state.write).not.toHaveBeenCalled();
+    expect(h.dispatch).not.toHaveBeenCalled();
+    expect(JSON.stringify(h.state.get('goals/bad-retry-policy'))).toBe(before);
+  });
+
+  it.each([[0, 1], [21, 20]])('persists the clamped saved attempt limit %i as %i', async (requested, expected) => {
+    const cwd = repo(); const h = harness();
+    const input = { intent: 'clamped retries', gate: 'true', dryRun: true };
+    expect((await runGoal({ ...input, maxAttempts: requested }, context(cwd), h.services)).exitCode).toBe(0);
+    const resumed = await runGoal({ ...input, resume: true }, context(cwd), h.services);
+    expect(resumed.exitCode).toBe(0);
+    expect((resumed.result as any).state.maxAttempts).toBe(expected);
+    expect(h.dispatch).not.toHaveBeenCalled();
+  });
+
+  it('does not retry exhausted tasks after lowering the saved attempt limit', async () => {
+    const cwd = repo(); const h = harness();
+    const input = { intent: 'lower retries', gate: 'true', engine: 'builder', reviewEngines: 'reviewer',
+      oracleGate: 'off', requireTests: false };
+    h.dispatch.mockResolvedValue({ exitCode: 1, stdout: '', stderr: 'fixture implementation failure', timedOut: false });
+    const first = await runGoal({ ...input, maxAttempts: 2 }, context(cwd), h.services);
+    expect((first.result as any).state.tasks[0].attempts).toBe(2);
+    h.dispatch.mockClear();
+    const resumed = await runGoal({ ...input, maxAttempts: 1, resume: true }, context(cwd), h.services);
+    expect((resumed.result as any).state.tasks[0].attempts).toBe(2);
+    expect(h.state.get('goals/lower-retries').payload.maxAttempts).toBe(1);
+    expect(h.dispatch).not.toHaveBeenCalled();
+  });
+
+  it('retains the saved attempt limit when resuming without an override', async () => {
+    const cwd = repo(); const h = harness();
+    const input = { intent: 'saved retry limit', gate: 'true', engine: 'builder', reviewEngines: 'reviewer',
+      oracleGate: 'off', requireTests: false };
+    const first = await runGoal({ ...input, maxAttempts: 1, dryRun: true }, context(cwd), h.services);
+    expect(first.exitCode).toBe(0);
+    h.dispatch.mockResolvedValue({ exitCode: 1, stdout: '', stderr: 'fixture implementation failure', timedOut: false });
+    const resumed = await runGoal({ ...input, resume: true }, context(cwd), h.services);
+    expect((resumed.result as any).state.tasks[0].attempts).toBe(1);
+    expect(h.dispatch).toHaveBeenCalledOnce();
+    expect(h.state.get('goals/saved-retry-limit').payload.maxAttempts).toBe(1);
+  });
+
   it.each(['valid', 'corrupt', 'missing', 'wrong-id', 'malformed', 'malformed-task', 'unknown-status', 'revoked', 'revoked-after-read', 'modern'] as const)('reads historical Goal status without changing journal bytes: %s', async kind => {
     const cwd = repo();
     const home = mkdtempSync(join(tmpdir(), 'agon-goal-history-'));

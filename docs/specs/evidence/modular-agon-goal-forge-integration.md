@@ -1,5 +1,42 @@
 # Goal / Forge integration evidence
 
+## Saved retry limits across resume
+
+Date: 2026-10-19. Physical Goal previously discarded `maxAttempts` when saving
+state. Resuming without an override silently used three attempts, even when the
+original run selected one. Goal now stores the effective limit and restores it
+on resume. An explicit override replaces the saved limit. Older modular records
+without this field retain the existing default of three. Existing input clamping
+to 1–20 is unchanged. Invalid saved limits fail before host effects or execution,
+including when an explicit override or supervised mode is requested.
+
+Twelve focused cases cover persistence, override persistence, old records,
+malformed values, clamping and lowering a limit after attempts already occurred.
+The original failure observed three dispatches instead of one. Five separate
+built-CLI invocations verify fresh persistence, resume, override, repeated resume,
+and corrupt-state rejection without changing the stored bytes.
+
+| Receipt | Result | Log SHA-256 |
+|---|---|---|
+| goal-resume-attempt-limit-red | Original one-attempt regression failed | 504ff35939a7421601985dc74dbb0cde54f3a1973c5ea97c0b4e89cf0c662ded |
+| goal-resume-attempt-limit-focused | Initial nine tests, types and lint passed | 2293635050a73a55d2f0f13d262126252328539bcdee619bead2a0762c0e3de8 |
+| goal-resume-attempt-limit-review-controls | Twelve tests, types and lint passed | 9145bc398a77cf2be3f6e05620c4a1263eecef8d5b3298a32098c62f6972c083 |
+| goal-resume-attempt-limit-full-gate | Full gate passed in 929.59s; 10,672 tests passed, six skipped | 9412885fe5b55f02434453c44d034364f81bde00fb1a29512d0ae33073a2cc27 |
+| goal-resume-attempt-limit-built-cli | Five separate CLI invocations passed in 1.7s | 02eb5b82c06139ac07e89e89a1c9290e87f118b749db62291cec1da3db417585 |
+
+Isolated Codex review found no blocking defect in the supplied source. Packet
+SHA-256: `7e232a724746bbebf99d46b581377c4305651286d401cf792d00a67ff8065daf`.
+Review log SHA-256: `4a4c523d9e15825a75ae4a1a8b325e57dd0c71cf891b6bda14c1371a37f86bc7`.
+Its proposed corruption, explicit-override, lowering and clamping controls were
+added and verified locally. The packet omitted the retry loop and supervisor;
+the reviewer did not claim to verify those. Local behavioral tests and the full
+suite cover them. No second review is claimed; temporary auth copy removed.
+
+All test receipts record zero provider launches. Raw commands, logs and receipts
+remain in `/Users/ra/dev/modular-agon-remediation/`. No global installation or
+push occurred. This is development verification, not clean-subject release
+acceptance. Legacy journal adoption and controller retirement remain unfinished.
+
 ## Historical Goal status reader
 
 Date: 2026-10-19. The built modular CLI previously returned `No persisted goal`

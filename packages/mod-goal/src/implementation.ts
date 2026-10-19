@@ -90,6 +90,7 @@ type GoalState = {
   spentUsd: number;
   budgetUsd: number;
   maxHours: number;
+  maxAttempts?: number;
   noProgressStreak: number;
   parkedStreak?: number;
   recentOutcomes: Array<"done" | "failed">;
@@ -532,6 +533,9 @@ export async function runGoal(
     return { exitCode: 1, stderr: `Cannot resume unknown goal '${id}'.\n` };
   const inputError = goalNumericInputError(input);
   if (inputError) return { exitCode: 1, stderr: inputError };
+  if (input.resume === true && prior?.maxAttempts !== undefined &&
+      (!Number.isSafeInteger(prior.maxAttempts) || prior.maxAttempts < 1 || prior.maxAttempts > 20))
+    return { exitCode: 1, stderr: `Cannot resume Goal '${id}': saved maxAttempts must be an integer from 1 to 20.\n` };
   if (input.supervised === true && input.dryRun !== true) {
     const result = await runGoalSupervisor(raw, processSupervisorRuntime(context.signal));
     context.signal.throwIfAborted();
@@ -567,7 +571,7 @@ export async function runGoal(
       stderr: `${error instanceof Error ? error.message : String(error)}\n`,
     };
   }
-  const maxAttempts = Math.max(1, Math.min(20, Number(input.maxAttempts ?? 3)));
+  const maxAttempts = Math.max(1, Math.min(20, Number(input.maxAttempts ?? (input.resume === true ? prior?.maxAttempts : undefined) ?? 3)));
   const gateTimeout = Math.max(1, Number(input.gateTimeout ?? 1800));
   const budgetUsd = Math.max(0, Number(input.budget ?? prior?.budgetUsd ?? 0) || 0);
   const maxHours = Math.max(0, Number(input.maxHours ?? prior?.maxHours ?? 0) || 0);
@@ -632,6 +636,7 @@ export async function runGoal(
       spentUsd: 0,
       budgetUsd,
       maxHours,
+      maxAttempts,
       noProgressStreak: 0,
       recentOutcomes: [],
       tasks,
@@ -650,6 +655,7 @@ export async function runGoal(
           status: "running",
           budgetUsd,
           maxHours,
+          maxAttempts,
           tasks: prior.tasks.map((t) => {
             const resumed: Task = t.status === 'running' || ((t.status === 'failed' || t.status === 'parked') && t.attempts < maxAttempts)
               ? { ...t, status: 'queued' } : t;

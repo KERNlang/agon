@@ -1,5 +1,48 @@
 # Goal / Forge integration evidence
 
+## Historical Goal status reader
+
+Date: 2026-10-19. The built modular CLI previously returned `No persisted goal`
+for a valid legacy journal under `goals/<id>/journal.json`. Goal now reads that
+journal through injected host effects when modern state is absent. It uses the
+existing Goal journal owner and summary formatter; it creates no second store.
+The result carries `format: legacy-journal`. Modern state retains precedence.
+
+Ten status cases cover valid, absent, corrupt, malformed and wrong-ID records,
+malformed tasks, unknown task statuses, revoked authority before/after read,
+and modern-state precedence. Reads preserve bytes and do not initialize storage,
+write modular state or dispatch engines. Existing summary/artifact checks also
+pass. This fixes historical inspection, not historical execution migration.
+
+| Receipt | Result | Log SHA-256 |
+|---|---|---|
+| goal-legacy-journal-status-probe | Built CLI reproduced missing historical status | 465cef464d62968ca5a745f71af3ca1e010f55555329924b6a6ed8b14a9c85a1 |
+| goal-historical-status-red | Valid-journal regression failed before correction | 8fa5ca63b0fc9ea5ecc2db55a22830839e0cf1fa8face86e71613e388c1b474b |
+| goal-historical-status-malformed-red | Reproduced malformed tasks reporting complete | de5269a7591b52191f4ecc508b6a695da98bdbda3adea07b80e2a0773faaff11 |
+| goal-historical-status-final-focused | 16 tests, types, focused lint and diff check passed | 58ea7f0364f71ceda1216d84bcce9068ba5979ecd9cf56bcdbc3f659c22e41c4 |
+| goal-historical-status-full-gate | All full gates passed; 10,660 tests, six skips; 951.933s | ea5769aa06b85c5a3ddc51b0e5b5128e66d39740a0ac1f98642ef97fce4117ff |
+| goal-historical-status-final-built | Final built CLI read the intent and remaining task, preserving source bytes | 36d8a76c91d40eeb1acef4892aff7ad5c0797dba5481973b228311d746d2bf87 |
+
+Isolated Codex review identified the malformed-task finding. Local red controls
+confirmed it; the shared summary formatter now validates the fields used to
+derive status. Packet SHA-256:
+`abc6aed710d99fbf0c11cdaeabe1114f9569b146264f2c2abdcf4e4192f3c757`.
+Review log SHA-256:
+`0fa3d542b20856b26c11bf09ef229ade7a5819223d795ca9604a69045961ca3f`.
+Its integration caveat is covered by the separate built-CLI probes. Its
+precedence and post-read authority suggestions have explicit tests. The repair
+was verified locally; no second review is claimed. Temporary auth copy removed.
+
+An intermediate test failed because expected undefined properties do not
+survive JSON serialization; expected state now comes from the persisted bytes.
+That failed receipt, all review material and raw logs remain in the durable
+evidence directory, `/Users/ra/dev/modular-agon-remediation/`. All test receipts
+record zero providers. No global installation or push occurred.
+
+Still required: lossless legacy resume, prior-writer quiescence, frozen-oracle
+continuity, rollback/re-entry and legacy controller retirement. No release
+acceptance claim follows from these development checks.
+
 ## Supervised invocation cancellation
 
 Date: 2026-10-19. Supervised Goal now honors the invocation AbortSignal.

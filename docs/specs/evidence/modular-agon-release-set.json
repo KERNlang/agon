@@ -243,16 +243,16 @@
         "range": "^19.2.0"
       }
     ],
-    "packedBytes": 1375848,
-    "unpackedBytes": 6200584,
+    "packedBytes": 1374287,
+    "unpackedBytes": 6201301,
     "fileCount": 113,
     "files": [
       {
-        "path": "dist/app-TMGTRQ3X.js",
+        "path": "dist/app-SVBBYLWW.js",
         "size": 410190
       },
       {
-        "path": "dist/app-TMGTRQ3X.js.map",
+        "path": "dist/app-SVBBYLWW.js.map",
         "size": 276041
       },
       {
@@ -296,20 +296,12 @@
         "size": 51
       },
       {
-        "path": "dist/chunk-43YL5UJZ.js",
-        "size": 15228
+        "path": "dist/chunk-4ZK5H23Q.js",
+        "size": 46698
       },
       {
-        "path": "dist/chunk-43YL5UJZ.js.map",
-        "size": 9399
-      },
-      {
-        "path": "dist/chunk-7WGAP4EE.js",
-        "size": 53019
-      },
-      {
-        "path": "dist/chunk-7WGAP4EE.js.map",
-        "size": 31205
+        "path": "dist/chunk-4ZK5H23Q.js.map",
+        "size": 28844
       },
       {
         "path": "dist/chunk-A2PW2H4R.js",
@@ -328,12 +320,28 @@
         "size": 24533
       },
       {
-        "path": "dist/chunk-BHVLMK4X.js",
-        "size": 24126
+        "path": "dist/chunk-B3XO5XEL.js",
+        "size": 93758
       },
       {
-        "path": "dist/chunk-BHVLMK4X.js.map",
-        "size": 15022
+        "path": "dist/chunk-B3XO5XEL.js.map",
+        "size": 55099
+      },
+      {
+        "path": "dist/chunk-BFUSYHVD.js",
+        "size": 12644
+      },
+      {
+        "path": "dist/chunk-BFUSYHVD.js.map",
+        "size": 7380
+      },
+      {
+        "path": "dist/chunk-BWKSJNV4.js",
+        "size": 864809
+      },
+      {
+        "path": "dist/chunk-BWKSJNV4.js.map",
+        "size": 515903
       },
       {
         "path": "dist/chunk-C4OUBIJA.js",
@@ -352,20 +360,12 @@
         "size": 14454
       },
       {
-        "path": "dist/chunk-FFADJVHQ.js",
-        "size": 100742
+        "path": "dist/chunk-FRXYFTZK.js",
+        "size": 295601
       },
       {
-        "path": "dist/chunk-FFADJVHQ.js.map",
-        "size": 55421
-      },
-      {
-        "path": "dist/chunk-HU3W3Q3A.js",
-        "size": 93369
-      },
-      {
-        "path": "dist/chunk-HU3W3Q3A.js.map",
-        "size": 54884
+        "path": "dist/chunk-FRXYFTZK.js.map",
+        "size": 190521
       },
       {
         "path": "dist/chunk-IUXC7V6V.js",
@@ -384,12 +384,12 @@
         "size": 100495
       },
       {
-        "path": "dist/chunk-K4OEBQKA.js",
-        "size": 12644
+        "path": "dist/chunk-KMUZ5OXK.js",
+        "size": 24126
       },
       {
-        "path": "dist/chunk-K4OEBQKA.js.map",
-        "size": 7380
+        "path": "dist/chunk-KMUZ5OXK.js.map",
+        "size": 15022
       },
       {
         "path": "dist/chunk-KNBOUJDY.js",
@@ -400,14 +400,6 @@
         "size": 4785
       },
       {
-        "path": "dist/chunk-LBTLMN22.js",
-        "size": 3949
-      },
-      {
-        "path": "dist/chunk-LBTLMN22.js.map",
-        "size": 2646
-      },
-      {
         "path": "dist/chunk-LLYF4KOB.js",
         "size": 49668
       },
@@ -416,12 +408,12 @@
         "size": 32688
       },
       {
-        "path": "dist/chunk-N3C2KRCD.js",
-        "size": 295601
+        "path": "dist/chunk-NVLYDRFA.js",
+        "size": 30870
       },
       {
-        "path": "dist/chunk-N3C2KRCD.js.map",
-        "size": 190521
+        "path": "dist/chunk-NVLYDRFA.js.map",
+        "size": 19204
       },
       {
         "path": "dist/chunk-PQ43A7VE.js",
@@ -432,6 +424,14 @@
         "size": 91754
       },
       {
+        "path": "dist/chunk-PZNQVE3G.js",
+        "size": 15228
+      },
+      {
+        "path": "dist/chunk-PZNQVE3G.js.map",
+        "size": 9399
+      },
+      {
         "path": "dist/chunk-Q6IDKAKQ.js",
         "size": 886065
       },
@@ -440,28 +440,12 @@
         "size": 578589
       },
       {
-        "path": "dist/chunk-RCCOE7NH.js",
-        "size": 30870
+        "path": "dist/chunk-RTL5XUOS.js",
+        "size": 2574
       },
       {
-        "path": "dist/chunk-RCCOE7NH.js.map",
-        "size": 19204
-      },
-      {
-        "path": "dist/chunk-RMOKP66J.js",
-        "size": 864809
-      },
-      {
-        "path": "dist/chunk-RMOKP66J.js.map",
-        "size": 515903
-      },
-      {
-        "path": "dist/chunk-RNFYVJ7U.js",
-        "size": 46698
-      },
-      {
-        "path": "dist/chunk-RNFYVJ7U.js.map",
-        "size": 28844
+        "path": "dist/chunk-RTL5XUOS.js.map",
+        "size": 1366
       },
       {
         "path": "dist/chunk-TL5D3C6A.js",
@@ -480,12 +464,12 @@
         "size": 6121
       },
       {
-        "path": "dist/chunk-WL6ANH53.js",
-        "size": 2574
+        "path": "dist/chunk-VX4UON3L.js",
+        "size": 3949
       },
       {
-        "path": "dist/chunk-WL6ANH53.js.map",
-        "size": 1366
+        "path": "dist/chunk-VX4UON3L.js.map",
+        "size": 2646
       },
       {
         "path": "dist/chunk-XDJELRJA.js",
@@ -496,6 +480,14 @@
         "size": 3129
       },
       {
+        "path": "dist/chunk-XMEHWWCF.js",
+        "size": 53019
+      },
+      {
+        "path": "dist/chunk-XMEHWWCF.js.map",
+        "size": 31205
+      },
+      {
         "path": "dist/chunk-XP6TCQU6.js",
         "size": 31179
       },
@@ -504,11 +496,19 @@
         "size": 17038
       },
       {
-        "path": "dist/cli-host-GHT6D2AQ.js",
+        "path": "dist/chunk-ZCJAVW4Z.js",
+        "size": 100742
+      },
+      {
+        "path": "dist/chunk-ZCJAVW4Z.js.map",
+        "size": 55421
+      },
+      {
+        "path": "dist/cli-host-VPIH4B6S.js",
         "size": 1505
       },
       {
-        "path": "dist/cli-host-GHT6D2AQ.js.map",
+        "path": "dist/cli-host-VPIH4B6S.js.map",
         "size": 811
       },
       {
@@ -520,11 +520,11 @@
         "size": 2014
       },
       {
-        "path": "dist/daemon-BZMQMSS4.js",
+        "path": "dist/daemon-GHDKSAQA.js",
         "size": 1136
       },
       {
-        "path": "dist/daemon-BZMQMSS4.js.map",
+        "path": "dist/daemon-GHDKSAQA.js.map",
         "size": 51
       },
       {
@@ -544,11 +544,11 @@
         "size": 51
       },
       {
-        "path": "dist/doctor-AMKNRXID.js",
+        "path": "dist/doctor-ZUV3L2V5.js",
         "size": 1168
       },
       {
-        "path": "dist/doctor-AMKNRXID.js.map",
+        "path": "dist/doctor-ZUV3L2V5.js.map",
         "size": 51
       },
       {
@@ -560,19 +560,19 @@
         "size": 4249
       },
       {
-        "path": "dist/first-party-services-2WTIXNPR.js",
-        "size": 41592
+        "path": "dist/first-party-services-VP2BAT5U.js",
+        "size": 41662
       },
       {
-        "path": "dist/first-party-services-2WTIXNPR.js.map",
-        "size": 25365
+        "path": "dist/first-party-services-VP2BAT5U.js.map",
+        "size": 25408
       },
       {
-        "path": "dist/forge-X4DEBNGE.js",
+        "path": "dist/forge-B6YRVVST.js",
         "size": 1297
       },
       {
-        "path": "dist/forge-X4DEBNGE.js.map",
+        "path": "dist/forge-B6YRVVST.js.map",
         "size": 51
       },
       {
@@ -584,11 +584,11 @@
         "size": 11368
       },
       {
-        "path": "dist/intent-skills-3GTF6BUH.js",
+        "path": "dist/intent-skills-IF4ILBBK.js",
         "size": 801
       },
       {
-        "path": "dist/intent-skills-3GTF6BUH.js.map",
+        "path": "dist/intent-skills-IF4ILBBK.js.map",
         "size": 51
       },
       {
@@ -608,11 +608,11 @@
         "size": 17983
       },
       {
-        "path": "dist/mod-JDPPOFAJ.js",
+        "path": "dist/mod-BE6WJ45W.js",
         "size": 42390
       },
       {
-        "path": "dist/mod-JDPPOFAJ.js.map",
+        "path": "dist/mod-BE6WJ45W.js.map",
         "size": 25403
       },
       {
@@ -632,11 +632,11 @@
         "size": 3694
       },
       {
-        "path": "dist/plan-mode-NHY2LER2.js",
+        "path": "dist/plan-mode-6NNAY7IY.js",
         "size": 665
       },
       {
-        "path": "dist/plan-mode-NHY2LER2.js.map",
+        "path": "dist/plan-mode-6NNAY7IY.js.map",
         "size": 51
       },
       {
@@ -652,11 +652,11 @@
         "size": 127009
       },
       {
-        "path": "dist/setup-LGYLKKQX.js",
+        "path": "dist/setup-HFBZ7CKU.js",
         "size": 285
       },
       {
-        "path": "dist/setup-LGYLKKQX.js.map",
+        "path": "dist/setup-HFBZ7CKU.js.map",
         "size": 51
       },
       {
@@ -668,11 +668,11 @@
         "size": 51
       },
       {
-        "path": "dist/update-RV42QM6V.js",
+        "path": "dist/update-DXL4FAAB.js",
         "size": 2615
       },
       {
-        "path": "dist/update-RV42QM6V.js.map",
+        "path": "dist/update-DXL4FAAB.js.map",
         "size": 1190
       },
       {
@@ -700,10 +700,10 @@
         "size": 127009
       }
     ],
-    "payloadHash": "sha256:73c4ab20d1b27c26aa48b5796f650feccdc92e2f2c1bca25d53dcf7be212a30a",
-    "integrity": "sha512-61rwPmDsAqCtcUu7JmBb9QQy17jdc4GIPGPC8f/lCME6IkIfopPhP6LDMagVo5ymkeXhklsimIuDx6cBnxARLQ==",
-    "shasum": "079dc0c896c0cde9a6f13cc3f70cc56a4988c898",
-    "tarballHash": "sha256:96662f98198a64eebf5186f7fd7d70b8588dd8ce2f5040d95169a59dc03f6623",
+    "payloadHash": "sha256:3added57358cfcf88ca075ae4b0de49805ec842df53cb6f07026772a5ef446e5",
+    "integrity": "sha512-rPZmiDURzkyAg5fxZHmG5rACbqLzt01VYfQSb3uCQWS80DyXNaHItQziLJk3KPokwxVMleqhUD75tMwb+1eVnA==",
+    "shasum": "2c5dc31dcea19e7b7aa60d4d53e5f8cff60c3c15",
+    "tarballHash": "sha256:8e4c28e207d93e6985a4a2472edabe8a20c9bceb065614dd7c239e73d45b1e4f",
     "packageJsonHash": "sha256:28e901652911437b0e49a15bf3be184c09f24652c51bdf68ef3055b27494ced1"
   },
   "packages": [
@@ -3355,8 +3355,8 @@
       "peerDependencies": {
         "@kernlang/agon-kernel": ">=0.0.0-0 <2"
       },
-      "packedBytes": 44239,
-      "unpackedBytes": 181715,
+      "packedBytes": 44644,
+      "unpackedBytes": 183715,
       "fileCount": 18,
       "files": [
         {
@@ -3369,7 +3369,7 @@
         },
         {
           "path": "dist/host.d.ts",
-          "size": 3879
+          "size": 4095
         },
         {
           "path": "dist/implementation.d.ts",
@@ -3381,7 +3381,7 @@
         },
         {
           "path": "dist/index.js",
-          "size": 142569
+          "size": 144353
         },
         {
           "path": "dist/journal-types.d.ts",
@@ -3432,10 +3432,10 @@
           "size": 214
         }
       ],
-      "payloadHash": "sha256:c2e059ae7c3b20ca9ba94c798e9a7ecdce736c4b2bebe82cf134adb989a25561",
-      "integrity": "sha512-YxQJRTe9Hho9u4dZ7cxHAqLTyl5d8LT53rxNVqqqmmEKiuf6QzfAlAD0uvmtzc9j5AryV0nICfjsWjT+NX4t2Q==",
-      "shasum": "830004a9193089e152fd40d876c3c242b579d711",
-      "tarballHash": "sha256:5ea8e4a6037600dfbe435979f6aa6f3a4e125dac146ab5d1e716e5a5f9a4c687",
+      "payloadHash": "sha256:a4161283049cf519ea7cab3f95b5196acdff8a9d0d1923c28d265fd11447a1f2",
+      "integrity": "sha512-ge15xhe/PGQWoPX8Em+0Bvkm8miDrTUR+Jm/KlE1dCbQ5s+a/HPIaj/xEuEXBNbSVMBKCG362IC0kVvIwP1BVQ==",
+      "shasum": "07d289717aeb9c20c3e72ca7ea0fb67b1c62b049",
+      "tarballHash": "sha256:d41cd4548ab00aaea8bc5eb2e9763cec94015ac3b733b6054220d10825c2d43d",
       "packageJsonHash": "sha256:9a729ce173b658d965d40ede6bc5a89a98eeb6a90677f3e6014e73b9ff1c64a4",
       "manifestHash": "sha256:8c113b8a44d42a8652f5770fc33a64e8bf2b963b57fd4b8215b1c7647d8a4c6b"
     },

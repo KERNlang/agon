@@ -7,6 +7,9 @@ import { readWorktreeSource, readWorktreePatch, applyPatchToTree } from '@kernla
 import type { PullRequestDraft } from '@kernlang/agon-support-worktree';
 import { createGoalOracle } from './oracle.js';
 import type { GoalOracleEffects, FrozenOracle } from './oracle.js';
+import { createGoalJournalStore } from './journal.js';
+import type { GoalJournalEffects } from './journal.js';
+import type { JournalState } from './journal-types.js';
 
 export interface GoalWorktree {
   readonly repoRoot: string;
@@ -48,6 +51,7 @@ export interface GoalHostServices {
     assertCurrent(): void;
     /** Cancellation may record its outcome; a revoked generation may not. */
     assertStateCurrent?(): void;
+    readHistoricalState?(id: string): JournalState | null;
     reviewDefaults?(): GoalReviewDefaults;
     implementationHints?(source: string, engines: readonly string[]): GoalImplementationHints;
     acquire(id: string): Promise<{ assertOwned(): Promise<void>; release(): Promise<void> }>;
@@ -72,6 +76,7 @@ const git = (cwd: string, args: string[]) => execFileSync('git', args, {
 export function createGoalHostServices(options: {
   worktrees: GoalWorktreeEffects;
   oracleEffects?: GoalOracleEffects;
+  journalEffects?: GoalJournalEffects;
   captureAuthority(): () => void;
   acquireWriter(id: string): Promise<{ assertOwned(): Promise<void>; release(): Promise<void> }>;
   reviewDefaults?(context: InvocationContext): GoalReviewDefaults;
@@ -87,6 +92,13 @@ export function createGoalHostServices(options: {
       const host = {
         assertCurrent,
         assertStateCurrent: authority,
+        ...(options.journalEffects ? { readHistoricalState: (id: string) => {
+          assertCurrent();
+          const state = createGoalJournalStore(options.journalEffects!).loadJournal(id);
+          assertCurrent();
+          if (state && state.spec?.goalId !== id) throw new Error('Historical Goal journal identity does not match the requested id.');
+          return state;
+        } } : {}),
         ...(options.implementationHints ? { implementationHints: (source: string, engines: readonly string[]) => {
           assertCurrent();
           const hints = options.implementationHints!(source, engines, context);

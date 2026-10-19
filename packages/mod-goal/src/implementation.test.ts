@@ -11,6 +11,7 @@ import type { ModServices } from '@kernlang/agon-mod-api';
 import type { ForgeModServices } from '@kernlang/agon-mod-forge';
 import { runGoal, runGoalSupervisor } from './implementation.js';
 import { createGoalHostServices } from './host.js';
+import { createGoalJournalStore, createJournal, addTasks } from './journal.js';
 import { createSessionWorktree, findSessionWorktree, worktreePathFor, rehydrateSessionWorktree } from '@kernlang/agon-support-worktree';
 import type { WorktreeSessionRuntime } from '@kernlang/agon-support-worktree';
 import { WriterFence } from '@kernlang/agon-kernel';
@@ -61,6 +62,7 @@ function harness(hostOptions: Partial<Parameters<typeof createGoalHostServices>[
   };
   const goal = createGoalHostServices({
     oracleEffects,
+    journalEffects: { path: (...parts) => join(home, ...parts), ensureHome: () => undefined },
     acquireWriter: id => WriterFence.acquire(join(home, `${id}.lock`), `agon.goal:${id}`),
     captureAuthority: () => () => undefined,
     worktrees,
@@ -103,6 +105,50 @@ const context = (cwd: string) => ({
 });
 
 describe('physical goal mod', () => {
+  it.each(['valid', 'corrupt', 'missing', 'wrong-id', 'malformed', 'malformed-task', 'unknown-status', 'revoked', 'revoked-after-read', 'modern'] as const)('reads historical Goal status without changing journal bytes: %s', async kind => {
+    const cwd = repo();
+    const home = mkdtempSync(join(tmpdir(), 'agon-goal-history-'));
+    let revoked = kind === 'revoked';
+    const h = harness({
+      captureAuthority: () => () => { if (revoked) throw new Error('generation revoked'); },
+      journalEffects: { path: (...parts) => {
+        if (kind === 'revoked-after-read') revoked = true;
+        return join(home, ...parts);
+      }, ensureHome: () => { throw new Error('status must not initialize storage'); } },
+    }, undefined, home);
+    if (kind === 'modern') vi.spyOn(h.goal, 'open').mockImplementation(() => { throw new Error('historical state must not be consulted'); });
+    const store = createGoalJournalStore({ path: (...parts) => join(home, ...parts), ensureHome: () => undefined });
+    const state = addTasks(createJournal({ goalId: 'historical', intent: 'saved work', branch: 'goal/historical',
+      gate: 'true', queueSource: 'queue.json', maxAttempts: 2, budgetUsd: 5, maxHours: 1, supervised: false }),
+    [{ id: 'one', source: 'retained task' }]);
+    if (kind !== 'missing') store.saveJournal(state);
+    const path = store.journalPath('historical');
+    if (kind === 'corrupt') writeFileSync(path, '{broken');
+    if (kind === 'wrong-id') writeFileSync(path, JSON.stringify({ ...state, spec: { ...state.spec, goalId: 'another' } }));
+    if (kind === 'malformed') writeFileSync(path, JSON.stringify({ ...state, tasks: null }));
+    if (kind === 'malformed-task') writeFileSync(path, JSON.stringify({ ...state, tasks: [{}] }));
+    if (kind === 'unknown-status') writeFileSync(path, JSON.stringify({ ...state, tasks: [{ ...state.tasks[0], status: 'finished-maybe' }] }));
+    const modern = { id: 'historical', tasks: [{ id: 'modern', status: 'done' }] };
+    if (kind === 'modern') h.state.set('goals/historical', modern);
+    const before = kind === 'missing' ? undefined : readFileSync(path);
+    const out = await runGoal({ id: 'historical', status: true }, context(cwd), h.services);
+    expect(out.exitCode).toBe(kind === 'valid' || kind === 'modern' ? 0 : 1);
+    if (kind === 'valid') {
+      expect(out.stdout).toContain('Intent: saved work');
+      expect(out.stdout).toContain('1 remaining');
+      expect(out.result).toEqual({ format: 'legacy-journal', state: JSON.parse(before!.toString()) });
+    }
+    if (kind === 'modern') expect(out.result).toMatchObject({ state: modern, counts: { done: 1 } });
+    if (kind === 'wrong-id') expect(out.stderr).toContain('identity does not match');
+    if (kind === 'revoked' || kind === 'revoked-after-read') expect(out.stderr).toContain('generation revoked');
+    if (before) expect(readFileSync(path)).toEqual(before);
+    else expect(existsSync(path)).toBe(false);
+    expect(h.state.size).toBe(kind === 'modern' ? 1 : 0);
+    expect(h.services.state.write).not.toHaveBeenCalled();
+    expect(h.dispatch).not.toHaveBeenCalled();
+    expect(h.services.runs.start).not.toHaveBeenCalled();
+  });
+
   it.each(['default', 'explicit', 'explicit-single', 'hint-error'])('uses existing Goal roster policy (%s)', async mode => {
     const cwd = repo();
     const implementationHints = vi.fn(() => {

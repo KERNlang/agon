@@ -24,6 +24,7 @@ import { GoalOracleInvalidError } from './oracle.js';
 import { buildOracleCheatPrompt, oracleProbeConclusive, oracleGateDecision } from './oracle-redteam.js';
 import { mutationGateDecision, foldMutationVerdicts, gateFailureSignature, taskParkDecision, globalBreaker, pickImplementWinner, chooseImplementRoster } from './policy.js';
 import { recordAttempt } from './journal.js';
+import { summarizeGoal } from './artifacts.js';
 import type { AttemptRecord } from './journal-types.js';
 import { runFitnessCommand } from "@kernlang/agon-support-verification";
 import { spawnWithTimeout } from '@kernlang/agon-support-engine-runtime';
@@ -507,8 +508,17 @@ export async function runGoal(
   const id = slug(idSource);
   const prior = await readGoal(services, id);
   if (input.status === true) {
-    if (!prior)
+    if (!prior) {
+      try {
+        const historical = services.goal?.open(context).readHistoricalState?.(id);
+        if (historical) return { exitCode: 0, stdout: `${summarizeGoal(historical)}\n`,
+          result: { format: 'legacy-journal', state: historical } as unknown as Json };
+      } catch (error) {
+        context.signal.throwIfAborted();
+        return { exitCode: 1, stderr: `Cannot read historical Goal '${id}': ${error instanceof Error ? error.message : String(error)}\n` };
+      }
       return { exitCode: 1, stderr: `No persisted goal '${id}' was found.\n` };
+    }
     const counts = Object.fromEntries(
       ["queued", "running", "done", "failed", "parked"].map((status) => [
         status,

@@ -5,6 +5,19 @@ import { isDone, remainingCount } from './journal.js';
  * Compact human digest of a finished (or stopped) run — gaps closed/parked/failed, commits, spend, wall-clock. The detached-delegation callback ships this, never a transcript dump.
  */
 export function summarizeGoal(state: JournalState): string {
+  // Invalid persisted tasks must not appear as a completed goal.
+  const optionalText = (value: unknown) => value === undefined || typeof value === 'string';
+  const optionalTime = (value: unknown) => value === undefined || (typeof value === 'number' && Number.isFinite(value));
+  if (!state?.spec || typeof state.spec.goalId !== 'string' || !state.spec.goalId ||
+      typeof state.spec.intent !== 'string' || typeof state.spec.branch !== 'string' ||
+      !Number.isFinite(state.spec.budgetUsd) || !Number.isFinite(state.spentUsd) ||
+      !optionalTime(state.startedAt) || !optionalTime(state.heartbeatAt) ||
+      !Array.isArray(state.tasks) || !state.tasks.every(task => task &&
+        typeof task.id === 'string' && task.id.length > 0 && typeof task.source === 'string' &&
+        ['queued', 'inflight', 'done', 'parked', 'failed'].includes(task.status) &&
+        optionalText(task.commitSha) && optionalText(task.lastError) && optionalText(task.notes))) {
+    throw new Error('Goal journal has invalid status fields.');
+  }
   const by = (s: string) => state.tasks.filter((t) => t.status === s);
   const done = by('done'), parked = by('parked'), failed = by('failed');
   const inflight = by('inflight');

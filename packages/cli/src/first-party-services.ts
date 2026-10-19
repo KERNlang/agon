@@ -129,6 +129,7 @@ export function decorateCliFirstPartyServices(manifest: ModManifest, base: ModSe
   return Object.freeze({ ...base, runs, ...(browser ? { browser } : {}), ...(workspace ? { workspace } : {}),
     ...(brainstorm ? { brainstorm } : {}),
     ...(manifest.id === 'agon.goal' ? { goal: createGoalHostServices({
+      journalEffects: { path: agonPath, ensureHome: ensureAgonHome },
       implementationHints: (source, engines, context) => {
         const hints = deriveRoutingHints(source, { activeEngines: () => [...engines] }, context.cwd);
         return { flow: hints.recommendedFlow, forgeScope: hints.recommendedForgeScope,

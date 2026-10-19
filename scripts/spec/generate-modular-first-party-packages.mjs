@@ -161,6 +161,7 @@ function expectedFiles(packageRecord) {
   if (short === 'conquer') inferredPermissions.add('git.write');
   const physicalPackFiles = ['dist/implementation.d.ts', ...(short === 'rag' ? ['dist/store.d.ts', 'dist/types.d.ts', 'dist/grounding.d.ts']
     : short === 'think' ? ['dist/thinking.d.ts']
+    : short === 'review' ? ['dist/consensus.d.ts', 'dist/findings.d.ts']
     : short === 'conquer' ? ['dist/completion-policy.d.ts', 'dist/workflow.d.ts', 'dist/falsifier.d.ts', 'dist/host.d.ts', 'dist/isolation.d.ts', 'dist/publication.d.ts']
     : short === 'nero' ? ['dist/verdict.d.ts', 'dist/critic-cascade.d.ts']
     : short === 'goal' ? ['dist/host.d.ts', 'dist/journal-types.d.ts', 'dist/policy.d.ts', 'dist/journal.d.ts', 'dist/paths.d.ts', 'dist/oracle.d.ts', 'dist/oracle-probe.d.ts', 'dist/oracle-redteam.d.ts', 'dist/mutation.d.ts']
@@ -431,6 +432,8 @@ export type { BrainstormResult } from './result.js';
 export type { BrainstormSessionHost, BrainstormSessionCommandResult, BrainstormSessionExecutionContext } from './session-workflow.js';
 ` : short === 'tribunal' ? `export { runTribunal } from './implementation.js';
 ` : short === 'review' ? `export { runReview } from './implementation.js';
+export * from './consensus.js';
+export { extractReviewFindings } from './findings.js';
 ` : short === 'agent' ? `export { runAgentTask } from './implementation.js';
 ` : short === 'nero' ? `export { runNero } from './implementation.js';
 export { parseNeroVerdict } from './verdict.js';

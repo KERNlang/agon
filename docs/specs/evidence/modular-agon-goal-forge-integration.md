@@ -1,5 +1,58 @@
 # Goal / Forge integration evidence
 
+## Goal review consensus parity
+
+Date: 2026-10-19. Goal now uses Review's shared consensus policy. A verified
+solo blocker or independently corroborated finding cannot be cleared by an
+adjudicator. Only uncertain findings reach adjudication, with the task diff
+and mutation evidence. Failed panels remain blocked. Retry diagnostics retain
+the actual blocking reason.
+
+The consensus module and raw findings extractor moved unchanged from CLI to
+mod-review. Byte comparisons against `58d4ba5f3` confirmed both moves. Existing
+CLI paths preserve imports through explicit re-exports. Raw parsing preserves
+omitted-confidence inference and sparse findings before consensus; standalone
+Review verdict behavior was not changed. No dependency was added.
+
+Isolated Codex review `goal-consensus-policy` identified missing diff context,
+lost raw finding information and misleading retry diagnostics. Each finding
+was verified against source and corrected locally. The review preceded those
+corrections; focused tests and the full gate verify the final bytes.
+Review packet SHA-256:
+`942d4b07c6f68111e144c1865febd2d2b472f19d4a10c09ff3ad7b651d5504ff`.
+Review log SHA-256:
+`0d538350058fff7d9d3b7df1ed88ffffc7ebc4e72efb2634cc10dfdc79d30e83`.
+The temporary authentication copy was verified absent after review.
+
+Logs and receipts remain in `/Users/ra/dev/modular-agon-remediation/`.
+
+| Receipt | Result | Log SHA-256 |
+|---|---|---|
+| goal-verified-blocker-red-valid-roster | Reproduced forbidden adjudication of a verified blocker | da2225b11e2848f2331e385a40474a94f2b7b37ee97aa7595d58525db4c96a73 |
+| goal-consensus-review-findings-red-selected | Eight cases executed; four reproduced review findings | fc5c27814a2e86144359c26d02b56b12f0c91383c0987e0fd6833bfc45e808e2 |
+| goal-consensus-reviewed-controls | 134 tests and focused gates passed | ebab514aa773c71dd3b0b99fafa10ddd835d5daddd3869ce19a0bb3689b13137 |
+| goal-consensus-retry-diagnostics | Ten retry/resume and diagnostic cases passed | 689f44292a2462213bbe5354f2fdd4efb446ae02d5b516619e51e686a3049d24 |
+| goal-consensus-reviewed-full-gate | Failed one obsolete diagnostic assertion; 10,644 passed, six skipped | 25a4864610c1c709ef06c86c868933d8b74a3c14b4807c241939c4cf71de6d99 |
+| goal-consensus-unavailable-panel-diagnostic | Ten cases, types, full lint and re-export guard passed | e0f284f93f98a4a9a50761878d600465c11a9d6d8a18b7ae2e8d4b49e7cde24d |
+| goal-consensus-final-full-gate | Full gate passed in 902.794s; 10,645 passed, six skipped; zero provider launches | 5562d7d151cd4ad23058d44b12c86fa05833882743cd2c8ceeeb215e94da81f2 |
+
+The failed full gate expected `review=1` instead of the actual unavailable-engine
+reason. The corrected test checks that exact reason in both task state and the
+event, while retaining fail-closed, no-extra-dispatch and zero-commit assertions.
+The earlier `goal-verified-blocker-red` failed on an invalid fixture engine;
+`goal-consensus-review-findings-red` selected zero tests. Both receipts remain
+archived but do not count as negative evidence.
+
+Full gate command:
+
+```sh
+npm run spec:modular-first-party:check && npm run spec:modular-generated:check && npm run build && node scripts/spec/verify-modular-release-set.mjs && node scripts/spec/verify-modular-supply-chain.mjs && npm run typecheck && npm test && npm run lint && npm run guard:reexports && npm run test:modular-release && npm run test:modular-supply-chain && git diff --check
+```
+
+Limits: this is working-tree development evidence, not clean-checkout release
+acceptance. Legacy Goal ownership, supervisor parity, optional Think integration
+and final subject-bound acceptance remain open. No global installation or push.
+
 ## Shared engine accounting follow-up
 
 Date: 2026-10-19. CLI and MCP engine services now return the existing tracker's

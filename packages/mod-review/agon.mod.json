@@ -178,6 +178,8 @@
       "dist/index.js",
       "dist/index.d.ts",
       "dist/implementation.d.ts",
+      "dist/consensus.d.ts",
+      "dist/findings.d.ts",
       "ownership.json",
       "schemas/config.schema.json"
     ],

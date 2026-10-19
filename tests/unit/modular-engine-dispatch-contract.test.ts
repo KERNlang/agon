@@ -4,6 +4,7 @@ import { glicko } from '@kernlang/agon-mod-ratings';
 import { classifyTask } from '@kernlang/agon-support-dedup';
 import { buildKernDraftPrompt, parseKernDraft } from '@kernlang/protocol';
 import { EngineRegistry as CatalogEngineRegistry } from '@kernlang/agon-support-engine-catalog';
+import { tracker } from '../../packages/core/src/signals/token-tracker.js';
 import type { BrainstormModServices } from '@kernlang/agon-mod-brainstorm';
 
 // Stop at the adapter boundary: no engine process, personal configuration or
@@ -18,7 +19,8 @@ const fixture = vi.hoisted(() => ({
   loadConfig: vi.fn(() => ({})),
   engine: { id: 'fixture-engine' },
 }));
-vi.mock('@kernlang/agon-core', () => ({
+vi.mock('@kernlang/agon-core', async () => ({
+  tracker: (await import('../../packages/core/src/signals/token-tracker.js')).tracker,
   EngineRegistry: class {
     load() {}
     activeIds() { return ['fixture-engine']; }
@@ -72,6 +74,8 @@ import { createMcpEngineServices, decorateMcpFirstPartyServices } from '../../pa
 
 const result = { exitCode: 0, stdout: 'fixture answer', stderr: '', durationMs: 4, timedOut: false };
 beforeEach(() => {
+  tracker.reset();
+  fixture.engine.id = 'fixture-engine';
   vi.clearAllMocks(); fixture.dispatch.mockResolvedValue(result);
   fixture.realHost = false;
   fixture.captureCli.mockReturnValue(fixture.assertCurrent);
@@ -219,6 +223,11 @@ describe.each([
       signal: new AbortController().signal, config: {},
     });
     expect(output).toMatchObject({ exitCode: 1, usage });
+    // Review and Goal consume this cost, including failed billed calls.
+    expect(output).toHaveProperty('costUsd', expect.any(Number));
+    expect((output as { costUsd: number }).costUsd).toBeGreaterThan(0);
+    expect(output).toHaveProperty('costSource', source);
+    expect(tracker.recent()).toHaveLength(1);
   });
 
   it('does not turn missing usage into a measured zero', async () => {
@@ -228,6 +237,39 @@ describe.each([
     });
     expect(output).not.toHaveProperty('usage');
     expect(output).not.toHaveProperty('costUsd');
+    expect(tracker.recent()).toHaveLength(0);
+  });
+
+  it('rejects malformed returned usage without contaminating shared accounting', async () => {
+    fixture.dispatch.mockResolvedValueOnce({ ...result,
+      usage: { promptTokens: Number.NaN, completionTokens: 20, totalTokens: 120, source: 'sdk' } });
+    await expect(createServices().dispatch('fixture-engine', 'fixture task', context))
+      .rejects.toThrow('Invalid reported token usage');
+    expect(tracker.getStats().dispatches).toBe(0);
+    expect(tracker.getStats().totalCostUsd).toBe(0);
+  });
+
+  it('uses existing cache-aware pricing without charging cached input as uncached', async () => {
+    const invoke = async (cachedInputTokens: number) => {
+      fixture.dispatch.mockResolvedValueOnce({ ...result,
+        usage: { promptTokens: 100, completionTokens: 20, totalTokens: 120, cachedInputTokens, source: 'sdk' } });
+      return createServices().dispatch('fixture-engine', 'fixture task', context) as Promise<{ costUsd: number }>;
+    };
+    const uncached = await invoke(0);
+    const cached = await invoke(80);
+    expect(uncached.costUsd).toBeGreaterThan(cached.costUsd);
+    expect(cached.costUsd).toBeGreaterThan(0);
+    expect(uncached.costUsd).toBeCloseTo(0.00024, 10);
+    expect(cached.costUsd).toBeCloseTo(0.000096, 10);
+    expect(tracker.recent()).toHaveLength(2);
+  });
+
+  it('preserves reported token counts but keeps flat-rate marginal cost at zero', async () => {
+    fixture.engine.id = 'fixture-coding-plan-model';
+    const usage = { promptTokens: 100, completionTokens: 20, totalTokens: 120, source: 'sdk' };
+    fixture.dispatch.mockResolvedValueOnce({ ...result, usage });
+    const output = await createServices().dispatch('fixture-engine', 'fixture task', context);
+    expect(output).toMatchObject({ usage, costUsd: 0, costSource: 'sdk' });
   });
 
   const context: InvocationContext = {

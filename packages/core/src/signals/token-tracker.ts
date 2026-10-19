@@ -91,6 +91,15 @@ export class TokenTracker {
       model = undefined;
       costUsd = estimateCost(engineId, totalTokens);
     } else if ('usage' in inputOrPrompt) {
+      const reported = inputOrPrompt.usage;
+      if (!reported || ![reported.promptTokens, reported.completionTokens, reported.totalTokens]
+        .every(count => Number.isSafeInteger(count) && count >= 0)
+        || !['sdk', 'cli-reported', 'estimated'].includes(reported.source)
+        || (reported.cachedInputTokens !== undefined
+          && (!Number.isSafeInteger(reported.cachedInputTokens) || reported.cachedInputTokens < 0
+            || reported.cachedInputTokens > reported.promptTokens))) {
+        throw new Error('Invalid reported token usage');
+      }
       promptTokens = inputOrPrompt.usage.promptTokens;
       responseTokens = inputOrPrompt.usage.completionTokens;
       totalTokens = inputOrPrompt.usage.totalTokens;

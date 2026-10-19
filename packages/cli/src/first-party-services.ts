@@ -2,7 +2,7 @@ import { resolveExplicitReviewEngines } from '@kernlang/agon-support-verificatio
 import { cliRunRecordHost } from './run-record-host.js';
 import { patchApplicationHost } from './patch-application-host.js';
 import { planSessionHost } from '@kernlang/agon-mod-plan';
-import { EngineRegistry, appendAttribution, appendPrAttribution, buildKernContextSpine, createRunDir, eventLogFlush, getRatings, loadConfig, pickTopRatedEngine, setSessionRoot } from '@kernlang/agon-core';
+import { EngineRegistry, appendAttribution, appendPrAttribution, buildKernContextSpine, createRunDir, eventLogFlush, getRatings, loadConfig, pickTopRatedEngine, setSessionRoot, tracker } from '@kernlang/agon-core';
 import { createCliAdapter } from '@kernlang/agon-adapter-cli';
 import { createForgeHostServices } from '@kernlang/agon-core';
 import { repoRoot, createSessionWorktree, findSessionWorktree, worktreePathFor, rehydrateSessionWorktree } from '@kernlang/agon-core';
@@ -220,7 +220,9 @@ export function createCliEngineServices(): ModServices['engines'] {
       if (!selected) throw Object.assign(new Error('No active engines. Run agon engine list or agon engine add <id>.'), { code: 'NO_ACTIVE_ENGINE' });
       const engine = registry.get(selected); const outputDir = createRunDir({ mode: 'mod-dispatch', announce: false }).path;
       const result = await createCliAdapter(registry).dispatch({ engine, prompt, cwd: context.cwd, mode: options?.mode ?? 'exec', timeout: Math.max(1, options?.timeoutSeconds ?? 120), outputDir, systemPrompt: options?.systemPrompt, textOnly: options?.textOnly, signal: context.signal });
+      const accounting = result.usage ? tracker.record(engine.id, { usage: result.usage }) : undefined;
       return { engineId: engine.id, exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr, durationMs: result.durationMs, timedOut: result.timedOut, outputDir,
+        ...(accounting ? { costUsd: accounting.costUsd, costSource: accounting.source } : {}),
         ...(result.usage ? { usage: result.usage } : {}) } as Json;
     },
   });

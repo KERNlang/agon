@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { tracker } from '@kernlang/agon-core';
 import type { IntentContribution, InvocationContext, ModServices, Registrar } from '@kernlang/agon-mod-api';
 
 const fixture = vi.hoisted(() => ({
@@ -43,6 +44,7 @@ import { createMcpEngineServices } from '../../packages/mcp/src/first-party-serv
 import { createMod, runReview } from '../../packages/mod-review/src/implementation.js';
 
 beforeEach(() => {
+  tracker.reset();
   fixture.config = { hiddenEngines: [], removedEngines: [] };
   fixture.diff = 'diff --git a/file.ts b/file.ts\n+changed';
   fixture.dispatch.mockReset().mockResolvedValue({
@@ -60,6 +62,18 @@ describe.each([['CLI', createCliEngineServices], ['MCP', createMcpEngineServices
     const services = (): ModServices => ({
       engines: createEngines(), receipts: { record: async () => 'fixture' },
     }) as ModServices;
+
+    it.each([0, 1])('returns reviewer cost through the real host when dispatch exits %s', async exitCode => {
+      fixture.dispatch.mockResolvedValueOnce({ exitCode,
+        stdout: '<!--AGON_REVIEW_FINDINGS_v1-->\n```json\n[]\n```', stderr: '', timedOut: false,
+        durationMs: 1, usage: { promptTokens: 100, completionTokens: 20, totalTokens: 120,
+          cachedInputTokens: 80, source: 'sdk' } });
+      const result = await runReview({ engine: 'codex' }, context, services());
+      expect(result.exitCode).toBe(exitCode);
+      const reviews = (result.result as { reviews: Array<{ costUsd: number }> }).reviews;
+      expect(reviews).toHaveLength(1);
+      expect(reviews[0].costUsd).toBeGreaterThan(0);
+    });
 
     it('allows explicit Kimi while keeping default exclusions', async () => {
       const host = services();

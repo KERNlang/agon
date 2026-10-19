@@ -1,5 +1,43 @@
 # Goal / Forge integration evidence
 
+## Shared engine accounting follow-up
+
+Date: 2026-10-19. CLI and MCP engine services now return the existing tracker's
+cache-aware cost estimate and usage source when dispatch returns usage. Review
+can consume those estimates on successful and failed calls. Missing usage stays
+absent at the host; it is not recorded as measured zero. No price table or
+dependency was added. TokenTracker rejects invalid counts and source values
+before changing shared accounting.
+
+Isolated Codex review `modular-dispatch-cost` identified malformed-usage
+contamination and test-state leakage. Both were corrected and verified locally.
+Review packet SHA-256:
+`0c6f478dadbe8e229898b8a5c36d72f6dd3e38eba2eaf7955b1146bd6154b6e3`.
+Review log SHA-256:
+`5a515ee467eebfd21dcfbb9eb6c41184d7a2fb941ff3b786fce96de80e6a81f3`.
+The temporary authentication copy was verified absent after review.
+
+Receipts remain in the durable local directory named below:
+
+| Receipt | Result | Log SHA-256 |
+|---|---|---|
+| token-tracker-invalid-usage-red-corrected | Seven missing-rejection failures before validation | 708198edcda28820f8f7f519fe175da90d8db40d80f7929ee54f03b4c0d8dcde |
+| modular-dispatch-reviewed-host-controls | 130 tests, types, full lint and re-export guard passed | 5d9f1b05b8af714b70ecdd46cb104e8bd0ba0530ef60a3e8bf7db6af4611ff4b |
+| modular-dispatch-reviewed-full-gate | Full gate passed in 832.038s; 10,636 tests passed, six skipped; zero provider launches | 789504c382a55b299db7fa35bdc18696f991acc7d013af4d64b6971ad09e3ae1 |
+
+The earlier `token-tracker-invalid-usage-red` receipt is retained but rejected as
+negative-control evidence: it failed from a missing test import, not the defect.
+The corrected run above failed on the intended assertions. Host controls use
+the real tracker and CLI/MCP services with adapter dispatch mocked. They cover
+malformed usage, exact fallback cache pricing, coding-plan zero and Review
+consumption. They do not establish live-provider billing accuracy.
+
+Limits: `costSource` describes token provenance, not verified billing rates.
+Unknown engines can use fallback prices. Review still maps absent usage to zero;
+Goal's auxiliary accounting and Think parity remain unfinished. The full gate
+tested working-tree source, not a clean committed release candidate. Native
+platform and npm provenance cells remain separate. No global install or push.
+
 Date: 2026-10-19. Development increment, not release acceptance.
 
 Goal now calls the existing Forge workflow for competitor execution, synthesis

@@ -10,7 +10,7 @@ import { glicko } from '@kernlang/agon-mod-ratings';
 import { EngineRegistry as CatalogEngineRegistry } from '@kernlang/agon-support-engine-catalog';
 import { classifyTask } from '@kernlang/agon-support-dedup';
 import { buildKernDraftPrompt, parseKernDraft } from '@kernlang/protocol';
-import { EngineRegistry, createRunDir, getRatings, loadConfig, pickTopRatedEngine, writeRunStatus } from '@kernlang/agon-core';
+import { EngineRegistry, createRunDir, getRatings, loadConfig, pickTopRatedEngine, tracker, writeRunStatus } from '@kernlang/agon-core';
 import type { Json, ModManifest, ModServices } from '@kernlang/agon-mod-api';
 import { handleJobToolCall } from './job-tools.js';
 import { captureMcpSurfaceAuthority } from './surface-authority.js';
@@ -107,7 +107,9 @@ export function createMcpEngineServices(): ModServices['engines'] {
           textOnly: options?.textOnly,
           signal: context.signal,
         });
+        const accounting = result.usage ? tracker.record(engine.id, { usage: result.usage }) : undefined;
         return { engineId: engine.id, exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr, durationMs: result.durationMs, timedOut: result.timedOut, outputDir,
+          ...(accounting ? { costUsd: accounting.costUsd, costSource: accounting.source } : {}),
           ...(result.usage ? { usage: result.usage } : {}) } as Json;
       },
   });

@@ -6,6 +6,47 @@ exercise these installed-user contracts. Its passing executions are not a
 whole-product compatibility verdict. No active installation may be promoted
 on the strength of that receipt.
 
+## MCP safe-mode startup repair — 2026-10-19
+
+Development subject: descendant of `e140d078c`. MCP authority now defers feature
+host services until ordinary bootstrap. Safe mode does not import that module
+or construct its engine services. Invocation configuration loads only after
+tool/schema checks; cancellation and captured host authority are checked again
+after the asynchronous import and before configuration or tool execution.
+
+| Receipt | Result | Log SHA-256 |
+|---|---|---|
+| modular-mcp-safe-import-red | Feature import broke authority loading before the fix | 0920363f0d1fb3bb12c62133b47ff5b6bfc8d959dece50e00306552185d56155 |
+| modular-mcp-safe-review-controls | Nine tests, types and full lint passed in 60.716s | a6ac215f3a443b0fb841c79e38a3be8b03f0a8d6d8f4d8b2b6fc87cfa1dbd7c2 |
+| modular-mcp-safe-full-gate | Failed under OS sandbox: socket EPERM and watcher failures; not waived | 5dc7fec7a5440efe0237cfc242ae71811ee9fc2d0ac805f9d887a1ef7c8d175e |
+| modular-mcp-safe-full-gate-local-sockets | Passed in 861.445s; 10,719 tests passed, six skipped | d33fe74960e443691e9ffff7789292c3af1662ac5a7f20acffa2ede1ed07e1bb |
+| modular-mcp-safe-final-built | Two rebuilt MCP processes passed in 0.454s | e0a6814966f757f4acef1157c623e41f0f236e27da84d29e9a10041da37381a8 |
+
+The full-gate retry used the same source with local socket/watch access. It kept
+isolated homes and provider/browser blockers. All receipts record zero provider
+launches. The built probe rejects feature-services imports: ordinary startup
+fails, while safe startup answers initialize, lists no tools and refuses Forge.
+
+Isolated Codex review found no blocking regression. Packet SHA-256:
+`bac41cfbdf36edf2d459fa88834aa82d8960ff92b1908447285fa03f1044204d`.
+Review log SHA-256:
+`cdb20d75ec4e9d84026d1ab7f8ebd22bba2fe2b8cb7536fa27def8f02ae9c385`.
+The temporary auth copy was removed. Additional tests cover cancellation,
+disposal, replacement, pointer change, import rejection and successful
+continuation. The proposed nonempty safe catalog assertion was rejected:
+kernel management currently contributes CLI/TUI entries only. Exact empty
+catalog assertions replace the vacuous owner check. Overlapping initialization
+remains a hypothetical limitation, not a demonstrated production flow: MCP
+initializes once before starting its server; disposal callers are tests.
+
+Raw logs and exact commands remain in `/Users/ra/dev/modular-agon-remediation/`.
+This repairs the feature-host import boundary, not final optional-mod packaging.
+The transport still imports Core memory helpers; selectable mods remain in
+the CLI bundle. A separate source trace found that modular SaveMemory replaced
+the existing project-memory contract with engine notes and lost per-fact
+approval. That compatibility repair and final package isolation remain open.
+No global installation, promotion or push occurred.
+
 ## CLI safe-mode startup repair — 2026-10-19
 
 Development subject: descendant of `cd60a459e`. Safe-mode bootstrap previously

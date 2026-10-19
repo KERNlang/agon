@@ -2,7 +2,6 @@ import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { loadConfig } from '@kernlang/agon-core';
 
 import {
   SurfaceGenerationError,
@@ -12,7 +11,6 @@ import {
   selectModSettings,
 } from '@kernlang/agon-kernel';
 import type { FirstPartySurfaceBoot, GeneratedSurfaceRuntime } from '@kernlang/agon-kernel';
-import { createMcpEngineServices, decorateMcpFirstPartyServices } from './first-party-services.js';
 
 const compatibilityRuntime: GeneratedSurfaceRuntime = Object.freeze({
   command: () => { throw new Error('MCP host cannot execute CLI compatibility commands'); },
@@ -29,11 +27,13 @@ function hostRoot(): string {
 
 export async function initializeMcpSurfaceAuthority(): Promise<void> {
   if (boot) return;
+  const safeMode = process.env.AGON_MOD_SAFE_MODE === '1';
+  const services = safeMode ? undefined : await import('./first-party-services.js');
   boot = await bootstrapFirstPartySurfaceGeneration({
     hostRoot: hostRoot(), runtime: compatibilityRuntime,
-    safeMode: process.env.AGON_MOD_SAFE_MODE === '1',
-    decorateFirstPartyServices: decorateMcpFirstPartyServices,
-    dispatchEngine: createMcpEngineServices().dispatch,
+    safeMode,
+    decorateFirstPartyServices: services?.decorateMcpFirstPartyServices,
+    dispatchEngine: services?.createMcpEngineServices().dispatch,
   });
 }
 
@@ -96,13 +96,16 @@ export function activeMcpSurfaceTools(): readonly ActiveMcpSurfaceTool[] {
 
 export async function invokeActiveMcpSurfaceTool(name: string, input: Record<string, unknown>, signal: AbortSignal = new AbortController().signal): Promise<unknown> {
   signal.throwIfAborted();
-  assertMcpSurfaceSelectionCurrent();
+  const assertCurrent = captureMcpSurfaceAuthority(name);
   const record = boot!.activated.generation.assertAvailable('mcp', name);
   const payload = record.payload as { inputSchema: Record<string, unknown>; run(input: Record<string, unknown>, context: Record<string, unknown>): Promise<unknown> | unknown };
   assertContributionInput(payload.inputSchema, input);
   const platform = `${process.platform}-${process.arch}`;
   if (!['darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64'].includes(platform)) throw new Error(`unsupported MCP platform: ${platform}`);
   const cwd = process.env.AGON_CWD ?? process.cwd();
+  const { loadConfig } = await import('@kernlang/agon-core');
+  signal.throwIfAborted();
+  assertCurrent();
   return payload.run(input, {
     invocationId: randomUUID(), cwd, platform,
     signal, config: selectModSettings(loadConfig(cwd), record.owner.id),

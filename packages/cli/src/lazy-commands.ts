@@ -198,6 +198,50 @@ function schemaGeneratedCommand(publicId: string, description: string, displayNa
     },
   };
 }
+
+/** Parse TUI command text without shell expansion, using the selected CLI schema. */
+export async function parseGeneratedCommandLine(publicId: string, text: string, cwd?: string): Promise<Record<string, Json>> {
+  const assertSelected = captureProcessSurfaceAuthority();
+  const record = processSurfaceClient('cli').assertAvailable(publicId);
+  const contribution = record.payload as CommandContribution;
+  if (!contribution.cli) throw new Error(`${publicId} has no CLI argument projection`);
+  let args = await resolveMaybeFn(schemaGeneratedCommand(publicId, '').args) as ArgsDef;
+  if (cwd !== undefined && args.cwd?.type === 'string') args = { ...args, cwd: { ...args.cwd, default: cwd } };
+  assertSelected();
+  const tokens: string[] = [];
+  let word = '';
+  let started = false;
+  let quote: '"' | "'" | undefined;
+  for (let index = 0; index < text.length; index++) {
+    const char = text[index];
+    if (char === quote) { quote = undefined; continue; }
+    if (quote !== "'" && char === '\\') {
+      const next = text[++index];
+      if (next === undefined) throw new Error('Incomplete escape in command; close the quote or remove the final backslash.');
+      if (quote === '"' && !['"', '\\', '$', '`', '\n'].includes(next)) word += '\\';
+      if (next !== '\n') { word += next; started = true; }
+      continue;
+    }
+    if (quote !== "'" && (char === '$' || char === '`'))
+      throw new Error('Shell expansion is not supported here. Use single quotes for literal shell text.');
+    if (quote) { word += char; continue; }
+    if (char === '"' || char === "'") { quote = char; started = true; continue; }
+    if (/[;&|<>()\n\r]/.test(char))
+      throw new Error('Shell operators are not supported here. Quote the gate command.');
+    if (/\s/.test(char)) {
+      if (started) tokens.push(word);
+      word = ''; started = false;
+    } else { word += char; started = true; }
+  }
+  if (quote) throw new Error('Unclosed quote in command.');
+  if (started) tokens.push(word);
+  const parsed = parseArgs(normalizeOptionSpellings(tokens, Object.keys(args)), args);
+  const properties = (contribution.inputSchema as { properties?: Record<string, unknown> })?.properties ?? {};
+  const input = Object.fromEntries(Object.entries(parsed).filter(([name, value]) => name in properties && value !== undefined)) as Record<string, Json>;
+  assertContributionInput(contribution.inputSchema ?? {}, input);
+  assertSelected();
+  return input;
+}
 // Commands whose real implementation nests further subCommands of its own
 // (`agon models list`, `agon ext install`, `agon browser-host install`, …).
 // Every other command below is a leaf — see the comment above `lazyCommand`

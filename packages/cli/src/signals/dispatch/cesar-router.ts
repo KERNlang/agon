@@ -60,13 +60,13 @@ export async function runPhysicalCesarWorkflow(
   input: Record<string, unknown>,
   cb: DispatchCallbacks,
   signal = new AbortController().signal,
+  cwd = resolveWorkingDir(),
 ): Promise<unknown> {
   if (route === 'brainstorm') {
     return runBrainstormSession(input, cb, signal, async (prepared, context) =>
       await executeProcessCesarRoute(route, prepared, context) as PhysicalCesarCommandResult);
   }
   signal.throwIfAborted();
-  const cwd = resolveWorkingDir();
   const output = await executeProcessCesarRoute(route, input, { cwd, signal }) as PhysicalCesarCommandResult;
   if ((output.exitCode ?? 0) !== 0) {
     throw new Error(output.stderr?.trim() || output.failure?.message || `${route} failed`);

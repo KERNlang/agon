@@ -1,5 +1,6 @@
 
-import { resolveWorkingDir, spawnWithTimeout } from '@kernlang/agon-core';
+import { resolveWorkingDir } from '@kernlang/agon-core';
+import { captureProcessSurfaceAuthority } from '../../surface-authority-runtime.js';
 
 import { ENGINE_COLORS } from '../../blocks/output-format.js';
 
@@ -441,16 +442,16 @@ export async function dispatchOrchestrationIntent(intent: any, input: string, cb
       }
       const _gCwd = resolveWorkingDir();
       const _gLabel = _gInput.slice(0, 40);
-      // Spawn the CLI as a child process so the hours-long loop never blocks
-      // the REPL event loop. The durable source of truth is the goal journal
-      // (agon goal --status --id <slug>); we surface a tail on completion.
-      cb.runAsJob('goal', _gLabel, withThreadOutcome(_gCwd, 'goal', _gLabel, async () => {
-        cb.dispatch({ type: 'info', message: `goal: launched in the background — \`agon goal ${_gInput}\`. Check progress with /jobs, /focus, or \`agon goal --status\`.` });
-        const res = await spawnWithTimeout({ command: '/bin/sh', args: ['-c', `agon goal ${_gInput}`], cwd: _gCwd, timeout: 24 * 60 * 60 * 1000 });
-        const tail = (res.stdout || '').slice(-4000);
-        if (tail.trim()) cb.dispatch({ type: 'text', content: tail });
-        if (res.exitCode !== 0) throw new Error((res.stderr || `agon goal exited ${res.exitCode}`).slice(-1000));
-      }, cb.ctx));
+      const assertSelected = captureProcessSurfaceAuthority();
+      cb.runAsJob('goal', _gLabel, signal => withThreadOutcome(_gCwd, 'goal', _gLabel, async () => {
+        signal.throwIfAborted();
+        assertSelected();
+        const { parseGeneratedCommandLine } = await import('../../lazy-commands.js');
+        const request = await parseGeneratedCommandLine('goal', _gInput, _gCwd);
+        assertSelected();
+        cb.dispatch({ type: 'info', message: 'goal: running in the background. Check progress with /jobs, /focus, or /goal --status --id <slug>.' });
+        return runPhysicalCesarWorkflow('goal', request, cb, signal, _gCwd);
+      }, cb.ctx)());
       return { handled: true, ranAsJob: true };
     }
 

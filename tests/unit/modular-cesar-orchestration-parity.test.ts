@@ -1,4 +1,5 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -12,6 +13,9 @@ import {
   processSurfaceClient,
 } from '../../packages/cli/src/surface-authority-runtime.js';
 import { runPhysicalCesarWorkflow } from '../../packages/cli/src/signals/dispatch/cesar-router.js';
+import { dispatchOrchestrationIntent } from '../../packages/cli/src/signals/dispatch/intent-orchestration.js';
+import type { DispatchCallbacks } from '../../packages/cli/src/signals/dispatch.js';
+import { ModStateStore } from '../../packages/mod-kernel/src/index.js';
 import type { ModServices } from '@kernlang/agon-mod-api';
 
 const root = mkdtempSync(join(tmpdir(), 'agon-cesar-parity-'));
@@ -40,6 +44,31 @@ const valid: Readonly<Record<string, Record<string, unknown>>> = Object.freeze({
 const readOnly = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Council', 'Review', 'Delegate', 'QuickNero']);
 
 describe('physical Cesar orchestration tool parity', () => {
+  it('runs TUI Goal start, status and resume through real registry and storage', async () => {
+    const cwd = join(root, 'goal-repo'); mkdirSync(cwd);
+    const git = (...args: string[]) => execFileSync('git', args, { cwd, stdio: 'pipe' });
+    git('init', '-b', 'main'); git('config', 'user.name', 'Fixture'); git('config', 'user.email', 'fixture@example.invalid');
+    writeFileSync(join(cwd, 'base.txt'), 'base\n'); git('add', 'base.txt'); git('commit', '-m', 'base');
+    const jobs: Array<(signal: AbortSignal) => Promise<unknown>> = [];
+    const events: Array<{ type: string; content?: string }> = [];
+    const cb = { ctx: {}, dispatch: (event: { type: string; content?: string }) => events.push(event),
+      runAsJob: (_kind: string, _label: string, run: (signal: AbortSignal) => Promise<unknown>) => jobs.push(run),
+    } as unknown as DispatchCallbacks;
+    const invoke = async (input: string) => {
+      await dispatchOrchestrationIntent({ type: 'goal', input }, `/goal ${input}`, cb);
+      await jobs.at(-1)!(new AbortController().signal);
+    };
+    await invoke(`"TUI fixture" --cwd ${JSON.stringify(cwd)} --gate true --max-hours 2 --dry-run`);
+    const store = new ModStateStore(join(root, 'host'), 'agon.goal');
+    const before = await store.read('goals/tui-fixture') as any;
+    expect(before.payload).toMatchObject({ intent: 'TUI fixture', maxHours: 2, gate: 'true', tasks: [expect.objectContaining({ attempts: 0 })] });
+    await invoke(`--status --id tui-fixture --cwd ${JSON.stringify(cwd)}`);
+    expect(await store.read('goals/tui-fixture')).toEqual(before);
+    await invoke(`--resume --id tui-fixture --cwd ${JSON.stringify(cwd)} --dry-run`);
+    expect((await store.read('goals/tui-fixture') as any).payload.tasks).toEqual(before.payload.tasks);
+    expect(events.filter(event => event.type === 'engine-block')).toHaveLength(3);
+  });
+
   it('keeps the host handoff schemas, effects, and no-prompt permission behavior', () => {
     const registry = createCesarToolRegistry('codex');
     for (const [name, input] of Object.entries(valid)) {

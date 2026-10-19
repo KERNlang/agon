@@ -1,5 +1,48 @@
 # Goal / Forge integration evidence
 
+## TUI Goal registry execution
+
+Date: 2026-10-19. TUI `/goal` no longer executes `/bin/sh -c` with an `agon`
+binary selected from PATH. It parses quoted arguments against the selected
+generated CLI schema, then invokes the physical registry route used by Cesar.
+There is no second Goal option catalog or new dependency. Shell expansion and
+unquoted shell operators are rejected. Single-quoted gate text remains literal.
+
+The queued job captures its generation and working directory. Execution checks
+the generation again and passes the job AbortSignal. The captured directory
+replaces the CLI schema's process-directory default; explicit relative `--cwd`
+values resolve against that captured directory. Background job tracking remains.
+
+| Receipt | Result | Log SHA-256 |
+|---|---|---|
+| goal-tui-registry-red | Ten tests failed on the old shell dispatch | b806102f70278358c8ed0f13f7db36adfa8ffb0c0082dbd63125b81f0718a34d |
+| goal-tui-captured-directory-red | Both review directory cases failed | 0d7e115c10ff5d53b2196c85e7395d324eb6fd033d4a2fc543bd6e54a2205c57 |
+| goal-tui-registry-real-route-final | 46 focused tests, types and lint passed | 39db81b0d5beb5fda00d0dccc24a9ec22d930879a70909695f9737680dad907b |
+| goal-tui-registry-full-gate | All gates passed in 862.235s; 10,698 tests passed, six skipped | 321f556e091c94ba7670d4912e0f6e30d5cd400a8889c53ffcffc876799e6801 |
+| goal-tui-registry-final-live | Final real-registry start/status/resume repeat passed in 2.872s | 81f05d9fa6570f606670ede30754a6d584b3a77a3683f76f922bc175e8bd7489 |
+
+Isolated Codex review reproduced a working-directory regression in the initial
+change. Capturing and forwarding the directory fixes it. Packet SHA-256:
+`7bc88a92c3e56923c59d146a4e68854e491360bb30788134806fbc9bda87623c`.
+Review log SHA-256:
+`6bf0dbb635442f837cb4146c0072c71abe1e0640692e490f8525361ac666e418`.
+Its conditional schema concern was refuted: the physical plan-step route is not
+the Cesar delegation-tool schema. The real route accepts CLI values and the Goal
+owner normalizes them. A test uses default host services, real Git worktrees and
+ModStateStore for dry-run start, status and resume. This is source-level routing
+with rebuilt package dependencies, not a rendered terminal or packed-install test.
+
+Other controls cover quoting, escaping, aliases, end-of-options, negative flags,
+disabled Goal, stale generation, queued cancellation and physical failure output.
+The first focused run failed on eager test-catalog initialization; a later run
+passed tests but failed a string-default type narrowing. Both failed receipts
+are retained. Final mode-document regeneration produced no change.
+
+All test receipts record zero providers. Review authentication copy removal was
+verified; no second review is claimed. Logs remain in
+`/Users/ra/dev/modular-agon-remediation/`. No global install or push occurred.
+Historical Goal adoption and full clean-subject release acceptance remain open.
+
 ## Supervised startup and checkpoint identity
 
 Date: 2026-10-19. Explicit resume now refuses missing state even when the caller

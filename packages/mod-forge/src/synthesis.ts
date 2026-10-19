@@ -1,5 +1,5 @@
 import { readFileSync, existsSync } from 'node:fs';
-import type { EngineAdapter } from '@kernlang/agon-support-engine-runtime';
+import type { DispatchResult, EngineAdapter } from '@kernlang/agon-support-engine-runtime';
 import type { ForgeManifest, Critique, SynthesisResult, ForgeEventCallback, WorktreeEntry } from './types.js';
 import type { ForgeStageRegistry, ForgeStageRuntime } from './stages.js';
 import { FitnessError } from './errors.js';
@@ -45,8 +45,28 @@ export function createForgeSynthesis(runtime: ForgeSynthesisRuntime) {
   const { worktreeCreate, worktreeRemoveBestEffort, applyPatch } = runtime;
   const runFitness = (options: Parameters<typeof runOwnedFitness>[0]) => runOwnedFitness(options, runtime.fitness);
 
-  async function runSynthesis(opts: {manifest:ForgeManifest, winner:string, losers:string[], registry:ForgeStageRegistry, adapter:EngineAdapter, forgeDir:string, fitnessCmd:string, timeout:number, fitnessTimeout:number, maxCritiques:number, repoRoot:string, headSha:string, synthEngine?:string, worktrees?:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal}): Promise<SynthesisResult> {
+  async function runSynthesis(opts: {manifest:ForgeManifest, winner:string, losers:string[], registry:ForgeStageRegistry, adapter:EngineAdapter, forgeDir:string, fitnessCmd:string, timeout:number, fitnessTimeout:number, maxCritiques:number, repoRoot:string, headSha:string, synthEngine?:string, worktrees?:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal,
+    onDispatch?: (record: { engineId: string; prompt: string; result?: DispatchResult; error?: string; durationMs: number }) => void,
+  }): Promise<SynthesisResult> {
     const { manifest, winner, losers, registry, adapter, forgeDir } = opts;
+    const measuredDispatch = async <T extends DispatchResult>(engineId: string, prompt: string, dispatch: () => Promise<T>): Promise<T> => {
+      const startedAt = Date.now();
+      let result: T | undefined;
+      let error: string | undefined;
+      try {
+        result = await dispatch();
+        return result;
+      } catch (cause) {
+        error = cause instanceof Error ? cause.message : String(cause);
+        throw cause;
+      } finally {
+        try {
+          opts.onDispatch?.({ engineId, prompt, result, error, durationMs: Date.now() - startedAt });
+        } catch (cause) {
+          console.warn(`[agon] synthesis dispatch accounting failed: ${cause instanceof Error ? cause.message : String(cause)}`);
+        }
+      }
+    };
     // The engine that performs the refine pass — a configurable synthesizer
     // (goal: judge; interactive: Cesar), defaulting to the winner's own engine
     // (forge's historical behavior). It must be a real, registered engine; an
@@ -122,7 +142,7 @@ export function createForgeSynthesis(runtime: ForgeSynthesisRuntime) {
       }
 
       try {
-        const result = await adapter.dispatch({
+        const result = await measuredDispatch(loserId, prompt, () => adapter.dispatch({
           engine,
           prompt,
           cwd: forgeDir,
@@ -130,7 +150,7 @@ export function createForgeSynthesis(runtime: ForgeSynthesisRuntime) {
           timeout: opts.timeout,
           outputDir: forgeDir,
           signal: opts.signal,
-        });
+        }));
         return parseCritiques(result.stdout);
       } catch (err) {
         console.warn(`[agon] synthesis critique (${loserId}) failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -189,7 +209,7 @@ export function createForgeSynthesis(runtime: ForgeSynthesisRuntime) {
       const winnerEngine = registry.get(refineEngineId);
       const synthMode = winnerEngine.agent && adapter.dispatchAgent ? 'agent' : 'exec';
       if (synthMode === 'agent') {
-        await adapter.dispatchAgent!({
+        await measuredDispatch(refineEngineId, synthPrompt, () => adapter.dispatchAgent!({
           engine: winnerEngine,
           prompt: synthPrompt,
           cwd: synthWtPath,
@@ -197,9 +217,9 @@ export function createForgeSynthesis(runtime: ForgeSynthesisRuntime) {
           timeout: opts.timeout,
           outputDir: forgeDir,
           signal: opts.signal,
-        });
+        }));
       } else {
-        await adapter.dispatch({
+        await measuredDispatch(refineEngineId, synthPrompt, () => adapter.dispatch({
           engine: winnerEngine,
           prompt: synthPrompt,
           cwd: synthWtPath,
@@ -207,7 +227,7 @@ export function createForgeSynthesis(runtime: ForgeSynthesisRuntime) {
           timeout: opts.timeout,
           outputDir: forgeDir,
           signal: opts.signal,
-        });
+        }));
       }
 
       opts.onEvent?.({ type: 'synthesis:score' });

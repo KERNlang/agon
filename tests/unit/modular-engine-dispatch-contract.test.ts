@@ -27,6 +27,10 @@ vi.mock('@kernlang/agon-core', () => ({
   },
   loadConfig: fixture.loadConfig,
   createForgeHostServices: () => fixture.forge,
+  agonPath: vi.fn(), ensureAgonHome: vi.fn(), worktreeCreate: vi.fn(),
+  worktreeRemoveBestEffort: vi.fn(), spawnWithTimeout: vi.fn(),
+  createSessionWorktree: vi.fn(), findSessionWorktree: vi.fn(),
+  worktreePathFor: vi.fn(), rehydrateSessionWorktree: vi.fn(),
   createRunDir: () => ({ id: 'fixture-run', path: '/fixture/output' }),
   getRatings: vi.fn(), pickTopRatedEngine: vi.fn(), writeRunStatus: vi.fn(),
   eventLogFlush: vi.fn(), setSessionRoot: vi.fn(),
@@ -97,7 +101,7 @@ describe.each([decorateCliFirstPartyServices, decorateMcpFirstPartyServices])('R
 });
 
 describe.each([decorateCliFirstPartyServices, decorateMcpFirstPartyServices])('Forge host wiring', decorate => {
-  it.each(['agon.forge', 'agon.team-forge', 'agon.pipeline-orchestration'])('provides host effects to the bundled %s consumer', id => {
+  it.each(['agon.forge', 'agon.team-forge', 'agon.pipeline-orchestration', 'agon.goal'])('provides host effects to the bundled %s consumer', id => {
     const services = decorate({ id } as never, {} as never);
     expect(services).toHaveProperty('forge', fixture.forge);
     expect(fixture.forge.open).not.toHaveBeenCalled();
@@ -207,6 +211,25 @@ describe.each([
   ['CLI', createCliEngineServices],
   ['MCP', createMcpEngineServices],
 ] as const)('%s engine dispatch contract', (_surface, createServices) => {
+  it.each(['sdk', 'cli-reported', 'estimated'] as const)('preserves %s usage, including cache tokens, on failed dispatch', async source => {
+    const usage = { promptTokens: 100, completionTokens: 20, totalTokens: 120, cachedInputTokens: 80, source };
+    fixture.dispatch.mockResolvedValueOnce({ ...result, exitCode: 1, usage });
+    const output = await createServices().dispatch('fixture-engine', 'fixture task', {
+      invocationId: 'usage', cwd: '/fixture/project', platform: 'darwin-arm64',
+      signal: new AbortController().signal, config: {},
+    });
+    expect(output).toMatchObject({ exitCode: 1, usage });
+  });
+
+  it('does not turn missing usage into a measured zero', async () => {
+    const output = await createServices().dispatch('fixture-engine', 'fixture task', {
+      invocationId: 'usage', cwd: '/fixture/project', platform: 'darwin-arm64',
+      signal: new AbortController().signal, config: {},
+    });
+    expect(output).not.toHaveProperty('usage');
+    expect(output).not.toHaveProperty('costUsd');
+  });
+
   const context: InvocationContext = {
     invocationId: 'fixture-invocation', cwd: '/fixture/project',
     platform: 'darwin-arm64', signal: new AbortController().signal, config: {},

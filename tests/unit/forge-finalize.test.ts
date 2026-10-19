@@ -6,6 +6,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { EngineRegistry } from '../../packages/core/src/signals/engine-registry.js';
 import { runForge } from '../../packages/forge/src/forge.js';
+import { createForgeWorkflow } from '@kernlang/agon-mod-forge';
+import { createForgeWorkflowEffects, estimateCostCacheAware } from '@kernlang/agon-core';
 
 vi.mock('../../packages/forge/src/quality.js', () => ({
   runLint: vi.fn(async () => 0),
@@ -170,6 +172,162 @@ describe('forge validate dispatch routing', () => {
 });
 
 describe('caller-driven forge finalize', () => {
+  it.each([
+    { engines: ['fast'], exitCode: 1 }, { engines: ['fast', 'slow'], exitCode: 1 },
+    { engines: ['fast'], exitCode: 0 }, { engines: ['fast', 'slow'], exitCode: 0 },
+  ])('retains usage when patch capture fails: %j', async ({ engines, exitCode }) => {
+    process.env.AGON_FINALIZE_TEST_KEY = 'test';
+    const repoDir = makeRepo();
+    const forgeDir = join(repoDir, 'capture-failure-run');
+    const usage = { promptTokens: 1234, completionTokens: 56, totalTokens: 1290, source: 'sdk' as const };
+    const manifest = await runForge({ task: 'write files', fitnessCmd: 'true',
+      cwd: repoDir, forgeDir, engines, healthCheckEnabled: false,
+    }, makeRegistry(), {
+      isAvailable: async () => true, getVersion: async () => 'fixture',
+      dispatch: async ({ engine, cwd }) => {
+        writeFileSync(join(cwd, `${engine.id}.txt`), 'partial work\n');
+        mkdirSync(join(forgeDir, `${engine.id}-patch.diff`));
+        return { exitCode, stdout: 'partial response', stderr: 'transport failed',
+          timedOut: false, durationMs: 1, usage };
+      },
+    });
+    expect(manifest.winner).toBeNull();
+    for (const engine of engines) {
+      expect(manifest.results[engine].pass).toBe(false);
+      const metrics = manifest.dispatchLog?.filter(metric => metric.engineId === engine) ?? [];
+      expect(metrics).toHaveLength(1);
+      expect(metrics[0].tokens).toMatchObject({ prompt: 1234, response: 56, source: 'sdk' });
+      if (exitCode !== 0) {
+        expect(metrics[0].error).toContain('transport failed');
+        expect(metrics[0].error).toContain('patch capture failed');
+      } else {
+        expect(metrics[0].error).toContain('fitness failed');
+      }
+      expect(manifest.results[engine].patchPath).toBeUndefined();
+    }
+  });
+
+  it.each(['sdk', 'cli-reported', 'estimated'] as const)('retains %s usage through the manifest and tracker', async (source) => {
+    process.env.AGON_FINALIZE_TEST_KEY = 'test';
+    const repoDir = makeRepo();
+    const forgeDir = join(repoDir, 'usage-run');
+    const effects = createForgeWorkflowEffects();
+    const record = vi.fn();
+    const workflow = createForgeWorkflow({ ...effects, tracker: { ...effects.tracker, record,
+      getStats: () => ({ totalTokens: 0, totalCostUsd: 0 }) } });
+    const usage = { promptTokens: 12345, completionTokens: 789, totalTokens: 13140,
+      cachedInputTokens: 10000, source };
+    const manifest = await workflow.runForge({ task: 'write files', fitnessCmd: 'true',
+      cwd: repoDir, forgeDir, engines: ['fast', 'slow'], healthCheckEnabled: false,
+    }, makeRegistry(), {
+      isAvailable: async () => true, getVersion: async () => 'fixture',
+      dispatch: async ({ engine, cwd }) => {
+        writeFileSync(join(cwd, `${engine.id}.txt`), 'work\n');
+        return { exitCode: 0, stdout: 'done', stderr: '', timedOut: false, durationMs: 1, usage };
+      },
+    });
+    for (const engine of ['fast', 'slow']) {
+      const metrics = manifest.dispatchLog?.filter(metric => metric.engineId === engine) ?? [];
+      expect(metrics).toHaveLength(1);
+      expect(metrics[0].tokens).toMatchObject({ prompt: 12345, response: 789,
+        total: 13140, cachedInputTokens: 10000, source });
+      expect(metrics[0].tokens?.costUsd).toBe(estimateCostCacheAware(engine, 12345, 789, 10000));
+      expect(record).toHaveBeenCalledWith(engine, { usage });
+    }
+  });
+
+  it.each([
+    undefined,
+    { promptTokens: -1, completionTokens: 1, totalTokens: 0, source: 'sdk' },
+    { promptTokens: 1, completionTokens: NaN, totalTokens: 1, source: 'sdk' },
+    { promptTokens: 1, completionTokens: 1, totalTokens: 2, cachedInputTokens: 2, source: 'sdk' },
+    { promptTokens: 1, completionTokens: 1, totalTokens: 2, source: 'unknown' },
+  ])('labels missing or malformed usage as estimated: %j', async (usage) => {
+    process.env.AGON_FINALIZE_TEST_KEY = 'test';
+    const repoDir = makeRepo();
+    const manifest = await runForge({ task: 'write file', fitnessCmd: 'true',
+      cwd: repoDir, forgeDir: join(repoDir, 'usage-run'), engines: ['fast'], healthCheckEnabled: false,
+    }, makeRegistry(), {
+      isAvailable: async () => true, getVersion: async () => 'fixture',
+      dispatch: async ({ cwd }) => {
+        writeFileSync(join(cwd, 'work.txt'), 'work\n');
+        return { exitCode: 0, stdout: 'done', stderr: '', timedOut: false, durationMs: 1,
+          usage: usage as any };
+      },
+    });
+    expect(manifest.dispatchLog).toHaveLength(1);
+    const tokens = manifest.dispatchLog![0].tokens!;
+    expect(tokens.source).toBe('estimated');
+    expect(tokens.prompt).toBeGreaterThan(0);
+    expect(tokens.response).toBe(1);
+    expect(tokens.total).toBe(tokens.prompt + tokens.response);
+    expect(tokens.cachedInputTokens).toBeUndefined();
+    expect(Number.isFinite(tokens.costUsd)).toBe(true);
+  });
+
+  it.each([['fast'], ['fast', 'slow']])('retains dispatch cost when fitness throws for %j', async (...engines) => {
+    process.env.AGON_FINALIZE_TEST_KEY = 'test';
+    const repoDir = makeRepo();
+    const forgeDir = join(tmpdir(), `agon-fitness-throw-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    tempDirs.push(forgeDir);
+    const effects = createForgeWorkflowEffects();
+    const workflow = createForgeWorkflow({ ...effects, stages: { ...effects.stages,
+      estimateCost: () => 0.25, fitness: { ...effects.stages.fitness,
+        runSyntaxCheck: () => { throw new Error('fitness probe crashed'); } },
+    } });
+    const manifest = await workflow.runForge({ task: 'write files', fitnessCmd: 'true',
+      cwd: repoDir, forgeDir, engines, healthCheckEnabled: false,
+    }, makeRegistry(), {
+      isAvailable: async () => true, getVersion: async () => 'fixture',
+      dispatch: async ({ engine, cwd }) => {
+        writeFileSync(join(cwd, `${engine.id}.txt`), 'partial work\n');
+        return { exitCode: 0, stdout: 'paid response', stderr: '', timedOut: false, durationMs: 1 };
+      },
+    });
+    expect(manifest.winner).toBeNull();
+    for (const engine of engines) {
+      expect(manifest.results[engine].pass).toBe(false);
+      const metrics = manifest.dispatchLog?.filter(metric => metric.engineId === engine) ?? [];
+      expect(metrics).toHaveLength(1);
+      expect(metrics[0].tokens?.costUsd).toBe(0.25);
+      expect(metrics[0].error).toContain('fitness probe crashed');
+      expect(readFileSync(manifest.patches[engine], 'utf8')).toContain('partial work');
+    }
+  });
+
+  it('retains settled dispatch costs after the real stage2 hard timeout', async () => {
+    process.env.AGON_FINALIZE_TEST_KEY = 'test';
+    const repoDir = makeRepo();
+    const forgeDir = join(repoDir, 'timeout-run');
+    const callbacks: string[] = [];
+    const manifest = await runForge({
+      task: 'write fast.txt', fitnessCmd: 'test -f fast.txt', cwd: repoDir, forgeDir,
+      engines: ['fast', 'slow'], healthCheckEnabled: false, timeout: 1, fitnessTimeout: 1,
+      onResult: engineId => { callbacks.push(engineId); return 'continue'; },
+    }, makeRegistry(), {
+      isAvailable: async () => true, getVersion: async () => 'fixture',
+      dispatch: async ({ engine, cwd, signal }) => {
+        if (engine.id === 'slow') {
+          await new Promise<void>(resolve => signal!.addEventListener('abort', () => resolve(), { once: true }));
+          await new Promise<void>(resolve => setImmediate(resolve));
+          return { exitCode: 0, stdout: 'paid partial response', stderr: '', timedOut: false, durationMs: 1 };
+        }
+        writeFileSync(join(cwd, 'fast.txt'), 'winner\n');
+        return { exitCode: 0, stdout: 'done', stderr: '', timedOut: false, durationMs: 1 };
+      },
+    });
+    expect(manifest.winner).toBe('fast');
+    expect(manifest.results.slow.pass).toBe(false);
+    expect(callbacks.sort()).toEqual(['fast', 'slow']);
+    const metrics = manifest.dispatchLog?.filter(metric => metric.engineId === 'slow') ?? [];
+    expect(metrics).toHaveLength(1);
+    expect(metrics[0].timedOut).toBe(true);
+    expect(metrics[0].tokens?.response).toBeGreaterThan(0);
+    expect(metrics[0].tokens?.costUsd).toBeGreaterThan(0);
+    const persisted = JSON.parse(readFileSync(join(forgeDir, 'manifest.json'), 'utf8'));
+    expect(persisted.dispatchLog.filter((metric: any) => metric.engineId === 'slow')).toEqual(metrics);
+  });
+
   it('drains a cancelled candidate before reporting stage2 complete', async () => {
     process.env.AGON_FINALIZE_TEST_KEY = 'test';
     const repoDir = makeRepo();
@@ -195,7 +353,7 @@ describe('caller-driven forge finalize', () => {
           announceSlow();
           await slowGate;
           slowFinished = true;
-          return { exitCode: 130, stdout: '', stderr: 'cancelled', timedOut: false, durationMs: 1 };
+          return { exitCode: 130, stdout: 'paid partial response', stderr: 'cancelled', timedOut: false, durationMs: 1 };
         }
         await slowStarted;
         writeFileSync(join(cwd, 'fast.txt'), 'winner\n');
@@ -212,6 +370,14 @@ describe('caller-driven forge finalize', () => {
       expect(slowFinished).toBe(true);
       expect(stageDone).toBe(true);
       expect(result.winner).toBe('fast');
+      expect(result.results.slow.pass).toBe(false);
+      const metrics = result.dispatchLog?.filter(metric => metric.engineId === 'slow') ?? [];
+      expect(metrics).toHaveLength(1);
+      expect(metrics[0].tokens?.prompt).toBeGreaterThan(0);
+      expect(metrics[0].tokens?.response).toBeGreaterThan(0);
+      expect(metrics[0].tokens?.costUsd).toBeGreaterThan(0);
+      const persisted = JSON.parse(readFileSync(join(forgeDir, 'manifest.json'), 'utf8'));
+      expect(persisted.dispatchLog.filter((metric: any) => metric.engineId === 'slow')).toEqual(metrics);
     } finally {
       releaseSlow();
       await invocation;

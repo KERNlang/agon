@@ -58,7 +58,7 @@ export function executionActionForPlan(action: string, activePlan?: {state?:stri
 /**
  * Cheap, deterministic routing hints for Cesar: intake kind, flow recommendation, uncertainty family, escalation shape, breadth, and forge scope.
  */
-export function deriveRoutingHints(input: string, ctx: HandlerContext): CesarRoutingHints {
+export function deriveRoutingHints(input: string, ctx: Pick<HandlerContext, 'activeEngines'>, workingDir?: string): CesarRoutingHints {
   const taskClass = classifyTask(input);
   const inputTokens = Math.ceil(input.length / 4);
   const lower = input.toLowerCase();
@@ -66,7 +66,7 @@ export function deriveRoutingHints(input: string, ctx: HandlerContext): CesarRou
   let scopeFileCount = 0;
   let scopeDirSpread = 0;
   try {
-    const cwd = resolveWorkingDir();
+    const cwd = workingDir ?? resolveWorkingDir();
     const changedFiles = gitChangedFiles(cwd);
     scopeFileCount = changedFiles.length;
     const dirs = new Set(changedFiles.map((f: string) => f.split('/').slice(0, 2).join('/')));

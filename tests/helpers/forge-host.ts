@@ -5,7 +5,8 @@ import type { DispatchOptions, DispatchResult, EngineDefinition } from '@kernlan
 import { cliRunRecordHost } from '../../packages/cli/src/run-record-host.js';
 
 /** Use real Forge effects with the fixture's provider transport. */
-export function withForgeHost(services: ModServices, healthCheckEnabled = false): ForgeModServices {
+export function withForgeHost(services: ModServices, healthCheckEnabled = false,
+  estimateCost?: (engineId: string, tokens: number) => number): ForgeModServices {
   return {
     ...services,
     runs: services.runs ?? cliRunRecordHost,
@@ -32,6 +33,7 @@ export function withForgeHost(services: ModServices, healthCheckEnabled = false)
         return {
           registry,
           effects: { ...effects, seedNewEnginesFromRegistry: () => {},
+            ...(estimateCost ? { stages: { ...effects.stages, estimateCost } } : {}),
             loadConfig: cwd => ({ ...effects.loadConfig(cwd), ratingsEnabled: false, forgeEnableSynthesis: false,
               forgeHealthCheckEnabled: healthCheckEnabled, forgeAutoAcceptScore: 101 }),
           },

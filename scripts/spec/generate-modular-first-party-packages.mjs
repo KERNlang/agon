@@ -266,7 +266,7 @@ export { runRag, buildRagIndex, queryRag, collectCorpusFiles, chunkMarkdown } fr
 ` : short === 'goal' ? `export { runGoal } from './implementation.js';
 export { summarizeGoal, createGoalResult } from './artifacts.js';
 export { createGoalHostServices } from './host.js';
-export type { GoalHostServices, GoalModServices, GoalWorktree, GoalWorktreeEffects, GoalTaskAcceptance } from './host.js';
+export type { GoalHostServices, GoalModServices, GoalWorktree, GoalWorktreeEffects, GoalTaskAcceptance, GoalImplementationHints } from './host.js';
 export type { GoalSpec, AttemptRecord, GoalTask, GoalEvent, JournalState } from './journal-types.js';
 export { createGoalJournalStore, createJournal, addTasks, requeueInflightTasks, nextTask, markStatus, recordAttempt, remainingCount, isDone, logEvent, boundEvents, GOAL_EVENT_CAP } from './journal.js';
 export type { GoalJournalEffects } from './journal.js';
@@ -378,7 +378,7 @@ export { runLint, runStyleCheck, runSyntaxCheck, changedFilesIncludingUntracked,
 export type { SyntaxCheckResult, ForgeSyntaxRuntime } from './quality.js';
 export { runFitness, normalizeFitnessCommandForShell } from './fitness.js';
 export type { ForgeFitnessRuntime } from './fitness.js';
-export { createForgeStages, resolveForgeDispatchTimeout, shouldHarvestFailedDispatch } from './stages.js';
+export { createForgeStages, measureForgeUsage, resolveForgeDispatchTimeout, shouldHarvestFailedDispatch } from './stages.js';
 export type { ForgeStageConfig, ForgeStageRegistry, ForgeStageRuntime } from './stages.js';
 export { buildForgePrompt, buildCritiquePrompt, buildSynthesisPrompt, buildForgePromptWithContext } from './prompts.js';
 export { buildStageContext, renderStageContext } from './stage-context.js';

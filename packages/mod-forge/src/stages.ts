@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import { lstatSync, writeFileSync } from 'node:fs';
 import type { DispatchResult, EngineAdapter, EngineDefinition } from '@kernlang/agon-support-engine-runtime';
 import type { EngineResult, DispatchMetric, ForgeEventCallback, StageResult, WorktreeEntry } from './types.js';
 import { runFitness as runOwnedFitness } from './fitness.js';
@@ -6,6 +7,7 @@ import type { ForgeFitnessRuntime } from './fitness.js';
 import { resolveForgeMode, resolveForgeRequireDiff, resolveForgeAcceptReviewOutput, classifyNoDiffForgeResult } from './result-policy.js';
 
 export interface ForgeStageConfig {
+  explicitDispatchTimeout?: number;
   forgeDispatchTimeout?: number;
   forgeFitnessTimeout: number;
   forgeAutoAcceptScore: number;
@@ -25,8 +27,29 @@ export interface ForgeStageRuntime {
   worktreeRemoveBestEffort(repoDir: string, path: string): void;
   estimateTokens(text: string): number;
   estimateCost(engineId: string, tokens: number): number;
+  estimateCostCacheAware?(engineId: string, promptTokens: number, completionTokens: number, cachedInputTokens?: number): number;
   fitness: ForgeFitnessRuntime;
   observeDispatch?(engineId: string, result: Readonly<Pick<DispatchResult, 'exitCode' | 'timedOut'>>): void;
+}
+
+/** Preserve reported usage; label text-derived fallback counts as estimates. */
+export function measureForgeUsage(runtime: Pick<ForgeStageRuntime, 'estimateTokens' | 'estimateCost' | 'estimateCostCacheAware'>,
+  engineId: string, prompt: string, result: Pick<DispatchResult, 'stdout' | 'usage'>): NonNullable<DispatchMetric['tokens']> {
+  const reportedUsage = result.usage;
+  const validCount = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+  const usage = reportedUsage && validCount(reportedUsage.promptTokens)
+    && validCount(reportedUsage.completionTokens) && validCount(reportedUsage.totalTokens)
+    && ['sdk', 'cli-reported', 'estimated'].includes(reportedUsage.source)
+    && (reportedUsage.cachedInputTokens === undefined || (validCount(reportedUsage.cachedInputTokens)
+      && reportedUsage.cachedInputTokens <= reportedUsage.promptTokens)) ? reportedUsage : undefined;
+  const promptTokens = usage?.promptTokens ?? runtime.estimateTokens(prompt);
+  const responseTokens = usage?.completionTokens ?? (result.stdout ? runtime.estimateTokens(result.stdout) : 0);
+  return { prompt: promptTokens, response: responseTokens,
+    total: usage?.totalTokens ?? promptTokens + responseTokens, source: usage?.source ?? 'estimated',
+    ...(usage?.cachedInputTokens !== undefined ? { cachedInputTokens: usage.cachedInputTokens } : {}),
+    costUsd: usage && runtime.estimateCostCacheAware
+      ? runtime.estimateCostCacheAware(engineId, promptTokens, responseTokens, usage.cachedInputTokens)
+      : runtime.estimateCost(engineId, promptTokens + responseTokens) };
 }
 
 function formatDispatchError(err: unknown): string {
@@ -69,9 +92,12 @@ function emitForgeEvent(onEvent: any, type: string, engineId?: string, data?: Re
 }
 
 /**
+ * An explicit invocation timeout overrides engine and configuration defaults.
  * Per-engine dispatch timeout for stage1/stage2. Floor: forgeDispatchTimeout (default 480s). Engines whose configured timeout (engines/*.json, calibrated for short chat use) is below the floor get raised to it — forge needs more time than a chat reply. Engines with a genuinely high configured timeout keep it. The previous behavior used forgeTimeout (1800s) as the floor, which let one stuck engine hold the run hostage for 30 min via Promise.allSettled.
  */
 export function resolveForgeDispatchTimeout(engine: any, config: ForgeStageConfig): number {
+  const explicit = config.explicitDispatchTimeout;
+  if (typeof explicit === 'number' && Number.isFinite(explicit) && explicit > 0) return explicit;
   const engineTimeout = Number(engine?.timeout ?? 0);
   const floorRaw = Number(config.forgeDispatchTimeout ?? 0);
   const floor = (Number.isFinite(floorRaw) && floorRaw > 0) ? floorRaw : 480;
@@ -103,7 +129,7 @@ export function shouldHarvestFailedDispatch(result: {exitCode?:number,timedOut?:
 
 /** Construction performs no filesystem or provider work. */
 export function createForgeStages(runtime: ForgeStageRuntime) {
-  const { repoRoot, worktreeCreate, worktreeRemoveBestEffort, estimateTokens, estimateCost } = runtime;
+  const { repoRoot, worktreeCreate, worktreeRemoveBestEffort } = runtime;
   const runFitness = (options: Parameters<typeof runOwnedFitness>[0]) => runOwnedFitness(options, runtime.fitness);
 
   async function runForgeEngineAttempt(opts: {engineId:string,prompt:string,dispatchMode:'exec'|'review',metricPhase:'stage1'|'stage2-scout'|'stage2-follower',fitnessCmd:string,config:ForgeStageConfig,registry:ForgeStageRegistry,adapter:EngineAdapter,root:string,baseSha:string,forgeDir:string,worktrees:WorktreeEntry[],onEvent?:ForgeEventCallback,signal?:AbortSignal,eventType:string,eventData?:Record<string,unknown>,worktreePath?:string,forgeMode?:'implement'|'improve'|'validate',requireDiff?:boolean,baselinePasses?:boolean,acceptReviewOutput?:boolean}): Promise<{result:EngineResult,metric:DispatchMetric,dispatchResult:any,worktreePath:string}> {
@@ -122,6 +148,7 @@ export function createForgeStages(runtime: ForgeStageRuntime) {
     const dispatchStart = Date.now();
     let dispatchDurationMs = 0;
     let dispatchResult: any;
+    let dispatchFailure: string | undefined;
     // Forge is a code-changing workflow. API-only engines must run through
     // the tool-using agent loop; plain API chat can only return text and will
     // never modify the worktree.
@@ -168,11 +195,37 @@ export function createForgeStages(runtime: ForgeStageRuntime) {
       } else if (dispatchExitCode !== 0) {
         const reason = `dispatch exited with code ${dispatchExitCode}`;
         const stderr = dispatchResult?.stderr ? `: ${String(dispatchResult.stderr).slice(0, 240).replace(/\s+/g, ' ').trim()}` : '';
-        throw new Error(`${reason}${stderr}`);
+        dispatchFailure = `${reason}${stderr}`;
       }
     } finally {
       dispatchDurationMs = Date.now() - dispatchStart;
       emitForgeEvent(opts.onEvent, 'engine:pid-clear', opts.engineId, { engineId: opts.engineId, phase: opts.metricPhase });
+    }
+
+    const tokens = measureForgeUsage(runtime, opts.engineId, opts.prompt, dispatchResult ?? { stdout: '' });
+    if (dispatchFailure) {
+      // Retain repair input without making the failed dispatch eligible to win.
+      let patch: Pick<EngineResult, 'patchPath' | 'diffLines' | 'filesChanged'> | undefined;
+      try {
+        const diff = runtime.fitness.worktreeDiff(wtPath);
+        const diffLines = runtime.fitness.diffLineCount(diff);
+        const filesChanged = runtime.fitness.diffFileCount(wtPath);
+        const patchPath = join(opts.forgeDir, `${opts.engineId}-patch.diff`);
+        writeFileSync(patchPath, diff);
+        patch = { patchPath, diffLines, filesChanged };
+      } catch (cause) {
+        dispatchFailure += `; patch capture failed: ${formatDispatchError(cause)}`;
+      }
+      emitForgeEvent(opts.onEvent, 'engine:failed', opts.engineId, {
+        engineId: opts.engineId, phase: opts.metricPhase === 'stage1' ? 'stage1' : 'stage2', error: dispatchFailure,
+      });
+      return {
+        result: { ...makeFailedResult(opts.engineId, dispatchFailure, dispatchDurationMs),
+          ...patch, worktreePath: wtPath },
+        metric: { engineId: opts.engineId, phase: opts.metricPhase, dispatchDurationMs,
+          totalDurationMs: dispatchDurationMs, error: dispatchFailure, tokens },
+        dispatchResult, worktreePath: wtPath,
+      };
     }
 
     // Orphan guard (fixes the "worktree missing before diff" noise): when this
@@ -189,22 +242,43 @@ export function createForgeStages(runtime: ForgeStageRuntime) {
     if (opts.signal?.aborted) {
       return {
         result: makeFailedResult(opts.engineId, 'aborted (finalized/superseded before fitness)', dispatchDurationMs),
-        metric: { engineId: opts.engineId, phase: opts.metricPhase as DispatchMetric['phase'], dispatchDurationMs, totalDurationMs: dispatchDurationMs, error: 'aborted before fitness' },
+        metric: { engineId: opts.engineId, phase: opts.metricPhase as DispatchMetric['phase'], dispatchDurationMs, totalDurationMs: dispatchDurationMs, error: 'aborted before fitness', tokens },
         dispatchResult,
         worktreePath: wtPath,
       };
     }
 
     const fitnessStart = Date.now();
-    const result = await runFitness({
-      engineId: opts.engineId,
-      worktreePath: wtPath,
-      fitnessCmd: opts.fitnessCmd,
-      timeout: opts.config.forgeFitnessTimeout,
-      forgeDir: opts.forgeDir,
-      requireDiff,
-      signal: opts.signal,
-    });
+    let result: EngineResult;
+    try {
+      result = await runFitness({
+        engineId: opts.engineId,
+        worktreePath: wtPath,
+        fitnessCmd: opts.fitnessCmd,
+        timeout: opts.config.forgeFitnessTimeout,
+        forgeDir: opts.forgeDir,
+        requireDiff,
+        signal: opts.signal,
+      });
+    } catch (cause) {
+      const error = `fitness failed: ${formatDispatchError(cause)}`;
+      const fitnessDurationMs = Date.now() - fitnessStart;
+      const totalDurationMs = dispatchDurationMs + fitnessDurationMs;
+      const patchPath = join(opts.forgeDir, `${opts.engineId}-patch.diff`);
+      let retainedPatch: string | undefined;
+      try {
+        if (lstatSync(patchPath, { throwIfNoEntry: false })?.isFile()) retainedPatch = patchPath;
+      } catch { /* Artifact inspection must not discard completed dispatch usage. */ }
+      emitForgeEvent(opts.onEvent, 'engine:failed', opts.engineId, { engineId: opts.engineId, error });
+      return {
+        result: { ...makeFailedResult(opts.engineId, error, totalDurationMs), status: 'fitness_failed',
+          engineCompleted: !dispatchResult?.timedOut, worktreePath: wtPath,
+          ...(retainedPatch ? { patchPath: retainedPatch } : {}) },
+        metric: { engineId: opts.engineId, phase: opts.metricPhase, dispatchDurationMs,
+          fitnessDurationMs, totalDurationMs, error, pass: false, score: 0, tokens },
+        dispatchResult, worktreePath: wtPath,
+      };
+    }
     const fitnessDurationMs = Date.now() - fitnessStart;
     if (result.diffLines === 0) {
       const noDiff = classifyNoDiffForgeResult({
@@ -242,8 +316,6 @@ export function createForgeStages(runtime: ForgeStageRuntime) {
     }
     opts.onEvent?.({ type: opts.metricPhase.includes('stage1') ? 'stage1:score' : 'stage2:score', engineId: opts.engineId, data: { engineId: opts.engineId, score: result.score, pass: result.pass, worktreePath: wtPath } });
 
-    const promptTokens = estimateTokens(opts.prompt);
-    const responseTokens = dispatchResult?.stdout ? estimateTokens(dispatchResult.stdout) : 0;
     const metric: DispatchMetric = {
       engineId: opts.engineId,
       phase: opts.metricPhase,
@@ -253,7 +325,7 @@ export function createForgeStages(runtime: ForgeStageRuntime) {
       pass: result.pass,
       score: result.score,
       timedOut: dispatchResult?.timedOut ?? false,
-      tokens: { prompt: promptTokens, response: responseTokens, costUsd: estimateCost(opts.engineId, promptTokens + responseTokens) },
+      tokens,
     };
     result.dispatchStdout = dispatchResult?.stdout?.slice(0, 5000) ?? '';
     return { result, metric, dispatchResult, worktreePath: wtPath };
@@ -455,6 +527,14 @@ export function createForgeStages(runtime: ForgeStageRuntime) {
         const attempt = await Promise.race([attemptPromise, timeoutPromise, finalizePromise]);
         if (timeoutHandle) clearTimeout(timeoutHandle);
         finalizeResolvers.delete(engineId);
+        const [settledAttempt] = await Promise.allSettled([attemptPromise]);
+        if (settledAttempt.status === 'fulfilled' && settledAttempt.value !== attempt) {
+          // Cancellation changes eligibility, not the cost of completed dispatch work.
+          const settledMetric = settledAttempt.value.metric;
+          attempt.metric.tokens = settledMetric.tokens;
+          attempt.metric.dispatchDurationMs = settledMetric.dispatchDurationMs;
+          attempt.metric.totalDurationMs = settledMetric.totalDurationMs;
+        }
         publishResult(engineId, attempt.result, attempt.metric);
         return attempt.result;
       } catch (err) {

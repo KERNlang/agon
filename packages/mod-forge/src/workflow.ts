@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
-import type { EngineAdapter, EngineDefinition, TaskClass } from '@kernlang/agon-support-engine-runtime';
+import type { DispatchResult, EngineAdapter, EngineDefinition, TaskClass } from '@kernlang/agon-support-engine-runtime';
 import { engineHealth, recordForgeOutcome, extractPatchFilePatterns } from '@kernlang/agon-support-engine-runtime';
 import { determineWinner } from '@kernlang/agon-support-judge';
 import { healthCheckEngines, HEALTH_CHECK_DEFAULT_PROMPT } from '@kernlang/agon-support-panel';
@@ -9,7 +9,7 @@ import { createSidechainLogger } from '@kernlang/agon-kernel';
 import type { ForgeOptions, ForgeManifest, ForgeEvent, DispatchMetric, EngineResult, WorktreeEntry } from './types.js';
 import { buildForgePrompt } from './prompts.js';
 import { planSynthesis } from './synth-plan.js';
-import { createForgeStages } from './stages.js';
+import { createForgeStages, measureForgeUsage } from './stages.js';
 import { resolveForgeMode, resolveForgeRequireDiff, resolveForgeAcceptReviewOutput } from './result-policy.js';
 import type { ForgeStageConfig, ForgeStageRuntime } from './stages.js';
 import { createForgeSynthesis } from './synthesis.js';
@@ -59,7 +59,7 @@ export interface ForgeWorkflowEffects<Registry extends ForgeWorkflowRegistry> {
   updateGlickoRanked(ranked: Array<{ engineId: string; score: number }>, taskClass: TaskClass, mode: 'forge'): void;
   buildKernContextSpine(cwd: string): Promise<string>;
   tracker: {
-    record(engineId: string, input: { usage: { promptTokens: number; completionTokens: number; totalTokens: number; source: 'cli-reported' } }): unknown;
+    record(engineId: string, input: { usage: NonNullable<DispatchResult['usage']> }): unknown;
     getStats(): { totalCostUsd: number; totalTokens: number };
   };
   stages: ForgeStageRuntime;
@@ -286,6 +286,7 @@ export function createForgeWorkflow<Registry extends ForgeWorkflowRegistry>(runt
     const config = {
       ...loadedConfig,
       forgeTimeout: resolveForgeRunTimeout(loadedConfig, options.timeout, taskClass),
+      explicitDispatchTimeout: options.timeout,
       forgeFitnessTimeout: options.fitnessTimeout ?? loadedConfig.forgeFitnessTimeout,
     } as ForgeWorkflowConfig;
     const forgeId = randomUUID();
@@ -651,7 +652,7 @@ export function createForgeWorkflow<Registry extends ForgeWorkflowRegistry>(runt
         }
         // Record token usage for stage 1
         for (const m of stage1.metrics ?? []) {
-          if (m.tokens) tracker.record(m.engineId, { usage: { promptTokens: m.tokens.prompt, completionTokens: m.tokens.response, totalTokens: m.tokens.prompt + m.tokens.response, source: 'cli-reported' as const } });
+          if (m.tokens) tracker.record(m.engineId, { usage: { promptTokens: m.tokens.prompt, completionTokens: m.tokens.response, totalTokens: m.tokens.total ?? m.tokens.prompt + m.tokens.response, source: m.tokens.source ?? 'estimated', ...(m.tokens.cachedInputTokens !== undefined ? { cachedInputTokens: m.tokens.cachedInputTokens } : {}) } });
           sidechain.log('dispatch:complete', m.engineId, { phase: m.phase, durationMs: m.dispatchDurationMs, score: m.score, pass: m.pass, tokens: m.tokens });
         }
         // Incremental persist after stage1 — if the process is killed during
@@ -739,7 +740,7 @@ export function createForgeWorkflow<Registry extends ForgeWorkflowRegistry>(runt
           }
           // Record token usage for stage 2
           for (const m of stage2.metrics ?? []) {
-            if (m.tokens) tracker.record(m.engineId, { usage: { promptTokens: m.tokens.prompt, completionTokens: m.tokens.response, totalTokens: m.tokens.prompt + m.tokens.response, source: 'cli-reported' as const } });
+            if (m.tokens) tracker.record(m.engineId, { usage: { promptTokens: m.tokens.prompt, completionTokens: m.tokens.response, totalTokens: m.tokens.total ?? m.tokens.prompt + m.tokens.response, source: m.tokens.source ?? 'estimated', ...(m.tokens.cachedInputTokens !== undefined ? { cachedInputTokens: m.tokens.cachedInputTokens } : {}) } });
             sidechain.log('dispatch:complete', m.engineId, { phase: m.phase, durationMs: m.dispatchDurationMs, score: m.score, pass: m.pass, tokens: m.tokens, error: m.error });
           }
           // Incremental persist after stage2 — survives a kill during synthesis or gauntlet.
@@ -885,6 +886,26 @@ export function createForgeWorkflow<Registry extends ForgeWorkflowRegistry>(runt
                 synthEngine: synthPlan.synthEngine,
                 worktrees,
                 onEvent: onSynthesisEvent,
+                onDispatch: ({ engineId, prompt, result, error, durationMs }) => {
+                  const tokens = result ? measureForgeUsage(runtime.stages, engineId, prompt, result) : undefined;
+                  const metric: DispatchMetric = { engineId, phase: 'synthesis', dispatchDurationMs: durationMs,
+                    totalDurationMs: durationMs, ...(result ? { timedOut: result.timedOut } : {}),
+                    ...(error ? { error } : {}), ...(tokens ? { tokens } : {}) };
+                  allMetrics.push(metric);
+                  manifest.dispatchLog = [...allMetrics];
+                  try { writeManifest(manifest); }
+                  catch (cause) { console.warn(`[agon] synthesis usage checkpoint failed: ${cause instanceof Error ? cause.message : String(cause)}`); }
+                  try {
+                    if (tokens) tracker.record(engineId, { usage: { promptTokens: tokens.prompt,
+                      completionTokens: tokens.response, totalTokens: tokens.total ?? tokens.prompt + tokens.response,
+                      source: tokens.source ?? 'estimated',
+                      ...(tokens.cachedInputTokens !== undefined ? { cachedInputTokens: tokens.cachedInputTokens } : {}) } });
+                  } catch (cause) {
+                    console.warn(`[agon] synthesis usage tracker failed: ${cause instanceof Error ? cause.message : String(cause)}`);
+                  }
+                  try { sidechain.log('dispatch:complete', engineId, { phase: 'synthesis', durationMs, tokens, error }); }
+                  catch (cause) { console.warn(`[agon] synthesis dispatch log failed: ${cause instanceof Error ? cause.message : String(cause)}`); }
+                },
                 signal: synthesisAbort.signal,
               });
               const timeoutPromise = new Promise<never>((_, reject) => {

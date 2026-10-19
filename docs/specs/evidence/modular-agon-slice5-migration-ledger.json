@@ -224,7 +224,8 @@
         "@kernlang/agon-mod-jobs",
         "@kernlang/agon-mod-git-actions",
         "@kernlang/agon-support-worktree",
-        "@kernlang/agon-support-verification"
+        "@kernlang/agon-support-verification",
+        "@kernlang/agon-mod-forge"
       ],
       "assignments": 14,
       "assignmentHash": "sha256:91d4a17698cf5a8e509bcaa4540bea6b974574bd66559399eb9459573f9b8da6",

@@ -92,7 +92,7 @@ export interface DispatchMetric {
   score?: number;
   timedOut?: boolean;
   error?: string;
-  tokens?: {prompt:number, response:number, costUsd:number};
+  tokens?: {prompt:number, response:number, costUsd:number, total?:number, cachedInputTokens?:number, source?:'sdk'|'cli-reported'|'estimated'};
 }
 
 export interface ForgeManifest {

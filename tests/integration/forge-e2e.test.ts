@@ -442,7 +442,7 @@ describe('Forge E2E', () => {
     { agent: true, fitnessPasses: false, throws: false },
     { agent: false, fitnessPasses: true, throws: true },
     { agent: true, fitnessPasses: true, throws: true },
-  ])('refines the winner in a real worktree: agent=$agent fitness=$fitnessPasses throws=$throws', async ({ agent, fitnessPasses, throws }) => {
+  ].flatMap(test => [false, true].map(accountingThrows => ({ ...test, accountingThrows }))))('refines the winner in a real worktree: agent=$agent fitness=$fitnessPasses throws=$throws accounting=$accountingThrows', async ({ agent, fitnessPasses, throws, accountingThrows }) => {
     const agonHome = setupTestAgonHome('forge-refinement');
     const repoDir = createRepo('refinement');
     const forgeDir = join(tmpdir(), `agon-forge-refinement-${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -464,6 +464,7 @@ describe('Forge E2E', () => {
       const fitnessCmd = fitnessPasses ? 'test "$(cat README.md)" = "# Refined"' : 'exit 1';
       const events: string[] = [];
       const refinementModes: string[] = [];
+      const onDispatch = vi.fn(() => { if (accountingThrows) throw new Error('fixture accounting failure'); });
       const refine = async (options: DispatchOptions): Promise<AgentDispatchResult> => {
         expect(readFileSync(join(options.cwd, 'README.md'), 'utf8')).toBe('# Winner\n');
         expect(options.prompt).toContain('Clarify the title');
@@ -507,6 +508,7 @@ describe('Forge E2E', () => {
         timeout: 10, fitnessTimeout: 10, maxCritiques: 3, repoRoot: repoDir,
         headSha: git(repoDir, ['rev-parse', 'HEAD']), worktrees,
         onEvent: event => { events.push(event.type); },
+        onDispatch,
       });
       if (throws) {
         await expect(pending).rejects.toThrow('refinement dispatch failed');
@@ -522,6 +524,7 @@ describe('Forge E2E', () => {
           'synthesis:score', 'synthesis:done']);
       }
       expect(refinementModes).toEqual([agent ? 'agent' : 'exec']);
+      expect(onDispatch).toHaveBeenCalledTimes(2);
       expect(worktrees).toHaveLength(1);
       expect(existsSync(worktrees[0].path)).toBe(false);
       expect(git(repoDir, ['worktree', 'list', '--porcelain'])).not.toContain('synth-worktree');

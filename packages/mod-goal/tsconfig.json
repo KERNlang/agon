@@ -32,6 +32,9 @@
       ],
       "@kernlang/agon-support-verification": [
         "../support-verification/src/index.ts"
+      ],
+      "@kernlang/agon-mod-forge": [
+        "../mod-forge/src/index.ts"
       ]
     },
     "sourceMap": false,
@@ -65,6 +68,9 @@
     },
     {
       "path": "../support-verification"
+    },
+    {
+      "path": "../mod-forge"
     }
   ],
   "include": [

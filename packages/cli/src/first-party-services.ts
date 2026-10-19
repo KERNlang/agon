@@ -25,6 +25,7 @@ import type { Json, ModManifest, ModServices } from '@kernlang/agon-mod-api';
 import { resolveBuiltinEnginesDir } from './lib/engines-dir.js';
 import { captureProcessSurfaceAuthority, assertProcessSurfaceAvailable } from './surface-authority-runtime.js';
 import { filterDefaultOrchestrationEngines } from './handlers/engine-filter.js';
+import { deriveRoutingHints } from './cesar/routing.js';
 import { buildServeRuntime, recordServeReady, removeServeConnectionFile, resolveServeEngine, writeServeConnectionFile } from './bridge/serve-runtime.js';
 import { runChrome } from './commands/chrome.js';
 import { runDrive } from './commands/drive.js';
@@ -128,6 +129,11 @@ export function decorateCliFirstPartyServices(manifest: ModManifest, base: ModSe
   return Object.freeze({ ...base, runs, ...(browser ? { browser } : {}), ...(workspace ? { workspace } : {}),
     ...(brainstorm ? { brainstorm } : {}),
     ...(manifest.id === 'agon.goal' ? { goal: createGoalHostServices({
+      implementationHints: (source, engines, context) => {
+        const hints = deriveRoutingHints(source, { activeEngines: () => [...engines] }, context.cwd);
+        return { flow: hints.recommendedFlow, forgeScope: hints.recommendedForgeScope,
+          escalationHint: hints.escalationHint };
+      },
       reviewDefaults: context => {
         const config = loadConfig(context.cwd);
         const registry = new EngineRegistry(); registry.load(resolveBuiltinEnginesDir());
@@ -187,7 +193,7 @@ export function decorateCliFirstPartyServices(manifest: ModManifest, base: ModSe
       },
     } } : {}),
     ...(manifest.id === 'agon.forge' ? { patchApplication: patchApplicationHost } : {}),
-    ...(['agon.forge', 'agon.team-forge', 'agon.pipeline-orchestration'].includes(manifest.id) ? {
+    ...(['agon.forge', 'agon.team-forge', 'agon.pipeline-orchestration', 'agon.goal'].includes(manifest.id) ? {
       forge: createForgeHostServices(() => {
         const registry = new EngineRegistry(); registry.load(resolveBuiltinEnginesDir()); return registry;
       }, createCliAdapter, () => {
@@ -214,7 +220,8 @@ export function createCliEngineServices(): ModServices['engines'] {
       if (!selected) throw Object.assign(new Error('No active engines. Run agon engine list or agon engine add <id>.'), { code: 'NO_ACTIVE_ENGINE' });
       const engine = registry.get(selected); const outputDir = createRunDir({ mode: 'mod-dispatch', announce: false }).path;
       const result = await createCliAdapter(registry).dispatch({ engine, prompt, cwd: context.cwd, mode: options?.mode ?? 'exec', timeout: Math.max(1, options?.timeoutSeconds ?? 120), outputDir, systemPrompt: options?.systemPrompt, textOnly: options?.textOnly, signal: context.signal });
-      return { engineId: engine.id, exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr, durationMs: result.durationMs, timedOut: result.timedOut, outputDir } as Json;
+      return { engineId: engine.id, exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr, durationMs: result.durationMs, timedOut: result.timedOut, outputDir,
+        ...(result.usage ? { usage: result.usage } : {}) } as Json;
     },
   });
 }

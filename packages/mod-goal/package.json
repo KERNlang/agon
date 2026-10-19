@@ -38,6 +38,7 @@
     "@kernlang/agon-mod-jobs": "1.0.0",
     "@kernlang/agon-mod-git-actions": "1.0.0",
     "@kernlang/agon-support-worktree": "1.0.0",
-    "@kernlang/agon-support-verification": "1.0.0"
+    "@kernlang/agon-support-verification": "1.0.0",
+    "@kernlang/agon-mod-forge": "1.0.0"
   }
 }

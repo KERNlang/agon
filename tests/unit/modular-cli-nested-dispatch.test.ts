@@ -1,15 +1,16 @@
 import { runCommand } from 'citty';
 import type { CommandDef } from 'citty';
+import type { CommandContribution } from '../../packages/mod-api/src/index.js';
 import { beforeEach, expect, it, vi } from 'vitest';
 
 const state = vi.hoisted(() => ({ calls: [] as string[], inputs: [] as unknown[], flagProjection: false, requiredIntent: false,
-  disabled: new Set<string>(), failure: false, generation: 0 }));
+  disabled: new Set<string>(), failure: false, generation: 0, goalProjection: undefined as CommandContribution | undefined }));
 vi.mock('../../packages/cli/src/surface-authority-runtime.js', () => {
-  const entries = ['ratings', 'ratings purge-unknown'].map(publicId => ({ publicId, category: 'cliCommands', description: publicId, aliases: publicId === 'ratings' ? ['scores'] : [] }));
+  const entries = () => ['ratings', 'ratings purge-unknown', ...(state.goalProjection ? ['goal'] : [])].map(publicId => ({ publicId, category: 'cliCommands', description: publicId, aliases: publicId === 'ratings' ? ['scores'] : [] }));
   const check = (_surface: string, id: string) => { if (state.disabled.has(id)) throw new Error(`disabled: ${id}`); };
   return {
-    processSurfacePublicIds: () => new Set(entries.map(entry => entry.publicId)),
-    processSurfaceCatalog: () => entries,
+    processSurfacePublicIds: () => new Set(entries().map(entry => entry.publicId)),
+    processSurfaceCatalog: entries,
     captureProcessSurfaceAuthority: () => {
       const generation = state.generation;
       return () => { if (generation !== state.generation) throw new Error('stale generation'); };
@@ -17,11 +18,11 @@ vi.mock('../../packages/cli/src/surface-authority-runtime.js', () => {
     assertProcessSurfaceAvailable: check,
     processSurfaceClient: () => ({ assertAvailable(id: string) {
       check('cli', id);
-      return { owner: { id: 'agon.ratings' }, payload: {
-        inputSchema: { type: 'object', additionalProperties: false, required: state.requiredIntent ? ['intent'] : [], properties: state.flagProjection ? {
+      return { owner: { id: id === 'goal' ? 'agon.goal' : 'agon.ratings' }, payload: {
+        inputSchema: state.goalProjection?.inputSchema ?? { type: 'object', additionalProperties: false, required: state.requiredIntent ? ['intent'] : [], properties: state.flagProjection ? {
           dryRun: { type: 'boolean', default: false }, requireTests: { type: 'boolean', default: true },
           gateTimeout: { type: 'string', default: '1800' }, reviewEngines: { type: 'string' }, intent: { type: 'string' },
-        } : {} }, cli: state.flagProjection ? { positionals: ['intent'], aliases: { reviewEngines: 'r' } } : {},
+        } : {} }, cli: state.goalProjection?.cli ?? (state.flagProjection ? { positionals: ['intent'], aliases: { reviewEngines: 'r' } } : {}),
         run(input: unknown) { state.inputs.push(input); state.calls.push(id); if (state.failure) throw new Error('child failed'); return { exitCode: 0 }; },
       } };
     } }),
@@ -29,7 +30,31 @@ vi.mock('../../packages/cli/src/surface-authority-runtime.js', () => {
 });
 import { createGeneratedLazySubCommands, normalizeCliArguments } from '../../packages/cli/src/lazy-commands.js';
 
-beforeEach(() => { state.calls = []; state.inputs = []; state.flagProjection = false; state.requiredIntent = false; state.disabled.clear(); state.failure = false; state.generation = 0; });
+beforeEach(() => { state.calls = []; state.inputs = []; state.flagProjection = false; state.requiredIntent = false; state.disabled.clear(); state.failure = false; state.generation = 0; state.goalProjection = undefined; });
+
+it('parses actual supervised Goal restart arguments through the generated Goal route', async () => {
+  const { createMod, runGoalSupervisor } = await import('../../packages/mod-goal/src/implementation.js');
+  const command = vi.fn((_surface: string, _contribution: CommandContribution) => () => {});
+  await createMod({} as never).activate({ command, planStep: () => () => {},
+    tool: () => () => {}, resultType: () => () => {} } as never);
+  state.goalProjection = command.mock.calls.find(([surface]) => surface === 'cli')![1];
+  const tasks = [{ id: 'first', source: 'a quoted "task" with\nnewlines' }];
+  const root = { subCommands: createGeneratedLazySubCommands() };
+  const runChild = vi.fn(async (args: readonly string[]) => {
+    await runCommand(root, { rawArgs: await normalizeCliArguments(root, [...args]) });
+    return { exitCode: state.inputs.length === 1 ? 137 : 0, outputTail: '' };
+  });
+  const result = await runGoalSupervisor({ intent: 'supervised goal', tasks,
+    engines: ['builder', 'reviewer'], requireTests: false, commit: false }, {
+    nodeExec: '/node', agonEntry: '/agon.js', runChild, wait: async () => {}, interrupted: () => false,
+  });
+  expect(result.exitCode).toBe(0);
+  expect(runChild).toHaveBeenCalledTimes(2);
+  expect(state.calls).toEqual(['goal', 'goal']);
+  const expected = expect.objectContaining({ intent: 'supervised goal', tasks: JSON.stringify(tasks),
+    engines: 'builder,reviewer', requireTests: false, commit: false, resume: true });
+  expect(state.inputs).toEqual([expected, expected]);
+});
 
 it('accepts a kebab-case boolean before a required positional', async () => {
   state.flagProjection = true;

@@ -37,12 +37,19 @@ export interface GoalReviewDefaults {
   readonly judge?: string;
 }
 
+export interface GoalImplementationHints {
+  readonly flow: string;
+  readonly forgeScope: string;
+  readonly escalationHint: string;
+}
+
 export interface GoalHostServices {
   open(context: InvocationContext): {
     assertCurrent(): void;
     /** Cancellation may record its outcome; a revoked generation may not. */
     assertStateCurrent?(): void;
     reviewDefaults?(): GoalReviewDefaults;
+    implementationHints?(source: string, engines: readonly string[]): GoalImplementationHints;
     acquire(id: string): Promise<{ assertOwned(): Promise<void>; release(): Promise<void> }>;
     openWorktree(branch: string, resumeBase?: string, expectedRepoRoot?: string): GoalWorktree;
     prepareTaskWorktree?(branch: string, baseline: { repoRoot: string; sha: string; patch: string }): GoalWorktree;
@@ -68,6 +75,7 @@ export function createGoalHostServices(options: {
   captureAuthority(): () => void;
   acquireWriter(id: string): Promise<{ assertOwned(): Promise<void>; release(): Promise<void> }>;
   reviewDefaults?(context: InvocationContext): GoalReviewDefaults;
+  implementationHints?(source: string, engines: readonly string[], context: InvocationContext): GoalImplementationHints;
   draftPullRequest?(input: PullRequestDraft, dispatch: (prompt: string) => Promise<string>): Promise<{ ok: boolean; title: string; body: string }>;
   formatPullRequestBody?(body: string, context: InvocationContext): string;
 }): GoalHostServices {
@@ -79,6 +87,12 @@ export function createGoalHostServices(options: {
       const host = {
         assertCurrent,
         assertStateCurrent: authority,
+        ...(options.implementationHints ? { implementationHints: (source: string, engines: readonly string[]) => {
+          assertCurrent();
+          const hints = options.implementationHints!(source, engines, context);
+          assertCurrent();
+          return hints;
+        } } : {}),
         ...(options.reviewDefaults ? { reviewDefaults: () => {
           assertCurrent();
           const defaults = options.reviewDefaults!(context);

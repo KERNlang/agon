@@ -30,6 +30,14 @@ describe('forge dispatch timeout selection', () => {
     expect(resolveForgeDispatchTimeout({ id: 'slow', timeout: 900 }, config)).toBe(900);
   });
 
+  it('uses an explicit invocation timeout instead of engine and configured defaults', () => {
+    expect(resolveForgeDispatchTimeout({ id: 'slow', timeout: 900 }, { ...config, explicitDispatchTimeout: 7 })).toBe(7);
+  });
+
+  it.each([undefined, 0, -1, Number.NaN, Number.POSITIVE_INFINITY])('keeps defaults for invalid or absent explicit timeout %s', explicitDispatchTimeout => {
+    expect(resolveForgeDispatchTimeout({ id: 'slow', timeout: 900 }, { ...config, explicitDispatchTimeout })).toBe(900);
+  });
+
   it('uses the forge dispatch floor when engine has no timeout', () => {
     expect(resolveForgeDispatchTimeout({ id: 'default' }, config)).toBe(480);
   });

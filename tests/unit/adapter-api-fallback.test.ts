@@ -263,6 +263,22 @@ describe('CliAdapter.dispatch — api fallback gated on key presence (Finding 1)
     expect(result.engineFault).toBe(true);
   });
 
+  it.each([
+    [{}, 0], [{ failed: true }, 1], [{ timedOut: true }, 124], [{ cancelled: true }, 130],
+  ])('preserves reported usage through both public agent methods: %#', async (status, exitCode) => {
+    process.env.FINDING1_FIXTURE_KEY = 'sk-test-123';
+    const usage = { promptTokens: 300, completionTokens: 50, totalTokens: 350,
+      cachedInputTokens: 230, source: 'sdk' as const };
+    mockState.apiAgentResult = { response: 'partial or complete', toolCalls: 1, steps: 2, ...status, usage };
+    const adapter = makeAdapter();
+    const result = await adapter.dispatchAgent({ ...makeOptions(), mode: 'agent' });
+    expect(result).toMatchObject({ exitCode, usage });
+    const stream = adapter.dispatchAgentStream({ ...makeOptions(), mode: 'agent' });
+    let terminal = await stream.next();
+    while (!terminal.done) terminal = await stream.next();
+    expect(terminal.value).toMatchObject({ exitCode, usage });
+  });
+
   it('dispatchAgent returns the conventional cancellation exit code', async () => {
     process.env.FINDING1_FIXTURE_KEY = 'sk-test-123';
     mockState.apiAgentResult = {

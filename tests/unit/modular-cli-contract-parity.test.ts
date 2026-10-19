@@ -79,7 +79,7 @@ function legacyTop(name: string): CommandDef | undefined {
 }
 
 describe('physical CLI contract parity', () => {
-  it.each(physicalTopLevel.filter((name) => name !== 'serve'))('preserves the legacy %s argument and nested-command contract', async (name) => {
+  it.each(physicalTopLevel.filter((name) => name !== 'serve'))('preserves the legacy %s contract plus explicit Goal supervisor additions', async (name) => {
     const generated = createGeneratedLazySubCommands();
     const legacy = legacyTop(name);
     const current = generated[name] as CommandDef | undefined;
@@ -87,6 +87,14 @@ describe('physical CLI contract parity', () => {
     expect(current, `missing generated command ${name}`).toBeDefined();
     const actual = await treeContract(current!);
     const expected = await treeContract(legacy!);
+    if (name === 'goal') {
+      // Supervised restarts must retain task arrays and explicit commit refusal.
+      // These two arguments repair dropped inputs; all legacy fields stay exact.
+      expect(expected.args).not.toHaveProperty('tasks');
+      expect(expected.args).not.toHaveProperty('commit');
+      expected.args.tasks = { type: 'string', required: false, aliases: [] };
+      expected.args.commit = { type: 'boolean', required: false, aliases: [], default: true };
+    }
     expect(contractDiff(actual, expected)).toEqual([]);
   });
 

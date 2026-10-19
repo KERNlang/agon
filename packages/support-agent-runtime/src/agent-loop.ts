@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { Semaphore, isHeavyTool } from '@kernlang/agon-support-engine-runtime';
+import type { DispatchResult } from '@kernlang/agon-support-engine-runtime';
 import { saveToolResultToDisk } from '@kernlang/agon-support-persistence';
 
 export interface ApiConfig {
@@ -72,6 +73,7 @@ export interface ApiAgentOptions {
 }
 
 export interface ApiAgentResult {
+  usage?: DispatchResult['usage'];
   response: string;
   toolCalls: number;
   steps: number;
@@ -151,6 +153,52 @@ export function isTransientDispatchFailure(stderr: string, exitCode?: number): b
  * Run an API engine with full tool loop. Returns final response after all tool calls resolve.
  */
 export async function runApiAgentLoop(opts: ApiAgentOptions, runtime: AgentLoopRuntime): Promise<ApiAgentResult> {
+  let usage: DispatchResult['usage'];
+  let complete = true;
+  let cacheComplete = true;
+  let attemptedCalls = 0;
+  let reportedCalls = 0;
+  const validCount = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+  const result = await runApiAgentLoopImplementation(opts, {
+    ...runtime,
+    apiStreamDispatchWithHistory: async function* (...args) {
+      attemptedCalls++;
+      let terminal;
+      try {
+        terminal = yield* runtime.apiStreamDispatchWithHistory(...args);
+      } catch (error) {
+        complete = false;
+        throw error;
+      }
+      const current: DispatchResult['usage'] = terminal?.usage;
+      if (!current || !validCount(current.promptTokens) || !validCount(current.completionTokens)
+        || !validCount(current.totalTokens) || !['sdk', 'cli-reported', 'estimated'].includes(current.source)
+        || (current.cachedInputTokens !== undefined && (!validCount(current.cachedInputTokens)
+          || current.cachedInputTokens > current.promptTokens))) {
+        complete = false;
+      } else {
+        reportedCalls++;
+        if (current.cachedInputTokens === undefined) cacheComplete = false;
+        const source = current.source === 'estimated' || usage?.source === 'estimated' ? 'estimated'
+          : current.source === 'cli-reported' || usage?.source === 'cli-reported' ? 'cli-reported' : 'sdk';
+        usage = {
+          promptTokens: (usage?.promptTokens ?? 0) + current.promptTokens,
+          completionTokens: (usage?.completionTokens ?? 0) + current.completionTokens,
+          totalTokens: (usage?.totalTokens ?? 0) + current.totalTokens,
+          ...(cacheComplete
+            ? { cachedInputTokens: (usage?.cachedInputTokens ?? 0) + (current.cachedInputTokens ?? 0) } : {}),
+          source,
+        };
+        if (![usage.promptTokens, usage.completionTokens, usage.totalTokens].every(validCount)) complete = false;
+      }
+      return terminal;
+    },
+  });
+  // Missing calls must not become a reported zero or a falsely complete total.
+  return complete && attemptedCalls === reportedCalls && usage ? { ...result, usage } : result;
+}
+
+async function runApiAgentLoopImplementation(opts: ApiAgentOptions, runtime: AgentLoopRuntime): Promise<ApiAgentResult> {
   const executionRefusal = (): string | undefined => {
     try {
       const reason = opts.executionRefusal?.();
@@ -273,6 +321,16 @@ export async function runApiAgentLoop(opts: ApiAgentOptions, runtime: AgentLoopR
     return reason ? { response: `Error: ${reason}`, toolCalls: totalToolCalls,
       steps: step, toolOutcomes, failed: true, errorReason: reason } : undefined;
   };
+  const publishVisible = (text: string, phase: 'narration' | 'final'): ApiAgentResult | undefined => {
+    try {
+      opts.onVisibleChunk?.(text, phase);
+    } catch (cause) {
+      const errorReason = cause instanceof Error ? cause.message : String(cause);
+      return { response: text, toolCalls: totalToolCalls, steps: step, toolOutcomes,
+        failed: true, errorReason: `Visible output callback failed: ${errorReason}` };
+    }
+    return undefined;
+  };
 
   while (step < MAX_STEPS) {
     step++;
@@ -310,12 +368,16 @@ export async function runApiAgentLoop(opts: ApiAgentOptions, runtime: AgentLoopR
       fullResponse = '';
       dispatchResult = null;
       let transientReason: string | null = null;
+      let stream: AsyncGenerator<string, any, void> | undefined;
+      let streamFinished = false;
 
       try {
         const gen = runtime.apiStreamDispatchWithHistory(opts.api, messageHistory as any, remaining, opts.signal, nativeTools);
+        stream = gen;
         while (true) {
           const { value, done } = await gen.next();
           if (done) {
+            streamFinished = true;
             const returnedRefusal = refusedResult();
             if (returnedRefusal) return returnedRefusal;
             dispatchResult = value as any;
@@ -357,6 +419,13 @@ export async function runApiAgentLoop(opts: ApiAgentOptions, runtime: AgentLoopR
           // successful turn. Both clean and partial stream faults are engine
           // failures; the adapter keeps the partial stdout for diagnostics.
           return { response: fullResponse || `Error: ${msg}`, toolCalls: totalToolCalls, steps: step, toolOutcomes, failed: true, engineFault: !thrownTimedOut, timedOut: thrownTimedOut, errorReason: msg };
+        }
+      } finally {
+        if (stream && !streamFinished) {
+          try { await stream.return(undefined); }
+          catch (cause) {
+            console.warn(`[agon] agent stream cleanup failed: ${cause instanceof Error ? cause.message : String(cause)}`);
+          }
         }
       }
 
@@ -451,7 +520,8 @@ export async function runApiAgentLoop(opts: ApiAgentOptions, runtime: AgentLoopR
       const cleanText = [parsedToolCalls.textBefore, parsedToolCalls.textAfter].filter(Boolean).join('\n\n').trim();
       if (cleanText) {
         lastVisibleText = cleanText;
-        if (opts.onVisibleChunk) opts.onVisibleChunk(cleanText, 'narration');
+        const callbackFailure = publishVisible(cleanText, 'narration');
+        if (callbackFailure) return callbackFailure;
       }
       pushHistory({
         role: 'assistant', content: cleanText || null,
@@ -646,7 +716,10 @@ export async function runApiAgentLoop(opts: ApiAgentOptions, runtime: AgentLoopR
     // Final response
     finalResponse = fullResponse;
     const finalVisible = runtime.safeAgentVisibleText(fullResponse);
-    if (opts.onVisibleChunk && finalVisible) opts.onVisibleChunk(finalVisible, 'final');
+    if (finalVisible) {
+      const callbackFailure = publishVisible(finalVisible, 'final');
+      if (callbackFailure) return callbackFailure;
+    }
     pushHistory({ role: 'assistant', content: fullResponse });
     break;
   }

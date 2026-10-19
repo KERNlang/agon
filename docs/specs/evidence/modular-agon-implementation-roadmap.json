@@ -1588,63 +1588,6 @@
       ]
     },
     {
-      "id": "@kernlang/agon-mod-plan",
-      "class": "user-toggleable-mod-package",
-      "owner": "@kernlang/agon-mod-plan",
-      "dependencies": [
-        "@kernlang/agon-mod-api",
-        "@kernlang/agon-support-engine-runtime",
-        "@kernlang/agon-support-persistence",
-        "@kernlang/agon-support-verification",
-        "@kernlang/agon-support-worktree"
-      ],
-      "publicBoundary": "manifest-declared contributions and lifecycle hooks through @kernlang/agon-mod-api",
-      "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
-      "extractionSources": [
-        "packages/cli/src/cesar/routing.ts:27",
-        "packages/cli/src/cesar/tools.ts:52",
-        "packages/cli/src/cesar/tools.ts:53",
-        "packages/cli/src/cesar/tools.ts:54",
-        "packages/cli/src/models/handler-types.ts:113",
-        "packages/cli/src/signals/intent-types.ts:22",
-        "packages/cli/src/signals/intent-types.ts:23",
-        "packages/cli/src/signals/intent-types.ts:24",
-        "packages/cli/src/signals/intent-types.ts:25",
-        "packages/cli/src/signals/intent-types.ts:26",
-        "packages/cli/src/signals/intent-types.ts:63",
-        "packages/cli/src/signals/intent.ts:56",
-        "packages/cli/src/signals/keyboard.ts:46",
-        "packages/cli/src/signals/keyboard.ts:67",
-        "packages/cli/src/signals/keyboard.ts:77",
-        "packages/cli/src/signals/keyboard.ts:78",
-        "packages/core/src/blocks/builtin-commands.ts:36",
-        "packages/core/src/blocks/builtin-commands.ts:37",
-        "packages/core/src/blocks/builtin-commands.ts:38",
-        "packages/core/src/blocks/builtin-commands.ts:39",
-        "packages/core/src/blocks/builtin-commands.ts:40",
-        "packages/core/src/blocks/builtin-commands.ts:41",
-        "packages/mcp/src/agon-orchestration.ts:24"
-      ],
-      "migrationOrder": 30,
-      "migrationSlice": "S5",
-      "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
-      "killList": [
-        "KL-001",
-        "KL-002",
-        "KL-003",
-        "KL-004",
-        "KL-005",
-        "KL-007",
-        "KL-011"
-      ],
-      "acceptanceEvidence": [
-        "PKG-15-BOUNDARY",
-        "PKG-15-PARITY",
-        "PKG-15-PACK",
-        "PKG-15-DISABLED"
-      ]
-    },
-    {
       "id": "@kernlang/agon-support-agent-runtime",
       "class": "hidden-shared-support-package",
       "owner": "@kernlang/agon-support-agent-runtime",
@@ -1666,7 +1609,7 @@
         "packages/support-agent-runtime/src/agent-session.ts:83",
         "packages/support-agent-runtime/src/agent-session.ts:94"
       ],
-      "migrationOrder": 31,
+      "migrationOrder": 29,
       "migrationSlice": "S4",
       "compatibilityAdapter": "legacy callers receive the same capability through a kernel-owned adapter until all dependants move",
       "killList": [
@@ -1696,7 +1639,7 @@
         "packages/support-judge/src/contracts.ts:38",
         "packages/support-judge/src/contracts.ts:43"
       ],
-      "migrationOrder": 32,
+      "migrationOrder": 30,
       "migrationSlice": "S4",
       "compatibilityAdapter": "legacy callers receive the same capability through a kernel-owned adapter until all dependants move",
       "killList": [
@@ -1737,7 +1680,7 @@
         "packages/support-worktree/src/worktree-lock.ts:31",
         "packages/support-worktree/src/worktree-session.ts"
       ],
-      "migrationOrder": 29,
+      "migrationOrder": 31,
       "migrationSlice": "S4",
       "compatibilityAdapter": "legacy callers receive the same capability through a kernel-owned adapter until all dependants move",
       "killList": [
@@ -1796,7 +1739,7 @@
         "packages/core/src/models/types.ts:297",
         "packages/mcp/src/agon-orchestration.ts:24"
       ],
-      "migrationOrder": 33,
+      "migrationOrder": 32,
       "migrationSlice": "S5",
       "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
       "killList": [
@@ -1846,7 +1789,7 @@
         "packages/cli/src/lazy-commands.ts:330",
         "packages/cli/src/signals/intent.ts:56"
       ],
-      "migrationOrder": 34,
+      "migrationOrder": 33,
       "migrationSlice": "S5",
       "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
       "killList": [
@@ -1883,7 +1826,7 @@
         "packages/cli/src/signals/intent.ts:56",
         "packages/forge/src/council.ts:36"
       ],
-      "migrationOrder": 35,
+      "migrationOrder": 34,
       "migrationSlice": "S5",
       "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
       "killList": [
@@ -1956,7 +1899,7 @@
         "packages/forge/src/types-impl.ts:3",
         "packages/mcp/src/agon-orchestration.ts:24"
       ],
-      "migrationOrder": 36,
+      "migrationOrder": 35,
       "migrationSlice": "S5",
       "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
       "killList": [
@@ -1995,7 +1938,7 @@
         "packages/forge/src/mutate-semantic.ts:25",
         "packages/forge/src/mutate.ts:48"
       ],
-      "migrationOrder": 37,
+      "migrationOrder": 36,
       "migrationSlice": "S5",
       "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
       "killList": [
@@ -2034,7 +1977,7 @@
         "packages/forge/src/nero.ts:28",
         "packages/mcp/src/agon-orchestration.ts:24"
       ],
-      "migrationOrder": 38,
+      "migrationOrder": 37,
       "migrationSlice": "S5",
       "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
       "killList": [
@@ -2051,6 +1994,63 @@
         "PKG-31-PARITY",
         "PKG-31-PACK",
         "PKG-31-DISABLED"
+      ]
+    },
+    {
+      "id": "@kernlang/agon-mod-plan",
+      "class": "user-toggleable-mod-package",
+      "owner": "@kernlang/agon-mod-plan",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-persistence",
+        "@kernlang/agon-support-verification",
+        "@kernlang/agon-support-worktree"
+      ],
+      "publicBoundary": "manifest-declared contributions and lifecycle hooks through @kernlang/agon-mod-api",
+      "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
+      "extractionSources": [
+        "packages/cli/src/cesar/routing.ts:27",
+        "packages/cli/src/cesar/tools.ts:52",
+        "packages/cli/src/cesar/tools.ts:53",
+        "packages/cli/src/cesar/tools.ts:54",
+        "packages/cli/src/models/handler-types.ts:113",
+        "packages/cli/src/signals/intent-types.ts:22",
+        "packages/cli/src/signals/intent-types.ts:23",
+        "packages/cli/src/signals/intent-types.ts:24",
+        "packages/cli/src/signals/intent-types.ts:25",
+        "packages/cli/src/signals/intent-types.ts:26",
+        "packages/cli/src/signals/intent-types.ts:63",
+        "packages/cli/src/signals/intent.ts:56",
+        "packages/cli/src/signals/keyboard.ts:46",
+        "packages/cli/src/signals/keyboard.ts:67",
+        "packages/cli/src/signals/keyboard.ts:77",
+        "packages/cli/src/signals/keyboard.ts:78",
+        "packages/core/src/blocks/builtin-commands.ts:36",
+        "packages/core/src/blocks/builtin-commands.ts:37",
+        "packages/core/src/blocks/builtin-commands.ts:38",
+        "packages/core/src/blocks/builtin-commands.ts:39",
+        "packages/core/src/blocks/builtin-commands.ts:40",
+        "packages/core/src/blocks/builtin-commands.ts:41",
+        "packages/mcp/src/agon-orchestration.ts:24"
+      ],
+      "migrationOrder": 38,
+      "migrationSlice": "S5",
+      "compatibilityAdapter": "legacy entrypoint delegates to owner-tagged registry until surface cutover",
+      "killList": [
+        "KL-001",
+        "KL-002",
+        "KL-003",
+        "KL-004",
+        "KL-005",
+        "KL-007",
+        "KL-011"
+      ],
+      "acceptanceEvidence": [
+        "PKG-15-BOUNDARY",
+        "PKG-15-PARITY",
+        "PKG-15-PACK",
+        "PKG-15-DISABLED"
       ]
     },
     {
@@ -2329,7 +2329,8 @@
         "@kernlang/agon-mod-jobs",
         "@kernlang/agon-mod-git-actions",
         "@kernlang/agon-support-worktree",
-        "@kernlang/agon-support-verification"
+        "@kernlang/agon-support-verification",
+        "@kernlang/agon-mod-forge"
       ],
       "publicBoundary": "manifest-declared contributions and lifecycle hooks through @kernlang/agon-mod-api",
       "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",

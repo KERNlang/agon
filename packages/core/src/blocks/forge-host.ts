@@ -9,7 +9,7 @@ import { writeVersionedResultEnvelope } from '@kernlang/agon-support-persistence
 import type { EngineRegistry } from '../signals/engine-registry.js';
 import { loadConfig, RUNS_DIR, CORPUS_PATH } from '../signals/config.js';
 import { seedNewEnginesFromRegistry, updateGlickoRanked } from '../signals/glicko.js';
-import { tracker, estimateTokens, estimateCost } from '../signals/token-tracker.js';
+import { tracker, estimateTokens, estimateCost, estimateCostCacheAware } from '../signals/token-tracker.js';
 import { classifyTask } from './task-classifier.js';
 import { assignForgeRoles, buildSpecializedPrompt } from './role-specialization.js';
 import { buildKernContextSpine } from './context-scanner.js';
@@ -32,7 +32,7 @@ export function createForgeWorkflowEffects(): ForgeWorkflowEffects<EngineRegistr
     seedNewEnginesFromRegistry, buildKernContextSpine, writeVersionedResultEnvelope,
     writeManifest: createForgeManifestStore({ runsDir: RUNS_DIR, withFileLock }).writeManifest,
     addToCorpus: createForgeCorpus(CORPUS_PATH).addToCorpus,
-    stages: { repoRoot, worktreeCreate, worktreeRemoveBestEffort, estimateTokens, estimateCost, fitness },
+    stages: { repoRoot, worktreeCreate, worktreeRemoveBestEffort, estimateTokens, estimateCost, estimateCostCacheAware, fitness },
     synthesis: { worktreeCreate, worktreeRemoveBestEffort, applyPatch, fitness },
     gauntlet: {
       repoRoot, worktreeDiff, worktreeCreate, worktreeRemoveBestEffort, createSidechainLogger,

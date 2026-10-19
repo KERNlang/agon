@@ -49,6 +49,16 @@ function patchTree(cwd: string, base: string, patches: readonly string[]): strin
   }
 }
 
+/** Create an immutable candidate base without moving a branch or its index. */
+export function createWorktreeSnapshot(cwd: string, base: string, patch: string): string {
+  const parent = git(cwd, ['rev-parse', '--verify', `${base}^{commit}`]);
+  const tree = patchTree(cwd, parent, [patch]);
+  return execFileSync('git', ['-c', 'user.name=Agon Snapshot', '-c', 'user.email=agon-snapshot@example.invalid',
+    'commit-tree', tree, '-p', parent, '-m', 'Isolated workflow snapshot'], {
+    cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 30_000,
+  }).trim();
+}
+
 /** Compose retained work onto an accepted baseline; conflicts leave both intact. */
 export function composeWorktreePatch(cwd: string, base: string, patches: readonly string[]): string {
   const tree = patchTree(cwd, base, patches);

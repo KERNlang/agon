@@ -32,7 +32,7 @@ export { runLint, runStyleCheck, runSyntaxCheck, changedFilesIncludingUntracked,
 export type { SyntaxCheckResult, ForgeSyntaxRuntime } from './quality.js';
 export { runFitness, normalizeFitnessCommandForShell } from './fitness.js';
 export type { ForgeFitnessRuntime } from './fitness.js';
-export { createForgeStages, resolveForgeDispatchTimeout, shouldHarvestFailedDispatch } from './stages.js';
+export { createForgeStages, measureForgeUsage, resolveForgeDispatchTimeout, shouldHarvestFailedDispatch } from './stages.js';
 export type { ForgeStageConfig, ForgeStageRegistry, ForgeStageRuntime } from './stages.js';
 export { buildForgePrompt, buildCritiquePrompt, buildSynthesisPrompt, buildForgePromptWithContext } from './prompts.js';
 export { buildStageContext, renderStageContext } from './stage-context.js';

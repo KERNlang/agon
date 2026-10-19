@@ -144,9 +144,9 @@ describe('frozen first-party package graph', () => {
     },
   );
 
-  it('contains the complete 49-package/155-edge target map without dangling dependencies', () => {
+  it('contains the complete 49-package/156-edge target map without dangling dependencies', () => {
     expect(FIRST_PARTY_PACKAGE_GRAPH.packages).toHaveLength(49);
-    expect(FIRST_PARTY_PACKAGE_GRAPH.dependencyEdges).toHaveLength(155);
+    expect(FIRST_PARTY_PACKAGE_GRAPH.dependencyEdges).toHaveLength(156);
     expect(FIRST_PARTY_PACKAGE_GRAPH.dependencyEdges.filter(({ from, to }) =>
       from === '@kernlang/agon-support-worktree' && to === '@kernlang/agon-support-engine-runtime',
     )).toEqual([{ from: '@kernlang/agon-support-worktree', to: '@kernlang/agon-support-engine-runtime', kind: 'hard' }]);
@@ -161,6 +161,16 @@ describe('frozen first-party package graph', () => {
     for (const entry of FIRST_PARTY_PACKAGE_GRAPH.packages) {
       for (const dependency of entry.dependencies) expect(ids.has(dependency), `${entry.id} -> ${dependency}`).toBe(true);
     }
+  });
+
+  it('declares Goal competition as a hard dependency on the existing Forge owner', () => {
+    expect(FIRST_PARTY_PACKAGE_GRAPH.dependencyEdges.filter(({ from, to }) =>
+      from === '@kernlang/agon-mod-goal' && to === '@kernlang/agon-mod-forge',
+    )).toEqual([{ from: '@kernlang/agon-mod-goal', to: '@kernlang/agon-mod-forge', kind: 'hard' }]);
+    const manifest = JSON.parse(readFileSync(new URL('../../packages/mod-goal/agon.mod.json', import.meta.url), 'utf8'));
+    expect(manifest.dependencies.required).toContainEqual({ id: 'agon.forge', range: '>=0.0.0-0' });
+    const metadata = JSON.parse(readFileSync(new URL('../../packages/mod-goal/package.json', import.meta.url), 'utf8'));
+    expect(metadata.dependencies['@kernlang/agon-mod-forge']).toBe('1.0.0');
   });
 
   it('is acyclic and keeps user mods dependent on the public protocol rather than private source paths', () => {

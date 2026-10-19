@@ -288,7 +288,8 @@ export const FIRST_PARTY_PACKAGE_GRAPH = {
         "@kernlang/agon-mod-jobs",
         "@kernlang/agon-mod-git-actions",
         "@kernlang/agon-support-worktree",
-        "@kernlang/agon-support-verification"
+        "@kernlang/agon-support-verification",
+        "@kernlang/agon-mod-forge"
       ]
     },
     {
@@ -934,6 +935,11 @@ export const FIRST_PARTY_PACKAGE_GRAPH = {
     {
       "from": "@kernlang/agon-mod-goal",
       "to": "@kernlang/agon-support-verification",
+      "kind": "hard"
+    },
+    {
+      "from": "@kernlang/agon-mod-goal",
+      "to": "@kernlang/agon-mod-forge",
       "kind": "hard"
     },
     {

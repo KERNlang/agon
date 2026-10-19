@@ -28,7 +28,7 @@ function orchestrationEngines(ids: readonly string[]): string[] {
 export function decorateMcpFirstPartyServices(manifest: ModManifest, base: ModServices): ModServices {
   return Object.freeze({
     ...base,
-    ...(['agon.forge', 'agon.team-forge', 'agon.pipeline-orchestration'].includes(manifest.id) ? { forge: createForgeHostServices(() => {
+    ...(['agon.forge', 'agon.team-forge', 'agon.pipeline-orchestration', 'agon.goal'].includes(manifest.id) ? { forge: createForgeHostServices(() => {
       const registry = new EngineRegistry(); registry.load(resolveEngineDefinitionsDir()); return registry;
     }, createCliAdapter, () => captureMcpSurfaceAuthority('Forge')) } : {}),
     ...(manifest.id === 'agon.ratings' ? { ratings: {
@@ -107,7 +107,8 @@ export function createMcpEngineServices(): ModServices['engines'] {
           textOnly: options?.textOnly,
           signal: context.signal,
         });
-        return { engineId: engine.id, exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr, durationMs: result.durationMs, timedOut: result.timedOut, outputDir } as Json;
+        return { engineId: engine.id, exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr, durationMs: result.durationMs, timedOut: result.timedOut, outputDir,
+          ...(result.usage ? { usage: result.usage } : {}) } as Json;
       },
   });
 }

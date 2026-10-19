@@ -49,7 +49,7 @@ const mods = {
   'pipeline-orchestration': ['@kernlang/agon-mod-brainstorm', '@kernlang/agon-mod-forge', '@kernlang/agon-mod-tribunal'],
   'pipeline-delivery': ['@kernlang/agon-mod-agent', '@kernlang/agon-mod-review'],
   agent: ['@kernlang/agon-support-agent-runtime'],
-  goal: ['@kernlang/agon-mod-plan', '@kernlang/agon-mod-agent', '@kernlang/agon-mod-review', '@kernlang/agon-mod-jobs', '@kernlang/agon-mod-git-actions', '@kernlang/agon-support-worktree', '@kernlang/agon-support-verification'],
+  goal: ['@kernlang/agon-mod-plan', '@kernlang/agon-mod-agent', '@kernlang/agon-mod-review', '@kernlang/agon-mod-jobs', '@kernlang/agon-mod-git-actions', '@kernlang/agon-support-worktree', '@kernlang/agon-support-verification', '@kernlang/agon-mod-forge'],
   conquer: ['@kernlang/agon-mod-agent', '@kernlang/agon-mod-nero', '@kernlang/agon-mod-tribunal', '@kernlang/agon-mod-brainstorm', '@kernlang/agon-mod-council', '@kernlang/agon-support-worktree', '@kernlang/agon-support-verification'],
   nero: ['@kernlang/agon-support-judge'],
   council: ['@kernlang/agon-support-panel', '@kernlang/agon-support-judge'],

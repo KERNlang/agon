@@ -1,7 +1,7 @@
 # Modular Agon acceptance roadmap
 
 **Status:** implementation in progress; release acceptance remains unproven
-**Date:** 2026-10-13 (source observations at `624af51e` plus uncommitted qualification work; historical diagnostics below retain their original subjects)
+**Date:** 2026-10-19 (source observations at `5f3923440` plus Goal/Forge integration work; historical diagnostics below retain their original subjects)
 
 The original plan was frozen on 2026-08-23. Raphael subsequently authorized
 implementation in an isolated worktree. This status update does not authorize
@@ -10,7 +10,7 @@ installation, promotion, or changes to the active/global Agon.
 The machine source of truth is
 [`evidence/modular-agon-implementation-roadmap.json`](./evidence/modular-agon-implementation-roadmap.json).
 Run `node scripts/spec/verify-modular-agon-roadmap.mjs` to prove that it covers
-49 packages, 153 unique dependency edges, all 872 frozen legacy ownership assignments,
+49 packages, 156 unique dependency edges, all 872 frozen legacy ownership assignments,
 existing source paths, topological order, nine gated slices, and classified
 claims.
 
@@ -20,7 +20,7 @@ claims.
 |---|---|
 | Public API, manifest validator, resolver, registry, compatibility metadata | implemented |
 | Slice 1A acceptance | original receipt [superseded](./evidence/modular-agon-slice1a-audit-supersession.md); current clean-subject acceptance remains unproven |
-| 49-package DAG | implemented structural map: 153 declared and unique edges; roadmap dependency sets match the package map, including Plan's approved worktree dependency |
+| 49-package DAG | implemented structural map: 156 declared and unique edges; roadmap dependency sets match the package map, including Goal's approved Forge dependency |
 | Durable host/state/profiles/activation | implementation exists; current-subject slice qualification still required |
 | Physical extraction beyond API/kernel | partial: physical packages exist; remaining ownership and host adapters are not retired |
 | Runtime-generated CLI/TUI/MCP/Cesar/docs | partial: executable generated activation exists; complete legacy-owner retirement is not proven |
@@ -195,7 +195,7 @@ diagnostic run cannot satisfy that gate. Use `--no-write --json` on the platform
 checker to inspect full results without replacing tracked evidence. Standalone
 matrix output is not a source-bound release approval.
 
-Release requires S1B–S9 clean receipts; 49 packages/153 edges/872 frozen legacy assignments;
+Release requires S1B–S9 clean receipts; 49 packages/156 edges/872 frozen legacy assignments;
 all enable/disable/dependency/failure/rollback cases on five surfaces; complete
 kill-list removal; install/update/interruption/downgrade/offline/safe-mode tests;
 content-bound trust/grants; minimal pack contents; native performance budgets;

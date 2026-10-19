@@ -1,5 +1,6 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { getEventListeners } from 'node:events';
 import { existsSync, mkdtempSync, writeFileSync, readFileSync, unlinkSync, renameSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -2724,6 +2725,74 @@ describe('physical goal mod', () => {
     expect(runChild).toHaveBeenCalledOnce();
     expect(wait).not.toHaveBeenCalled();
     expect(dispose).toHaveBeenCalledOnce();
+    expect(h.dispatch).not.toHaveBeenCalled();
+  });
+
+  it.each(['before-spawn', 'reading-state', 'running-child', 'backoff'] as const)('honors supervised invocation cancellation: %s', async phase => {
+    const cwd = repo(); const h = harness();
+    const controller = new AbortController();
+    const reason = new Error('supervised invocation cancelled');
+    const started = join(cwd, 'supervisor-child-started');
+    const stopped = join(cwd, 'supervisor-child-stopped');
+    const child = join(cwd, 'supervisor-child.mjs');
+    writeFileSync(child, [
+      'import { appendFileSync, writeFileSync } from "node:fs";',
+      `appendFileSync(${JSON.stringify(started)}, 'started\\n');`,
+      `process.on('SIGTERM', () => { writeFileSync(${JSON.stringify(stopped)}, 'stopped'); process.exit(0); });`,
+      'process.stdout.write("GOAL_SUPERVISOR_CHILD_READY\\n");',
+      phase === 'backoff' ? 'process.exit(1);' : 'setTimeout(() => process.exit(0), 1000);',
+    ].join('\n'));
+    const entry = process.argv[1];
+    const signals = ['SIGINT', 'SIGTERM', 'SIGHUP'] as const;
+    const listeners = signals.map(signal => process.listenerCount(signal));
+    const abortListeners = getEventListeners(controller.signal, 'abort');
+    if (phase === 'reading-state') vi.mocked(h.services.state.read).mockImplementationOnce(async () => {
+      await Promise.resolve();
+      controller.abort(reason);
+      return undefined;
+    });
+    const schedule = setTimeout;
+    let backoffTimer: ReturnType<typeof setTimeout> | undefined;
+    const clearTimer = vi.spyOn(globalThis, 'clearTimeout');
+    const timers = vi.spyOn(globalThis, 'setTimeout').mockImplementation(((callback: any, delay?: number, ...args: any[]) => {
+      const timer = schedule(callback, delay, ...args);
+      if (phase === 'backoff' && delay === 5000) {
+        backoffTimer = timer;
+        queueMicrotask(() => controller.abort(reason));
+      }
+      return timer;
+    }) as typeof setTimeout);
+    const originalWrite = process.stdout.write.bind(process.stdout);
+    let observedOutput = '';
+    const output = vi.spyOn(process.stdout, 'write').mockImplementation((...args: any[]) => {
+      observedOutput += String(args[0]);
+      if (phase === 'running-child' && observedOutput.includes('GOAL_SUPERVISOR_CHILD_READY')) controller.abort(reason);
+      return (originalWrite as any)(...args);
+    });
+    if (phase === 'before-spawn') controller.abort(reason);
+    let failure: unknown;
+    try {
+      process.argv[1] = child;
+      try {
+        await runGoal({ intent: 'supervised cancellation', gate: 'true', supervised: true, maxRestarts: phase === 'backoff' ? 1 : 0 },
+          { ...context(cwd), signal: controller.signal }, h.services);
+      } catch (error) { failure = error; }
+    } finally {
+      process.argv[1] = entry;
+      output.mockRestore();
+      timers.mockRestore();
+    }
+    const childExpected = phase === 'running-child' || phase === 'backoff';
+    expect(existsSync(started)).toBe(childExpected);
+    if (childExpected) expect(readFileSync(started, 'utf8')).toBe('started\n');
+    if (phase === 'backoff') {
+      expect(backoffTimer).toBeDefined();
+      expect(clearTimer).toHaveBeenCalledWith(backoffTimer);
+    }
+    expect(existsSync(stopped)).toBe(phase === 'running-child');
+    expect(failure).toBe(reason);
+    expect(signals.map(signal => process.listenerCount(signal))).toEqual(listeners);
+    expect(getEventListeners(controller.signal, 'abort')).toEqual(abortListeners);
     expect(h.dispatch).not.toHaveBeenCalled();
   });
 

@@ -172,14 +172,16 @@ function supervisorArguments(input: Record<string, Json>): string[] {
   return args;
 }
 
-function processSupervisorRuntime(): GoalSupervisorRuntime | undefined {
+function processSupervisorRuntime(signal?: AbortSignal): GoalSupervisorRuntime | undefined {
   const agonEntry = process.argv[1];
   if (!agonEntry) return undefined;
   let interrupted = false;
   let child: ReturnType<typeof spawn> | undefined;
   let wake: (() => void) | undefined;
   const stop = () => { interrupted = true; try { child?.kill("SIGTERM"); } catch { /* already stopped */ } wake?.(); };
-  for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.once(signal, stop);
+  for (const event of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.once(event, stop);
+  signal?.addEventListener('abort', stop, { once: true });
+  if (signal?.aborted) stop();
   return {
     nodeExec: process.execPath,
     agonEntry,
@@ -202,7 +204,8 @@ function processSupervisorRuntime(): GoalSupervisorRuntime | undefined {
       wake = () => { clearTimeout(timer); wake = undefined; resolveWait(); };
     }),
     dispose: () => {
-      for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.removeListener(signal, stop);
+      signal?.removeEventListener('abort', stop);
+      for (const event of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.removeListener(event, stop);
     },
   };
 }
@@ -222,6 +225,10 @@ export async function runGoalSupervisor(
     try { args = supervisorArguments(input); }
     catch (error) { return { exitCode: 1, stderr: `${error instanceof Error ? error.message : String(error)}\n` }; }
     for (;;) {
+      if (runtime.interrupted()) {
+        const result = { restarts, reason: "interrupted" };
+        return { exitCode: 0, stdout: `${JSON.stringify(result, null, 2)}\n`, result };
+      }
       const child = await runtime.runChild(args);
       if (runtime.interrupted()) {
         const result = { restarts, reason: "interrupted" };
@@ -488,6 +495,7 @@ export async function runGoal(
   context: InvocationContext,
   services: GoalModServices,
 ): Promise<CommandResult> {
+  context.signal.throwIfAborted();
   const input = raw as Record<string, Json>;
   const requestedIntent = String(
     input.intent ?? (Array.isArray(input._) ? input._.join(" ") : ""),
@@ -515,7 +523,9 @@ export async function runGoal(
   const inputError = goalNumericInputError(input);
   if (inputError) return { exitCode: 1, stderr: inputError };
   if (input.supervised === true && input.dryRun !== true) {
-    return runGoalSupervisor(raw);
+    const result = await runGoalSupervisor(raw, processSupervisorRuntime(context.signal));
+    context.signal.throwIfAborted();
+    return result;
   }
   let intent = requestedIntent || prior?.intent || "";
   const branch = String(input.branch ?? prior?.branch ?? `goal/${id}`).trim();

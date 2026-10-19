@@ -1,5 +1,42 @@
 # Goal / Forge integration evidence
 
+## Supervised invocation cancellation
+
+Date: 2026-10-19. Supervised Goal now honors the invocation AbortSignal.
+An already-cancelled invocation cannot spawn a child. Cancellation during state
+loading prevents the later spawn; cancellation during execution sends SIGTERM
+and waits for child close. Cancellation during backoff clears the timer and
+prevents restart. The caller receives the original abort reason after cleanup.
+No dependency or public runtime interface changed.
+
+Real-child fixtures cover all four phases, exact child launch count, process
+signal listener restoration, abort listener restoration and timer cleanup.
+The initial backoff fixture incorrectly allowed zero retries; that failed run
+is retained but is not evidence of a production defect. It now permits one.
+
+| Receipt | Result | Log SHA-256 |
+|---|---|---|
+| goal-supervisor-invocation-cancel-red | Pre-abort spawned a child; active abort did not stop it | b17bb16165a2cec52c3ed2bb5422843750fe775a9f4f2552a3f1c084ca22cc6e |
+| goal-supervisor-invocation-cancel-boundaries | Failed backoff fixture: no retries permitted | 3f218ea9576c680b9c0b02e2401241dd7758fe7cead0f1bc81e206a51b3ebff3 |
+| goal-supervisor-invocation-cancel-reviewed | 15 focused tests, types, focused lint and diff check passed | ea63a46d2dbe56ac614481650b700a1418c0b0b16cf6904c0c9ebc46ec8d6c77 |
+| goal-supervisor-invocation-cancel-full-gate | 10,650 passed, six skipped; all full gates passed in 945.115s | 7e65963b268db4e4b45e61a933f59d2c15c2e3b73882a8a66959ca69721e6804 |
+
+Isolated Codex review found no introduced blocking defect. Packet SHA-256:
+`8517ad4d2a79e2d7a72bf0844dc241ccae13a5fedda8817cee7877f229c5daa3`.
+Review log SHA-256:
+`cf889c609f6fb3db63c68379bcd198eb0809d56465a6fdc0e4be66d826be732e`.
+Source-verified coverage suggestions added the state-loading cancellation,
+launch-count and timer assertions, and accumulated output before matching the
+readiness marker. Those test changes passed locally; no second review claimed.
+Temporary review auth copy was removed. Test receipts record zero providers.
+
+Limits: SIGTERM-resistant children, descendant-process teardown and the existing
+spawn-error-before-close path require separate qualification. These tests do
+not prove arbitrary child termination or legacy journal migration. This is
+development verification, not a clean-checkout release acceptance receipt.
+Durable raw evidence: `/Users/ra/dev/modular-agon-remediation/`.
+No global installation, promotion or push occurred.
+
 ## Supervisor missing-queue parity
 
 Date: 2026-10-19. The modular supervisor now treats Goal's `Queue not found`

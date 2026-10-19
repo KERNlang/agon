@@ -6,6 +6,76 @@ exercise these installed-user contracts. Its passing executions are not a
 whole-product compatibility verdict. No active installation may be promoted
 on the strength of that receipt.
 
+## Shared Git/worktree owner — 2026-10-19
+
+The first full run failed one stale test spy after 10,743 passing tests and six
+skips. CLI now imports attribution from Worktree, but the test still replaced
+Core's compatibility binding. The spy now targets the physical owner with all
+original assertions retained. `modular-git-owner-host-spy` passes; the full
+failure remains archived (`modular-git-owner-full`, log SHA
+`6e5f83020f6de54a9a050d9be5f220d4e34d5ddc8d32691b21255e894c447f5f`).
+
+The separate support boundary gate also exposed a stale duplicate dependency
+table. It omitted the previously approved Worktree to Engine Runtime edge.
+The verifier now reads the canonical package map, retains the exact eleven
+support owners, and rejects invalid or duplicate dependencies. Source, asset,
+kernel-peer and dependency-mutation checks remain. The regular test suite now
+runs this gate with its self-test; it previously only imported source checks.
+The regression failed before the fix (`modular-support-map-red`). Damaged-map
+controls and the reviewed gate pass (`modular-support-map-reviewed`, log SHA
+`17c22dcb35b5672fc35c86200b64c77fa018b983593caad4112508a2dafe30fd`).
+Codex found no blocking defect; its request to run mutation controls in the
+regular suite was verified and applied. Packet SHA:
+`ce425dfdee753e1900b852ed577d7021c87368ff28aa1b24426028d42b43402a`;
+review log SHA: `9da89de7abe125723306c7f22055e17eeec226d32479fbb0aed217190f762a54`.
+This gate checks conformance to canonical policy, not approval of policy changes.
+
+Git operations moved from Core to the existing Worktree support package. Core
+preserves its 40 public bindings; the CLI host imports moved operations from
+the physical owner. No dependency was added. The move retains Git flags,
+timeouts, error messages, retries, cleanup, global active-worktree tracking,
+patch handling and attribution behavior. The physical Worktrees mod's stricter
+setup semantics remain separate; this extraction does not silently change them.
+
+`modular-git-owner-source-parity` proves the implementation matches the prior
+committed file after only local import changes and replacing two identity
+wrappers with native Set/String.split. Log SHA:
+`41f21dc6f7038882c4db5bd66c190b86238d4450d3dcc62bd69c4b9eb76dd2cd`.
+
+Codex review found no demonstrated extraction regression, but identified weak
+ownership assertions. The test now pins the exact export set and compares
+reference identity, not deep equality. `modular-git-owner-map-negative` rejects
+a copied empty map; `modular-git-owner-export-negative` rejects a removed export.
+Both mutations were restored. The patch test now invokes the moved `applyPatch`
+directly as well as the separate `applyPatchToTree` API. Review packet SHA:
+`44042b4e8f6ba0b84d2487bfd709056ae0f72e66849e25404496c76596089110`;
+log SHA: `43b1e88a88c4145ca820eef38d53a1b02391028f8a580659fc9ff10ff1ba5304`.
+
+`modular-git-owner-review-fixed` passed eight files / 152 tests, types and diff
+checks in 18.36s. Log SHA:
+`ba5b5bdc6d934ac48d02674ccc39336dca6f5fefe648e2b2f2e325c44d51371b`.
+The built owner probe (`modular-git-owner-built-flow-canonical`, 0.293s) exercises
+real ephemeral/persistent worktrees, idempotent hooks, raw patch application,
+index and stash preservation, cleanup and typed errors. Its initial assertion
+confused macOS `/tmp` with canonical `/private/tmp`; that failed probe is kept,
+and the corrected check compares the actual canonical fixture path. Log SHA:
+`1e1fa3764d81b00b0276b797c752e0d4e7e2b1a37c1619d9d5d8f76c7437f4f0`.
+
+Two initial focused commands could not locate Vitest; they are not regression
+evidence. The first post-move test run used stale built support exports and
+failed; rebuilding the owning package fixed that boundary. All receipts remain
+in the durable archive. All verification runs launched zero providers.
+The full retry passed in 866.717s: 10,751 tests passed, six skipped; build,
+types, lint, generated drift, boundary mutations, release and supply-chain gates
+passed. Receipt: `modular-git-owner-full-retry`; log SHA:
+`e548c9dc3f0426683b3d7a1a19b4fad04d30578f5ecb27a7d86cc0577f3787de`.
+Final rebuilt probes also passed: `modular-git-owner-final-identity` verifies
+40 legacy bindings, 37 public Core bindings, shared constructors/map and
+idempotent hooks; `-final-flow` exercises real Git operations; `-final-goal`
+exercises seven CLI invocations; `-final-mcp` checks five permission cases.
+These are development-checkout receipts, not clean release qualification.
+Minimal-profile isolation and the remaining common-host ownership are not done.
+
 ## Shared host error owners — 2026-10-19
 
 Configuration, Git and Plan imports reached Forge through Core's mixed error

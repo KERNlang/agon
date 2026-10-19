@@ -1,12 +1,12 @@
 import { resolveExplicitReviewEngines } from '@kernlang/agon-support-verification';
 import { cliRunRecordHost } from './run-record-host.js';
 import { patchApplicationHost } from './patch-application-host.js';
-import { EngineRegistry, appendAttribution, appendPrAttribution, buildKernContextSpine, createRunDir, eventLogFlush, getRatings, loadConfig, pickTopRatedEngine, setSessionRoot, tracker } from '@kernlang/agon-core';
+import { EngineRegistry, buildKernContextSpine, createRunDir, eventLogFlush, getRatings, loadConfig, pickTopRatedEngine, setSessionRoot, tracker } from '@kernlang/agon-core';
 import { createCliAdapter } from '@kernlang/agon-adapter-cli';
 import { createForgeHostServices } from '@kernlang/agon-core';
-import { repoRoot, createSessionWorktree, findSessionWorktree, worktreePathFor, rehydrateSessionWorktree } from '@kernlang/agon-core';
-import { agonPath, ensureAgonHome, worktreeCreate, worktreeRemoveBestEffort, spawnWithTimeout } from '@kernlang/agon-core';
-import { resolveWithinRoot } from '@kernlang/agon-support-worktree';
+import { createSessionWorktree, findSessionWorktree, worktreePathFor, rehydrateSessionWorktree } from '@kernlang/agon-core';
+import { agonPath, ensureAgonHome, spawnWithTimeout } from '@kernlang/agon-core';
+import { appendAttribution, appendPrAttribution, repoRoot, resolveWithinRoot, worktreeCreate, worktreeRemoveBestEffort } from '@kernlang/agon-support-worktree';
 import { WriterFence } from '@kernlang/agon-kernel';
 import { getAgonHome } from '@kernlang/agon-core';
 import { createHash } from 'node:crypto';

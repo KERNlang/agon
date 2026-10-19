@@ -4,19 +4,35 @@ import { pathToFileURL } from 'node:url';
 import ts from 'typescript';
 
 const root = resolve(import.meta.dirname, '../..');
-const expected = new Map([
-  ['engine-runtime', []],
-  ['persistence', []],
-  ['dedup', []],
-  ['browser-bridge', []],
-  ['saas-api', []],
-  ['engine-catalog', ['engine-runtime']],
-  ['verification', ['engine-runtime', 'persistence']],
-  ['panel', ['engine-runtime']],
-  ['worktree', ['verification']],
-  ['agent-runtime', ['engine-runtime', 'persistence', 'verification']],
-  ['judge', ['panel', 'verification']],
-]);
+const supportNames = [
+  'engine-runtime', 'persistence', 'dedup', 'browser-bridge', 'saas-api',
+  'engine-catalog', 'verification', 'panel', 'worktree', 'agent-runtime', 'judge',
+];
+const supportPrefix = '@kernlang/agon-support-';
+
+export function supportDependencies(packageMap) {
+  const support = packageMap.packages.filter(entry => entry.class === 'hidden-shared-support-package');
+  const ids = support.map(entry => entry.id).sort();
+  if (JSON.stringify(ids) !== JSON.stringify(supportNames.map(name => supportPrefix + name).sort())) {
+    throw new Error('canonical package map must contain exactly the eleven support owners');
+  }
+  return new Map(supportNames.map(name => {
+    const matches = packageMap.packages.filter(entry => entry.id === supportPrefix + name);
+    if (matches.length !== 1) throw new Error(`duplicate canonical support owner: ${name}`);
+    const { dependencies } = matches[0];
+    if (!Array.isArray(dependencies) || dependencies.some(id => typeof id !== 'string')
+      || new Set(dependencies).size !== dependencies.length) {
+      throw new Error(`invalid canonical dependencies: ${name}`);
+    }
+    const shared = dependencies.filter(id => id.startsWith(supportPrefix));
+    if (shared.some(id => !ids.includes(id))) throw new Error(`unknown canonical support dependency: ${name}`);
+    return [name, shared.map(id => id.slice(supportPrefix.length))];
+  }));
+}
+
+const expected = supportDependencies(JSON.parse(readFileSync(
+  join(root, 'docs/specs/evidence/modular-agon-package-map.json'), 'utf8',
+)));
 
 const legacyAdapters = new Map([
   ['packages/core/src/api/agent-loop.ts', 'agent-runtime'],

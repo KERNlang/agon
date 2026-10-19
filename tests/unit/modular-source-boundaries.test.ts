@@ -1,7 +1,30 @@
 import { expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import * as verifier from '../../scripts/spec/verify-modular-support-boundaries.mjs';
+
+it.each(['missing', 'duplicate', 'wrong-class', 'duplicate-edge', 'duplicate-support-edge', 'unknown-edge'])(
+  'rejects a damaged canonical support map: %s', damage => {
+    const map = JSON.parse(readFileSync(new URL('../../docs/specs/evidence/modular-agon-package-map.json', import.meta.url), 'utf8'));
+    const index = map.packages.findIndex((entry: { id: string }) => entry.id === '@kernlang/agon-support-worktree');
+    const owner = map.packages[index];
+    if (damage === 'missing') map.packages.splice(index, 1);
+    if (damage === 'duplicate') map.packages.push({ ...owner, class: 'minimal-kernel-machinery' });
+    if (damage === 'wrong-class') owner.class = 'minimal-kernel-machinery';
+    if (damage === 'duplicate-edge') owner.dependencies.push(owner.dependencies[0]);
+    if (damage === 'duplicate-support-edge') owner.dependencies.push('@kernlang/agon-support-engine-runtime');
+    if (damage === 'unknown-edge') owner.dependencies.push('@kernlang/agon-support-missing');
+    expect(() => verifier.supportDependencies(map)).toThrow();
+  },
+);
+
+it('verifies physical support dependencies against the canonical package map', () => {
+  const root = fileURLToPath(new URL('../../', import.meta.url));
+  expect(() => execFileSync(process.execPath, [
+    'scripts/spec/verify-modular-support-boundaries.mjs', '--self-test',
+  ], { cwd: root, encoding: 'utf8', stdio: 'pipe' })).not.toThrow();
+});
 
 it('preserves the committed support package contracts during regeneration', () => {
   const root = fileURLToPath(new URL('../../', import.meta.url));

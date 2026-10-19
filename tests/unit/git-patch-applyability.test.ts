@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { applyPatchToTree } from '../../packages/core/src/blocks/patch-apply.js';
 import { worktreeDiff } from '../../packages/core/src/blocks/git.js';
+import { applyPatch } from '@kernlang/agon-support-worktree';
 
 const tempRoots: string[] = [];
 
@@ -80,5 +81,9 @@ describe('git patch applyability', () => {
     expect(result.ok).toBe(true);
     expect(existsSync(join(repo, 'created.txt'))).toBe(true);
     expect(readFileSync(join(repo, 'created.txt'), 'utf-8')).toBe('hello\n');
+
+    const sharedRepo = createRepo('shared-normalize-apply');
+    applyPatch(sharedRepo, patch);
+    expect(readFileSync(join(sharedRepo, 'created.txt'), 'utf-8')).toBe('hello\n');
   });
 });

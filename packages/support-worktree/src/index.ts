@@ -18,3 +18,4 @@ export * from './patch-parser.js';
 export * from './patch-content.js';
 export { isTestFile, parseChangedLines, newFilesInDiff } from './git-diff.js';
 export { GitError, WorktreeError, PlanStateError } from './errors.js';
+export * from './git.js';

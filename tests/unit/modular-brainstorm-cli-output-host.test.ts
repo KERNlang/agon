@@ -4,6 +4,7 @@ import type { BrainstormModServices } from '@kernlang/agon-mod-brainstorm';
 import type { ConquerModServices } from '@kernlang/agon-mod-conquer';
 import type { GoalModServices } from '@kernlang/agon-mod-goal';
 import * as core from '@kernlang/agon-core';
+import * as worktree from '@kernlang/agon-support-worktree';
 import * as forge from '@kernlang/agon-forge';
 import * as adapters from '@kernlang/agon-adapter-cli';
 import { conquerCommand } from '../../packages/cli/src/commands/conquer.js';
@@ -101,7 +102,7 @@ it('legacy Conquer keeps the successful push but skips prose when Forge is disab
 it('binds Conquer publication to kernel configuration rather than mod-owned configuration', async () => {
   const config = { protectedPushBranches: ['kernel-protected'], commitCoAuthor: '' } as ReturnType<typeof core.loadConfig>;
   const load = vi.spyOn(core, 'loadConfig').mockReturnValue(config);
-  const format = vi.spyOn(core, 'appendAttribution').mockReturnValue('kernel-formatted');
+  const format = vi.spyOn(worktree, 'appendAttribution').mockReturnValue('kernel-formatted');
   vi.spyOn(core.EngineRegistry.prototype, 'load').mockImplementation(() => {});
   vi.spyOn(authority, 'captureProcessSurfaceAuthority').mockReturnValue(() => {});
   vi.spyOn(authority, 'assertProcessSurfaceAvailable').mockImplementation(() => {});

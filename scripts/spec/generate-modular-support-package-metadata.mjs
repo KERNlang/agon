@@ -59,7 +59,7 @@ for (const [name, dependencies] of packages) {
     files: ['dist', 'LICENSE', ...(name === 'engine-runtime' ? ['engines', 'python', 'patches'] : []), ...(name === 'dedup' ? ['python'] : []), ...(name === 'saas-api' ? ['python'] : []), ...(name === 'verification' ? ['python'] : []), ...(name === 'persistence' ? ['python'] : [])],
     sideEffects: false,
     scripts: { build: 'tsup && tsc -b tsconfig.json --force', typecheck: 'tsc --noEmit' },
-    peerDependencies: { '@kernlang/agon-kernel': name === 'engine-catalog' ? '>=1.0.0 <2' : '>=0.0.0-0 <2' },
+    peerDependencies: { '@kernlang/agon-kernel': ['engine-catalog', 'engine-runtime', 'worktree'].includes(name) ? '>=1.0.0 <2' : '>=0.0.0-0 <2' },
     dependencies: {
       ...Object.fromEntries(dependencies.map((dependency) => ['@kernlang/agon-support-' + dependency, version])),
       ...(name === 'engine-runtime' ? { zod: '^4.3.6' } : {}),

@@ -6,6 +6,66 @@ exercise these installed-user contracts. Its passing executions are not a
 whole-product compatibility verdict. No active installation may be promoted
 on the strength of that receipt.
 
+## Shared host error owners — 2026-10-19
+
+Configuration, Git and Plan imports reached Forge through Core's mixed error
+barrel. A throwing Forge-import control reproduced this before the change.
+The existing base `AgonError` and `ConfigError` now live in Kernel;
+`GitError`, `WorktreeError` and `PlanStateError` live in Worktree support.
+Core retains public re-exports and Forge retains its own `FitnessError`.
+Runtime and Worktree use their existing Kernel peers; no dependency was added.
+Their minimum peer version is now 1.0.0, the existing locked release-set version,
+because older Kernels do not provide the new exports. The metadata generator
+and lockfile carry the same requirement. This is not a package upgrade.
+
+Codex review found no confirmed blocking code defect. Its requested inheritance
+and FitnessError identity checks were added. Kernel's built output has only
+Mod API package imports; Runtime and Worktree import Kernel's actual base class,
+not private copies. This bounds the cycle/identity evidence to inspected output,
+not every possible installation. Review packet SHA:
+`cecf7637ebe1baccfa4c9aacc7c64bd92860564bae472d0f8b4b3eb209cbe028`;
+log SHA: `21313e97eefd7d3652faec11aae01be34acf985a85f5e17d4d9e561a305d825a`.
+
+Archived development evidence:
+
+- `modular-host-error-isolation-red`: common imports failed on missing Forge.
+- `modular-host-error-owners-red`: canonical physical exports were absent.
+- `modular-host-error-direct-owners`: six test files and types passed in 4.637s.
+- `modular-host-error-peer-controls`: identity tests, types, generated metadata
+  and pre-release N−1/N−2 API compatibility checks passed in 2.622s. Log SHA:
+  `7ea7c00210aae7ad4462db7d1e25d625d86d11b9baa1d85661a6ec5ae5f2b404`.
+- `modular-host-error-built-red`: despite its ID, this probe PASSED. Typecheck
+  had already emitted updated Core files. It is built constructor-identity
+  evidence, not a negative control. Log SHA:
+  `444a5c9e6ed04a38ad29bbe066ffcc5498459534f3211b4f8d46c7eb8f236b28`.
+
+The required OSV scan (`modular-host-error-osv`) returned findings: 16 advisories
+across nine packages, two critical, seven high, six medium, one low. Tinypool
+1.1.1 has both critical dev findings; Undici 6.28.0 has runtime findings. The
+lockfile diff changes only two peer ranges, not resolved dependency versions.
+No advisory is waived or fixed by this extraction. Dependency remediation and
+security release acceptance remain open. Scan log SHA:
+`57aefcb56dfe4c3a6080e4f02403c9b753e092e1470fa1f349e4163cc29f99be`.
+
+The first full gate rejected two stale Engine Runtime identity hashes in the
+generated surface catalog after the peer-range correction. Regeneration changed
+only those hashes. The failure is retained as `modular-host-error-full`.
+
+`modular-host-error-full-retry` passed in 859.507s: 10,743 tests passed and six
+were skipped. Build, types, lint, generated artifacts, re-export guard, release-set
+and supply-chain checks passed. Log SHA:
+`745af57446b5cf61c4b46eec9e91cffe082e6f68a2397354972f286f4bfc4050`.
+The supply-chain checks validate package contents and metadata; they do not
+supersede the separate OSV findings above.
+
+Final rebuilt checks passed: `modular-host-error-final-identity` (0.185s),
+`modular-host-error-final-goal` (seven CLI invocations, 2.501s), and
+`modular-host-error-final-mcp` (five MCP processes, 1.488s). Their logs retain
+the identity, supervisor recovery and permission/safe-mode assertions.
+All recorded verification runs launched zero providers. This is development
+verification, not clean committed release qualification. Core's other feature
+imports and the Ratings-disabled workflow contract remain unresolved boundaries.
+
 ## Awaitable selected-host setup — 2026-10-19
 
 Kernel package bootstrap now awaits host decoration before calling a mod

@@ -4,7 +4,7 @@ import { existsSync, readFileSync } from 'node:fs';
 
 import { join } from 'node:path';
 
-import { GitError, WorktreeError } from '../models/errors.js';
+import { GitError, WorktreeError } from '@kernlang/agon-support-worktree';
 
 import { normalizePatchContent, linkWorktreeNodeModules, hydrateWorktreeBuildArtifacts, pruneEphemeralWorktrees, pruneMissingWorktreeRegistrations } from '@kernlang/agon-support-worktree';
 export { linkWorktreeNodeModules, hydrateWorktreeBuildArtifacts };

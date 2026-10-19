@@ -4,11 +4,10 @@ import {
   cancelPlan as cancelModularPlan,
   failPlan as failModularPlan,
   startPlan as startModularPlan,
+  PlanStateError,
   type Plan,
   type WorktreePlanRuntime,
 } from "@kernlang/agon-support-worktree";
-
-import { PlanStateError } from "../models/errors.js";
 
 const compatibilityRuntime: WorktreePlanRuntime = Object.freeze<WorktreePlanRuntime>({
   createStateError: (expected: string | string[], actual: string) => new PlanStateError(expected, actual),

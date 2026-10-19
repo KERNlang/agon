@@ -1,3 +1,14 @@
+export class AgonError extends Error {
+  constructor(message: string) { super(message); this.name = 'AgonError' }
+}
+
+export class ConfigError extends AgonError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ConfigError';
+  }
+}
+
 export type DurableHostErrorCode =
   | 'MOD_HOST_BUSY'
   | 'MOD_FENCE_LOST'

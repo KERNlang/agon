@@ -1,8 +1,7 @@
-export const AGON_MODE_NAMES: readonly string[] = ['forge', 'brainstorm', 'tribunal', 'campfire', 'council', 'synthesis', 'conquer', 'goal', 'agent', 'pipeline', 'review', 'nero', 'think'];
+import { AgonError } from '@kernlang/agon-kernel';
+export { AgonError };
 
-export class AgonError extends Error {
-  constructor(message: string) { super(message); this.name = 'AgonError' }
-}
+export const AGON_MODE_NAMES: readonly string[] = ['forge', 'brainstorm', 'tribunal', 'campfire', 'council', 'synthesis', 'conquer', 'goal', 'agent', 'pipeline', 'review', 'nero', 'think'];
 
 export class EngineNotFoundError extends AgonError {
   constructor(

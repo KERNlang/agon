@@ -126,7 +126,7 @@ export type {
   ActivationTransactionPlan,
 } from './activation-service.js';
 
-export { DurableHostError } from './host-errors.js';
+export { AgonError, ConfigError, DurableHostError } from './host-errors.js';
 export type { DurableHostErrorCode } from './host-errors.js';
 export { DurableModHost } from './durable-host.js';
 export type {

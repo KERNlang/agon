@@ -198,7 +198,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.engine-runtime",
       "version": "1.0.0",
-      "contentHash": "sha256:dd437dbd23a708b207af4a950841e4eacc1b1fd08a53d756da784b03dc53dd97"
+      "contentHash": "sha256:bf4ed8dae8da59c6370c00682572e5263d4643f3f84506dc9d60dddcd354e4a6"
     },
     "ownerClass": "hidden-shared-support-package",
     "description": "EngineReliability",
@@ -7802,7 +7802,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.engine-runtime",
       "version": "1.0.0",
-      "contentHash": "sha256:dd437dbd23a708b207af4a950841e4eacc1b1fd08a53d756da784b03dc53dd97"
+      "contentHash": "sha256:bf4ed8dae8da59c6370c00682572e5263d4643f3f84506dc9d60dddcd354e4a6"
     },
     "ownerClass": "hidden-shared-support-package",
     "description": "closeEnginePicker",

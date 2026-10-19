@@ -16,7 +16,7 @@ import type { AgonConfig } from '../models/types.js';
 import { DEFAULT_AGON_CONFIG } from '../models/types.js';
 import { LEGACY_MOD_SETTING_OWNERS } from '../models/first-party-settings.generated.js';
 
-import { ConfigError } from '../models/errors.js';
+import { ConfigError } from '@kernlang/agon-kernel';
 
 import { withFileLock } from '../blocks/file-lock.js';
 

@@ -6,6 +6,37 @@ exercise these installed-user contracts. Its passing executions are not a
 whole-product compatibility verdict. No active installation may be promoted
 on the strength of that receipt.
 
+## MCP legacy memory owner retirement — 2026-10-19
+
+The kernel write helper no longer implements SaveMemory. Production dispatch
+already sent only AgonBash, AgonEdit and AgonWrite to that helper. SaveMemory
+has one MCP execution owner: the physical memory mod. Unknown helper names,
+including inherited object keys, now return before permission signaling.
+The transport's unused Core formatter imports were removed with the branch.
+Core's exported legacy factory remains for compatibility; this does not claim
+that all Core feature imports have been retired.
+
+The three rejection tests failed before the cut. Existing AgonWrite completion
+and sixteen physical MCP authority tests passed afterward. Codex review found
+no blocker; its coverage suggestion was applied by configuring a signal
+directory and proving that rejected names leave it empty.
+Review packet SHA: `de37ee24edbe93f92f8b68b976cec32d43697a1fe650530eb1bee6d1c7b59c82`.
+Review log SHA: `3b5ad1643ffca6eb2a9f6fb32123ccc6085b566f505f8fca66a788917afd2b50`.
+
+An attempted Core-import runtime negative control was rejected as evidence:
+the first probe had a quoting error; the corrected probe passed against the
+old built artifact too. It cannot distinguish the source import change under
+the existing bundle layout. Both logs remain archived.
+
+`modular-mcp-memory-retirement-full` passed in 867.875s: 10,737 tests passed,
+six skipped, plus build/types/lint/generated/re-export/release/supply-chain gates.
+Log SHA: `b839a23f6a23da4c029289548dc089fdab2861eb7776cdee3b25a5cc90cd8842`.
+`modular-mcp-memory-retirement-built` then passed the five real MCP-process
+memory cases in 1.487s. Log SHA:
+`1e6b54fae1b7f53319218e67d1a71eae9df465154663933227a65af9d45e39cb`.
+Both recorded zero provider launches. Final clean-checkout release acceptance
+and selectable-package isolation are still open.
+
 ## Project-memory contract repair — 2026-10-19
 
 The physical SaveMemory mod had replaced the original `memory`/`section`

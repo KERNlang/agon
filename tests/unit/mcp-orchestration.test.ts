@@ -43,6 +43,18 @@ async function waitForFile(dir: string, predicate: (name: string) => boolean): P
 }
 
 describe('agon orchestration MCP write tools', () => {
+  it.each(['SaveMemory', 'UnknownTool', '__proto__'])('rejects %s outside the kernel write owner', async name => {
+    const cwd = tempDir('agon-mcp-retired-write-');
+    process.env.AGON_CWD = cwd;
+    const signalDir = tempDir('agon-mcp-retired-signals-');
+    process.env.AGON_SIGNAL_DIR = signalDir;
+    process.env.AGON_SESSION_ID = 'retired-write';
+    await expect(executeApprovedKernelWrite(name, { memory: 'Must not write', section: 'Decisions' }))
+      .resolves.toBe('Unknown write tool');
+    expect(readdirSync(cwd)).toEqual([]);
+    expect(readdirSync(signalDir)).toEqual([]);
+  });
+
   it('writes a tool-completion signal after an approved AgonWrite', async () => {
     const signalDir = tempDir('agon-mcp-signals-');
     const cwd = tempDir('agon-mcp-cwd-');

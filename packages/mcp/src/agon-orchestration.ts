@@ -15,13 +15,6 @@ import { execSync } from "node:child_process";
 import { FIRST_PARTY_SURFACE_CATALOG } from "@kernlang/agon-kernel";
 import { CommandExecutionError } from "@kernlang/agon-mod-api";
 
-import {
-  appendMemoryLine,
-  todayPrefix,
-  canonicalMemorySection,
-  MEMORY_SECTIONS,
-} from "@kernlang/agon-core";
-
 export const KERNEL_MCP_TOOLS: readonly DynamicMcpTool[] = Object.freeze([
   Object.freeze({
     name: 'ReportConfidence',
@@ -294,9 +287,9 @@ export async function executeApprovedKernelWrite(
     AgonBash: "Bash",
     AgonEdit: "Edit",
     AgonWrite: "Write",
-    SaveMemory: "SaveMemory",
   };
-  const kernTool = toolMap[name] ?? name;
+  if (!Object.hasOwn(toolMap, name)) return "Unknown write tool";
+  const kernTool = toolMap[name];
 
   // Write permission request signal
   writePermissionRequest(requestId, kernTool, args);
@@ -349,41 +342,6 @@ export async function executeApprovedKernelWrite(
       mkdirSync(dirname(filePath), { recursive: true });
       writeFileSync(filePath, fileContent);
       const output = `File written: ${filePath}`;
-      writeToolCompletion(requestId, name, args, "done", output);
-      return output;
-    }
-    if (name === "SaveMemory") {
-      // Canonicalize + validate the section against the SAME MEMORY_SECTIONS list
-      // the core tool uses, so this external-CLI path produces identical headers
-      // and rejects non-canonical sections instead of writing a divergent header.
-      const section = canonicalMemorySection((args as any).section);
-      const memory = String((args as any).memory ?? "").trim();
-      if (!section) {
-        const output = `Invalid section "${String((args as any).section ?? "")}". Use one of: ${MEMORY_SECTIONS.join(", ")}`;
-        writeToolCompletion(requestId, name, args, "error", output);
-        return output;
-      }
-      const cwd = process.env.AGON_CWD || process.cwd();
-      const memPath = join(cwd, ".agon", "project.md");
-      const existing = existsSync(memPath)
-        ? readFileSync(memPath, "utf-8")
-        : "";
-      const res = appendMemoryLine(existing, section, memory, todayPrefix());
-      if (!res.changed) {
-        const output = `Already in project memory [${section}] — skipped (near-duplicate).`;
-        writeToolCompletion(requestId, name, args, "done", output);
-        return output;
-      }
-      mkdirSync(dirname(memPath), { recursive: true });
-      writeFileSync(
-        memPath,
-        res.content.endsWith("\n") ? res.content : res.content + "\n",
-      );
-      const note =
-        res.status === "evicted"
-          ? " (section was full — oldest entry dropped)"
-          : "";
-      const output = `Saved to project memory [${section}]: ${memory}${note}`;
       writeToolCompletion(requestId, name, args, "done", output);
       return output;
     }

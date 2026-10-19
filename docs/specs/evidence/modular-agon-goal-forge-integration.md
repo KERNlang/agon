@@ -1,5 +1,52 @@
 # Goal / Forge integration evidence
 
+## Supervised startup and checkpoint identity
+
+Date: 2026-10-19. Explicit resume now refuses missing state even when the caller
+supplies intent and gate. A fresh supervised launch starts without `--resume`;
+subsequent restarts resume its checkpoint. Existing-goal collisions stop before
+supervision. Acquisition-time state changes are terminal, not automatic retries.
+A stable `supervisorRunId` binds automatic recovery to the checkpoint created by
+that supervised launch. It is a correlation marker, not a credential or sandbox.
+Manual explicit resume without the marker remains supported.
+
+Crash before the first checkpoint stops at the next resume. It does not recreate
+unknown history. Crash after a checkpoint retains saved progress and costs.
+Tests cover both competing-checkpoint interleavings: creation during acquisition
+and a competing record after an early crash. Neither can adopt the other run.
+The exact optional CLI field is tested alongside all existing argument contracts.
+
+| Receipt | Result | Log SHA-256 |
+|---|---|---|
+| goal-explicit-resume-missing-red | Missing-state resume incorrectly created a goal | bd27229fc8a905a761ef3435200192a1cd2b340ab628d177296ee9193fb29fe7 |
+| goal-supervisor-startup-recovery-red | Four startup/recovery controls failed | 46a664e20f372263fca842ea46c8a6ef0ef1ddcdfb2403eab14736caf075a270 |
+| goal-supervisor-competing-checkpoint-red | Both review race controls failed | a9c0b753ecfc88d1c58bfb1bd7da05d339a11bd931e83e5ff23d81528d981144 |
+| goal-supervisor-checkpoint-identity-full-gate | Failed: three fixture/contract expectations; 10,676 passed, six skipped | 410be8364ff2b644ffd24e05f49fd6e76f5837c16ef88f2e8ca075465a82087b |
+| goal-supervisor-checkpoint-contracts | 58 focused tests, types and lint passed | 2f715352f85002951594e245c110174c3e4fe2d44bac3d57eeef3dc8df02e1ae |
+| goal-supervisor-checkpoint-identity-final-gate | Full gate passed in 940.522s; 10,679 tests passed, six skipped | 2e1b854dd7b6c03787b97911c973d162f3f0f1529e979064a6fe2c92cac5231a |
+| goal-supervisor-checkpoint-final-built | Seven CLI invocations plus a real supervised child passed in 2.41s | a89f93c6ba9936fcddcd0118027fc78850d28bb2a0d0b4171694e49e1b03f7f1 |
+
+Isolated Codex review identified the competing-checkpoint defect; both local red
+controls confirmed it. Packet SHA-256:
+`af888d8ba295ab6a56821b83f53cc113ddd428856769569dffe7ff6b74970896`.
+Review log SHA-256:
+`7ad153410b3b05f4d608a26e58830f425254523075dd99f1a9be739c719f0434`.
+The finding was fixed and verified locally; no second review is claimed.
+The temporary authentication copy was removed after the review.
+
+The first full run exposed three stale expectations: an error-path fixture reused
+an existing goal ID, CLI parity lacked the exact new marker contract, and a nested
+dispatch test expected resume on the initial launch. Distinct fixture IDs and
+explicit field/argument assertions correct those expectations without exclusions.
+All failed receipts remain available. Mode documentation regeneration produced
+no change. Two built-CLI probe runs passed, including the final rebuilt candidate.
+
+Raw commands, logs and receipts remain in
+`/Users/ra/dev/modular-agon-remediation/`. Test receipts record zero providers.
+No push or global installation occurred. These are development checks, not final
+clean-subject release acceptance. TUI Goal routing, historical journal adoption
+and the remaining original acceptance requirements are still open.
+
 ## Saved retry limits across resume
 
 Date: 2026-10-19. Physical Goal previously discarded `maxAttempts` when saving

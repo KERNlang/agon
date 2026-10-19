@@ -89,11 +89,14 @@ describe('physical CLI contract parity', () => {
     const expected = await treeContract(legacy!);
     if (name === 'goal') {
       // Supervised restarts must retain task arrays and explicit commit refusal.
-      // These two arguments repair dropped inputs; all legacy fields stay exact.
+      // The run identity prevents adoption of a competing checkpoint.
+      // All legacy fields stay exact.
       expect(expected.args).not.toHaveProperty('tasks');
       expect(expected.args).not.toHaveProperty('commit');
+      expect(expected.args).not.toHaveProperty('supervisorRunId');
       expected.args.tasks = { type: 'string', required: false, aliases: [] };
       expected.args.commit = { type: 'boolean', required: false, aliases: [], default: true };
+      expected.args.supervisorRunId = { type: 'string', required: false, aliases: [] };
     }
     expect(contractDiff(actual, expected)).toEqual([]);
   });

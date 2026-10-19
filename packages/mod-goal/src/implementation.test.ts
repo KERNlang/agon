@@ -105,6 +105,18 @@ const context = (cwd: string) => ({
 });
 
 describe('physical goal mod', () => {
+  it('does not create a fresh goal when explicit resume has no saved state', async () => {
+    const cwd = repo(); const h = harness();
+    const open = vi.spyOn(h.goal, 'open');
+    const resumed = await runGoal({ id: 'missing-history', intent: 'retained goal', gate: 'true',
+      resume: true, dryRun: true }, context(cwd), h.services);
+    expect(resumed.exitCode).toBe(1);
+    expect(resumed.stderr).toContain('Cannot resume unknown goal');
+    expect(h.services.state.write).not.toHaveBeenCalled();
+    expect(open).not.toHaveBeenCalled();
+    expect(h.dispatch).not.toHaveBeenCalled();
+  });
+
   it.each(['override', 'historical'] as const)('resolves the saved attempt limit: %s', async kind => {
     const cwd = repo(); const h = harness();
     const input = { intent: 'retry policy', gate: 'true', engine: 'builder', reviewEngines: 'reviewer',
@@ -2428,9 +2440,9 @@ describe('physical goal mod', () => {
   it('refuses a red base, protected branch, missing resume, and invalid dependency graph', async () => {
     const cwd = repo(); const h = harness();
     expect((await runGoal({ intent: 'x', gate: 'false' }, context(cwd), h.services)).failure?.code).toBe('GOAL_BASELINE_RED');
-    expect((await runGoal({ intent: 'x', gate: 'true', branch: 'main' }, context(cwd), h.services)).stderr).toContain('goal/*');
+    expect((await runGoal({ intent: 'protected branch', gate: 'true', branch: 'main' }, context(cwd), h.services)).stderr).toContain('goal/*');
     expect((await runGoal({ id: 'missing', resume: true }, context(cwd), h.services)).stderr).toContain('unknown goal');
-    expect((await runGoal({ intent: 'x', gate: 'true', tasks: [{ id: 'x', dependsOn: ['missing'] }] }, context(cwd), h.services)).stderr).toContain('unknown task');
+    expect((await runGoal({ intent: 'invalid dependencies', gate: 'true', tasks: [{ id: 'x', dependsOn: ['missing'] }] }, context(cwd), h.services)).stderr).toContain('unknown task');
   });
 
   it('stops a strict non-discriminating task oracle before spending an engine call', async () => {
@@ -2818,16 +2830,47 @@ describe('physical goal mod', () => {
     expect(out.exitCode).toBe(0);
     expect(out.result).toEqual({ restarts: 1, reason: 'clean exit — terminal state reached' });
     expect(runChild).toHaveBeenCalledTimes(2);
-    expect(runChild.mock.calls[0][0]).toEqual(['goal', 'overnight', '--gate', 'true', '--resume']);
+    expect(runChild.mock.calls[0][0]).toEqual(['goal', 'overnight', '--gate', 'true', '--supervisor-run-id', expect.any(String)]);
+    expect(runChild.mock.calls[1][0]).toEqual([...runChild.mock.calls[0][0], '--resume']);
     expect(wait).toHaveBeenCalledWith(5000);
+    expect(h.dispatch).not.toHaveBeenCalled();
+  });
+
+  it.each(['fresh', 'explicit', 'collision', 'lost-state'] as const)('separates supervised startup from recovery: %s', async kind => {
+    const cwd = repo(); const h = harness();
+    const input = { id: 'supervised-identity', intent: 'supervised identity', gate: 'true', dryRun: true };
+    if (kind === 'collision') expect((await runGoal(input, context(cwd), h.services)).exitCode).toBe(0);
+    vi.mocked(h.services.state.write).mockClear();
+    let launches = 0;
+    const runChild = vi.fn(async (args: readonly string[]) => {
+      launches += 1;
+      if (kind === 'lost-state' && launches === 1) return { exitCode: 137, outputTail: 'crashed before checkpoint' };
+      const marker = args.indexOf('--supervisor-run-id');
+      const child = await runGoal({ ...input, resume: args.includes('--resume'),
+        ...(marker >= 0 ? { supervisorRunId: args[marker + 1] } : {}) }, context(cwd), h.services);
+      if (kind === 'fresh' && launches === 1) {
+        expect(child.exitCode).toBe(0);
+        h.state.get('goals/supervised-identity').payload.spentUsd = 0.25;
+        return { exitCode: 137, outputTail: 'crashed after checkpoint' };
+      }
+      return { exitCode: child.exitCode, outputTail: child.stderr ?? child.stdout ?? '' };
+    });
+    const out = await runGoalSupervisor({ ...input, resume: kind === 'explicit', maxRestarts: 2 }, {
+      nodeExec: '/node', agonEntry: '/agon.js', runChild, wait: async () => {}, interrupted: () => false,
+    });
+    expect(out.exitCode).toBe(kind === 'fresh' ? 0 : 1);
+    expect(runChild.mock.calls.map(([args]) => args.includes('--resume')))
+      .toEqual(kind === 'explicit' ? [true] : kind === 'collision' ? [false] : [false, true]);
+    if (kind === 'fresh') expect(h.state.get('goals/supervised-identity').payload.spentUsd).toBe(0.25);
+    else expect(h.services.state.write).not.toHaveBeenCalled();
     expect(h.dispatch).not.toHaveBeenCalled();
   });
 
   it('does not restart after Goal reports a missing queue', async () => {
     const cwd = repo(); const h = harness();
     const input = { intent: 'missing queue', gate: 'true', queue: join(cwd, 'absent-queue'), maxRestarts: 2 };
-    const runChild = vi.fn(async () => {
-      const child = await runGoal({ ...input, resume: true }, context(cwd), h.services);
+    const runChild = vi.fn(async (args: readonly string[]) => {
+      const child = await runGoal({ ...input, resume: args.includes('--resume') }, context(cwd), h.services);
       expect(child.exitCode).toBe(1);
       expect(child.stderr).toBe(`Queue not found: ${input.queue}\n`);
       return { exitCode: child.exitCode, outputTail: child.stderr! };
@@ -2842,6 +2885,31 @@ describe('physical goal mod', () => {
     expect(runChild).toHaveBeenCalledOnce();
     expect(wait).not.toHaveBeenCalled();
     expect(dispose).toHaveBeenCalledOnce();
+    expect(h.dispatch).not.toHaveBeenCalled();
+  });
+
+  it.each(['acquisition', 'after-crash'] as const)('does not adopt a competing checkpoint during supervised %s', async phase => {
+    const cwd = repo(); const h = harness();
+    const input = { id: 'shared-startup', intent: 'original run', gate: 'true', dryRun: true };
+    expect((await runGoal({ ...input, intent: 'competing run' }, context(cwd), h.services)).exitCode).toBe(0);
+    const saved = JSON.stringify(h.state.get('goals/shared-startup'));
+    vi.mocked(h.services.state.write).mockClear();
+    if (phase === 'acquisition') vi.mocked(h.services.state.read).mockResolvedValueOnce(undefined);
+    let launches = 0;
+    const runChild = vi.fn(async (args: readonly string[]) => {
+      if (++launches === 1 && phase === 'after-crash') return { exitCode: 137, outputTail: 'crashed before checkpoint' };
+      const marker = args.indexOf('--supervisor-run-id');
+      const child = await runGoal({ ...input, resume: args.includes('--resume'),
+        ...(marker >= 0 ? { supervisorRunId: args[marker + 1] } : {}) }, context(cwd), h.services);
+      return { exitCode: child.exitCode, outputTail: child.stderr ?? child.stdout ?? '' };
+    });
+    const out = await runGoalSupervisor({ ...input, maxRestarts: 2 }, {
+      nodeExec: '/node', agonEntry: '/agon.js', runChild, wait: async () => {}, interrupted: () => false,
+    });
+    expect(out.exitCode).toBe(1);
+    expect(runChild).toHaveBeenCalledTimes(phase === 'acquisition' ? 1 : 2);
+    expect(JSON.stringify(h.state.get('goals/shared-startup'))).toBe(saved);
+    expect(h.services.state.write).not.toHaveBeenCalled();
     expect(h.dispatch).not.toHaveBeenCalled();
   });
 
@@ -2924,8 +2992,9 @@ describe('physical goal mod', () => {
     expect(out.exitCode).toBe(0);
     expect(runChild).toHaveBeenCalledTimes(2);
     const expected = ['goal', 'structured goal', '--tasks', JSON.stringify(tasks), '--engines', 'builder,reviewer',
-      '--review-engines', 'reviewer', '--no-require-tests', '--no-commit', '--resume'];
-    expect(runChild.mock.calls.map(([args]) => args)).toEqual([expected, expected]);
+      '--review-engines', 'reviewer', '--no-require-tests', '--no-commit', '--supervisor-run-id', expect.any(String)];
+    expect(runChild.mock.calls[0][0]).toEqual(expected);
+    expect(runChild.mock.calls[1][0]).toEqual([...runChild.mock.calls[0][0], '--resume']);
   });
 
   it('loads serialized supervised tasks without replacing them with the intent', async () => {

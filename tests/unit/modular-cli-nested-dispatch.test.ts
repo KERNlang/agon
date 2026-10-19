@@ -51,9 +51,14 @@ it('parses actual supervised Goal restart arguments through the generated Goal r
   expect(result.exitCode).toBe(0);
   expect(runChild).toHaveBeenCalledTimes(2);
   expect(state.calls).toEqual(['goal', 'goal']);
-  const expected = expect.objectContaining({ intent: 'supervised goal', tasks: JSON.stringify(tasks),
-    engines: 'builder,reviewer', requireTests: false, commit: false, resume: true });
-  expect(state.inputs).toEqual([expected, expected]);
+  const expected = { intent: 'supervised goal', tasks: JSON.stringify(tasks),
+    engines: 'builder,reviewer', requireTests: false, commit: false };
+  const first = state.inputs[0] as Record<string, unknown>;
+  expect(first.supervisorRunId).toMatch(/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/);
+  expect(state.inputs).toEqual([
+    expect.objectContaining({ ...expected, resume: false, supervisorRunId: first.supervisorRunId }),
+    expect.objectContaining({ ...expected, resume: true, supervisorRunId: first.supervisorRunId }),
+  ]);
 });
 
 it('accepts a kebab-case boolean before a required positional', async () => {

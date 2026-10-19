@@ -91,6 +91,7 @@ type GoalState = {
   budgetUsd: number;
   maxHours: number;
   maxAttempts?: number;
+  supervisorRunId?: string;
   noProgressStreak: number;
   parkedStreak?: number;
   recentOutcomes: Array<"done" | "failed">;
@@ -131,7 +132,7 @@ export function goalSupervisorBackoffMs(restarts: number, baseMs = 5_000, capMs 
 
 export function isDeterministicGoalExit(outputTail: string): boolean {
   const lower = outputTail.toLowerCase();
-  return ["oracle changed", "goal_oracle_invalid", "invalid numeric goal option", "cannot change the recorded branch or gate", "goal requires intent and an explicit gate", "cannot resume unknown goal", "queue not found", "no active engine", "goal/* branch"]
+  return ["oracle changed", "goal_oracle_invalid", "invalid numeric goal option", "cannot change the recorded branch or gate", "goal requires intent and an explicit gate", "cannot resume unknown goal", "already exists. resume it explicitly", "goal state changed while acquiring execution", "goal supervisor checkpoint identity", "queue not found", "no active engine", "goal/* branch"]
     .some((phrase) => lower.includes(phrase));
 }
 
@@ -170,7 +171,7 @@ function supervisorArguments(input: Record<string, Json>): string[] {
     else if (typeof value === 'object') throw new Error(`Cannot supervise Goal option ${key}: unsupported structured value.`);
     else args.push(`--${option}`, String(value));
   }
-  args.push("--resume");
+  if (input.resume === true) args.push("--resume");
   return args;
 }
 
@@ -224,7 +225,7 @@ export async function runGoalSupervisor(
     const inputError = goalNumericInputError(input);
     if (inputError) return { exitCode: 1, stderr: inputError };
     let args: string[];
-    try { args = supervisorArguments(input); }
+    try { args = supervisorArguments(input.resume === true ? input : { ...input, supervisorRunId: randomUUID() }); }
     catch (error) { return { exitCode: 1, stderr: `${error instanceof Error ? error.message : String(error)}\n` }; }
     for (;;) {
       if (runtime.interrupted()) {
@@ -247,6 +248,7 @@ export async function runGoalSupervisor(
         const result = { restarts, reason: "interrupted" };
         return { exitCode: 0, stdout: `${JSON.stringify(result, null, 2)}\n`, result };
       }
+      if (restarts === 0 && input.resume !== true) args = [...args, '--resume'];
       restarts += 1;
     }
   } finally {
@@ -268,6 +270,7 @@ const schema = Object.freeze({
     maxAttempts: { type: "number" },
     gateTimeout: { type: "number" },
     resume: { type: "boolean" },
+    supervisorRunId: { type: "string" },
     dryRun: { type: "boolean" },
     commit: { type: "boolean" },
     push: { type: "boolean" },
@@ -280,6 +283,7 @@ const cliSchema = Object.freeze({
   properties: {
     intent: { type: "string" },
     tasks: { type: "string", description: "Inline JSON task array for supervised execution" },
+    supervisorRunId: { type: "string", description: "Internal supervised checkpoint identity" },
     queue: { type: "string" },
     gate: { type: "string" },
     witnessCmd: { type: "string" },
@@ -529,8 +533,15 @@ export async function runGoal(
     const result = { state: prior, counts };
     return { exitCode: 0, stdout: `${JSON.stringify(result, null, 2)}\n`, result: result as unknown as Json };
   }
-  if (input.resume === true && !prior && (!requestedIntent || !String(input.gate ?? "").trim()))
+  if (input.resume === true && !prior)
     return { exitCode: 1, stderr: `Cannot resume unknown goal '${id}'.\n` };
+  if (prior && input.resume !== true)
+    return { exitCode: 1, stderr: `Goal '${id}' already exists. Resume it explicitly or choose a new id.\n` };
+  if (input.supervisorRunId !== undefined &&
+      (typeof input.supervisorRunId !== 'string' || !/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(input.supervisorRunId)))
+    return { exitCode: 1, stderr: 'Goal supervisor checkpoint identity is invalid.\n' };
+  if (input.resume === true && input.supervisorRunId !== undefined && prior?.supervisorRunId !== input.supervisorRunId)
+    return { exitCode: 1, stderr: 'Goal supervisor checkpoint identity does not match this run. Resume the intended goal explicitly.\n' };
   const inputError = goalNumericInputError(input);
   if (inputError) return { exitCode: 1, stderr: inputError };
   if (input.resume === true && prior?.maxAttempts !== undefined &&
@@ -637,6 +648,7 @@ export async function runGoal(
       budgetUsd,
       maxHours,
       maxAttempts,
+      ...(typeof input.supervisorRunId === 'string' ? { supervisorRunId: input.supervisorRunId } : {}),
       noProgressStreak: 0,
       recentOutcomes: [],
       tasks,

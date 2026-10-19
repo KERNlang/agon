@@ -6,6 +6,72 @@ exercise these installed-user contracts. Its passing executions are not a
 whole-product compatibility verdict. No active installation may be promoted
 on the strength of that receipt.
 
+## Awaitable selected-host setup — 2026-10-19
+
+Kernel package bootstrap now awaits host decoration before calling a mod
+factory. Existing synchronous decorators remain valid. CLI setup loads its
+direct Goal/Plan host bindings inside the matching owner branches. Default
+configuration, engine dispatch and runtime policies are unchanged.
+
+This does not complete optional-package isolation. Core retains Plan exports;
+shared host imports still include other mods, and CLI bundling remains open.
+The Goal control rejects the entire Goal module while allowing unrelated host
+setup. The Plan control rejects only its session-host binding: it must not be
+reported as evidence that Plan can already be physically absent.
+
+Codex review packet SHA:
+`9d0c501a71071acb03362f6990933965964dea33a3f581b2bebd9cb8195447fa`;
+review log SHA:
+`5b2641a661845f88db8fcb0f3b6fa74dcabd31829f8e792cf4f09eefa38ec978`.
+Review found missed aliased callers in engine-dispatch tests. Their failures
+were reproduced and callers now await construction. Factory spies strengthen
+the setup tests: resolved services arrive before factory creation, and a
+rejected decorator prevents its factory. An unchanged candidate pointer alone
+was insufficient proof and is not used as the primary oracle.
+
+Archived receipts in `/Users/ra/dev/modular-agon-remediation/`:
+
+- `modular-async-host-red`: actual Ask dispatch failed before the await.
+- `modular-async-host-aliased-caller-red`: reproduced missed test callers.
+- `modular-async-host-review-controls`: 103 tests/types passed; log SHA
+  `e7d909bd15b09e330a00efd8ed83f808918ab1983ff00e5156489ae5b9d62060`.
+- `modular-async-host-plan-control`: 14 host tests/types passed; log SHA
+  `302576d2a31a396d5e422e43833e20027a89931d34e2ea6b84ad0292079d98e2`.
+
+An earlier mixed-source/built-kernel run failed; rebuilding the kernel fixed
+the mismatch. A Vitest wrapper-message assertion was corrected to inspect its
+exact cause. Those failed logs remain archived, not counted as passing.
+Full-gate and rebuilt-process results follow; clean release qualification is separate.
+
+The first full gate (`modular-async-host-full`) failed one ownership assertion:
+it required a static Plan host import. The other 10,740 tests passed, with six
+skips. A focused rerun reproduced the failure. The ownership check now compares
+the actual decorated session host with the physical Plan export; it still
+rejects the retired CLI owner and checks the interactive dispatch import.
+`modular-async-host-owner-fixed` passed the four affected test files and types
+in 2.849s, with zero provider launches. Log SHA:
+`988a846e4f51baaf884388f665f1800e033f6cdb8363c2135e6bde255cfef79d`.
+The failed full-gate log is retained with SHA
+`03d7bc36e6f500f00d3d94129b0a865ee7664beff5aa6d74fd592c9e9d0dceea`.
+The full rerun `modular-async-host-full-retry` passed in 866.632s:
+10,741 tests passed, six skipped; build, types, lint, generated metadata,
+re-export, release and supply-chain gates passed. Log SHA:
+`b87c3a274196ead8ba625c5efa29779e018ed644a21a757aab48a2b66f5a4c0d`.
+
+Final rebuilt-process verification:
+
+- `modular-async-host-goal-built`: seven real CLI invocations passed in 2.513s,
+  covering supervised startup, unknown resume, collision, token mismatch,
+  matching recovery and manual resume. Log SHA:
+  `a89f93c6ba9936fcddcd0118027fc78850d28bb2a0d0b4171694e49e1b03f7f1`.
+- `modular-async-host-mcp-built`: five MCP processes passed in 1.478s,
+  covering approved memory writes, denied and non-boolean approval, missing
+  approval channel, and safe-mode unreachability. Log SHA:
+  `1e6b54fae1b7f53319218e67d1a71eae9df465154663933227a65af9d45e39cb`.
+
+All three runs recorded zero provider launches. No active installation changed.
+These are development-subject checks, not final clean-checkout release receipts.
+
 ## MCP legacy memory owner retirement — 2026-10-19
 
 The kernel write helper no longer implements SaveMemory. Production dispatch

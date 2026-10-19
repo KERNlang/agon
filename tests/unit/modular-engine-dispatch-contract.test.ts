@@ -87,41 +87,41 @@ afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); });
 describe.each([decorateCliFirstPartyServices, decorateMcpFirstPartyServices])('Ratings protection host', decorate => {
   it('protects all registered engines plus configured historical IDs, without dispatch', async () => {
     fixture.loadConfig.mockReturnValueOnce({ ratingsPurgeKeepEngines: ['renamed-engine', 'fixture-engine'] });
-    const services = decorate({ id: 'agon.ratings' } as never, {} as never);
+    const services = await decorate({ id: 'agon.ratings' } as never, {} as never);
     const context = { invocationId: 'ratings', cwd: '/fixture/project', platform: 'darwin-arm64' as const, signal: new AbortController().signal, config: {} };
     expect(await services.ratings?.protectedEngineIds(context)).toEqual(['fixture-engine', 'disabled-engine', 'filtered-engine', 'renamed-engine']);
     expect(fixture.loadConfig).toHaveBeenCalledWith(context.cwd);
     expect(fixture.dispatch).not.toHaveBeenCalled();
   });
-  it('does not add ratings maintenance to an unrelated mod', () => {
-    expect(decorate({ id: 'custom.example' } as never, {} as never)).not.toHaveProperty('ratings');
+  it('does not add ratings maintenance to an unrelated mod', async () => {
+    expect(await decorate({ id: 'custom.example' } as never, {} as never)).not.toHaveProperty('ratings');
   });
   it.each(['not-an-array', 42])('preserves the legacy non-array config guard (%j)', async invalid => {
     fixture.loadConfig.mockReturnValueOnce({ ratingsPurgeKeepEngines: invalid });
-    const services = decorate({ id: 'agon.ratings' } as never, {} as never);
+    const services = await decorate({ id: 'agon.ratings' } as never, {} as never);
     const context = { invocationId: 'ratings', cwd: '/fixture/project', platform: 'darwin-arm64' as const, signal: new AbortController().signal, config: {} };
     expect(await services.ratings?.protectedEngineIds(context)).toEqual(['fixture-engine', 'disabled-engine', 'filtered-engine']);
   });
 });
 
 describe.each([decorateCliFirstPartyServices, decorateMcpFirstPartyServices])('Forge host wiring', decorate => {
-  it.each(['agon.forge', 'agon.team-forge', 'agon.pipeline-orchestration', 'agon.goal'])('provides host effects to the bundled %s consumer', id => {
-    const services = decorate({ id } as never, {} as never);
+  it.each(['agon.forge', 'agon.team-forge', 'agon.pipeline-orchestration', 'agon.goal'])('provides host effects to the bundled %s consumer', async id => {
+    const services = await decorate({ id } as never, {} as never);
     expect(services).toHaveProperty('forge', fixture.forge);
     expect(fixture.forge.open).not.toHaveBeenCalled();
     expect(fixture.dispatch).not.toHaveBeenCalled();
   });
-  it('does not expose Forge or patch application to unrelated mods', () => {
-    const services = decorate({ id: 'custom.example' } as never, {} as never);
+  it('does not expose Forge or patch application to unrelated mods', async () => {
+    const services = await decorate({ id: 'custom.example' } as never, {} as never);
     expect(services).not.toHaveProperty('forge');
     expect(services).not.toHaveProperty('patchApplication');
   });
 });
 
 describe.each([decorateCliFirstPartyServices, decorateMcpFirstPartyServices])('Brainstorm host wiring', decorate => {
-  it.each(['agon.brainstorm', 'agon.pipeline-orchestration'])('opens %s with the physical registry and Ratings lookup', id => {
+  it.each(['agon.brainstorm', 'agon.pipeline-orchestration'])('opens %s with the physical registry and Ratings lookup', async id => {
     const load = vi.spyOn(CatalogEngineRegistry.prototype, 'load').mockImplementation(() => {});
-    decorate({ id } as never, {} as never);
+    await decorate({ id } as never, {} as never);
     expect(load).not.toHaveBeenCalled();
     const registry = fixture.brainstormFactory.mock.calls[0]![0].openRegistry('/fixture/project') as CatalogEngineRegistry;
     expect(registry).toBeInstanceOf(CatalogEngineRegistry);
@@ -137,7 +137,7 @@ describe.each([decorateCliFirstPartyServices, decorateMcpFirstPartyServices])('B
     } as never);
     vi.stubEnv('AGON_FORCE_HEALTH_PROBE', '1');
     vi.stubEnv('AGON_DISABLE_FORGE_HEALTH_CHECK', '');
-    const decorated = decorate({ id } as never, {} as never) as BrainstormModServices;
+    const decorated = await decorate({ id } as never, {} as never) as BrainstormModServices;
     expect(load).not.toHaveBeenCalled();
     expect(fixture.adapterOpened).not.toHaveBeenCalled();
     const controller = new AbortController();
@@ -165,8 +165,8 @@ describe.each([decorateCliFirstPartyServices, decorateMcpFirstPartyServices])('B
     await expect(seat('cancelled', 'system')).resolves.toMatchObject({ ok: false, attempts: 0, detail: 'aborted before dispatch' });
     expect(fixture.dispatch).not.toHaveBeenCalled();
   });
-  it.each(['agon.brainstorm', 'agon.pipeline-orchestration'])('binds %s effects to their physical owners', id => {
-    decorate({ id } as never, {} as never);
+  it.each(['agon.brainstorm', 'agon.pipeline-orchestration'])('binds %s effects to their physical owners', async id => {
+    await decorate({ id } as never, {} as never);
     expect(fixture.brainstormFactory).toHaveBeenCalledOnce();
     expect(fixture.brainstormFactory.mock.calls[0]).toHaveLength(1);
     expect(fixture.brainstormFactory.mock.calls[0]![0]).toMatchObject({
@@ -181,8 +181,8 @@ describe.each([decorateCliFirstPartyServices, decorateMcpFirstPartyServices])('B
     expect(fixture.loadConfig).not.toHaveBeenCalled();
     expect(fixture.dispatch).not.toHaveBeenCalled();
   });
-  it.each(['agon.brainstorm', 'agon.pipeline-orchestration'])('pins deferred %s effects to current surface authority', id => {
-    decorate({ id } as never, {} as never);
+  it.each(['agon.brainstorm', 'agon.pipeline-orchestration'])('pins deferred %s effects to current surface authority', async id => {
+    await decorate({ id } as never, {} as never);
     expect(fixture.captureCli).not.toHaveBeenCalled();
     expect(fixture.captureMcp).not.toHaveBeenCalled();
     const capture = fixture.brainstormFactory.mock.calls[0]![0].captureAuthority as () => () => void;
@@ -198,16 +198,16 @@ describe.each([decorateCliFirstPartyServices, decorateMcpFirstPartyServices])('B
     fixture.assertCurrent.mockImplementationOnce(() => { throw reason; });
     expect(check).toThrow(reason);
   });
-  it.each(['agon.brainstorm', 'agon.pipeline-orchestration'])('provides host effects to the bundled %s consumer', id => {
-    const services = decorate({ id } as never, {} as never);
+  it.each(['agon.brainstorm', 'agon.pipeline-orchestration'])('provides host effects to the bundled %s consumer', async id => {
+    const services = await decorate({ id } as never, {} as never);
     const expected = decorate === decorateCliFirstPartyServices && id === 'agon.brainstorm'
       ? { ...fixture.brainstorm, writeCliOutput: expect.any(Function) }
       : fixture.brainstorm;
     expect(services).toHaveProperty('brainstorm', expected);
     expect(fixture.brainstorm.open).not.toHaveBeenCalled();
   });
-  it('does not expose the capability to unrelated mods', () => {
-    expect(decorate({ id: 'custom.example' } as never, {} as never)).not.toHaveProperty('brainstorm');
+  it('does not expose the capability to unrelated mods', async () => {
+    expect(await decorate({ id: 'custom.example' } as never, {} as never)).not.toHaveProperty('brainstorm');
   });
 });
 

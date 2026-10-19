@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { expect, it } from 'vitest';
 import * as plan from '@kernlang/agon-mod-plan';
+import type { ModManifest, ModServices } from '@kernlang/agon-mod-api';
 
 const source = (path: string) => readFileSync(fileURLToPath(new URL(`../../${path}`, import.meta.url)), 'utf8');
 
@@ -47,10 +48,14 @@ it('binds Cesar proposals and session resume without legacy execution adapters',
   expect(interactive).toContain('selectResumablePlan(');
 });
 
-it('removes the CLI-owned session scope instead of retaining a second owner', () => {
+it('removes the CLI-owned session scope instead of retaining a second owner', async () => {
   expect(existsSync(fileURLToPath(new URL('../../packages/cli/src/plan-session-host.ts', import.meta.url)))).toBe(false);
   for (const path of ['packages/cli/src/first-party-services.ts', 'packages/cli/src/signals/dispatch/intent-session.ts']) {
     expect(source(path)).not.toContain('plan-session-host.js');
-    expect(source(path)).toMatch(/import\s*\{[^}]*\b(?:planSessionHost|withPlanSession)\b[^}]*\}\s*from\s*['"]@kernlang\/agon-mod-plan['"]/);
   }
+  expect(source('packages/cli/src/signals/dispatch/intent-session.ts'))
+    .toMatch(/import\s*\{[^}]*\bwithPlanSession\b[^}]*\}\s*from\s*['"]@kernlang\/agon-mod-plan['"]/);
+  const { decorateCliFirstPartyServices } = await import('../../packages/cli/src/first-party-services.js');
+  const services = await decorateCliFirstPartyServices({ id: 'agon.plan' } as ModManifest, {} as ModServices);
+  expect(services.planSession).toBe(plan.planSessionHost);
 });

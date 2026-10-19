@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
-import type { AgonModV1, Json, ModManifest, ModServices, Registrar } from '@kernlang/agon-mod-api';
+import type { AgonModV1, Awaitable, Json, ModManifest, ModServices, Registrar } from '@kernlang/agon-mod-api';
 
 import { activateFirstPartySurfaceGeneration } from './activated-surface-generation.js';
 import type { ActivatedSurfaceGeneration, FirstPartySurfacePackage } from './activated-surface-generation.js';
@@ -143,14 +143,14 @@ function createServices(hostRoot: string, manifest: ModManifest, source: ModServ
   } as unknown as ModServices);
 }
 
-async function loadPackage(hostRoot: string, packageId: string, decorateServices?: (manifest: ModManifest, services: ModServices) => ModServices): Promise<FirstPartySurfacePackage> {
+async function loadPackage(hostRoot: string, packageId: string, decorateServices?: (manifest: ModManifest, services: ModServices) => Awaitable<ModServices>): Promise<FirstPartySurfacePackage> {
   const loaded = await import(packageId) as FirstPartyModule;
   if (!loaded.MANIFEST || typeof loaded.createMod !== 'function') throw new Error(`invalid bundled first-party package: ${packageId}`);
   if (loaded.MANIFEST.id !== packageId.replace('@kernlang/agon-mod-', 'agon.')) {
     throw new Error(`bundled package identity mismatch: ${packageId} != ${loaded.MANIFEST.id}`);
   }
   const baseServices = createServices(hostRoot, loaded.MANIFEST);
-  const services = decorateServices ? decorateServices(loaded.MANIFEST, baseServices) : baseServices;
+  const services = decorateServices ? await decorateServices(loaded.MANIFEST, baseServices) : baseServices;
   return Object.freeze({ manifest: loaded.MANIFEST, mod: await loaded.createMod(services), services });
 }
 
@@ -178,7 +178,7 @@ export async function bootstrapFirstPartySurfaceGeneration(options: {
   readonly candidateSelection?: CandidateSurfaceSelection;
   /** Host capability, exposed to folder mods only through authority wrappers. */
   readonly dispatchEngine?: ModServices['engines']['dispatch'];
-  readonly decorateFirstPartyServices?: (manifest: ModManifest, services: ModServices) => ModServices;
+  readonly decorateFirstPartyServices?: (manifest: ModManifest, services: ModServices) => Awaitable<ModServices>;
 }): Promise<FirstPartySurfaceBoot> {
   if (options.safeMode && options.candidateSelection) throw new Error('safe mode cannot qualify a candidate selection');
   if (options.safeMode) {

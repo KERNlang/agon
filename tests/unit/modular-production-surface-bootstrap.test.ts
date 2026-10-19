@@ -2,6 +2,8 @@ import { mkdtemp, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { CommandContribution, ModServices } from '@kernlang/agon-mod-api';
+import * as askPackage from '@kernlang/agon-mod-ask';
 import { loadModManagementView } from '../../packages/cli/src/commands/mod.js';
 
 import {
@@ -28,10 +30,60 @@ import { detectIntent } from '../../packages/cli/src/signals/intent.js';
 const NOW = '2026-08-23T20:00:00.000Z';
 afterEach(async () => {
   await disposeProcessSurfaceAuthority();
+  vi.restoreAllMocks();
   vi.unstubAllEnvs();
 });
 
 describe('production physical surface bootstrap', () => {
+  it('awaits selected host services before exposing a physical command', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-async-host-'));
+    const { desiredState } = createReleaseSetupSelection({ profile: 'minimal', now: NOW });
+    const lock = await surfaceLockFor(desiredState);
+    const dispatch = vi.fn(async () => ({ engineId: 'fixture', exitCode: 0, stdout: 'decorated answer' }));
+    const unexpected = () => { throw new Error('unexpected compatibility execution'); };
+    let decorated = false;
+    const createMod = askPackage.createMod;
+    const factory = vi.spyOn(askPackage, 'createMod').mockImplementation(services => {
+      expect(decorated).toBe(true);
+      return createMod(services);
+    });
+    const boot = await bootstrapFirstPartySurfaceGeneration({ hostRoot: root,
+      candidateSelection: { desiredState, lock, configurationFiles: {} },
+      runtime: { command: unexpected, tool: unexpected, parseIntent: unexpected, renderDocs: unexpected },
+      decorateFirstPartyServices: async (_manifest, base: ModServices) => {
+        await new Promise<void>(resolve => setImmediate(resolve));
+        decorated = true;
+        return { ...base, engines: { dispatch } };
+      },
+    });
+    try {
+      const command = boot.activated.generation.assertAvailable('cli', 'ask').payload as CommandContribution;
+      await expect(command.run({ engine: 'fixture', prompt: 'question' }, {
+        invocationId: 'async-host', cwd: root, platform: 'darwin-arm64', signal: new AbortController().signal, config: {},
+      })).resolves.toMatchObject({ exitCode: 0, stdout: 'decorated answer\n' });
+      expect(dispatch).toHaveBeenCalledTimes(1);
+      expect(factory).toHaveBeenCalledTimes(1);
+    } finally { await boot.activated.dispose(); }
+  });
+
+  it('rejects a failed asynchronous host setup before calling its mod factory', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-async-host-rejected-'));
+    const { desiredState } = createReleaseSetupSelection({ profile: 'minimal', now: NOW });
+    const lock = await surfaceLockFor(desiredState);
+    const unexpected = () => { throw new Error('unexpected compatibility execution'); };
+    const factory = vi.spyOn(askPackage, 'createMod');
+    await expect(bootstrapFirstPartySurfaceGeneration({ hostRoot: root,
+      candidateSelection: { desiredState, lock, configurationFiles: {} },
+      runtime: { command: unexpected, tool: unexpected, parseIntent: unexpected, renderDocs: unexpected },
+      decorateFirstPartyServices: async () => {
+        await new Promise<void>(resolve => setImmediate(resolve));
+        throw new Error('fixture host import failed');
+      },
+    })).rejects.toThrow('fixture host import failed');
+    expect(factory).not.toHaveBeenCalled();
+    expect(await new DurableModHost(root, { kernelVersion: '1.0.0' }).readCurrentPointer()).toBeNull();
+  });
+
   it('boots kernel safe mode without importing feature host services', async () => {
     const root = await mkdtemp(join(tmpdir(), 'agon-safe-host-import-'));
     vi.stubEnv('AGON_MOD_SAFE_MODE', '0');

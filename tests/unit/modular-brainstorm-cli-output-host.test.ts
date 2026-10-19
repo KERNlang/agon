@@ -10,11 +10,44 @@ import { conquerCommand } from '../../packages/cli/src/commands/conquer.js';
 import * as authority from '../../packages/cli/src/surface-authority-runtime.js';
 import { decorateCliFirstPartyServices } from '../../packages/cli/src/first-party-services.js';
 
+it('loads Goal host code only when decorating the Goal owner', async () => {
+  vi.doMock('@kernlang/agon-mod-goal', () => { throw new Error('fixture Goal package unavailable'); });
+  vi.resetModules();
+  try {
+    const host = await import('../../packages/cli/src/first-party-services.js');
+    const unrelated = await host.decorateCliFirstPartyServices({ id: 'agon.ask' } as ModManifest, {} as ModServices);
+    expect(unrelated.engines.dispatch).toBeTypeOf('function');
+    await expect(host.decorateCliFirstPartyServices({ id: 'agon.goal' } as ModManifest, {} as ModServices))
+      .rejects.toMatchObject({ cause: { message: 'fixture Goal package unavailable' } });
+  } finally {
+    vi.doUnmock('@kernlang/agon-mod-goal');
+    vi.resetModules();
+  }
+});
+
+it('reads the Plan session host only when decorating the Plan owner', async () => {
+  vi.doMock('@kernlang/agon-mod-plan', async importOriginal => ({
+    ...await importOriginal<typeof import('@kernlang/agon-mod-plan')>(),
+    get planSessionHost() { throw new Error('fixture Plan session host unavailable'); },
+  }));
+  vi.resetModules();
+  try {
+    const host = await import('../../packages/cli/src/first-party-services.js');
+    const unrelated = await host.decorateCliFirstPartyServices({ id: 'agon.ask' } as ModManifest, {} as ModServices);
+    expect(unrelated.engines.dispatch).toBeTypeOf('function');
+    await expect(host.decorateCliFirstPartyServices({ id: 'agon.plan' } as ModManifest, {} as ModServices))
+      .rejects.toThrow('fixture Plan session host unavailable');
+  } finally {
+    vi.doUnmock('@kernlang/agon-mod-plan');
+    vi.resetModules();
+  }
+});
+
 it.each([
   { forgeJudgeEngine: 'forge-judge', cesarEngine: 'cesar', expected: 'forge-judge' },
   { forgeJudgeEngine: '', cesarEngine: 'cesar', expected: 'cesar' },
   { forgeJudgeEngine: '', cesarEngine: '', expected: undefined },
-])('projects Goal review defaults from target configuration (judge=$expected)', ({ forgeJudgeEngine, cesarEngine, expected }) => {
+])('projects Goal review defaults from target configuration (judge=$expected)', async ({ forgeJudgeEngine, cesarEngine, expected }) => {
   const load = vi.spyOn(core, 'loadConfig').mockReturnValue({
     goalReviewEngines: ['configured-reviewer'], forgeJudgeEngine, cesarEngine,
   } as ReturnType<typeof core.loadConfig>);
@@ -23,7 +56,7 @@ it.each([
   vi.spyOn(core.EngineRegistry.prototype, 'get').mockImplementation(id => ({ id, isLocal: id === 'local' }) as ReturnType<core.EngineRegistry['get']>);
   vi.spyOn(authority, 'captureProcessSurfaceAuthority').mockReturnValue(() => {});
   try {
-    const services = decorateCliFirstPartyServices({ id: 'agon.goal' } as ModManifest, {} as ModServices) as GoalModServices;
+    const services = await decorateCliFirstPartyServices({ id: 'agon.goal' } as ModManifest, {} as ModServices) as GoalModServices;
     expect(load).not.toHaveBeenCalled();
     const opened = services.goal!.open({ invocationId: 'goal-defaults', cwd: '/fixture-target',
       platform: 'darwin-arm64', signal: new AbortController().signal,
@@ -73,7 +106,7 @@ it('binds Conquer publication to kernel configuration rather than mod-owned conf
   vi.spyOn(authority, 'captureProcessSurfaceAuthority').mockReturnValue(() => {});
   vi.spyOn(authority, 'assertProcessSurfaceAvailable').mockImplementation(() => {});
   try {
-    const services = decorateCliFirstPartyServices({ id: 'agon.conquer' } as ModManifest, {} as ModServices) as ConquerModServices;
+    const services = await decorateCliFirstPartyServices({ id: 'agon.conquer' } as ModManifest, {} as ModServices) as ConquerModServices;
     const opened = await services.conquer!.open({ invocationId: 'policy-host', cwd: '/fixture-project',
       platform: 'darwin-arm64', signal: new AbortController().signal,
       config: { protectedPushBranches: ['mod-owned-decoy'], commitCoAuthor: 'decoy' } });
@@ -100,7 +133,7 @@ it.each((['conquer', 'goal'] as const).flatMap(owner =>
     return 'TITLE: feat: fixture\n\nVerified fixture body';
   });
   try {
-    const services = decorateCliFirstPartyServices({ id: `agon.${owner}` } as ModManifest, {} as ModServices) as ConquerModServices & GoalModServices;
+    const services = await decorateCliFirstPartyServices({ id: `agon.${owner}` } as ModManifest, {} as ModServices) as ConquerModServices & GoalModServices;
     const opened = await services[owner]!.open({ invocationId: 'draft-host', cwd: '/fixture-project',
       platform: 'darwin-arm64', signal: new AbortController().signal, config: {} });
     const draft = opened.draftPullRequest!({ engineId: 'fixture', intent: 'task', context: 'verified', commits: '', diff: '' }, dispatch);
@@ -114,20 +147,20 @@ it.each((['conquer', 'goal'] as const).flatMap(owner =>
   } finally { vi.restoreAllMocks(); }
 });
 
-it('provides the terminal writer only to the CLI Brainstorm host and writes nothing during decoration', () => {
+it('provides the terminal writer only to the CLI Brainstorm host and writes nothing during decoration', async () => {
   const write = vi.spyOn(process.stdout, 'write').mockReturnValue(true);
   try {
-    const services = decorateCliFirstPartyServices({ id: 'agon.brainstorm' } as ModManifest, {} as ModServices) as BrainstormModServices;
+    const services = await decorateCliFirstPartyServices({ id: 'agon.brainstorm' } as ModManifest, {} as ModServices) as BrainstormModServices;
     expect(write).not.toHaveBeenCalled();
     expect(services.brainstorm?.writeCliOutput).toBeTypeOf('function');
     services.brainstorm!.writeCliOutput!('fixture stream\n');
     expect(write).toHaveBeenCalledExactlyOnceWith('fixture stream\n');
-    const pipeline = decorateCliFirstPartyServices({ id: 'agon.pipeline-orchestration' } as ModManifest, {} as ModServices) as BrainstormModServices;
+    const pipeline = await decorateCliFirstPartyServices({ id: 'agon.pipeline-orchestration' } as ModManifest, {} as ModServices) as BrainstormModServices;
     expect(pipeline.brainstorm?.writeCliOutput).toBeUndefined();
-    const conquer = decorateCliFirstPartyServices({ id: 'agon.conquer' } as ModManifest, {} as ModServices) as BrainstormModServices;
+    const conquer = await decorateCliFirstPartyServices({ id: 'agon.conquer' } as ModManifest, {} as ModServices) as BrainstormModServices;
     expect(conquer.brainstorm?.open).toBeTypeOf('function');
     expect(conquer.brainstorm?.writeCliOutput).toBeUndefined();
-    const unrelated = decorateCliFirstPartyServices({ id: 'agon.ask' } as ModManifest, {} as ModServices) as BrainstormModServices;
+    const unrelated = await decorateCliFirstPartyServices({ id: 'agon.ask' } as ModManifest, {} as ModServices) as BrainstormModServices;
     expect(unrelated.brainstorm).toBeUndefined();
   } finally { write.mockRestore(); }
 });

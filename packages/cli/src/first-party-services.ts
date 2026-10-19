@@ -1,12 +1,10 @@
 import { resolveExplicitReviewEngines } from '@kernlang/agon-support-verification';
 import { cliRunRecordHost } from './run-record-host.js';
 import { patchApplicationHost } from './patch-application-host.js';
-import { planSessionHost } from '@kernlang/agon-mod-plan';
 import { EngineRegistry, appendAttribution, appendPrAttribution, buildKernContextSpine, createRunDir, eventLogFlush, getRatings, loadConfig, pickTopRatedEngine, setSessionRoot, tracker } from '@kernlang/agon-core';
 import { createCliAdapter } from '@kernlang/agon-adapter-cli';
 import { createForgeHostServices } from '@kernlang/agon-core';
 import { repoRoot, createSessionWorktree, findSessionWorktree, worktreePathFor, rehydrateSessionWorktree } from '@kernlang/agon-core';
-import { createGoalHostServices } from '@kernlang/agon-mod-goal';
 import { agonPath, ensureAgonHome, worktreeCreate, worktreeRemoveBestEffort, spawnWithTimeout } from '@kernlang/agon-core';
 import { resolveWithinRoot } from '@kernlang/agon-support-worktree';
 import { WriterFence } from '@kernlang/agon-kernel';
@@ -46,7 +44,7 @@ async function draftFirstPartyPullRequest(input: PrTextInput, dispatch: (prompt:
   } });
 }
 
-export function decorateCliFirstPartyServices(manifest: ModManifest, base: ModServices): ModServices {
+export async function decorateCliFirstPartyServices(manifest: ModManifest, base: ModServices): Promise<ModServices> {
   const runs = cliRunRecordHost;
   const workspace = manifest.id === 'agon.worktrees' ? Object.freeze({
     setSessionRoot(path: string): void { setSessionRoot(path); },
@@ -128,7 +126,7 @@ export function decorateCliFirstPartyServices(manifest: ModManifest, base: ModSe
   } : undefined;
   return Object.freeze({ ...base, runs, ...(browser ? { browser } : {}), ...(workspace ? { workspace } : {}),
     ...(brainstorm ? { brainstorm } : {}),
-    ...(manifest.id === 'agon.goal' ? { goal: createGoalHostServices({
+    ...(manifest.id === 'agon.goal' ? { goal: (await import('@kernlang/agon-mod-goal')).createGoalHostServices({
       journalEffects: { path: agonPath, ensureHome: ensureAgonHome },
       implementationHints: (source, engines, context) => {
         const hints = deriveRoutingHints(source, { activeEngines: () => [...engines] }, context.cwd);
@@ -202,7 +200,7 @@ export function decorateCliFirstPartyServices(manifest: ModManifest, base: ModSe
         return () => { assertCurrent(); assertProcessSurfaceAvailable('cli', 'forge'); };
       }),
     } : {}),
-    ...(manifest.id === 'agon.plan' ? { planSession: planSessionHost } : {}), engines: createCliEngineServices() });
+    ...(manifest.id === 'agon.plan' ? { planSession: (await import('@kernlang/agon-mod-plan')).planSessionHost } : {}), engines: createCliEngineServices() });
 }
 
 export function createCliEngineServices(): ModServices['engines'] {

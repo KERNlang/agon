@@ -4,6 +4,24 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as physical from '../../packages/mod-plan/src/index.js';
 import * as frozen from '../fixtures/modular-plan-store-legacy.js';
+import { savePersistedPlan, loadPersistedPlan } from '../../packages/support-persistence/src/plan-store.js';
+
+it.each([
+  ['draft', 'draft'], ['approved', 'approved'], ['running', 'running'],
+  ['paused', 'paused'], ['completed', 'completed'], ['failed', 'failed'],
+  ['cancelled', 'cancelled'], ['awaiting_approval', 'approved'], ['done', 'completed'],
+])('persists Plan state %s with envelope status %s', (state, expected) => {
+  const home = mkdtempSync(join(tmpdir(), 'agon-plan-envelope-'));
+  vi.stubEnv('AGON_HOME', home);
+  try {
+    const plan = { id: 'plan-status', state, updatedAt: '2026-10-19T00:00:00.000Z' };
+    savePersistedPlan(plan);
+    const raw = JSON.parse(readFileSync(join(home, 'plans', 'plan-status.json'), 'utf8'));
+    expect(raw.status).toBe(expected);
+    expect(raw.payload).toEqual(plan);
+    expect(loadPersistedPlan(plan.id)).toEqual(plan);
+  } finally { vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }); }
+});
 
 it('Plan owns storage and preserves saved bytes, readers and malformed-file isolation', () => {
   expect(physical).toHaveProperty('saveCesarPlan');

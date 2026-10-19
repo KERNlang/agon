@@ -34,7 +34,7 @@ function safePlanPath(id: string): string {
 export interface PersistedPlan { id: string; updatedAt: string }
 
 function planStatus(plan: PersistedPlan & { state?: string }): 'draft'|'approved'|'running'|'paused'|'completed'|'failed'|'cancelled' {
-  if (plan.state === 'awaiting_approval') return 'approved';
+  if (plan.state === 'approved' || plan.state === 'awaiting_approval') return 'approved';
   if (plan.state === 'running') return 'running';
   if (plan.state === 'paused') return 'paused';
   if (plan.state === 'done' || plan.state === 'completed') return 'completed';

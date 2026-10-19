@@ -6,6 +6,61 @@ exercise these installed-user contracts. Its passing executions are not a
 whole-product compatibility verdict. No active installation may be promoted
 on the strength of that receipt.
 
+## Plan default error adapter retirement and persisted status — 2026-10-19
+
+Worktree support now creates its own canonical `PlanStateError` by default.
+Core's four error-injecting wrappers become direct compatibility re-exports;
+CLI no longer injects the same constructor. Custom invocation-scoped error
+factories remain supported. Transition logic is unchanged; the separate
+persistence status correction is described below.
+No dependency was added.
+
+`modular-plan-default-red` failed on four physical error types and wrapper
+identity before the change. Its log SHA:
+`79e7d3961d042ebd5dec5a75477c57170ec49191db824cc0018c626928f71636`.
+Codex found no blocking defect and identified test gaps. The tests now check
+exact custom error identity and arguments for all four transitions, canonical
+constructor identity, fields/messages, and absence of CLI default injection.
+The existing test name now accurately describes interleaved invocation isolation,
+not untested import-order independence. Review packet SHA:
+`26552d26aa294e108a5d28f39d2ce40ed85815faf4f9506382eaccebddf7dde3`;
+log SHA: `78ebda0e32faa474bad2091691882cc3ef701e9ce1639c8a74936b39483dd25f`.
+Reviewed focused run: 111 tests, types and diff checks passed; zero providers.
+Receipt `modular-plan-default-reviewed`, log SHA:
+`8e5c7d70a6292a1998f2d0caff435ce55d38204baf3622aeefe6a1624d5b1b3f`.
+The first full gate passed in 874.827s with 10,760 passing tests and six skips
+(`modular-plan-default-full`, log SHA
+`32ec01181addffae9a9e44705675141394f4cc4de0363b36e59bfeac546a5846`).
+The final built persistence probe then found an existing contract defect:
+`approved` payloads received `draft` envelope status. The other six states
+matched. The failed receipt is retained as `modular-plan-built-status`.
+
+The persistence owner now maps `approved` explicitly. No payload, historical
+record, other state, or alias is rewritten. Nine raw-envelope regression cases
+cover seven states and both legacy aliases; the approved case failed first.
+The rebuilt status probe passes (`modular-plan-built-status-fixed`, log SHA
+`275f0eb7d826d12c8dbf7d6b11b162f0d18ae3c21bc60a7edba6ad94e0ee8002`).
+Codex found no correctness finding in this bounded fix. Review packet SHA:
+`010a36e1d2ca4f3d8513f9922fd2bb07d1b8244f2a9c03336929b7b734b30bbe`;
+log SHA: `bd90ee71a0372b42fdc2971f8f26a49883856dd4e05fbaa036e02c2f44dbb75a`.
+The new full gate passed in 873.344s: 10,769 tests passed, six skipped;
+build, types, lint, re-export, generated artifacts, support boundaries,
+release-set and supply-chain self-tests passed. No provider launched.
+Receipt `modular-plan-default-full-fixed`, log SHA:
+`ef23d68a8bdbe8f1c7a50232a44a6514526abe237cf60e934817719612254ef1`.
+Two final built-package probes passed after the final build. Status replay
+checks all seven raw envelope states and Core/owner binding identity:
+`modular-plan-built-status-final`, log SHA
+`27b6cf5deec933f20262d6b6c7097bf248fad00e7b084ae5bb9571b2d84d5ac7`.
+The physical Plan workflow uses real isolated persistence and verifies dismissed
+disk-draft approval, explicit approval, cancellation, failed/paused retries,
+retained attempts/artifacts, and default/custom errors. Every save checks the
+raw envelope and reload. Its Forge effect records dispatch rather than invoking
+providers; it is not live-provider qualification. Receipt
+`modular-plan-workflow-built-final`, log SHA
+`7660839daf3e6075fa4bbb688b0c3ed1c5d0757504719b7b352f4a4c3d51d8bc`.
+Common-host isolation and whole-product acceptance remain open.
+
 ## Shared Git/worktree owner — 2026-10-19
 
 The first full run failed one stale test spy after 10,743 passing tests and six

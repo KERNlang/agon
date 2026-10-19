@@ -1,10 +1,11 @@
+import { PlanStateError } from './errors.js';
+
 export interface WorktreePlanRuntime {
   createStateError(expected: string | string[], actual: string): Error;
 }
 
 function planStateError(expected: string | string[], actual: string, runtime?: WorktreePlanRuntime): Error {
-  const expectedText = Array.isArray(expected) ? expected.join(' | ') : expected;
-  return runtime?.createStateError(expected, actual) ?? new Error('Invalid plan state: expected ' + expectedText + ', got ' + actual);
+  return runtime?.createStateError(expected, actual) ?? new PlanStateError(expected, actual);
 }
 
 export type PlanState = 'draft' | 'approved' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';

@@ -32,6 +32,10 @@ describe('S4 compatibility adapter parity', () => {
     expect(legacyInformationGain.computeInfoGain).toBe(verification.computeInfoGain);
     expect(legacyPlan.createPlan).toBe(worktree.createPlan);
     expect(legacyPlan.advanceStep).toBe(worktree.advanceStep);
+    expect(legacyPlan.approvePlan).toBe(worktree.approvePlan);
+    expect(legacyPlan.startPlan).toBe(worktree.startPlan);
+    expect(legacyPlan.cancelPlan).toBe(worktree.cancelPlan);
+    expect(legacyPlan.failPlan).toBe(worktree.failPlan);
   });
 
   it('reexports browser and dedup implementations', () => {

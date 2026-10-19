@@ -1,4 +1,4 @@
-import { loadPlan, listPlans, savePlan, PlanStateError } from '@kernlang/agon-core';
+import { loadPlan, listPlans, savePlan } from '@kernlang/agon-core';
 import type { WorktreePlanHost } from '@kernlang/agon-mod-plan';
 import type { Dispatch, HandlerContext } from '../handlers/types.js';
 import { assertProcessSurfaceAvailable, captureProcessSurfaceAuthority } from '../surface-authority-runtime.js';
@@ -23,7 +23,6 @@ export function worktreePlanHost(dispatch: Dispatch, ctx: HandlerContext): Workt
     setCurrent: plan => ctx.setCurrentPlan(plan),
     load: loadPlan, list: listPlans, save: savePlan, emit: dispatch,
     ask: question => ctx.askQuestion(question),
-    stateRuntime: { createStateError: (expected, actual) => new PlanStateError(expected, actual) },
     forge: async plan => {
       const { handleForge } = await import('../handlers/forge.js');
       if (!host.available(plan)) return;

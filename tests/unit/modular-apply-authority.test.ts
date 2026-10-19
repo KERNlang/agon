@@ -2,7 +2,7 @@ import { chmod, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promis
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DurableModHost, createFirstPartyModCatalog, createFullCompatDesiredState, planDesiredStateChange } from '../../packages/mod-kernel/src/index.js';
 import { surfaceLockFor } from '../helpers/modular-surface-lock.js';
 import { disposeProcessSurfaceAuthority, initializeProcessSurfaceAuthority } from '../../packages/cli/src/surface-authority-runtime.js';
@@ -23,7 +23,7 @@ const context = { invocationId: 'apply-authority', cwd: '/fixture', platform: 'd
 
 describe.each([true, false])('Apply host authority with disabled=%s', disabled => {
   let root: string;
-  beforeAll(async () => {
+  beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), 'agon-apply-authority-'));
     workspace.cwd = join(root, 'workspace');
     execFileSync('git', ['init', '--quiet', workspace.cwd]);
@@ -38,7 +38,7 @@ describe.each([true, false])('Apply host authority with disabled=%s', disabled =
     await host.commitGeneration({ operation: disabled ? 'disable' : 'install', lock: await surfaceLockFor(desired), desiredState: desired, installedIndex: {} });
     await initializeProcessSurfaceAuthority(root);
   });
-  afterAll(async () => {
+  afterEach(async () => {
     await disposeProcessSurfaceAuthority();
     for (const generation of await readdir(join(root, 'generations'))) await chmod(join(root, 'generations', generation), 0o755);
     await rm(root, { recursive: true, force: true });

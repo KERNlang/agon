@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -17,6 +17,7 @@ import { dispatchOrchestrationIntent } from '../../packages/cli/src/signals/disp
 import type { DispatchCallbacks } from '../../packages/cli/src/signals/dispatch.js';
 import { ModStateStore } from '../../packages/mod-kernel/src/index.js';
 import type { ModServices } from '@kernlang/agon-mod-api';
+import { executeToolCall, getProjectFileStateCache } from '@kernlang/agon-core';
 
 const root = mkdtempSync(join(tmpdir(), 'agon-cesar-parity-'));
 
@@ -44,6 +45,73 @@ const valid: Readonly<Record<string, Record<string, unknown>>> = Object.freeze({
 const readOnly = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Council', 'Review', 'Delegate', 'QuickNero']);
 
 describe('physical Cesar orchestration tool parity', () => {
+  it('confirms each project-memory write and refreshes the read-before-write cache', async () => {
+    const cwd = mkdtempSync(join(root, 'memory-'));
+    const path = join(cwd, '.agon', 'project.md');
+    const registry = createCesarToolRegistry();
+    const input = { memory: 'Use session tokens', section: 'Decisions' };
+    const cache = new Map(getProjectFileStateCache(cwd).cache);
+    const context = { cwd, readFileState: cache, abortSignal: new AbortController().signal } as never;
+    expect(registry.get('SaveMemory')!.checkPermission(input, context).behavior).toBe('ask');
+    const call = { id: 'memory-fixture', name: 'SaveMemory', input };
+    expect((await executeToolCall(call, context, registry, async () => false)).result.ok).toBe(false);
+    expect((await executeToolCall(call, context, registry)).result.ok).toBe(false);
+    expect(existsSync(path)).toBe(false);
+    const saved = await executeToolCall(call, context, registry, async () => true);
+    expect(saved.result.ok).toBe(true);
+    expect(saved.result.content).toContain('Saved to project memory [Decisions]');
+    expect(readFileSync(path, 'utf8')).toContain('Use session tokens');
+    expect(cache.get(path)).toMatchObject({ lastTouchedBy: 'save-memory', isPartialView: false });
+    expect(cache.get(path)?.content.trim()).toBe(readFileSync(path, 'utf8').trim());
+  });
+
+  it.each(['cancel', 'replace'] as const)('rejects project-memory approval after %s', async action => {
+    const cwd = mkdtempSync(join(root, 'memory-stale-'));
+    const registry = createCesarToolRegistry();
+    const controller = new AbortController();
+    const context = { cwd, readFileState: new Map(), abortSignal: controller.signal } as never;
+    const result = await executeToolCall({
+      id: 'stale-memory', name: 'SaveMemory',
+      input: { memory: 'Must not be saved', section: 'Decisions' },
+    }, context, registry, async () => {
+      if (action === 'cancel') controller.abort();
+      else {
+        await disposeProcessSurfaceAuthority();
+        await initializeProcessSurfaceAuthority(join(root, 'host'));
+      }
+      return true;
+    });
+    expect(result.result.ok).toBe(false);
+    expect(existsSync(join(cwd, '.agon', 'project.md'))).toBe(false);
+  });
+
+  it('rejects a generation change during the project-memory write-grant check', async () => {
+    const cwd = mkdtempSync(join(root, 'memory-grant-'));
+    const host = join(cwd, 'host');
+    await disposeProcessSurfaceAuthority();
+    try {
+      await initializeProcessSurfaceAuthority(host, (manifest, base) => manifest.id !== 'agon.memory' ? base : {
+        ...base, permissions: { check: async () => {
+          mkdirSync(host, { recursive: true });
+          writeFileSync(join(host, 'current-generation.json'), '{}');
+          return 'allow' as const;
+        } },
+      });
+      const registry = createCesarToolRegistry();
+      const result = await executeToolCall({
+        id: 'memory-grant', name: 'SaveMemory',
+        input: { memory: 'Must not be saved', section: 'Decisions' },
+      }, { cwd, readFileState: new Map(), abortSignal: new AbortController().signal } as never,
+      registry, async () => true);
+      expect(result.result.ok).toBe(false);
+      expect(result.result.error).toMatch(/generation changed/);
+      expect(existsSync(join(cwd, '.agon', 'project.md'))).toBe(false);
+    } finally {
+      await disposeProcessSurfaceAuthority();
+      await initializeProcessSurfaceAuthority(join(root, 'host'));
+    }
+  });
+
   it('runs TUI Goal start, status and resume through real registry and storage', async () => {
     const cwd = join(root, 'goal-repo'); mkdirSync(cwd);
     const git = (...args: string[]) => execFileSync('git', args, { cwd, stdio: 'pipe' });

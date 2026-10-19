@@ -1,5 +1,6 @@
 export { SUPPORT_PACKAGE } from './package-metadata.js';
 export * from './paths.js';
+export * from './project-memory.js';
 export * from './file-history.js';
 export * from './event-log.js';
 export * from './delegate-ledger.js';

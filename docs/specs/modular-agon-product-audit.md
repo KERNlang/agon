@@ -6,6 +6,55 @@ exercise these installed-user contracts. Its passing executions are not a
 whole-product compatibility verdict. No active installation may be promoted
 on the strength of that receipt.
 
+## Project-memory contract repair — 2026-10-19
+
+The physical SaveMemory mod had replaced the original `memory`/`section`
+contract with engine-observation fields. It now writes dated, deduplicated
+facts to the invocation's `.agon/project.md`, preserving the original section
+cap and unrelated content. Engine-memory support remains unchanged. The pure
+formatter moved byte-identically to shared persistence; Core retains exports.
+
+MCP and Cesar obtain explicit per-call approval. Missing or denied approval
+cannot write. Cancellation, host replacement and canonical-generation changes
+are checked before execution. A synchronous invocation authority check also
+runs after the asynchronous write-grant check, before file I/O. Cesar updates
+the caller's actual read-before-write cache, not a global replacement.
+
+The additive Mod API fields are `ToolContribution.requiresConfirmation` and
+optional local invocation callbacks `assertCurrent`/`didWriteFile`. Hosts
+currently supply those callbacks only to the bundled memory owner; they do
+not cross third-party worker serialization. No dependency was added.
+
+Codex review packet `modular-project-memory` found the post-grant authority
+gap and caller-cache mismatch. Both received focused regression controls and
+source fixes. Its approval-reason concern was checked against
+`core/src/signals/tool-registry.ts`: `ask` always invokes the approval handler,
+or denies if no handler exists; `save-memory` is not an override token.
+Packet SHA-256: `4fd63557ea175e97d40d0d4633bf19351215ba57445b7e478943a62560e506e7`.
+Review log SHA-256: `9d415dc8abc572f443c2cf7c0336f9c3717e5cf5435428953ca4d911f7424836`.
+
+Evidence remains outside Git in `/Users/ra/dev/modular-agon-remediation/`:
+
+- `modular-memory-project-contract-red`: original schema regression failed.
+- `modular-memory-review-fixes`: separate caller cache failed against the old
+  built mod; 29 other tests passed. Preserved, not counted as green.
+- `modular-memory-review-fixes-built`: rebuilt mod passed 30 tests and types;
+  log SHA `8964553b1636937f9b576df949625d9b20769f6090e778e0144683317ac501b2`.
+- `modular-memory-generation-control`: ten Cesar tests and types passed,
+  including a real canonical-pointer change during the write-grant check;
+  log SHA `b88bc3c815d7b6321af8cf6ecbede9b5650bbd059e403c18a4f1c3411590b69d`.
+
+`modular-memory-full-gate` passed in 866.083s: 10,734 tests passed, six skipped;
+build, types, lint, re-export guard, generated metadata, release-set and
+supply-chain gates passed. Log SHA-256:
+`ccd72bf2639a0a6ff589d274c77e914269ab027c65e5c0795aa5abc243a8a7cd`.
+`modular-memory-final-built` then passed five rebuilt MCP-process cases in
+1.539s: approval, denial, non-boolean approval, missing approval channel and
+safe-mode rejection. It checked real files and permission-file cleanup.
+Log SHA-256: `1e6b54fae1b7f53319218e67d1a71eae9df465154663933227a65af9d45e39cb`.
+Both runs recorded zero provider launches. Final clean-subject qualification,
+package isolation and whole-release acceptance remain open.
+
 ## MCP safe-mode startup repair — 2026-10-19
 
 Development subject: descendant of `e140d078c`. MCP authority now defers feature

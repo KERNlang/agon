@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -115,5 +115,72 @@ describe('production MCP surface authority', () => {
     process.env.AGON_MODULAR_HOST_ROOT = join(root, 'host');
     await initializeMcpSurfaceAuthority();
     await expect(invokeActiveMcpSurfaceTool('RoomList', {})).resolves.toEqual([]);
+  });
+
+  it('retains the project-memory input contract on the generated SaveMemory tool', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-mcp-memory-contract-'));
+    process.env.AGON_HOME = join(root, 'home');
+    process.env.AGON_MODULAR_HOST_ROOT = join(root, 'host');
+    await initializeMcpSurfaceAuthority();
+    const tool = activeMcpSurfaceTools().find(({ name }) => name === 'SaveMemory');
+    expect(tool?.ownerId).toBe('agon.memory');
+    expect(tool?.inputSchema).toMatchObject({
+      required: expect.arrayContaining(['memory', 'section']),
+      properties: { memory: { type: 'string' }, section: { type: 'string' } },
+    });
+  });
+
+  it.each(['allow', 'deny', 'truthy', 'cancel', 'replace', 'pointer'] as const)('preserves project-memory approval on %s', async action => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-mcp-memory-approval-'));
+    const signals = join(root, 'signals');
+    await mkdir(signals);
+    vi.stubEnv('AGON_HOME', join(root, 'home'));
+    vi.stubEnv('AGON_MODULAR_HOST_ROOT', join(root, 'host'));
+    vi.stubEnv('AGON_CWD', root);
+    vi.stubEnv('AGON_SIGNAL_DIR', signals);
+    vi.stubEnv('AGON_SESSION_ID', 'memory-fixture');
+    const controller = new AbortController();
+    try {
+      await initializeMcpSurfaceAuthority();
+      const input = { memory: 'Use session tokens', section: 'Decisions' };
+      const settled = invokeActiveMcpSurfaceTool('SaveMemory', input, controller.signal)
+        .then(value => ({ value, error: undefined }), error => ({ value: undefined, error }));
+      let request = '';
+      await vi.waitFor(async () => {
+        request = (await readdir(signals)).find(name => name.includes('-perm-') && !name.includes('-response')) ?? '';
+        expect(request).not.toBe('');
+      });
+      expect(JSON.parse(await readFile(join(signals, request), 'utf8'))).toMatchObject({ tool: 'SaveMemory', args: input });
+      await expect(readFile(join(root, '.agon', 'project.md'))).rejects.toMatchObject({ code: 'ENOENT' });
+      if (action === 'cancel') controller.abort();
+      if (action === 'replace') {
+        await disposeMcpSurfaceAuthority();
+        vi.stubEnv('AGON_MOD_SAFE_MODE', '1');
+        await initializeMcpSurfaceAuthority();
+      }
+      if (action === 'pointer') {
+        await mkdir(join(root, 'host'), { recursive: true });
+        await writeFile(join(root, 'host', 'current-generation.json'), '{}');
+      }
+      if (action !== 'cancel') {
+        await writeFile(join(signals, request.replace(/\.json$/, '-response.json')), JSON.stringify({
+          approved: action === 'truthy' ? 'yes' : action !== 'deny',
+        }));
+      }
+      const outcome = await settled;
+      if (action === 'allow') {
+        expect(outcome.error).toBeUndefined();
+        expect(outcome.value).toContain('Saved to project memory [Decisions]');
+        expect(await readFile(join(root, '.agon', 'project.md'), 'utf8')).toMatch(/## Decisions\n- \d{4}-\d{2}-\d{2} Use session tokens/);
+      } else {
+        expect(outcome.error).toBeInstanceOf(Error);
+        await expect(readFile(join(root, '.agon', 'project.md'))).rejects.toMatchObject({ code: 'ENOENT' });
+      }
+      expect(await readdir(signals)).toEqual([]);
+    } finally {
+      controller.abort();
+      await disposeMcpSurfaceAuthority();
+      vi.unstubAllEnvs();
+    }
   });
 });

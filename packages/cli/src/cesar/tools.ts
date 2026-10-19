@@ -1,8 +1,9 @@
 import { assertContributionInput, selectModSettings } from '@kernlang/agon-kernel';
+import { statSync } from 'node:fs';
 
 import { ToolRegistry, getProjectFileStateCache, createReadTool, createEditTool, createMultiEditTool, createWriteTool, createBashTool, createGrepTool, createGlobTool, createReportConfidenceTool, createRetrieveResultTool, createTodoWriteTool, executeToolCall, resolveWorkingDir, parsePermissionRuleSet, parseToolHooks, isReadOnlyCommand, loadConfig } from '@kernlang/agon-core';
 
-import { assertCanonicalSurfaceSelectionCurrent, processSurfaceCatalog, processSurfaceClient, processSurfaceNames } from '../surface-authority-runtime.js';
+import { assertCanonicalSurfaceSelectionCurrent, captureProcessSurfaceAuthority, processSurfaceCatalog, processSurfaceClient, processSurfaceNames } from '../surface-authority-runtime.js';
 
 import type { ToolContext, ToolCallResult, ToolHandler } from '@kernlang/agon-core';
 
@@ -29,6 +30,7 @@ import { isBashToolName } from './brain-helpers.js';
  */
 export function createCesarToolRegistry(engineId?: string, available: ReadonlySet<string> = processSurfaceNames('cesar')): ToolRegistry {
   const toolRegistry = new ToolRegistry();
+  const assertSelected = captureProcessSurfaceAuthority();
   const catalog = processSurfaceCatalog('cesar').filter((entry) => entry.kind === 'cesar-tool');
   for (const entry of catalog.filter(({ ownerClass }) => ownerClass === 'user-toggleable-mod-package')) {
     const record = processSurfaceClient('cesar').assertAvailable(entry.publicId);
@@ -36,6 +38,7 @@ export function createCesarToolRegistry(engineId?: string, available: ReadonlySe
       readonly description: string;
       readonly inputSchema: Record<string, unknown>;
       readonly effect: 'read' | 'write' | 'network' | 'process';
+      readonly requiresConfirmation?: boolean;
       readonly metadata?: Record<string, unknown>;
       run(input: Record<string, unknown>, context: Record<string, unknown>): Promise<unknown> | unknown;
     };
@@ -51,8 +54,11 @@ export function createCesarToolRegistry(engineId?: string, available: ReadonlySe
           maxResultSizeChars: 100_000, isReadOnly: readOnly, isConcurrencySafe: readOnly,
           ...(payload.metadata ? { metadata: payload.metadata } : {}) },
         validate,
-        checkPermission: () => {
-          assertCanonicalSurfaceSelectionCurrent();
+        checkPermission: input => {
+          assertSelected();
+          if (payload.requiresConfirmation === true) {
+            return { behavior: 'ask', message: `Allow ${name}: ${JSON.stringify(input)}?` };
+          }
           // Bundled tools preserve their established host-intercepted approval
           // semantics. Third-party tools remain fail-closed at this adapter in
           // addition to their capability wrappers.
@@ -61,13 +67,22 @@ export function createCesarToolRegistry(engineId?: string, available: ReadonlySe
             : { behavior: 'ask', message: `Allow external mod tool ${name}?` };
         },
         execute: async (input, context) => {
-          assertCanonicalSurfaceSelectionCurrent();
+          assertSelected();
           assertContributionInput(payload.inputSchema, input);
           const platform = `${process.platform}-${process.arch}`;
           if (!['darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64'].includes(platform)) return { ok: false, content: '', error: `unsupported platform: ${platform}` };
           const value = await payload.run(input, {
             invocationId: `cesar-${Date.now()}`, cwd: context.cwd, platform,
             signal: context.abortSignal ?? new AbortController().signal, config: selectModSettings(loadConfig(context.cwd), record.owner.id),
+            ...(record.owner.id === 'agon.memory' ? {
+              assertCurrent: assertSelected,
+              didWriteFile: (path: string, content: string) => {
+                context.readFileState.set(path, {
+                  content, timestamp: statSync(path).mtimeMs, offset: undefined, limit: undefined,
+                  isPartialView: false, lastTouchedBy: 'save-memory', lastTouchedAt: Date.now(),
+                });
+              },
+            } : {}),
           });
           return { ok: true, content: typeof value === 'string' ? value : JSON.stringify(value) };
         },

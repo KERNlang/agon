@@ -1,3 +1,50 @@
-import type{AgonModFactory,Dispose,InvocationContext,Json,ModServices,Registrar}from'@kernlang/agon-mod-api';import{addEngineNote,extractPatchFilePatterns}from'@kernlang/agon-support-engine-runtime';const schema=Object.freeze({type:'object',additionalProperties:false,required:['engineId','observation'],properties:{engineId:{type:'string'},taskClass:{type:'string'},observation:{type:'string'},forgeId:{type:'string'},patch:{type:'string'},filePatterns:{type:'array',items:{type:'string'}}}})as Readonly<Record<string,Json>>;
-export async function saveMemory(raw:Json,context:InvocationContext,services:ModServices):Promise<Json>{const x=raw as Record<string,Json>,engineId=String(x.engineId??'').trim(),observation=String(x.observation??'').trim();if(!engineId||!observation)throw new TypeError('engineId and observation are required');if(observation.length>4000)throw new TypeError('observation exceeds 4000 characters');if(await services.permissions.check('fs.write','engine-memory.json')!=='allow')throw new TypeError('Permission denied: fs.write is required');const explicit=Array.isArray(x.filePatterns)?x.filePatterns.filter((v):v is string=>typeof v==='string'):[],patterns=[...new Set([...explicit,...(typeof x.patch==='string'?extractPatchFilePatterns(x.patch):[])])].slice(0,12);addEngineNote(engineId,String(x.taskClass??'general')as any,observation,typeof x.forgeId==='string'?x.forgeId:undefined,patterns);const receiptId=await services.receipts.record('memory-saved',{engineId,taskClass:String(x.taskClass??'general'),patternCount:patterns.length,invocationId:context.invocationId});return{saved:true,engineId,patterns,receiptId};}
-export const createMod:AgonModFactory=services=>Object.freeze({apiVersion:'1'as const,async activate(registrar:Registrar):Promise<Dispose>{const d:Dispose[]=[];for(const[id,surface]of[['mcpTools:0030','mcp'],['cesarTools:0024','cesar']]as const)d.push(registrar.tool(surface,{id,description:'Save bounded evidence-backed routing memory about an engine',inputSchema:schema,effect:'write',run:(i,c)=>saveMemory(i,c,services)}));return async()=>{for(const x of[...d].reverse())await x();};}});export default createMod;
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import type { AgonModFactory, InvocationContext, Json, ModServices, Registrar } from '@kernlang/agon-mod-api';
+import { appendMemoryLine, canonicalMemorySection, MEMORY_FILE_REL, MEMORY_SECTIONS, todayPrefix } from '@kernlang/agon-support-persistence';
+
+const schema = Object.freeze({
+  type: 'object',
+  required: ['memory', 'section'],
+  properties: {
+    memory: { type: 'string', minLength: 1, description: 'One durable project fact. The date is added automatically.' },
+    section: { type: 'string', enum: MEMORY_SECTIONS },
+  },
+}) as Readonly<Record<string, Json>>;
+
+export async function saveMemory(raw: Json, context: InvocationContext, services: ModServices): Promise<Json> {
+  const input = raw as Record<string, Json>;
+  if (typeof input.memory !== 'string' || !input.memory.trim()) throw new TypeError('Missing required parameter: memory');
+  const section = canonicalMemorySection(input.section);
+  if (!section) throw new TypeError('Invalid project-memory section');
+  context.signal.throwIfAborted();
+  const path = resolve(context.cwd, MEMORY_FILE_REL);
+  if (await services.permissions.check('fs.write', path) !== 'allow') throw new Error('Permission denied: fs.write is required');
+  context.signal.throwIfAborted();
+  context.assertCurrent?.();
+  const existing = existsSync(path) ? readFileSync(path, 'utf8') : '';
+  const result = appendMemoryLine(existing, section, input.memory, todayPrefix());
+  if (!result.changed) return 'Already in project memory [' + section + '] — skipped (near-duplicate).';
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, result.content.endsWith('\n') ? result.content : result.content + '\n', 'utf8');
+  try { await context.didWriteFile?.(path, result.content); }
+  catch { /* Cache refresh is best effort, as in the legacy tool. */ }
+  const note = result.status === 'evicted' ? ' (section was full — oldest entry dropped)' : '';
+  return 'Saved to project memory [' + section + ']: ' + input.memory + note;
+}
+
+export const createMod: AgonModFactory = services => Object.freeze({
+  apiVersion: '1' as const,
+  async activate(registrar: Registrar) {
+    const disposers = (['mcp', 'cesar'] as const).map(surface => registrar.tool(surface, {
+      id: surface === 'mcp' ? 'mcpTools:0030' : 'cesarTools:0024',
+      description: 'Save one durable project fact to .agon/project.md under Decisions, Constraints, Conventions or Session Notes. Each call requires confirmation; dated duplicates are skipped.',
+      inputSchema: schema,
+      effect: 'write',
+      requiresConfirmation: true,
+      run: (input, context) => saveMemory(input, context, services),
+    }));
+    return async () => { for (const dispose of disposers.reverse()) await dispose(); };
+  },
+});
+export default createMod;

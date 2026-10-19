@@ -223,6 +223,7 @@ function writeToolCompletion(
 async function pollPermissionResponse(
   id: string,
   timeoutMs: number,
+  signal?: AbortSignal,
 ): Promise<{ approved: boolean; reason?: string }> {
   const signalDir = process.env.AGON_SIGNAL_DIR;
   const sessionId = process.env.AGON_SESSION_ID;
@@ -232,6 +233,7 @@ async function pollPermissionResponse(
   const responsePath = join(signalDir, `${sessionId}-perm-${id}-response.json`);
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
+    signal?.throwIfAborted();
     if (existsSync(responsePath)) {
       try {
         const data = JSON.parse(readFileSync(responsePath, "utf-8"));
@@ -245,7 +247,7 @@ async function pollPermissionResponse(
         } catch {
           /* cleanup optional */
         }
-        return { approved: !!data.approved, reason: data.reason };
+        return { approved: data.approved === true, reason: data.reason };
       } catch {
         /* parse error — keep polling */
       }
@@ -258,6 +260,26 @@ async function pollPermissionResponse(
     /* cleanup optional */
   }
   return { approved: false, reason: "Permission request timed out" };
+}
+
+/** Use the existing permission channel for an owner-tagged tool. */
+export async function confirmModToolCall(name: string, input: Record<string, unknown>, signal: AbortSignal): Promise<boolean> {
+  signal.throwIfAborted();
+  const id = `pr-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  const signalDir = process.env.AGON_SIGNAL_DIR;
+  const sessionId = process.env.AGON_SESSION_ID;
+  if (!signalDir || !sessionId) return false;
+  writePermissionRequest(id, name, input);
+  try {
+    const response = await pollPermissionResponse(id, 120_000, signal);
+    signal.throwIfAborted();
+    return response.approved;
+  } finally {
+    for (const suffix of ['.json', '-response.json']) {
+      try { unlinkSync(join(signalDir, `${sessionId}-perm-${id}${suffix}`)); }
+      catch { /* Permission files can already be consumed. */ }
+    }
+  }
 }
 
 /**

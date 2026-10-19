@@ -48,6 +48,10 @@ export interface InvocationContext {
   readonly platform: Platform;
   readonly signal: AbortSignal;
   readonly config: Readonly<Record<string, Json>>;
+  /** Recheck host authority after an asynchronous operation, before an effect. */
+  readonly assertCurrent?: () => void;
+  /** Refresh this invocation's read-before-write cache after a file write. */
+  readonly didWriteFile?: (path: string, content: string) => Awaitable<void>;
 }
 
 export interface CommandResult {
@@ -100,6 +104,8 @@ export interface ToolContribution {
   readonly description: string;
   readonly inputSchema: Readonly<Record<string, Json>>;
   readonly effect: 'read' | 'write' | 'network' | 'process';
+  /** The host must obtain approval for each call before running this tool. */
+  readonly requiresConfirmation?: boolean;
   readonly metadata?: Json;
   run(input: Json, context: InvocationContext): Awaitable<Json>;
 }

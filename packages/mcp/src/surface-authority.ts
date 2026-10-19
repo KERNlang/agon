@@ -98,16 +98,23 @@ export async function invokeActiveMcpSurfaceTool(name: string, input: Record<str
   signal.throwIfAborted();
   const assertCurrent = captureMcpSurfaceAuthority(name);
   const record = boot!.activated.generation.assertAvailable('mcp', name);
-  const payload = record.payload as { inputSchema: Record<string, unknown>; run(input: Record<string, unknown>, context: Record<string, unknown>): Promise<unknown> | unknown };
+  const payload = record.payload as { inputSchema: Record<string, unknown>; requiresConfirmation?: boolean; run(input: Record<string, unknown>, context: Record<string, unknown>): Promise<unknown> | unknown };
   assertContributionInput(payload.inputSchema, input);
   const platform = `${process.platform}-${process.arch}`;
   if (!['darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64'].includes(platform)) throw new Error(`unsupported MCP platform: ${platform}`);
   const cwd = process.env.AGON_CWD ?? process.cwd();
   const { loadConfig } = await import('@kernlang/agon-core');
+  if (payload.requiresConfirmation === true) {
+    const { confirmModToolCall } = await import('./agon-orchestration.js');
+    signal.throwIfAborted();
+    assertCurrent();
+    if (!await confirmModToolCall(name, input, signal)) throw new Error('Permission denied');
+  }
   signal.throwIfAborted();
   assertCurrent();
   return payload.run(input, {
     invocationId: randomUUID(), cwd, platform,
     signal, config: selectModSettings(loadConfig(cwd), record.owner.id),
+    ...(record.owner.id === 'agon.memory' ? { assertCurrent } : {}),
   });
 }

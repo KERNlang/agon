@@ -19,6 +19,7 @@ const CATALOG = {
   metered: {
     models: {
       'sonnet-x': { limit: { context: 200000 }, cost: { input: 2, output: 10, cache_read: 0.2, cache_write: 2.5 } },
+      'zero-rate': { cost: { input: 0, output: 0, cache_read: 0, cache_write: 0 } },
     },
   },
   'provider-a': {
@@ -171,8 +172,10 @@ describe('lookupCatalogModelCost — real split pricing from the catalog', () =>
     expect(estimateCost('metered-sonnet-x', 1_000_000)).toBeCloseTo(4, 5);
   });
 
-  it('keeps plan-included engines at exactly $0 via catalog zeros', () => {
+  it('keeps subscription engines and zero-rate catalog models at exactly $0', () => {
     expect(estimateCostCacheAware('kimi-for-coding-k3', 5_000_000, 500_000, 4_000_000)).toBe(0);
+    expect(estimateCostCacheAware('metered-zero-rate', 5_000_000, 500_000, 4_000_000)).toBe(0);
+    expect(estimateCost('metered-zero-rate', 5_000_000)).toBe(0);
   });
 });
 

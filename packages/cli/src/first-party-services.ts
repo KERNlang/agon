@@ -1,7 +1,7 @@
 import { resolveExplicitReviewEngines } from '@kernlang/agon-support-verification';
 import { cliRunRecordHost } from './run-record-host.js';
 import { patchApplicationHost } from './patch-application-host.js';
-import { EngineRegistry, buildKernContextSpine, createRunDir, eventLogFlush, getRatings, loadConfig, pickTopRatedEngine, setSessionRoot, tracker } from '@kernlang/agon-core';
+import { EngineRegistry, buildKernContextSpine, createRunDir, eventLogFlush, getRatings, loadConfig, pickTopRatedEngine, setSessionRoot } from '@kernlang/agon-core';
 import { createCliAdapter } from '@kernlang/agon-adapter-cli';
 import { createForgeHostServices } from '@kernlang/agon-core';
 import { createSessionWorktree, findSessionWorktree, worktreePathFor, rehydrateSessionWorktree } from '@kernlang/agon-core';
@@ -16,7 +16,7 @@ import { createConquerHostServices } from '@kernlang/agon-mod-conquer';
 import type { PrTextInput } from '@kernlang/agon-mod-forge';
 import { rankCriticCascade } from '@kernlang/agon-mod-nero';
 import { glicko } from '@kernlang/agon-mod-ratings';
-import { EngineRegistry as CatalogEngineRegistry } from '@kernlang/agon-support-engine-catalog';
+import { EngineRegistry as CatalogEngineRegistry, tracker } from '@kernlang/agon-support-engine-catalog';
 import { classifyTask } from '@kernlang/agon-support-dedup';
 import { buildKernDraftPrompt, parseKernDraft } from '@kernlang/protocol';
 import type { Json, ModManifest, ModServices } from '@kernlang/agon-mod-api';

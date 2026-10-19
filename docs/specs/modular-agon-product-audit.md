@@ -6,6 +6,43 @@ exercise these installed-user contracts. Its passing executions are not a
 whole-product compatibility verdict. No active installation may be promoted
 on the strength of that receipt.
 
+## Shared token accounting owner — 2026-10-19
+
+Engine Catalog now owns the existing token tracker, pricing helpers and shared
+singleton. The implementation matches the previous Core source byte-for-byte
+after changing only its catalog lookup import. Core preserves explicit public
+compatibility exports. CLI and MCP common hosts use the physical owner directly.
+No dependency, pricing rule, validation, aggregation or reset policy changed.
+
+The ownership identity regression failed before extraction:
+`modular-token-owner-red`, log SHA
+`434f58e7de7636a64af743440c3ff9c2e6faa1d8381786bb39017451d220d43b`.
+Independent catalog build, 114 focused tests, types and diff checks passed:
+`modular-token-owner-focused`, log SHA
+`33508dc9333fa5ee59093b0deaa63ccd062ca02acb9616f582017416188413d6`.
+Codex found no blocking defect. Packet SHA:
+`480118add8a64300c5706834a0c24b7f4e605d425aa940c005c8a1297fcf4c10`;
+review log SHA:
+`893d86e8d60570290d0c077c850bc434340ccaaba4660b9620e868f12afa5587`.
+The existing zero-price test used a subscription name that bypassed catalog
+lookup. It now also checks a metered-named zero-rate model on both pricing paths.
+The existing support boundary gate rejects reverse imports into Core; identity
+alone does not prove ownership direction. Reviewed focused checks and the
+boundary self-test passed (`modular-token-owner-reviewed`, log SHA
+`504637939645e460507e46775dbfb9678c0175d323cde9bb8d3cc43987955bef`).
+Full development qualification passed in 861.775s: 10,770 tests, six skips,
+build, types, lint, re-export guard, generated/boundary checks, release-set
+and supply-chain self-tests. No provider launched. Receipt
+`modular-token-owner-full`, log SHA
+`57c75c8e6e8fa29e417356f1260f513f93235799a27a511991eea1a33a4481e4`.
+The final built probe verifies Core's public entrypoint and Catalog share the
+same tracker/helpers, records and resets cross those entrypoints, and CLI/MCP
+bundles import external accounting without a duplicate tracker implementation.
+Receipt `modular-token-owner-built`, log SHA
+`45add01607e282df86cc4a773f6b095231808d77302ac6ca88e7c939e95148e1`.
+This proves same-process identity, not cross-process sharing or live-provider
+dispatch. Common-host isolation remains incomplete.
+
 ## Plan default error adapter retirement and persisted status — 2026-10-19
 
 Worktree support now creates its own canonical `PlanStateError` by default.

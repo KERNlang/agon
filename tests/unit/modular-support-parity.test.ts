@@ -5,6 +5,8 @@ import * as verification from '@kernlang/agon-support-verification';
 import * as worktree from '@kernlang/agon-support-worktree';
 import * as browser from '@kernlang/agon-support-browser-bridge';
 import * as dedup from '@kernlang/agon-support-dedup';
+import * as catalog from '@kernlang/agon-support-engine-catalog';
+import * as legacyAccounting from '../../packages/core/src/signals/token-tracker.js';
 
 import * as legacyFileHistory from '../../packages/core/src/blocks/file-history.js';
 import * as legacyEventLog from '../../packages/core/src/sessions/event-log.js';
@@ -17,6 +19,13 @@ import * as legacyBrowserHost from '../../packages/cli/src/bridge/browser-host.j
 import * as legacyDedup from '../../packages/core/src/blocks/dedup-resolver.js';
 
 describe('S4 compatibility adapter parity', () => {
+  it('shares token accounting functions and the tracker with the catalog owner', () => {
+    for (const name of ['TokenTracker', 'tracker', 'estimateTokens', 'estimateCost', 'estimateCostCacheAware', 'isFlatRateEngine']) {
+      expect(catalog).toHaveProperty(name);
+      expect((catalog as Record<string, unknown>)[name]).toBe((legacyAccounting as Record<string, unknown>)[name]);
+    }
+  });
+
   it('reexports persistence implementations without a second owner', () => {
     expect(legacyFileHistory.takeSnapshot).toBe(persistence.takeSnapshot);
     expect(legacyEventLog.append).toBe(persistence.append);

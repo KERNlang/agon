@@ -87,14 +87,15 @@ export async function initializeProcessSurfaceAuthority(
   decorateFirstPartyServices?: Parameters<typeof bootstrapFirstPartySurfaceGeneration>[0]['decorateFirstPartyServices'],
 ): Promise<void> {
   if (boot) return;
-  const decorate = decorateFirstPartyServices
-    ?? (await import('./first-party-services.js')).decorateCliFirstPartyServices;
+  const safeMode = process.env.AGON_MOD_SAFE_MODE === '1';
+  // Recovery must not import optional feature packages or their host effects.
+  const services = safeMode ? undefined : await import('./first-party-services.js');
   const candidate = await bootstrapFirstPartySurfaceGeneration({
     hostRoot,
     runtime: compatibilityRuntime,
-    safeMode: process.env.AGON_MOD_SAFE_MODE === '1',
-    decorateFirstPartyServices: decorate,
-    dispatchEngine: (await import('./first-party-services.js')).createCliEngineServices().dispatch,
+    safeMode,
+    decorateFirstPartyServices: decorateFirstPartyServices ?? services?.decorateCliFirstPartyServices,
+    dispatchEngine: services?.createCliEngineServices().dispatch,
   });
   selector = new SurfaceGenerationSelector(candidate.activated.generation);
   boot = candidate;

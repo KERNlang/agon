@@ -157,8 +157,10 @@ const hostRoot = modularHostRoot();
 // memory. Top-level metadata does not need to import and activate 36 physical
 // packages. Once any durable host or folder-mod state exists, help performs
 // the full authoritative bootstrap so disabled and external commands cannot
-// be misrepresented. Version output is state-independent.
-const mayUsePristineCatalog = !existsSync(hostRoot) && !existsSync(join(dirname(hostRoot), 'mods'));
+// be misrepresented. Safe-mode help uses only kernel commands. Version output
+// is state-independent.
+const mayUsePristineCatalog = process.env.AGON_MOD_SAFE_MODE !== '1'
+  && !existsSync(hostRoot) && !existsSync(join(dirname(hostRoot), 'mods'));
 if (process.env.AGON_JOB_GENERATION !== undefined || !topLevelMetadataOnly || (!process.argv.includes('--version') && !process.argv.includes('-v') && !mayUsePristineCatalog)) {
   await initializeProcessSurfaceAuthority();
 }

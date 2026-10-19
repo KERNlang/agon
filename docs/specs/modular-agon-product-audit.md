@@ -6,6 +6,46 @@ exercise these installed-user contracts. Its passing executions are not a
 whole-product compatibility verdict. No active installation may be promoted
 on the strength of that receipt.
 
+## CLI safe-mode startup repair — 2026-10-19
+
+Development subject: descendant of `cd60a459e`. Safe-mode bootstrap previously
+imported feature host services and constructed engine services before entering
+the kernel-only branch. CLI startup now skips those effects in safe mode.
+Ordinary startup retains its decorator and engine services. Pristine safe-mode
+help now lists kernel management commands instead of the all-feature catalog.
+`--version` remains independent of host state. Citty does not support `-v` as a
+version alias; its existing error behavior is preserved.
+
+| Receipt | Result | Log SHA-256 |
+|---|---|---|
+| modular-safe-host-import-red-control | Safe-mode import failed before the fix | f2f0fb847209d647ec355b61eaa72868fd053cd6ba5a6cdc55c4ffe699a1cea4 |
+| modular-safe-pristine-help-red | Both pristine help aliases failed before the catalog fix | 8845c62a22934fbfdee780dd79efc08719470ea78e00d8aa7e6c6d9f74a698c9 |
+| modular-safe-startup-final-focused | 44 tests, types and targeted lint passed | ff8ae7ccc820ff45ad5b3751d7339d764e3441e93766665bc482b40e772c76f2 |
+| modular-safe-startup-full-gate | Passed in 865.677s; 10,712 tests passed, six skipped | ce541b3f269389d085210bfac77d4650174f2feff7a60cf19fb1bc50e752be85 |
+| modular-safe-startup-final-built | Three rebuilt CLI checks passed in 0.568s | 1ca196ed16d859ad9ec5b4878162b9745aaf919d8bf340d567d0e4cbcd824d7b |
+
+The built probe refuses feature-services imports through a Node resolver hook.
+Ordinary `mod list` fails on that control; safe-mode help and `mod list` succeed.
+Source tests also reject an injected throwing decorator in safe mode. Both
+metadata forms preserve an unusable host file. Child help tests explicitly set
+Consola's log level because its test-environment default suppresses info output.
+Initial harness/PATH, wrapped-error and unsupported-alias assumptions produced
+failed receipts; they remain retained, not counted as production defects.
+
+Isolated Codex review found no blocking finding. Packet SHA-256:
+`64158eddbe8b6522bdbeff82135a493ef0ff2adfb8bd308af43dc51c7bda5cbf`.
+Review log SHA-256:
+`4e47500ca93bd1d3d62f71b787303dccfe6a1c5bbd6a9e670eeba199b897dfeb`.
+Suggested controls were verified locally; the proposed `-v` alias assumption
+was refuted against Citty source. The temporary auth copy was removed.
+
+All test receipts record zero providers. Logs and exact commands remain in
+`/Users/ra/dev/modular-agon-remediation/`. No global installation or push occurred.
+This is CLI recovery evidence, not final packed optional-mod isolation. MCP has
+a matching eager-import path still to repair. A separate diagnostic build proved
+that mods remain embedded in the CLI; its temporary externalization was reverted.
+Packaging cutover and final clean-subject release acceptance remain unfinished.
+
 ## Findings and clean repair plan
 
 | ID | Finding | Repair boundary and required regression | Status |

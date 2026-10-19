@@ -32,6 +32,28 @@ afterEach(async () => {
 });
 
 describe('production physical surface bootstrap', () => {
+  it('boots kernel safe mode without importing feature host services', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-safe-host-import-'));
+    vi.stubEnv('AGON_MOD_SAFE_MODE', '0');
+    vi.doMock('../../packages/cli/src/first-party-services.js', () => {
+      throw new Error('fixture feature services unavailable');
+    });
+    try {
+      await expect(initializeProcessSurfaceAuthority(root)).rejects.toMatchObject({
+        cause: { message: 'fixture feature services unavailable' },
+      });
+      vi.stubEnv('AGON_MOD_SAFE_MODE', '1');
+      const decorate = vi.fn(() => { throw new Error('safe mode must not decorate feature services'); });
+      await initializeProcessSurfaceAuthority(root, decorate);
+      expect(decorate).not.toHaveBeenCalled();
+      expect(processSurfaceClient('cli').generation).toBe('kernel-safe-mode');
+      expect(processSurfacePublicIds('cli')).toContain('mod');
+      expect(processSurfacePublicIds('cli')).not.toContain('forge');
+    } finally {
+      vi.doUnmock('../../packages/cli/src/first-party-services.js');
+    }
+  });
+
   it('qualifies a staged selection without activating the full compatibility profile', async () => {
     const root = await mkdtemp(join(tmpdir(), 'agon-candidate-selection-'));
     const { desiredState } = createReleaseSetupSelection({ profile: 'minimal', with: ['think'], now: NOW });

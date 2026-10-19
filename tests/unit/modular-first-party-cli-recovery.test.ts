@@ -30,6 +30,37 @@ async function previewAndApprove(command: any, target: string) {
 }
 
 describe('first-party safe-mode CLI recovery', () => {
+  it.each(['--help', '-h'])('shows only kernel commands in pristine safe-mode %s', async flag => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-safe-pristine-help-'));
+    const cli = fileURLToPath(new URL('../../packages/cli/dist/index.js', import.meta.url));
+    const result = spawnSync(process.execPath, [cli, flag], {
+      cwd: root, encoding: 'utf8', timeout: 10_000,
+      env: { ...process.env, HOME: root, AGON_HOME: root, AGON_MODULAR_HOST_ROOT: join(root, 'host'),
+        AGON_MOD_SAFE_MODE: '1', AGON_JOB_GENERATION: undefined, CONSOLA_LEVEL: '3' },
+    });
+    expect(result.error).toBeUndefined();
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toMatch(/\bmod\b/);
+    expect(result.stdout).not.toMatch(/\bforge\b|\bbrainstorm\b|\bgoal\b/);
+  });
+
+  it.each([['--version', 0], ['-v', 1]] as const)('preserves safe-mode %s behavior with unusable host state', async (flag, exitCode) => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-safe-version-'));
+    const hostRoot = join(root, 'host');
+    await writeFile(hostRoot, 'not a directory');
+    const cli = fileURLToPath(new URL('../../packages/cli/dist/index.js', import.meta.url));
+    const result = spawnSync(process.execPath, [cli, flag], {
+      cwd: root, encoding: 'utf8', timeout: 10_000,
+      env: { ...process.env, HOME: root, AGON_HOME: root, AGON_MODULAR_HOST_ROOT: hostRoot,
+        AGON_MOD_SAFE_MODE: '1', AGON_JOB_GENERATION: undefined, CONSOLA_LEVEL: '3' },
+    });
+    expect(result.error).toBeUndefined();
+    expect(result.status, result.stderr).toBe(exitCode);
+    if (flag === '--version') expect(result.stdout).toContain('1.0.0');
+    else expect(result.stderr).toContain('No command specified');
+    expect(await readFile(hostRoot, 'utf8')).toBe('not a directory');
+  });
+
   it('requires exact quota approval and preserves cancelled or replaced caches through the built CLI', async () => {
     const root = await mkdtemp(join(tmpdir(), 'agon-cli-quota '));
     const home = join(root, 'separate-home');

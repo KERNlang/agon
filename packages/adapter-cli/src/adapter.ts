@@ -23,6 +23,23 @@ export class CliAdapter implements EngineAdapter {
     this.getVersion = this.getVersion.bind(this);
   }
 
+  private persistApiAgentOutcome(result: ApiAgentResult, options: DispatchOptions): ReturnType<typeof normalizeApiAgentOutcome> {
+    const outcome = normalizeApiAgentOutcome(result);
+    // Classify the provider result, not paths from local filesystem errors.
+    recordDispatchHealth(options.engine.id, outcome);
+    try {
+      const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
+      mkdirSync(dirname(outputPath), { recursive: true });
+      writeFileSync(outputPath, outcome.stdout);
+      return outcome;
+    } catch (error) {
+      // A local artifact failure must not discard usage already billed upstream.
+      const detail = error instanceof Error ? error.message : String(error);
+      return { ...outcome, exitCode: outcome.exitCode || 1,
+        stderr: [outcome.stderr, `Could not write API agent output artifact: ${detail}`].filter(Boolean).join('\n') };
+    }
+  }
+
   async dispatch(options: DispatchOptions): Promise<DispatchResult> {
     options = normalizeDispatchOptions(options);
     // Prefer CLI binary when available — API is fallback for binary-less engines. The shared execution planner owns this decision for every public adapter method.
@@ -287,12 +304,8 @@ export class CliAdapter implements EngineAdapter {
       const baselineDiff = readOnlyDiff(agentContext.cwd);
       const result = await runApiAgentLoop({ api: apiConfig, prompt: options.prompt, systemPrompt: agentContext.systemPrompt, historyMessages: agentContext.historyMessages, cwd: agentContext.cwd, timeout: options.timeout, signal: options.signal, maxSteps: 200, permissionMode: options.permissionMode, allowedCommands: options.allowedCommands, toolPermissions: options.toolPermissions, onPermissionAsk: options.onApproval, onTodos: options.onTodos });
       const change = captureNewAgentDiff(baselineDiff, agentContext.cwd);
-      const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
-      mkdirSync(dirname(outputPath), { recursive: true });
-      writeFileSync(outputPath, result.response);
       // Normalize the API tool loop into the same truthful terminal contract as CLI execution. Partial stdout and worktree changes survive failure/timeout/cancel.
-      const outcome = normalizeApiAgentOutcome(result);
-      recordDispatchHealth(options.engine.id, outcome);
+      const outcome = this.persistApiAgentOutcome(result, options);
       return { ...outcome, durationMs: nowMs() - startTime, ...change };
     }
     if (execution.backend === 'missing') {
@@ -451,12 +464,8 @@ export class CliAdapter implements EngineAdapter {
           if (fallback) yield encodeAgentStreamText(fallback, 'final');
         }
 
-        const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
-        mkdirSync(dirname(outputPath), { recursive: true });
-        writeFileSync(outputPath, agentResult.response ?? '');
-        const outcome = normalizeApiAgentOutcome(agentResult);
+        const outcome = this.persistApiAgentOutcome(agentResult, options);
         const change = captureNewAgentDiff(baselineDiff, cwd);
-        recordDispatchHealth(options.engine.id, outcome);
         return { ...outcome, durationMs: nowMs() - startedAt, ...change };
       } finally {
         streamAbort.dispose(); queue.dispose();

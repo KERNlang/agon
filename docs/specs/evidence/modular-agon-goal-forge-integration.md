@@ -61,3 +61,32 @@ mid-provider interruption recovery, artifact-write accounting, other auxiliary
 provider accounting, legacy Goal owner retirement and subject-bound reviews.
 Unavailable native runners and npm publishing provenance remain external cells.
 The active/global installation was not changed. Nothing was pushed or promoted.
+
+## API agent artifact-write follow-up
+
+Both API agent methods previously threw after a completed model call when the
+output file could not be written. The caller lost returned usage. Two real
+filesystem EISDIR fixtures reproduced this. A shared private adapter method now
+preserves usage and partial output in a failed result; cancellation and timeout
+retain their exit codes and reasons.
+
+Independent Codex review raised a health-classification risk. Six tests proved
+that a path containing `unauthorized` could quarantine a healthy engine. Health
+classification now receives the provider result before local write errors are
+appended. Ten artifact-failure controls cover both methods, all terminal states,
+existing provider fault flags, filesystem details and actual health state.
+
+`api-artifact-reviewed-full-gate` passed in 831.591s: 10,619 tests passed, six
+skipped; build/types/lint/generated/re-export/release-set/supply-chain checks
+passed with zero provider launches. Log SHA-256:
+`7363cc7a26a7d4b36c22e5c88bc6ae09882832283759699592a3091f10e8b1e5`.
+Release metadata was regenerated after the build, before the full tests.
+
+Independent review packet SHA-256:
+`42b16ed0937bf9debbfdac55f1eb5f63e75270073cb960c60b2123bf699a256f`.
+Review log SHA-256:
+`f46b6e20168796ff4973ef20eebf35fbd02956ad21e99b32cb7ce2e55c99f738`.
+Raw review, red/green controls and full-gate receipts remain in the same durable
+archive. Temporary review authentication copy was removed. Other dispatch paths
+and the shared Review/Goal cost contract still need qualification; this fix does
+not establish complete accounting or release acceptance.

@@ -271,6 +271,33 @@ describe('goal journal — persistence (sandboxed AGON_HOME)', () => {
     expect(loaded!.tasks[0]).toMatchObject({ id: 'a', status: 'done', commitSha: 'abc' });
   });
 
+  it('reads an exact historical snapshot without rewriting bytes or dropping unknown fields', () => {
+    const store = physicalGoal.createGoalJournalStore({ path: (...parts) => join(home, ...parts),
+      ensureHome: () => { throw new Error('read must not initialize storage'); } });
+    const path = store.journalPath('snapshot'); mkdirSync(join(home, 'goals', 'snapshot'), { recursive: true });
+    const text = JSON.stringify({ ...createJournal({ ...spec(), goalId: 'snapshot' }), extra: { retained: 'value' } }, null, 4) + '\n\n';
+    writeFileSync(path, text);
+    const snapshot = store.readJournalSnapshot('snapshot');
+    expect(snapshot?.bytes).toEqual(Buffer.from(text));
+    expect(snapshot?.state).toEqual(JSON.parse(text));
+    expect(readFileSync(path)).toEqual(Buffer.from(text));
+    expect(store.readJournalSnapshot('absent')).toBeNull();
+    expect(existsSync(join(home, 'goals', 'absent'))).toBe(false);
+    expect(() => store.readJournalSnapshot('../escape')).toThrow('Invalid goalId');
+  });
+
+  it.each(['json', 'bom', 'encoding', 'directory'] as const)('distinguishes %s failure from a missing historical journal', kind => {
+    const store = physicalGoal.createGoalJournalStore({ path: (...parts) => join(home, ...parts), ensureHome: () => {} });
+    const path = store.journalPath('snapshot'); mkdirSync(join(home, 'goals', 'snapshot'), { recursive: true });
+    if (kind === 'directory') mkdirSync(path);
+    else writeFileSync(path, kind === 'json' ? '{PRIVATE_FIXTURE_VALUE' : kind === 'bom' ? '\ufeff{}' : Buffer.from([34, 255, 34]));
+    expect(() => store.readJournalSnapshot('snapshot')).toThrow(kind === 'json' || kind === 'bom' ? /invalid JSON/ : kind === 'encoding' ? /UTF-8/ : /EISDIR/);
+    try { store.readJournalSnapshot('snapshot'); }
+    catch (error) { expect(String(error)).not.toContain('PRIVATE_FIXTURE_VALUE'); }
+    if (kind === 'encoding') expect(store.loadJournal('snapshot')).toBe('\ufffd');
+    else expect(store.loadJournal('snapshot')).toBeNull();
+  });
+
   it('shares persisted bytes with the physical store without an ambient home dependency', () => {
     const store = physicalGoal.createGoalJournalStore({
       path: (...parts) => join(home, ...parts),

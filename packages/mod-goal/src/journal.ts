@@ -45,7 +45,25 @@ export function createGoalJournalStore(effects: GoalJournalEffects) {
       return null;
     }
   }
-  return { goalDir, journalPath, saveJournal, loadJournal };
+
+  /** Read exact source bytes. Only an absent file means absent state. */
+  function readJournalSnapshot(goalId: string): { bytes: Uint8Array; state: unknown } | null {
+    const path = journalPath(goalId);
+    let bytes: Buffer;
+    try { bytes = readFileSync(path); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+      throw error;
+    }
+    let text: string;
+    try { text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes); }
+    catch { throw new Error('Historical Goal journal is not valid UTF-8. Preserve the file before repair.'); }
+    let state: unknown;
+    try { state = JSON.parse(text); }
+    catch { throw new Error('Historical Goal journal contains invalid JSON. Preserve the file before repair.'); }
+    return { bytes, state };
+  }
+  return { goalDir, journalPath, saveJournal, loadJournal, readJournalSnapshot };
 }
 
 /**

@@ -188,7 +188,7 @@ describe('physical goal mod', () => {
     expect(h.state.get('goals/saved-retry-limit').payload.maxAttempts).toBe(1);
   });
 
-  it.each(['valid', 'corrupt', 'missing', 'wrong-id', 'malformed', 'malformed-task', 'unknown-status', 'revoked', 'revoked-after-read', 'modern'] as const)('reads historical Goal status without changing journal bytes: %s', async kind => {
+  it.each(['valid', 'corrupt', 'null', 'array', 'number', 'encoding', 'missing', 'wrong-id', 'malformed', 'malformed-task', 'unknown-status', 'revoked', 'revoked-after-read', 'modern'] as const)('reads historical Goal status without changing journal bytes: %s', async kind => {
     const cwd = repo();
     const home = mkdtempSync(join(tmpdir(), 'agon-goal-history-'));
     let revoked = kind === 'revoked';
@@ -207,6 +207,10 @@ describe('physical goal mod', () => {
     if (kind !== 'missing') store.saveJournal(state);
     const path = store.journalPath('historical');
     if (kind === 'corrupt') writeFileSync(path, '{broken');
+    if (kind === 'null') writeFileSync(path, 'null');
+    if (kind === 'array') writeFileSync(path, '[]');
+    if (kind === 'number') writeFileSync(path, '0');
+    if (kind === 'encoding') writeFileSync(path, Buffer.from([34, 255, 34]));
     if (kind === 'wrong-id') writeFileSync(path, JSON.stringify({ ...state, spec: { ...state.spec, goalId: 'another' } }));
     if (kind === 'malformed') writeFileSync(path, JSON.stringify({ ...state, tasks: null }));
     if (kind === 'malformed-task') writeFileSync(path, JSON.stringify({ ...state, tasks: [{}] }));
@@ -223,6 +227,15 @@ describe('physical goal mod', () => {
     }
     if (kind === 'modern') expect(out.result).toMatchObject({ state: modern, counts: { done: 1 } });
     if (kind === 'wrong-id') expect(out.stderr).toContain('identity does not match');
+    if (kind === 'corrupt') {
+      expect(out.stderr).toContain('Cannot read historical Goal');
+      expect(out.stderr).toContain('invalid JSON');
+      expect(out.stderr).not.toContain('{broken');
+      expect(out.stderr).not.toContain('No persisted goal');
+    }
+    if (kind === 'missing') expect(out.stderr).toContain('No persisted goal');
+    if (kind === 'null' || kind === 'array' || kind === 'number') expect(out.stderr).toContain('must contain an object');
+    if (kind === 'encoding') expect(out.stderr).toContain('UTF-8');
     if (kind === 'revoked' || kind === 'revoked-after-read') expect(out.stderr).toContain('generation revoked');
     if (before) expect(readFileSync(path)).toEqual(before);
     else expect(existsSync(path)).toBe(false);

@@ -1,5 +1,44 @@
 # Goal / Forge integration evidence
 
+## Strict historical journal inspection
+
+Date: 2026-10-19. Historical status no longer reports corrupt JSON as missing
+state. The existing Goal journal owner provides `readJournalSnapshot`: one byte
+read, strict UTF-8 decoding, fixed JSON/encoding diagnostics, and exact source
+bytes with unknown fields retained. Only ENOENT means absent state. Other I/O
+failures propagate. The host rejects non-object state and retains identity,
+summary, and authority checks. Legacy `loadJournal` behavior is unchanged.
+No migration, publication, new dependency, or journal rewrite occurs.
+
+| Receipt | Result | Log SHA-256 |
+|---|---|---|
+| goal-historical-strict-read-red | Corrupt-state regression failed before the fix | d6e458b1d4218b6d83f461112e81f2ea22f4aa0b2e83240d30c501f86cd83236 |
+| goal-historical-strict-read-review-controls | 26 focused tests, types and lint passed | ea20bdf6f459406457bc9dd277b2087dfd6619862a9208b2e30ed95e290bf424 |
+| goal-historical-strict-read-full-gate | Full gate passed in 934.377s; 10,707 tests passed, six skipped | 3888176ca35d7d84a0805c6f4a36554efcec47df755122238f0ee19bc3ba765e |
+| goal-historical-strict-read-final-cli | Five rebuilt CLI invocations passed in 1.338s | 4e2183c276d834da78b9bca5cfe25ee72f64e49aabf8b73048e263408db02a82 |
+
+The final CLI run distinguishes missing state, invalid JSON, invalid UTF-8,
+null, and a UTF-8 BOM. It verifies unchanged source bytes and no fixture-content
+disclosure. Unit controls also cover unknown fields, arrays/scalars, unsafe IDs,
+directory I/O errors, absence without initialization, and legacy tolerant reads.
+A separate native EACCES test is not claimed.
+
+Isolated Codex review found no concrete defect. Packet SHA-256:
+`b46ee2b249327ee0b01cf0e41d348af4bfdeda87721480135d83dfe7287bd581`.
+Review log SHA-256:
+`d5a4af49b5fef0431f15fdaad764422a08d8cdf6460279531e98007fe92a06d4`.
+Its optional BOM control was added and passed. Authentication-copy removal was
+verified. No second review is claimed.
+
+Initial focused and CLI probes used stale built artifacts and failed. Both
+receipts remain retained; rebuilding Goal and the CLI resolved them without
+weakening tests. A later suspicion about BOM escaping was refuted by inspecting
+decoded script character codes; the final probe uses literal U+FEFF. All test
+receipts record zero provider launches. Raw logs and commands remain under
+`/Users/ra/dev/modular-agon-remediation/`. No global installation or push occurred.
+Historical execution migration, final package-boundary cutover, and clean-subject
+release acceptance remain open. These checks do not establish full acceptance.
+
 ## TUI Goal registry execution
 
 Date: 2026-10-19. TUI `/goal` no longer executes `/bin/sh -c` with an `agon`

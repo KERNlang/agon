@@ -94,9 +94,13 @@ export function createGoalHostServices(options: {
         assertStateCurrent: authority,
         ...(options.journalEffects ? { readHistoricalState: (id: string) => {
           assertCurrent();
-          const state = createGoalJournalStore(options.journalEffects!).loadJournal(id);
+          const snapshot = createGoalJournalStore(options.journalEffects!).readJournalSnapshot(id);
           assertCurrent();
-          if (state && state.spec?.goalId !== id) throw new Error('Historical Goal journal identity does not match the requested id.');
+          if (!snapshot) return null;
+          if (!snapshot.state || typeof snapshot.state !== 'object' || Array.isArray(snapshot.state))
+            throw new Error('Historical Goal journal must contain an object. Preserve the file before repair.');
+          const state = snapshot.state as JournalState;
+          if (state.spec?.goalId !== id) throw new Error('Historical Goal journal identity does not match the requested id.');
           return state;
         } } : {}),
         ...(options.implementationHints ? { implementationHints: (source: string, engines: readonly string[]) => {

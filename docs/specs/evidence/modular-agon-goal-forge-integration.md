@@ -1,5 +1,34 @@
 # Goal / Forge integration evidence
 
+## Supervisor missing-queue parity
+
+Date: 2026-10-19. The modular supervisor now treats Goal's `Queue not found`
+diagnostic as permanent, matching legacy behavior. Previously it restarted the
+same invalid invocation until the restart cap. No dependency or API changed.
+
+The regression obtains the error from actual `runGoal`, then feeds it through
+`runGoalSupervisor`. Before the fix it recorded two restarts; afterward it stops
+with zero restarts, no wait, no engine dispatch and one runtime disposal. An
+isolated built-CLI smoke test also starts the real supervised child and verifies
+exit 1, zero restarts and the deterministic-failure reason within four seconds.
+
+| Receipt | Result | Log SHA-256 |
+|---|---|---|
+| goal-supervisor-missing-queue-red | Reproduced two restarts instead of zero | 7936e0f2922add1b4c83307b945eaf85c30462e83b45a601bf5f99f31eeec4ef |
+| goal-supervisor-missing-queue-green | 11 modular and 17 legacy tests, types and diff check passed | f1c183e2c5822bad6e7d9c0261be162b9949e237fa24584cb8e1f280cf33b3e2 |
+| goal-supervisor-missing-queue-cli | One built-CLI smoke run passed; zero provider launches | 60eab7e6e4c0b50a5d66a3ea8ece6e49d6e05ca2abe4acd9f89e98e946b0263f |
+| goal-supervisor-missing-queue-full-gate | Full gate passed in 951.978s; 10,646 passed, six skipped; zero provider launches | 132c1378d137321da9f787e6e871e23947a16505fb48b2ca70988c4e5971b182 |
+
+Isolated Codex review found no blocking issue in this correction. Packet SHA-256:
+`b97e5c0c293d16592f0654647a7a57394b5b97d056e7c1c81e85044b087dad02`.
+Review log SHA-256:
+`17cef27197c3c65065af168bae418b5df38187eedb42e6ceda930ed3bab7fcd3`.
+Its coverage caveat was verified: the unit regression injects the child runtime;
+the separate built-CLI smoke covers actual argument parsing and child output.
+Substring classification still has its pre-existing heuristic limits. This does
+not prove every supervisor cancellation path or clean-checkout release acceptance.
+Evidence remains in the durable directory below. No global install or push.
+
 ## Goal review consensus parity
 
 Date: 2026-10-19. Goal now uses Review's shared consensus policy. A verified

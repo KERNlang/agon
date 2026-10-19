@@ -2705,6 +2705,28 @@ describe('physical goal mod', () => {
     expect(h.dispatch).not.toHaveBeenCalled();
   });
 
+  it('does not restart after Goal reports a missing queue', async () => {
+    const cwd = repo(); const h = harness();
+    const input = { intent: 'missing queue', gate: 'true', queue: join(cwd, 'absent-queue'), maxRestarts: 2 };
+    const runChild = vi.fn(async () => {
+      const child = await runGoal({ ...input, resume: true }, context(cwd), h.services);
+      expect(child.exitCode).toBe(1);
+      expect(child.stderr).toBe(`Queue not found: ${input.queue}\n`);
+      return { exitCode: child.exitCode, outputTail: child.stderr! };
+    });
+    const wait = vi.fn(async () => undefined);
+    const dispose = vi.fn();
+    const out = await runGoalSupervisor(input, {
+      nodeExec: '/node', agonEntry: '/agon.js', runChild, wait, dispose, interrupted: () => false,
+    });
+    expect(out.exitCode).toBe(1);
+    expect(out.result).toEqual({ restarts: 0, reason: 'deterministic failure — not retrying' });
+    expect(runChild).toHaveBeenCalledOnce();
+    expect(wait).not.toHaveBeenCalled();
+    expect(dispose).toHaveBeenCalledOnce();
+    expect(h.dispatch).not.toHaveBeenCalled();
+  });
+
   it('preserves structured inputs and false options across supervised restarts', async () => {
     const tasks = [{ id: 'first', source: 'write code', verify: 'test -f first.ts', dependsOn: [] }];
     const runChild = vi.fn().mockResolvedValueOnce({ exitCode: 137, outputTail: 'killed' })

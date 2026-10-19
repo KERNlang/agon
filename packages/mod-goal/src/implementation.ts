@@ -129,7 +129,7 @@ export function goalSupervisorBackoffMs(restarts: number, baseMs = 5_000, capMs 
 
 export function isDeterministicGoalExit(outputTail: string): boolean {
   const lower = outputTail.toLowerCase();
-  return ["oracle changed", "goal_oracle_invalid", "invalid numeric goal option", "cannot change the recorded branch or gate", "goal requires intent and an explicit gate", "cannot resume unknown goal", "no active engine", "goal/* branch"]
+  return ["oracle changed", "goal_oracle_invalid", "invalid numeric goal option", "cannot change the recorded branch or gate", "goal requires intent and an explicit gate", "cannot resume unknown goal", "queue not found", "no active engine", "goal/* branch"]
     .some((phrase) => lower.includes(phrase));
 }
 

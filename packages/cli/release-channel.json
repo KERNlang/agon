@@ -265,10 +265,10 @@
         "agon.panel"
       ],
       "sourceLocator": "@kernlang/agon-mod-team-brainstorm@1.0.0",
-      "integrity": "sha512-B2jtJXGEZwmJ+RboNtSOjT0tMeLVCuiRZKm4bvtXxgfeN39okTGmQZXmkZBOzJBXVEPyR+TUBGRgzjP/J0lHWw==",
-      "contentHash": "sha256:23431b274d0644ebe3579da56062f8a1a15881176bd15f73242bd9d0362d0fec",
+      "integrity": "sha512-xHXdlIjOvUPOUnyXelZMk+ga3xhFz/Dbr4+mp0JdOJmVDdgjy6w5rRB7xjTCszvUlBBwZASunuIzgG/umNF0KA==",
+      "contentHash": "sha256:50798b93ab836ac4011a62ad6ef0b110fdd50da09712b835b711d661edebe7c3",
       "manifestHash": "sha256:8a3a2880ef10bc5b2341504af121e6b957e5a4029f99526d094a7d9c311e2448",
-      "payloadHash": "sha256:8c6462da02dc8c28206c338172c130a6de4f2833148e6f4e47219ee9df592071"
+      "payloadHash": "sha256:1d30e1332307c1ae780a35949986c9278814943a3d7bd0bac7fea8ed28760c36"
     },
     {
       "id": "@kernlang/agon-mod-tribunal",
@@ -309,10 +309,10 @@
         "agon.tribunal"
       ],
       "sourceLocator": "@kernlang/agon-mod-team-tribunal@1.0.0",
-      "integrity": "sha512-tfZ9EiHu3leyn3k5g5BLTI73IXJqvQppEoatNnDciUEYIh3FEeLGybesNXUEiPqPCgtj4G5qU5VjllmFyCDeBQ==",
-      "contentHash": "sha256:161dd3ef3530e8b377b77331cdc50205740c7c392f4a4fbae64cfe6eecb8f127",
+      "integrity": "sha512-rD8XcoKcaqR6TEaqw8AND74ICNYMOHyucZWl1pfq38ETuRPj82VH4WaKoQ4eJy+LqcplZUTaIMBXRlpz/1eJBA==",
+      "contentHash": "sha256:bdd0b7a3a0133d7b4bdfcb9902cea08c063fe886e37973c7b1d68bc0f2a2bc23",
       "manifestHash": "sha256:81b7ee425cd89d4d1a327918ebc2036089da6ec09a29a653ec21b5a0315dac65",
-      "payloadHash": "sha256:4e5d73dc3ed730937cc3e0489ba37bec9ebc216bc1bb828a1f8830a601de8db4"
+      "payloadHash": "sha256:4f52db24e1fbc446ff2cbc75118d32ebeaf8722d9232d9b993eeff98ca325bb8"
     },
     {
       "id": "@kernlang/agon-mod-campfire",
@@ -377,10 +377,10 @@
         "agon.panel"
       ],
       "sourceLocator": "@kernlang/agon-mod-team-forge@1.0.0",
-      "integrity": "sha512-ep6AJtfDDsM102feNQ7axkPHNrvD/PUFhvQ4dVtRJsJLBEy9rSPEK8Z/NySwTGTtbM1ThOaiJVUhZtXeD1GaaQ==",
-      "contentHash": "sha256:ce0ad9cde78a01dbb3ccf1811542f440ef5ead317cdad72c9fd7401726c893ba",
+      "integrity": "sha512-hqR+NlokgYiCNqQ2fjhXdPDrfQmoqxpca+AGSeXNCcmgEmc77KS8MnGvi6zn+w5DkTr5wL+OLI834yM2eWoVyQ==",
+      "contentHash": "sha256:217456e11dbbdf623c93fcb81173806a65f6e68537c268bf2eecc3729de69d43",
       "manifestHash": "sha256:4f07d53e5796f3045a245e0b97d121a01a13da383d1c8693a1482c4781031a65",
-      "payloadHash": "sha256:130d054b8f5fac05f83b7b0b95bf212d0aa7e16023347efa6d77ef6415911b85"
+      "payloadHash": "sha256:8abe48cbf8499fa16a86d583efd16b2154c3348723a169d5be395792f65a1694"
     },
     {
       "id": "@kernlang/agon-mod-synthesis",
@@ -1803,7 +1803,7 @@
         "peerDependencies": {
           "@kernlang/agon-kernel": ">=0.0.0-0 <2"
         },
-        "integrity": "sha512-B2jtJXGEZwmJ+RboNtSOjT0tMeLVCuiRZKm4bvtXxgfeN39okTGmQZXmkZBOzJBXVEPyR+TUBGRgzjP/J0lHWw==",
+        "integrity": "sha512-xHXdlIjOvUPOUnyXelZMk+ga3xhFz/Dbr4+mp0JdOJmVDdgjy6w5rRB7xjTCszvUlBBwZASunuIzgG/umNF0KA==",
         "resolved": "https://registry.npmjs.org/@kernlang/agon-mod-team-brainstorm/-/agon-mod-team-brainstorm-1.0.0.tgz"
       },
       "node_modules/@kernlang/agon-mod-team-forge": {
@@ -1819,7 +1819,7 @@
         "peerDependencies": {
           "@kernlang/agon-kernel": ">=0.0.0-0 <2"
         },
-        "integrity": "sha512-ep6AJtfDDsM102feNQ7axkPHNrvD/PUFhvQ4dVtRJsJLBEy9rSPEK8Z/NySwTGTtbM1ThOaiJVUhZtXeD1GaaQ==",
+        "integrity": "sha512-hqR+NlokgYiCNqQ2fjhXdPDrfQmoqxpca+AGSeXNCcmgEmc77KS8MnGvi6zn+w5DkTr5wL+OLI834yM2eWoVyQ==",
         "resolved": "https://registry.npmjs.org/@kernlang/agon-mod-team-forge/-/agon-mod-team-forge-1.0.0.tgz"
       },
       "node_modules/@kernlang/agon-mod-team-tribunal": {
@@ -1835,7 +1835,7 @@
         "peerDependencies": {
           "@kernlang/agon-kernel": ">=0.0.0-0 <2"
         },
-        "integrity": "sha512-tfZ9EiHu3leyn3k5g5BLTI73IXJqvQppEoatNnDciUEYIh3FEeLGybesNXUEiPqPCgtj4G5qU5VjllmFyCDeBQ==",
+        "integrity": "sha512-rD8XcoKcaqR6TEaqw8AND74ICNYMOHyucZWl1pfq38ETuRPj82VH4WaKoQ4eJy+LqcplZUTaIMBXRlpz/1eJBA==",
         "resolved": "https://registry.npmjs.org/@kernlang/agon-mod-team-tribunal/-/agon-mod-team-tribunal-1.0.0.tgz"
       },
       "node_modules/@kernlang/agon-mod-think": {

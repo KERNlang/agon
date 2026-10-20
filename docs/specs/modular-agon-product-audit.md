@@ -6,6 +6,37 @@ exercise these installed-user contracts. Its passing executions are not a
 whole-product compatibility verdict. No active installation may be promoted
 on the strength of that receipt.
 
+## Physical team intent contracts — 2026-10-20
+
+The three team intent runners now consume their existing parser fields:
+membersPerSide, tribunalMode, and fitnessCmd. Parser output and ordinary CLI
+inputs remain unchanged. Previously a parsed 3v3 request ran 2v2, red-team
+ran adversarial, and Forge replaced the requested fitness command with true.
+Three parse-to-run regressions failed before the mapping fix.
+
+Codex review identified an inherited host boundary defect: Forge's intent
+schema required the CLI-only test field. A real runPhysicalTuiContribution
+regression reproduced rejection before execution. The intent now requires
+task, while the CLI still requires task and test. Missing-task input still
+fails before dispatch. The separate Forge workflow fixture verifies actual
+fitness results, worktree isolation, and winning patch contents.
+
+Review packet SHA-256:
+`ead413a54d27e2eabaafb1536ad34d68716778abf92278cf8c2b6d91d19430f7`.
+Review log SHA-256:
+`031c52812c1d02156bd4b7bfa8bfed4531b2f80867dd162e0a2645e41019bb17`.
+The confirmed schema finding was fixed and checked locally. Twenty-three
+focused tests pass. Full gate `team-intent-reviewed-full` passed in 865.857
+seconds: build, offline inventory, SBOM, typecheck, 10,817 tests, lint,
+re-export and diff checks. 657 files passed; six tests and one file skipped.
+No providers launched. Log SHA-256:
+`8dd0bd5f08c13fef60bd8f72ecf3105393da85a3294df7b85254475fc8a444e4`.
+
+Team ownership and full legacy behavior parity remain open. In particular,
+the frozen oracle verifier checks archived artifact integrity, not current
+candidate equivalence. Its two named team Forge cases do not establish
+Brainstorm/Tribunal event, result, composition, judge or rating parity.
+
 ## Physical team role assignment — 2026-10-20
 
 The shared panel composer now assigns roles by position within each team,

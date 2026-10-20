@@ -245,7 +245,7 @@ export const createMod: AgonModFactory = (services) =>
         registrar.intent({
           id: "intentVariants:0060",
           description: "Parse team-forge intent",
-          inputSchema,
+          inputSchema: Object.freeze({ ...inputSchema, required: ["task"] }),
           parse: (value) => {
             if (!/^\/team-forge(?:\s|$)/i.test(value)) return undefined;
             const parts = value.replace(/^\/team-forge\s*/i, "").split(/\s+/);
@@ -260,7 +260,16 @@ export const createMod: AgonModFactory = (services) =>
               ...(size ? { membersPerSide: Number(size[1]) } : {}),
             };
           },
-          run: (input, context) => run(input, context, services),
+          run: (input, context) => {
+            const parsed = input as Record<string, Json>;
+            return run({
+              ...parsed,
+              test: parsed.fitnessCmd ?? parsed.test ?? "",
+              members: typeof parsed.membersPerSide === "number"
+                ? String(parsed.membersPerSide)
+                : parsed.members ?? "2",
+            }, context, services);
+          },
         }),
       );
       for (const id of ["builtinCommandMetadata:0045", "tuiSlashCommands:0065"])

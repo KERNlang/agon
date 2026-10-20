@@ -1,4 +1,4 @@
-import {describe,expect,it,vi} from 'vitest'; import type{CommandContribution,ModServices,Registrar}from '@kernlang/agon-mod-api'; import{createMod}from'./implementation.js'; const context={invocationId:'i',cwd:process.cwd(),platform:'darwin-arm64' as const,signal:new AbortController().signal,config:{}};
+import {describe,expect,it,vi} from 'vitest'; import type{CommandContribution,IntentContribution,ModServices,Registrar}from '@kernlang/agon-mod-api'; import{createMod}from'./implementation.js'; const context={invocationId:'i',cwd:process.cwd(),platform:'darwin-arm64' as const,signal:new AbortController().signal,config:{}};
 
 it('rejects a malformed team member count before dispatch', async () => {
   const h = await setup();
@@ -6,5 +6,14 @@ it('rejects a malformed team member count before dispatch', async () => {
     .rejects.toThrow('Team size must be a finite number');
   expect(h.dispatch).not.toHaveBeenCalled();
 });
-async function setup(){const dispatch=vi.fn(async(engineId:string,prompt:string)=>({engineId,exitCode:0,stdout:prompt.includes('Score completeness')?'SCORE_ALPHA: 60\nSCORE_BETA: 80\nWINNER: BETA':`${engineId} ${prompt.includes('As architect')?'proposal':'draft'}`,stderr:'',timedOut:false}));const record=vi.fn(async()=>'r');const services={identity:{id:'agon.team-brainstorm',version:'1',contentHash:`sha256:${'a'.repeat(64)}`},source:'bundled',logger:{debug:vi.fn(),info:vi.fn(),warn:vi.fn()},receipts:{record},permissions:{check:vi.fn()},state:{read:vi.fn(),write:vi.fn()},engines:{listActive:vi.fn(async()=>['a','b','c','d']),dispatch}} as unknown as ModServices;let command:CommandContribution|undefined;const registrar={command:(surface:string,v:CommandContribution)=>{if(surface==='cli')command=v;return()=>{};},intent:()=>()=>{},tool:()=>()=>{},planStep:()=>()=>{}} as unknown as Registrar;const mod=await createMod(services);await mod.activate(registrar,services);return{command:command!,dispatch,record};}
+async function setup(){const dispatch=vi.fn(async(engineId:string,prompt:string)=>({engineId,exitCode:0,stdout:prompt.includes('Score completeness')?'SCORE_ALPHA: 60\nSCORE_BETA: 80\nWINNER: BETA':`${engineId} ${prompt.includes('As architect')?'proposal':'draft'}`,stderr:'',timedOut:false}));const record=vi.fn(async()=>'r');const services={identity:{id:'agon.team-brainstorm',version:'1',contentHash:`sha256:${'a'.repeat(64)}`},source:'bundled',logger:{debug:vi.fn(),info:vi.fn(),warn:vi.fn()},receipts:{record},permissions:{check:vi.fn()},state:{read:vi.fn(),write:vi.fn()},engines:{listActive:vi.fn(async()=>['a','b','c','d']),dispatch}} as unknown as ModServices;let command:CommandContribution|undefined;let intent:IntentContribution|undefined;const registrar={command:(surface:string,v:CommandContribution)=>{if(surface==='cli')command=v;return()=>{};},intent:(value:IntentContribution)=>{intent=value;return()=>{};},tool:()=>()=>{},planStep:()=>()=>{}} as unknown as Registrar;const mod=await createMod(services);await mod.activate(registrar,services);return{command:command!,intent:intent!,dispatch,record};}
+it('runs the parsed three-member team format', async () => {
+  const h = await setup();
+  const parsed = await h.intent.parse('/team-brainstorm 3v3 Q');
+  expect(parsed).toEqual({ question: 'Q', membersPerSide: 3 });
+  const out = await h.intent.run(parsed!, context);
+  const result = JSON.parse((out as { stdout: string }).stdout);
+  expect(result.teams.map((team: { members: unknown[] }) => team.members.length)).toEqual([3, 3]);
+  expect(h.dispatch.mock.calls.filter(([, prompt]) => prompt.includes('Produce an independent brainstorm draft'))).toHaveLength(6);
+});
 describe('physical team brainstorm',()=>{it('composes two teams, drafts, synthesizes, and judges',async()=>{const h=await setup();const out=await h.command.run({question:'Q',members:'2'},context);const result=JSON.parse((out as{stdout:string}).stdout);expect(result).toMatchObject({winnerTeamId:'BETA',panelHealth:{degraded:false}});expect(result.teams).toHaveLength(2);expect(result.submissions.ALPHA.members).toHaveLength(2);expect(h.dispatch).toHaveBeenCalledTimes(7);expect(h.record).toHaveBeenCalled();});it('rejects fewer than two engines',async()=>{const h=await setup();const out=await h.command.run({question:'Q',engines:'a'},context);expect(out).toMatchObject({exitCode:1});});});

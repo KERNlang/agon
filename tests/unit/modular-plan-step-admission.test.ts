@@ -7,8 +7,8 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { DurableModHost, createFirstPartyModCatalog, createFullCompatDesiredState, planDesiredStateChange } from '../../packages/mod-kernel/src/index.js';
 import { surfaceLockFor } from '../helpers/modular-surface-lock.js';
 import { GenerationLeaseStore } from '../../packages/mod-kernel/src/generation-leases.js';
-import { assertProcessPlanStepAvailable, disposeProcessSurfaceAuthority, guardProcessEngineAdapter, initializeProcessSurfaceAuthority, processSurfaceCatalog, withProcessSurfaceAuthority } from '../../packages/cli/src/surface-authority-runtime.js';
-import { DurableModHost as RuntimeDurableModHost, SurfaceGeneration, currentInvocationOwnerAvailable } from '@kernlang/agon-kernel';
+import { assertProcessPlanStepAvailable, disposeProcessSurfaceAuthority, guardProcessEngineAdapter, initializeProcessSurfaceAuthority, processSurfaceCatalog, withProcessSurfaceAuthority, withProcessInvocationScope } from '../../packages/cli/src/surface-authority-runtime.js';
+import { DurableModHost as RuntimeDurableModHost, ModRegistry, SurfaceGeneration, currentInvocationOwnerAvailable } from '@kernlang/agon-kernel';
 import type { CesarPlanStep } from '@kernlang/agon-mod-plan';
 import type { HandlerContext } from '../../packages/cli/src/handlers/types.js';
 import type { DispatchOptions, EngineAdapter, EngineDefinition } from '@kernlang/agon-core';
@@ -46,6 +46,8 @@ vi.mock('../../packages/cli/src/handlers/review.js', async original => ({
   selectReviewEngine: () => 'fixture',
 }));
 import { buildStepExecutors } from '../../packages/cli/src/handlers/plan-mode.js';
+import { routeWithCesar } from '../../packages/cli/src/signals/dispatch/cesar-router.js';
+import type { DispatchCallbacks } from '../../packages/cli/src/signals/dispatch.js';
 vi.mock('@kernlang/agon-mod-brainstorm', async original => {
   const actual = await original<typeof import('@kernlang/agon-mod-brainstorm')>();
   return { ...actual, createBrainstormRuntime: (...args: Parameters<typeof actual.createBrainstormRuntime>) => {
@@ -120,6 +122,48 @@ it.each([false, true])('carries Ratings selection into a legacy Plan delegate (d
   const output = await buildStepExecutors(context()).delegate.execute(step('delegate'), {});
   expect(effects.delegate).toHaveBeenCalledOnce();
   expect(output.result).toMatchObject({ status: 'success', output: 'delegated output' });
+  expect(currentInvocationOwnerAvailable('agon.ratings')).toBeUndefined();
+});
+
+it.each([false, true])('carries Ratings selection into ordinary TUI routing (disabled=%s)', async disabled => {
+  await install(disabled ? 'agon.ratings' : undefined);
+  await initializeProcessSurfaceAuthority(root);
+  const seen: Array<boolean | undefined> = [];
+  effects.brain.mockImplementationOnce(async () => {
+    await Promise.resolve();
+    seen.push(currentInvocationOwnerAvailable('agon.ratings'));
+    return { responded: true, delegated: false };
+  });
+  const ctx = { ...context(), activeEngines: () => ['fixture'], cesar: {} } as HandlerContext;
+  const callbacks = { ctx, dispatch: vi.fn(), setPendingImages: vi.fn() } as unknown as DispatchCallbacks;
+  expect(await routeWithCesar('hello', [], callbacks)).toBe(false);
+  expect(effects.brain).toHaveBeenCalledOnce();
+  expect(seen).toEqual([!disabled]);
+  expect(currentInvocationOwnerAvailable('agon.ratings')).toBeUndefined();
+});
+
+it('retains the caller registry through nested host scope and rejection', async () => {
+  await install();
+  await initializeProcessSurfaceAuthority(root);
+  const caller = new ModRegistry({ generation: 'caller-without-ratings', activeOwners: [] });
+  await expect(caller.runWithInvocationScope(() => withProcessInvocationScope(async () => {
+    await Promise.resolve();
+    expect(currentInvocationOwnerAvailable('agon.ratings')).toBe(false);
+    throw new Error('fixture rejection');
+  }))).rejects.toThrow('fixture rejection');
+  expect(currentInvocationOwnerAvailable('agon.ratings')).toBeUndefined();
+  await withProcessInvocationScope(async () => {
+    expect(currentInvocationOwnerAvailable('agon.ratings')).toBe(true);
+  });
+});
+
+it('refuses a stale host before entering an invocation scope', async () => {
+  await install();
+  await initializeProcessSurfaceAuthority(root);
+  await install('agon.ratings');
+  const run = vi.fn(async () => 'must not run');
+  await expect(withProcessInvocationScope(run)).rejects.toMatchObject({ code: 'MOD_GENERATION_MISMATCH' });
+  expect(run).not.toHaveBeenCalled();
   expect(currentInvocationOwnerAvailable('agon.ratings')).toBeUndefined();
 });
 

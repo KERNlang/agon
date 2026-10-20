@@ -1,4 +1,5 @@
 import type { TaskClass } from '@kernlang/agon-support-engine-runtime';
+import { currentInvocationOwnerAvailable } from '@kernlang/agon-kernel';
 
 import { getRatings } from './glicko.js';
 
@@ -12,6 +13,9 @@ export interface EngineRole {
 }
 
 export function rankByTaskClass(engineIds: string[], taskClass: TaskClass): EngineRole[] {
+  if (currentInvocationOwnerAvailable('agon.ratings') === false) {
+    return engineIds.map(engineId => ({ engineId, role: 'specialist', confidence: 50, specialization: '' }));
+  }
   const ratings = getRatings();
   const classRatings = ratings.byTaskClass[taskClass] ?? {};
   const globalRatings = ratings.global;

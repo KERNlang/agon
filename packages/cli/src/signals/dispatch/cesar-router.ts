@@ -40,7 +40,7 @@ import { askChoiceQuestion } from './plan-queries.js';
 
 import { createPlanExecutionSession } from '../../blocks/plan-execution-effects.js';
 
-import { executeProcessCesarRoute } from '../../surface-authority-runtime.js';
+import { executeProcessCesarRoute, withProcessInvocationScope } from '../../surface-authority-runtime.js';
 
 type PhysicalCesarCommandResult = {
   readonly exitCode?: number;
@@ -1108,6 +1108,10 @@ export async function runCesarBrainFallback(input: string, cb: DispatchCallbacks
  * Unified Cesar brain routing. Returns true if a background job was dispatched.
  */
 export async function routeWithCesar(input: string, images: ImageAttachment[], cb: DispatchCallbacks): Promise<boolean> {
+  return withProcessInvocationScope(() => routeCesarTurn(input, images, cb));
+}
+
+async function routeCesarTurn(input: string, images: ImageAttachment[], cb: DispatchCallbacks): Promise<boolean> {
   // Refuse before the recovery ladder can turn a cleanup failure into a fresh
   // adapter dispatch. Leave pending input attachments untouched for recovery.
   const cleanupFailed = captureCleanupGuard(cb);

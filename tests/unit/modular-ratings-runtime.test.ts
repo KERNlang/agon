@@ -1,12 +1,13 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { glicko, loadRatings as loadModRatings } from '@kernlang/agon-mod-ratings';
+import { glicko, loadRatings as loadModRatings, rankByTaskClass } from '@kernlang/agon-mod-ratings';
 import * as core from '../../packages/core/src/signals/glicko.js';
 import { readRatingsFile } from '../../packages/mod-ratings/src/storage.js';
 import { setupTestAgonHome, cleanupTestAgonHome } from '../helpers/agon-home.js';
 import { ModRegistry } from '@kernlang/agon-kernel';
 import * as persistence from '@kernlang/agon-support-persistence';
+import { deriveRoutingHints, buildRoutingContext } from '../../packages/cli/src/cesar/routing.js';
 
 let home: string;
 beforeEach(() => { home = setupTestAgonHome('ratings-runtime'); });
@@ -107,6 +108,49 @@ it('does not mutate the supplied record if directory creation fails', () => {
     expect(() => core.saveRatings(record)).toThrow();
     expect(record.lastUpdated).toBe('unchanged');
   } finally { vi.unstubAllEnvs(); }
+});
+
+it('keeps task-role selection neutral without Ratings while preserving history', () => {
+  for (let index = 0; index < 5; index++) core.updateGlicko('winner', 'loser', 'test', 'forge');
+  const before = readFileSync(join(home, 'ratings.json'), 'utf8');
+  const disabled = new ModRegistry({ generation: 'roles-disabled', activeOwners: [] });
+  disabled.runWithInvocationScope(() => {
+    const roles = rankByTaskClass(['loser', 'winner'], 'test');
+    expect(roles.map(role => role.engineId)).toEqual(['loser', 'winner']);
+    expect(roles.every(role => role.confidence === 50 && role.specialization === '')).toBe(true);
+    expect(core.loadRatings().global.winner.wins).toBe(5);
+  });
+  const enabled = new ModRegistry({ generation: 'roles-enabled', activeOwners: [
+    { id: 'agon.ratings', version: '1.0.0', contentHash: `sha256:${'a'.repeat(64)}` },
+  ] });
+  enabled.runWithInvocationScope(() => {
+    expect(rankByTaskClass(['loser', 'winner'], 'test')[0]).toMatchObject({
+      engineId: 'winner', role: 'lead', confidence: 100,
+    });
+  });
+  expect(readFileSync(join(home, 'ratings.json'), 'utf8')).toBe(before);
+});
+
+it('omits rating-derived routing evidence when Ratings is disabled', () => {
+  const input = 'write unit tests';
+  const ctx = {
+    activeEngines: () => ['loser', 'winner'],
+    config: { sessionContinuity: false },
+    registry: { get: (id: string) => ({ id }) },
+  } as any;
+  const taskClass = deriveRoutingHints(input, ctx).taskClass;
+  for (let index = 0; index < 5; index++) core.updateGlicko('winner', 'loser', taskClass, 'forge');
+  expect(deriveRoutingHints(input, ctx).eloSpread).toBeGreaterThan(0);
+  expect(buildRoutingContext(input, ctx)).toContain('Rating (');
+  new ModRegistry({ generation: 'routing-disabled', activeOwners: [] }).runWithInvocationScope(() => {
+    expect(deriveRoutingHints(input, ctx).eloSpread).toBeUndefined();
+    const context = buildRoutingContext(input, ctx);
+    expect(context).not.toContain('Rating (');
+    expect(context).not.toContain('GLICKO SPREAD:');
+    expect(context).not.toContain('win rate');
+    expect(context).toContain('loser');
+    expect(context).toContain('winner');
+  });
 });
 
 it.each(['serialize', 'write', 'rename'])('preserves the previous store on a %s failure', failure => {

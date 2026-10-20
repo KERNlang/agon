@@ -6,6 +6,40 @@ exercise these installed-user contracts. Its passing executions are not a
 whole-product compatibility verdict. No active installation may be promoted
 on the strength of that receipt.
 
+## Ratings routing and queued-host scope — 2026-10-20
+
+Ordinary Cesar routing and direct brain entry now reuse the selected registry's
+async invocation scope. Nested Plan/job scopes remain intact. This does not add
+a lease or replace cancellation controllers. Disabled Ratings no longer
+reorders task roles or supplies rating summaries, Elo spread, or win-rate labels
+to routing prompts. Historical readers and qualitative engine memory remain.
+
+Independent Codex review found that queued successors could inherit the old
+host's scope after replacement. A real brain-entry regression reproduced the
+successor dispatch. Queue callbacks now validate captured host authority before
+entry and cannot reset a replacement host's busy state. Healthy successors and
+direct calls are covered without mocking the brain wrapper.
+
+Review packet SHA-256:
+`82008552e818d5c2e7607871284fa284b2b23c6f43ce73be3efb43ba79cb3589`.
+Review log SHA-256:
+`a9b4562ab5a6d1f10056f9955cd3fb392d8a4462287768687ee5689d2417765e`.
+Both findings were resolved with local regression evidence. The obsolete
+full-gate attempt was deliberately cancelled during build, not counted as pass.
+
+`ratings-tui-reviewed-full` passed in 845.514 seconds: build, offline release
+inventory refresh, SBOM, typecheck, 10,799 tests, lint, re-export and diff checks.
+Six tests and one test file remain skipped; 657 test files passed. No provider
+launched. Log SHA-256:
+`22c8c7558a0a82338b8d8d240df90f8bf443e3a176c101b10fdcdf519da7fe71`.
+Npm provenance remains externally blocked.
+
+Full optional-Ratings acceptance remains open for other legacy selection
+consumers, generic slash-command scope, and team composition/Elo ownership.
+A read-only probe also confirmed incorrect per-team role indexing in
+`support-panel/src/teams.ts`; that separate defect is not fixed by this change.
+Detailed negative controls and adjudication remain in the durable archive.
+
 ## Optional Ratings invocation boundary — 2026-10-20
 
 The registry now carries live mod availability through its existing invocation

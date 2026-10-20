@@ -16,6 +16,7 @@ import {
   bootstrapFirstPartySurfaceGeneration,
   canonicalJson,
   selectModSettings,
+  currentInvocationOwnerAvailable,
 } from '@kernlang/agon-kernel';
 import type {
   FirstPartySurfaceBoot,
@@ -155,6 +156,13 @@ export function captureProcessSurfaceAuthority(): () => void {
     }
     assertCanonicalSurfaceSelectionCurrent();
   };
+}
+
+/** Carry selected settings into host-owned work without replacing its cancellation. */
+export async function withProcessInvocationScope<T>(run: () => Promise<T>): Promise<T> {
+  assertCanonicalSurfaceSelectionCurrent();
+  if (!boot || currentInvocationOwnerAvailable('agon.kernel') !== undefined) return run();
+  return await boot.activated.generation.registry.runWithInvocationScope(run) as T;
 }
 
 /** Guard provider entry points without changing the session's shared adapter. */

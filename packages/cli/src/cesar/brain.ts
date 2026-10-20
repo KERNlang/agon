@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import { captureProcessSurfaceAuthority, withProcessInvocationScope } from '../surface-authority-runtime.js';
 import { sessionCleanupFailed, SESSION_CLEANUP_FAILURE_MESSAGE } from './session-health.js';
 
 import { mkdirSync, appendFileSync, existsSync, readFileSync, unlinkSync, readdirSync, writeFileSync } from 'node:fs';
@@ -143,6 +144,10 @@ export async function commitTurnAndSuggest(suggestion: {action:string, rest?:str
 }
 
 export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[], parentSignal?: AbortSignal, assertOwnerAvailable?: () => void): Promise<CesarTurnOutcome> {
+  return withProcessInvocationScope(() => enterCesarBrain(input, dispatch, ctx, images, parentSignal, assertOwnerAvailable));
+}
+
+async function enterCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[], parentSignal?: AbortSignal, assertOwnerAvailable?: () => void): Promise<CesarTurnOutcome> {
   parentSignal?.throwIfAborted();
   assertOwnerAvailable?.();
   const abort = new AbortController();
@@ -158,6 +163,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
 }
 
 async function runCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images: ImageAttachment[] | undefined, abort: AbortController, ownsActiveAbort: boolean, assertOwnerAvailable?: () => void): Promise<CesarTurnOutcome> {
+  const assertHostCurrent = captureProcessSurfaceAuthority();
   let _runtimeHost: any = null;
   let _turnRuntime: any = null;
   const assertExecutionAvailable = (): void => {
@@ -4009,9 +4015,14 @@ async function runCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerCont
           if (queued) {
             ctx.cesar!.queue = null;
             setTimeout(() => {
-              handleCesarBrain(queued.input, queued.dispatch, ctx, queued.images).catch((err: any) => {
+              void Promise.resolve().then(() => {
+                assertHostCurrent();
+                return handleCesarBrain(queued.input, queued.dispatch, ctx, queued.images);
+              }).catch((err: any) => {
                 console.error(`[cesar:queue] drain failed: ${err.message ?? err}`);
-                ctx.cesar!.busy = false;
+                // A stale callback must not reset a replacement host or turn.
+                try { assertHostCurrent(); } catch { return; }
+                if (!ctx.cesar!.turnId) ctx.cesar!.busy = false;
               });
             }, _wasInterrupted ? 0 : 100);
           }

@@ -1,4 +1,5 @@
 import { classifyTask, getRatings, getEngineProfile, rankByTaskClass, resolveWorkingDir, gitChangedFiles, currentBranch, loadOrCreateActiveThread } from '@kernlang/agon-core';
+import { currentInvocationOwnerAvailable } from '@kernlang/agon-kernel';
 
 import type { TaskClass, EngineRole } from '@kernlang/agon-core';
 
@@ -243,14 +244,16 @@ export function deriveRoutingHints(input: string, ctx: Pick<HandlerContext, 'act
     estimatedStepCost = planCostEstimator.estimate(stepType, engines);
   } catch { /* cost estimation is advisory */ }
   try {
-    const ratings = getRatings();
-    const taskRatings = ratings.byTaskClass?.[taskClass];
-    if (taskRatings && Object.keys(taskRatings).length >= 2) {
-      const sorted = Object.entries(taskRatings)
-        .filter(([id]) => activeEngines.includes(id))
-        .sort(([, a], [, b]) => (b as any).mu - (a as any).mu);
-      if (sorted.length >= 2) {
-        eloSpread = Math.round((sorted[0][1] as any).mu - (sorted[1][1] as any).mu);
+    if (currentInvocationOwnerAvailable('agon.ratings') !== false) {
+      const ratings = getRatings();
+      const taskRatings = ratings.byTaskClass?.[taskClass];
+      if (taskRatings && Object.keys(taskRatings).length >= 2) {
+        const sorted = Object.entries(taskRatings)
+          .filter(([id]) => activeEngines.includes(id))
+          .sort(([, a], [, b]) => (b as any).mu - (a as any).mu);
+        if (sorted.length >= 2) {
+          eloSpread = Math.round((sorted[0][1] as any).mu - (sorted[1][1] as any).mu);
+        }
       }
     }
   } catch { /* ELO data is advisory */ }
@@ -350,7 +353,7 @@ export function buildRoutingContext(input: string, ctx: HandlerContext, consume?
             return `${n.observation}${scope}`;
           })
           .join('; ') || 'none yet';
-        const winRate = r.confidence > 0 ? ` (${r.confidence}% win rate)` : '';
+        const winRate = currentInvocationOwnerAvailable('agon.ratings') !== false && r.confidence > 0 ? ` (${r.confidence}% win rate)` : '';
         return `  ${r.engineId}: ${r.role}${winRate} — strengths: ${strengths} | weak: ${weaknesses} | memory: ${recentMemory}`;
       });
       parts.push(`ENGINES (${hints.taskClass}):\n${lines.join('\n')}`);
@@ -361,15 +364,17 @@ export function buildRoutingContext(input: string, ctx: HandlerContext, consume?
   
   // ── Rating summary for this task class ──
   try {
-    const ratings = getRatings();
-    const taskRatings = ratings.byTaskClass?.[hints.taskClass];
-    if (taskRatings && Object.keys(taskRatings).length > 0) {
-      const sorted = Object.entries(taskRatings)
-        .filter(([id]) => activeEngines.includes(id))
-        .sort(([, a], [, b]) => (b as any).mu - (a as any).mu);
-      if (sorted.length > 0) {
-        const ratingLine = sorted.map(([id, r]) => `${id}:${Math.round((r as any).mu)}+-${Math.round((r as any).phi)}`).join(' > ');
-        parts.push(`Rating (${hints.taskClass}): ${ratingLine}`);
+    if (currentInvocationOwnerAvailable('agon.ratings') !== false) {
+      const ratings = getRatings();
+      const taskRatings = ratings.byTaskClass?.[hints.taskClass];
+      if (taskRatings && Object.keys(taskRatings).length > 0) {
+        const sorted = Object.entries(taskRatings)
+          .filter(([id]) => activeEngines.includes(id))
+          .sort(([, a], [, b]) => (b as any).mu - (a as any).mu);
+        if (sorted.length > 0) {
+          const ratingLine = sorted.map(([id, r]) => `${id}:${Math.round((r as any).mu)}+-${Math.round((r as any).phi)}`).join(' > ');
+          parts.push(`Rating (${hints.taskClass}): ${ratingLine}`);
+        }
       }
     }
   } catch { /* no rating data yet */ }

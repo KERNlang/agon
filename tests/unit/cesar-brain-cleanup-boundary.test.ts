@@ -12,6 +12,8 @@ import { handleCesarBrain } from '../../packages/cli/src/cesar/brain.js';
 import { markSessionCleanupFailed, sessionCleanupFailed } from '../../packages/cli/src/cesar/session-health.js';
 import { pushSteering } from '../../packages/cli/src/cesar/steering.js';
 import { beginCesarTurn, transitionCesarTurn } from '../../packages/cli/src/cesar/turn-runtime.js';
+import { initializeProcessSurfaceAuthority, disposeProcessSurfaceAuthority } from '../../packages/cli/src/surface-authority-runtime.js';
+import { currentInvocationOwnerAvailable } from '@kernlang/agon-kernel';
 
 const { budget, ensure, backend } = vi.hoisted(() => ({ budget: vi.fn(), ensure: vi.fn(), backend: vi.fn() }));
 vi.mock('../../packages/cli/src/cesar/context-budget.js', async original => {
@@ -72,6 +74,49 @@ beforeEach(() => {
   budget.mockReset().mockResolvedValue({ proceed: true, compacted: false });
   ensure.mockReset().mockRejectedValue(new Error('fixture acquisition must not run'));
   backend.mockReset().mockReturnValue({ backend: 'cli', engine: { id: 'fixture' } });
+});
+
+describe('modular brain entry scope', () => {
+  it.each([false, true])('binds direct brain entry and rejects a queued successor after host replacement=%s', async replace => {
+    const root = mkdtempSync(join(tmpdir(), 'agon-brain-scope-'));
+    const session = createFixtureSession();
+    const ctx = createFixtureContext(session);
+    const dispatch = vi.fn();
+    const seen: Array<boolean | undefined> = [];
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await initializeProcessSurfaceAuthority(root);
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      ensure.mockResolvedValue(session);
+      session.send.mockImplementation(async function* () {
+        await Promise.resolve();
+        seen.push(currentInvocationOwnerAvailable('agon.ratings'));
+        if (seen.length === 1) ctx.cesar.queue = { input: 'queued successor', dispatch, images: [] };
+        yield { type: 'text', content: 'Fixture answer complete.' };
+        yield { type: 'done', content: 'end_turn' };
+      });
+      await handleCesarBrain('first turn', dispatch, ctx, []);
+      expect(seen).toEqual([true]);
+      expect(ctx.setActiveAbort).toHaveBeenLastCalledWith(null);
+      expect(currentInvocationOwnerAvailable('agon.ratings')).toBeUndefined();
+      if (replace) {
+        await disposeProcessSurfaceAuthority();
+        await initializeProcessSurfaceAuthority(root);
+        ctx.cesar.busy = true;
+      }
+      await vi.advanceTimersByTimeAsync(100);
+      if (!replace) expect(error).not.toHaveBeenCalled();
+      await vi.waitFor(() => expect(seen).toEqual(replace ? [true] : [true, true]));
+      if (replace) {
+        expect(error).toHaveBeenCalledWith(expect.stringContaining('disposed or replaced'));
+        expect(ctx.cesar.busy).toBe(true);
+      }
+    } finally {
+      vi.useRealTimers();
+      await disposeProcessSurfaceAuthority();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('owning workflow admission', () => {

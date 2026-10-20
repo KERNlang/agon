@@ -6,6 +6,38 @@ exercise these installed-user contracts. Its passing executions are not a
 whole-product compatibility verdict. No active installation may be promoted
 on the strength of that receipt.
 
+## Shared team owners — 2026-10-20
+
+Kernel now owns the existing team contract types. Panel owns composition and
+role assignment with an injected confidence-floor snapshot loader. Ratings
+owns team Elo persistence, updates and contribution weights. Core retains
+compatibility exports and the existing public composition signatures. No new
+dependency is required. This moves ownership; it does not change team policy.
+
+Literal baseline tests passed before extraction and after it. Sixty focused
+tests cover task-specific composition, role weights, exact Elo changes,
+published store bytes, malformed historical reads, and facade identity.
+Enabled behavior retains three rating snapshots per composition, random
+role ties, rounded composition floors, UUID format and the existing lock.
+Lock cleanup assertions alone do not prove concurrent-update correctness.
+
+Independent Codex review found no concrete extraction regression. Packet
+SHA-256: `dfc036a588173383f5ff9b7ca04f03859cfed6bcd578a7b8c1e099c1e2e258c0`.
+Review log: `719bf66f69f9a6578375e000bb9da1690e5fb0d318da89cb30b322c309fe26c0`.
+The new probabilistic UUID uniqueness assertion was replaced with format
+checks; production UUID behavior was not changed. Focused receipt log:
+`aa8e6a126cb8627c18e9c1e8fa7b544984df655e4e127871c2b7648d08b960e1`.
+Full gate `team-shared-reviewed-full` passed in 852.151 seconds: build, offline
+inventory, supply chain, typecheck, 10,825 tests, lint, re-export and diff checks.
+658 test files passed; six tests and one file skipped. No providers launched.
+Log SHA-256: `32a2bdb78d16d146dda34f4d1466a4e3f9be0333a9e27a156cb0cfd0a6b65a5a`.
+This is an incremental verification receipt, not clean-checkout release acceptance.
+
+Still open: disabled-Ratings selection/update guards, the inherited static
+team-store path, and rich physical team workflow parity. Historical readers
+must stay available when Ratings is disabled. The frozen oracle remains an
+artifact-integrity check, not evidence of candidate workflow equivalence.
+
 ## Physical team intent contracts — 2026-10-20
 
 The three team intent runners now consume their existing parser fields:

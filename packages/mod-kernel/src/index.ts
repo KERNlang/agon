@@ -1,3 +1,4 @@
+export type { TeamRole, TeamComposeMode, TeamCoopStrategy, TeamMember, TeamSpec, TeamFormat, TeamRoundTrace, TeamSubmission, TeamScoreCard, TeamMatchResult, TeamEventType, TeamEvent } from './team-contracts.js';
 export { validatePersistedEnvelope } from '@kernlang/agon-mod-api';
 export { parseArtifactLeaseIdentity } from './host-contracts.js';
 export type { Json, PersistedEnvelope } from '@kernlang/agon-mod-api';

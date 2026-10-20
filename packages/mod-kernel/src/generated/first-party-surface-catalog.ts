@@ -8078,7 +8078,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.persistence",
       "version": "1.0.0",
-      "contentHash": "sha256:764dcd5ff9fca25102ba431060f6c755d363187f2177c947ded24ebfb358aa87"
+      "contentHash": "sha256:d1ed6d82d8223488ba2e0b966f620717254ab0e6f3bbb23ec17f7c48bbe89c40"
     },
     "ownerClass": "hidden-shared-support-package",
     "description": "historySet",

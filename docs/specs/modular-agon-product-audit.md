@@ -6,6 +6,41 @@ exercise these installed-user contracts. Its passing executions are not a
 whole-product compatibility verdict. No active installation may be promoted
 on the strength of that receipt.
 
+## Composed configuration owner — 2026-10-20
+
+Persistence now owns composed config, its memo cache, defaults and generated
+first-party settings. Core preserves explicit compatibility exports. The moved
+config implementation body is byte-identical to its previous owner. Engine
+and browser normalizers remain in their existing packages, reached through the
+two approved workspace dependencies. The target graph now has 158 unique edges.
+
+`modular-config-owner-full-corrected` passed typecheck and the complete suite:
+10,771 tests passed, six skipped, 598.928s, zero provider launches. Log SHA-256:
+`5b4587320110f55442c13b5a174f205b3ced0c6492a7e18b057d15f77b61292a`.
+`modular-config-owner-platform-and-runtime` passed 71 platform/graph tests,
+built-runtime export/default/cache identity, cross-surface writes, cloned reads,
+dynamic-home isolation, lint, re-export guard and SBOM negative controls.
+Log SHA-256:
+`ba43d9f3cacdb0a4f58e800c943799706d920b000faa89caf9b6a5fb489092df`.
+
+Build passed before release inventory regeneration. Offline release-set/SBOM
+refresh and setup tests passed in `modular-config-owner-release-cache-retry`.
+Log SHA-256:
+`dd489ceaceb3b225ca641dae80a4b40d8efc7ecf4bb35c52329cf71e29355afa`.
+The first refresh failed on an absent cached tarball; an existing isolated
+pressure cache resolved it without downloads or relaxed integrity checks.
+The first full gate exposed two stale graph-count mocks. Both now reflect the
+approved edges; malformed-evidence and graph rejection tests remain intact.
+
+Isolated Codex review found no concrete regression in its source packet.
+Review log SHA-256:
+`2d759ac8a9c128dbc53ea4ad6208e51a04764ef867f6e3bf3a075f524e11a5fd`.
+Receipts and raw logs remain in the durable local remediation archive.
+This is development evidence, not final clean-committed release qualification.
+The existing OSV findings remain unresolved; no external version changed.
+Ratings-disabled workflow behavior and remaining host ownership are still open.
+MCP has not gained an unapproved Persistence dependency.
+
 ## Shared token accounting owner — 2026-10-19
 
 Engine Catalog now owns the existing token tracker, pricing helpers and shared

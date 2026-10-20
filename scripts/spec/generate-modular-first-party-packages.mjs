@@ -458,6 +458,9 @@ const generated = new Map();
 for (const mod of mods) for (const [path, source] of expectedFiles(mod)) generated.set(path, source);
 const settings = [...legacySettings].sort(([left], [right]) => compareAscii(left, right));
 generated.set(resolve(root, 'packages/core/src/models/first-party-settings.generated.ts'),
+  "export { DEFAULT_FIRST_PARTY_SETTINGS, LEGACY_MOD_SETTING_OWNERS } from '@kernlang/agon-support-persistence';\n"
+  + "export type { FirstPartyLegacySettings } from '@kernlang/agon-support-persistence';\n");
+generated.set(resolve(root, 'packages/support-persistence/src/first-party-settings.generated.ts'),
   '// Generated from owner configuration schemas. Run generate-modular-first-party-packages.mjs.\n'
   + 'export interface FirstPartyLegacySettings {\n'
   + settings.map(([key, value]) => `  ${key}?: ${value.type};`).join('\n')

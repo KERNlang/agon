@@ -37,7 +37,9 @@ export const FIRST_PARTY_PACKAGE_GRAPH = {
       "class": "hidden-shared-support-package",
       "defaultEnabled": true,
       "dependencies": [
-        "@kernlang/agon-kernel"
+        "@kernlang/agon-kernel",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-browser-bridge"
       ]
     },
     {
@@ -520,6 +522,16 @@ export const FIRST_PARTY_PACKAGE_GRAPH = {
     {
       "from": "@kernlang/agon-support-persistence",
       "to": "@kernlang/agon-kernel",
+      "kind": "hard"
+    },
+    {
+      "from": "@kernlang/agon-support-persistence",
+      "to": "@kernlang/agon-support-engine-runtime",
+      "kind": "hard"
+    },
+    {
+      "from": "@kernlang/agon-support-persistence",
+      "to": "@kernlang/agon-support-browser-bridge",
       "kind": "hard"
     },
     {

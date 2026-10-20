@@ -895,7 +895,10 @@ describe('Forge configuration ownership', () => {
         expect(invalid.stderr).toContain('legacy migration aliases differ');
       }
       writeFileSync(schemaPath, JSON.stringify(schema));
-      const generatedPath = join(fixture, 'packages/core/src/models/first-party-settings.generated.ts');
+      const generatedPath = join(fixture, 'packages/support-persistence/src/first-party-settings.generated.ts');
+      const compatibility = readFileSync(join(fixture, 'packages/core/src/models/first-party-settings.generated.ts'), 'utf8');
+      expect(compatibility).toContain("from '@kernlang/agon-support-persistence'");
+      expect(compatibility).not.toContain('export interface');
       const generated = readFileSync(generatedPath, 'utf8');
       expect(generated).not.toMatch(/foreignSetting|not-forge-owned/);
       expect(generated).toContain('forgeFitnessTimeout?: number');

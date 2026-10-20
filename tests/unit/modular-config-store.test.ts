@@ -28,6 +28,17 @@ function fixture() {
 }
 
 describe('Kernel configuration storage', () => {
+  it('shares one composed config owner between Core and Persistence', async () => {
+    const core = await import('../../packages/core/src/signals/config.js');
+    const persistence = await import('@kernlang/agon-support-persistence');
+    const types = await import('../../packages/core/src/models/types.js');
+    for (const name of ['loadConfig', 'configSet', 'configGet', 'invalidateConfigCache', 'ensureAgonHome', 'pruneRuns', '_configMemoCache'] as const) {
+      expect(core[name]).toBe(persistence[name]);
+    }
+    expect(types.DEFAULT_AGON_CONFIG).toBe(persistence.DEFAULT_AGON_CONFIG);
+    expect(types.DEFAULT_CONFIG).toBe(persistence.DEFAULT_CONFIG);
+  });
+
   it('refuses invalid UTF-8 without rewriting the original bytes', async () => {
     home = setupTestAgonHome('config-write-invalid-utf8');
     const path = join(home, 'config.json');

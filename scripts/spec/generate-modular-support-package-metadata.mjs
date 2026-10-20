@@ -5,7 +5,7 @@ const root = resolve(import.meta.dirname, '../..');
 const version = '1.0.0';
 const packages = [
   ['engine-runtime', []],
-  ['persistence', []],
+  ['persistence', ['engine-runtime', 'browser-bridge']],
   ['dedup', []],
   ['browser-bridge', []],
   ['saas-api', []],

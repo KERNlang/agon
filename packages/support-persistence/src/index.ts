@@ -24,3 +24,12 @@ export * from './persisted-envelope.js';
 export { writeVersionedResultEnvelope } from './result-envelope.js';
 export { DEFAULT_PERSISTENCE_SETTINGS } from './settings.js';
 export type { PersistenceSettings } from './settings.js';
+export {
+  getAgonHome, agonPath, RUN_PRUNE_KEEP_COUNT, RUN_PRUNE_MIN_AGE_MS,
+  LOCAL_CONFIG_NAME, LOCAL_PRIVATE_CONFIG_NAME, _configMemoCache,
+  invalidateConfigCache, loadConfig, configGet, configSet, pruneRuns, ensureAgonHome,
+} from './agon-config.js';
+export { DEFAULT_AGON_CONFIG, DEFAULT_CONFIG } from './agon-config-settings.js';
+export type { AgonConfig } from './agon-config-settings.js';
+export { DEFAULT_FIRST_PARTY_SETTINGS, LEGACY_MOD_SETTING_OWNERS } from './first-party-settings.generated.js';
+export type { FirstPartyLegacySettings } from './first-party-settings.generated.js';

@@ -1,7 +1,7 @@
 {
   "bomFormat": "CycloneDX",
   "specVersion": "1.6",
-  "serialNumber": "urn:uuid:c5901177-0965-5a18-b516-67d297f324cb",
+  "serialNumber": "urn:uuid:bbc8cdde-5b15-5ff4-8297-7a562dd43fa5",
   "version": 1,
   "metadata": {
     "component": {
@@ -38,7 +38,7 @@
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "51ad52bf89f3b7764044ad541f840c6a1622e3d46a143644c3e8ebb3ac4f3746"
+          "content": "0c113eed000c38c377f65294b6050ac6b4909f9f6aa96eeb4eadf1ee48cc8566"
         }
       ],
       "licenses": [
@@ -51,7 +51,7 @@
       "properties": [
         {
           "name": "npm:integrity",
-          "value": "sha512-kX/895sJ76dHDELX6RcdBaEqbtwfoEa3cXYjnMYxntyAON+hlMTAXUUsGaE6fzilaimPDapMVPJiFxns7LGETQ=="
+          "value": "sha512-MyEw7DgZRdNg6M/OAb4aF/p606eA1yiCSLlhexu7aFg+9v0sXXcStgCzCjBxqIOzr/iAGyV9/JVc9eOq/0LRlA=="
         },
         {
           "name": "agon:class",
@@ -68,7 +68,7 @@
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "e26deed3a2f3acf3b0c390ce4473b5cb16c2036509fd3ad696b43db3cf511a98"
+          "content": "6c9db71496f0f979f097f154d75aa13471f9fddf3ac6bbab21e9f18ce84b83f7"
         }
       ],
       "licenses": [
@@ -81,7 +81,7 @@
       "properties": [
         {
           "name": "npm:integrity",
-          "value": "sha512-cyPifqx9FIgOZBuYu1jt15Za55G3nqbRcZhyvfPxo/MXU2mxkWcMMBF89ge5e3SjmbYEKxDo463M/CDysy085g=="
+          "value": "sha512-/EUNhe4sjd9p9tQ8lyq3L9FuXDT+YW6aZxhsBSwfo6t8djKjDAvA3+VYOy0RlYj1FXiOtkfGViVHHVKvnHcV5g=="
         },
         {
           "name": "agon:class",
@@ -188,7 +188,7 @@
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "0cf0b4ad9480e29b4eea363f9760ad7786187b0c0f9b52dac3820925411b7d6a"
+          "content": "f7be45225185ab3fd970d9303cce4782dd9b7458159b950d9f8022166ef91f5c"
         }
       ],
       "licenses": [
@@ -201,7 +201,7 @@
       "properties": [
         {
           "name": "npm:integrity",
-          "value": "sha512-kJp/wcavmMR2EdLruwmu7H2uo1y+fJaV3XZDxIrqeqIWYkKwuZ+EQDqgzMfF1zvUAwIRtOSFUx//9cT6m5KU5g=="
+          "value": "sha512-qysU6vZqFD6L7+AgH+h9zdIafqrVdlWdwN8ojMvW9NQP8k9uCYHJuyZDHn1m8Jaa25DD58jU8/z700b+MAiFVw=="
         },
         {
           "name": "agon:class",
@@ -5074,6 +5074,8 @@
       "ref": "@kernlang/agon-support-persistence@1.0.0",
       "dependsOn": [
         "@kernlang/agon-kernel@1.0.0",
+        "@kernlang/agon-support-browser-bridge@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
         "npm:node_modules/@kernlang/agon-engines@0.1.3"
       ]
     },

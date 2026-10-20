@@ -17,6 +17,12 @@
   "references": [
     {
       "path": "../mod-kernel"
+    },
+    {
+      "path": "../support-engine-runtime"
+    },
+    {
+      "path": "../support-browser-bridge"
     }
   ],
   "include": [

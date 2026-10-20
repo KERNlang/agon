@@ -26,6 +26,8 @@
     "@kernlang/agon-kernel": ">=0.0.0-0 <2"
   },
   "dependencies": {
+    "@kernlang/agon-support-engine-runtime": "1.0.0",
+    "@kernlang/agon-support-browser-bridge": "1.0.0",
     "@kernlang/agon-engines": "^0.1.2"
   }
 }

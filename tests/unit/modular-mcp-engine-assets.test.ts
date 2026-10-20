@@ -2,7 +2,10 @@ import { describe, expect, it, vi } from 'vitest';
 import type { ModServices, ModManifest } from '@kernlang/agon-mod-api';
 
 const assets = vi.hoisted(() => ({ resolve: vi.fn(() => '/fixture/owned-engine-assets'), load: vi.fn() }));
-vi.mock('@kernlang/agon-support-engine-runtime', () => ({ resolveEngineDefinitionsDir: assets.resolve }));
+vi.mock('@kernlang/agon-support-engine-runtime', async importOriginal => ({
+  ...await importOriginal<typeof import('@kernlang/agon-support-engine-runtime')>(),
+  resolveEngineDefinitionsDir: assets.resolve,
+}));
 vi.mock('@kernlang/agon-core', () => ({
   EngineRegistry: class {
     load = assets.load;

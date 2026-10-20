@@ -6,6 +6,38 @@ exercise these installed-user contracts. Its passing executions are not a
 whole-product compatibility verdict. No active installation may be promoted
 on the strength of that receipt.
 
+## Pre-extraction team workflow baseline — 2026-10-20
+
+`tests/unit/team-prompt-routing.test.ts` now captures raw cooperative and match
+contracts before physical team workflow migration. It exercises real legacy
+workflows with fixture provider responses, not live providers. Coverage includes
+structured drafts, unequal draft ordering, non-first architect selection,
+partial member failure, synthesis and judge failures, Tribunal phase failures,
+two-round context, capped rounds, tokens, elapsed time, events and match envelopes.
+Distinct proposals verify Alpha/Beta judge wiring. Test cwd and home are isolated.
+
+Codex review identified six coverage gaps. Each was checked against source and
+addressed locally. Review packet SHA-256:
+`c51116694c34bb699494b530127b166edcaed588b8b2d4db96777d613541d67f`.
+Review log SHA-256:
+`b20ce00e4437bd7b7999b788961acf458209ccf378131ce5f1c2acefd0ab74bb`.
+Twelve focused cases and typecheck pass; log SHA-256:
+`45e89e342a815992a4c1e421699928d1eb4b93879db985f158460a4c71a06206`.
+Negative controls reject missing Tribunal token accounting and reversed
+Brainstorm draft ordering. Both mutations were restored; production is unchanged.
+The ordering control fails exactly two cases; log SHA-256:
+`9c580a58752449f4084e4ea30e0396802fc8f46869adafefd10ca2cd131be484`.
+
+This preserves inherited behavior, including thrown-error versus returned-error
+handling. It does not claim current physical team implementations have parity,
+or replace the full workflow corpus and final clean-subject qualification.
+Full gate `team-raw-baselines-full` passed in 846.072 seconds: build, offline
+release inventory, supply-chain checks, types, 10,843 tests, lint, re-export
+guard and diff checks. Six tests and one file skipped; zero provider launches.
+Log SHA-256:
+`c47bffeda0d0b21ca9a96b47afcdca79f57ee67e50bf33159243d770decca4f0`.
+This is baseline verification, not final modular release qualification.
+
 ## Optional Ratings in team workflows — 2026-10-20
 
 Team confidence loading now returns before reading history when the invocation

@@ -5,6 +5,7 @@ import type { TaskClass } from '@kernlang/agon-support-engine-runtime';
 import { getRatings } from './glicko.js';
 
 import type { TeamRole, TeamMatchResult, TeamMember, TeamSpec, TeamRoundTrace } from '@kernlang/agon-kernel';
+import { currentInvocationOwnerAvailable } from '@kernlang/agon-kernel';
 
 
 import { TEAM_ELO_PATH, withFileLock } from '@kernlang/agon-support-persistence';
@@ -14,7 +15,8 @@ import { TEAM_ELO_PATH, withFileLock } from '@kernlang/agon-support-persistence'
 import type { TeamCompositionRating, TeamEloRecord, TeamRoleRating } from '@kernlang/agon-support-persistence';
 export type { TeamCompositionRating, TeamEloRecord, TeamRoleRating } from '@kernlang/agon-support-persistence';
 
-export function loadTeamConfidenceFloor(taskClass: TaskClass): (engineId: string) => number {
+export function loadTeamConfidenceFloor(taskClass: TaskClass): ((engineId: string) => number) | undefined {
+  if (currentInvocationOwnerAvailable('agon.ratings') === false) return undefined;
   const ratings = getRatings();
   return engineId => {
     const rating = ratings.byTaskClass[taskClass]?.[engineId] ?? ratings.global[engineId];
@@ -159,6 +161,7 @@ function applyTeamEloMatch(record: TeamEloRecord, match: TeamMatchResult, k: num
  * Apply a team match result. The whole read-modify-write runs under the cross-process lock so two concurrent team runs finishing together can't clobber each other's ELO updates.
  */
 export function updateTeamElo(match: TeamMatchResult, kFactor?: number): void {
+  if (currentInvocationOwnerAvailable('agon.ratings') === false) return;
   if (!match.winnerTeamId) return; // draw — skip for now
   withFileLock(TEAM_ELO_PATH + '.lock', () => {
     const record = loadTeamElo();

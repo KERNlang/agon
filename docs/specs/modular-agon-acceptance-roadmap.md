@@ -10,7 +10,7 @@ installation, promotion, or changes to the active/global Agon.
 The machine source of truth is
 [`evidence/modular-agon-implementation-roadmap.json`](./evidence/modular-agon-implementation-roadmap.json).
 Run `node scripts/spec/verify-modular-agon-roadmap.mjs` to prove that it covers
-49 packages, 156 unique dependency edges, all 872 frozen legacy ownership assignments,
+49 packages, 158 unique dependency edges, all 872 frozen legacy ownership assignments,
 existing source paths, topological order, nine gated slices, and classified
 claims.
 
@@ -20,7 +20,7 @@ claims.
 |---|---|
 | Public API, manifest validator, resolver, registry, compatibility metadata | implemented |
 | Slice 1A acceptance | original receipt [superseded](./evidence/modular-agon-slice1a-audit-supersession.md); current clean-subject acceptance remains unproven |
-| 49-package DAG | implemented structural map: 156 declared and unique edges; roadmap dependency sets match the package map, including Goal's approved Forge dependency |
+| 49-package DAG | implemented structural map: 158 declared and unique edges; roadmap dependency sets match the package map, including Goal's approved Forge dependency and Persistence's approved Engine Runtime/Browser Bridge dependencies |
 | Durable host/state/profiles/activation | implementation exists; current-subject slice qualification still required |
 | Physical extraction beyond API/kernel | partial: physical packages exist; remaining ownership and host adapters are not retired |
 | Runtime-generated CLI/TUI/MCP/Cesar/docs | partial: executable generated activation exists; complete legacy-owner retirement is not proven |

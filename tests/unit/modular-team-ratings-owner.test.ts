@@ -2,6 +2,8 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { TeamMatchResult, TeamSpec } from '@kernlang/agon-kernel';
+import type { CommandContribution } from '@kernlang/agon-mod-api';
+import { manifest } from '../helpers/modular-agon.js';
 import { setupTestAgonHome, cleanupTestAgonHome } from '../helpers/agon-home.js';
 
 let home: string;
@@ -89,6 +91,113 @@ it('keeps a draw from creating a team ratings store', async () => {
   owner.updateTeamElo(match(null));
   expect(existsSync(join(home, 'team-elo.json'))).toBe(false);
   expect(owner.getTeamElo().byFormat).toEqual({});
+});
+
+it.each([false, true])('blocks disabled team rating updates before locking (existing=%s)', async existing => {
+  const owner = await import('@kernlang/agon-mod-ratings');
+  const persistence = await import('@kernlang/agon-support-persistence');
+  const { ModRegistry } = await import('@kernlang/agon-kernel');
+  const path = join(home, 'team-elo.json');
+  if (existing) owner.updateTeamElo(match('A'));
+  const before = existing ? readFileSync(path, 'utf8') : undefined;
+  const lock = vi.spyOn(persistence, 'withFileLock');
+  new ModRegistry({ generation: 'without-ratings', activeOwners: [] }).runWithInvocationScope(() => {
+    owner.updateTeamElo(match('B'));
+    expect(lock).not.toHaveBeenCalled();
+    expect(owner.getTeamElo().byFormat['1v1']?.compositions.a.rating).toBe(existing ? 1516 : undefined);
+    expect(owner.predictTeamRating(match('A').teams[0].members, '1v1')).toBe(existing ? 1516 : 1500);
+  });
+  expect(existsSync(path)).toBe(existing);
+  if (existing) expect(readFileSync(path, 'utf8')).toBe(before);
+  expect(existsSync(path + '.lock')).toBe(false);
+  expect(existsSync(path + '.tmp')).toBe(false);
+});
+
+it.each([
+  { mode: 'auto-balanced' as const, expected: [['a', 'b'], ['b', 'c']] },
+  { mode: 'adaptive' as const, expected: [['a', 'b'], ['c', 'b']] },
+  { mode: 'explicit' as const, expected: [['c', 'a'], ['a', 'b']] },
+])('uses roster order without rating reads when Ratings is disabled ($mode)', async ({ mode, expected }) => {
+  const owner = await import('@kernlang/agon-mod-ratings');
+  const glicko = await import('../../packages/mod-ratings/src/glicko.js');
+  const { ModRegistry } = await import('@kernlang/agon-kernel');
+  const { composeTeams } = await import('../../packages/core/src/teams/team.js');
+  const record = glicko.getRatings();
+  record.global.b = { ...glicko.defaultGlickoRating(), mu: 3000, phi: 10 };
+  writeFileSync(join(home, 'ratings.json'), JSON.stringify(record));
+  const reads = vi.spyOn(glicko, 'getRatings');
+  const random = vi.spyOn(Math, 'random');
+  new ModRegistry({ generation: 'without-ratings', activeOwners: [] }).runWithInvocationScope(() => {
+    expect(owner.loadTeamConfidenceFloor('test')).toBeUndefined();
+    const teams = composeTeams(['a', 'b', 'c'], 2, mode, 'test', [['c', 'a'], ['a', 'b']]);
+    expect(teams.map(value => value.members.map(member => member.engineId))).toEqual(expected);
+    expect(teams.map(value => value.aggregateElo)).toEqual([100, 100]);
+    expect(reads).not.toHaveBeenCalled();
+    expect(random).not.toHaveBeenCalled();
+  });
+});
+
+it('keeps rating selection and updates available in an enabled invocation', async () => {
+  const owner = await import('@kernlang/agon-mod-ratings');
+  const { ModRegistry } = await import('@kernlang/agon-kernel');
+  const record = owner.glicko.getRatings();
+  record.global.b = { ...owner.glicko.defaultGlickoRating(), mu: 3000, phi: 10 };
+  writeFileSync(join(home, 'ratings.json'), JSON.stringify(record));
+  const { assignTeamRoles } = await import('../../packages/core/src/teams/team.js');
+  new ModRegistry({ generation: 'with-ratings', activeOwners: [
+    { id: 'agon.ratings', version: '1.0.0', contentHash: `sha256:${'a'.repeat(64)}` },
+  ] }).runWithInvocationScope(() => {
+    expect(assignTeamRoles(['a', 'b'], 'test').map(member => member.engineId)).toEqual(['b', 'a']);
+    owner.updateTeamElo(match('A'));
+    expect(owner.getTeamElo().byFormat['1v1'].compositions.a.rating).toBe(1516);
+  });
+});
+
+it.each(['brainstorm', 'tribunal'] as const)('runs team %s without disabled Ratings effects', async mode => {
+  const { EngineRegistry } = await import('@kernlang/agon-core');
+  const { ModRegistry } = await import('@kernlang/agon-kernel');
+  const owner = await import('@kernlang/agon-mod-ratings');
+  const persistence = await import('@kernlang/agon-support-persistence');
+  const { runTeamBrainstorm, runTeamTribunal } = await import('../../packages/forge/src/index.js');
+  const registry = new EngineRegistry();
+  for (const id of ['a', 'b']) {
+    registry.register({ schemaVersion: 3, id, displayName: id, binary: process.execPath,
+      exec: { args: ['{prompt}'] }, review: { args: ['{prompt}'] } });
+  }
+  writeFileSync(join(home, 'config.json'), JSON.stringify({ ratingsEnabled: true }));
+  owner.updateTeamElo(match('A'));
+  const path = join(home, 'team-elo.json');
+  const before = readFileSync(path, 'utf8');
+  const lock = vi.spyOn(persistence, 'withFileLock');
+  const dispatch = vi.fn(async () => ({ exitCode: 0, timedOut: false, stderr: '', durationMs: 1,
+    stdout: 'Proposal\nSCORE_ALPHA: 70\nSCORE_BETA: 30\nWINNER: ALPHA' }));
+  const options = { question: 'migration?', membersPerSide: 2, rounds: 1,
+    engines: ['a', 'b'], registry, adapter: { dispatch }, timeout: 10, outputDir: home };
+  const workflowOwner = { id: `agon.team-${mode}`, version: '1.0.0', contentHash: `sha256:${'a'.repeat(64)}` as const };
+  const host = new ModRegistry({ generation: 'without-ratings', activeOwners: [workflowOwner] });
+  const registration = host.beginRegistration(manifest(workflowOwner.id, workflowOwner.version, {
+    contributes: { cliCommands: [{ id: 'team-fixture', aliases: [] }], tuiActions: [],
+      mcpTools: [], cesarTools: [], lifecycleHooks: [], resultTypes: [], configKeys: [], generatedDocs: [] },
+  }));
+  const output: { match?: TeamMatchResult } = {};
+  registration.registrar.command('cli', { id: 'team-fixture', description: 'Team workflow probe', run: async () => {
+    await Promise.resolve();
+    output.match = mode === 'brainstorm' ? await runTeamBrainstorm(options) : await runTeamTribunal(options);
+    return { exitCode: 0 };
+  } });
+  registration.commit();
+  const command = host.resolve('cli-command', 'team-fixture')!.payload as CommandContribution;
+  await command.run({}, { invocationId: 'team-fixture', cwd: home, platform: 'darwin-arm64',
+    signal: new AbortController().signal, config: {} });
+  const result = output.match;
+  expect(result).toBeDefined();
+  if (!result) throw new Error('Team workflow did not return a match');
+  expect(dispatch.mock.calls.length).toBeGreaterThanOrEqual(5);
+  expect(result.winnerTeamId).toBe(result.teams[0].teamId);
+  expect(result.teams[0].members.map(member => member.engineId)).toEqual(['a', 'b']);
+  expect(result.scorecards[result.teams[0].teamId].score).toBe(70);
+  expect(lock).not.toHaveBeenCalled();
+  expect(readFileSync(path, 'utf8')).toBe(before);
 });
 
 it('preserves malformed historical bytes and reports their read failure', async () => {

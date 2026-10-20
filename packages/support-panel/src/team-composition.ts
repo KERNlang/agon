@@ -9,10 +9,11 @@ export function makeFormat(membersPerSide: number): TeamFormat {
   return { membersPerSide, label: `${membersPerSide}v${membersPerSide}` };
 }
 
-export function assignRankedTeamRoles(engineIds: string[], confidenceFloor: (engineId: string) => number): TeamMember[] {
+export function assignRankedTeamRoles(engineIds: string[], confidenceFloor: ((engineId: string) => number) | undefined): TeamMember[] {
 
   // Rank engines by Glicko-2 confidence floor
   const ranked = [...engineIds].sort((a, b) => {
+    if (!confidenceFloor) return 0;
     const aFloor = confidenceFloor(a);
     const bFloor = confidenceFloor(b);
     if (aFloor !== bFloor) return bFloor - aFloor;
@@ -47,11 +48,11 @@ export function assignRankedTeamRoles(engineIds: string[], confidenceFloor: (eng
   return members;
 }
 
-export function composeRankedTeams(engineIds: string[], membersPerSide: number, mode: TeamComposeMode, loadConfidenceFloor: () => (engineId: string) => number, explicitTeams?: [string[],string[]]): [TeamSpec, TeamSpec] {
+export function composeRankedTeams(engineIds: string[], membersPerSide: number, mode: TeamComposeMode, loadConfidenceFloor: () => ((engineId: string) => number) | undefined, explicitTeams?: [string[],string[]]): [TeamSpec, TeamSpec] {
   const confidenceFloor = loadConfidenceFloor();
 
   function engineElo(id: string): number {
-    return Math.round(confidenceFloor(id));
+    return confidenceFloor ? Math.round(confidenceFloor(id)) : 100;
   }
 
   let teamA: string[];

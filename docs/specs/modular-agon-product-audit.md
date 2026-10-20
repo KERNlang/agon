@@ -6,6 +6,45 @@ exercise these installed-user contracts. Its passing executions are not a
 whole-product compatibility verdict. No active installation may be promoted
 on the strength of that receipt.
 
+## Optional Ratings in team workflows — 2026-10-20
+
+Team confidence loading now returns before reading history when the invocation
+disables Ratings. Panel uses stable roster order without random rating ties;
+the existing neutral aggregate remains 100. Team Elo updates return before
+locking, loading or writing. Enabled and unspecified invocation behavior is
+unchanged. Historical load, get and prediction readers remain available.
+
+Three regressions failed before the repair: updates with an absent store,
+updates with an existing store, and disabled confidence loading. Expanded
+tests cover all three composition modes, enabled selection and updates,
+unchanged historical bytes, and registered async execution of real legacy
+Brainstorm/Tribunal workflows with fixture provider responses. These workflows
+still produce winners and scorecards without Ratings effects. This does not
+prove every surface enters the scope or that physical team workflows have
+legacy parity.
+
+Independent Codex review found no concrete production regression. Packet:
+`9842cde7a28da358f0d8178a9c531af9c8786fbf3b262f08636893b0a91a34f9`.
+Review log: `d2e909e7b6fd63127f3562058810dd3a3ba99417bd2687be57aa8e3122139e01`.
+Its neutral-score and async-registry coverage suggestions were implemented.
+47 focused tests, typecheck and diff checks passed, with zero provider launches.
+Log: `98cdfd8804a9da7b27f0614027a68c9db8a81caced9764d6376669589653b5f3`.
+The expanded enabled test initially used the wrong registry identity shape;
+the fixture was corrected without changing its expected ranking.
+
+Full gate `team-ratings-reviewed-full` failed under the restricted sandbox:
+socket listeners returned EPERM and file watchers fell back to watchdogs.
+With authorized socket/watch permissions and unchanged source, all nine
+affected files passed (109 tests, zero provider launches). Diagnostic log:
+`349f546e489a2a150fa2de6f3ba944c05939644ca112fd3abfaa82fdaa8815b9`.
+The failed receipt is retained, not accepted. Complete rerun
+`team-ratings-reviewed-full-permitted` passed in 857.571 seconds: build,
+offline package inventory, supply chain, typecheck, 10,833 tests, lint,
+re-export and diff checks. 658 files passed; six tests and one file skipped.
+Zero providers launched. Log SHA-256:
+`894af6dea9fc808128a21aae7f2880e09d20ad634e413b6d54d94895b27a9cbf`.
+This qualifies the repair increment, not complete release acceptance.
+
 ## Shared team owners — 2026-10-20
 
 Kernel now owns the existing team contract types. Panel owns composition and

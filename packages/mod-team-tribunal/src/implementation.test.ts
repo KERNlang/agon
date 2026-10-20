@@ -18,6 +18,12 @@ async function setup() {
 }
 
 describe('physical team tribunal', () => {
+  it('rejects a malformed member count before dispatch', async () => {
+    const h = await setup();
+    await expect(h.command.run({ question: 'Q', members: 'invalid' }, context))
+      .rejects.toThrow('Team size must be a finite number');
+    expect(h.dispatch).not.toHaveBeenCalled();
+  });
   it('composes, argues multiple rounds, and judges', async () => {
     const h = await setup(); const out = await h.command.run({ question: 'Q', members: '2', rounds: '2' }, context);
     const result = JSON.parse((out as { stdout: string }).stdout);

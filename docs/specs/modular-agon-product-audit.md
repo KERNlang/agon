@@ -6,6 +6,39 @@ exercise these installed-user contracts. Its passing executions are not a
 whole-product compatibility verdict. No active installation may be promoted
 on the strength of that receipt.
 
+## Physical team role assignment — 2026-10-20
+
+The shared panel composer now assigns roles by position within each team,
+not by the interleaved engine index. Engine assignment remains unchanged.
+Two-member teams previously received duplicate roles; larger teams could
+omit architects or reviewers. Nonfinite team sizes now fail before dispatch.
+Finite rounding and minimum-size behavior remain unchanged.
+
+Negative controls failed for sizes two through four before the fix.
+Nineteen focused tests cover exact roles, engine ordering, odd-roster wrapping,
+malformed sizes, and real Git/worktree/fitness execution with fixture engines.
+The Forge fixture verifies separate worktrees, an untouched source checkout,
+Alpha passing, Beta failing, and the winning patch contents.
+
+Independent Codex review found no blocking production regression. Its test
+improvements were applied and verified locally. Packet SHA-256:
+`57b1c8fc59009bac7acbefdff56aad775d0d58a47d7982a4a13bcccc540ce82e`.
+Review log SHA-256:
+`e6f7cd797e00c8aad58b9e50afaa89d24eb706c45bd42238f8bbeb179f94b761`.
+
+`team-role-reviewed-full` passed in 872.778 seconds: build, offline release
+inventory, SBOM, typecheck, 10,813 tests, lint, re-export and diff checks.
+657 test files passed; six tests and one file remain skipped. No provider
+launched. Log SHA-256:
+`c5e209fc0326be0931a6cd90e7b62d3dceb8a6bb7cd42308304fb10f586d5362`.
+Detailed receipts remain in the durable remediation archive.
+
+This does not qualify complete team compatibility. Separate probes found
+physical intent field mismatches: Brainstorm ignores parsed team size,
+Tribunal ignores parsed size and mode, and Forge does not consume the parsed
+fitness field. Those remain open, alongside rich legacy team ownership and
+optional Ratings behavior.
+
 ## Ratings routing and queued-host scope — 2026-10-20
 
 Ordinary Cesar routing and direct brain entry now reuse the selected registry's

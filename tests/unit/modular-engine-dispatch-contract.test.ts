@@ -6,6 +6,9 @@ import { buildKernDraftPrompt, parseKernDraft } from '@kernlang/protocol';
 import { EngineRegistry as CatalogEngineRegistry } from '@kernlang/agon-support-engine-catalog';
 import { tracker } from '../../packages/core/src/signals/token-tracker.js';
 import type { BrainstormModServices } from '@kernlang/agon-mod-brainstorm';
+import * as kernel from '@kernlang/agon-kernel';
+import { getRatings, pickTopRatedEngine } from '@kernlang/agon-core';
+import { EngineRegistry as CoreEngineRegistry } from '../../packages/core/src/signals/engine-registry.js';
 
 // Stop at the adapter boundary: no engine process, personal configuration or
 // run directory is needed to test the actual CLI and MCP host implementations.
@@ -84,6 +87,31 @@ beforeEach(() => {
 });
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); });
 
+it('keeps the Core registry fallback independent of disabled Ratings', () => {
+  vi.spyOn(kernel, 'currentInvocationOwnerAvailable').mockReturnValue(false);
+  const registry = new CoreEngineRegistry();
+  expect(registry.getFallbackChain('source', 'code', ['b', 'a'])).toEqual(['b', 'a']);
+  expect(fixture.rating).not.toHaveBeenCalled();
+});
+
+it('keeps Conquer critics available without reading or seeding disabled Ratings', async () => {
+  vi.spyOn(kernel, 'currentInvocationOwnerAvailable').mockReturnValue(false);
+  const seed = vi.spyOn(glicko, 'seedNewEnginesFromRegistry').mockReturnValue([]);
+  const read = vi.spyOn(glicko, 'getRatings').mockReturnValue({ global: {}, byMode: {} } as never);
+  const pick = vi.spyOn(glicko, 'pickTopRatedEngine');
+  fixture.loadConfig.mockReturnValueOnce({ protectedPushBranches: [] });
+  const services = await decorateCliFirstPartyServices({ id: 'agon.conquer' } as never, {} as never);
+  const host = await services.conquer!.open({
+    invocationId: 'conquer-no-ratings', cwd: '/fixture', platform: 'darwin-arm64',
+    signal: new AbortController().signal, config: {},
+  });
+  expect(host.rankCritics(['second', 'first'])).toEqual([{ engineId: 'second' }, { engineId: 'first' }]);
+  expect(seed).not.toHaveBeenCalled();
+  expect(read).not.toHaveBeenCalled();
+  expect(pick).not.toHaveBeenCalled();
+  expect(fixture.dispatch).not.toHaveBeenCalled();
+});
+
 describe.each([decorateCliFirstPartyServices, decorateMcpFirstPartyServices])('Ratings protection host', decorate => {
   it('protects all registered engines plus configured historical IDs, without dispatch', async () => {
     fixture.loadConfig.mockReturnValueOnce({ ratingsPurgeKeepEngines: ['renamed-engine', 'fixture-engine'] });
@@ -119,6 +147,19 @@ describe.each([decorateCliFirstPartyServices, decorateMcpFirstPartyServices])('F
 });
 
 describe.each([decorateCliFirstPartyServices, decorateMcpFirstPartyServices])('Brainstorm host wiring', decorate => {
+  it('stops rating-based fallback lookup without rebuilding the engine registry', async () => {
+    let enabled = true;
+    vi.spyOn(kernel, 'currentInvocationOwnerAvailable').mockImplementation(() => enabled);
+    vi.spyOn(CatalogEngineRegistry.prototype, 'load').mockImplementation(() => {});
+    fixture.rating.mockImplementation((id?: string) => ({ mu: id === 'higher' ? 2000 : 1000, phi: 30 }));
+    await decorate({ id: 'agon.brainstorm' } as never, {} as never);
+    const registry = fixture.brainstormFactory.mock.calls[0]![0].openRegistry('/fixture') as CatalogEngineRegistry;
+    expect(registry.getFallbackChain('source', 'code', ['lower', 'higher'])).toEqual(['higher', 'lower']);
+    fixture.rating.mockClear();
+    enabled = false;
+    expect(registry.getFallbackChain('source', 'code', ['lower', 'higher'])).toEqual(['lower', 'higher']);
+    expect(fixture.rating).not.toHaveBeenCalled();
+  });
   it.each(['agon.brainstorm', 'agon.pipeline-orchestration'])('opens %s with the physical registry and Ratings lookup', async id => {
     const load = vi.spyOn(CatalogEngineRegistry.prototype, 'load').mockImplementation(() => {});
     await decorate({ id } as never, {} as never);
@@ -209,6 +250,17 @@ describe.each([decorateCliFirstPartyServices, decorateMcpFirstPartyServices])('B
   it('does not expose the capability to unrelated mods', async () => {
     expect(await decorate({ id: 'custom.example' } as never, {} as never)).not.toHaveProperty('brainstorm');
   });
+});
+
+it.each([createCliEngineServices, createMcpEngineServices])('keeps requested engine order without Ratings in %s', async createServices => {
+  vi.spyOn(kernel, 'currentInvocationOwnerAvailable').mockReturnValue(false);
+  const context: InvocationContext = { invocationId: 'no-ratings', cwd: '/fixture',
+    platform: 'darwin-arm64', signal: new AbortController().signal, config: {} };
+  expect(await createServices().rank!(['b', 'a'], ['critique'], context)).toEqual([
+    { engineId: 'b', reason: 'random', scope: null }, { engineId: 'a', reason: 'random', scope: null },
+  ]);
+  expect(getRatings).not.toHaveBeenCalled();
+  expect(pickTopRatedEngine).not.toHaveBeenCalled();
 });
 
 describe.each([

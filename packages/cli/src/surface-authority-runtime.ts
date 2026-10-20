@@ -211,7 +211,7 @@ export async function withProcessSurfaceAuthority<T>(
     parentSignal?.throwIfAborted();
     if (boot !== selected) throw new SurfaceGenerationError('MOD_GENERATION_MISMATCH', 'modular host was disposed or replaced; restart Agon', true);
     assertAvailable(child.signal);
-    const value = await run(child.signal);
+    const value = await selected.activated.generation.registry.runWithInvocationScope(() => run(child.signal)) as T;
     // The caller owns result semantics, including structured cancellation results.
     outcome = { completed: true, value };
   } catch (error) {

@@ -5,6 +5,7 @@
  * injects the legacy Glicko lookup until rating ownership moves with its mod.
  */
 import { EngineRegistry as SupportEngineRegistry } from '@kernlang/agon-support-engine-catalog';
+import { currentInvocationOwnerAvailable } from '@kernlang/agon-kernel';
 
 import { getEngineGlickoRating } from './glicko.js';
 
@@ -12,6 +13,7 @@ export * from '@kernlang/agon-support-engine-catalog';
 
 export class EngineRegistry extends SupportEngineRegistry {
   constructor() {
-    super((engineId, taskClass) => getEngineGlickoRating(engineId, taskClass));
+    super((engineId, taskClass) => currentInvocationOwnerAvailable('agon.ratings') === false
+      ? undefined : getEngineGlickoRating(engineId, taskClass));
   }
 }

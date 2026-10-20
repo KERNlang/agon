@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -8,6 +8,7 @@ import { EngineRegistry } from '@kernlang/agon-core';
 import type { DispatchOptions, DispatchResult, EngineAdapter, EngineDefinition } from '../../packages/core/src/models/types.js';
 import { runTribunal } from '@kernlang/agon-forge';
 import { cleanupTestAgonHome, setupTestAgonHome } from '../helpers/agon-home.js';
+import { ModRegistry } from '@kernlang/agon-kernel';
 
 function makeEngine(id: string): EngineDefinition {
   return {
@@ -94,6 +95,21 @@ describe('tribunal execution protocols', () => {
 
     return { result, prompts, maxActiveByRound, summarySignal, signal: controller.signal };
   }
+
+  it.each([false, true])('completes Tribunal with Ratings disabled=%s', async disabled => {
+    const registry = new ModRegistry({
+      generation: 'tribunal-ratings-selection',
+      activeOwners: disabled ? [] : [{ id: 'agon.ratings', version: '1.0.0', contentHash: `sha256:${'a'.repeat(64)}` }],
+    });
+    await registry.runWithInvocationScope(async () => {
+      const { result, prompts } = await run('parallel', 1);
+      expect(result.summary).toBe('summary');
+      expect(result.positions).toHaveLength(3);
+      expect(prompts).toHaveLength(3);
+      expect(existsSync(join(agonHome!, 'ratings.json'))).toBe(!disabled);
+      expect(existsSync(join(agonHome!, 'ratings.json.lock'))).toBe(false);
+    });
+  });
 
   it('parallel starts every seat together without current-round context', async () => {
     const { result, prompts, maxActiveByRound, summarySignal, signal } = await run('parallel', 1);

@@ -8,6 +8,7 @@ import type { TaskClass, EngineDefinition } from '@kernlang/agon-support-engine-
 import { readRatingsFile, writeRatingsFile } from './storage.js';
 
 import { withFileLock } from '@kernlang/agon-support-persistence';
+import { currentInvocationOwnerAvailable } from '@kernlang/agon-kernel';
 
 type RatingEngineRegistry = { list(): EngineDefinition[] };
 // ── Module: GlickoRatings ──
@@ -230,7 +231,7 @@ export function computeNewSigma(sigma: number, phi: number, v: number, delta: nu
  * Pairwise Glicko-2 updates for all ranked positions. Higher score beats lower score. The WHOLE batch runs under one ratings lock with a single load and save — previously each pair did its own unlocked load→save (up to 15 RMW cycles for a 6-engine run), which is what let two concurrent run completions clobber each other.
  */
 export function updateGlickoRanked(ranked: Array<{engineId:string,score:number}>, taskClass: TaskClass, mode: 'forge'|'brainstorm'|'tribunal'|'critique'): void {
-  if (ranked.length < 2) return;
+  if (currentInvocationOwnerAvailable('agon.ratings') === false || ranked.length < 2) return;
   withFileLock(ratingsLockPath(), () => {
     const record = loadRatings();
     for (let i = 0; i < ranked.length; i++) {
@@ -370,6 +371,7 @@ export function lineageFromRegistry(registry: RatingEngineRegistry): Record<stri
  * One-shot cold-start seeding: read engine lineage from the registry, seed any new engine's global rating from its predecessor, and persist if anything changed. Safe to call repeatedly (idempotent — only seeds engines with no rating yet). Call before a competition so a freshly-dropped model version enters ranked play near its family's strength instead of from 1500.
  */
 export function seedNewEnginesFromRegistry(registry: RatingEngineRegistry): string[] {
+  if (currentInvocationOwnerAvailable('agon.ratings') === false) return [];
   let seeded: string[] = [];
   withFileLock(ratingsLockPath(), () => {
     const ratings = loadRatings();

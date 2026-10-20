@@ -7,7 +7,7 @@ import { createForgeHostServices } from '@kernlang/agon-core';
 import { createSessionWorktree, findSessionWorktree, worktreePathFor, rehydrateSessionWorktree } from '@kernlang/agon-core';
 import { agonPath, ensureAgonHome, spawnWithTimeout } from '@kernlang/agon-core';
 import { appendAttribution, appendPrAttribution, repoRoot, resolveWithinRoot, worktreeCreate, worktreeRemoveBestEffort } from '@kernlang/agon-support-worktree';
-import { WriterFence } from '@kernlang/agon-kernel';
+import { WriterFence, currentInvocationOwnerAvailable } from '@kernlang/agon-kernel';
 import { getAgonHome } from '@kernlang/agon-core';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
@@ -107,7 +107,9 @@ export async function decorateCliFirstPartyServices(manifest: ModManifest, base:
   const brainstorm = usesBrainstorm ? {
     ...createBrainstormHostServices<CatalogEngineRegistry>({
       openRegistry: () => {
-        const registry = new CatalogEngineRegistry(glicko.getEngineGlickoRating);
+        const registry = new CatalogEngineRegistry((engineId, taskClass) =>
+          currentInvocationOwnerAvailable('agon.ratings') === false
+            ? undefined : glicko.getEngineGlickoRating(engineId, taskClass));
         registry.load(resolveBuiltinEnginesDir()); return registry;
       },
       createAdapter: createCliAdapter,
@@ -173,6 +175,7 @@ export async function decorateCliFirstPartyServices(manifest: ModManifest, base:
       createAdapter: createCliAdapter,
       contextSpine: context => buildKernContextSpine(context.cwd),
       rankCritics: (registry, ids) => {
+        if (currentInvocationOwnerAvailable('agon.ratings') === false) return ids.map(engineId => ({ engineId }));
         glicko.seedNewEnginesFromRegistry(registry);
         const ratings = glicko.getRatings();
         return rankCriticCascade(ids, exclude =>
@@ -211,7 +214,12 @@ export function createCliEngineServices(): ModServices['engines'] {
       return resolveExplicitReviewEngines(engineIds, registry, loadConfig(context.cwd) as never);
     },
     async listActive(context: Parameters<ModServices['engines']['dispatch']>[2]): Promise<readonly string[]> { const registry = new EngineRegistry(); registry.load(resolveBuiltinEnginesDir()); return filterDefaultOrchestrationEngines(registry.activeIds(loadConfig(context.cwd) as never)); },
-    async rank(engineIds: readonly string[], scopes: readonly ('forge'|'brainstorm'|'tribunal'|'critique')[]): Promise<readonly {engineId:string;reason:'top-rated'|'random'|'none';scope:'forge'|'brainstorm'|'tribunal'|'critique'|'global'|null}[]> { const remaining=[...engineIds]; const ranked=[]; const ratings=getRatings(); while(remaining.length){ const picked=pickTopRatedEngine(remaining,ratings,{modes:[...scopes],rng:()=>0}); if(!picked.engineId) break; ranked.push(picked); remaining.splice(remaining.indexOf(picked.engineId),1); } return ranked; },
+    async rank(engineIds: readonly string[], scopes: readonly ('forge'|'brainstorm'|'tribunal'|'critique')[]): Promise<readonly {engineId:string;reason:'top-rated'|'random'|'none';scope:'forge'|'brainstorm'|'tribunal'|'critique'|'global'|null}[]> {
+      if (currentInvocationOwnerAvailable('agon.ratings') === false) {
+        return engineIds.map(engineId => ({ engineId, reason: 'random' as const, scope: null }));
+      }
+      const remaining=[...engineIds]; const ranked=[]; const ratings=getRatings(); while(remaining.length){ const picked=pickTopRatedEngine(remaining,ratings,{modes:[...scopes],rng:()=>0}); if(!picked.engineId) break; ranked.push(picked); remaining.splice(remaining.indexOf(picked.engineId),1); } return ranked;
+    },
     async dispatch(engineId: string, prompt: string, context: Parameters<ModServices['engines']['dispatch']>[2], options?: Parameters<ModServices['engines']['dispatch']>[3]): Promise<Json> {
       const registry = new EngineRegistry(); registry.load(resolveBuiltinEnginesDir());
       const config = loadConfig(context.cwd); const active = filterDefaultOrchestrationEngines(registry.activeIds(config as never));

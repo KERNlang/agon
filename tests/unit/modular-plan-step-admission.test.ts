@@ -8,7 +8,7 @@ import { DurableModHost, createFirstPartyModCatalog, createFullCompatDesiredStat
 import { surfaceLockFor } from '../helpers/modular-surface-lock.js';
 import { GenerationLeaseStore } from '../../packages/mod-kernel/src/generation-leases.js';
 import { assertProcessPlanStepAvailable, disposeProcessSurfaceAuthority, guardProcessEngineAdapter, initializeProcessSurfaceAuthority, processSurfaceCatalog, withProcessSurfaceAuthority } from '../../packages/cli/src/surface-authority-runtime.js';
-import { DurableModHost as RuntimeDurableModHost, SurfaceGeneration } from '@kernlang/agon-kernel';
+import { DurableModHost as RuntimeDurableModHost, SurfaceGeneration, currentInvocationOwnerAvailable } from '@kernlang/agon-kernel';
 import type { CesarPlanStep } from '@kernlang/agon-mod-plan';
 import type { HandlerContext } from '../../packages/cli/src/handlers/types.js';
 import type { DispatchOptions, EngineAdapter, EngineDefinition } from '@kernlang/agon-core';
@@ -94,6 +94,34 @@ function context(): HandlerContext { return { config: {}, adapter: {} } as Handl
 function step(type: string): CesarPlanStep {
   return { id: 'step', type, description: 'fixture', state: 'pending', estimatedTokens: 0, estimatedCostUsd: 0 };
 }
+
+it.each([false, true])('carries selected Ratings availability through host callbacks (disabled=%s)', async disabled => {
+  await install(disabled ? 'agon.ratings' : undefined);
+  await initializeProcessSurfaceAuthority(root);
+  expect(currentInvocationOwnerAvailable('agon.ratings')).toBeUndefined();
+  const result = await withProcessSurfaceAuthority(undefined, () => {}, async () => {
+    expect(currentInvocationOwnerAvailable('agon.ratings')).toBe(!disabled);
+    await Promise.resolve();
+    expect(currentInvocationOwnerAvailable('agon.ratings')).toBe(!disabled);
+    return 'completed';
+  });
+  expect(result).toBe('completed');
+  expect(currentInvocationOwnerAvailable('agon.ratings')).toBeUndefined();
+});
+
+it.each([false, true])('carries Ratings selection into a legacy Plan delegate (disabled=%s)', async disabled => {
+  await install(disabled ? 'agon.ratings' : undefined);
+  await initializeProcessSurfaceAuthority(root);
+  effects.delegate.mockImplementationOnce(async () => {
+    await Promise.resolve();
+    expect(currentInvocationOwnerAvailable('agon.ratings')).toBe(!disabled);
+    return { response: 'delegated output' };
+  });
+  const output = await buildStepExecutors(context()).delegate.execute(step('delegate'), {});
+  expect(effects.delegate).toHaveBeenCalledOnce();
+  expect(output.result).toMatchObject({ status: 'success', output: 'delegated output' });
+  expect(currentInvocationOwnerAvailable('agon.ratings')).toBeUndefined();
+});
 
 it.each(['brainstorm', 'pipeline'].flatMap(type =>
   ['healthy', 'after-probe', 'after-draft'].map(transition => ({ type, transition })),

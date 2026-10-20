@@ -8,6 +8,8 @@ import { EngineRegistry } from '../../packages/core/src/signals/engine-registry.
 import { runForge } from '../../packages/forge/src/forge.js';
 import { createForgeWorkflow } from '@kernlang/agon-mod-forge';
 import { createForgeWorkflowEffects, estimateCostCacheAware } from '@kernlang/agon-core';
+import * as kernel from '@kernlang/agon-kernel';
+import { setupTestAgonHome, cleanupTestAgonHome } from '../helpers/agon-home.js';
 
 vi.mock('../../packages/forge/src/quality.js', () => ({
   runLint: vi.fn(async () => 0),
@@ -68,6 +70,64 @@ function makeRegistry(): EngineRegistry {
 }
 
 describe('forge validate dispatch routing', () => {
+  it.each([true, false])('completes Forge with Ratings available=%s', async enabled => {
+    const home = setupTestAgonHome('forge-optional-ratings');
+    const selected = new kernel.ModRegistry({ generation: 'forge-ratings-selection',
+      activeOwners: enabled ? [{ id: 'agon.ratings', version: '1.0.0', contentHash: `sha256:${'a'.repeat(64)}` }] : [],
+    });
+    try {
+      process.env.AGON_FINALIZE_TEST_KEY = 'test';
+      const repoDir = makeRepo();
+      const effects = createForgeWorkflowEffects();
+      const seedNewEnginesFromRegistry = vi.fn();
+      const assignForgeRoles = vi.fn(() => new Map([
+        ['fast', { role: 'lead', specialization: 'rating-derived fixture' }],
+        ['slow', { role: 'challenger', specialization: 'rating-derived fixture' }],
+      ]));
+      const updateGlickoRanked = vi.fn();
+      const buildSpecializedPrompt = vi.fn((_id: string, _task: string, prompt: string) =>
+        prompt + '\nengine-defined specialization');
+      const workflow = createForgeWorkflow({ ...effects,
+        loadConfig: cwd => ({ ...effects.loadConfig(cwd), ratingsEnabled: true }),
+        seedNewEnginesFromRegistry, assignForgeRoles, updateGlickoRanked, buildSpecializedPrompt,
+      });
+      const prompts: string[] = [];
+      await selected.runWithInvocationScope(async () => {
+        const manifest = await workflow.runForge({ task: 'write files', fitnessCmd: 'true',
+          cwd: repoDir, forgeDir: join(repoDir, 'ratings-run'), engines: ['fast', 'slow'],
+          healthCheckEnabled: false,
+        }, makeRegistry(), {
+          isAvailable: async () => true, getVersion: async () => 'fixture',
+          dispatch: async ({ engine, cwd, prompt }) => {
+            prompts.push(prompt);
+            writeFileSync(join(cwd, `${engine.id}.txt`), 'work\n');
+            return { exitCode: 0, stdout: 'done', stderr: '', timedOut: false, durationMs: 1 };
+          },
+        });
+        expect(manifest.status).toBe('completed');
+        expect(Object.values(manifest.results).every(result => result.pass)).toBe(true);
+        expect(Object.keys(manifest.results).sort()).toEqual(['fast', 'slow']);
+        expect(seedNewEnginesFromRegistry).toHaveBeenCalledTimes(enabled ? 1 : 0);
+        expect(assignForgeRoles).toHaveBeenCalledTimes(enabled ? 1 : 0);
+        expect(updateGlickoRanked).toHaveBeenCalledTimes(enabled ? 1 : 0);
+        expect(buildSpecializedPrompt).toHaveBeenCalledTimes(2);
+        expect(prompts).toHaveLength(2);
+        for (const prompt of prompts) {
+          expect(prompt).toContain('engine-defined specialization');
+          expect(prompt.includes('rating-derived fixture')).toBe(enabled);
+        }
+        const memory = JSON.parse(readFileSync(join(home, 'engine-memory.json'), 'utf8'));
+        for (const engine of ['fast', 'slow']) {
+          expect(memory.engines[engine].notes).toEqual(expect.arrayContaining([
+            expect.objectContaining({ forgeId: manifest.forgeId }),
+          ]));
+        }
+      });
+    } finally {
+      cleanupTestAgonHome(home);
+    }
+  });
+
   it('uses plain dispatch, not agent tools, for validate mode without required diff', async () => {
     process.env.AGON_FINALIZE_TEST_KEY = 'test';
     const repoDir = makeRepo();

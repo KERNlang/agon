@@ -14,6 +14,7 @@ import { EngineRegistry, createRunDir, getRatings, loadConfig, pickTopRatedEngin
 import type { Json, ModManifest, ModServices } from '@kernlang/agon-mod-api';
 import { handleJobToolCall } from './job-tools.js';
 import { captureMcpSurfaceAuthority } from './surface-authority.js';
+import { currentInvocationOwnerAvailable } from '@kernlang/agon-kernel';
 
 const excludedExact = new Set(['kimi', 'minimax', 'mistral']);
 const excludedPrefixes = ['qwen', 'ollama', 'opencode', 'open-code'];
@@ -47,7 +48,9 @@ export function decorateMcpFirstPartyServices(manifest: ModManifest, base: ModSe
     }) } : {}),
     ...(manifest.id === 'agon.brainstorm' || manifest.id === 'agon.pipeline-orchestration' ? { brainstorm: createBrainstormHostServices<CatalogEngineRegistry>({
       openRegistry: () => {
-        const registry = new CatalogEngineRegistry(glicko.getEngineGlickoRating);
+        const registry = new CatalogEngineRegistry((engineId, taskClass) =>
+          currentInvocationOwnerAvailable('agon.ratings') === false
+            ? undefined : glicko.getEngineGlickoRating(engineId, taskClass));
         registry.load(resolveEngineDefinitionsDir()); return registry;
       },
       createAdapter: createCliAdapter,
@@ -86,6 +89,9 @@ export function createMcpEngineServices(): ModServices['engines'] {
         return orchestrationEngines(registry.activeIds(config as never));
       },
       async rank(engineIds: readonly string[], scopes: readonly ('forge'|'brainstorm'|'tribunal'|'critique')[]): Promise<readonly {engineId:string;reason:'top-rated'|'random'|'none';scope:'forge'|'brainstorm'|'tribunal'|'critique'|'global'|null}[]> {
+        if (currentInvocationOwnerAvailable('agon.ratings') === false) {
+          return engineIds.map(engineId => ({ engineId, reason: 'random' as const, scope: null }));
+        }
         const remaining = [...engineIds]; const ranked = []; const ratings = getRatings();
         while (remaining.length) { const picked = pickTopRatedEngine(remaining, ratings, { modes: [...scopes], rng: () => 0 }); if (!picked.engineId) break; ranked.push(picked); remaining.splice(remaining.indexOf(picked.engineId), 1); }
         return ranked;

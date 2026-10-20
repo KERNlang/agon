@@ -6,16 +6,33 @@ export interface InvocationConfigurationScope {
   readonly configuration: Pick<GenerationConfiguration, 'source' | 'owners'> | undefined;
 }
 
-const scope = new AsyncLocalStorage<InvocationConfigurationScope>();
+interface InvocationScope {
+  readonly configuration: InvocationConfigurationScope | undefined;
+  readonly ownerAvailable?: (ownerId: string) => boolean;
+}
+
+const scope = new AsyncLocalStorage<InvocationScope>();
 
 export function currentInvocationConfiguration(): InvocationConfigurationScope | undefined {
-  return scope.getStore();
+  return scope.getStore()?.configuration;
+}
+
+/** Undefined means the caller is outside a registry invocation. */
+export function currentInvocationOwnerAvailable(ownerId: string): boolean | undefined {
+  return scope.getStore()?.ownerAvailable?.(ownerId);
 }
 
 /** Bind lazy output as well as the initial call. Do not capture editable values. */
-export function runWithInvocationConfiguration(selected: InvocationConfigurationScope | undefined, run: () => unknown): unknown {
-  if (!selected) return run();
-  const selectedScope = selected;
+export function runWithInvocationConfiguration(
+  selected: InvocationConfigurationScope | undefined,
+  run: () => unknown,
+  ownerAvailable?: (ownerId: string) => boolean,
+): unknown {
+  if (!selected && !ownerAvailable) return run();
+  const selectedScope: InvocationScope = {
+    configuration: selected,
+    ownerAvailable: ownerAvailable ?? scope.getStore()?.ownerAvailable,
+  };
   function bindIterator(iterator: AsyncIterator<unknown>, factory?: () => AsyncIterator<unknown>): AsyncIterableIterator<unknown> {
     const bound: AsyncIterableIterator<unknown> = {
       next: (...args: [] | [unknown]) => scope.run(selectedScope, () => iterator.next(...args)),

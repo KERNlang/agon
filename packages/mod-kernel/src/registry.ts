@@ -143,6 +143,12 @@ export class ModRegistry {
     }
   }
 
+  /** Bind host callbacks to the same settings and owners as contributions. */
+  runWithInvocationScope(run: () => unknown): unknown {
+    return runWithInvocationConfiguration(this.#configurationScope, run,
+      ownerId => this.#activeOwners.has(ownerId));
+  }
+
   static fromLegacy(options: ModRegistryOptions, entries: readonly LegacyRegistryEntry[]): ModRegistry {
     const registry = new ModRegistry(options);
     for (const entry of entries) {
@@ -308,7 +314,7 @@ export class ModRegistry {
         const schemas = (this.#ownerKeys.get(owner.id) ?? []).map(ownerKey => this.#records.get(ownerKey))
           .filter(entry => entry?.kind === 'config').map(entry => entry!.payload);
         const invocation = schemas.length ? { ...context, config: resolveRegisteredModSettings(owner.id, context.config, schemas) } : context;
-        return runWithInvocationConfiguration(this.#configurationScope, () => invoke.call(original, input, invocation));
+        return this.runWithInvocationScope(() => invoke.call(original, input, invocation));
       } }
       : original;
     const record = Object.freeze({ kind, id, aliases: Object.freeze([...aliases]), owner, payload: freezeCompatibilityPayload(guarded) });

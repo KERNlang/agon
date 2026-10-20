@@ -5,7 +5,7 @@ import { engineHealth, recordForgeOutcome, extractPatchFilePatterns } from '@ker
 import { determineWinner } from '@kernlang/agon-support-judge';
 import { healthCheckEngines, HEALTH_CHECK_DEFAULT_PROMPT } from '@kernlang/agon-support-panel';
 import type { PanelEngineRegistry } from '@kernlang/agon-support-panel';
-import { createSidechainLogger } from '@kernlang/agon-kernel';
+import { createSidechainLogger, currentInvocationOwnerAvailable } from '@kernlang/agon-kernel';
 import type { ForgeOptions, ForgeManifest, ForgeEvent, DispatchMetric, EngineResult, WorktreeEntry } from './types.js';
 import { buildForgePrompt } from './prompts.js';
 import { planSynthesis } from './synth-plan.js';
@@ -281,7 +281,7 @@ export function createForgeWorkflow<Registry extends ForgeWorkflowRegistry>(runt
     // Cold-start: seed newly-dropped model versions from their predecessor before
     // starter selection / competition, so a new engine is rated at its family's
     // strength (advisorScore) instead of the 1500 default on its first forge.
-    seedNewEnginesFromRegistry(registry);
+    if (currentInvocationOwnerAvailable('agon.ratings') !== false) seedNewEnginesFromRegistry(registry);
     const taskClass = classifyTask(options.task);
     const config = {
       ...loadedConfig,
@@ -551,7 +551,9 @@ export function createForgeWorkflow<Registry extends ForgeWorkflowRegistry>(runt
       });
 
       // Role specialization — assign roles based on ELO per-task-class
-      const roles = assignForgeRoles(available, taskClass);
+      const roles = currentInvocationOwnerAvailable('agon.ratings') === false
+        ? new Map<string, { role: string; specialization: string }>()
+        : assignForgeRoles(available, taskClass);
       const enginePrompts = new Map<string, string>();
       for (const id of available) {
         const specialized = buildSpecializedPrompt(id, taskClass, forgePrompt);
@@ -969,7 +971,7 @@ export function createForgeWorkflow<Registry extends ForgeWorkflowRegistry>(runt
             .map(([id, r]) => ({ engineId: id, score: r.pass ? r.score : -1 }))
             .sort((a, b) => b.score - a.score);
 
-          if (ranked.length >= 2) {
+          if (ranked.length >= 2 && currentInvocationOwnerAvailable('agon.ratings') !== false) {
             updateGlickoRanked(ranked, taskClass, 'forge');
             for (const entry of ranked) {
               onEvent?.({ type: 'elo:update', data: { engineId: entry.engineId, score: entry.score, rank: ranked.indexOf(entry) + 1, taskClass } });

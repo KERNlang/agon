@@ -4,7 +4,7 @@ import type { LegacyRegistryEntry } from '../../packages/mod-kernel/src/index.js
 import type { CommandContribution, InvocationContext, ModIdentity } from '../../packages/mod-api/src/index.js';
 import { manifest } from '../helpers/modular-agon.js';
 import { resolveRegisteredModSettings } from '../../packages/mod-kernel/src/mod-settings.js';
-import { currentInvocationConfiguration, runWithInvocationConfiguration } from '../../packages/mod-kernel/src/configuration-scope.js';
+import { currentInvocationConfiguration, currentInvocationOwnerAvailable, runWithInvocationConfiguration } from '../../packages/mod-kernel/src/configuration-scope.js';
 
 const hash = `sha256:${'a'.repeat(64)}` as const;
 const active: ModIdentity = { id: 'example.active', version: '1.0.0', contentHash: hash };
@@ -12,6 +12,56 @@ const disabled: ModIdentity = { id: 'example.disabled', version: '1.0.0', conten
 const competitor: ModIdentity = { id: 'example.competitor', version: '1.0.0', contentHash: hash };
 
 describe('owner-tagged ModRegistry', () => {
+  it('restores nested host scopes and isolates concurrent callbacks after rejection', async () => {
+    const enabled = new ModRegistry({ generation: 'enabled', activeOwners: [active, competitor] });
+    const absent = new ModRegistry({ generation: 'absent', activeOwners: [active] });
+    const observed = () => currentInvocationOwnerAvailable(competitor.id);
+    await Promise.all([
+      enabled.runWithInvocationScope(async () => {
+        expect(observed()).toBe(true);
+        await expect(absent.runWithInvocationScope(async () => {
+          await Promise.resolve();
+          expect(observed()).toBe(false);
+          throw new Error('nested failure');
+        })).rejects.toThrow('nested failure');
+        expect(observed()).toBe(true);
+      }),
+      absent.runWithInvocationScope(async () => {
+        await Promise.resolve();
+        expect(observed()).toBe(false);
+      }),
+    ]);
+    expect(observed()).toBeUndefined();
+  });
+
+  it('binds optional-owner availability to the registry and observes disposal during a stream', async () => {
+    const registry = new ModRegistry({ generation: 'availability', activeOwners: [active, competitor] });
+    const registration = registry.beginRegistration(manifest(active.id, active.version, { contributes: {
+      cliCommands: [{ id: 'availability', aliases: [] }], tuiActions: [], mcpTools: [], cesarTools: [],
+      lifecycleHooks: [], resultTypes: [], configKeys: [], generatedDocs: [],
+    } }));
+    registration.registrar.command('cli', { id: 'availability', description: 'fixture',
+      run: () => (async function* () {
+        for (let index = 0; index < 2; index++) {
+          yield { type: 'text' as const, text: String(currentInvocationOwnerAvailable(competitor.id)) };
+        }
+      })(),
+    });
+    registration.commit();
+    const command = registry.resolve('cli-command', 'availability')!.payload as CommandContribution;
+    const result = await command.run({}, { invocationId: 'scope', cwd: '/fixture',
+      platform: 'darwin-arm64', signal: new AbortController().signal, config: {} });
+    if (!(Symbol.asyncIterator in result)) throw new Error('expected stream');
+    const iterator = result[Symbol.asyncIterator]();
+    expect((await iterator.next()).value).toEqual({ type: 'text', text: 'true' });
+    expect(currentInvocationOwnerAvailable(competitor.id)).toBeUndefined();
+    await registry.disposeOwner(competitor.id);
+    expect((await iterator.next()).value).toEqual({ type: 'text', text: 'false' });
+    await iterator.return!();
+    expect(currentInvocationConfiguration()).toBeUndefined();
+    expect(currentInvocationOwnerAvailable(active.id)).toBeUndefined();
+  });
+
   it('assimilates custom thenables and iterable getters within selected rules', async () => {
     const selected = { hostRoot: 'selected', configuration: undefined };
     const current = () => currentInvocationConfiguration()?.hostRoot;
@@ -84,7 +134,11 @@ describe('owner-tagged ModRegistry', () => {
       lifecycleHooks: [], resultTypes: [], configKeys: [], generatedDocs: [],
     } }));
     const seen: string[] = [];
-    const observe = () => seen.push(currentInvocationConfiguration()?.hostRoot ?? 'outside');
+    const observe = () => {
+      seen.push(currentInvocationConfiguration()?.hostRoot ?? 'outside');
+      expect(currentInvocationOwnerAvailable(active.id)).toBe(true);
+      expect(currentInvocationOwnerAvailable(disabled.id)).toBe(false);
+    };
     async function* stream() {
       try { observe(); yield { type: 'text' as const, text: 'fixture' }; await Promise.resolve(); observe(); }
       finally { observe(); }
@@ -101,6 +155,7 @@ describe('owner-tagged ModRegistry', () => {
     const context: InvocationContext = { invocationId: 'scope', cwd: '/fixture', platform: 'darwin-arm64', signal: new AbortController().signal, config: {} };
     const result = await command.run({}, context);
     expect(currentInvocationConfiguration()).toBeUndefined();
+    expect(currentInvocationOwnerAvailable(active.id)).toBeUndefined();
     if (Symbol.asyncIterator in result) {
       const iterator = result[Symbol.asyncIterator]();
       await iterator.next();

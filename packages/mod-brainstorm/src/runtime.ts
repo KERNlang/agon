@@ -5,6 +5,7 @@ import type { BrainstormRatingHistory } from './policy.js';
 import { createBrainstormScout } from './scout.js';
 import { createBrainstormWorkflow } from './workflow.js';
 import type { BrainstormWorkflowOptions, BrainstormWorkflowServices } from './workflow.js';
+import { currentInvocationOwnerAvailable } from '@kernlang/agon-kernel';
 
 /** Host effects only. Scoring, selection and workflow composition belong here. */
 export interface BrainstormRuntimeServices<Options extends BrainstormWorkflowOptions>
@@ -16,7 +17,9 @@ export interface BrainstormRuntimeServices<Options extends BrainstormWorkflowOpt
 
 /** Canonical composition for host adapters; construction performs no effects. */
 export function createBrainstormRuntime<Options extends BrainstormWorkflowOptions>(services: BrainstormRuntimeServices<Options>) {
-  const scoring = createBrainstormScoring(() => services.readRatings());
+  const ratingsAvailable = () => currentInvocationOwnerAvailable('agon.ratings') !== false;
+  const scoring = createBrainstormScoring(() => ratingsAvailable()
+    ? services.readRatings() : { global: {}, byMode: { brainstorm: {} } });
   const collectRankedDrafts = createBrainstormCollector<Options>({
     buildPrompt: input => services.buildPrompt(input),
     parseDraft: raw => services.parseDraft(raw),
@@ -39,14 +42,14 @@ export function createBrainstormRuntime<Options extends BrainstormWorkflowOption
   });
 
   const runBrainstorm = createBrainstormWorkflow<Options>({
-    seed: options => services.seed(options),
+    seed: options => { if (ratingsAvailable()) services.seed(options); },
     preflight: options => services.preflight(options),
     createLogger: options => services.createLogger(options),
     collect: (options, engines, style) => collectRankedDrafts({ ...options, engines, style }),
     qualityScore: scoring.qualityScore,
     calibrateConfidence: scoring.calibrateConfidence,
     deduplicate: (drafts, options) => services.deduplicate(drafts, options),
-    updateRatings: (bids, question) => services.updateRatings(bids, question),
+    updateRatings: (bids, question) => { if (ratingsAvailable()) services.updateRatings(bids, question); },
     selectWinner: (options, engineId) => services.selectWinner(options, engineId),
   });
 

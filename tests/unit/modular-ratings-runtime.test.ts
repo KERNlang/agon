@@ -5,6 +5,8 @@ import { glicko, loadRatings as loadModRatings } from '@kernlang/agon-mod-rating
 import * as core from '../../packages/core/src/signals/glicko.js';
 import { readRatingsFile } from '../../packages/mod-ratings/src/storage.js';
 import { setupTestAgonHome, cleanupTestAgonHome } from '../helpers/agon-home.js';
+import { ModRegistry } from '@kernlang/agon-kernel';
+import * as persistence from '@kernlang/agon-support-persistence';
 
 let home: string;
 beforeEach(() => { home = setupTestAgonHome('ratings-runtime'); });
@@ -71,6 +73,28 @@ it('keeps tied ranked entries from competing and retains lineage provenance', ()
   expect(core.seedNewEnginesFromRegistry(registry)).toEqual([]);
   expect(core.getRatings().engineMeta.successor.derivedFrom).toBe('a');
   expect(core.getRatings().engineMeta.a.versions).toEqual(['successor']);
+});
+
+it.each([false, true])('skips competition effects before locking with Ratings disabled (existing=%s)', existing => {
+  const path = join(home, 'ratings.json');
+  if (existing) core.updateGlicko('winner', 'loser', 'test', 'forge');
+  const before = existing ? readFileSync(path, 'utf8') : undefined;
+  const lock = vi.spyOn(persistence, 'withFileLock');
+  const list = vi.fn(() => []);
+  const registry = new ModRegistry({ generation: 'without-ratings', activeOwners: [] });
+  registry.runWithInvocationScope(() => {
+    expect(core.seedNewEnginesFromRegistry({ list })).toEqual([]);
+    core.updateGlickoRanked([{ engineId: 'winner', score: 90 }, { engineId: 'loser', score: 10 }], 'test', 'forge');
+    expect(lock).not.toHaveBeenCalled();
+    expect(list).not.toHaveBeenCalled();
+    // Historical reads remain available without enabling competition updates.
+    expect(Boolean(core.loadRatings().global.winner)).toBe(existing);
+    expect(Boolean(loadModRatings().global.winner)).toBe(existing);
+  });
+  expect(existsSync(path)).toBe(existing);
+  if (existing) expect(readFileSync(path, 'utf8')).toBe(before);
+  expect(existsSync(path + '.lock')).toBe(false);
+  expect(existsSync(path + '.tmp')).toBe(false);
 });
 
 it('does not mutate the supplied record if directory creation fails', () => {

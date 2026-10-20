@@ -18,7 +18,7 @@ export interface EngineActivationConfig {
   removedEngines: string[];
 }
 
-export type EngineRatingResolver = (engineId: string, taskClass?: string) => { mu: number; phi: number };
+export type EngineRatingResolver = (engineId: string, taskClass?: string) => { mu: number; phi: number } | undefined;
 
 function getAgonEnginesDir(): string {
   const override = process.env.AGON_HOME?.trim();
@@ -528,10 +528,13 @@ export class EngineRegistry {
     if (available.length === 0) return [];
     if (!this.resolveRating) return available;
     try {
-      const scored = available.map((id: string) => {
-        const rating = this.resolveRating!(id, taskClass);
-        return { id, score: rating.mu - 2 * rating.phi };
-      });
+      const scored: Array<{ id: string; score: number }> = [];
+      for (const id of available) {
+        const rating = this.resolveRating(id, taskClass);
+        // An unavailable rating source must not change fallback order.
+        if (rating === undefined) return available;
+        scored.push({ id, score: rating.mu - 2 * rating.phi });
+      }
       scored.sort((a, b) => b.score - a.score);
       return scored.map((entry) => entry.id);
     } catch {

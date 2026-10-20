@@ -6,6 +6,54 @@ exercise these installed-user contracts. Its passing executions are not a
 whole-product compatibility verdict. No active installation may be promoted
 on the strength of that receipt.
 
+## Optional Ratings invocation boundary — 2026-10-20
+
+The registry now carries live mod availability through its existing invocation
+scope. Plan and background-job callbacks use that same scope, alongside their
+existing leases and cancellation checks. Outside a modular invocation, legacy
+defaults remain unchanged.
+
+Brainstorm calibration, Forge rating-derived roles and updates, engine fallback
+ordering, CLI/MCP ranking, and physical Conquer critic selection skip Ratings
+when unavailable. Ratings-owned lineage seeding and ranked updates return before
+acquiring a lock. Historical readers remain available. Engine-defined prompts
+and qualitative outcome memory remain active.
+
+Negative controls reproduced the scope, calibration, ranking, Forge seeding
+and owner-lock defects before their fixes. Tests cover populated and absent
+stores, exact unchanged bytes, promise/iterator scope isolation, disposal,
+actual Plan entry, and real Forge/Tribunal workflows with fixture engines.
+Forge assertions inspect dispatched text and persisted outcome notes, not only
+callback counts.
+
+Codex review packet SHA-256:
+`344d21adcd606f2a2d8a29894a97f18bb026ab4257863afd6a13b4068519144d`.
+Review log SHA-256:
+`121b3e5e60830ff90df36d36b58871632795186ea0be1bb0b673ae49f31084e7`.
+The Forge evidence gap was corrected. The proposed Brainstorm asynchronous
+regression was refuted: the service contracts return `void` and callers never
+awaited them. Host callbacks currently return completed results; generic lazy
+result leasing is not claimed or added by this change.
+
+The first full gate passed build/typecheck and 10,753 tests, but failed 38 setup
+tests because rebuilding changed CLI chunk names before release inventory
+refresh. Its failure remains recorded:
+`4afd048e99414fa1e54850597703d55b8eda5316e8c87de9d3ed5ea4a79978b4`.
+After offline release-set/SBOM refresh, all 105 setup/Forge tests, typecheck,
+lint and re-export checks passed with zero provider launches. Log SHA-256:
+`f912278b7ddc80e639bc86c2f32a17135b01bdb78c1edb56de437d38e9589ff1`.
+The corrected full-suite run passed in 654.72 seconds: 10,791 tests passed,
+six skipped, with 657 passing test files and one skipped file. Typecheck,
+lint, re-export guards, supply-chain checks and diff checks also passed.
+No provider launched. Run: `ratings-invocation-full-corrected`. Log SHA-256:
+`8f7a0f810747a8a67345778d4c7ae109bff63dc5b30bed1f163f3c052d068de0`.
+
+This is not full optional-Ratings acceptance. Legacy selection consumers,
+team composition and its separate Elo store, Cesar rating hints, and direct
+administrative mutation APIs still need reconciliation. No dependency changed.
+Detailed receipts and review adjudication remain in the durable local
+remediation archive; no active installation was modified.
+
 ## Composed configuration owner — 2026-10-20
 
 Persistence now owns composed config, its memo cache, defaults and generated

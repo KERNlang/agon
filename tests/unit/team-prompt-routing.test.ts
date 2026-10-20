@@ -1,9 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { EngineAdapter, TeamEvent, TeamSpec } from '../../packages/core/src/index.js';
-import { EngineRegistry } from '../../packages/core/src/index.js';
-import { runTeamBrainstorm, runTeamTribunal } from '../../packages/forge/src/index.js';
+import { EngineRegistry, loadConfig, classifyTask, getRatings, updateTeamElo } from '../../packages/core/src/index.js';
+import { runTeamBrainstorm as legacyTeamBrainstorm, runTeamTribunal } from '../../packages/forge/src/index.js';
 import { runTeamCoopTribunal } from '../../packages/forge/src/team-tribunal.js';
-import { runTeamCoopBrainstorm } from '../../packages/forge/src/team-brainstorm.js';
+import { runTeamCoopBrainstorm as legacyTeamCoopBrainstorm } from '../../packages/forge/src/team-brainstorm.js';
+import { createTeamBrainstormRuntime } from '../../packages/mod-team-brainstorm/src/runtime.js';
+import { loadTeamConfidenceFloor } from '../../packages/mod-ratings/src/team-elo.js';
+import { buildKernDraftPrompt, parseKernDraft } from '@kernlang/protocol';
+import { createTeamBrainstormHostServices } from '../../packages/mod-team-brainstorm/src/host.js';
+import type { InvocationContext } from '@kernlang/agon-mod-api';
 import { cleanupTestAgonHome, setupTestAgonHome } from '../helpers/agon-home.js';
 
 let agonHome: string;
@@ -47,7 +52,127 @@ function recordingAdapter(modes: string[], systemPrompts: string[] = [], cwds: s
   } as any;
 }
 
-describe('team prompt routing', () => {
+describe('physical team host authority', () => {
+  it('uses task-specific rating floors for composition while the legacy update switch stays off', async () => {
+    const registry = registryWithTwoEngines();
+    for (const id of ['e3', 'e4']) registry.register({
+      schemaVersion: 3, id, displayName: id, binary: process.execPath,
+      exec: { args: ['{prompt}'] },
+    } as any);
+    const floors: Record<string, number> = { e1: 124.4, e2: 299.6, e3: 200.2, e4: 900 };
+    const floor = vi.fn((id: string) => floors[id]);
+    const loadFloor = vi.fn(() => floor);
+    const readRatings = vi.fn(() => ({ global: {}, byMode: { brainstorm: {} } }));
+    const updateRatings = vi.fn();
+    const calls: Array<Parameters<EngineAdapter['dispatch']>[0]> = [];
+    const runtime = createTeamBrainstormRuntime({
+      loadConfig: () => ({ cesarEngine: 'e4', ratingsEnabled: false }),
+      classifyTask: () => 'other', readRatings, updateTeamElo: updateRatings,
+      loadConfidenceFloor: loadFloor, buildKernDraftPrompt, parseKernDraft,
+      partitionRoster: (_registry: EngineRegistry, requested) => ({ active: requested!, removed: [] }),
+    });
+    const result = await runtime.runTeamBrainstorm({
+      question: 'rated composition', membersPerSide: 2, engines: ['e1', 'e2', 'e3', 'e4'],
+      registry, timeout: 10, outputDir: agonHome,
+      adapter: { dispatch: async options => {
+        calls.push(options);
+        return { exitCode: 0, timedOut: false, stderr: '', durationMs: 1,
+          stdout: options.prompt.includes('JUDGE') ? 'SCORE_ALPHA: 70\nSCORE_BETA: 30\nWINNER: ALPHA' : structuredDraft };
+      } } as EngineAdapter,
+    });
+    expect(result.teams.map(team => ({ members: team.members, aggregateElo: team.aggregateElo }))).toEqual([
+      { members: [{ engineId: 'e2', role: 'architect', weight: 0.6 },
+        { engineId: 'e3', role: 'implementer', weight: 0.4 }], aggregateElo: 250 },
+      { members: [{ engineId: 'e3', role: 'architect', weight: 0.6 },
+        { engineId: 'e1', role: 'implementer', weight: 0.4 }], aggregateElo: 162 },
+    ]);
+    expect(loadFloor.mock.calls).toEqual([['other'], ['other'], ['other']]);
+    expect(readRatings).toHaveBeenCalled();
+    expect(updateRatings).not.toHaveBeenCalled();
+    expect(calls.filter(call => call.prompt.includes('TEAM SYNTHESIS')).map(call => call.engine.id)).toEqual(['e2', 'e3']);
+    expect(calls.at(-1)?.engine.id).toBe('e4');
+  });
+
+  const transitions = [
+    { transition: 'current', phase: 'draft', reject: false },
+    ...['retired', 'cancelled'].flatMap(transition =>
+      ['draft', 'synthesis', 'judge'].flatMap(phase =>
+        [false, true].map(reject => ({ transition, phase, reject })))),
+  ];
+  it.each(transitions)('checks late $phase results ($transition, reject=$reject)', async ({ transition, phase, reject }) => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const controller = new AbortController();
+    let current = true;
+    const calls: Array<Parameters<EngineAdapter['dispatch']>[0]> = [];
+    const registry = registryWithTwoEngines();
+    const openRegistry = vi.fn(() => registry);
+    const readConfig = vi.fn((cwd: string) => ({ ...loadConfig(cwd), cesarEngine: 'e2', ratingsEnabled: true }));
+    const updateRatings = vi.fn();
+    const adapter = {
+      dispatch: async (options: Parameters<EngineAdapter['dispatch']>[0]) => {
+        calls.push(options);
+        await Promise.resolve();
+        const activePhase = options.prompt.includes('JUDGE') ? 'judge'
+          : options.prompt.includes('TEAM SYNTHESIS') ? 'synthesis' : 'draft';
+        if (activePhase === phase) {
+          if (transition === 'retired') current = false;
+          if (transition === 'cancelled') controller.abort(new Error('cancelled'));
+          if (reject) throw new Error('provider failed after authority change');
+        }
+        return { exitCode: 0, timedOut: false, stderr: '', durationMs: 1,
+          stdout: options.prompt.includes('JUDGE') ? 'SCORE_ALPHA: 70\nSCORE_BETA: 30\nWINNER: ALPHA' : structuredDraft };
+      },
+    } as EngineAdapter;
+    const createAdapter = vi.fn(() => adapter);
+    const captureAuthority = vi.fn(() => () => { if (!current) throw new Error('retired'); });
+    const host = createTeamBrainstormHostServices({
+      openRegistry, createAdapter, captureAuthority,
+      loadConfig: readConfig, classifyTask, readRatings: getRatings, updateTeamElo: updateRatings,
+      loadConfidenceFloor: loadTeamConfidenceFloor, buildKernDraftPrompt, parseKernDraft,
+      partitionRoster: (value: EngineRegistry, requested, config) => value.partitionRoster(requested, config),
+    });
+    expect(openRegistry).not.toHaveBeenCalled();
+    expect(createAdapter).not.toHaveBeenCalled();
+    expect(readConfig).not.toHaveBeenCalled();
+    expect(captureAuthority).not.toHaveBeenCalled();
+    const context: InvocationContext = {
+      invocationId: 'host-baseline', cwd: agonHome, platform: 'darwin-arm64',
+      signal: controller.signal, config: {},
+    };
+    const invocation = host.open(context);
+    expect(openRegistry).toHaveBeenCalledWith(agonHome);
+    expect(readConfig).not.toHaveBeenCalled();
+    const events: TeamEvent[] = [];
+    const result = invocation.run({ question: 'migration?', membersPerSide: 1,
+      engines: ['e1', 'e2'], composeMode: 'explicit', explicitTeams: [['e1'], ['e2']],
+      timeout: 10, outputDir: agonHome, onEvent: event => events.push(event as TeamEvent) });
+    if (transition === 'current') {
+      await expect(result).resolves.toMatchObject({ mode: 'brainstorm', task: 'migration?' });
+      expect(calls).toHaveLength(5);
+      expect(calls[4].engine.id).toBe('e2');
+      expect(updateRatings).toHaveBeenCalledTimes(1);
+      expect(events.at(-1)?.type).toBe('team:match-done');
+    } else {
+      await expect(result).rejects.toThrow(transition);
+      expect(calls).toHaveLength(phase === 'draft' ? 2 : phase === 'synthesis' ? 4 : 5);
+      expect(updateRatings).not.toHaveBeenCalled();
+      expect(events.some(event => event.type === 'team:match-done')).toBe(false);
+      if (phase === 'draft') expect(events.some(event => event.type === 'team:member-done')).toBe(false);
+      expect(events.some(event => event.type === 'team:score' || event.type === 'team:winner')).toBe(false);
+    }
+    expect(readConfig).toHaveBeenCalledWith(agonHome);
+    expect(calls.every(call => call.signal === controller.signal)).toBe(true);
+  });
+});
+
+describe.each(['legacy', 'physical'] as const)('team prompt routing (%s)', implementation => {
+  const runtime = createTeamBrainstormRuntime({
+    loadConfig, classifyTask, readRatings: getRatings, updateTeamElo,
+    loadConfidenceFloor: loadTeamConfidenceFloor, buildKernDraftPrompt, parseKernDraft,
+    partitionRoster: (registry: EngineRegistry, requested, config) => registry.partitionRoster(requested, config),
+  });
+  const runTeamBrainstorm = implementation === 'legacy' ? legacyTeamBrainstorm : runtime.runTeamBrainstorm;
+  const runTeamCoopBrainstorm = implementation === 'legacy' ? legacyTeamCoopBrainstorm : runtime.runTeamCoopBrainstorm;
   it.each(['none', 'draft', 'synthesis'] as const)('preserves Brainstorm raw output and failure fallback (failure=%s)', async failure => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-10-20T00:00:00Z'));

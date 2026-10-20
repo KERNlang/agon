@@ -12,10 +12,11 @@ import { getAgonHome } from '@kernlang/agon-core';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { createBrainstormHostServices } from '@kernlang/agon-mod-brainstorm';
+import { createTeamBrainstormHostServices } from '@kernlang/agon-mod-team-brainstorm';
 import { createConquerHostServices } from '@kernlang/agon-mod-conquer';
 import type { PrTextInput } from '@kernlang/agon-mod-forge';
 import { rankCriticCascade } from '@kernlang/agon-mod-nero';
-import { glicko } from '@kernlang/agon-mod-ratings';
+import { glicko, loadTeamConfidenceFloor, updateTeamElo } from '@kernlang/agon-mod-ratings';
 import { EngineRegistry as CatalogEngineRegistry, tracker } from '@kernlang/agon-support-engine-catalog';
 import { classifyTask } from '@kernlang/agon-support-dedup';
 import { buildKernDraftPrompt, parseKernDraft } from '@kernlang/protocol';
@@ -128,6 +129,22 @@ export async function decorateCliFirstPartyServices(manifest: ModManifest, base:
   } : undefined;
   return Object.freeze({ ...base, runs, ...(browser ? { browser } : {}), ...(workspace ? { workspace } : {}),
     ...(brainstorm ? { brainstorm } : {}),
+    ...(manifest.id === 'agon.team-brainstorm' ? { teamBrainstorm: createTeamBrainstormHostServices({
+      openRegistry: () => {
+        const registry = new CatalogEngineRegistry((engineId, taskClass) =>
+          currentInvocationOwnerAvailable('agon.ratings') === false
+            ? undefined : glicko.getEngineGlickoRating(engineId, taskClass));
+        registry.load(resolveBuiltinEnginesDir()); return registry;
+      },
+      createAdapter: createCliAdapter,
+      loadConfig, classifyTask, readRatings: glicko.getRatings, updateTeamElo,
+      loadConfidenceFloor: loadTeamConfidenceFloor, buildKernDraftPrompt, parseKernDraft,
+      partitionRoster: (registry: CatalogEngineRegistry, requested, config) => registry.partitionRoster(requested, config),
+      captureAuthority: () => {
+        const assertCurrent = captureProcessSurfaceAuthority();
+        return () => { assertCurrent(); assertProcessSurfaceAvailable('cli', 'team-brainstorm'); };
+      },
+    }) } : {}),
     ...(manifest.id === 'agon.goal' ? { goal: (await import('@kernlang/agon-mod-goal')).createGoalHostServices({
       journalEffects: { path: agonPath, ensureHome: ensureAgonHome },
       implementationHints: (source, engines, context) => {

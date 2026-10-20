@@ -6,6 +6,52 @@ exercise these installed-user contracts. Its passing executions are not a
 whole-product compatibility verdict. No active installation may be promoted
 on the strength of that receipt.
 
+## Team Brainstorm physical runtime and command — 2026-10-20
+
+The physical mod now owns the rich team draft, synthesis and judge workflow.
+Its lazy invocation host injects registry, configuration and rating effects.
+CLI binds that host; the command preserves raw results in the existing run store.
+Missing host capabilities fail explicitly instead of selecting another algorithm.
+
+Legacy and physical Brainstorm run the same frozen behavior tests. Additional
+tests cover task-specific rated composition, disabled Ratings, and cancellation
+or retirement during draft, synthesis, judge and persistence operations.
+`ratingsEnabled` retains its legacy meaning: it suppresses updates, not reads.
+Disabling the Ratings mod suppresses both reads and writes.
+
+The isolated Codex review found two confirmed contract defects in this command:
+failure-status writes lacked a post-await authority check, and the plan-step
+result schema described its request. Both now have failing-before/passing-after
+tests. Completion persistence also preserves both errors on a double failure
+and never rewrites success because receipt recording failed.
+Review packet SHA-256:
+`6344e29d68844a493f94f985a660bb498067a69d28de0b2b77745105689ff3c9`.
+Review log SHA-256:
+`a7125c9079984ef05426c84aa4466adf0b9f1bc3c930c48db8d99381c4d81890`.
+72 focused tests, typecheck and diff checks passed; log SHA-256:
+`360fbec7c523158693f7d6080c963ea75f3a4e5f905ebe87c78b2f4eb6843add`.
+
+The built CLI also ran with two real local fixture subprocess engines. Its
+parser, registry, host, five dispatches, raw result, success status and latest-run
+symlink were checked. No live providers launched. Two runs: the first exposed
+a test counting the symlink as a second directory; the corrected check passed.
+Passing log SHA-256:
+`da9b37c90d1716154065e391308230c43cc34bdbe01ca4fc8a1bea0e7b6699d1`.
+
+Full gate `team-physical-command-full` passed in 855.69 seconds: build, offline
+release inventory, supply-chain checks, types, 10,883 tests, lint, re-export
+guard and diff checks. Six tests and one file skipped; zero provider launches.
+Log SHA-256:
+`c7449096906798aec86ae9b42fa8f3a5cb54f2ae24cba2d7802aa268d7d7c7ef`.
+
+This is not complete extraction. Legacy Forge still owns its callable team
+facade, and MCP host wiring is pending the internal dependency grant. Remove
+the legacy algorithm only after routing every consumer through the physical
+owner and repeating parity/disabled-mod checks. Team Tribunal and Team Forge
+remain separate unfinished migrations. Tribunal tests repeated under the
+legacy/physical test headings still call legacy code; they do not prove
+Tribunal extraction. Final clean-subject acceptance remains open.
+
 ## Pre-extraction team workflow baseline — 2026-10-20
 
 `tests/unit/team-prompt-routing.test.ts` now captures raw cooperative and match

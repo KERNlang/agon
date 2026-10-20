@@ -153,12 +153,25 @@ it('keeps rating selection and updates available in an enabled invocation', asyn
   });
 });
 
-it.each(['brainstorm', 'tribunal'] as const)('runs team %s without disabled Ratings effects', async mode => {
-  const { EngineRegistry } = await import('@kernlang/agon-core');
+it.each([
+  { mode: 'brainstorm', physical: false }, { mode: 'tribunal', physical: false },
+  { mode: 'brainstorm', physical: true },
+] as const)('runs team $mode without disabled Ratings effects (physical=$physical)', async ({ mode, physical }) => {
+  const { EngineRegistry, loadConfig, classifyTask } = await import('@kernlang/agon-core');
   const { ModRegistry } = await import('@kernlang/agon-kernel');
   const owner = await import('@kernlang/agon-mod-ratings');
   const persistence = await import('@kernlang/agon-support-persistence');
   const { runTeamBrainstorm, runTeamTribunal } = await import('../../packages/forge/src/index.js');
+  const { createTeamBrainstormRuntime } = await import('../../packages/mod-team-brainstorm/src/runtime.js');
+  const { buildKernDraftPrompt, parseKernDraft } = await import('@kernlang/protocol');
+  const readRatings = vi.fn(owner.glicko.getRatings);
+  const loadConfidenceFloor = vi.fn(owner.loadTeamConfidenceFloor);
+  const updateTeamElo = vi.fn(owner.updateTeamElo);
+  const runtime = createTeamBrainstormRuntime({
+    loadConfig, classifyTask, readRatings, loadConfidenceFloor, updateTeamElo,
+    buildKernDraftPrompt, parseKernDraft,
+    partitionRoster: (value: InstanceType<typeof EngineRegistry>, requested, config) => value.partitionRoster(requested, config),
+  });
   const registry = new EngineRegistry();
   for (const id of ['a', 'b']) {
     registry.register({ schemaVersion: 3, id, displayName: id, binary: process.execPath,
@@ -182,7 +195,8 @@ it.each(['brainstorm', 'tribunal'] as const)('runs team %s without disabled Rati
   const output: { match?: TeamMatchResult } = {};
   registration.registrar.command('cli', { id: 'team-fixture', description: 'Team workflow probe', run: async () => {
     await Promise.resolve();
-    output.match = mode === 'brainstorm' ? await runTeamBrainstorm(options) : await runTeamTribunal(options);
+    output.match = physical ? await runtime.runTeamBrainstorm(options as Parameters<typeof runtime.runTeamBrainstorm>[0])
+      : mode === 'brainstorm' ? await runTeamBrainstorm(options) : await runTeamTribunal(options);
     return { exitCode: 0 };
   } });
   registration.commit();
@@ -198,6 +212,9 @@ it.each(['brainstorm', 'tribunal'] as const)('runs team %s without disabled Rati
   expect(result.scorecards[result.teams[0].teamId].score).toBe(70);
   expect(lock).not.toHaveBeenCalled();
   expect(readFileSync(path, 'utf8')).toBe(before);
+  expect(readRatings).not.toHaveBeenCalled();
+  expect(loadConfidenceFloor).not.toHaveBeenCalled();
+  expect(updateTeamElo).not.toHaveBeenCalled();
 });
 
 it('preserves malformed historical bytes and reports their read failure', async () => {

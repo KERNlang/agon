@@ -8,3 +8,7 @@ export const SOURCE_OCCURRENCES = Object.freeze(ownership.assignments);
 export const IMPLEMENTATION_KIND = 'physical' as const;
 export { createMod } from './implementation.js';
 export { createMod as default } from './implementation.js';
+export { createTeamBrainstormRuntime } from './runtime.js';
+export { createTeamBrainstormHostServices } from './host.js';
+export type { TeamBrainstormHostServices, TeamBrainstormHostEffects, TeamBrainstormModServices, TeamBrainstormInvocationOptions } from './host.js';
+export type { TeamBrainstormEffects, TeamBrainstormOptions, TeamBrainstormRegistry, TeamBrainstormConfig, TeamBrainstormEvent } from './runtime.js';

@@ -15,6 +15,10 @@ const resultSchema = Object.freeze({
   properties: {
     exitCode: { type: 'integer' }, stdout: { type: 'string' }, stderr: { type: 'string' },
     result: { type: 'object', additionalProperties: true },
+    failure: { type: 'object', additionalProperties: false, required: ['code', 'message', 'retryable'],
+      properties: { code: { type: 'string' }, message: { type: 'string' }, retryable: { type: 'boolean' },
+        details: { type: 'object', additionalProperties: false, required: ['runPath'],
+          properties: { runPath: { type: 'string' } } } } },
   },
 }) as Readonly<Record<string, Json>>;
 const text = (value: unknown) => typeof value === 'string' ? value.trim() : '';
@@ -45,6 +49,7 @@ async function run(raw: Json, context: InvocationContext & { onWorkflowEvent?: (
   let result;
   try {
     invocation.assertCurrent();
+    context.onWorkflowEvent?.({ type: 'team:run-started', data: { path: run.path } });
     result = await invocation.run({
       question, context: text(input.context) || undefined, membersPerSide: members,
       engines, timeout, outputDir: run.path, onEvent: event => context.onWorkflowEvent?.(event),
@@ -73,7 +78,15 @@ async function run(raw: Json, context: InvocationContext & { onWorkflowEvent?: (
     ok: true, summary: 'winner=' + (result.winnerTeamId ?? 'draw'),
   }, context);
   invocation.assertCurrent();
-  await services.receipts.record('team-brainstorm', { winnerTeamId: result.winnerTeamId, members });
+  try {
+    await services.receipts.record('team-brainstorm', { winnerTeamId: result.winnerTeamId, members });
+  } catch (error) {
+    invocation.assertCurrent();
+    const message = `Team Brainstorm match saved at ${run.path}, but its receipt could not be recorded: ${error instanceof Error ? error.message : String(error)}. Inspect the saved match before retrying.`;
+    return { exitCode: 1, stdout: JSON.stringify(result, null, 2) + '\n', stderr: message + '\n',
+      result: result as unknown as Json,
+      failure: { code: 'TEAM_BRAINSTORM_RECEIPT_FAILED', message, retryable: false, details: { runPath: run.path } } };
+  }
   invocation.assertCurrent();
   return { exitCode: 0, stdout: JSON.stringify(result, null, 2) + '\n', result: result as unknown as Json };
 }

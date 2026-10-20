@@ -208,11 +208,14 @@ export async function dispatchOrchestrationIntent(intent: any, input: string, cb
       const _tbLabel = intent.question?.slice(0, 40) ?? 'team-brainstorm';
       const continuationEpoch = cb.ctx.inputEpoch ?? 0;
       const continuationUserTurns = countTrackedUserTurns(cb.ctx);
-      cb.runAsJob('team-brainstorm', _tbLabel, withThreadOutcome(_tbCwd, 'team-brainstorm', _tbLabel, async () => {
-        await handleTeamBrainstorm(intent.question, cb.dispatch, cb.ctx, intent.membersPerSide);
+      cb.runAsJob('team-brainstorm', _tbLabel, signal => withThreadOutcome(_tbCwd, 'team-brainstorm', _tbLabel, async () => {
+        signal?.throwIfAborted();
+        const completed = await handleTeamBrainstorm(intent.question, cb.dispatch, cb.ctx, intent.membersPerSide, signal);
+        signal?.throwIfAborted();
+        if (!completed) return;
         const chatContext = collectRecentEngineContext(cb.ctx, 12, 1500);
         if (chatContext) await continueCesarAfterResult(`Team brainstorm completed on: "${(intent.question ?? '').slice(0, 200)}"\n\n${chatContext}\n\nSynthesize the winning approach into a concrete plan.`, cb, continuationEpoch, continuationUserTurns);
-      }, cb.ctx));
+      }, cb.ctx)());
       return { handled: true, ranAsJob: true };
     }
     case 'build':

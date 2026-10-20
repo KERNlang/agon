@@ -6,6 +6,7 @@ import { buildKernDraftPrompt, parseKernDraft } from '@kernlang/protocol';
 import { createMod } from './implementation.js';
 import { createTeamBrainstormHostServices } from './host.js';
 import type { TeamBrainstormModServices } from './host.js';
+import type { TeamBrainstormEvent } from './runtime.js';
 import { setupTestAgonHome, cleanupTestAgonHome } from '../../../tests/helpers/agon-home.js';
 
 let home: string;
@@ -79,6 +80,34 @@ it('runs the parsed three-member team format', async () => {
 });
 
 describe('physical team brainstorm', () => {
+  it('announces the actual run before dispatch without changing the raw result', async () => {
+    const h = await setup();
+    const events: Array<{ event: TeamBrainstormEvent; dispatches: number }> = [];
+    const context = { ...h.context, onWorkflowEvent: (event: TeamBrainstormEvent) => {
+      events.push({ event, dispatches: h.dispatch.mock.calls.length });
+    } };
+    const output = await h.command.run({ question: 'Q' }, context);
+    expect(events[0]).toEqual({ event: { type: 'team:run-started', data: { path: home } }, dispatches: 0 });
+    expect(events.filter(({ event }) => event.type === 'team:run-started')).toHaveLength(1);
+    const result = JSON.parse((output as { stdout: string }).stdout);
+    expect(result).not.toHaveProperty('runPath');
+    expect(result).not.toHaveProperty('path');
+    expect(JSON.parse(h.writeArtifact.mock.calls[0][2])).toEqual(result);
+  });
+
+  it('honors cancellation from the run announcement before executing engines', async () => {
+    const h = await setup();
+    const error = new Error('cancelled at run start');
+    const context = { ...h.context, onWorkflowEvent: (event: TeamBrainstormEvent) => {
+      if (event.type === 'team:run-started') h.controller.abort(error);
+    } };
+    await expect(h.command.run({ question: 'Q' }, context)).rejects.toBe(error);
+    expect(h.dispatch).not.toHaveBeenCalled();
+    expect(h.writeArtifact).not.toHaveBeenCalled();
+    expect(h.finish).not.toHaveBeenCalled();
+    expect(h.record).not.toHaveBeenCalled();
+  });
+
   it('advertises the result envelope returned by the plan step, not its request', async () => {
     const h = await setup();
     const success = await h.planStep.run({ question: 'Q' }, h.context);
@@ -138,6 +167,38 @@ describe('physical team brainstorm', () => {
     expect(h.record).not.toHaveBeenCalled();
   });
 
+  it('returns the saved match with a failed receipt status', async () => {
+    const h = await setup();
+    h.record.mockRejectedValueOnce(new Error('receipt unavailable'));
+    const output = await h.command.run({ question: 'Q' }, h.context);
+    expect(output).toMatchObject({ exitCode: 1, failure: {
+      code: 'TEAM_BRAINSTORM_RECEIPT_FAILED', retryable: false,
+      details: { runPath: home },
+    } });
+    const completed = output as { stdout: string; result: unknown; stderr: string };
+    expect(completed.stderr).toContain('receipt unavailable');
+    expect(completed.stderr).toContain(home);
+    expect(JSON.parse(completed.stdout)).toEqual(completed.result);
+    expect(JSON.parse(h.writeArtifact.mock.calls[0][2])).toEqual(completed.result);
+    expect(validateContributionInput(h.planStep.resultSchema, output)).toBeNull();
+    expect(h.finish).toHaveBeenCalledTimes(1);
+    expect(h.finish.mock.calls[0][1]).toMatchObject({ ok: true });
+  });
+
+  it.each(['cancelled', 'retired'] as const)('does not return a saved match after receipt rejection and %s authority', async mode => {
+    const error = new Error('invocation no longer current');
+    let retired = false;
+    const h = await setup(() => { if (retired) throw error; });
+    h.record.mockImplementationOnce(async () => {
+      if (mode === 'cancelled') h.controller.abort(error);
+      else retired = true;
+      throw new Error('receipt unavailable');
+    });
+    await expect(h.command.run({ question: 'Q' }, h.context)).rejects.toBe(error);
+    expect(h.finish).toHaveBeenCalledTimes(1);
+    expect(h.finish.mock.calls[0][1]).toMatchObject({ ok: true });
+  });
+
   it('records an artifact failure once and preserves its identity', async () => {
     const h = await setup();
     const error = new Error('artifact unavailable');
@@ -152,7 +213,7 @@ describe('physical team brainstorm', () => {
     const h = await setup();
     const error = new Error('receipt unavailable');
     h.record.mockRejectedValueOnce(error);
-    await expect(h.command.run({ question: 'Q' }, h.context)).rejects.toBe(error);
+    expect(await h.command.run({ question: 'Q' }, h.context)).toMatchObject({ exitCode: 1 });
     expect(h.finish).toHaveBeenCalledTimes(1);
     expect(h.finish.mock.calls[0][1]).toMatchObject({ ok: true });
   });

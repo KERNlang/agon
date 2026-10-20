@@ -12,3 +12,7 @@ export { createTeamBrainstormRuntime } from './runtime.js';
 export { createTeamBrainstormHostServices } from './host.js';
 export type { TeamBrainstormHostServices, TeamBrainstormHostEffects, TeamBrainstormModServices, TeamBrainstormInvocationOptions } from './host.js';
 export type { TeamBrainstormEffects, TeamBrainstormOptions, TeamBrainstormRegistry, TeamBrainstormConfig, TeamBrainstormEvent } from './runtime.js';
+export { presentTeamBrainstormEvent, presentTeamBrainstormResult } from './presentation.js';
+export type { TeamBrainstormDisplayEvent } from './presentation.js';
+export { runTeamBrainstormSession } from './session-workflow.js';
+export type { TeamBrainstormSessionHost, TeamBrainstormSessionExecutionContext } from './session-workflow.js';

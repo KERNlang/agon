@@ -8,3 +8,5 @@ export const SOURCE_OCCURRENCES = Object.freeze(ownership.assignments);
 export const IMPLEMENTATION_KIND = 'physical' as const;
 export { createMod } from './implementation.js';
 export { createMod as default } from './implementation.js';
+export { runTeamCoopTribunal } from './cooperative.js';
+export type { TeamTribunalRegistry } from './cooperative.js';

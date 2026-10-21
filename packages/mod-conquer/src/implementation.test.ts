@@ -803,7 +803,10 @@ describe('explicit engine resolution across Conquer workflows', () => {
     expect(dispatch.mock.calls.every(([id]) => ['selected-builder', 'selected-a', 'selected-b'].includes(id))).toBe(true);
     for (const mode of ['nero', 'tribunal', 'council']) expect(record).toHaveBeenCalledWith(mode, expect.anything());
     expect(dispatch.mock.calls.some(([, prompt]) => prompt.includes('You are Nero'))).toBe(true);
-    expect(dispatch.mock.calls.some(([, prompt]) => prompt.startsWith('ROLE:'))).toBe(true);
+    expect(dispatch.mock.calls).toEqual(expect.arrayContaining([
+      ['selected-a', expect.stringContaining('You are: **Argue FOR**')],
+      ['selected-b', expect.stringContaining('You are: **Argue AGAINST**')],
+    ].map(([id, prompt]) => expect.arrayContaining([id, prompt]))));
     expect(dispatch.mock.calls.some(([, prompt]) => prompt.startsWith('Frame this question'))).toBe(true);
     expect(dispatch.mock.calls.some(([, prompt]) => prompt.startsWith('Synthesize one accountable'))).toBe(true);
   });

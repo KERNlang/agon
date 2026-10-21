@@ -9,12 +9,23 @@ import {
   TRIBUNAL_PROTOCOLS,
 } from '@kernlang/agon-forge';
 import { detectIntent } from '../../packages/cli/src/signals/intent.js';
+import * as tribunalOwner from '@kernlang/agon-mod-tribunal';
 import { disposeProcessSurfaceAuthority, initializeProcessSurfaceAuthority } from '../../packages/cli/src/surface-authority-runtime.js';
 
 beforeAll(() => initializeProcessSurfaceAuthority('/tmp/agon-tribunal-modes-authority'));
 afterAll(() => disposeProcessSurfaceAuthority());
 
 describe('tribunal-modes', () => {
+  it('keeps legacy exports bound to the physical policy owner', () => {
+    expect(getModeConfig).toBe(tribunalOwner.getModeConfig);
+    expect(buildModePrompt).toBe(tribunalOwner.buildModePrompt);
+    expect(buildModeSummaryPrompt).toBe(tribunalOwner.buildModeSummaryPrompt);
+    expect(isTribunalMode).toBe(tribunalOwner.isTribunalMode);
+    expect(isTribunalProtocol).toBe(tribunalOwner.isTribunalProtocol);
+    expect(TRIBUNAL_MODES).toBe(tribunalOwner.TRIBUNAL_MODES);
+    expect(TRIBUNAL_PROTOCOLS).toBe(tribunalOwner.TRIBUNAL_PROTOCOLS);
+  });
+
   describe('TRIBUNAL_MODES', () => {
     it('contains all 6 modes', () => {
       expect(TRIBUNAL_MODES).toEqual(['adversarial', 'socratic', 'red-team', 'steelman', 'synthesis', 'postmortem']);

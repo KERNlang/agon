@@ -1,5 +1,34 @@
 # Installed-product audit and repair ledger
 
+## Tribunal policy ownership and review repairs — 2026-10-21
+
+`mod-tribunal/src/modes.ts` owns the existing mode, role and prompt policies.
+Legacy `forge/src/tribunal-modes.ts` is a public-package re-export facade.
+Forge's approved parent dependency and build reference preserve old consumers.
+The physical Tribunal command now uses this policy instead of its duplicate
+role table and generic prompts. The legacy facade can retire only when its
+public consumers migrate; its presence is not full runtime extraction.
+
+Independent Codex review found an inherited Investigator prompt mismatch,
+exposed by the policy consolidation. A dedicated investigation instruction now
+keeps the two-engine postmortem's first seat distinct from prevention. The
+registered intent runners also normalize parsed mode/protocol fields; previously
+they silently executed defaults. Both fixes have failing-before regressions.
+
+Coverage includes six mode policies, participant-specific instructions, default
+and explicit automatic protocols, round caps, intent parse-to-execution, raw team
+results, and deferred-response parallel/chained/hybrid scheduling. Forcing all
+rounds parallel fails the chained and hybrid tests. Review packet SHA-256:
+`88c7a8125f8b7bd72229c9a03ea84c8cbad7c9c2c123fbc08d19b2361ce7ed93`.
+Review log SHA-256:
+`c43896f829a0c5863c04deb25a489bf8e910a267ac85ce311a49b110bc2a5d9f`.
+Detailed receipts and adjudications remain in the durable remediation archive.
+
+This does not establish full Tribunal runtime parity: retry, result, logging and
+host cancellation differences remain. The extracted Team Tribunal cooperative
+executor is not yet the production match owner. No team-mod/MCP dependency edges
+were added. Repository-wide and clean-commit release qualification remain open.
+
 Audit subject: `667317911ce04bae2dbe70946fe7cff937e17ca7` (2026-09-05).
 Disposition: **not release-ready**. The earlier 33-gate pressure run did not
 exercise these installed-user contracts. Its passing executions are not a

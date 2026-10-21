@@ -12,6 +12,7 @@
     { "path": "../mod-conquer" },
     { "path": "../mod-nero" },
     { "path": "../mod-goal" },
+    { "path": "../mod-tribunal" },
     { "path": "../core" },
     { "path": "../support-persistence" },
     { "path": "../support-worktree" }

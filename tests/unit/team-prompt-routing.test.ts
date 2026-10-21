@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { EngineAdapter, TeamEvent, TeamSpec } from '../../packages/core/src/index.js';
 import { EngineRegistry, loadConfig, classifyTask, getRatings, updateTeamElo } from '../../packages/core/src/index.js';
 import { runTeamBrainstorm as legacyTeamBrainstorm, runTeamTribunal } from '../../packages/forge/src/index.js';
-import { runTeamCoopTribunal } from '../../packages/forge/src/team-tribunal.js';
+import { runTeamCoopTribunal as legacyTeamCoopTribunal } from '../../packages/forge/src/team-tribunal.js';
+import { runTeamCoopTribunal as physicalTeamCoopTribunal } from '../../packages/mod-team-tribunal/src/cooperative.js';
 import { runTeamCoopBrainstorm as legacyTeamCoopBrainstorm } from '../../packages/forge/src/team-brainstorm.js';
 import { createTeamBrainstormRuntime } from '../../packages/mod-team-brainstorm/src/runtime.js';
 import { loadTeamConfidenceFloor } from '../../packages/mod-ratings/src/team-elo.js';
@@ -165,7 +166,113 @@ describe('physical team host authority', () => {
   });
 });
 
-describe.each(['legacy', 'physical'] as const)('team prompt routing (%s)', implementation => {
+describe('legacy Team Tribunal mode contract', () => {
+  it.each([false, true])('preserves judge settlement (judge rejects=%s)', async rejects => {
+    const registry = registryWithTwoEngines();
+    registry.register({ ...registry.get('e1'), id: 'e3', displayName: 'e3' });
+    const events: TeamEvent[] = [];
+    const calls: Array<Parameters<EngineAdapter['dispatch']>[0]> = [];
+    const run = runTeamTribunal({
+      question: 'Keep rollback?', membersPerSide: 1, rounds: 1,
+      composeMode: 'explicit', explicitTeams: [['e1'], ['e2']],
+      engines: ['e1', 'e2', 'e3'], registry, timeout: 10, outputDir: agonHome,
+      onEvent: event => events.push(event as TeamEvent),
+      adapter: { dispatch: async options => {
+        calls.push(options);
+        const judge = options.prompt.includes('TRIBUNAL JUDGE');
+        if (judge && rejects) throw new Error('judge unavailable');
+        return { exitCode: 0, timedOut: false, stderr: '', durationMs: 1,
+          stdout: judge ? 'SCORE_ALPHA: 30\nSCORE_BETA: 70\nWINNER: BETA' : `argument ${options.engine.id}` };
+      } } as EngineAdapter,
+    });
+    if (rejects) {
+      await expect(run).rejects.toThrow('judge unavailable');
+      expect(events.filter(event => ['team:score', 'team:winner', 'team:match-done'].includes(event.type))).toEqual([]);
+      expect(events.filter(event => event.type === 'team:round-done')).toHaveLength(2);
+    } else {
+      const result = await run;
+      const [alpha, beta] = result.teams;
+      expect(result.winnerTeamId).toBe(beta.teamId);
+      expect(result.scorecards[alpha.teamId].score).toBe(30);
+      expect(result.scorecards[beta.teamId].score).toBe(70);
+      expect(events.slice(-4)).toEqual([
+        { type: 'team:score', data: { teamId: alpha.teamId, score: 30 } },
+        { type: 'team:score', data: { teamId: beta.teamId, score: 70 } },
+        { type: 'team:winner', data: { winnerTeamId: beta.teamId } },
+        { type: 'team:match-done', data: {} },
+      ]);
+    }
+    expect(calls).toHaveLength(5);
+    expect(calls.at(-1)?.engine.id).toBe('e3');
+    expect(calls.at(-1)?.prompt).toContain('## TEAM BETA (Argue AGAINST):\nargument e2');
+  });
+
+  const modes = [
+    { mode: undefined, rounds: 3, positions: ['Argue FOR', 'Argue AGAINST'] },
+    { mode: 'adversarial' as const, rounds: 3, positions: ['Argue FOR', 'Argue AGAINST'] },
+    { mode: 'socratic' as const, rounds: 3, positions: ['Questioner', 'Responder'] },
+    { mode: 'red-team' as const, rounds: 2, positions: ['Defender', 'Attacker 1'] },
+    { mode: 'steelman' as const, rounds: 2, positions: ['Advocate', 'Steelman opponent'] },
+    { mode: 'synthesis' as const, rounds: 2, positions: ['Proposer A', 'Proposer B'] },
+    { mode: 'postmortem' as const, rounds: 2, positions: ['Investigator', 'Prevention designer'] },
+  ];
+  const cases = modes.flatMap(mode => [1, 3].flatMap(size => ['draw', 'unscored'].flatMap(judge =>
+    [1, 9].map(requestedRounds => ({ ...mode, size, judge, requestedRounds, rounds: requestedRounds === 1 ? 1 : mode.rounds })))));
+  it.each(cases)('preserves $mode $size-member requested=$requestedRounds rounds, roles and $judge verdict', async ({ mode, rounds, positions, size, judge, requestedRounds }) => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-20T00:00:00Z'));
+    const registry = registryWithTwoEngines();
+    for (const id of ['e3', 'e4']) registry.register({ ...registry.get('e1'), id, displayName: id });
+    const calls: Array<Parameters<EngineAdapter['dispatch']>[0]> = [];
+    const events: TeamEvent[] = [];
+    const signal = new AbortController().signal;
+    const result = await runTeamTribunal({
+      question: 'Keep rollback?', membersPerSide: size, rounds: requestedRounds, mode,
+      composeMode: 'explicit', explicitTeams: size === 1 ? [['e1'], ['e2']] : [['e1', 'e2', 'e3'], ['e3', 'e2', 'e1']],
+      engines: ['e1', 'e2', 'e3', 'e4'], registry, timeout: 10, outputDir: agonHome, signal,
+      onEvent: event => events.push(event as TeamEvent),
+      adapter: { dispatch: async options => {
+        calls.push(options);
+        const finalRound = options.prompt.match(/FINAL ARGUMENT FOR ROUND (\d+)/)?.[1];
+        const position = options.prompt.split('\n')[0].split(' — ')[0].slice('## TEAM '.length);
+        return { exitCode: 0, timedOut: false, stderr: '', durationMs: 1, usage: { totalTokens: 2 },
+          stdout: options.prompt.includes('TRIBUNAL JUDGE')
+            ? judge === 'draw' ? 'SCORE_ALPHA: 110\nSCORE_BETA: 5\nWINNER: DRAW' : 'No numeric score or winner'
+            : finalRound ? ` final ${options.engine.id} ${finalRound} ${position} ` : ` strategy/support ${options.engine.id} ` };
+      } } as EngineAdapter,
+    });
+    const expectedPositions = mode === 'postmortem' && size === 3
+      ? ['Timeline analyst', 'Root-cause investigator'] : positions;
+    const phaseCount = size === 1 ? 2 : 3;
+    expect(calls).toHaveLength(rounds * phaseCount * 2 + 1);
+    expect(calls.every(call => call.mode === 'exec' && call.signal === signal && call.cwd === agonHome)).toBe(true);
+    expect(calls.every(call => call.systemPrompt === 'Return text only. Do not use tools, read files, or modify the workspace.')).toBe(true);
+    expect(calls.at(-1)?.engine.id).toBe(size === 1 ? 'e3' : 'e4');
+    expect(Object.keys(result).sort()).toEqual(['format', 'matchId', 'mode', 'scorecards', 'submissions', 'task', 'teams', 'timestamp', 'winnerTeamId']);
+    expect(result).toMatchObject({ mode: 'tribunal', task: 'Keep rollback?', winnerTeamId: null,
+      format: { membersPerSide: size, label: `${size}v${size}` }, timestamp: '2026-10-20T00:00:00.000Z' });
+    for (const [index, team] of result.teams.entries()) {
+      const synthesizer = team.members.find(member => member.role === 'reviewer') ?? team.members[0];
+      const finalOutput = `final ${synthesizer.engineId} ${rounds} ${expectedPositions[index].toUpperCase()}`;
+      expect(calls.at(-1)?.prompt).toContain(`## TEAM ${index === 0 ? 'ALPHA' : 'BETA'} (${expectedPositions[index]}):\n${finalOutput}`);
+      expect(result.scorecards[team.teamId]).toEqual({ teamId: team.teamId,
+        score: judge === 'draw' ? index === 0 ? 100 : 5 : 50,
+        breakdown: { position: expectedPositions[index] } });
+      expect(result.submissions[team.teamId]).toMatchObject({ teamId: team.teamId,
+        finalOutput, totalTokens: rounds * phaseCount * 2,
+        wallClockMs: 0, collaborationLift: 0 });
+      expect(result.submissions[team.teamId].trace).toHaveLength(rounds * phaseCount);
+      expect(result.submissions[team.teamId].trace.map(item => item.round))
+        .toEqual(Array.from({ length: rounds }, (_, round) => Array(phaseCount).fill(round + 1)).flat());
+    }
+    expect(events.filter(event => event.type === 'team:round-start')).toHaveLength(rounds * 2);
+    expect(events.filter(event => event.type === 'team:round-done')).toHaveLength(rounds * 2);
+    expect(events.slice(-2)).toEqual([{ type: 'team:winner', data: { winnerTeamId: null } },
+      { type: 'team:match-done', data: {} }]);
+  });
+});
+
+describe.each(['legacy', 'physical'] as const)('team prompt routing (%s cooperative/Brainstorm; Tribunal match remains legacy)', implementation => {
   const runtime = createTeamBrainstormRuntime({
     loadConfig, classifyTask, readRatings: getRatings, updateTeamElo,
     loadConfidenceFloor: loadTeamConfidenceFloor, buildKernDraftPrompt, parseKernDraft,
@@ -173,6 +280,7 @@ describe.each(['legacy', 'physical'] as const)('team prompt routing (%s)', imple
   });
   const runTeamBrainstorm = implementation === 'legacy' ? legacyTeamBrainstorm : runtime.runTeamBrainstorm;
   const runTeamCoopBrainstorm = implementation === 'legacy' ? legacyTeamCoopBrainstorm : runtime.runTeamCoopBrainstorm;
+  const runTeamCoopTribunal = implementation === 'legacy' ? legacyTeamCoopTribunal : physicalTeamCoopTribunal;
   it.each(['none', 'draft', 'synthesis'] as const)('preserves Brainstorm raw output and failure fallback (failure=%s)', async failure => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-10-20T00:00:00Z'));
@@ -348,6 +456,68 @@ describe.each(['legacy', 'physical'] as const)('team prompt routing (%s)', imple
       { type: 'team:member-dispatch', data: { teamId: 'baseline', engineId: 'e3', role: 'reviewer' } },
       { type: 'team:round-done', data: { teamId: 'baseline', round } },
     ]));
+  });
+
+  it.each([false, true])('characterizes concurrent Tribunal supports (first rejects=%s)', async rejects => {
+    const registry = registryWithTwoEngines();
+    for (const id of ['e3', 'e4']) registry.register({ ...registry.get('e1'), id, displayName: id });
+    const team: TeamSpec = {
+      teamId: 'parallel', name: 'Parallel', lineupKey: 'e1+e2+e3+e4',
+      source: 'explicit', aggregateElo: 100,
+      members: [
+        { engineId: 'e1', role: 'architect', weight: 0.25 },
+        { engineId: 'e2', role: 'implementer', weight: 0.25 },
+        { engineId: 'e3', role: 'implementer', weight: 0.25 },
+        { engineId: 'e4', role: 'reviewer', weight: 0.25 },
+      ],
+    };
+    const first = Promise.withResolvers<string>();
+    const second = Promise.withResolvers<string>();
+    const bothStarted = Promise.withResolvers<void>();
+    const secondDone = Promise.withResolvers<void>();
+    const calls: Array<Parameters<EngineAdapter['dispatch']>[0]> = [];
+    const events: TeamEvent[] = [];
+    let supportsStarted = 0;
+    const adapter = { dispatch: async (options: Parameters<EngineAdapter['dispatch']>[0]) => {
+      calls.push(options);
+      let stdout = options.engine.id === 'e1' ? 'strategy' : 'final';
+      if (options.engine.id === 'e2' || options.engine.id === 'e3') {
+        if (++supportsStarted === 2) bothStarted.resolve();
+        stdout = await (options.engine.id === 'e2' ? first.promise : second.promise);
+      }
+      return { exitCode: 0, timedOut: false, stdout, stderr: '', durationMs: 1 };
+    } } as EngineAdapter;
+    const running = runTeamCoopTribunal(team, 'against', 'rollback?', 1, 'red-team',
+      registry, adapter, 10, agonHome, event => {
+        events.push(event);
+        if (event.type === 'team:member-done' && event.data.engineId === 'e3') secondDone.resolve();
+      });
+    const outcome = running.then(value => ({ value }), error => ({ error }));
+    await bothStarted.promise;
+    expect(calls.map(call => call.engine.id)).toEqual(['e1', 'e2', 'e3']);
+    if (rejects) {
+      first.reject(new Error('support failed'));
+      expect(await outcome).toEqual({ error: new Error('support failed') });
+      expect(events.some(event => event.type === 'team:member-done')).toBe(false);
+      // Legacy rejection does not cancel the pending sibling.
+      second.resolve('second evidence');
+      await secondDone.promise;
+      expect(events.at(-1)).toEqual({ type: 'team:member-done', data: { teamId: 'parallel', engineId: 'e3' } });
+      expect(calls.map(call => call.engine.id)).toEqual(['e1', 'e2', 'e3']);
+      expect(events.some(event => event.type === 'team:round-done')).toBe(false);
+    } else {
+      second.resolve('second evidence');
+      await secondDone.promise;
+      expect(calls.map(call => call.engine.id)).toEqual(['e1', 'e2', 'e3']);
+      first.resolve('first evidence');
+      const result = await running;
+      expect(calls.map(call => call.engine.id)).toEqual(['e1', 'e2', 'e3', 'e4']);
+      expect(calls[3].prompt).toContain('first evidence\n\n---\n\nsecond evidence');
+      expect(result.submission.trace.map(step => step.actor)).toEqual(['e1', 'e3', 'e2', 'e4']);
+      expect(events.filter(event => event.type === 'team:member-done').map(event => event.data.engineId))
+        .toEqual(['e3', 'e2']);
+      expect(result.arguments).toEqual(['final']);
+    }
   });
 
   it.each([0, 1, 2])('propagates Tribunal phase %i failure without later dispatch', async failedCall => {

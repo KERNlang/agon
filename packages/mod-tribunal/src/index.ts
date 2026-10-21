@@ -9,3 +9,8 @@ export const IMPLEMENTATION_KIND = 'physical' as const;
 export { createMod } from './implementation.js';
 export { createMod as default } from './implementation.js';
 export { runTribunal } from './implementation.js';
+export {
+  getModeConfig, buildModePrompt, buildModeSummaryPrompt,
+  isTribunalMode, isTribunalProtocol, TRIBUNAL_MODES, TRIBUNAL_PROTOCOLS,
+} from './modes.js';
+export type { TribunalMode, TribunalModeConfig, TribunalProtocol } from './modes.js';

@@ -14,3 +14,7 @@ export {
   isTribunalMode, isTribunalProtocol, TRIBUNAL_MODES, TRIBUNAL_PROTOCOLS,
 } from './modes.js';
 export type { TribunalMode, TribunalModeConfig, TribunalProtocol } from './modes.js';
+export { createTribunalRuntime, buildFallbackSummary, requireNonEmptyDispatchText } from './runtime.js';
+export type { TribunalRuntimeOptions, TribunalRuntimeEffects, TribunalEvent, TribunalPosition, TribunalRound, TribunalResult } from './runtime.js';
+export { createTribunalHostServices } from './host.js';
+export type { TribunalHostEffects, TribunalHostServices, TribunalHostSession, TribunalModServices, TribunalInvocationContext } from './host.js';

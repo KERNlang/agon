@@ -1,4 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { cleanupTestAgonHome, setupTestAgonHome } from '../helpers/agon-home.js';
 import type { EngineDispatchOptions, InvocationContext } from '@kernlang/agon-mod-api';
 import { glicko } from '@kernlang/agon-mod-ratings';
 import { classifyTask } from '@kernlang/agon-support-dedup';
@@ -6,6 +9,8 @@ import { buildKernDraftPrompt, parseKernDraft } from '@kernlang/protocol';
 import { EngineRegistry as CatalogEngineRegistry } from '@kernlang/agon-support-engine-catalog';
 import { tracker } from '../../packages/core/src/signals/token-tracker.js';
 import type { BrainstormModServices } from '@kernlang/agon-mod-brainstorm';
+import type { TribunalModServices } from '@kernlang/agon-mod-tribunal';
+import { createTribunalRuntime } from '@kernlang/agon-mod-tribunal';
 import * as kernel from '@kernlang/agon-kernel';
 import { getRatings, pickTopRatedEngine } from '@kernlang/agon-core';
 import { EngineRegistry as CoreEngineRegistry } from '../../packages/core/src/signals/engine-registry.js';
@@ -143,6 +148,63 @@ describe.each([decorateCliFirstPartyServices, decorateMcpFirstPartyServices])('F
     const services = await decorate({ id: 'custom.example' } as never, {} as never);
     expect(services).not.toHaveProperty('forge');
     expect(services).not.toHaveProperty('patchApplication');
+  });
+});
+
+describe('CLI Tribunal host wiring', () => {
+  it('loads user participants and a configured summary engine outside the panel', async () => {
+    const home = setupTestAgonHome('tribunal-custom-engines');
+    try {
+      const enginesDir = join(home, 'engines');
+      mkdirSync(enginesDir, { recursive: true });
+      for (const id of ['custom-alpha', 'custom-beta', 'custom-judge']) {
+        writeFileSync(join(enginesDir, `${id}.json`), JSON.stringify({
+          schemaVersion: 3, id, displayName: id, isLocal: true, binary: 'sh', timeout: 30,
+          exec: { args: [] }, review: { args: [] },
+        }));
+      }
+      vi.spyOn(glicko, 'seedNewEnginesFromRegistry').mockReturnValue([]);
+      vi.spyOn(glicko, 'updateGlickoRanked').mockImplementation(() => {});
+      fixture.loadConfig.mockReturnValueOnce({ cesarEngine: 'custom-judge' });
+      const services = await decorateCliFirstPartyServices({ id: 'agon.tribunal' } as never, {} as never) as TribunalModServices;
+      const signal = new AbortController().signal;
+      const session = await services.tribunal!.open({
+        invocationId: 'user-engines', cwd: home, platform: 'darwin-arm64', signal, config: {},
+      });
+      const result = await createTribunalRuntime(session.effects)({
+        question: 'Q', engines: ['custom-alpha', 'custom-beta'], rounds: 1, protocol: 'chained',
+        registry: session.registry, adapter: session.adapter, timeout: 1, outputDir: home, cwd: home, signal,
+      });
+      expect(result.summary).toBe('fixture answer');
+      expect(fixture.dispatch.mock.calls.map(([request]) => request.engine.id))
+        .toEqual(['custom-alpha', 'custom-beta', 'custom-judge']);
+      expect(fixture.dispatch.mock.calls.every(([request]) => request.engine.tier === 'user')).toBe(true);
+      expect(fixture.loadConfig).toHaveBeenCalledWith(home);
+    } finally {
+      cleanupTestAgonHome(home);
+    }
+  });
+  it.each(['agon.tribunal', 'agon.conquer', 'agon.pipeline-orchestration'])('binds %s lazily and checks Tribunal authority on dispatch', async id => {
+    const load = vi.spyOn(CatalogEngineRegistry.prototype, 'load').mockImplementation(() => {});
+    const services = await decorateCliFirstPartyServices({ id } as never, {} as never) as TribunalModServices;
+    expect(services.tribunal).toBeDefined();
+    expect(load).not.toHaveBeenCalled();
+    expect(fixture.adapterOpened).not.toHaveBeenCalled();
+    const context = { invocationId: 'tribunal-wiring', cwd: '/fixture/project', platform: 'darwin-arm64' as const,
+      signal: new AbortController().signal, config: {} };
+    const session = await services.tribunal!.open(context);
+    expect(load).toHaveBeenCalledExactlyOnceWith('/fixture/engines');
+    expect(fixture.assertCli).toHaveBeenCalledWith('cli', 'tribunal');
+    session.effects.loadConfig('/ignored');
+    expect(fixture.loadConfig).toHaveBeenCalledWith(context.cwd);
+    fixture.assertCli.mockImplementationOnce(() => { throw new Error('Tribunal disabled'); });
+    await expect(session.adapter.dispatch({ engine: fixture.engine as never, prompt: 'Q', cwd: context.cwd,
+      mode: 'exec', timeout: 1, outputDir: '/unused' })).rejects.toThrow('Tribunal disabled');
+    expect(fixture.dispatch).not.toHaveBeenCalled();
+  });
+  it('does not expose Tribunal host effects to unrelated mods', async () => {
+    expect(await decorateCliFirstPartyServices({ id: 'custom.example' } as never, {} as never))
+      .not.toHaveProperty('tribunal');
   });
 });
 

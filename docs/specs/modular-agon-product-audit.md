@@ -1,5 +1,37 @@
 # Installed-product audit and repair ledger
 
+## Standalone Tribunal command retired — 2026-10-23
+
+Removed the unused 203-line standalone CLI command. Generated dispatch remains
+authoritative. The existing guard rejects reintroducing the legacy file. Its
+original flags remain in a frozen parity fixture, with source commit, path and
+SHA-256. TypeScript AST extraction from that Git object verified the exact
+metadata and arguments. Dynamic glob consumers must be checked when retiring
+files: the first run exposed this parity-test consumer, which was repaired
+without weakening its assertions. The failed run remains archived.
+
+Isolated Codex review found no concrete runtime regression. The removal guard
+failed before deletion and passed afterward. All 11,109 tests passed, six skipped;
+build, types, release metadata and supply-chain checks passed. The combined
+20-minute harness timed out during lint and remains recorded as failed. Lint,
+re-export and whitespace checks then passed separately on unchanged source.
+Two rebuilt CLI runs, normal and quiet, passed with persisted status and fixture
+judging. No live provider launched.
+
+Durable evidence: `/Users/ra/dev/modular-agon-remediation/`.
+Combined run: `tribunal-retirement-contract-qualified.receipt.json`, log SHA-256
+`3d9c873e69f9f6a074f61ceebdd975dcae0d65887d55834e13e936e678742f69`.
+Remaining gates: `tribunal-retirement-final-checks.receipt.json`, log SHA-256
+`6f2d6aeb00d52ab976ae92de86d238b8d457b7602dc3b9aa179bc83baeaa3eca`.
+Review: `tribunal-command-retirement-codex-review.log`, SHA-256
+`4d8d7800c2e39a613a0fa604e4eef72369e6b383d2b7d7488ec06502c4cd6d3d`.
+Negative control: `tribunal-command-retirement-red.receipt.json`.
+Live runs: `tribunal-cli-smoke-v6.receipt.json`.
+
+Plan and legacy Conquer still consume the Forge runtime binding; it is not
+retired. Original aggregate release acceptance remains incomplete. Global Agon
+and personal state remain untouched. Nothing was installed or pushed.
+
 ## Tribunal session ownership — 2026-10-23
 
 Tribunal now owns session preparation, progress, result presentation and ordered

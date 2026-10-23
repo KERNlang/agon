@@ -1,0 +1,57 @@
+{
+  "sourceCommit": "e8b1f2dd2528646df18ba4e6298e77a53cf44dc0",
+  "sourcePath": "packages/cli/src/commands/conquer.ts",
+  "sourceSha256": "9242bbc127d8bd331164e2731b432be39cc6a3bc881bcaf392a2bf89e4632d91",
+  "command": {
+    "meta": {
+      "name": "conquer",
+      "description": "Supervised-autonomous build: Cesar drives an external builder CLI (codex/claude/agy) unattended toward a task, convening nero/tribunal/council on forks, and stops at a human merge gate. `agon conquer \"<task>\" --gate \"<test cmd>\"`."
+    },
+    "args": {
+      "task": {
+        "type": "positional",
+        "description": "What to build.",
+        "required": false
+      },
+      "builder": {
+        "type": "string",
+        "alias": "b",
+        "description": "Builder engine (codex|claude|agy). Default: codex if active, else the first active engine."
+      },
+      "engines": {
+        "type": "string",
+        "alias": "e",
+        "description": "Advisor pool for consults (comma-separated). Default: active orchestration engines minus the builder."
+      },
+      "gate": {
+        "type": "string",
+        "alias": "g",
+        "description": "REQUIRED — the acceptance gate command (build/typecheck/lint/tests), e.g. \"npm run build && npm test\". This IS the done-oracle."
+      },
+      "gateTimeout": {
+        "type": "string",
+        "description": "Per-gate timeout in seconds (default 1800)."
+      },
+      "maxTurns": {
+        "type": "string",
+        "description": "Max builder turns (default 40)."
+      },
+      "maxHours": {
+        "type": "string",
+        "description": "Wall-clock cap in hours (default: none)."
+      },
+      "timeout": {
+        "type": "string",
+        "description": "Per-builder-turn timeout in seconds (default 600)."
+      },
+      "push": {
+        "type": "boolean",
+        "description": "On success, commit and push the isolated conquer branch (prints a PR hint). Default: leave the isolated branch/worktree for review."
+      },
+      "label": {
+        "type": "string",
+        "description": "Human-readable suffix baked into the run dir name."
+      }
+    }
+  }
+}

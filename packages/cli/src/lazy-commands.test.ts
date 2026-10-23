@@ -162,6 +162,7 @@ describe('lazySubCommands — full parity with the real command modules', () => 
 
   it('physical commands do not retain a legacy dynamic import', () => {
     expect(() => readFileSync(join(__dirname, 'commands/tribunal.ts'), 'utf-8')).toThrow(/ENOENT/);
+    expect(() => readFileSync(join(__dirname, 'commands/conquer.ts'), 'utf-8')).toThrow(/ENOENT/);
     const sourceText = readFileSync(join(__dirname, 'lazy-commands.ts'), 'utf-8');
     expect(sourceText).not.toContain("'daemonCommand'");
     expect(sourceText).not.toContain("import('./commands/ask.js')");

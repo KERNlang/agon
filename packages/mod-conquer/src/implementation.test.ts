@@ -248,7 +248,18 @@ it.each(['uncommitted', 'committed', 'drafted', 'draft-failed', 'draft-cancelled
   }
   const finish = vi.spyOn(services.runs!, 'finish');
   const start = vi.spyOn(services.runs!, 'start');
-  const result = await runConquerTaskImpl({ task: 'publish feature', gate: 'test -f feature.txt',
+  const invoke: typeof runConquerTaskImpl = state === 'draft-disabled' ? async (input, context, host) => {
+    let command: CommandContribution | undefined;
+    const registrar = new Proxy({}, { get: (_, method) => (...args: unknown[]) => {
+      if (method === 'command' && args[0] === 'cli') command = args[1] as CommandContribution;
+      return () => {};
+    } }) as Registrar;
+    await (await createMod(host)).activate(registrar);
+    const output = await command!.run(input, context);
+    if (Symbol.asyncIterator in output) throw new Error('Unexpected streaming Conquer result');
+    return output;
+  } : runConquerTaskImpl;
+  const result = await invoke({ task: 'publish feature', gate: 'test -f feature.txt',
     builder: 'builder', maxTurns: '1', ...(state === 'no-push' ? {} : { push: true }) },
     { invocationId: 'publication', cwd, platform: 'darwin-arm64', signal: controller.signal, config: {}, onWorkflowEvent: vi.fn() }, services);
   expect(git(['rev-parse', 'HEAD'])).toBe(sourceHead);
@@ -295,6 +306,11 @@ it.each(['uncommitted', 'committed', 'drafted', 'draft-failed', 'draft-cancelled
       if (hasDraft) {
         expect(payload.pullRequest.url).toContain('https://github.com/fixture/repo/compare/');
         expect(dispatch).toHaveBeenCalledTimes(state === 'draft-disabled' ? 1 : 2);
+        if (state === 'draft-disabled') {
+          expect(result.stdout).toContain(`Pushed ${payload.worktree.branch}.`);
+          expect(result.stdout).toContain(payload.pullRequest.mergeHint);
+          expect(result.stdout).toContain('merge gate');
+        }
         const saved = JSON.parse(readFileSync(join(remote, 'receipts', `${payload.receiptId}.json`), 'utf8'));
         expect(saved.payload.publication.ok).toBe(true);
         expect(saved.payload.pullRequest.usedTemplate).toBe(state !== 'drafted');

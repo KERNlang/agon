@@ -7,6 +7,7 @@ import { createGeneratedLazySubCommands } from '../../packages/cli/src/lazy-comm
 import { disposeProcessSurfaceAuthority, initializeProcessSurfaceAuthority } from '../../packages/cli/src/surface-authority-runtime.js';
 import frozenWorktree from '../fixtures/modular-worktree-command-contract.json';
 import frozenTribunal from '../fixtures/modular-tribunal-command-contract.json';
+import frozenConquer from '../fixtures/modular-conquer-command-contract.json';
 
 type CommandDef = {
   meta?: { name?: string };
@@ -32,7 +33,7 @@ const physicalTopLevel = [
 ] as const;
 
 function allLegacyCommands(): CommandDef[] {
-  return [frozenWorktree.command, frozenTribunal.command, ...Object.values(legacyModules).flatMap((module) => Object.values(module))]
+  return [frozenWorktree.command, frozenTribunal.command, frozenConquer.command, ...Object.values(legacyModules).flatMap((module) => Object.values(module))]
     .filter((value): value is CommandDef => Boolean(value && typeof value === 'object' && (value as CommandDef).meta?.name));
 }
 

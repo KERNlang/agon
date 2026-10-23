@@ -1,5 +1,45 @@
 # Installed-product audit and repair ledger
 
+## Conquer standalone command retirement — 2026-10-24
+
+Removed the unused 233-line legacy CLI command. The generated CLI already used
+the physical Conquer contribution. Its option contract remains in
+`tests/fixtures/modular-conquer-command-contract.json`, extracted from Git object
+`e8b1f2dd2528646df18ba4e6298e77a53cf44dc0`. A negative control proved that the
+retirement guard fails while the old file exists. The old mocked publication
+test now runs through the registered physical command in the existing real-Git
+matrix: one push, saved publication receipt, no disabled Forge dispatch, and
+readable merge instructions. The public Forge facade remains for its consumers.
+
+Isolated Agon Codex review identified two evidence limits. The option-parity
+test checks behavior, not exact help descriptions; generated descriptions already
+differed before this removal. The fixture provenance is independently verified
+against the recorded Git object, including a mutated-description negative
+control, but is not a recurring history-dependent suite gate. Neither limit is
+reported as byte-identical generated help or ongoing provenance qualification.
+
+Full suite: 11,150 passed, six skipped (645.041 seconds). Build, types, lint,
+re-export, migration-ledger, release-set and supply-chain gates passed. One final
+compiled run passed all 27 workflow cases (20.781 seconds), with isolated durable
+state, local fixture engines and zero provider launches. Native evidence is
+macOS arm64, Node 26.12.1. This is not aggregate release acceptance.
+
+Durable receipts remain outside the shipping tree in
+`/Users/ra/dev/modular-agon-remediation/`:
+
+- `conquer-command-retirement-suite`: log SHA-256
+  `ed6e188adb845c2899efab90a2dc6d60981596e7a493ae29801491a3193937c5`.
+- `conquer-command-retirement-build`: log SHA-256
+  `e192682630b446f2d293520c5e8cc963d7f5fde615d479cf1c7cd901097b8101`.
+- `conquer-command-retirement-built-final`: log SHA-256
+  `26d6c608e17f722f5508a311fdc23be15e3765520d230e92663285af80f9e724`.
+- Review packet SHA-256
+  `ad7a4b2d6f89ac8be7f6265b7ce8a8822bed19ed6ad97513cd207b405f2a1682`;
+  review log SHA-256
+  `1bdbd1e2178172e04c664975f48d725b1947aa4a9cdd255e4a40a009bac8c25e`.
+- `conquer-command-contract-provenance.receipt.json`: exact read-only extraction
+  verification command, source hash, exit code and negative-control result.
+
 ## Conquer physical CLI presentation — 2026-10-24
 
 The registered CLI contribution now prints readable progress, worktree recovery,

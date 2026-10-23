@@ -5,9 +5,6 @@ import type { ConquerModServices } from '@kernlang/agon-mod-conquer';
 import type { GoalModServices } from '@kernlang/agon-mod-goal';
 import * as core from '@kernlang/agon-core';
 import * as worktree from '@kernlang/agon-support-worktree';
-import * as forge from '@kernlang/agon-forge';
-import * as adapters from '@kernlang/agon-adapter-cli';
-import { conquerCommand } from '../../packages/cli/src/commands/conquer.js';
 import * as authority from '../../packages/cli/src/surface-authority-runtime.js';
 import { decorateCliFirstPartyServices } from '../../packages/cli/src/first-party-services.js';
 
@@ -67,37 +64,6 @@ it.each([
   } finally { vi.restoreAllMocks(); }
 });
 
-it('legacy Conquer keeps the successful push but skips prose when Forge is disabled', async () => {
-  const previousExit = process.exitCode;
-  vi.spyOn(core, 'ensureAgonHome').mockImplementation(() => {});
-  vi.spyOn(core, 'loadConfig').mockReturnValue({ protectedPushBranches: [] } as ReturnType<typeof core.loadConfig>);
-  vi.spyOn(core, 'createRunDir').mockReturnValue({ id: 'fixture', path: '/fixture/run' } as ReturnType<typeof core.createRunDir>);
-  vi.spyOn(core, 'defaultBaseBranch').mockReturnValue('main');
-  vi.spyOn(core, 'githubRepoUrl').mockReturnValue('');
-  vi.spyOn(core.EngineRegistry.prototype, 'load').mockImplementation(() => {});
-  vi.spyOn(core.EngineRegistry.prototype, 'activeIds').mockReturnValue(['fixture']);
-  vi.spyOn(core.EngineRegistry.prototype, 'resolveId').mockReturnValue('fixture');
-  vi.spyOn(adapters, 'createCliAdapter').mockReturnValue({} as ReturnType<typeof adapters.createCliAdapter>);
-  vi.spyOn(forge, 'createConquerIsolation').mockReturnValue({ repoRoot: '/fixture/root', branch: 'conquer/fixture', path: '/fixture/worktree' });
-  vi.spyOn(forge, 'runConquer').mockResolvedValue({ done: true, lastClaim: 'verified', stopReason: 'done', turnsUsed: 1, consultsRun: 0 } as Awaited<ReturnType<typeof forge.runConquer>>);
-  const draft = vi.spyOn(forge, 'runPrText').mockResolvedValue({ ok: true, title: 'unexpected', body: 'unexpected', engineId: 'fixture' });
-  const git = vi.spyOn(core, 'spawnWithTimeout').mockImplementation(async options => ({
-    exitCode: 0, stdout: options.args?.[0] === 'rev-parse' ? 'conquer/fixture' : '', stderr: '', durationMs: 1, timedOut: false,
-  }));
-  vi.spyOn(authority, 'captureProcessSurfaceAuthority').mockReturnValue(() => {});
-  vi.spyOn(authority, 'assertProcessSurfaceAvailable').mockImplementation((_surface, id) => {
-    if (id === 'forge') throw new Error('fixture Forge disabled');
-  });
-  const output = vi.spyOn(console, 'log').mockImplementation(() => {});
-  try {
-    process.exitCode = undefined;
-    await conquerCommand.run({ args: { task: 'fixture task', builder: 'fixture', gate: 'true', push: true } });
-    expect(draft).not.toHaveBeenCalled();
-    expect(git.mock.calls.filter(([options]) => options.args?.[0] === 'push')).toHaveLength(1);
-    expect(output.mock.calls.flat().join('\n')).toContain('merge gate');
-    expect(process.exitCode).toBeUndefined();
-  } finally { process.exitCode = previousExit; vi.restoreAllMocks(); }
-});
 
 it('binds Conquer publication to kernel configuration rather than mod-owned configuration', async () => {
   const config = { protectedPushBranches: ['kernel-protected'], commitCoAuthor: '' } as ReturnType<typeof core.loadConfig>;

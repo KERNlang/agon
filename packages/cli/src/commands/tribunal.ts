@@ -6,6 +6,7 @@ import {
 import { resolveBuiltinEnginesDir } from '../lib/engines-dir.js';
 import type { ForgeEvent, RunStatusEngine } from '@kernlang/agon-core';
 import { createCliAdapter } from '@kernlang/agon-adapter-cli';
+import { renderTribunalResult } from '@kernlang/agon-mod-tribunal';
 import { getModeConfig, isTribunalMode, isTribunalProtocol, runTribunal } from '@kernlang/agon-forge';
 import type { TribunalMode, TribunalProtocol } from '@kernlang/agon-forge';
 import { header, fail, info, warn, bold, dim, red } from '../blocks/output-format.js';
@@ -196,58 +197,7 @@ export const tribunalCommand = defineCommand({
       return;
     }
 
-    // Display results
-    for (const round of result.rounds) {
-      console.log('');
-      header(`Round ${round.round}`);
-      for (const pos of round.positions) {
-        console.log('');
-        console.log(`  ${bold(pos.engineId)} ${dim(`(${pos.position})`)}`);
-        // Show first 500 chars of argument
-        const arg = pos.arguments[0] ?? '';
-        const lines = arg.slice(0, 500).split('\n');
-        for (const line of lines) {
-          console.log(`  ${line}`);
-        }
-        if (arg.length > 500) console.log(`  ${dim('...(truncated)')}`);
-      }
-    }
-
-    // Surface failures before the verdict — easy to miss if buried in
-    // mid-run console.warn output. Dedupe by engineId so an engine that
-    // failed both rounds doesn't double-print.
-    if (failedEngines.length > 0) {
-      const byEngine = new Map<string, Array<{ phase: string; error: string }>>();
-      for (const f of failedEngines) {
-        const arr = byEngine.get(f.engineId) ?? [];
-        arr.push({ phase: f.phase, error: f.error });
-        byEngine.set(f.engineId, arr);
-      }
-      console.log('');
-      header('Engines that hit errors');
-      for (const [engineId, fails] of byEngine.entries()) {
-        warn(`${bold(engineId)} (${fails.length} failure${fails.length > 1 ? 's' : ''})`);
-        for (const f of fails) {
-          const snippet = f.error.length > 160 ? `${f.error.slice(0, 160)}…` : f.error;
-          console.log(`  ${dim(f.phase)}: ${red(snippet)}`);
-        }
-      }
-    }
-
-    // Panel health is non-negotiable output: a retried or dropped seat-round
-    // must be visible in the final render, right next to the verdict it shaped.
-    if (result.panelHealth?.banner) {
-      console.log('');
-      warn(result.panelHealth.banner);
-    }
-
-    // Summary
-    console.log('');
-    header('Verdict');
-    console.log('');
-    console.log(result.summary);
-    console.log('');
-    info(dim(`Full debate saved: ${outputDir}`));
+    renderTribunalResult(result, failedEngines, outputDir, { log: console.log, header, warn, info, bold, dim, red });
     printRunSummary(status);
   },
 });

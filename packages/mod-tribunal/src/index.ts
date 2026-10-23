@@ -18,3 +18,5 @@ export { createTribunalRuntime, buildFallbackSummary, requireNonEmptyDispatchTex
 export type { TribunalRuntimeOptions, TribunalRuntimeEffects, TribunalEvent, TribunalPosition, TribunalRound, TribunalResult } from './runtime.js';
 export { createTribunalHostServices } from './host.js';
 export type { TribunalHostEffects, TribunalHostServices, TribunalHostSession, TribunalModServices, TribunalInvocationContext } from './host.js';
+export { renderTribunalResult } from './presentation.js';
+export type { TribunalFailure, TribunalOutput } from './presentation.js';

@@ -4,7 +4,7 @@ import type { ConquerPublicationResult } from './publication.js';
 import { prepareConquerPullRequest } from './pull-request.js';
 import type { ConquerPullRequest } from './pull-request.js';
 import { spawnWithTimeout } from '@kernlang/agon-support-engine-runtime';
-import type { ConquerHostServices } from './host.js';
+import type { ConquerHostServices, ConquerInvocationContext } from './host.js';
 import type { ConquerIsolation } from './isolation.js';
 import { readWorktreeSource, readWorktreePatch, defaultBaseBranch, githubRepoUrl } from '@kernlang/agon-support-worktree';
 import type { RunRecordHandle } from '@kernlang/agon-mod-api';
@@ -49,7 +49,7 @@ function objectResult(result: CommandResult): Record<string, Json> {
   const payload = result.result;
   return payload !== null && typeof payload === 'object' && !Array.isArray(payload) ? payload : {};
 }
-export async function runConquerTask(raw:Json,context:InvocationContext,services:ConquerModServices):Promise<CommandResult>{const input=normalizeConquerInput(raw as Record<string,Json>);const task=text(input.task)||(Array.isArray(input._)?input._.map(String).join(' ').trim():'');const gate=text(input.gate);if(!task)return{exitCode:1,stderr:'Conquer requires a task.\n'};if(!gate)return{exitCode:1,stderr:'Conquer requires an explicit --gate done oracle.\n'};const active = services.engines.listActive ? [...await services.engines.listActive(context)] : [];
+export async function runConquerTask(raw:Json,context:ConquerInvocationContext,services:ConquerModServices):Promise<CommandResult>{const input=normalizeConquerInput(raw as Record<string,Json>);const task=text(input.task)||(Array.isArray(input._)?input._.map(String).join(' ').trim():'');const gate=text(input.gate);if(!task)return{exitCode:1,stderr:'Conquer requires a task.\n'};if(!gate)return{exitCode:1,stderr:'Conquer requires an explicit --gate done oracle.\n'};const active = services.engines.listActive ? [...await services.engines.listActive(context)] : [];
   const explicitBuilder = text(input.builder);
   const explicitAdvisors = text(input.engines);
   let builder = explicitBuilder || (active.includes('codex') ? 'codex' : active[0]);
@@ -98,10 +98,24 @@ export async function runConquerTask(raw:Json,context:InvocationContext,services
     worktree = capabilities.createIsolation(task, run.id, source.baseSha);
     const retained = { ...worktree, baseSha: source.baseSha };
     await runs.writeArtifact(run, 'worktree.json', JSON.stringify(retained, null, 2), context);
-    const buildContext = { ...context, cwd: retained.path };
+    const { onWorkflowEvent, ...nestedContext } = context;
+    const notify = (event: Parameters<NonNullable<ConquerInvocationContext['onWorkflowEvent']>>[0]) => {
+      context.signal.throwIfAborted();
+      capabilities.assertCurrent();
+      onWorkflowEvent?.(event);
+      context.signal.throwIfAborted();
+      capabilities.assertCurrent();
+    };
+    notify({ type: 'conquer:start', data: { task, builder, advisors, gate, outputDir: run.path,
+      worktree: retained, dirtySourceExcluded: source.dirtySourceExcluded } });
+    const buildContext = { ...nestedContext, cwd: retained.path };
     const workflow = await runConquerWorkflow({
       task, builderEngine: builder, outputDir: run.path, signal: context.signal,
       caps: { maxTurns, maxWallClockMs: maxHours * 3_600_000 },
+      onTurn: turn => {
+        // Keep cancelled-result persistence, but do not publish stale progress.
+        if (!context.signal.aborted) notify({ type: 'conquer:turn', data: { ...turn } });
+      },
     }, {
       contextSpine: () => services.conquer?.contextSpine(buildContext) ?? Promise.resolve(''),
       build: async (prompt, systemPrompt) => {
@@ -201,7 +215,7 @@ export async function runConquerTask(raw:Json,context:InvocationContext,services
           branch: publication.branch, base, repoUrl }, {
           git, formatBody: policy.prBody,
           ...(capabilities.draftPullRequest ? { draft: draft => capabilities.draftPullRequest!(draft, async prompt => {
-            const response = await services.engines.dispatch(builder, prompt, { ...context, cwd: retained.path },
+            const response = await services.engines.dispatch(builder, prompt, buildContext,
               { timeoutSeconds: 300, textOnly: true, mode: 'exec' });
             if (!response || typeof response !== 'object' || Array.isArray(response)
               || response.exitCode !== 0 || response.timedOut === true) throw new Error('PR text generation failed');

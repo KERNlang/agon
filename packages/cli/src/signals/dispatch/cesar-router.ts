@@ -2,6 +2,7 @@ import { join } from 'node:path';
 import { markSessionCleanupFailed, sessionCleanupFailed, SESSION_CLEANUP_FAILURE_MESSAGE } from '../../cesar/session-health.js';
 import { runBrainstormSession } from '../../blocks/brainstorm-session.js';
 import { runTribunalSession } from '../../blocks/tribunal-session.js';
+import { runConquerSession } from '../../blocks/conquer-session.js';
 
 import { mkdirSync, appendFileSync } from 'node:fs';
 
@@ -63,6 +64,10 @@ export async function runPhysicalCesarWorkflow(
   signal = new AbortController().signal,
   cwd = resolveWorkingDir(),
 ): Promise<unknown> {
+  if (route === 'conquer') {
+    return runConquerSession(input, cb, signal, async (prepared, context) =>
+      await executeProcessCesarRoute(route, prepared, context) as PhysicalCesarCommandResult, cwd);
+  }
   if (route === 'tribunal') {
     return runTribunalSession(input, cb, signal, async (prepared, context) =>
       await executeProcessCesarRoute(route, prepared, context) as PhysicalCesarCommandResult, cwd);

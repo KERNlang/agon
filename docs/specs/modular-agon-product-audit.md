@@ -1,5 +1,46 @@
 # Installed-product audit and repair ledger
 
+## Conquer session owner — 2026-10-24
+
+Conquer now owns session presentation, history and outcome settlement. TUI,
+Cesar and the orchestration fallback execute the selected physical contribution
+with the job's signal. The CLI binds display and persistence effects. The obsolete
+142-line session handler is removed; its absence has a regression guard.
+The standalone CLI command and its human output remain a separate migration gap.
+
+Isolated Agon Codex review exposed three confirmed issues, now fixed: progress
+observers leaked into PR drafting, late cancellation could contradict committed
+history, and receipt failure could hide the execution error. History is now the
+session settlement boundary. A further negative control caught publication
+failure being recorded as an aborted workflow despite completed build work;
+the session now records a crash and preserves the publication error.
+
+Full suite: 11,139 passed, six skipped. Build, types, lint, re-export, release-set,
+supply-chain, migration-ledger and whitespace checks passed. Release metadata
+changes affect only CLI and Conquer payloads; no dependency was added.
+Two compiled smoke runs passed: eight Conquer cases, then all 25 combined
+Plan/Tribunal/Conquer cases. The final run used real durable generations, local
+Git worktrees and persisted session state. Fixture engines ran local subprocesses;
+no live provider launched. Native evidence: macOS arm64, Node 26.12.1.
+
+Durable evidence: `/Users/ra/dev/modular-agon-remediation/`.
+Full suite: `conquer-session-final-suite.receipt.json`, log SHA-256
+`bd93f3a5d2d75fd6ed16f4ac9d8be8f8190aeeff280b5109b8092d94dd63b154`.
+Build gates: `conquer-session-final-build.receipt.json`, log SHA-256
+`8c79f589bc5937195bea0f326d58f2a0cf6e6ead86d22fdcc083dd7c2b6ac6b1`.
+Review: `conquer-session-owner-codex-review.log`, SHA-256
+`c2e11e4bd03eebdbae5519ea3a5cc393411e92e4b0f4a507ce669fe5ead48811`.
+Final live run: `conquer-session-built-smoke-final.receipt.json`, log SHA-256
+`5da420f0288f4116a0c85d2a6fcdf9f41867a05880384df4c06334313c4ad30d`.
+Negative controls: `conquer-session-events-red`, `conquer-session-display-red`
+and `conquer-session-failure-status-red` receipts. Failed intermediate checks
+remain archived. The retirement-red run includes stale-build failures as well
+as the meaningful obsolete-file guard; it is not seven independent defects.
+
+This is increment evidence, not clean-commit aggregate release acceptance.
+Other ownership and release requirements remain open. Global Agon and personal
+state remain untouched. Nothing was pushed.
+
 ## Plan Tribunal owner binding — 2026-10-23
 
 Plan now binds the physical Tribunal runtime directly. Both the panel step and

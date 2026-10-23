@@ -6,6 +6,13 @@ import { createConquerIsolation } from './isolation.js';
 import type { ConquerIsolation, ConquerIsolationEffects } from './isolation.js';
 import type { ConquerPrDraft } from './pull-request.js';
 
+export interface ConquerInvocationContext extends InvocationContext {
+  readonly onWorkflowEvent?: (event: {
+    type: string;
+    data?: Record<string, unknown>;
+  }) => void;
+}
+
 export interface ConquerPublicationPolicy {
   readonly protectedPushBranches: readonly string[];
   commitBody(claim: string): string;

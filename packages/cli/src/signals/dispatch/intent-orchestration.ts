@@ -4,7 +4,7 @@ import { captureProcessSurfaceAuthority } from '../../surface-authority-runtime.
 
 import { ENGINE_COLORS } from '../../blocks/output-format.js';
 
-import { handleForge, handleCampfire, handleThink, handleCouncil, handleSynthesis, handleNeroChallenge, handleResearch, handleChrome, handleConquer, handleBuild, handleReviewMany, handleSanitize, handleNaturalize, handleMutate, runAgentMode, runAgentTeam } from '../../handlers/index.js';
+import { handleForge, handleCampfire, handleThink, handleCouncil, handleSynthesis, handleNeroChallenge, handleResearch, handleChrome, handleBuild, handleReviewMany, handleSanitize, handleNaturalize, handleMutate, runAgentMode, runAgentTeam } from '../../handlers/index.js';
 
 import { handleTeamTribunal } from '../../handlers/team-tribunal.js';
 
@@ -152,11 +152,11 @@ export async function dispatchOrchestrationIntent(intent: any, input: string, cb
       const _cqLabel = intent.task?.slice(0, 40) ?? 'conquer';
       const cqEpoch = cb.ctx.inputEpoch ?? 0;
       const cqUserTurns = countTrackedUserTurns(cb.ctx);
-      cb.runAsJob('conquer', _cqLabel, withThreadOutcome(_cqCwd, 'conquer', _cqLabel, async () => {
-        await handleConquer(intent.task ?? '', cb.dispatch, cb.ctx, { gate: intent.gate, builder: intent.builder, engineIds: intent.engineIds, maxTurns: intent.maxTurns, gateTimeoutSec: intent.gateTimeout, maxHours: intent.maxHours, turnTimeoutSec: intent.turnTimeout });
+      cb.runAsJob('conquer', _cqLabel, signal => withThreadOutcome(_cqCwd, 'conquer', _cqLabel, async () => {
+        await runPhysicalCesarWorkflow('conquer', { task: intent.task, gate: intent.gate, builder: intent.builder, engineIds: intent.engineIds, maxTurns: intent.maxTurns, gateTimeout: intent.gateTimeout, maxHours: intent.maxHours, turnTimeout: intent.turnTimeout }, cb, signal, _cqCwd);
         const chatContext = collectRecentEngineContext(cb.ctx, 14, 1500);
         if (chatContext) await continueCesarAfterResult(`Conquer build on: "${(intent.task ?? '').slice(0, 200)}"\n\n${chatContext}\n\nSummarize what was built + the done-oracle outcome, and recommend the next step (review/merge or keep going).`, cb, cqEpoch, cqUserTurns);
-      }, cb.ctx));
+      }, cb.ctx)());
       return { handled: true, ranAsJob: true };
     }
     case 'synthesis': {

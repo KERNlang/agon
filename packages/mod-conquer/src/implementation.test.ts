@@ -65,6 +65,44 @@ async function runConquerTask(...[input, context, services]: Parameters<typeof r
   return runConquerTaskImpl(input, context, withTribunalFixtureHost(withConquerHost(services)));
 }
 
+it.each(['complete', 'cancel-start'] as const)('reports Conquer session progress and retained work: %s', async scenario => {
+  const cwd = repo();
+  const controller = new AbortController();
+  const events: Array<{ type: string; data: Record<string, unknown> }> = [];
+  const dispatch = vi.fn(async (_id, _prompt, context) => {
+    writeFileSync(join(context.cwd, 'feature.txt'), 'review this feature\n');
+    return { exitCode: 0, stdout: 'CONQUER_DONE: feature exists', stderr: '', timedOut: false };
+  });
+  const services = { logger: { debug: vi.fn() }, receipts: { record: vi.fn(async () => 'fixture') },
+    engines: { listActive: async () => ['builder'], dispatch } } as unknown as ModServices;
+  const context = {
+    invocationId: 'conquer-session-events', cwd, platform: 'darwin-arm64' as const,
+    signal: controller.signal, config: {},
+    onWorkflowEvent(event: { type: string; data?: Record<string, unknown> }) {
+      if (!event.data) throw new Error('Missing workflow event data');
+      events.push({ type: event.type, data: event.data });
+      if (scenario === 'cancel-start' && event.type === 'conquer:start') controller.abort(new Error('cancelled at start'));
+    },
+  };
+  const running = runConquerTask({ task: 'build feature', gate: 'test -f feature.txt', maxTurns: '1' }, context, services);
+  if (scenario === 'cancel-start') {
+    await expect(running).rejects.toThrow('cancelled at start');
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(services.receipts.record).not.toHaveBeenCalled();
+  } else {
+    const result = await running;
+    expect(result.exitCode).toBe(0);
+    expect(events).toContainEqual({ type: 'conquer:turn', data: expect.objectContaining({ n: 1, action: 'done-check' }) });
+  }
+  expect(events[0]).toEqual({ type: 'conquer:start', data: expect.objectContaining({
+    builder: 'builder', advisors: [], gate: 'test -f feature.txt', task: 'build feature',
+    outputDir: expect.any(String), worktree: expect.objectContaining({ branch: expect.any(String), path: expect.any(String) }),
+  }) });
+  const retained = events[0].data.worktree as { path: string };
+  expect(existsSync(retained.path)).toBe(true);
+  expect(existsSync(join(cwd, 'feature.txt'))).toBe(false);
+});
+
 it.each(['success', 'failure', 'cancelled', 'committed'] as const)('retains a named review worktree after %s', async outcome => {
   const cwd = repo();
   writeFileSync(join(cwd, 'source-wip.txt'), 'keep source work\n');
@@ -138,6 +176,7 @@ it.each(['uncommitted', 'committed', 'drafted', 'draft-failed', 'draft-cancelled
   if (state === 'commit-switch') writeFileSync(join(hooks, 'post-commit'), '#!/bin/sh\ngit checkout -b hook-moved >&2\n', { mode: 0o755 });
   const sourceHead = git(['rev-parse', 'HEAD']);
   const dispatch = vi.fn(async (_id, prompt, context, options) => {
+    expect(context).not.toHaveProperty('onWorkflowEvent');
     if (prompt.startsWith('Write the pull-request text')) {
       processesAtDraft = spawned.mock.calls.length;
       expect(options).toMatchObject({ textOnly: true, timeoutSeconds: 300 });
@@ -183,7 +222,7 @@ it.each(['uncommitted', 'committed', 'drafted', 'draft-failed', 'draft-cancelled
   const start = vi.spyOn(services.runs!, 'start');
   const result = await runConquerTaskImpl({ task: 'publish feature', gate: 'test -f feature.txt',
     builder: 'builder', maxTurns: '1', ...(state === 'no-push' ? {} : { push: true }) },
-    { invocationId: 'publication', cwd, platform: 'darwin-arm64', signal: controller.signal, config: {} }, services);
+    { invocationId: 'publication', cwd, platform: 'darwin-arm64', signal: controller.signal, config: {}, onWorkflowEvent: vi.fn() }, services);
   expect(git(['rev-parse', 'HEAD'])).toBe(sourceHead);
   expect(git(['status', '--porcelain'])).toBe('');
   if (state === 'denied' || state === 'ask' || state === 'missing-policy') {

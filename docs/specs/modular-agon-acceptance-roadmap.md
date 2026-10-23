@@ -195,7 +195,7 @@ diagnostic run cannot satisfy that gate. Use `--no-write --json` on the platform
 checker to inspect full results without replacing tracked evidence. Standalone
 matrix output is not a source-bound release approval.
 
-Release requires S1B–S9 clean receipts; 49 packages/156 edges/872 frozen legacy assignments;
+Release requires S1B–S9 clean receipts; 49 packages/158 edges/872 frozen legacy assignments;
 all enable/disable/dependency/failure/rollback cases on five surfaces; complete
 kill-list removal; install/update/interruption/downgrade/offline/safe-mode tests;
 content-bound trust/grants; minimal pack contents; native performance budgets;

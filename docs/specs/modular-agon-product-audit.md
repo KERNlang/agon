@@ -1,5 +1,45 @@
 # Installed-product audit and repair ledger
 
+## Plan Tribunal owner binding — 2026-10-23
+
+Plan now binds the physical Tribunal runtime directly. Both the panel step and
+the pipeline step keep their existing options and Plan-owned artifact paths.
+The public Forge facade remains for other consumers; it is not retired here.
+No dependency was added.
+
+Four negative cases exposed a real settlement defect: after generation changes,
+ratings could update before the periodic authority monitor noticed revocation.
+The binding now checks Plan's captured authority at Tribunal runtime boundaries.
+Tests hold the monitor pending and verify refusal after rounds and summary,
+cancellation, no success export, and no completed event after refusal.
+
+Isolated Agon Codex review found no concrete regression. Its coverage questions
+were checked against runtime tests and actual built CLI adapter subprocesses.
+Two built smoke runs passed all 17 scenarios, including real ratings-file
+creation, Ratings disabled, and Tribunal revocation. All engines were local
+fixtures; no live provider launched. Native evidence is macOS arm64, Node 26.12.1.
+
+Full suite: 11,119 passed, six skipped. Build, types, lint, re-export, release-set,
+supply-chain and whitespace gates passed. The first full run correctly rejected
+stale Plan binding hashes in the migration ledger. The existing generator changed
+only 29 binding/derived hashes, not owners or acceptance requirements. Its 15
+focused checks and the complete suite then passed. Failed evidence is retained.
+
+Durable evidence: `/Users/ra/dev/modular-agon-remediation/`.
+Full suite: `plan-tribunal-qualified-suite-ledger.receipt.json`, log SHA-256
+`7204fccfab7e0b888be3492c6334fa2ff73f214962754a606a2d52530235113a`.
+Build gates: `plan-tribunal-qualified-build.receipt.json`, log SHA-256
+`d67745f12038d881cb78f2eb57a07da38546b4fc1d2a7085cfc35a70ec757e66`.
+Review: `plan-tribunal-owner-codex-review.log`, SHA-256
+`acbe12a900bc474a65024ef51f641d5a6b654ae415e9b859773ffd4b203eda88`.
+Negative control: `plan-tribunal-settlement-red.receipt.json`.
+Final live run: `plan-tribunal-built-smoke-final.receipt.json`, log SHA-256
+`4028873e2f1ad6adf4a66218dd7fa87e9c7502efabfd30f26e4e3ec4d5bb0b1b`.
+
+Remaining: legacy Conquer session ownership and other original migration and
+release requirements. This is increment evidence, not clean-commit aggregate
+release acceptance. Global Agon and personal state remain untouched. No push.
+
 ## Standalone Tribunal command retired — 2026-10-23
 
 Removed the unused 203-line standalone CLI command. Generated dispatch remains

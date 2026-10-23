@@ -23,6 +23,9 @@ vi.mock('@kernlang/agon-forge', async original => ({ ...await original<Record<st
   runBrainstorm: backends.brainstorm, runForge: backends.forge, runTribunal: backends.tribunal,
 }));
 import { buildLegacyBuildStepExecutors } from '../fixtures/modular-plan-build-steps-legacy.js';
+vi.mock('@kernlang/agon-mod-tribunal', async original => ({
+  ...await original<object>(), createTribunalRuntime: () => backends.tribunal,
+}));
 vi.mock('@kernlang/agon-mod-brainstorm', async original => {
   const actual = await original<typeof import('@kernlang/agon-mod-brainstorm')>();
   return { ...actual, createBrainstormRuntime: (...args: Parameters<typeof actual.createBrainstormRuntime>) => ({

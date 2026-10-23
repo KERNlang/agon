@@ -11,6 +11,9 @@ vi.mock('@kernlang/agon-forge', async original => ({ ...await original<Record<st
   runBrainstorm: backends.brainstorm, runTribunal: backends.tribunal, runCampfire: backends.campfire, runDelegate: backends.delegate,
 }));
 import { buildLegacyPanelStepExecutors } from '../fixtures/modular-plan-panel-steps-legacy.js';
+vi.mock('@kernlang/agon-mod-tribunal', async original => ({
+  ...await original<object>(), createTribunalRuntime: () => backends.tribunal,
+}));
 vi.mock('@kernlang/agon-mod-brainstorm', async original => {
   const actual = await original<typeof import('@kernlang/agon-mod-brainstorm')>();
   return { ...actual, createBrainstormRuntime: (...args: Parameters<typeof actual.createBrainstormRuntime>) => ({
@@ -33,6 +36,7 @@ it('keeps panel step algorithms out of the CLI host', () => {
   const source = readFileSync(new URL('../../packages/cli/src/handlers/plan-mode.ts', import.meta.url), 'utf8');
   expect(source).toContain('createPlanStepExecutors({');
   expect(source).not.toMatch(/import\s*\{[^}]*\brunBrainstorm\b[^}]*\}\s*from\s*['"]@kernlang\/agon-forge['"]/);
+  expect(source).not.toMatch(/import\s*\{[^}]*\brunTribunal\b[^}]*\}\s*from\s*['"]@kernlang\/agon-forge['"]/);
   expect(source).not.toContain('createPanelStepExecutors(');
   for (const kind of ['brainstorm', 'tribunal', 'campfire', 'delegate']) {
     expect(source).not.toMatch(new RegExp(`${kind}:\\s*wrap\\(`));

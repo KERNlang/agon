@@ -41,6 +41,10 @@ vi.mock('@kernlang/agon-mod-brainstorm', async original => {
   }) };
 });
 
+vi.mock('@kernlang/agon-mod-tribunal', async original => ({
+  ...await original<object>(), createTribunalRuntime: () => runTribunalMock,
+}));
+
 import { buildStepExecutors } from '../../packages/cli/src/handlers/plan-mode.js';
 
 function makeCtx(overrides: Record<string, unknown> = {}) {

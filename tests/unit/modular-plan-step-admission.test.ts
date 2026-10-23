@@ -16,7 +16,7 @@ import { tracker, setSessionRoot, _resetSessionRootForTests } from '@kernlang/ag
 
 const effects = vi.hoisted(() => ({ brainstorm: vi.fn(), brain: vi.fn(), delegate: vi.fn(), other: vi.fn(), verify: vi.fn() }));
 const composition = vi.hoisted(() => ({
-  real: false, seed: vi.fn(), ratings: vi.fn(() => ({ global: {}, byMode: { brainstorm: {} } })),
+  real: false, realTribunal: false, seed: vi.fn(), ratings: vi.fn(() => ({ global: {}, byMode: { brainstorm: {} } })),
   update: vi.fn(), classify: vi.fn(() => 'code'), config: vi.fn(() => ({})),
 }));
 vi.mock('@kernlang/agon-mod-ratings', async original => {
@@ -56,6 +56,14 @@ vi.mock('@kernlang/agon-mod-brainstorm', async original => {
       composition.real ? runtime.runBrainstorm(...input) : effects.brainstorm(...input) };
   } };
 });
+vi.mock('@kernlang/agon-mod-tribunal', async original => {
+  const actual = await original<typeof import('@kernlang/agon-mod-tribunal')>();
+  return { ...actual, createTribunalRuntime: (...args: Parameters<typeof actual.createTribunalRuntime>) => {
+    const runtime = actual.createTribunalRuntime(...args);
+    return (...input: Parameters<typeof runtime>) =>
+      composition.realTribunal ? runtime(...input) : effects.other(...input);
+  } };
+});
 
 const NOW = '2026-10-10T00:00:00.000Z';
 let root: string;
@@ -63,6 +71,9 @@ let host: DurableModHost;
 beforeEach(async () => {
   vi.clearAllMocks();
   composition.real = false;
+  composition.realTribunal = false;
+  composition.seed.mockReset();
+  composition.update.mockReset();
   effects.verify.mockImplementation((await vi.importActual<typeof import('@kernlang/agon-core')>('@kernlang/agon-core')).spawnWithTimeout);
   effects.brainstorm.mockResolvedValue({ winner: 'fixture', response: 'answer' });
   effects.brain.mockReset().mockResolvedValue({ terminalState: 'completed', responded: true });
@@ -214,6 +225,66 @@ it.each(['brainstorm', 'pipeline'].flatMap(type =>
   expect(dispatch.mock.calls[0][0].prompt).toBe('Reply with just: ok');
   expect(dispatch.mock.calls[2][0]).toMatchObject({ engine: { id: 'fixture' }, textOnly: true, mode: 'exec' });
   expect(dispatch.mock.calls[4][0].prompt).toContain('Multiple AI engines analyzed');
+});
+
+it.each(['tribunal', 'pipeline'].flatMap(type =>
+  ['healthy', 'ratings-disabled', 'after-round', 'after-summary', 'cancel-summary'].map(transition => ({ type, transition })),
+))('runs the physical Tribunal composition through Plan $type / $transition', async ({ type, transition }) => {
+  composition.realTribunal = true;
+  // Prove boundary checks without relying on the periodic generation monitor.
+  vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+  vi.stubEnv('AGON_FORCE_HEALTH_PROBE', '');
+  vi.stubEnv('AGON_DISABLE_FORGE_HEALTH_CHECK', '1');
+  await install(transition === 'ratings-disabled' ? 'agon.ratings' : undefined);
+  await initializeProcessSurfaceAuthority(root);
+  const controller = new AbortController();
+  const scopes: Array<boolean | undefined> = [];
+  composition.seed.mockImplementation(() => { scopes.push(currentInvocationOwnerAvailable('agon.ratings')); });
+  composition.update.mockImplementation(() => { scopes.push(currentInvocationOwnerAvailable('agon.ratings')); });
+  const dispatch = vi.fn(async (_options: DispatchOptions) => {
+    const call = dispatch.mock.calls.length;
+    if ((transition === 'after-round' && call === 2) || (transition === 'after-summary' && call === 5)) {
+      await install('agon.tribunal');
+    }
+    if (transition === 'cancel-summary' && call === 5) controller.abort(new Error('cancelled at summary'));
+    return { exitCode: 0, stderr: '', timedOut: false, durationMs: 1,
+      stdout: call === 5 ? 'physical Tribunal verdict' : 'A substantive fixture argument with evidence.' };
+  });
+  const registry = { get: (id: string) => ({ id }) } as HandlerContext['registry'];
+  const ctx = { ...context(), registry, adapter: { dispatch }, activeEngines: () => ['fixture', 'second'] } as HandlerContext;
+  const executors = buildStepExecutors(ctx);
+  expect(composition.seed).not.toHaveBeenCalled();
+  expect(dispatch).not.toHaveBeenCalled();
+  const result = await executors[type].execute(step(type), {}, controller.signal);
+  expect(composition.seed).toHaveBeenCalledExactlyOnceWith(registry);
+  expect(effects.other).toHaveBeenCalledTimes(type === 'pipeline' ? 1 : 0);
+  const directory = dispatch.mock.calls[0][0].outputDir!;
+  expect(directory).toMatch(new RegExp(`/plan-exec-\\d+/step${type === 'pipeline' ? '/tribunal' : ''}$`));
+  const files = await readdir(directory);
+  expect(files).toEqual([expect.stringMatching(/^tribunal_.*\.jsonl$/)]);
+  const events = (await readFile(join(directory, files[0]), 'utf8')).trim().split('\n')
+    .map(line => JSON.parse(line).type);
+  if (transition === 'after-round' || transition === 'after-summary' || transition === 'cancel-summary') {
+    expect(result.result.status).toBe('failure');
+    expect(dispatch).toHaveBeenCalledTimes(transition === 'after-round' ? 2 : 5);
+    expect(composition.update).not.toHaveBeenCalled();
+    expect(result).not.toHaveProperty('contextExport');
+    expect(events).not.toContain('tribunal:done');
+    return;
+  }
+  expect(result.result.status).toBe('success');
+  expect(result.result.output).toContain('physical Tribunal verdict');
+  expect(dispatch).toHaveBeenCalledTimes(5);
+  expect(dispatch.mock.calls[4][0].engine.id).toBe('claude');
+  expect(composition.classify).toHaveBeenCalled();
+  expect(composition.update).toHaveBeenCalledTimes(2);
+  expect(scopes).toEqual(Array(3).fill(transition !== 'ratings-disabled'));
+  expect(events.at(-1)).toBe('tribunal:done');
+  for (const [options] of dispatch.mock.calls) {
+    expect(options.outputDir).toBe(directory);
+    expect(options.signal).toBeInstanceOf(AbortSignal);
+    expect(options.signal?.aborted).toBe(false);
+  }
 });
 
 it.each(['failed', 'timed_out', 'cancelled', 'superseded'])('rejects a live self-step brain outcome of %s', async terminalState => {

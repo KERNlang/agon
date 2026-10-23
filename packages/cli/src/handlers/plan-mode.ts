@@ -9,7 +9,8 @@ import { SurfaceGenerationError } from '@kernlang/agon-kernel';
 
 import type { CesarPlan, StepExecutor } from '@kernlang/agon-core';
 
-import { runForge, runTribunal, runCampfire, runDelegate } from '@kernlang/agon-forge';
+import { runForge, runCampfire, runDelegate } from '@kernlang/agon-forge';
+import { createTribunalRuntime } from '@kernlang/agon-mod-tribunal';
 import { createBrainstormRuntime, createBrainstormEngineServices } from '@kernlang/agon-mod-brainstorm';
 import { glicko } from '@kernlang/agon-mod-ratings';
 import { classifyTask } from '@kernlang/agon-support-dedup';
@@ -89,6 +90,12 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
   };
   const guardedAdapter = (type: string, signal?: AbortSignal) =>
     guardProcessEngineAdapter(ctx.adapter, () => assertStepAvailable(type, signal));
+  const runTribunal = createTribunalRuntime<HandlerContext['registry']>({
+    assertCurrent: () => assertStepAvailable('tribunal'),
+    loadConfig, classifyTask,
+    seedRegistry: glicko.seedNewEnginesFromRegistry,
+    updateRanked: glicko.updateGlickoRanked,
+  });
   const executionRefusal = (type: string, signal?: AbortSignal) => () => {
     try { assertStepAvailable(type, signal); return undefined; }
     catch (error) { return error instanceof Error ? error.message : String(error); }

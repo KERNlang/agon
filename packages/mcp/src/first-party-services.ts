@@ -7,6 +7,7 @@ import { createCliAdapter } from '@kernlang/agon-adapter-cli';
 import { createForgeHostServices } from '@kernlang/agon-core';
 import { createBrainstormHostServices } from '@kernlang/agon-mod-brainstorm';
 import { createTribunalHostServices } from '@kernlang/agon-mod-tribunal';
+import { createCampfireHostServices } from '@kernlang/agon-mod-campfire';
 import { glicko } from '@kernlang/agon-mod-ratings';
 import { EngineRegistry as CatalogEngineRegistry, tracker } from '@kernlang/agon-support-engine-catalog';
 import { classifyTask } from '@kernlang/agon-support-dedup';
@@ -30,6 +31,14 @@ function orchestrationEngines(ids: readonly string[]): string[] {
 export function decorateMcpFirstPartyServices(manifest: ModManifest, base: ModServices): ModServices {
   return Object.freeze({
     ...base,
+    ...(manifest.id === 'agon.campfire' ? { campfire: createCampfireHostServices({
+      openRegistry: () => {
+        const registry = new CatalogEngineRegistry();
+        registry.load(resolveEngineDefinitionsDir()); return registry;
+      },
+      createAdapter: createCliAdapter, loadConfig, warn: message => console.warn(message),
+      captureAuthority: () => captureMcpSurfaceAuthority('Campfire'),
+    }) } : {}),
     ...(['agon.forge', 'agon.team-forge', 'agon.pipeline-orchestration', 'agon.goal'].includes(manifest.id) ? { forge: createForgeHostServices(() => {
       const registry = new EngineRegistry(); registry.load(resolveEngineDefinitionsDir()); return registry;
     }, createCliAdapter, () => captureMcpSurfaceAuthority('Forge')) } : {}),

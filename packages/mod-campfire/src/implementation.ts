@@ -1,5 +1,8 @@
 import { commandResultToToolResult } from '@kernlang/agon-mod-api';
-import type { AgonModFactory, CommandResult, Dispose, Json, ModServices, Registrar } from '@kernlang/agon-mod-api';
+import type { AgonModFactory, CommandResult, Dispose, InvocationContext, Json, Registrar } from '@kernlang/agon-mod-api';
+
+import { runCampfireRuntime } from './runtime.js';
+import type { CampfireModServices } from './host.js';
 
 const schema = Object.freeze({
   type: 'object', additionalProperties: true, required: ['topic'],
@@ -15,41 +18,65 @@ const text = (value: unknown) => typeof value === 'string' ? value.trim() : '';
 const extras = (value: unknown) => Array.isArray(value) ? value.map(String) : [];
 const engineIds = (value: Json | undefined) => typeof value === 'string' ? value.split(',').map((id) => id.trim()).filter(Boolean) : [];
 
-async function run(raw: Json, context: Parameters<ModServices['engines']['dispatch']>[2], services: ModServices): Promise<CommandResult> {
+async function run(raw: Json, context: InvocationContext, services: CampfireModServices): Promise<CommandResult> {
+  context.signal.throwIfAborted();
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { exitCode: 1, stderr: 'Provide a Campfire request object.\n' };
   const input = raw as Record<string, Json>;
   const topic = [text(input.topic), ...extras(input._).filter((part) => part !== input.topic)].filter(Boolean).join(' ').trim();
   if (!topic) return { exitCode: 1, stderr: 'Provide a topic. Usage: agon campfire "topic"\n' };
+  const timeout = Number(input.timeout ?? 120);
+  if (!Number.isFinite(timeout) || timeout <= 0) return { exitCode: 1, stderr: 'Campfire timeout must be a positive number of seconds.\n' };
+  if (!services.campfire || !services.runs) return { exitCode: 1, stderr: 'Campfire host capabilities are unavailable. Restart with a compatible modular host.\n' };
   let engines = engineIds(input.engines);
   if (!engines.length && services.engines.listActive) engines = [...await services.engines.listActive(context)];
   if (!engines.length) return { exitCode: 1, stderr: 'Campfire requires at least one active engine.\n' };
   const strategy = text(input.strategy) === 'all-respond' ? 'all-respond' : 'lead-first';
   const requestedLead = text(input.lead);
   const lead = requestedLead && engines.includes(requestedLead) ? requestedLead : engines[0];
-  const timeoutSeconds = Math.max(1, Number.parseInt(text(input.timeout) || '120', 10));
-  const invoke = async (engineId: string, prompt: string) => {
+  const host = await services.campfire.open(context);
+  host.assertCurrent();
+  const handle = await services.runs.start('campfire', text(input.label) || undefined, context);
+  let result: Awaited<ReturnType<typeof runCampfireRuntime>>;
+  try {
+    result = await runCampfireRuntime({
+      topic, context: text(input.context) || undefined, seedPlan: text(input.seedPlan) || undefined,
+      engines, strategy, leadEngine: lead, timeout, outputDir: handle.path,
+      cwd: context.cwd, signal: context.signal, registry: host.registry, adapter: host.adapter,
+    }, host.effects);
+    host.assertCurrent();
+  } catch (error) {
     try {
-      const output = await services.engines.dispatch(engineId, prompt, context, { timeoutSeconds, systemPrompt: 'Join an open technical discussion. Be candid and concrete; there is no winner.' }) as Record<string, Json>;
-      const content = output.exitCode === 0 && output.timedOut !== true ? text(output.stdout) : '';
-      return { engineId: text(output.engineId) || engineId, content, ok: Boolean(content), error: content ? null : text(output.stderr) || 'no usable response' };
-    } catch (error) {
-      return { engineId, content: '', ok: false, error: error instanceof Error ? error.message : String(error) };
+      await services.runs.finish(handle, {
+        mode: 'campfire', startedAt: handle.startedAt, endedAt: new Date().toISOString(), ok: false,
+        summary: error instanceof Error ? error.message : String(error),
+        engines: engines.map(id => ({ id, status: 'error', detail: 'Campfire did not complete' })),
+      }, context);
+    } catch (recordError) {
+      try {
+        await services.logger.warn(`Campfire failure record could not be saved at ${handle.path}: ${recordError instanceof Error ? recordError.message : String(recordError)}`);
+      } catch { /* Diagnostics must not replace the workflow failure. */ }
     }
-  };
-  const rounds: Awaited<ReturnType<typeof invoke>>[] = [];
-  if (strategy === 'all-respond') {
-    rounds.push(...await Promise.all(engines.map((engineId) => invoke(engineId, `TOPIC: ${topic}\n\nGive your view and respond to likely alternative views.`))));
-  } else {
-    const opening = await invoke(lead, `TOPIC: ${topic}\n\nOpen the discussion with a useful framing and your current view.`);
-    rounds.push(opening);
-    const remaining = engines.filter((engineId) => engineId !== lead);
-    rounds.push(...await Promise.all(remaining.map((engineId) => invoke(engineId, `TOPIC: ${topic}\n\nLEAD (${lead}):\n${opening.content || '[lead failed]'}\n\nRespond constructively: extend, disagree, or reframe.`))));
+    throw error;
   }
-  const contributed = rounds.filter(({ ok }) => ok).length;
-  const result = { topic, strategy, lead, rounds, panelHealth: { requested: engines.length, responded: contributed, degraded: contributed !== engines.length } };
-  if (!contributed) return { exitCode: 1, stderr: 'Campfire produced no usable responses.\n', result: result as Json };
-  await services.receipts.record('campfire', { strategy, lead, requested: engines.length, responded: contributed });
-  const stdout = input.quiet === true ? `${rounds.filter(({ ok }) => ok).map(({ engineId, content }) => `${engineId}: ${content}`).join('\n\n')}\n` : `${JSON.stringify(result, null, 2)}\n`;
-  return { exitCode: 0, stdout, result: result as Json };
+  const responded = new Set(result.rounds.filter(round => round.content.trim()).map(round => round.engineId));
+  try {
+    await services.runs.finish(handle, {
+      mode: 'campfire', startedAt: handle.startedAt, endedAt: new Date().toISOString(),
+      ok: responded.size === engines.length, summary: `${responded.size}/${engines.length} engines contributed`,
+      engines: engines.map(id => ({ id, status: responded.has(id) ? 'ok' : 'error', detail: responded.has(id) ? 'response received' : 'no output' })),
+    }, context);
+  } catch (error) {
+    host.assertCurrent();
+    throw error;
+  }
+  host.assertCurrent();
+  const output = { ...result, strategy, panelHealth: { requested: engines.length, responded: responded.size, degraded: responded.size !== engines.length } };
+  if (!responded.size) return { exitCode: 1, stderr: 'Campfire produced no usable responses.\n', result: output as Json };
+  // Record completed responses, not permission or the command's final outcome.
+  await services.receipts.record('campfire', { strategy, lead: result.lead, requested: engines.length, responded: responded.size });
+  host.assertCurrent();
+  const stdout = input.quiet === true ? `${result.rounds.filter(round => round.content.trim()).map(({ engineId, content }) => `${engineId}: ${content}`).join('\n\n')}\n` : `${JSON.stringify(output, null, 2)}\n`;
+  return { exitCode: 0, stdout, result: output as Json };
 }
 
 export const createMod: AgonModFactory = (services) => Object.freeze({

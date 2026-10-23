@@ -18,6 +18,7 @@
     "@kernlang/agon-kernel": "1.0.0",
     "@kernlang/agon-mod-api": "1.0.0",
     "@kernlang/agon-mod-brainstorm": "1.0.0",
+    "@kernlang/agon-mod-campfire": "1.0.0",
     "@kernlang/agon-mod-jobs": "1.0.0",
     "@kernlang/agon-mod-ratings": "1.0.0",
     "@kernlang/agon-mod-rooms": "1.0.0",

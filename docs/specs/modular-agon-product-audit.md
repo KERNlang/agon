@@ -1,5 +1,74 @@
 # Installed-product audit and repair ledger
 
+## Campfire runtime owner — 2026-10-24
+
+Campfire now owns its discussion runtime. The legacy Forge export delegates to
+that owner and preserves its public `topic`/`rounds` result. The separate simplified
+mod algorithm was removed. CLI and MCP inject guarded registry, adapter and config
+effects. Only two existing workspace edges were added: Forge/MCP → Campfire 1.0.0.
+No external version or installation changed.
+
+The extracted runtime preserves prompts, project context, prior assessments,
+quarantine filtering, opt-in health probes, plain-text dispatch, observer filtering
+and raw rounds. Cancellation and generation checks now prevent stale results.
+Parallel seats settle before failure recording; authority loss aborts sibling
+dispatches. Recording failures cannot replace an existing cancellation.
+
+Isolated Agon Codex review returned five findings, checked against source:
+
+1. Cancellation hidden by successful-run persistence failure: reproduced, fixed.
+2. Parallel seats outliving workflow return: reproduced with deferred tests and
+   compiled local Node processes, fixed. The same compiled check then passed.
+3. Receipt writes are not atomic with authority changes: true limitation, not
+   treated as authorization or final success. The receipt records historical
+   response counts only. Consumer tracing found no success/permission promotion;
+   a new test requires command rejection after revocation during recording.
+4. Frozen oracle shares live support code: retained as a workflow-policy oracle,
+   not a frozen transitive implementation. Independent checks constrain quarantine
+   and configured API probes, including their non-project scratch directory.
+5. Missing facade/distinct-cwd coverage: added public wrapper comparisons and
+   a different invocation directory. All now pass.
+
+Verification: 11,174 tests passed, six skipped (605.644 seconds). Ten frozen
+legacy comparisons cover prompts, dispatch fields and raw public results. Child
+signal identity deliberately differs to support cancellation; it is tested
+separately. All 17 focused mod cases, build, types, lint, re-export, migration-ledger,
+release-set, supply-chain and whitespace gates passed.
+
+Native macOS arm64/Node 26.12.1 checks exercised real durable generations and
+local Node engines through compiled Plan, generated CLI and MCP. Five cases
+passed: normal Plan execution, disabled admission, drained cancellation, CLI and
+MCP. CLI/MCP each persisted one successful run. The final five-case run followed
+the full suite (3.868 seconds). All qualification runs recorded zero live providers.
+
+One earlier full suite was deliberately interrupted after review defects were
+proved; its exit -15 receipt remains, not a pass. An early native surface harness
+counted the documented `latest` symlink twice; corrected enumeration counts real
+directories and still requires exactly one run. Both failures remain archived.
+OSV reported 24 vulnerabilities in 10 dependency entries: two critical, nine high,
+11 medium and two low. Package-integrity checks do not clear those findings.
+
+Durable evidence remains in `/Users/ra/dev/modular-agon-remediation/`:
+
+- `campfire-review-full-suite`: log SHA-256
+  `626c0961c37ea16a9f0fc0887f82bb95c661f9a2ffabccce669308be44cb54af`.
+- `campfire-review-final-build`: log SHA-256
+  `b9f387887a82d23da067634a44d141adffa5bdd4ba153393398fe79539b23dda`.
+- `campfire-native-final`: log SHA-256
+  `0972a81d95bee12e886cbf0d4441283758e8b863dbe4cdf3895323c5925dce45`.
+- Frozen native helper SHA-256
+  `28791db0510f5d728539f235e367bdcdd07eaed81d6f977345c67e2328cc4971`.
+- Review packet SHA-256
+  `7667302909b0f2e8faa02415898661ace6fbc8ae288548d35361152baf967f00`;
+  review log SHA-256
+  `0acff531ff4e625cc31642e73001bf683e9e36abc7523682faf91174e1828a6a`.
+
+This is not full release acceptance. Campfire's legacy CLI presentation and
+session handler still need retirement, including job-signal propagation. The
+Forge facade remains for public consumers and is not counted as retired; Campfire
+owns it until caller migration and public compatibility evidence permit removal.
+Other platform, clean-subject and aggregate acceptance gates remain open.
+
 ## Conquer standalone command retirement — 2026-10-24
 
 Removed the unused 233-line legacy CLI command. The generated CLI already used

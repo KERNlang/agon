@@ -9,6 +9,7 @@
   "references": [
     { "path": "../mod-forge" },
     { "path": "../mod-brainstorm" },
+    { "path": "../mod-campfire" },
     { "path": "../mod-conquer" },
     { "path": "../mod-nero" },
     { "path": "../mod-goal" },

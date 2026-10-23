@@ -13,6 +13,7 @@ import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { createBrainstormHostServices } from '@kernlang/agon-mod-brainstorm';
 import { createTribunalHostServices } from '@kernlang/agon-mod-tribunal';
+import { createCampfireHostServices } from '@kernlang/agon-mod-campfire';
 import { header, warn, info, bold, dim, red } from './blocks/output-format.js';
 import { createTeamBrainstormHostServices } from '@kernlang/agon-mod-team-brainstorm';
 import { createConquerHostServices } from '@kernlang/agon-mod-conquer';
@@ -131,6 +132,17 @@ export async function decorateCliFirstPartyServices(manifest: ModManifest, base:
   } : undefined;
   return Object.freeze({ ...base, runs, ...(browser ? { browser } : {}), ...(workspace ? { workspace } : {}),
     ...(brainstorm ? { brainstorm } : {}),
+    ...(manifest.id === 'agon.campfire' ? { campfire: createCampfireHostServices({
+      openRegistry: () => {
+        const registry = new CatalogEngineRegistry();
+        registry.load(resolveBuiltinEnginesDir()); return registry;
+      },
+      createAdapter: createCliAdapter, loadConfig, warn: message => console.warn(message),
+      captureAuthority: () => {
+        const assertCurrent = captureProcessSurfaceAuthority();
+        return () => { assertCurrent(); assertProcessSurfaceAvailable('cli', 'campfire'); };
+      },
+    }) } : {}),
     ...(['agon.tribunal', 'agon.conquer', 'agon.pipeline-orchestration'].includes(manifest.id) ? {
       tribunal: { ...createTribunalHostServices<CatalogEngineRegistry>({
         openRegistry: () => {

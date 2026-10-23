@@ -8,3 +8,7 @@ export const SOURCE_OCCURRENCES = Object.freeze(ownership.assignments);
 export const IMPLEMENTATION_KIND = 'physical' as const;
 export { createMod } from './implementation.js';
 export { createMod as default } from './implementation.js';
+export { runCampfireRuntime } from './runtime.js';
+export type { CampfireOptions, CampfireEffects, CampfireResult } from './runtime.js';
+export { createCampfireHostServices } from './host.js';
+export type { CampfireHostEffects, CampfireHostServices, CampfireHostSession, CampfireModServices } from './host.js';

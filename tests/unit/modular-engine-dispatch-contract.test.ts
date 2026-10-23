@@ -151,7 +151,38 @@ describe.each([decorateCliFirstPartyServices, decorateMcpFirstPartyServices])('F
   });
 });
 
-describe('CLI Tribunal host wiring', () => {
+describe.each([
+  ['CLI', decorateCliFirstPartyServices],
+  ['MCP', decorateMcpFirstPartyServices],
+] as const)('%s Tribunal host wiring', (surface, decorate) => {
+  it('stops rating-based fallback lookup when Ratings is disabled', async () => {
+    let enabled = true;
+    vi.spyOn(kernel, 'currentInvocationOwnerAvailable').mockImplementation(() => enabled);
+    vi.spyOn(CatalogEngineRegistry.prototype, 'load').mockImplementation(() => {});
+    fixture.rating.mockImplementation((id?: string) => ({ mu: id === 'higher' ? 2000 : 1000, phi: 30 }));
+    const services = await decorate({ id: 'agon.tribunal' } as never, {} as never) as TribunalModServices;
+    const session = await services.tribunal!.open({ invocationId: 'ratings', cwd: '/fixture',
+      platform: 'darwin-arm64', signal: new AbortController().signal, config: {} });
+    expect(session.registry.getFallbackChain('source', 'code', ['lower', 'higher'])).toEqual(['higher', 'lower']);
+    fixture.rating.mockClear();
+    enabled = false;
+    expect(session.registry.getFallbackChain('source', 'code', ['lower', 'higher'])).toEqual(['lower', 'higher']);
+    expect(fixture.rating).not.toHaveBeenCalled();
+  });
+
+  it('rejects an already-cancelled invocation before opening providers', async () => {
+    const load = vi.spyOn(CatalogEngineRegistry.prototype, 'load').mockImplementation(() => {});
+    const services = await decorate({ id: 'agon.tribunal' } as never, {} as never) as TribunalModServices;
+    const controller = new AbortController();
+    const reason = new Error('cancelled before Tribunal');
+    controller.abort(reason);
+    expect(() => services.tribunal!.open({ invocationId: 'cancelled', cwd: '/fixture',
+      platform: 'darwin-arm64', signal: controller.signal, config: {} })).toThrow(reason);
+    expect(load).not.toHaveBeenCalled();
+    expect(fixture.adapterOpened).not.toHaveBeenCalled();
+    expect(fixture.dispatch).not.toHaveBeenCalled();
+  });
+
   it('loads user participants and a configured summary engine outside the panel', async () => {
     const home = setupTestAgonHome('tribunal-custom-engines');
     try {
@@ -166,7 +197,7 @@ describe('CLI Tribunal host wiring', () => {
       vi.spyOn(glicko, 'seedNewEnginesFromRegistry').mockReturnValue([]);
       vi.spyOn(glicko, 'updateGlickoRanked').mockImplementation(() => {});
       fixture.loadConfig.mockReturnValueOnce({ cesarEngine: 'custom-judge' });
-      const services = await decorateCliFirstPartyServices({ id: 'agon.tribunal' } as never, {} as never) as TribunalModServices;
+      const services = await decorate({ id: 'agon.tribunal' } as never, {} as never) as TribunalModServices;
       const signal = new AbortController().signal;
       const session = await services.tribunal!.open({
         invocationId: 'user-engines', cwd: home, platform: 'darwin-arm64', signal, config: {},
@@ -186,7 +217,7 @@ describe('CLI Tribunal host wiring', () => {
   });
   it.each(['agon.tribunal', 'agon.conquer', 'agon.pipeline-orchestration'])('binds %s lazily and checks Tribunal authority on dispatch', async id => {
     const load = vi.spyOn(CatalogEngineRegistry.prototype, 'load').mockImplementation(() => {});
-    const services = await decorateCliFirstPartyServices({ id } as never, {} as never) as TribunalModServices;
+    const services = await decorate({ id } as never, {} as never) as TribunalModServices;
     expect(services.tribunal).toBeDefined();
     expect(load).not.toHaveBeenCalled();
     expect(fixture.adapterOpened).not.toHaveBeenCalled();
@@ -194,16 +225,18 @@ describe('CLI Tribunal host wiring', () => {
       signal: new AbortController().signal, config: {} };
     const session = await services.tribunal!.open(context);
     expect(load).toHaveBeenCalledExactlyOnceWith('/fixture/engines');
-    expect(fixture.assertCli).toHaveBeenCalledWith('cli', 'tribunal');
+    if (surface === 'CLI') expect(fixture.assertCli).toHaveBeenCalledWith('cli', 'tribunal');
+    else expect(fixture.captureMcp).toHaveBeenCalledWith('Tribunal');
     session.effects.loadConfig('/ignored');
     expect(fixture.loadConfig).toHaveBeenCalledWith(context.cwd);
-    fixture.assertCli.mockImplementationOnce(() => { throw new Error('Tribunal disabled'); });
+    const assertAvailable = surface === 'CLI' ? fixture.assertCli : fixture.assertCurrent;
+    assertAvailable.mockImplementationOnce(() => { throw new Error('Tribunal disabled'); });
     await expect(session.adapter.dispatch({ engine: fixture.engine as never, prompt: 'Q', cwd: context.cwd,
       mode: 'exec', timeout: 1, outputDir: '/unused' })).rejects.toThrow('Tribunal disabled');
     expect(fixture.dispatch).not.toHaveBeenCalled();
   });
   it('does not expose Tribunal host effects to unrelated mods', async () => {
-    expect(await decorateCliFirstPartyServices({ id: 'custom.example' } as never, {} as never))
+    expect(await decorate({ id: 'custom.example' } as never, {} as never))
       .not.toHaveProperty('tribunal');
   });
 });

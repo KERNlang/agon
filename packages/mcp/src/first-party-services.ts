@@ -6,6 +6,7 @@ import { resolveExplicitReviewEngines } from '@kernlang/agon-support-verificatio
 import { createCliAdapter } from '@kernlang/agon-adapter-cli';
 import { createForgeHostServices } from '@kernlang/agon-core';
 import { createBrainstormHostServices } from '@kernlang/agon-mod-brainstorm';
+import { createTribunalHostServices } from '@kernlang/agon-mod-tribunal';
 import { glicko } from '@kernlang/agon-mod-ratings';
 import { EngineRegistry as CatalogEngineRegistry, tracker } from '@kernlang/agon-support-engine-catalog';
 import { classifyTask } from '@kernlang/agon-support-dedup';
@@ -60,6 +61,20 @@ export function decorateMcpFirstPartyServices(manifest: ModManifest, base: ModSe
       buildPrompt: buildKernDraftPrompt, parseDraft: parseKernDraft,
       captureAuthority: () => captureMcpSurfaceAuthority('Brainstorm'),
     }) } : {}),
+    ...(['agon.tribunal', 'agon.conquer', 'agon.pipeline-orchestration'].includes(manifest.id) ? {
+      tribunal: createTribunalHostServices<CatalogEngineRegistry>({
+        openRegistry: () => {
+          const registry = new CatalogEngineRegistry((engineId, taskClass) =>
+            currentInvocationOwnerAvailable('agon.ratings') === false
+              ? undefined : glicko.getEngineGlickoRating(engineId, taskClass));
+          registry.load(resolveEngineDefinitionsDir()); return registry;
+        },
+        createAdapter: createCliAdapter,
+        loadConfig, classifyTask,
+        seedRegistry: glicko.seedNewEnginesFromRegistry, updateRanked: glicko.updateGlickoRanked,
+        captureAuthority: () => captureMcpSurfaceAuthority('Tribunal'),
+      }),
+    } : {}),
     runs: Object.freeze({
       start(mode: string, label: string | undefined) { const startedAt = new Date().toISOString(); const created = createRunDir({ mode, label, announce: false }); return Object.freeze({ id: created.id, path: created.path, mode, startedAt }); },
       finish(handle: { path: string }, status: Json): void { writeRunStatus(handle.path, status as never); },

@@ -19,6 +19,36 @@ afterEach(async () => {
 });
 
 describe('production MCP surface authority', () => {
+  it.each(['pointer', 'dispose', 'replace', 'complete'] as const)('pins the Tribunal host to real MCP authority: %s', async action => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-mcp-tribunal-authority-'));
+    vi.stubEnv('AGON_HOME', join(root, 'home'));
+    vi.stubEnv('AGON_MODULAR_HOST_ROOT', join(root, 'host'));
+    try {
+      await initializeMcpSurfaceAuthority();
+      const { decorateMcpFirstPartyServices } = await import('../../packages/mcp/src/first-party-services.js');
+      const services = decorateMcpFirstPartyServices({ id: 'agon.tribunal' } as never, {} as never) as
+        import('@kernlang/agon-mod-tribunal').TribunalModServices;
+      const session = await services.tribunal!.open({ invocationId: 'real-authority', cwd: root,
+        platform: 'darwin-arm64', signal: new AbortController().signal, config: {} });
+      expect(() => session.assertCurrent()).not.toThrow();
+      if (action === 'dispose' || action === 'replace') await disposeMcpSurfaceAuthority();
+      if (action === 'replace') await initializeMcpSurfaceAuthority();
+      if (action === 'pointer') {
+        await mkdir(join(root, 'host'), { recursive: true });
+        await writeFile(join(root, 'host', 'current-generation.json'), '{}');
+      }
+      if (action === 'complete') expect(() => session.assertCurrent()).not.toThrow();
+      else {
+        const reason = action === 'pointer' ? /canonical modular generation changed/ : /disposed or replaced/;
+        expect(() => session.assertCurrent()).toThrow(reason);
+        expect(() => session.effects.loadConfig(root)).toThrow(reason);
+      }
+    } finally {
+      await disposeMcpSurfaceAuthority();
+      vi.unstubAllEnvs();
+    }
+  });
+
   it('boots safe-mode authority without importing feature host services', async () => {
     const root = await mkdtemp(join(tmpdir(), 'agon-mcp-safe-import-'));
     vi.stubEnv('AGON_MODULAR_HOST_ROOT', join(root, 'host'));

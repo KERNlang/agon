@@ -1,5 +1,40 @@
 # Installed-product audit and repair ledger
 
+## Tribunal command runtime cutover — 2026-10-23
+
+The physical command now invokes its canonical Tribunal runtime. Its duplicate
+debate scheduler is removed. Configured judging, retries, panel health, ratings,
+sidechain logging and cancellation use that runtime. Only CLI contributions use
+human rendering; nested contributions retain structured results. CLI output
+streams before completion and quiet mode retains run-path/summary output.
+
+Independent Codex review identified two confirmed defects. CLI and MCP run
+finalization now reject failed status writes. CLI retains its immutable outcome
+and exit retry. Command completion is published after command-owned durable
+effects, so an observer cannot cancel already-completed work retroactively.
+Real blocked status writes and completion-triggered cancellation failed before
+the fixes. A built CLI smoke exposed duplicate JSON after streamed output;
+the generated CLI fallback now distinguishes absent stdout from explicit empty
+stdout. The new empty-output regression failed before this one-line repair.
+
+Final local gate: 11,083 tests passed, six skipped; build, typecheck, lint,
+re-export, release-set, supply-chain and whitespace checks passed. Two final
+built CLI runs (normal and quiet) passed with isolated fixture engines and no
+live provider launches. This is incremental evidence, not release acceptance.
+The earlier sandbox run failed on local socket/watch restrictions; all nine
+affected files passed unchanged with the required permissions before the full
+gate was repeated. Failed evidence is retained, not relabelled green.
+
+Durable evidence directory: `/Users/ra/dev/modular-agon-remediation/`.
+Full receipt: `tribunal-command-output-qualified.receipt.json`; log SHA-256
+`dbea1a0c1771209bddbca6c1fc4107d6f90a92e6f86398c4f9d7405a6e65e9b4`.
+Review: `tribunal-command-cutover-codex-review.log`; SHA-256
+`bf400cc661c62b222e4ec88205856b60d8cd688a6ef012d170655213c1742c9c`.
+Final live receipt: `tribunal-cli-smoke-v3.receipt.json`.
+Remaining: Tribunal session/TUI effect ownership and legacy handler retirement,
+plus the original aggregate acceptance and platform requirements. Global Agon
+and personal state were not modified; nothing was installed or pushed.
+
 ## Tribunal policy ownership and review repairs — 2026-10-21
 
 `mod-tribunal/src/modes.ts` owns the existing mode, role and prompt policies.

@@ -1,3 +1,4 @@
+import { withTribunalFixtureHost } from '../../../tests/fixtures/modular-tribunal-host.js';
 import{execFileSync}from'node:child_process';import{existsSync,mkdtempSync,writeFileSync}from'node:fs';import{tmpdir}from'node:os';import{join}from'node:path';import{describe,expect,it,vi}from'vitest';import type{ModServices,CommandContribution,Registrar}from'@kernlang/agon-mod-api';import{createMod,runConquerTask as runConquerTaskImpl}from'./implementation.js';
 import { assertContributionInput } from '@kernlang/agon-kernel';
 import * as verification from '@kernlang/agon-support-verification';
@@ -61,7 +62,7 @@ function withConquerHost(services: ModServices): ConquerModServices {
 }
 
 async function runConquerTask(...[input, context, services]: Parameters<typeof runConquerTaskImpl>) {
-  return runConquerTaskImpl(input, context, withConquerHost(services));
+  return runConquerTaskImpl(input, context, withTribunalFixtureHost(withConquerHost(services)));
 }
 
 it.each(['success', 'failure', 'cancelled', 'committed'] as const)('retains a named review worktree after %s', async outcome => {
@@ -745,7 +746,7 @@ describe('explicit engine resolution across Conquer workflows', () => {
     const dispatch = vi.fn(async (engineId: string) => ({ engineId, exitCode: 0, stdout: 'Confidence: 80%\nVERDICT: SOUND', stderr: '', timedOut: false }));
     const services = { receipts: { record: vi.fn(async () => 'fixture') },
       engines: { listActive: async () => ['default-a', 'default-b'], resolveRequested, dispatch } } as unknown as ModServices;
-    const result = await run(input, { invocationId: 'explicit-pool', cwd: process.cwd(), platform: 'darwin-arm64', signal: new AbortController().signal, config: {} }, services);
+    const result = await run(input, { invocationId: 'explicit-pool', cwd: process.cwd(), platform: 'darwin-arm64', signal: new AbortController().signal, config: {} }, withTribunalFixtureHost(services));
     expect(result.exitCode).toBe(0);
     expect(resolveRequested).toHaveBeenCalledWith(['alias-a', 'alias-b'], expect.anything());
     expect(dispatch).toHaveBeenCalled();
@@ -767,7 +768,7 @@ describe('explicit engine resolution across Conquer workflows', () => {
     const services = { receipts: { record: vi.fn(async () => 'fixture') },
       engines: { listActive: async () => ['default-a', 'default-b'], resolveRequested, dispatch } } as unknown as ModServices;
     const defaultInput = Object.fromEntries(Object.entries(input).filter(([key]) => key !== 'engines' && key !== 'chairman'));
-    const result = await run(defaultInput, { invocationId: 'default-pool', cwd: process.cwd(), platform: 'darwin-arm64', signal: new AbortController().signal, config: {} }, services);
+    const result = await run(defaultInput, { invocationId: 'default-pool', cwd: process.cwd(), platform: 'darwin-arm64', signal: new AbortController().signal, config: {} }, withTribunalFixtureHost(services));
     expect(result.exitCode).toBe(0);
     expect(resolveRequested).not.toHaveBeenCalled();
     expect(dispatch).toHaveBeenCalled();

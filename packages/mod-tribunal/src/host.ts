@@ -3,6 +3,7 @@ import { guardEngineAdapter } from '@kernlang/agon-support-engine-runtime';
 import type { EngineAdapter } from '@kernlang/agon-support-engine-runtime';
 import type { PanelEngineRegistry } from '@kernlang/agon-support-panel';
 import type { TribunalEvent, TribunalRuntimeEffects } from './runtime.js';
+import type { TribunalOutput } from './presentation.js';
 
 export interface TribunalInvocationContext extends InvocationContext {
   readonly onWorkflowEvent?: (event: TribunalEvent) => void;
@@ -17,6 +18,7 @@ export interface TribunalHostSession {
 
 export interface TribunalHostServices {
   open(context: InvocationContext): Awaitable<TribunalHostSession>;
+  readonly cliOutput?: TribunalOutput;
 }
 
 export interface TribunalModServices extends ModServices {

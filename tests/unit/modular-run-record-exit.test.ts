@@ -33,6 +33,27 @@ async function isolated(check: (exit: () => void) => Promise<void>) {
   }
 }
 
+it.each(['cli', 'mcp'] as const)('reports a real status-write failure to the %s caller', async surface => {
+  await isolated(async exit => {
+    const host = surface === 'cli' ? runs : (await import('../../packages/mcp/src/first-party-services.js'))
+      .decorateMcpFirstPartyServices({ id: 'agon.history' } as never, {} as never).runs!;
+    const handle = await host.start('tribunal', 'blocked-write', {} as never);
+    const obstruction = join(handle.path, '.status.json.tmp');
+    mkdirSync(obstruction);
+    const warning = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const status = { ok: true, summary: 'completed work retained' };
+    try {
+      await expect(Promise.resolve().then(() => host.finish(handle, status, {} as never)))
+        .rejects.toThrow(/status.*persist/i);
+      expect(existsSync(join(handle.path, 'status.json'))).toBe(false);
+      rmSync(obstruction, { recursive: true });
+      if (surface === 'cli') exit();
+      else await host.finish(handle, status, {} as never);
+      expect(JSON.parse(readFileSync(join(handle.path, 'status.json'), 'utf8'))).toEqual(status);
+    } finally { warning.mockRestore(); }
+  });
+});
+
 it.each(['start', 'candidate', 'artifact', 'receipt', 'finish', 'invalid-repository', 'success',
   'artifact-error', 'receipt-error', 'cleanup-error', 'failed-finish', 'harvested-finish', 'dry-finish',
   'blocked-finish', 'blocked-cancel', 'cleanup-after-finish'] as const)(
@@ -99,6 +120,7 @@ it.each(['start', 'candidate', 'artifact', 'receipt', 'finish', 'invalid-reposit
           .then(result => ({ result, error: undefined }), error => ({ result: undefined, error }));
         if (phase === 'success') expect(outcome.result?.exitCode).toBe(0);
         else if (phase === 'invalid-repository') expect(outcome.result?.failure?.code).toBe('NOT_A_GIT_REPOSITORY');
+        else if (blocked) expect(outcome.error).toEqual(expect.objectContaining({ message: expect.stringMatching(/status.*persist/i) }));
         else expect(outcome.error).toBe(reason);
         expect(handle).toBeDefined();
         expect(submitted).toHaveLength(1);
@@ -212,7 +234,7 @@ it.each([true, false])('retains the actual final outcome after a failed status w
     const expected = JSON.parse(JSON.stringify(status));
     const warning = vi.spyOn(console, 'error').mockImplementation(() => {});
     try {
-      await runs.finish(handle, status, {} as never);
+      await expect(Promise.resolve().then(() => runs.finish(handle, status, {} as never))).rejects.toThrow(/status.*persist/i);
       expect(warning).toHaveBeenCalledWith(expect.stringContaining('failed to write status.json'));
       expect(existsSync(join(handle.path, 'status.json'))).toBe(false);
       // Recovery must not retain a mutable reference to a caller's result.
@@ -234,7 +256,8 @@ it('bounds exit retries and still finalizes other runs when storage remains unav
     mkdirSync(join(blocked.path, '.status.json.tmp'));
     const warning = vi.spyOn(console, 'error').mockImplementation(() => {});
     try {
-      await runs.finish(blocked, { ok: true, summary: 'real result' }, {} as never);
+      await expect(Promise.resolve().then(() => runs.finish(blocked, { ok: true, summary: 'real result' }, {} as never)))
+        .rejects.toThrow(/status.*persist/i);
       exit();
       expect(warning).toHaveBeenCalledTimes(2); // Initial write and one exit retry.
       expect(existsSync(join(blocked.path, 'status.json'))).toBe(false);
@@ -255,7 +278,7 @@ it('releases tracking after an explicit successful persistence retry', async () 
     const warning = vi.spyOn(console, 'error').mockImplementation(() => {});
     try {
       const status = { ok: false, summary: 'actual failure' };
-      await runs.finish(handle, status, {} as never);
+      await expect(Promise.resolve().then(() => runs.finish(handle, status, {} as never))).rejects.toThrow(/status.*persist/i);
       expect(process.listenerCount('exit')).toBe(before + 1);
       rmSync(obstruction, { recursive: true });
       await runs.finish(handle, status, {} as never);

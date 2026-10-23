@@ -13,6 +13,7 @@ import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { createBrainstormHostServices } from '@kernlang/agon-mod-brainstorm';
 import { createTribunalHostServices } from '@kernlang/agon-mod-tribunal';
+import { header, warn, info, bold, dim, red } from './blocks/output-format.js';
 import { createTeamBrainstormHostServices } from '@kernlang/agon-mod-team-brainstorm';
 import { createConquerHostServices } from '@kernlang/agon-mod-conquer';
 import type { PrTextInput } from '@kernlang/agon-mod-forge';
@@ -131,7 +132,7 @@ export async function decorateCliFirstPartyServices(manifest: ModManifest, base:
   return Object.freeze({ ...base, runs, ...(browser ? { browser } : {}), ...(workspace ? { workspace } : {}),
     ...(brainstorm ? { brainstorm } : {}),
     ...(['agon.tribunal', 'agon.conquer', 'agon.pipeline-orchestration'].includes(manifest.id) ? {
-      tribunal: createTribunalHostServices<CatalogEngineRegistry>({
+      tribunal: { ...createTribunalHostServices<CatalogEngineRegistry>({
         openRegistry: () => {
           const registry = new CatalogEngineRegistry((engineId, taskClass) =>
             currentInvocationOwnerAvailable('agon.ratings') === false
@@ -145,7 +146,9 @@ export async function decorateCliFirstPartyServices(manifest: ModManifest, base:
           const assertCurrent = captureProcessSurfaceAuthority();
           return () => { assertCurrent(); assertProcessSurfaceAvailable('cli', 'tribunal'); };
         },
-      }),
+      }), ...(manifest.id === 'agon.tribunal' ? {
+        cliOutput: { log: (text: string) => console.log(text), header, warn, info, bold, dim, red },
+      } : {}) },
     } : {}),
     ...(manifest.id === 'agon.team-brainstorm' ? { teamBrainstorm: createTeamBrainstormHostServices({
       openRegistry: () => {

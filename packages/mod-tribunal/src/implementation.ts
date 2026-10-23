@@ -1,8 +1,13 @@
 import { commandResultToToolResult } from '@kernlang/agon-mod-api';
-import type { AgonModFactory, CommandResult, Dispose, Json, ModServices, Registrar } from '@kernlang/agon-mod-api';
+import type { AgonModFactory, CommandResult, Dispose, Json, Registrar } from '@kernlang/agon-mod-api';
 
-import { getModeConfig, buildModePrompt, buildModeSummaryPrompt, TRIBUNAL_MODES, TRIBUNAL_PROTOCOLS } from './modes.js';
+import { getModeConfig, TRIBUNAL_MODES, TRIBUNAL_PROTOCOLS } from './modes.js';
 import type { TribunalMode as Mode, TribunalProtocol as Protocol } from './modes.js';
+import { createTribunalRuntime } from './runtime.js';
+import type { TribunalEvent, TribunalResult } from './runtime.js';
+import type { TribunalFailure } from './presentation.js';
+import { renderTribunalResult } from './presentation.js';
+import type { TribunalInvocationContext, TribunalModServices } from './host.js';
 const modes = new Set<Mode>(TRIBUNAL_MODES);
 const protocols = new Set<Protocol>(TRIBUNAL_PROTOCOLS);
 const schema = Object.freeze({ type: 'object', additionalProperties: true, required: ['question'], properties: { question: { type: 'string' }, rounds: { type: 'string', default: '2' }, engines: { type: 'string' }, mode: { type: 'string', default: 'adversarial' }, protocol: { type: 'string', default: 'auto' }, timeout: { type: 'string', default: '120' }, label: { type: 'string' }, quiet: { type: 'boolean' }, _: { type: 'array', items: { type: 'string' } } } }) as Readonly<Record<string, Json>>;
@@ -33,48 +38,123 @@ export function parseTribunalIntent(input: string): Record<string, Json> | undef
   return { question: question.join(' '), ...(tribunalMode ? { tribunalMode } : {}), ...(tribunalProtocol ? { tribunalProtocol } : {}) };
 }
 
-export async function runTribunal(raw: Json, context: Parameters<ModServices['engines']['dispatch']>[2], services: ModServices): Promise<CommandResult> {
+export async function runTribunal(raw: Json, context: TribunalInvocationContext, services: TribunalModServices, cliOutput = false): Promise<CommandResult> {
+  const failure = (message: string): CommandResult => ({ exitCode: 1, stderr: message + '\n' });
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return failure('Provide a Tribunal request object.');
   const input = raw as Record<string, Json>;
-  const question = [text(input.question), ...extras(input._).filter((part) => part !== input.question)].filter(Boolean).join(' ').trim();
-  if (!question) return { exitCode: 1, stderr: 'Provide a question. Usage: agon tribunal "question"\n' };
+  const quiet = input.quiet === true || (cliOutput && process.env.AGON_QUIET === '1');
+  const question = [text(input.question), ...extras(input._).filter(part => part !== input.question)].filter(Boolean).join(' ').trim();
+  if (!question) return failure('Provide a question. Usage: agon tribunal "question"');
+  context.signal.throwIfAborted();
   let engines = ids(input.engines);
   try {
-    if (engines.length && services.engines.resolveRequested) {
-      engines = [...await services.engines.resolveRequested(engines, context)];
-    } else if (!engines.length && services.engines.listActive) {
-      engines = [...await services.engines.listActive(context)];
-    }
+    if (engines.length && services.engines.resolveRequested) engines = [...await services.engines.resolveRequested(engines, context)];
+    else if (!engines.length && services.engines.listActive) engines = [...await services.engines.listActive(context)];
   } catch (error) {
-    return { exitCode: 1, stderr: `${error instanceof Error ? error.message : String(error)}\n` };
+    context.signal.throwIfAborted();
+    return failure(error instanceof Error ? error.message : String(error));
   }
   engines = engines.slice(0, 4);
-  if (engines.length < 2) return { exitCode: 1, stderr: `Tribunal needs at least 2 engines. Only found: ${engines.join(', ') || 'none'}\n` };
-  const modeText = text(input.mode) || 'adversarial'; if (!modes.has(modeText as Mode)) return { exitCode: 1, stderr: `Invalid tribunal mode: ${modeText}\n` }; const mode = modeText as Mode;
-  const cfg = getModeConfig(mode, engines.length); const requestedProtocol = (text(input.protocol) || 'auto').toLowerCase();
-  if (requestedProtocol !== 'auto' && !protocols.has(requestedProtocol as Protocol)) return { exitCode: 1, stderr: `Invalid tribunal protocol: ${requestedProtocol}\n` };
+  if (engines.length < 2) return failure(`Tribunal needs at least 2 engines. Only found: ${engines.join(', ') || 'none'}`);
+  const modeText = text(input.mode) || 'adversarial';
+  if (!modes.has(modeText as Mode)) return failure(`Invalid tribunal mode: ${modeText}`);
+  const mode = modeText as Mode;
+  const cfg = getModeConfig(mode, engines.length);
+  const requestedProtocol = (text(input.protocol) || 'auto').toLowerCase();
+  if (requestedProtocol !== 'auto' && !protocols.has(requestedProtocol as Protocol)) return failure(`Invalid tribunal protocol: ${requestedProtocol}`);
   const protocol = requestedProtocol === 'auto' ? cfg.protocol : requestedProtocol as Protocol;
-  const rounds = Math.max(1, Math.min(cfg.maxRounds, Number.parseInt(text(input.rounds) || '2', 10))); const timeoutSeconds = Math.max(1, Number.parseInt(text(input.timeout) || '120', 10));
-  const positions = engines.map((engineId, index) => ({ engineId, position: cfg.roles[index] ?? `Participant ${index + 1}`, arguments: [] as string[] }));
-  const failures: { engineId: string; round: number; error: string }[] = []; const roundResults: { round: number; positions: { engineId: string; position: string; argument: string }[] }[] = [];
-  const dispatch = async (engineId: string, prompt: string, round: number) => { try { const output = await services.engines.dispatch(engineId, prompt, context, { timeoutSeconds, systemPrompt: 'You are a debate participant. Respond directly with evidence and reasoning. Do not use tools.' }) as Record<string, Json>; const content = output.exitCode === 0 && output.timedOut !== true ? text(output.stdout).replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim() : ''; if (!content) throw new Error(text(output.stderr) || 'no visible response'); return content; } catch (error) { failures.push({ engineId, round, error: error instanceof Error ? error.message : String(error) }); return '(failed to respond)'; } };
-  for (let round = 1; round <= rounds && !context.signal.aborted; round++) {
-    const prior = positions.map((position) => `${position.engineId} (${position.position}): ${position.arguments.at(-1) ?? ''}`).join('\n\n');
-    const one = async (position: typeof positions[number], earlier = '') => dispatch(position.engineId,
-      buildModePrompt({ mode, role: position.position, question, round, totalRounds: rounds,
-        previousArguments: round > 1 ? prior : undefined, currentRoundArguments: earlier || undefined }), round);
-    const parallel = protocol === 'parallel' || (protocol === 'hybrid' && round === 1); const outputs: string[] = [];
-    if (parallel) outputs.push(...await Promise.all(positions.map((position) => one(position))));
-    else for (const position of positions) outputs.push(await one(position, outputs.map((argument, index) => `${positions[index].engineId}: ${argument}`).join('\n\n')));
-    outputs.forEach((argument, index) => positions[index].arguments.push(argument));
-    roundResults.push({ round, positions: positions.map((position, index) => ({ engineId: position.engineId, position: position.position, argument: outputs[index] })) });
+  const requestedRounds = Number(input.rounds ?? 2);
+  const timeout = Number(input.timeout ?? 120);
+  if (!Number.isInteger(requestedRounds) || requestedRounds < 1) return failure('Tribunal rounds must be a positive integer.');
+  if (!Number.isFinite(timeout) || timeout < 1) return failure('Tribunal timeout must be a positive number of seconds.');
+  const rounds = Math.min(cfg.maxRounds, requestedRounds);
+  if (!services.tribunal || !services.runs) return failure('Tribunal host capabilities are unavailable. Restart with a compatible modular CLI or MCP host.');
+  const session = await services.tribunal.open(context);
+  session.assertCurrent();
+  const label = text(input.label) || undefined;
+  const run = await services.runs.start('tribunal', label, context);
+  const lines: string[] = [];
+  const plain = (value: string) => value;
+  const log = (value: string) => { lines.push(value); };
+  const output = cliOutput ? services.tribunal.cliOutput ?? {
+    log, header: log, info: log, warn: log, bold: plain, dim: plain, red: plain,
+  } : undefined;
+  const printSummary = (statuses: readonly { id: string; status: string }[]) => {
+    const failed = statuses.filter(seat => seat.status !== 'ok');
+    output?.log(`AGON_SUMMARY: ${statuses.length - failed.length}/${statuses.length} succeeded${failed.length ? '; ' + failed.map(seat => `${seat.id}: ${seat.status}`).join(', ') : ''}`);
+  };
+  const failures: TribunalFailure[] = [];
+  let completion: TribunalEvent | undefined;
+  let result: TribunalResult;
+  try {
+    session.assertCurrent();
+    output?.log(quiet ? run.path : `AGON_RUN: ${run.path}`);
+    if (output && !quiet) {
+      output.header(`Tribunal: ${question}`);
+      output.info(`Engines: ${engines.join(', ')}`);
+      output.info(`Rounds: ${rounds}`);
+      output.info(`Mode: ${mode}`);
+      output.info(`Protocol: ${protocol}`);
+      output.log('');
+    }
+    result = await createTribunalRuntime(session.effects)({
+      question, engines, rounds, mode, protocol, timeout, cwd: context.cwd,
+      registry: session.registry, adapter: session.adapter, outputDir: run.path, signal: context.signal,
+      onEvent: event => {
+        // The command publishes completion only after its own durable effects.
+        if (event.type === 'forge:done') { completion = event; return; }
+        if (event.type === 'engine:failed') failures.push({
+          engineId: String(event.data?.engineId ?? event.engineId ?? 'unknown'),
+          phase: String(event.data?.phase ?? 'dispatch'), error: String(event.data?.error ?? 'unknown error'),
+        });
+        else if (output && !quiet && event.data?.round && event.engineId && event.data.position) {
+          output.info(`Round ${event.data.round}: ${output.bold(event.engineId)} (${String(event.data.position)})...`);
+        }
+        context.onWorkflowEvent?.(event);
+      },
+    });
+    session.assertCurrent();
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    await services.runs.finish(run, {
+      mode: 'tribunal', ...(label ? { label } : {}), startedAt: run.startedAt, endedAt: new Date().toISOString(),
+      engines: engines.map(id => ({ id, status: 'error', detail })), summary: detail, ok: false,
+    }, context);
+    context.signal.throwIfAborted();
+    printSummary(engines.map(id => ({ id, status: 'error' })));
+    return { ...failure(detail), ...(cliOutput ? { stdout: lines.length ? lines.join('\n') + '\n' : '' } : {}) };
   }
-  const debate = positions.map((position) => `${position.engineId} (${position.position}):\n${position.arguments.join('\n\n')}`).join('\n\n---\n\n');
-  let summary = debate; try { const output = await services.engines.dispatch(engines[0], buildModeSummaryPrompt({ mode, question, positions }), context, { timeoutSeconds, systemPrompt: 'Synthesize the debate. Be decisive and evidence-oriented. Do not use tools.' }) as Record<string, Json>; if (output.exitCode === 0 && text(output.stdout)) summary = text(output.stdout); } catch { /* evidence remains in the raw debate */ }
-  const responded = positions.filter((position) => position.arguments.some((argument) => argument !== '(failed to respond)')).length; const result = { question, mode, protocol, rounds: roundResults, positions, summary, panelHealth: { requested: engines.length * rounds, responded: engines.length * rounds - failures.length, degraded: failures.length > 0, failures } };
-  if (!responded) return { exitCode: 1, stderr: 'Tribunal produced no usable arguments.\n', result: result as Json };
+  const statuses = engines.map(id => {
+    const errors = failures.filter(item => item.engineId === id);
+    const count = result.rounds.flatMap(round => round.positions.filter(position => position.engineId === id))
+      .flatMap(position => position.arguments).filter(argument => argument.trim() && argument !== '(failed to respond)').length;
+    return errors.length
+      ? { id, status: 'error', detail: errors.map(item => `${item.phase}: ${item.error.length > 160 ? item.error.slice(0, 160) + '…' : item.error}`).join('; ') }
+      : count ? { id, status: 'ok', detail: `${count} arguments` } : { id, status: 'error', detail: 'no arguments produced' };
+  });
+  const okCount = statuses.filter(seat => seat.status === 'ok').length;
+  await services.runs.finish(run, {
+    mode: 'tribunal', ...(label ? { label } : {}), startedAt: run.startedAt, endedAt: new Date().toISOString(),
+    engines: statuses, summary: `${okCount}/${engines.length} engines argued across ${rounds} round(s) (mode=${mode}, protocol=${protocol})`,
+    ok: okCount === engines.length,
+  }, context);
+  session.assertCurrent();
+  if (!result.panelHealth?.responded) {
+    printSummary(statuses);
+    return { ...failure('Tribunal produced no usable arguments.'), result: result as unknown as Json,
+      ...(cliOutput ? { stdout: lines.length ? lines.join('\n') + '\n' : '' } : {}) };
+  }
   await services.receipts.record('tribunal', { mode, protocol, rounds, engines: engines.length, failures: failures.length });
-  return input.quiet === true ? { exitCode: 0, stdout: `${summary}\n`, result: result as Json } : { exitCode: 0, stdout: `${JSON.stringify(result, null, 2)}\n`, result: result as Json };
+  session.assertCurrent();
+  if (output) {
+    if (!quiet) renderTribunalResult(result, failures, run.path, output);
+    printSummary(statuses);
+    if (completion) context.onWorkflowEvent?.(completion);
+    return { exitCode: 0, stdout: lines.length ? lines.join('\n') + '\n' : '', result: result as unknown as Json };
+  }
+  if (completion) context.onWorkflowEvent?.(completion);
+  return { exitCode: 0, stdout: input.quiet === true ? result.summary + '\n' : JSON.stringify(result, null, 2) + '\n', result: result as unknown as Json };
 }
 
-export const createMod: AgonModFactory = (services) => Object.freeze({ apiVersion: '1' as const, async activate(registrar: Registrar): Promise<Dispose> { const disposers: Dispose[] = []; const command = { description: 'Adversarial debate — engines argue different sides of a question', inputSchema: schema, cli, run: (input: Json, context: any) => runTribunal(input, context, services) }; disposers.push(registrar.command('cli', { id: 'cliCommands:0072', ...command })); for (const id of ['intentVariants:0057', 'intentVariants:0063']) disposers.push(registrar.intent({ id, description: 'Parse tribunal intent', inputSchema: schema, parse: parseTribunalIntent, run: (value, context) => { const parsed = value as Record<string, Json>; return runTribunal({ ...parsed, mode: parsed.tribunalMode ?? parsed.mode ?? 'adversarial', protocol: parsed.tribunalProtocol ?? parsed.protocol ?? 'auto' }, context, services); } })); for (const id of ['builtinCommandMetadata:0048', 'tuiSlashCommands:0069']) disposers.push(registrar.command('tui', { id, ...command })); disposers.push(registrar.tool('mcp', { id: 'mcpTools:0032', description: 'Run an adversarial tribunal', inputSchema: schema, effect: 'process', run: async (input, context) => commandResultToToolResult(await runTribunal(input, context, services)) })); for (const id of ['cesarRoutes:0066', 'cesarRoutes:0067', 'cesarRoutes:0068', 'cesarRoutes:0069']) disposers.push(registrar.planStep({ id, inputSchema: schema, resultSchema: schema, risk: 'read', run: (input, context) => runTribunal(input, context, services) })); disposers.push(registrar.tool('cesar', { id: 'cesarTools:0026', description: 'Hand this question to an adversarial Tribunal', inputSchema: cesarSchema, effect: 'read', run: async () => 'Delegation accepted — end your turn now so the run can start.' })); disposers.push(registrar.resultType({ id: 'resultAndEnvelopeTypes:0139', schema: { type: 'object', additionalProperties: true }, readableVersions: '>=0.2.0', render: async (payload) => ({ text: JSON.stringify(payload, null, 2) }) })); return async () => { for (const dispose of [...disposers].reverse()) await dispose(); }; } });
+export const createMod: AgonModFactory = (services) => Object.freeze({ apiVersion: '1' as const, async activate(registrar: Registrar): Promise<Dispose> { const disposers: Dispose[] = []; const command = { description: 'Adversarial debate — engines argue different sides of a question', inputSchema: schema, cli, run: (input: Json, context: any) => runTribunal(input, context, services) }; disposers.push(registrar.command('cli', { id: 'cliCommands:0072', ...command, run: (input, context) => runTribunal(input, context, services, true) })); for (const id of ['intentVariants:0057', 'intentVariants:0063']) disposers.push(registrar.intent({ id, description: 'Parse tribunal intent', inputSchema: schema, parse: parseTribunalIntent, run: (value, context) => { const parsed = value as Record<string, Json>; return runTribunal({ ...parsed, mode: parsed.tribunalMode ?? parsed.mode ?? 'adversarial', protocol: parsed.tribunalProtocol ?? parsed.protocol ?? 'auto' }, context, services); } })); for (const id of ['builtinCommandMetadata:0048', 'tuiSlashCommands:0069']) disposers.push(registrar.command('tui', { id, ...command })); disposers.push(registrar.tool('mcp', { id: 'mcpTools:0032', description: 'Run an adversarial tribunal', inputSchema: schema, effect: 'process', run: async (input, context) => commandResultToToolResult(await runTribunal(input, context, services)) })); for (const id of ['cesarRoutes:0066', 'cesarRoutes:0067', 'cesarRoutes:0068', 'cesarRoutes:0069']) disposers.push(registrar.planStep({ id, inputSchema: schema, resultSchema: schema, risk: 'read', run: (input, context) => runTribunal(input, context, services) })); disposers.push(registrar.tool('cesar', { id: 'cesarTools:0026', description: 'Hand this question to an adversarial Tribunal', inputSchema: cesarSchema, effect: 'read', run: async () => 'Delegation accepted — end your turn now so the run can start.' })); disposers.push(registrar.resultType({ id: 'resultAndEnvelopeTypes:0139', schema: { type: 'object', additionalProperties: true }, readableVersions: '>=0.2.0', render: async (payload) => ({ text: JSON.stringify(payload, null, 2) }) })); return async () => { for (const dispose of [...disposers].reverse()) await dispose(); }; } });
 export default createMod;

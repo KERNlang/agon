@@ -38,7 +38,9 @@ export const cliRunRecordHost = Object.freeze<RunRecordHostServices>({
     const snapshot = structuredClone(status) as unknown as RunStatus;
     const entry = pending.get(handle.path);
     if (entry) entry.finalStatus = snapshot;
-    if (!writeRunStatus(handle.path, snapshot)) return;
+    if (!writeRunStatus(handle.path, snapshot)) {
+      throw new Error(`Run status could not be persisted at ${handle.path}. Completed work is retained; inspect staging before retrying.`);
+    }
     pending.delete(handle.path);
     if (pending.size === 0) process.removeListener('exit', finalizeInterruptedRuns);
   },

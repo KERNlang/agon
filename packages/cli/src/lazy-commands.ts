@@ -193,7 +193,7 @@ function schemaGeneratedCommand(publicId: string, description: string, displayNa
       } else result = output as CommandResult;
       assertInvocation();
       if (result.stdout) process.stdout.write(result.stdout); if (result.stderr) process.stderr.write(result.stderr);
-      if (result.result !== undefined && !result.stdout) console.log(typeof result.result === 'string' ? result.result : JSON.stringify(result.result, null, 2));
+      if (result.result !== undefined && result.stdout === undefined) console.log(typeof result.result === 'string' ? result.result : JSON.stringify(result.result, null, 2));
       if (result.exitCode !== 0) process.exitCode = result.exitCode;
     },
   };

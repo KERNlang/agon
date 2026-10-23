@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { CommandContribution, IntentContribution, ModServices, Registrar } from '@kernlang/agon-mod-api';
 import { createMod } from './implementation.js';
+import { withTribunalFixtureHost } from '../../../tests/fixtures/modular-tribunal-host.js';
 
 const context = { invocationId: 'tribunal-test', cwd: process.cwd(), platform: 'darwin-arm64' as const, signal: new AbortController().signal, config: {} };
 
@@ -10,10 +11,177 @@ async function setup(failing = new Set<string>()) {
   const services = { identity: { id: 'agon.tribunal', version: '1.0.0', contentHash: `sha256:${'a'.repeat(64)}` }, source: 'bundled', logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn() }, receipts: { record }, permissions: { check: vi.fn(async () => 'allow') }, state: { read: vi.fn(), write: vi.fn() }, engines: { listActive: vi.fn(async () => ['alpha', 'beta']), dispatch } } as unknown as ModServices;
   const intents: IntentContribution[] = [];
   let command: CommandContribution | undefined; const registrar = { command: (surface: string, value: CommandContribution) => { if (surface === 'cli') command = value; return () => {}; }, intent: (value: IntentContribution) => { intents.push(value); return () => {}; }, tool: () => () => {}, planStep: () => () => {}, resultType: () => () => {} } as unknown as Registrar;
-  const mod = await createMod(services); await mod.activate(registrar, services); return { command: command!, intents, dispatch, record };
+  const hosted = withTribunalFixtureHost(services);
+  const mod = await createMod(hosted); await mod.activate(registrar, hosted); return { command: command!, intents, dispatch, record, services: hosted };
 }
 
 describe('physical tribunal mod', () => {
+  it('publishes completion only after finalization and does not undo it on observer cancellation', async () => {
+    const h = await setup();
+    const controller = new AbortController();
+    const finish = vi.spyOn(h.services.runs!, 'finish');
+    const done = vi.fn();
+    const result = await h.command.run({ question: 'Q', rounds: '1' }, {
+      ...context, signal: controller.signal,
+      onWorkflowEvent: (event: { type: string }) => {
+        if (event.type !== 'forge:done') return;
+        done();
+        expect(finish).toHaveBeenCalledOnce();
+        expect(h.record).toHaveBeenCalledOnce();
+        controller.abort(new Error('after completion'));
+      },
+    } as typeof context);
+    expect(result.exitCode).toBe(0);
+    expect(done).toHaveBeenCalledOnce();
+    expect(finish.mock.calls[0][1]).toMatchObject({ ok: true });
+  });
+  it('refuses a missing host without dispatch or a run record', async () => {
+    const h = await setup();
+    const start = vi.spyOn(h.services.runs!, 'start');
+    Object.assign(h.services, { tribunal: undefined });
+    expect(await h.command.run({ question: 'Q' }, context)).toMatchObject({ exitCode: 1, stderr: expect.stringContaining('host capabilities') });
+    expect(start).not.toHaveBeenCalled();
+    expect(h.dispatch).not.toHaveBeenCalled();
+  });
+
+  it('rejects a pre-aborted invocation before opening its host', async () => {
+    const h = await setup();
+    const open = vi.spyOn(h.services.tribunal!, 'open');
+    await expect(h.command.run({ question: 'Q' }, { ...context, signal: AbortSignal.abort(new Error('already cancelled')) }))
+      .rejects.toThrow('already cancelled');
+    expect(open).not.toHaveBeenCalled();
+    expect(h.record).not.toHaveBeenCalled();
+  });
+
+  it('keeps all-failed evidence but does not issue a success receipt', async () => {
+    const h = await setup(new Set(['alpha', 'beta']));
+    const finish = vi.spyOn(h.services.runs!, 'finish');
+    const result = await h.command.run({ question: 'Q', rounds: '1' }, context);
+    expect(result).toMatchObject({ exitCode: 1, result: { panelHealth: { responded: 0 } } });
+    expect(result.stdout).toContain('AGON_SUMMARY: 0/2 succeeded; alpha: error, beta: error');
+    expect(finish).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ ok: false }), context);
+    expect(h.record).not.toHaveBeenCalled();
+  });
+
+  it('retains arguments when the summary engine fails', async () => {
+    const h = await setup();
+    h.dispatch.mockImplementation(async (engineId, prompt) => ({ engineId,
+      exitCode: prompt.includes('## TASK\n') ? 1 : 0,
+      stdout: prompt.includes('## TASK\n') ? '' : `${engineId} argument`, stderr: 'summary unavailable', timedOut: false }));
+    const result = await h.command.run({ question: 'Q', rounds: '1' }, context);
+    expect(result.exitCode).toBe(0);
+    expect(result.result).toMatchObject({ summary: expect.stringContaining('alpha argument') });
+    expect(result.stdout).toContain('Engines that hit errors');
+    expect(result.stdout).toContain('tribunal-summary');
+  });
+
+  it('does not publish success when run finalization fails', async () => {
+    const h = await setup();
+    vi.spyOn(h.services.runs!, 'finish').mockRejectedValue(new Error('disk unavailable'));
+    await expect(h.command.run({ question: 'Q', rounds: '1' }, context)).rejects.toThrow('disk unavailable');
+    expect(h.record).not.toHaveBeenCalled();
+  });
+
+  it('rejects a retired generation after a dispatch completes', async () => {
+    const h = await setup();
+    const session = await h.services.tribunal!.open(context);
+    let retired = false;
+    const assertCurrent = () => { if (retired) throw new Error('generation retired'); };
+    session.assertCurrent = assertCurrent;
+    session.effects.assertCurrent = assertCurrent;
+    h.services.tribunal!.open = () => session;
+    h.dispatch.mockImplementation(async engineId => {
+      retired = true;
+      return { engineId, exitCode: 0, stdout: 'late argument', stderr: '', timedOut: false };
+    });
+    const result = await h.command.run({ question: 'Q', protocol: 'chained' }, context);
+    expect(result).toMatchObject({ exitCode: 1, stderr: expect.stringContaining('generation retired') });
+    expect(h.dispatch).toHaveBeenCalledOnce();
+    expect(h.record).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])('keeps CLI run markers and human output (quiet=%s)', async quiet => {
+    const h = await setup();
+    const result = await h.command.run({ question: 'Q', rounds: '1', quiet }, context);
+    expect(result.exitCode).toBe(0);
+    const lines = result.stdout!.trim().split('\n');
+    expect(lines[0]).toMatch(quiet ? /^\/.*agon-tribunal-fixture-/ : /^AGON_RUN: \/.*agon-tribunal-fixture-/);
+    expect(lines.at(-1)).toBe('AGON_SUMMARY: 2/2 succeeded');
+    if (quiet) expect(lines).toHaveLength(2);
+    else {
+      expect(result.stdout).toContain('Tribunal: Q\nEngines: alpha, beta\nRounds: 1\nMode: adversarial\nProtocol: hybrid');
+      expect(result.stdout).toContain('Round 1: alpha (Argue FOR)...');
+      expect(result.stdout).toContain('Verdict\n\nverdict');
+      expect(result.stdout).toContain('Full debate saved: ');
+    }
+  });
+
+  it('streams through the injected CLI renderer without duplicating stdout', async () => {
+    const h = await setup();
+    const lines: string[] = [];
+    const write = (value: string) => { lines.push(value); };
+    Object.assign(h.services.tribunal!, { cliOutput: {
+      log: write, header: write, info: write, warn: write,
+      bold: (value: string) => value, dim: (value: string) => value, red: (value: string) => value,
+    } });
+    h.dispatch.mockImplementation(async engineId => {
+      expect(lines[0]).toMatch(/^AGON_RUN:/);
+      return { engineId, exitCode: 0, stdout: 'argument', stderr: '', timedOut: false };
+    });
+    const result = await h.command.run({ question: 'Q', rounds: '1' }, context);
+    expect(result.stdout).toBe('');
+    expect(lines.filter(line => line.startsWith('AGON_RUN:'))).toHaveLength(1);
+    expect(lines.at(-1)).toBe('AGON_SUMMARY: 2/2 succeeded');
+  });
+
+  it('uses the configured outside-panel judge and persists the labelled outcome', async () => {
+    const h = await setup();
+    const session = await h.services.tribunal!.open(context);
+    session.effects.loadConfig = () => ({ cesarEngine: 'judge' });
+    h.services.tribunal!.open = () => session;
+    const finish = vi.spyOn(h.services.runs!, 'finish');
+    const result = await h.command.run({ question: 'Q', rounds: '1', label: 'decision' }, context);
+    expect(result.exitCode).toBe(0);
+    expect(h.dispatch.mock.calls.map(([id]) => id)).toEqual(['alpha', 'beta', 'judge']);
+    expect(finish).toHaveBeenCalledWith(expect.objectContaining({ mode: 'tribunal' }),
+      expect.objectContaining({ label: 'decision', ok: true, engines: [
+        { id: 'alpha', status: 'ok', detail: '1 arguments' },
+        { id: 'beta', status: 'ok', detail: '1 arguments' },
+      ] }), context);
+  });
+
+  it('forwards active cancellation and finalizes failure without a success receipt', async () => {
+    const h = await setup();
+    const controller = new AbortController();
+    const invocation = { ...context, signal: controller.signal };
+    const session = await h.services.tribunal!.open(invocation);
+    h.services.tribunal!.open = () => session;
+    const started = Promise.withResolvers<void>();
+    const dispatch = vi.spyOn(session.adapter, 'dispatch').mockImplementation(async options => {
+      expect(options.signal).toBe(controller.signal);
+      started.resolve();
+      await new Promise<void>(resolve => options.signal!.addEventListener('abort', () => resolve(), { once: true }));
+      return { engineId: options.engine.id, exitCode: 0, stdout: 'late result', stderr: '', timedOut: false } as never;
+    });
+    const finish = vi.spyOn(h.services.runs!, 'finish');
+    const pending = h.command.run({ question: 'Q', protocol: 'chained' }, invocation);
+    const rejected = expect(pending).rejects.toThrow('cancel fixture');
+    await started.promise;
+    controller.abort(new Error('cancel fixture'));
+    await rejected;
+    expect(dispatch).toHaveBeenCalledOnce();
+    expect(finish).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ ok: false, summary: 'cancel fixture' }), invocation);
+    expect(h.record).not.toHaveBeenCalled();
+  });
+
+  it.each([{ rounds: 'NaN' }, { rounds: '0' }, { rounds: '1.5' }, { timeout: 'Infinity' }])(
+    'rejects invalid execution bounds before dispatch: %j', async bounds => {
+      const h = await setup();
+      expect(await h.command.run({ question: 'Q', ...bounds }, context)).toMatchObject({ exitCode: 1 });
+      expect(h.dispatch).not.toHaveBeenCalled();
+      expect(h.record).not.toHaveBeenCalled();
+    });
+
   it.each([
     ['/tribunal socratic Q', 'socratic', 'chained'],
     ['/tribunal --mode red-team --protocol parallel Q', 'red-team', 'parallel'],
@@ -40,7 +208,7 @@ describe('physical tribunal mod', () => {
   ])('uses canonical $mode roles and prompts', async ({ mode, roles, instruction, summary }) => {
     const h = await setup();
     const result = await h.command.run({ question: 'Ship it?', rounds: '1', engines: 'a,b,c,d', mode }, context);
-    const parsed = JSON.parse((result as { stdout: string }).stdout);
+    const parsed = (result as { result: any }).result;
     expect(parsed.positions.map((position: { position: string }) => position.position)).toEqual(roles);
     expect(h.dispatch.mock.calls[0][1]).toContain(instruction);
     expect(h.dispatch.mock.calls.at(-1)?.[1]).toContain(summary);
@@ -49,7 +217,7 @@ describe('physical tribunal mod', () => {
   it('uses investigator roles for a two-engine postmortem', async () => {
     const h = await setup();
     const result = await h.command.run({ question: 'Incident?', rounds: '1', mode: 'postmortem' }, context);
-    const parsed = JSON.parse((result as { stdout: string }).stdout);
+    const parsed = (result as { result: any }).result;
     expect(parsed.positions.map((position: { position: string }) => position.position))
       .toEqual(['Investigator', 'Prevention designer']);
     expect(h.dispatch.mock.calls[0][1]).toContain('Investigate the incident');
@@ -101,7 +269,7 @@ describe('physical tribunal mod', () => {
           expect(participants).toBe(first + 1);
           gates[first].resolve(`first ${round}`);
           await started[first + 1].promise;
-          expect(h.dispatch.mock.calls[first + 1][1]).toContain(`alpha: first ${round}`);
+          expect(h.dispatch.mock.calls[first + 1][1]).toContain(`**alpha (Argue FOR):**\nfirst ${round}`);
           gates[first + 1].resolve(`second ${round}`);
         }
       }
@@ -126,11 +294,11 @@ describe('physical tribunal mod', () => {
     expect(prompts[0]).not.toContain('## PREVIOUS ARGUMENTS');
     expect(prompts[0]).not.toContain('## EARLIER ARGUMENTS THIS ROUND');
     expect(prompts[1].includes('## EARLIER ARGUMENTS THIS ROUND')).toBe(protocol === 'chained');
-    expect(prompts[2]).toContain('## PREVIOUS ARGUMENTS\nalpha (Proposer A): alpha argument 1\n\nbeta (Proposer B): beta argument 2');
+    expect(prompts[2]).toContain('## PREVIOUS ARGUMENTS\n**alpha (Proposer A):**\nalpha argument 1\n\n---\n\n**beta (Proposer B):**\nbeta argument 2');
     expect(prompts[2]).not.toContain('## EARLIER ARGUMENTS THIS ROUND');
     expect(prompts[2]).toContain('create a hybrid');
     expect(prompts[3].includes('## EARLIER ARGUMENTS THIS ROUND')).toBe(protocol !== 'parallel');
-    if (protocol !== 'parallel') expect(prompts[3]).toContain('alpha: alpha argument 3');
+    if (protocol !== 'parallel') expect(prompts[3]).toContain('**alpha (Proposer A):**\nalpha argument 3');
     expect(prompts[4]).toContain('alpha argument 1\n\nalpha argument 3');
     expect(prompts[4]).toContain('beta argument 2\n\nbeta argument 4');
   });
@@ -147,7 +315,7 @@ describe('physical tribunal mod', () => {
     async ({ mode, cap, protocol, explicitAuto }) => {
       const h = await setup();
       const output = await h.command.run({ question: 'Q', mode, rounds: '99', ...(explicitAuto ? { protocol: 'auto' } : {}) }, context);
-      const result = JSON.parse((output as { stdout: string }).stdout);
+      const result = output.result as any;
       expect(result.protocol).toBe(protocol);
       expect(result.rounds).toHaveLength(cap);
       expect(h.dispatch).toHaveBeenCalledTimes(cap * 2 + 1);
@@ -162,7 +330,7 @@ describe('physical tribunal mod', () => {
     });
 
   it('runs the configured rounds and synthesizes a verdict', async () => {
-    const h = await setup(); const result = await h.command.run({ question: 'Ship it?', rounds: '2', protocol: 'parallel' }, context); const parsed = JSON.parse((result as { stdout: string }).stdout);
+    const h = await setup(); const result = await h.command.run({ question: 'Ship it?', rounds: '2', protocol: 'parallel' }, context); const parsed = (result as { result: any }).result;
     expect(parsed).toMatchObject({ mode: 'adversarial', protocol: 'parallel', summary: 'verdict', panelHealth: { requested: 4, responded: 4, degraded: false } });
     expect(parsed.rounds).toHaveLength(2); expect(h.dispatch).toHaveBeenCalledTimes(5); expect(h.record).toHaveBeenCalled();
   });
@@ -170,7 +338,7 @@ describe('physical tribunal mod', () => {
     const h = await setup(); await expect(h.command.run({ question: 'Q', mode: 'magic' }, context)).resolves.toMatchObject({ exitCode: 1 }); expect(h.dispatch).not.toHaveBeenCalled();
   });
   it('preserves partial evidence and marks a degraded panel', async () => {
-    const h = await setup(new Set(['beta'])); const result = await h.command.run({ question: 'Q', rounds: '1' }, context); const parsed = JSON.parse((result as { stdout: string }).stdout);
-    expect(parsed.panelHealth).toMatchObject({ requested: 2, responded: 1, degraded: true }); expect(parsed.panelHealth.failures[0]).toMatchObject({ engineId: 'beta' });
+    const h = await setup(new Set(['beta'])); const result = await h.command.run({ question: 'Q', rounds: '1' }, context); const parsed = (result as { result: any }).result;
+    expect(parsed.panelHealth).toMatchObject({ requested: 2, responded: 1, degraded: true }); expect(parsed.panelHealth.notes.join(' ')).toContain('beta');
   });
 });

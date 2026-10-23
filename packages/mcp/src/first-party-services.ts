@@ -77,7 +77,11 @@ export function decorateMcpFirstPartyServices(manifest: ModManifest, base: ModSe
     } : {}),
     runs: Object.freeze({
       start(mode: string, label: string | undefined) { const startedAt = new Date().toISOString(); const created = createRunDir({ mode, label, announce: false }); return Object.freeze({ id: created.id, path: created.path, mode, startedAt }); },
-      finish(handle: { path: string }, status: Json): void { writeRunStatus(handle.path, status as never); },
+      finish(handle: { path: string }, status: Json): void {
+        if (!writeRunStatus(handle.path, status as never)) {
+          throw new Error(`Run status could not be persisted at ${handle.path}. Completed work is retained; inspect staging before retrying.`);
+        }
+      },
       writeArtifact(handle: { path: string }, relativePath: string, content: string): void {
         const root = resolve(handle.path); const target = resolve(root, relativePath);
         if (target === root || !target.startsWith(root + sep)) throw new Error(`Run artifact escapes its run directory: ${relativePath}`);

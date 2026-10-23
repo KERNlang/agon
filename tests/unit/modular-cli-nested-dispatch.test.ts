@@ -1,10 +1,10 @@
 import { runCommand } from 'citty';
 import type { CommandDef } from 'citty';
-import type { CommandContribution } from '../../packages/mod-api/src/index.js';
+import type { CommandContribution, CommandResult } from '../../packages/mod-api/src/index.js';
 import { beforeEach, expect, it, vi } from 'vitest';
 
 const state = vi.hoisted(() => ({ calls: [] as string[], inputs: [] as unknown[], flagProjection: false, requiredIntent: false,
-  disabled: new Set<string>(), failure: false, generation: 0, goalProjection: undefined as CommandContribution | undefined }));
+  disabled: new Set<string>(), failure: false, generation: 0, result: { exitCode: 0 } as CommandResult, goalProjection: undefined as CommandContribution | undefined }));
 vi.mock('../../packages/cli/src/surface-authority-runtime.js', () => {
   const entries = () => ['ratings', 'ratings purge-unknown', ...(state.goalProjection ? ['goal'] : [])].map(publicId => ({ publicId, category: 'cliCommands', description: publicId, aliases: publicId === 'ratings' ? ['scores'] : [] }));
   const check = (_surface: string, id: string) => { if (state.disabled.has(id)) throw new Error(`disabled: ${id}`); };
@@ -23,14 +23,32 @@ vi.mock('../../packages/cli/src/surface-authority-runtime.js', () => {
           dryRun: { type: 'boolean', default: false }, requireTests: { type: 'boolean', default: true },
           gateTimeout: { type: 'string', default: '1800' }, reviewEngines: { type: 'string' }, intent: { type: 'string' },
         } : {} }, cli: state.goalProjection?.cli ?? (state.flagProjection ? { positionals: ['intent'], aliases: { reviewEngines: 'r' } } : {}),
-        run(input: unknown) { state.inputs.push(input); state.calls.push(id); if (state.failure) throw new Error('child failed'); return { exitCode: 0 }; },
+        run(input: unknown) { state.inputs.push(input); state.calls.push(id); if (state.failure) throw new Error('child failed'); return state.result; },
       } };
     } }),
   };
 });
 import { createGeneratedLazySubCommands, normalizeCliArguments } from '../../packages/cli/src/lazy-commands.js';
 
-beforeEach(() => { state.calls = []; state.inputs = []; state.flagProjection = false; state.requiredIntent = false; state.disabled.clear(); state.failure = false; state.generation = 0; state.goalProjection = undefined; });
+beforeEach(() => { state.calls = []; state.inputs = []; state.flagProjection = false; state.requiredIntent = false; state.disabled.clear(); state.failure = false; state.generation = 0; state.result = { exitCode: 0 }; state.goalProjection = undefined; });
+
+it.each([undefined, '', 'Already formatted\n'])('preserves explicit stdout %j without duplicating the structured result', async stdout => {
+  state.result = { exitCode: 2, stdout, stderr: 'Diagnostic\n', result: { answer: 42 } };
+  const output = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+  const error = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+  const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+  const previousExit = process.exitCode;
+  try {
+    await runCommand({ subCommands: createGeneratedLazySubCommands() }, { rawArgs: ['ratings'] });
+    expect(output.mock.calls).toEqual(stdout ? [[stdout]] : []);
+    expect(log.mock.calls).toEqual(stdout === undefined ? [[JSON.stringify({ answer: 42 }, null, 2)]] : []);
+    expect(error.mock.calls).toEqual([['Diagnostic\n']]);
+    expect(process.exitCode).toBe(2);
+  } finally {
+    process.exitCode = previousExit;
+    output.mockRestore(); error.mockRestore(); log.mockRestore();
+  }
+});
 
 it('parses actual supervised Goal restart arguments through the generated Goal route', async () => {
   const { createMod, runGoalSupervisor } = await import('../../packages/mod-goal/src/implementation.js');

@@ -1,5 +1,7 @@
 import type { ConquerInvocationContext } from './host.js';
 import type { ConquerResult } from './workflow.js';
+import { renderConquerProgress, renderConquerPublication } from './presentation.js';
+import type { ConquerPublicationOutput } from './presentation.js';
 
 export interface ConquerSessionHost {
   cwd(): string;
@@ -49,37 +51,16 @@ export async function runConquerSession(
       cwd: host.cwd(), signal,
       onWorkflowEvent(event) {
         signal.throwIfAborted();
-        if (event.type !== 'conquer:start' && event.type !== 'conquer:turn') return;
-        if (!event.data) throw new Error('Conquer returned invalid session metadata.');
-        if (event.type === 'conquer:start') {
-          const data = event.data;
-          const retained = data.worktree as { branch?: unknown; path?: unknown } | undefined;
-          if (typeof data.builder !== 'string' || !Array.isArray(data.advisors)
-            || !data.advisors.every(id => typeof id === 'string')
-            || typeof retained?.branch !== 'string' || typeof retained.path !== 'string') {
-            throw new Error('Conquer returned invalid session metadata.');
-          }
-          builder = data.builder;
-          advisors = [...data.advisors];
-          worktree = { branch: retained.branch, path: retained.path };
-          host.dispatch({ type: 'header', title: `Conquer · builder=${builder} · advisors=${advisors.join(',') || '(none)'}` });
-          const task = input.task as string;
-          for (const message of [task.length > 120 ? task.slice(0, 120) + '…' : task,
-            `gate: ${input.gate}`, `isolated branch: ${worktree.branch}`, `worktree: ${worktree.path}`]) {
-            signal.throwIfAborted();
-            info(message);
-          }
-          if (data.dirtySourceExcluded) host.dispatch({ type: 'warning', message: 'The source checkout has uncommitted work. It remains untouched and is not included in this HEAD-based Conquer branch.' });
-        } else {
-          const turn = event.data;
-          const detail = typeof turn.detail === 'string' ? turn.detail : '';
-          info(`turn ${turn.n} · ${turn.action}${turn.action === 'consult' || turn.action === 'done-check' ? ` — ${detail.slice(0, 80)}` : ''}`);
-        }
+        renderConquerProgress({ ...event, data: event.data && { ...event.data, task: input.task, gate: input.gate } }, message => {
+          signal.throwIfAborted();
+          host.dispatch(message);
+          signal.throwIfAborted();
+        }, state => { builder = state.builder; advisors = state.advisors; worktree = state.worktree; });
         signal.throwIfAborted();
       },
     });
     signal.throwIfAborted();
-    const result = output.result as { workflow?: ConquerResult; outputDir?: string } | undefined;
+    const result = output.result as (ConquerPublicationOutput & { workflow?: ConquerResult; outputDir?: string }) | undefined;
     const workflow = result?.workflow;
     if (!workflow || typeof workflow.done !== 'boolean' || typeof workflow.stopReason !== 'string' || !worktree || !builder) {
       throw new Error(output.stderr?.trim() || output.failure?.message || 'Conquer returned an invalid session result.');
@@ -92,7 +73,7 @@ export async function runConquerSession(
     const reason = success ? workflow.doneReason : output.failure?.message || output.stderr?.trim() || workflow.doneReason;
     if (success) {
       info(`✓ Conquered. Claim: ${claim}`);
-      info(`The builder's changes are isolated on ${worktree.branch} at ${worktree.path}. Review and commit there, then open a PR to merge. Remove it later with: agon worktree rm ${worktree.branch}`);
+      if (!renderConquerPublication(result ?? {}, info)) info(`The builder's changes are isolated on ${worktree.branch} at ${worktree.path}. Review and commit there, then open a PR to merge. Remove it later with: agon worktree rm ${worktree.branch}`);
     } else {
       info(reason ? `${workflow.done ? 'Conquer failed' : 'Not verified done'} — ${reason}` : 'Did not reach a verified done state — inspect the isolated worktree.');
       info(`Work preserved on ${worktree.branch} at ${worktree.path}.`);

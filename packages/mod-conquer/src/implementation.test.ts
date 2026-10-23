@@ -65,7 +65,35 @@ async function runConquerTask(...[input, context, services]: Parameters<typeof r
   return runConquerTaskImpl(input, context, withTribunalFixtureHost(withConquerHost(services)));
 }
 
-it.each(['complete', 'cancel-start'] as const)('reports Conquer session progress and retained work: %s', async scenario => {
+it('preserves human-readable Conquer CLI output and structured results', async () => {
+  const cwd = repo();
+  const services = withConquerHost({ logger: { debug: vi.fn() },
+    receipts: { record: vi.fn(async () => 'fixture') },
+    engines: { listActive: async () => ['builder'], dispatch: async (_id, _prompt, context) => {
+      writeFileSync(join(context.cwd, 'feature.txt'), 'review this feature\n');
+      return { exitCode: 0, stdout: 'CONQUER_DONE: feature exists', stderr: '', timedOut: false };
+    } },
+  } as unknown as ModServices);
+  let contribution: CommandContribution | undefined;
+  const registrar = new Proxy({}, { get: (_, method) => (...args: unknown[]) => {
+    if (method === 'command' && args[0] === 'cli') contribution = args[1] as CommandContribution;
+    return () => {};
+  } }) as Registrar;
+  await (await createMod(services)).activate(registrar);
+  const result = await contribution!.run({ task: 'build feature', gate: 'test -f feature.txt', maxTurns: '1' },
+    { invocationId: 'conquer-cli-output', cwd, platform: 'darwin-arm64', signal: new AbortController().signal, config: {} });
+  if (Symbol.asyncIterator in result) throw new Error('Unexpected streaming Conquer result');
+  expect(result.exitCode).toBe(0);
+  expect(result.result).toMatchObject({ workflow: { done: true }, worktree: { path: expect.any(String) } });
+  expect(result.stdout).toContain('Conquer · builder=builder');
+  expect(result.stdout).toContain('gate: test -f feature.txt');
+  expect(result.stdout).toContain('isolated branch: conquer/');
+  expect(result.stdout).toContain('turn 1');
+  expect(result.stdout).toContain('✓ Conquered');
+  expect(result.stdout).toContain('agon worktree rm');
+});
+
+it.each(['complete', 'cancel-start', 'logger-success', 'logger-cancel'] as const)('reports Conquer session progress and retained work: %s', async scenario => {
   const cwd = repo();
   const controller = new AbortController();
   const events: Array<{ type: string; data: Record<string, unknown> }> = [];
@@ -73,7 +101,7 @@ it.each(['complete', 'cancel-start'] as const)('reports Conquer session progress
     writeFileSync(join(context.cwd, 'feature.txt'), 'review this feature\n');
     return { exitCode: 0, stdout: 'CONQUER_DONE: feature exists', stderr: '', timedOut: false };
   });
-  const services = { logger: { debug: vi.fn() }, receipts: { record: vi.fn(async () => 'fixture') },
+  const services = { logger: { debug: vi.fn(async () => { if (scenario.startsWith('logger-')) throw new Error('diagnostic failed'); }) }, receipts: { record: vi.fn(async () => 'fixture') },
     engines: { listActive: async () => ['builder'], dispatch } } as unknown as ModServices;
   const context = {
     invocationId: 'conquer-session-events', cwd, platform: 'darwin-arm64' as const,
@@ -81,11 +109,11 @@ it.each(['complete', 'cancel-start'] as const)('reports Conquer session progress
     onWorkflowEvent(event: { type: string; data?: Record<string, unknown> }) {
       if (!event.data) throw new Error('Missing workflow event data');
       events.push({ type: event.type, data: event.data });
-      if (scenario === 'cancel-start' && event.type === 'conquer:start') controller.abort(new Error('cancelled at start'));
+      if ((scenario === 'cancel-start' || scenario === 'logger-cancel') && event.type === 'conquer:start') controller.abort(new Error('cancelled at start'));
     },
   };
   const running = runConquerTask({ task: 'build feature', gate: 'test -f feature.txt', maxTurns: '1' }, context, services);
-  if (scenario === 'cancel-start') {
+  if (scenario === 'cancel-start' || scenario === 'logger-cancel') {
     await expect(running).rejects.toThrow('cancelled at start');
     expect(dispatch).not.toHaveBeenCalled();
     expect(services.receipts.record).not.toHaveBeenCalled();

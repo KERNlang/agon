@@ -1,5 +1,49 @@
 # Installed-product audit and repair ledger
 
+## Conquer physical CLI presentation — 2026-10-24
+
+The registered CLI contribution now prints readable progress, worktree recovery,
+falsifier details and publication/PR hints. Structured results and exit codes stay
+intact. CLI and sessions share progress and publication rendering; the CLI host
+binds the existing terminal writer. The backend remains the single executor.
+
+Isolated Agon Codex review found three confirmed defects. Four failing regression
+cases proved them: published sessions still requested a commit, generic failure
+text hid the oracle reason, and a rejected cleanup diagnostic replaced either
+success or cancellation. All now pass. Additional checks cover display failure,
+failed recovery display, observer failure and cancellation during final output.
+
+Full suite: 11,151 passed, six skipped. All 198 focused checks, build, types, lint,
+re-export, migration-ledger, release-set, supply-chain and whitespace gates passed.
+Two compiled-runtime runs each passed all 27 cases, including generated CLI
+execution through the real terminal writer. Local fixture subprocesses, durable
+generations, Git worktrees and persisted sessions were exercised. No live provider
+launched. Native evidence remains macOS arm64, Node 26.12.1.
+
+The first package gate failed because its disposable cache lacked locked runtime
+archives. That failure remains recorded. The existing cache-fill command restored
+68 locked registry URLs in isolated state; the complete offline package gate then
+passed. No version, dependency, global installation or personal cache changed.
+
+Durable evidence: `/Users/ra/dev/modular-agon-remediation/`.
+Full suite: `conquer-cli-presentation-full-suite.receipt.json`, log SHA-256
+`f0e2fc91672f9369ef3a9e15b662847be72d5bb7aca6403b4862d463a13bf0e2`.
+Build gates: `conquer-cli-presentation-final.receipt.json`, log SHA-256
+`de9e96239344c412294cc6c9adc8268dc913122f07624af4c5c20196a19cf30d`.
+Review: `conquer-cli-presentation-codex-review.log`, SHA-256
+`63d9b5f84c89f501226f1dec3a4a68e3321505384da6a44a08290e20684770dc`.
+Final live run: `conquer-cli-presentation-built-final.receipt.json`, log SHA-256
+`26d6c608e17f722f5508a311fdc23be15e3765520d230e92663285af80f9e724`.
+Negative controls: `conquer-cli-presentation-red-v2` and `conquer-cli-review-red`.
+The initial `conquer-cli-presentation-red` failed executable lookup, not behavior.
+All failed logs remain archived. The frozen live helper has SHA-256
+`9e8652a91bc68d17389fea7eea869d25f48e9db0059633cddb81578009a5c28f`.
+
+Remaining: retire the unused standalone Conquer command while retaining its
+flag contract and publication test coverage; complete other original ownership
+and release requirements. This is increment evidence, not aggregate release
+acceptance. No push or active/global installation change.
+
 ## Conquer session owner — 2026-10-24
 
 Conquer now owns session presentation, history and outcome settlement. TUI,

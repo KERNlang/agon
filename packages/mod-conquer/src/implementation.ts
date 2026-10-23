@@ -1,4 +1,5 @@
 import { runDoneOracle } from './falsifier.js';
+import { runConquerCli } from './cli-workflow.js';
 import { publishConquerBranch } from './publication.js';
 import type { ConquerPublicationResult } from './publication.js';
 import { prepareConquerPullRequest } from './pull-request.js';
@@ -273,9 +274,15 @@ export async function runConquerTask(raw:Json,context:ConquerInvocationContext,s
     }
     throw error;
   } finally {
-    if (worktree) await services.logger.debug('conquer worktree retained', {
-      branch: worktree.branch, path: worktree.path, retained: existsSync(worktree.path),
-    });
+    if (worktree) {
+      try {
+        await services.logger.debug('conquer worktree retained', {
+          branch: worktree.branch, path: worktree.path, retained: existsSync(worktree.path),
+        });
+      } catch (error) {
+        console.warn('[agon] Conquer retention diagnostic failed:', error);
+      }
+    }
   }
 }
 
@@ -320,5 +327,7 @@ function parseConquer(value: string) {
   }
   return { task: rest.replace(/\s+/g, ' ').trim(), gate, builder, engineIds, maxTurns, gateTimeout, maxHours, turnTimeout, ...(push ? { push } : {}) };
 }
-export const createMod:AgonModFactory=services=>Object.freeze({apiVersion:'1'as const,async activate(registrar:Registrar):Promise<Dispose>{const d:Dispose[]=[];const command={description:'Supervised autonomous build in an isolated worktree with an explicit done oracle',inputSchema:schema,cli,run:(input:Json,context:InvocationContext)=>runConquerTask(input,context,services)};d.push(registrar.command('cli',{id:'cliCommands:0013',...command}));d.push(registrar.command('tui',{id:'tuiSlashCommands:0021',...command,inputSchema:tuiSchema,parse:parseConquer}));d.push(registrar.planStep({id:'cesarRoutes:0016',inputSchema:schema,resultSchema:schema,risk:'workspace-write',run:(input,context)=>runConquerTask(input,context,services)}));d.push(registrar.tool('cesar',{id:'cesarTools:0004',description:'Hand this task to the supervised Conquer controller',inputSchema:cesarSchema,effect:'process',run:async()=> 'Delegation accepted. STOP responding now. The orchestrator will handle the rest.'}));for (const id of ['resultAndEnvelopeTypes:0037', 'resultAndEnvelopeTypes:0055']) d.push(registrar.resultType({ id, schema: { type: 'object', additionalProperties: true }, readableVersions: '>=0.2.0', render: async (payload) => ({ text: JSON.stringify(payload, null, 2) }) }));
+export const createMod:AgonModFactory=services=>Object.freeze({apiVersion:'1'as const,async activate(registrar:Registrar):Promise<Dispose>{const d:Dispose[]=[];const command={description:'Supervised autonomous build in an isolated worktree with an explicit done oracle',inputSchema:schema,cli,run:(input:Json,context:InvocationContext)=>runConquerTask(input,context,services)};d.push(registrar.command('cli',{id:'cliCommands:0013',...command,
+  run: (input, context) => runConquerCli(input, context, command.run, (services as ConquerModServices).conquer?.cliOutput),
+}));d.push(registrar.command('tui',{id:'tuiSlashCommands:0021',...command,inputSchema:tuiSchema,parse:parseConquer}));d.push(registrar.planStep({id:'cesarRoutes:0016',inputSchema:schema,resultSchema:schema,risk:'workspace-write',run:(input,context)=>runConquerTask(input,context,services)}));d.push(registrar.tool('cesar',{id:'cesarTools:0004',description:'Hand this task to the supervised Conquer controller',inputSchema:cesarSchema,effect:'process',run:async()=> 'Delegation accepted. STOP responding now. The orchestrator will handle the rest.'}));for (const id of ['resultAndEnvelopeTypes:0037', 'resultAndEnvelopeTypes:0055']) d.push(registrar.resultType({ id, schema: { type: 'object', additionalProperties: true }, readableVersions: '>=0.2.0', render: async (payload) => ({ text: JSON.stringify(payload, null, 2) }) }));
 return async()=>{for(const x of[...d].reverse())await x();};}});export default createMod;

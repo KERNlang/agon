@@ -199,6 +199,11 @@ export async function decorateCliFirstPartyServices(manifest: ModManifest, base:
       },
     }) } : {}),
     ...(manifest.id === 'agon.conquer' ? { conquer: createConquerHostServices({
+      cliOutput: event => {
+        if (event.type === 'header') header(event.title);
+        else if (event.type === 'warning') warn(event.message);
+        else info(event.message);
+      },
       worktrees: { repoRoot, createSessionWorktree },
       publicationPolicy: context => {
         const config = loadConfig(context.cwd);

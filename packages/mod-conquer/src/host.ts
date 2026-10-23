@@ -5,6 +5,7 @@ import type { FalsifierEffects } from './falsifier.js';
 import { createConquerIsolation } from './isolation.js';
 import type { ConquerIsolation, ConquerIsolationEffects } from './isolation.js';
 import type { ConquerPrDraft } from './pull-request.js';
+import type { ConquerDisplay } from './presentation.js';
 
 export interface ConquerInvocationContext extends InvocationContext {
   readonly onWorkflowEvent?: (event: {
@@ -20,6 +21,7 @@ export interface ConquerPublicationPolicy {
 }
 
 export interface ConquerHostServices {
+  readonly cliOutput?: ConquerDisplay;
   contextSpine(context: InvocationContext): Promise<string>;
   open(context: InvocationContext): Awaitable<FalsifierEffects & {
     assertCurrent(): void;
@@ -31,6 +33,7 @@ export interface ConquerHostServices {
 
 /** Bind catalog and provider access to the current invocation authority. */
 export function createConquerHostServices<Registry extends { get(id: string): EngineDefinition }>(options: {
+  cliOutput?: ConquerDisplay;
   openRegistry(cwd: string): Registry;
   createAdapter(registry: Registry): EngineAdapter;
   rankCritics(registry: Registry, engineIds: string[]): ReturnType<FalsifierEffects['rankCritics']>;
@@ -41,6 +44,7 @@ export function createConquerHostServices<Registry extends { get(id: string): En
   draftPullRequest?(input: ConquerPrDraft, dispatch: (prompt: string) => Promise<string>): Promise<{ ok: boolean; title: string; body: string }>;
 }): ConquerHostServices {
   return {
+    ...(options.cliOutput ? { cliOutput: options.cliOutput } : {}),
     contextSpine: options.contextSpine,
     open(context) {
       context.signal.throwIfAborted();

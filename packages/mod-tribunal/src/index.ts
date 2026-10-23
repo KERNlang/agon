@@ -20,3 +20,7 @@ export { createTribunalHostServices } from './host.js';
 export type { TribunalHostEffects, TribunalHostServices, TribunalHostSession, TribunalModServices, TribunalInvocationContext } from './host.js';
 export { renderTribunalResult } from './presentation.js';
 export type { TribunalFailure, TribunalOutput } from './presentation.js';
+export { createTribunalSessionRecord } from './session-record.js';
+export type { TribunalSessionEffects } from './session-record.js';
+export { runTribunalSession } from './session-workflow.js';
+export type { TribunalSessionHost, TribunalSessionContext, TribunalSessionCommandResult } from './session-workflow.js';

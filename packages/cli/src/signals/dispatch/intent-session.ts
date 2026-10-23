@@ -6,6 +6,7 @@ import { withPlanSession, dispatchPlanSession, createPlanSessionActions, loadCes
 import type { PlanSessionActions, PlanSessionDispatchResult } from '@kernlang/agon-mod-plan';
 import type { SessionJobsInvocationContext } from '@kernlang/agon-mod-jobs';
 import { runBrainstormSession } from '../../blocks/brainstorm-session.js';
+import { runTribunalSession } from '../../blocks/tribunal-session.js';
 import { worktreePlanHost } from '../../blocks/worktree-plan-effects.js';
 
 import { resolveWorkingDir, buildImageAttachment, sessionContext, visionSupportNote } from '@kernlang/agon-core';
@@ -408,6 +409,16 @@ export async function runPhysicalTuiContribution(
       sessionJobs: { manager: cb.jobManager, dispatch: cb.dispatch },
     } : {}),
   };
+  if (record.owner?.id === 'agon.tribunal') {
+    await runTribunalSession(normalized as Record<string, unknown>, cb, signal, async (prepared, context) => {
+      const output = await contribution.run(prepared as Json, { ...invocation, ...context });
+      if (output && typeof output === 'object' && Symbol.asyncIterator in output) {
+        throw new TypeError('Tribunal returned an unexpected streaming command result.');
+      }
+      return output as CommandResult;
+    }, invocation.cwd);
+    return;
+  }
   if (record.owner?.id === 'agon.brainstorm') {
     await runBrainstormSession(normalized as Record<string, unknown>, cb, signal, async (prepared, context) => {
       const output = await contribution.run(prepared as Json, { ...invocation, ...context });

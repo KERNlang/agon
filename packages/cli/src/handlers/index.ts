@@ -2,7 +2,6 @@ export type { OutputEvent, Dispatch, HandlerContext, EngineProgress } from './ty
 export { handleForge } from './forge.js';
 export { handleChat } from './chat.js';
 export { handleCampfire } from './campfire.js';
-export { handleTribunal } from './tribunal.js';
 export {
   handleLeaderboard,
   handleCesarReport,

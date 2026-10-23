@@ -7,7 +7,7 @@ import { persistencePath } from '@kernlang/agon-support-persistence';
 
 import { icons } from '../icons.js';
 
-import { handleForge, handleChat, handleTribunal } from '../../handlers/index.js';
+import { handleForge, handleChat } from '../../handlers/index.js';
 
 import type { DispatchCallbacks, DispatchResult } from '../dispatch.js';
 
@@ -164,7 +164,7 @@ export async function dispatchMetaIntent(intent: any, input: string, cb: Dispatc
       const si = intent as any;
       const answer = await cb.askQuestion('Debate with all engines? (y/n)');
       if (isExplicitApproval(answer)) {
-        cb.runAsJob('tribunal', si.question?.slice(0, 40) ?? 'tribunal', () => handleTribunal(si.question ?? si.input, cb.dispatch, cb.ctx));
+        cb.runAsJob('tribunal', si.question?.slice(0, 40) ?? 'tribunal', async signal => { await runPhysicalCesarWorkflow('tribunal', { question: si.question ?? si.input }, cb, signal); });
         return { handled: true, ranAsJob: true };
       }
       await handleChat(si.input, cb.dispatch, cb.ctx, cb.allImages);

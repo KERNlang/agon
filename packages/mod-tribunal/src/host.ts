@@ -7,6 +7,7 @@ import type { TribunalOutput } from './presentation.js';
 
 export interface TribunalInvocationContext extends InvocationContext {
   readonly onWorkflowEvent?: (event: TribunalEvent) => void;
+  readonly onRunStarted?: (path: string) => void;
 }
 
 export interface TribunalHostSession {

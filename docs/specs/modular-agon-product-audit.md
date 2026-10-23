@@ -1,5 +1,40 @@
 # Installed-product audit and repair ledger
 
+## Tribunal session ownership — 2026-10-23
+
+Tribunal now owns session preparation, progress, result presentation and ordered
+history/telemetry writes. CLI binds existing host effects and executes the selected
+registry contribution. The legacy CLI session handler is removed. TUI dispatch
+uses contribution ownership, not its public name. Explicit, suggested, recovered
+and fallback Cesar paths forward the job cancellation signal.
+
+Independent Codex review found cancellation during settlement could publish a
+verdict after a host callback aborted. Two tests reproduced this before signal
+checks were added. Tracking now precedes the success receipt; optional summary
+display cannot reverse a saved outcome. History writes remain ordered effects,
+not an atomic transaction. A second review hypothesis, external replacement of
+the Tribunal Cesar route, is rejected: bootstrap reserves all first-party surface
+names, and external catalog entries are not selectable `plan-step` routes.
+
+Full local gate: 11,109 tests passed, six skipped. Build, typecheck, lint,
+re-export, package release metadata, supply-chain and whitespace checks passed.
+Normal and quiet built CLI smoke runs passed with fixture engines, persisted
+status and configured judging. No live providers launched.
+
+Durable evidence: `/Users/ra/dev/modular-agon-remediation/`.
+Receipt `tribunal-session-qualified.receipt.json`, log SHA-256
+`afd9cd6a259a8be7d347c76c095d016e420a0726feca0f4bead1826c6de34448`.
+Review `tribunal-session-owner-codex-review.log`, SHA-256
+`1c5293febfb4c2f6303d85bf4185cc8c34507293241a35a6dc29e1d9287e7fd7`.
+Negative controls: `tribunal-session-settlement-red.receipt.json`.
+Live smoke: `tribunal-cli-smoke-v4.receipt.json`.
+The interrupted pre-fix gate and stale-build test failure remain archived.
+
+Remaining: unused standalone Tribunal command retirement, legacy runtime binding
+consumers in Plan and Conquer, and original aggregate release qualification.
+This increment is not whole-product acceptance. Global Agon and personal state
+remain untouched; no installation or push.
+
 ## Tribunal command runtime cutover — 2026-10-23
 
 The physical command now invokes its canonical Tribunal runtime. Its duplicate

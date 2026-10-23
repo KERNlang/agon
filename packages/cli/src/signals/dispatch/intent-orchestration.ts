@@ -4,7 +4,7 @@ import { captureProcessSurfaceAuthority } from '../../surface-authority-runtime.
 
 import { ENGINE_COLORS } from '../../blocks/output-format.js';
 
-import { handleForge, handleCampfire, handleTribunal, handleThink, handleCouncil, handleSynthesis, handleNeroChallenge, handleResearch, handleChrome, handleConquer, handleBuild, handleReviewMany, handleSanitize, handleNaturalize, handleMutate, runAgentMode, runAgentTeam } from '../../handlers/index.js';
+import { handleForge, handleCampfire, handleThink, handleCouncil, handleSynthesis, handleNeroChallenge, handleResearch, handleChrome, handleConquer, handleBuild, handleReviewMany, handleSanitize, handleNaturalize, handleMutate, runAgentMode, runAgentTeam } from '../../handlers/index.js';
 
 import { handleTeamTribunal } from '../../handlers/team-tribunal.js';
 
@@ -69,13 +69,13 @@ export async function dispatchOrchestrationIntent(intent: any, input: string, cb
       const _tLabel = intent.question?.slice(0, 40) ?? 'tribunal';
       const continuationEpoch = cb.ctx.inputEpoch ?? 0;
       const continuationUserTurns = countTrackedUserTurns(cb.ctx);
-      cb.runAsJob('tribunal', _tLabel, withThreadOutcome(_tCwd, 'tribunal', _tLabel, async () => {
+      cb.runAsJob('tribunal', _tLabel, signal => withThreadOutcome(_tCwd, 'tribunal', _tLabel, async () => {
         if (cb.eventBus) await cb.eventBus.emit('pre:tribunal', { question: intent.question, mode: intent.tribunalMode, protocol: intent.tribunalProtocol, cwd: _tCwd });
-        await handleTribunal(intent.question, cb.dispatch, cb.ctx, intent.tribunalMode, intent.tribunalProtocol);
+        await runPhysicalCesarWorkflow('tribunal', { question: intent.question, mode: intent.tribunalMode ?? 'adversarial', protocol: intent.tribunalProtocol ?? 'auto' }, cb, signal, _tCwd);
         if (cb.eventBus) cb.eventBus.emit('post:tribunal', { question: intent.question, cwd: _tCwd }).catch(() => {});
         const chatContext = collectRecentEngineContext(cb.ctx, 12, 1500);
         if (chatContext) await continueCesarAfterResult(`Tribunal concluded on: "${(intent.question ?? '').slice(0, 200)}"\n\n${chatContext}\n\nSummarize the verdict and key takeaways.`, cb, continuationEpoch, continuationUserTurns);
-      }, cb.ctx));
+      }, cb.ctx)());
       return { handled: true, ranAsJob: true };
     }
     case 'campfire': {

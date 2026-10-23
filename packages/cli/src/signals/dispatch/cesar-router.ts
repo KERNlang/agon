@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 import { markSessionCleanupFailed, sessionCleanupFailed, SESSION_CLEANUP_FAILURE_MESSAGE } from '../../cesar/session-health.js';
 import { runBrainstormSession } from '../../blocks/brainstorm-session.js';
+import { runTribunalSession } from '../../blocks/tribunal-session.js';
 
 import { mkdirSync, appendFileSync } from 'node:fs';
 
@@ -62,6 +63,10 @@ export async function runPhysicalCesarWorkflow(
   signal = new AbortController().signal,
   cwd = resolveWorkingDir(),
 ): Promise<unknown> {
+  if (route === 'tribunal') {
+    return runTribunalSession(input, cb, signal, async (prepared, context) =>
+      await executeProcessCesarRoute(route, prepared, context) as PhysicalCesarCommandResult, cwd);
+  }
   if (route === 'brainstorm') {
     return runBrainstormSession(input, cb, signal, async (prepared, context) =>
       await executeProcessCesarRoute(route, prepared, context) as PhysicalCesarCommandResult);
@@ -475,12 +480,12 @@ export async function handleDelegatedAction(result: any, input: string, cb: Disp
             case 'tribunal': {
               cb.dispatch({ type: 'info', message: `Cesar → tribunal${hardened ? ' (hardened)' : ''}${tMode ? ` [${tMode}]` : ''}` });
               const _cwdTrib = resolveWorkingDir();
-              cb.runAsJob('tribunal', label, withThreadOutcome(_cwdTrib, 'tribunal', label, () =>
-                runDelegatedJobThenContinue(cb, () => runPhysicalCesarWorkflow('tribunal', { question: taskInput, mode: tMode ?? 'adversarial' }, cb), ({ chatContext, result, success, errorMsg }) =>
+              cb.runAsJob('tribunal', label, signal => withThreadOutcome(_cwdTrib, 'tribunal', label, () =>
+                runDelegatedJobThenContinue(cb, () => runPhysicalCesarWorkflow('tribunal', { question: taskInput, mode: tMode ?? 'adversarial' }, cb, signal, _cwdTrib), ({ chatContext, result, success, errorMsg }) =>
                   !success
                     ? `Tribunal${tMode ? ` (${tMode})` : ''} on: "${taskInput.slice(0, 200)}" failed: ${errorMsg}. ${chatContext ? `Partial transcript:\n\n${chatContext}\n\n` : ''}Decide how to recover or continue the task with what you have.`
                     : `Tribunal${tMode ? ` (${tMode})` : ''} concluded on: "${taskInput.slice(0, 200)}"\n\n${chatContext || JSON.stringify(result, null, 2)}\n\nSummarize the verdict and key takeaways.`,
-                  continuationEpoch, continuationUserTurns), cb.ctx));
+                  continuationEpoch, continuationUserTurns), cb.ctx)());
               return true;
             }
             case 'team-tribunal': {
@@ -692,10 +697,10 @@ export async function handleRecoveredDelegation(crashDel: any, input: string, cb
         case 'tribunal': {
           cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'tribunal', crashDel.tribunalMode ? `recovered delegation [${crashDel.tribunalMode}]` : 'recovered delegation') });
           const _cwdRecoverTrib = resolveWorkingDir();
-          cb.runAsJob('tribunal', label, withThreadOutcome(_cwdRecoverTrib, 'tribunal', label, async () => {
-            const tribunal = await runPhysicalCesarWorkflow('tribunal', { question: recoveredTask, mode: crashDel.tribunalMode ?? 'adversarial' }, cb);
+          cb.runAsJob('tribunal', label, signal => withThreadOutcome(_cwdRecoverTrib, 'tribunal', label, async () => {
+            const tribunal = await runPhysicalCesarWorkflow('tribunal', { question: recoveredTask, mode: crashDel.tribunalMode ?? 'adversarial' }, cb, signal, _cwdRecoverTrib);
             await continueCesarAfterResult(`Recovered tribunal${crashDel.tribunalMode ? ` (${crashDel.tribunalMode})` : ''} concluded on: "${recoveredTask.slice(0, 200)}"\n\n${JSON.stringify(tribunal, null, 2)}\n\nSummarize the verdict and continue the original task.`, cb, continuationEpoch, continuationUserTurns);
-          }, cb.ctx));
+          }, cb.ctx)());
           return true;
         }
         case 'campfire': {
@@ -917,10 +922,10 @@ export async function runCesarBrainFallback(input: string, cb: DispatchCallbacks
             case 'tribunal': {
               cb.dispatch({ type: 'info', message: `Cesar → tribunal${fallbackSuggestion.tribunalMode ? ` [${fallbackSuggestion.tribunalMode}]` : ''}` });
               const _cwdFallbackTrib = resolveWorkingDir();
-              cb.runAsJob('tribunal', label, withThreadOutcome(_cwdFallbackTrib, 'tribunal', label, async () => {
-                const tribunal = await runPhysicalCesarWorkflow('tribunal', { question: fallbackTask, mode: fallbackSuggestion.tribunalMode ?? 'adversarial' }, cb);
+              cb.runAsJob('tribunal', label, signal => withThreadOutcome(_cwdFallbackTrib, 'tribunal', label, async () => {
+                const tribunal = await runPhysicalCesarWorkflow('tribunal', { question: fallbackTask, mode: fallbackSuggestion.tribunalMode ?? 'adversarial' }, cb, signal, _cwdFallbackTrib);
                 await continueCesarAfterResult(`Fallback tribunal${fallbackSuggestion.tribunalMode ? ` (${fallbackSuggestion.tribunalMode})` : ''} concluded on: "${fallbackTask.slice(0, 200)}"\n\n${JSON.stringify(tribunal, null, 2)}\n\nSummarize the verdict and continue the original task.`, cb, continuationEpoch, continuationUserTurns);
-              }, cb.ctx));
+              }, cb.ctx)());
               return true;
             }
             case 'campfire': {

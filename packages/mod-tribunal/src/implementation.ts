@@ -88,6 +88,8 @@ export async function runTribunal(raw: Json, context: TribunalInvocationContext,
   let result: TribunalResult;
   try {
     session.assertCurrent();
+    context.onRunStarted?.(run.path);
+    session.assertCurrent();
     output?.log(quiet ? run.path : `AGON_RUN: ${run.path}`);
     if (output && !quiet) {
       output.header(`Tribunal: ${question}`);

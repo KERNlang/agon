@@ -116,7 +116,13 @@ it.each(['normal', 'two', 'external-chair', 'forced', 'thin', 'floor', 'chair-fa
         after.core.updateGlickoRanked(ranked, taskClass, 'critique');
       }, warn: message => after.warnings.push(message),
     });
-    expect(actual).toEqual(expected);
+    if (scenario === 'advisor-failure' || scenario === 'all-failed') {
+      // Legacy omitted degradation after exhausted advisor retries.
+      expect(expected.degraded).toBe(false);
+      expect(actual).toEqual({ ...expected, degraded: true });
+    } else {
+      expect(actual).toEqual(expected);
+    }
     expect(after.requests).toEqual(before.requests);
     expect(after.events).toEqual(before.events);
     expect(after.effects).toEqual(before.effects);

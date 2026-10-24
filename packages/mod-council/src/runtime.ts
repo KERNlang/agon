@@ -412,6 +412,7 @@ export async function runCouncilRuntime<Registry extends PanelEngineRegistry>(
     await settleSeats(seats.map(async (seat) => {
       notify({ type: 'synthesis:critique', engineId: seat.engineId });
       const res = await dispatchText(seat.engineId, buildRolePrompt({ role: seat.role, brief }), ADVISOR_SYS, `council-role-${seat.role}`);
+      if (!res.ok) degraded = true;
       seat.response = res.ok ? res.text : '(no response)';
     }));
   }
@@ -426,6 +427,7 @@ export async function runCouncilRuntime<Registry extends PanelEngineRegistry>(
       if (!target.response || target.response === '(no response)') { seat.critique = ''; return; }
       notify({ type: 'synthesis:critique', engineId: seat.engineId });
       const res = await dispatchText(seat.engineId, buildCritiquePrompt({ critiqueRole: seat.role, brief, targetRole: target.role, targetResponse: target.response }), ADVISOR_SYS, `council-critique-${seat.role}`);
+      if (!res.ok) degraded = true;
       seat.critique = res.ok ? res.text : '';
     }));
   }

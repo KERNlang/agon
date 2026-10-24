@@ -54,10 +54,9 @@ export async function runCouncilSession(
   check();
   const question = typeof input.question === 'string' ? input.question.trim() : '';
   if (!question) throw new Error('No decision provided. Usage: /council <decision>');
-  const pool = typeof input.engines === 'string' && input.engines.trim()
-    ? input.engines.split(',').map(id => id.trim()).filter(Boolean) : host.defaultEngines();
+  let pool = [...new Set(typeof input.engines === 'string' && input.engines.trim()
+    ? input.engines.split(',').map(id => id.trim()).filter(Boolean) : host.defaultEngines())];
   check();
-  if (pool.length < 2) throw new Error(`A council needs at least 2 engines (have ${pool.length}). Add engines with /engines.`);
   let chairman: string | undefined;
   if (typeof input.chairman === 'string' && input.chairman.trim()) {
     const requested = input.chairman.trim();
@@ -65,6 +64,8 @@ export async function runCouncilSession(
     check();
     if (!chairman) effect(() => host.dispatch({ type: 'info', message: `Chairman '${requested}' is not available — using rating-based selection.` }));
   }
+  if (chairman && !pool.includes(chairman)) pool = [chairman, ...pool];
+  if (pool.length < 2) throw new Error(`A council needs at least 2 engines (have ${pool.length}). Add engines with /engines.`);
   const startedAt = host.now();
   let stopTimer = () => {};
   let stopped = false;

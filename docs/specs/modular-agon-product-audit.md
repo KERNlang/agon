@@ -1,5 +1,39 @@
 # Installed-product audit and repair ledger
 
+## Council review adjudication — 2026-10-24
+
+All three findings from the isolated Agon/Codex review are source-confirmed and
+repaired. Session roster validation now follows chairman resolution and removes
+duplicates. Exhausted role/critique retries mark an otherwise successful verdict
+degraded. Non-CLI JSON output takes precedence over quiet, including retained
+results when receipt persistence fails. Quiet-only output remains plain text.
+
+Negative controls: `council-session-roster-red`,
+`council-degraded-red-verified`, and `council-json-precedence-red` each fail before
+their corresponding fix. The first degradation probe used a wrong role-prompt
+match; it is retained but superseded by the verified red probe. Historical
+runtime fixtures are unchanged; parity explicitly allows only the demonstrated
+degraded-flag correction and still compares requests, effects and events.
+
+`council-review-fixes-build-native` passed build, types, lint, export guard,
+180 focused tests and 19 native probes (7 session, 6 CLI, 6 nested MCP-host).
+Log SHA-256: `9fa44cb9a36ba3cfaf1bfc8f10f7e95adcd26291eec7d10f444f81de1c438088`.
+`council-review-fixes-native-boundaries-v2` additionally passed external-chair
+session selection and advisor-failure CLI behavior with real fixture processes.
+Log SHA-256: `a71a64324d33aeb146bccf926c3ed8eccb2376dc62b621052228c8807be8793f`.
+Its initial probe lacked the host registry; the corrected fixture uses the real
+isolated registry. No production change was needed for that fixture failure.
+All runs recorded zero external provider launches. These are development probes,
+not installed-candidate acceptance or a terminal-rendering test. Full-suite and
+clean committed-subject qualification were pending at that checkpoint.
+
+Final development gate `council-reviewed-full-qualification` passed in 669.669
+seconds: release-set/SBOM refresh, 11,414 tests passed (6 skipped), followed by
+21 native probes (8 session, 7 CLI, 6 MCP-host) and diff check. Zero providers.
+Log SHA-256: `3f079c05b7983bf9b99fb795dd9ef7ddcfc37dc71595c5c96b18c09012771b6e`.
+This closes the three review findings for the Council increment, not the full
+Modular Agon release. Synthesis migration and final installed acceptance remain.
+
 ## Council ownership cutover in progress — 2026-10-24
 
 Council now owns the runtime, CLI presentation and session policy. The CLI binds

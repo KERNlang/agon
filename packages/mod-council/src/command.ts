@@ -124,5 +124,5 @@ export async function runCouncil(raw: Json, context: InvocationContext, services
     }
   }
   return { exitCode: result.ok && !receiptFailure ? 0 : 1, result: result as unknown as Json, ...receiptFailure,
-    stdout: display ? (lines.length ? lines.join('\n') + '\n' : '') : quiet ? result.verdict + '\n' : JSON.stringify(result, null, 2) + '\n' };
+    stdout: display ? (lines.length ? lines.join('\n') + '\n' : '') : quiet && !json ? result.verdict + '\n' : JSON.stringify(result, null, 2) + '\n' };
 }

@@ -5,6 +5,34 @@ import { withCouncilFixtureHost } from '../../../tests/fixtures/modular-council-
 const context = { invocationId: 'council-test', cwd: process.cwd(), platform: 'darwin-arm64' as const, signal: new AbortController().signal, config: {} };
 async function setup() { const dispatch = vi.fn(async (engineId: string, prompt: string) => ({ engineId, exitCode: 0, stdout: prompt.includes('Synthesize the advisors') ? 'RECOMMENDATION\nConfidence: 73%\nShip with a kill-switch.' : prompt.includes('Frame this') ? 'DECISION: ship\nOPTIONS: yes/no' : `${engineId} analysis`, stderr: '', timedOut: false })); const record = vi.fn(async () => 'receipt'); const services = { identity: { id: 'agon.council', version: '1.0.0', contentHash: `sha256:${'a'.repeat(64)}` }, source: 'bundled', logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn() }, receipts: { record }, permissions: { check: vi.fn(async () => 'allow') }, state: { read: vi.fn(), write: vi.fn() }, engines: { listActive: vi.fn(async () => ['alpha', 'beta', 'gamma']), rank: vi.fn(async () => [{ engineId: 'gamma', reason: 'top-rated', scope: 'tribunal' }, { engineId: 'alpha', reason: 'top-rated', scope: 'global' }, { engineId: 'beta', reason: 'random', scope: null }]), dispatch } } as unknown as ModServices; let command: CommandContribution | undefined; const registrar = { resultType: () => () => {}, command: (surface: string, value: CommandContribution) => { if (surface === 'cli') command = value; return () => {}; }, tool: () => () => {}, planStep: () => () => {} } as unknown as Registrar; const hosted = withCouncilFixtureHost(services); const mod = await createMod(hosted); await mod.activate(registrar, hosted); return { command: command!, dispatch, record, services: hosted }; }
 describe('physical council mod', () => {
+  it.each(['role', 'critique'] as const)('marks a successful verdict degraded after exhausted %s retries', async phase => {
+    const h = await setup();
+    const original = h.dispatch.getMockImplementation()!;
+    h.dispatch.mockImplementation(async (engineId, prompt) => {
+      const target = engineId === 'alpha' && (phase === 'role'
+        ? prompt.includes('Respond ONLY from your role') : prompt.includes('Critique ONE peer'));
+      return target ? { engineId, exitCode: 2, stdout: '', stderr: 'advisor unavailable', timedOut: false }
+        : original(engineId, prompt);
+    });
+    const output = await h.command.run({ question: 'Q', json: true }, context);
+    expect(h.dispatch.mock.calls.filter(([id, prompt]) => id === 'alpha' && (phase === 'role'
+      ? prompt.includes('Respond ONLY from your role') : prompt.includes('Critique ONE peer')))).toHaveLength(2);
+    expect(output).toMatchObject({ exitCode: 0, result: { ok: true, degraded: true } });
+    expect(h.record).toHaveBeenCalledWith('council', expect.objectContaining({ degraded: true }));
+  });
+  it.each([false, true])('gives JSON precedence over quiet outside CLI, receipt failure: %s', async receiptFails => {
+    const h = await setup();
+    if (receiptFails) h.record.mockRejectedValueOnce(new Error('receipt unavailable'));
+    const output = await runCouncil({ question: 'Q', json: true, quiet: true }, context, h.services);
+    expect(output.exitCode).toBe(receiptFails ? 1 : 0);
+    expect(JSON.parse(output.stdout!)).toMatchObject({ ok: true, confidence: 73 });
+    expect(output.result).toEqual(JSON.parse(output.stdout!));
+  });
+  it('keeps quiet-only non-CLI output as plain verdict text', async () => {
+    const h = await setup();
+    const output = await runCouncil({ question: 'Q', quiet: true }, context, h.services);
+    expect(output.stdout).toBe('RECOMMENDATION\nConfidence: 73%\nShip with a kill-switch.\n');
+  });
   it('retains the completed verdict and run when its receipt cannot be saved', async () => {
     const h = await setup();
     const finish = vi.spyOn(h.services.runs!, 'finish');

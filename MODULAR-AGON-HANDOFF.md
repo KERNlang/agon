@@ -20,14 +20,15 @@ The active/global Agon installation has not been replaced by this work.
 | Physical target packages | 49 exist and are represented in the release-set check |
 | Package-map dependency edges | 158 unique edges in the checked structural map |
 | Frozen legacy ownership assignments | 872 assignments to reconcile; NOT 872 proven retired owners |
-| Latest full local test run | 11,406 passed, 6 skipped; 680 files passed, 1 skipped |
-| Latest Council native probes | 18 passed: 7 session, 6 CLI, 5 nested MCP-host processes |
+| Latest full local test run | 11,414 passed, 6 skipped; 680 files passed, 1 skipped |
+| Latest Council native probes | 21 passed: 8 session, 7 CLI, 6 nested MCP-host processes |
 | Fresh release acceptance on this exact snapshot | Not established; do not mark any of the nine final slice receipts accepted from these working-tree results |
 | Remaining closure groups below | 6; these are work groups, NOT six bugs or a completion percentage |
 
 There is no reliable total count of unfinished individual defects. One Synthesis
-winner defect is reproduced below; three new Council review findings still need
-adjudication. Do not translate package counts or test counts into percent done.
+winner defect is reproduced below; three Council review findings are now confirmed
+and repaired, with full-suite and native development checks passing. Do not translate
+package counts or test counts into percent done.
 
 ## What has been built
 
@@ -55,7 +56,7 @@ Older entries describe their recorded subjects, not necessarily today's state.
 
 | Group | Concrete remaining work | Completion evidence |
 |---|---|---|
-| 1. Council review | Verify the three findings below, fix confirmed defects, retain regression evidence | Independent review adjudication and fresh affected gates |
+| 1. Council review | Closed for this increment: three confirmed findings repaired, full suite and native probes pass | Review adjudication and hashes in the product audit; final release qualification remains group 4 |
 | 2. Synthesis ownership/parity | Replace divergent legacy/physical algorithms with one owner; preserve original behavior except demonstrated defects; fix parser and job cancellation | Frozen oracle, discriminating parser tests, native command/session tests |
 | 3. Ownership and adapter retirement | Reconcile all 872 assignments and kill-list entries; distinguish public compatibility from duplicate execution; trace Plan/Brainstorm/Apply and remaining workflows | Source-level consumer evidence, boundary and disabled-mod checks, truthful ledger |
 | 4. Installed-product acceptance | Qualify one clean committed subject through fresh install, upgrade/downgrade, rollback/re-entry, offline, safe mode, uninstall and folder mods | Fresh subject-bound receipts, not ambient working-tree test logs |
@@ -79,16 +80,19 @@ legacy parity. See `packages/mod-synthesis/src/implementation.ts` and
 `synthesis.ts` helper. The fallback session handler also owns a separate abort
 controller; trace the actual job signal during the migration.
 
-**Council independent review, not yet adjudicated:**
+**Council independent review, confirmed and repaired:**
 
 1. Session rejects one advisor plus an external chairman before forming the effective roster.
 2. Failed advisors can leave a successful verdict labelled `degraded: false`.
 3. Non-CLI output gives quiet precedence over JSON, unlike CLI presentation.
 
-These are reviewer hypotheses, not three confirmed regressions. Check inherited
-behavior and consumers before fixing. The review ran through isolated Agon/Codex
-after Raphael approved the exact source packet. Raw packet, response and hashes
-are in the evidence export. The previous approval blocker is no longer pending.
+Each finding has failing-before/passing-after tests. The advisor degradation bug
+was inherited from the legacy runtime; the frozen oracle remains unchanged and
+the parity test explicitly checks this corrected difference. Effective session
+rosters now include an available external chairman before minimum-size validation,
+and JSON wins over quiet consistently. The isolated Agon/Codex review packet and
+response remain in the evidence export. Later regression receipts are detailed
+in the product audit. Full-suite and native development checks pass for these fixes.
 
 **Dependency security:** the recorded OSV scan has unresolved findings, including
 two CVSS 9.5 advisories for dev dependency tinypool 1.1.1. Read
@@ -105,17 +109,25 @@ Raphael then explicitly requested pushing all of it, not only this document.
 The publication commit is a WIP snapshot of those changes. It does not turn
 working-tree receipts into clean-checkout release receipts.
 
-Latest full gate: `council-cutover-requalification`, 835.786 seconds, exit 0.
+Pre-publication full gate: `council-cutover-requalification`, 835.786 seconds, exit 0.
 Includes build, catalog check, release-set/SBOM generation, full tests, types,
 lint, re-export guard and diff check. Log SHA-256:
 `28e518f3042fcbb6b86929eda5b4dfe3f2231bc6079ec725bb7dfdac814de8f5`.
 
-Latest native gate: `council-cutover-native-final`, 35.655 seconds, exit 0.
+Pre-publication native gate: `council-cutover-native-final`, 35.655 seconds, exit 0.
 Includes 18 fresh processes and catalog/release/SBOM drift checks. Log SHA-256:
 `eed6b14469c6b1cf4505559d0d3a48b6c73b003f438aefb258f34f8aca4b613c`.
 Both used isolated state and recorded zero external provider launches.
 The native checks use compiled workspace code, not a freshly installed candidate.
 Nested MCP-host checks are not full JSON-RPC transport tests.
+
+Post-review gate: `council-reviewed-full-qualification`, 669.669 seconds, exit 0.
+Release-set/SBOM refreshed; 11,414 tests passed, 6 skipped; 21 native probes
+passed after the suite. Log SHA-256:
+`3f079c05b7983bf9b99fb795dd9ef7ddcfc37dc71595c5c96b18c09012771b6e`.
+Build/types/lint/export checks passed in `council-review-fixes-build-native`.
+No external provider launched. These remain working-tree development checks,
+not clean installed-release acceptance.
 
 ## Logs and evidence for an AI reader
 

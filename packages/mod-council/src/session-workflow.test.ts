@@ -55,6 +55,22 @@ function host() {
     resolveChairman: (id: string) => id, dispatch: vi.fn(), scheduleEvery: vi.fn(() => vi.fn()),
     appendMessage: vi.fn(), track: vi.fn(), addResult: vi.fn(), recordRun: vi.fn() };
 }
+it('includes an available external chairman before validating the session roster', async () => {
+  const effects = host();
+  const execute = vi.fn(async () => ({ exitCode: 0, result }));
+  await runCouncilSession({ question: 'Q', engines: 'alpha', chairman: 'beta' },
+    { cwd: '/fixture', signal: new AbortController().signal }, effects, execute);
+  expect(execute).toHaveBeenCalledWith(expect.objectContaining({ engines: 'beta,alpha', chairman: 'beta' }), expect.anything());
+  expect(effects.addResult).toHaveBeenCalledWith(expect.objectContaining({ engines: ['beta', 'alpha'] }));
+});
+it.each(['alpha', 'missing'])('rejects a one-engine roster when chairman %s adds no available engine', async chairman => {
+  const effects = { ...host(), resolveChairman: (id: string) => id === 'missing' ? undefined : id };
+  const execute = vi.fn();
+  await expect(runCouncilSession({ question: 'Q', engines: 'alpha,alpha', chairman },
+    { cwd: '/fixture', signal: new AbortController().signal }, effects, execute)).rejects.toThrow('at least 2 engines');
+  expect(execute).not.toHaveBeenCalled();
+  expect(effects.scheduleEvery).not.toHaveBeenCalled();
+});
 it('preserves a completed verdict after receipt failure without success telemetry', async () => {
   const effects = host();
   await expect(runCouncilSession({ question: 'Q' }, { cwd: '/fixture', signal: new AbortController().signal }, effects,

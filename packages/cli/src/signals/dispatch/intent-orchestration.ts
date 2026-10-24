@@ -4,7 +4,7 @@ import { captureProcessSurfaceAuthority } from '../../surface-authority-runtime.
 
 import { ENGINE_COLORS } from '../../blocks/output-format.js';
 
-import { handleForge, handleCampfire, handleThink, handleCouncil, handleSynthesis, handleNeroChallenge, handleResearch, handleChrome, handleBuild, handleReviewMany, handleSanitize, handleNaturalize, handleMutate, runAgentMode, runAgentTeam } from '../../handlers/index.js';
+import { handleForge, handleThink, handleCouncil, handleSynthesis, handleNeroChallenge, handleResearch, handleChrome, handleBuild, handleReviewMany, handleSanitize, handleNaturalize, handleMutate, runAgentMode, runAgentTeam } from '../../handlers/index.js';
 
 import { handleTeamTribunal } from '../../handlers/team-tribunal.js';
 
@@ -83,13 +83,13 @@ export async function dispatchOrchestrationIntent(intent: any, input: string, cb
       const _cLabel = intent.topic?.slice(0, 40) ?? 'campfire';
       const continuationEpoch = cb.ctx.inputEpoch ?? 0;
       const continuationUserTurns = countTrackedUserTurns(cb.ctx);
-      cb.runAsJob('campfire', _cLabel, withThreadOutcome(_cCwd, 'campfire', _cLabel, async () => {
+      cb.runAsJob('campfire', _cLabel, signal => withThreadOutcome(_cCwd, 'campfire', _cLabel, async () => {
         if (cb.eventBus) await cb.eventBus.emit('pre:campfire', { topic: intent.topic, cwd: _cCwd });
-        await handleCampfire(intent.topic, cb.dispatch, cb.ctx);
+        await runPhysicalCesarWorkflow('campfire', { topic: intent.topic }, cb, signal, _cCwd);
         if (cb.eventBus) cb.eventBus.emit('post:campfire', { topic: intent.topic, cwd: _cCwd }).catch(() => {});
         const chatContext = collectRecentEngineContext(cb.ctx, 12, 1500);
         if (chatContext) await continueCesarAfterResult(`Campfire discussion on: "${(intent.topic ?? '').slice(0, 200)}"\n\n${chatContext}\n\nSummarize the key insights and any consensus reached.`, cb, continuationEpoch, continuationUserTurns);
-      }, cb.ctx));
+      }, cb.ctx)());
       return { handled: true, ranAsJob: true };
     }
     case 'think': {

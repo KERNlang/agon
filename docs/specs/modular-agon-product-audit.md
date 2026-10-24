@@ -1,5 +1,54 @@
 # Installed-product audit and repair ledger
 
+## Campfire session ownership — 2026-10-24
+
+Campfire now owns session preparation, progress, response presentation and ordered
+history/result/telemetry effects. CLI binds existing stores and display functions.
+The old 121-line session handler and its unused export are removed. Its source is
+preserved in parent commit `5b6d358b552c1665388d478a76ce1ab39c4454e2`.
+TUI dispatch selects the owner by identity, not public command name. Cesar and
+intent jobs forward their cancellation signal and captured working directory.
+
+One isolated Agon Codex review found three defects. All were reproduced before
+fixing: responses could follow a changed chat-session pointer; interval display
+errors could escape cleanup; positional topics could differ in stored history.
+The binding now captures the originating session. Progress failures stop optional
+progress while execution settles. One Campfire-owned topic normalizer serves
+execution and session recording. All four job callback routes have executable
+signal-forwarding tests.
+
+Storage remains ordered, not transactional. A failed result-store write leaves
+earlier history/tracker writes intact and prevents completed telemetry. Cancellation
+is checked between effects. Optional summary and progress cleanup cannot reverse
+an already saved outcome. Generic rejected-execution unit cases prove rejection
+handling only; they do not by themselves prove disabled-mod enforcement.
+
+Verification: 21 focused session cases pass. Full suite: 11,195 passed, six skipped
+(606.879 seconds), with zero provider launches. Full build, types, lint,
+re-export, migration-ledger, offline package-content and SBOM checks pass.
+Seven compiled native cases passed twice (5.405 and 5.169 seconds), including
+real persisted chat reload and actual disabled-mod rejection before response or
+run writes. Local Node fixture engines exercise process execution; this is not
+live-provider evidence. The last native run followed the full suite.
+Native platform: macOS arm64, Node 26.12.1 only. Whole-release acceptance is not
+claimed. No new dependency or vulnerability clearance is implied.
+
+Full-suite log SHA-256:
+`9975cda3e0a3fe67a202090818f8e6d7c8409bcdd14d3b1087f8581ea18675fe`.
+Build/package log SHA-256:
+`557af51b6f080e16a2ee3477f89ef96b24a4499bcbbe727614a023793c0459b8`.
+Native log SHA-256:
+`e6c1ee8f2f0929bcf06f2f0ab06a9bb99879f804917e860b4dcf12c03c5f39e6`.
+Frozen native helper SHA-256:
+`fda75c79fcbb8b5f82b7c88b4d401bd476a58068861d2f9db3e020523d69bb8f`.
+Review packet SHA-256:
+`fa4e4c876aac8a3e7c8914d9090df491138588729c9f23debc8fbabb02734c11`.
+Durable raw evidence: `/Users/ra/dev/modular-agon-remediation/`, filenames beginning
+`campfire-session-`. No dependency, global installation or personal state changed.
+
+Still separate: standalone Campfire CLI presentation, Plan's compatibility import,
+other remaining ownership assignments and aggregate clean-checkout acceptance.
+
 ## Campfire runtime owner — 2026-10-24
 
 Campfire now owns its discussion runtime. The legacy Forge export delegates to

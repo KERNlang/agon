@@ -8,6 +8,7 @@ import type { SessionJobsInvocationContext } from '@kernlang/agon-mod-jobs';
 import { runBrainstormSession } from '../../blocks/brainstorm-session.js';
 import { runTribunalSession } from '../../blocks/tribunal-session.js';
 import { runConquerSession } from '../../blocks/conquer-session.js';
+import { runCampfireSession } from '../../blocks/campfire-session.js';
 import { worktreePlanHost } from '../../blocks/worktree-plan-effects.js';
 
 import { resolveWorkingDir, buildImageAttachment, sessionContext, visionSupportNote } from '@kernlang/agon-core';
@@ -410,6 +411,16 @@ export async function runPhysicalTuiContribution(
       sessionJobs: { manager: cb.jobManager, dispatch: cb.dispatch },
     } : {}),
   };
+  if (record.owner?.id === 'agon.campfire') {
+    await runCampfireSession(normalized as Record<string, unknown>, cb, signal, async (prepared, context) => {
+      const output = await contribution.run(prepared as Json, { ...invocation, ...context });
+      if (output && typeof output === 'object' && Symbol.asyncIterator in output) {
+        throw new TypeError('Campfire returned an unexpected streaming command result.');
+      }
+      return output as CommandResult;
+    }, invocation.cwd);
+    return;
+  }
   if (record.owner?.id === 'agon.conquer') {
     await runConquerSession(normalized as Record<string, unknown>, cb, signal, async (prepared, context) => {
       const output = await contribution.run(prepared as Json, { ...invocation, ...context });

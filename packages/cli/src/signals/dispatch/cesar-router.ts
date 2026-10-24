@@ -3,6 +3,7 @@ import { markSessionCleanupFailed, sessionCleanupFailed, SESSION_CLEANUP_FAILURE
 import { runBrainstormSession } from '../../blocks/brainstorm-session.js';
 import { runTribunalSession } from '../../blocks/tribunal-session.js';
 import { runConquerSession } from '../../blocks/conquer-session.js';
+import { runCampfireSession } from '../../blocks/campfire-session.js';
 
 import { mkdirSync, appendFileSync } from 'node:fs';
 
@@ -64,6 +65,10 @@ export async function runPhysicalCesarWorkflow(
   signal = new AbortController().signal,
   cwd = resolveWorkingDir(),
 ): Promise<unknown> {
+  if (route === 'campfire') {
+    return runCampfireSession(input, cb, signal, async (prepared, context) =>
+      await executeProcessCesarRoute(route, prepared, context) as PhysicalCesarCommandResult, cwd);
+  }
   if (route === 'conquer') {
     return runConquerSession(input, cb, signal, async (prepared, context) =>
       await executeProcessCesarRoute(route, prepared, context) as PhysicalCesarCommandResult, cwd);
@@ -507,12 +512,12 @@ export async function handleDelegatedAction(result: any, input: string, cb: Disp
             case 'campfire': {
               cb.dispatch({ type: 'info', message: `Cesar → campfire${hardened ? ' (hardened)' : ''}${tMode ? ` [${tMode}]` : ''}` });
               const _cwdCamp = resolveWorkingDir();
-              cb.runAsJob('campfire', label, withThreadOutcome(_cwdCamp, 'campfire', label, () =>
-                runDelegatedJobThenContinue(cb, () => runPhysicalCesarWorkflow('campfire', { topic: taskInput }, cb), ({ chatContext, result, success, errorMsg }) =>
+              cb.runAsJob('campfire', label, signal => withThreadOutcome(_cwdCamp, 'campfire', label, () =>
+                runDelegatedJobThenContinue(cb, () => runPhysicalCesarWorkflow('campfire', { topic: taskInput }, cb, signal, _cwdCamp), ({ chatContext, result, success, errorMsg }) =>
                   !success
                     ? `Campfire on: "${taskInput.slice(0, 200)}" failed: ${errorMsg}. ${chatContext ? `Partial discussion:\n\n${chatContext}\n\n` : ''}Decide how to recover or continue the task directly.`
                     : `Campfire discussion on: "${taskInput.slice(0, 200)}"\n\n${chatContext || JSON.stringify(result, null, 2)}\n\nSummarize the key insights and any consensus reached.`,
-                  continuationEpoch, continuationUserTurns), cb.ctx));
+                  continuationEpoch, continuationUserTurns), cb.ctx)());
               return true;
             }
             case 'council': {
@@ -711,10 +716,10 @@ export async function handleRecoveredDelegation(crashDel: any, input: string, cb
         case 'campfire': {
           cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'campfire', 'recovered delegation') });
           const _cwdRecoverCamp = resolveWorkingDir();
-          cb.runAsJob('campfire', label, withThreadOutcome(_cwdRecoverCamp, 'campfire', label, async () => {
-            const campfire = await runPhysicalCesarWorkflow('campfire', { topic: recoveredTask }, cb);
+          cb.runAsJob('campfire', label, signal => withThreadOutcome(_cwdRecoverCamp, 'campfire', label, async () => {
+            const campfire = await runPhysicalCesarWorkflow('campfire', { topic: recoveredTask }, cb, signal, _cwdRecoverCamp);
             await continueCesarAfterResult(`Recovered campfire discussion on: "${recoveredTask.slice(0, 200)}"\n\n${JSON.stringify(campfire, null, 2)}\n\nSummarize the key insights and continue the original task.`, cb, continuationEpoch, continuationUserTurns);
-          }, cb.ctx));
+          }, cb.ctx)());
           return true;
         }
         case 'council': {
@@ -936,10 +941,10 @@ export async function runCesarBrainFallback(input: string, cb: DispatchCallbacks
             case 'campfire': {
               cb.dispatch({ type: 'info', message: 'Cesar → campfire' });
               const _cwdFallbackCamp = resolveWorkingDir();
-              cb.runAsJob('campfire', label, withThreadOutcome(_cwdFallbackCamp, 'campfire', label, async () => {
-                const campfire = await runPhysicalCesarWorkflow('campfire', { topic: fallbackTask }, cb);
+              cb.runAsJob('campfire', label, signal => withThreadOutcome(_cwdFallbackCamp, 'campfire', label, async () => {
+                const campfire = await runPhysicalCesarWorkflow('campfire', { topic: fallbackTask }, cb, signal, _cwdFallbackCamp);
                 await continueCesarAfterResult(`Fallback campfire discussion on: "${fallbackTask.slice(0, 200)}"\n\n${JSON.stringify(campfire, null, 2)}\n\nSummarize the key insights and continue the original task.`, cb, continuationEpoch, continuationUserTurns);
-              }, cb.ctx));
+              }, cb.ctx)());
               return true;
             }
             case 'council': {

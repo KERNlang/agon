@@ -2,6 +2,7 @@ import { commandResultToToolResult } from '@kernlang/agon-mod-api';
 import type { AgonModFactory, CommandResult, Dispose, InvocationContext, Json, Registrar } from '@kernlang/agon-mod-api';
 
 import { runCampfireRuntime } from './runtime.js';
+import { campfireTopic } from './input.js';
 import type { CampfireModServices } from './host.js';
 
 const schema = Object.freeze({
@@ -15,14 +16,13 @@ const schema = Object.freeze({
 const cesarSchema = Object.freeze({ type: 'object', additionalProperties: false, required: ['topic'], properties: { topic: { type: 'string', minLength: 1 } } }) as Readonly<Record<string, Json>>;
 const cli = Object.freeze({ positionals: ['topic'], aliases: { engines: 'e', strategy: 's', lead: 'l' }, descriptions: { topic: 'Topic to discuss' } });
 const text = (value: unknown) => typeof value === 'string' ? value.trim() : '';
-const extras = (value: unknown) => Array.isArray(value) ? value.map(String) : [];
 const engineIds = (value: Json | undefined) => typeof value === 'string' ? value.split(',').map((id) => id.trim()).filter(Boolean) : [];
 
 async function run(raw: Json, context: InvocationContext, services: CampfireModServices): Promise<CommandResult> {
   context.signal.throwIfAborted();
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { exitCode: 1, stderr: 'Provide a Campfire request object.\n' };
   const input = raw as Record<string, Json>;
-  const topic = [text(input.topic), ...extras(input._).filter((part) => part !== input.topic)].filter(Boolean).join(' ').trim();
+  const topic = campfireTopic(input);
   if (!topic) return { exitCode: 1, stderr: 'Provide a topic. Usage: agon campfire "topic"\n' };
   const timeout = Number(input.timeout ?? 120);
   if (!Number.isFinite(timeout) || timeout <= 0) return { exitCode: 1, stderr: 'Campfire timeout must be a positive number of seconds.\n' };

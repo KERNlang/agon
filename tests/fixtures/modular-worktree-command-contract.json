@@ -1,0 +1,47 @@
+{
+  "sourceCommit": "b55e5966759036940e21cf6f1af15f1f72f3ba46",
+  "sourcePath": "packages/cli/src/commands/worktree.ts",
+  "sourceSha256": "ff3be86719e218ddc476fb9dfb9c4496c07e4e8ec55806c76524bbcf4ac5feb3",
+  "command": {
+    "meta": {
+      "name": "worktree",
+      "description": "Isolated per-session git worktrees (new/list/rm/prune/rehydrate)"
+    },
+    "args": {
+      "action": {
+        "type": "positional",
+        "required": true,
+        "description": "Action: new <branch> | list | rm <branch> | prune | rehydrate <branch>"
+      },
+      "branch": {
+        "type": "positional",
+        "required": false,
+        "description": "Branch name (for new / rm / rehydrate)"
+      },
+      "base": {
+        "type": "string",
+        "description": "Base ref for a new branch (default: current HEAD)"
+      },
+      "deps": {
+        "type": "string",
+        "description": "Dependency setup: link (fast node_modules overlay, default) | install (run the project package manager) | none",
+        "default": "link"
+      },
+      "older-than": {
+        "type": "string",
+        "description": "Age threshold for prune (e.g. 7d, 24h, 30m)",
+        "default": "7d"
+      },
+      "dry-run": {
+        "type": "boolean",
+        "description": "For prune: report what would be removed without removing it",
+        "default": false
+      },
+      "force": {
+        "type": "boolean",
+        "description": "rm/prune: remove even when the worktree has uncommitted changes (discards them)",
+        "default": false
+      }
+    }
+  }
+}

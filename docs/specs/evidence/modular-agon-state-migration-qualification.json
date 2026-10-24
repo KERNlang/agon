@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "slice": "S9",
+  "passed": true,
+  "historicalCorpus": {
+    "path": "docs/specs/evidence/modular-agon-legacy-oracle/persisted-envelopes.raw.ndjson",
+    "sha256": "sha256:a0bd6956e72ca7c1348914e414398d1f7d47947811cfa042ece23bea9061b74b",
+    "records": 7
+  },
+  "compatibility": {
+    "sourceBytesPreserved": true,
+    "unknownPayloadFieldsPreserved": true,
+    "disableAndUninstallRetainHistoricalData": true,
+    "readers": [
+      "legacy-0.2.x",
+      "envelope-v1"
+    ],
+    "downgradePolicy": "previous immutable generation reads the preserved legacy source; migrated bytes are staged, never destructive"
+  },
+  "checks": {
+    "status": 0,
+    "stdoutTail": "\n RUN  v3.2.7 /Users/ra/dev/agon-modular-implementation\n\n ✓ tests/unit/modular-migration-engine.test.ts (3 tests) 21ms\n ✓ tests/unit/modular-envelope-contract.test.ts (2 tests) 6ms\n ✓ tests/unit/modular-release-state-migrations.test.ts (3 tests) 22ms\n ✓ tests/unit/modular-purge-retention.test.ts (1 test) 396ms\n   ✓ managed purge generation retention > cannot purge a non-selected installation while any retained generation references it  396ms\n\n Test Files  4 passed (4)\n      Tests  9 passed (9)\n   Start at  22:59:35\n   Duration  771ms (transform 119ms, setup 68ms, collect 274ms, tests 446ms, environment 0ms, prepare 134ms)\n\n",
+    "stderrTail": ""
+  }
+}

@@ -1,8 +1,20 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { createSidechainLogger } from '../../packages/core/src/blocks/sidechain-logger.js';
+import { createSidechainLogger } from '../../packages/mod-kernel/src/sidechain-logger.js';
 import { readFileSync, rmSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { createHash } from 'node:crypto';
+
+it('preserves the exact legacy logger implementation from 22fbc4f3', () => {
+  const source = readFileSync(new URL('../../packages/mod-kernel/src/sidechain-logger.ts', import.meta.url));
+  expect(createHash('sha256').update(source).digest('hex')).toBe('266abce83c450811a018c767942cd9184d528fd60ab05ffd156c5d07ede06bd8');
+});
+
+it('has one physical kernel owner and no legacy core implementation', () => {
+  expect(existsSync(new URL('../../packages/core/src/blocks/sidechain-logger.ts', import.meta.url))).toBe(false);
+  const core = readFileSync(new URL('../../packages/core/src/index.ts', import.meta.url), 'utf8');
+  expect(core).toContain("export { createSidechainLogger } from '@kernlang/agon-kernel'");
+});
 
 describe('SidechainLogger', () => {
   const testDir = join(tmpdir(), `sidechain-test-${Date.now()}`);

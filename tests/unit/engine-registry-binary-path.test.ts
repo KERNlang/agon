@@ -1,10 +1,13 @@
 import { describe, expect, it, afterEach } from 'vitest';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync, readFileSync, chmodSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync, readFileSync, chmodSync, renameSync, symlinkSync, linkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { EngineRegistry } from '../../packages/core/src/signals/engine-registry.js';
+import { EngineRegistry, inspectBinaryCache, evictBinaryCache, recoverBinaryCacheWriter } from '../../packages/core/src/signals/engine-registry.js';
 import type { EngineDefinition } from '../../packages/core/src/models/types.js';
 import { setupTestAgonHome, cleanupTestAgonHome, agonHomePath } from '../helpers/agon-home.js';
+import { WriterFence, withSynchronousWriterFence } from '../../packages/mod-kernel/src/writer-lock.js';
+import { spawnSync } from 'node:child_process';
+import { satisfies } from 'semver';
 
 // Fix 2: EngineRegistry.findBinary used to shell out to `execFileSync('which', …)`
 // per engine (~10 subprocess spawns, 5s timeout each) on first roster
@@ -123,6 +126,147 @@ describe('EngineRegistry.findBinary — in-process PATH scan', () => {
 });
 
 describe('EngineRegistry.findBinary — ~/.agon/cache/binaries.json disk cache', () => {
+  it('requires the kernel release that exposes the writer-fence contract', () => {
+    const pkg = JSON.parse(readFileSync(new URL('../../packages/support-engine-catalog/package.json', import.meta.url), 'utf8'));
+    const range = pkg.peerDependencies['@kernlang/agon-kernel'];
+    expect(satisfies('0.1.0', range)).toBe(false);
+    expect(satisfies('1.0.0', range)).toBe(true);
+    expect(satisfies('2.0.0', range)).toBe(false);
+  });
+
+  it('counts logical path bytes and preserves another hard link when the cache name is removed', () => {
+    const home = setupTestAgonHome('bincache-hardlink');
+    try {
+      mkdirSync(agonHomePath('cache'), { recursive: true });
+      const file = agonHomePath('cache', 'binaries.json');
+      const retained = agonHomePath('retained-copy');
+      writeFileSync(file, 'keep');
+      linkSync(file, retained);
+      const snapshot = inspectBinaryCache(home)!;
+      expect(snapshot.logicalBytes).toBe(4);
+      expect(evictBinaryCache(home, snapshot)).toBe('removed');
+      expect(readFileSync(retained, 'utf8')).toBe('keep');
+      expect(inspectBinaryCache(home)).toBeNull();
+    } finally { cleanupTestAgonHome(home); }
+  });
+
+  it('recovers a dead writer but refuses a live writer without altering cache bytes', async () => {
+    const home = setupTestAgonHome('bincache-writer-recovery');
+    try {
+      mkdirSync(agonHomePath('cache'), { recursive: true });
+      const file = agonHomePath('cache', 'binaries.json');
+      const lock = agonHomePath('cache', 'binaries.writer.json');
+      writeFileSync(file, 'keep');
+      const live = WriterFence.acquireSync(lock, 'fixture-live');
+      await expect(recoverBinaryCacheWriter(home)).rejects.toThrow();
+      expect(readFileSync(file, 'utf8')).toBe('keep');
+      live.releaseSync();
+      const child = spawnSync(process.execPath, ['-e', 'process.exit(0)']);
+      expect(child.status).toBe(0);
+      WriterFence.acquireSync(lock, 'fixture-dead', { pid: child.pid });
+      expect(() => inspectBinaryCache(home)).toThrow('writer');
+      await recoverBinaryCacheWriter(home);
+      expect(inspectBinaryCache(home)?.logicalBytes).toBe(4);
+      expect(readFileSync(file, 'utf8')).toBe('keep');
+    } finally { cleanupTestAgonHome(home); }
+  });
+
+  it('evicts the exact observed cache and does not chase replacement bytes on retry', () => {
+    const home = setupTestAgonHome('bincache-eviction');
+    try {
+      mkdirSync(agonHomePath('cache'), { recursive: true });
+      const file = agonHomePath('cache', 'binaries.json');
+      writeFileSync(file, 'derived');
+      const snapshot = inspectBinaryCache(home)!;
+      expect(snapshot.logicalBytes).toBe(7);
+      expect(evictBinaryCache(home, snapshot)).toBe('removed');
+      expect(evictBinaryCache(home, snapshot)).toBe('missing');
+      writeFileSync(file, 'replacement');
+      expect(evictBinaryCache(home, snapshot)).toBe('changed');
+      expect(readFileSync(file, 'utf8')).toBe('replacement');
+    } finally { cleanupTestAgonHome(home); }
+  });
+
+  it.each(['replace', 'edit'] as const)('keeps an approved cache changed by %s', change => {
+    const home = setupTestAgonHome('bincache-changed');
+    try {
+      mkdirSync(agonHomePath('cache'), { recursive: true });
+      const file = agonHomePath('cache', 'binaries.json');
+      writeFileSync(file, 'before');
+      const snapshot = inspectBinaryCache(home)!;
+      if (change === 'replace') {
+        writeFileSync(`${file}.replacement`, 'after!');
+        renameSync(`${file}.replacement`, file);
+      } else writeFileSync(file, 'after!');
+      expect(evictBinaryCache(home, snapshot)).toBe('changed');
+      expect(readFileSync(file, 'utf8')).toBe('after!');
+    } finally { cleanupTestAgonHome(home); }
+  });
+
+  it('refuses another home, linked cache files and linked cache directories', () => {
+    const home = setupTestAgonHome('bincache-path-guard');
+    const outside = mkdtempSync(join(tmpdir(), 'agon-bincache-outside-'));
+    tempDirs.push(outside);
+    try {
+      mkdirSync(agonHomePath('cache'), { recursive: true });
+      const file = agonHomePath('cache', 'binaries.json');
+      writeFileSync(file, 'keep');
+      const snapshot = inspectBinaryCache(home)!;
+      expect(() => evictBinaryCache(outside, snapshot)).toThrow('owner path');
+      renameSync(file, join(outside, 'binaries.json'));
+      symlinkSync(join(outside, 'binaries.json'), file);
+      expect(() => inspectBinaryCache(home)).toThrow('regular file');
+      expect(() => evictBinaryCache(home, snapshot)).toThrow('regular file');
+      rmSync(file);
+      rmSync(agonHomePath('cache'), { recursive: true });
+      symlinkSync(outside, agonHomePath('cache'));
+      expect(() => inspectBinaryCache(home)).toThrow('real directory');
+      expect(() => evictBinaryCache(home, snapshot)).toThrow('real directory');
+      expect(readFileSync(join(outside, 'binaries.json'), 'utf8')).toBe('keep');
+    } finally { cleanupTestAgonHome(home); }
+  });
+
+  it('reports contention without deleting the approved cache', () => {
+    const home = setupTestAgonHome('bincache-eviction-contention');
+    try {
+      mkdirSync(agonHomePath('cache'), { recursive: true });
+      const file = agonHomePath('cache', 'binaries.json');
+      writeFileSync(file, 'keep');
+      const snapshot = inspectBinaryCache(home)!;
+      withSynchronousWriterFence(agonHomePath('cache', 'binaries.writer.json'), 'agon.engine-catalog.binary-cache', () => {
+        expect(() => evictBinaryCache(home, snapshot)).toThrow('writer');
+        expect(() => inspectBinaryCache(home)).toThrow('writer');
+        expect(readFileSync(file, 'utf8')).toBe('keep');
+      });
+      expect(evictBinaryCache(home, snapshot)).toBe('removed');
+    } finally { cleanupTestAgonHome(home); }
+  });
+
+  it('resolves PATH without replacing cache bytes while retention holds the cache writer fence', () => {
+    const home = setupTestAgonHome('bincache-retention-writer');
+    try {
+      const binDir = mkdtempSync(join(tmpdir(), 'agon-bincache-retention-'));
+      tempDirs.push(binDir);
+      const exe = makeFakeExecutable(binDir, 'retained-cache-tool');
+      process.env.PATH = binDir;
+      mkdirSync(agonHomePath('cache'), { recursive: true });
+      const cacheFile = agonHomePath('cache', 'binaries.json');
+      writeFileSync(cacheFile, 'approved cache bytes');
+      const registry = new EngineRegistry();
+      registry.register(makeBinaryEngine('retained-cache-engine', { binary: 'retained-cache-tool' }));
+      withSynchronousWriterFence(agonHomePath('cache', 'binaries.writer.json'), 'agon.kernel.retention', () => {
+        expect(registry.findBinary(registry.get('retained-cache-engine'))).toBe(exe);
+        expect(readFileSync(cacheFile, 'utf8')).toBe('approved cache bytes');
+      });
+      const next = new EngineRegistry();
+      next.register(makeBinaryEngine('retained-cache-engine', { binary: 'retained-cache-tool' }));
+      expect(next.findBinary(next.get('retained-cache-engine'))).toBe(exe);
+      expect(JSON.parse(readFileSync(cacheFile, 'utf8')).entries['retained-cache-tool'].path).toBe(exe);
+    } finally {
+      cleanupTestAgonHome(home);
+    }
+  });
+
   it('writes a resolved binary into the disk cache, keyed by a PATH hash', () => {
     const home = setupTestAgonHome('bincache-write');
     try {

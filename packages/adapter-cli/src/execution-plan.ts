@@ -14,6 +14,7 @@ export interface ExecutionPlan {
 }
 
 export interface NormalizedApiAgentOutcome {
+  usage?: ApiAgentResult['usage'];
   exitCode: number;
   stdout: string;
   stderr: string;
@@ -145,17 +146,18 @@ export function normalizeApiAgentOutcome(result: ApiAgentResult|null|undefined):
   }
   const stdout = result.response ?? '';
   const reason = result.errorReason ?? '';
-  const fault = (result.engineFault === true) ? { engineFault: true } : {};
+  const metadata = { ...(result.engineFault === true ? { engineFault: true } : {}),
+    ...(result.usage ? { usage: result.usage } : {}) };
   if (result.cancelled) {
-    return { exitCode: 130, stdout: stdout, stderr: reason || 'aborted', timedOut: false, ...fault };
+    return { exitCode: 130, stdout: stdout, stderr: reason || 'aborted', timedOut: false, ...metadata };
   }
   if (result.timedOut) {
-    return { exitCode: 124, stdout: stdout, stderr: reason || 'API agent timed out', timedOut: true, ...fault };
+    return { exitCode: 124, stdout: stdout, stderr: reason || 'API agent timed out', timedOut: true, ...metadata };
   }
   if (result.failed) {
-    return { exitCode: 1, stdout: stdout, stderr: reason || 'API agent execution failed', timedOut: false, ...fault };
+    return { exitCode: 1, stdout: stdout, stderr: reason || 'API agent execution failed', timedOut: false, ...metadata };
   }
-  return { exitCode: 0, stdout: stdout, stderr: '', timedOut: false, ...fault };
+  return { exitCode: 0, stdout: stdout, stderr: '', timedOut: false, ...metadata };
 }
 
 /**

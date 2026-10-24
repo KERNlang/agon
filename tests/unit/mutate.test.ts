@@ -3,7 +3,8 @@
 // AI-semantic wire format (mutate-semantic.ts), plus ONE end-to-end pass over
 // a throwaway git repo for the worktree/hydration path. Mutant classification
 // itself lives in tests/unit/mutant-runner.test.ts.
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+import * as processRuntime from '@kernlang/agon-support-engine-runtime';
 import { appendFileSync, cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
@@ -312,6 +313,56 @@ describe('mutate — semantic wire format', () => {
 const FIXTURE = fileURLToPath(new URL('../fixtures/mutate-tautology', import.meta.url));
 
 describe('runMutate — hydrated sandbox', () => {
+  it.each([false, true])('shows operational failure with earned evidence in grouped=%s output', grouped => {
+    const partial = report({ baselineError: 'fixture process unavailable', generated: 3, killed: 1,
+      survived: 0, invalid: 0, notRun: 2, score: 1 });
+    const lines = formatMutationReportLines(partial, [], { grouped });
+    expect(lines[0]).toContain('fixture process unavailable');
+    expect(lines.join('\n')).toContain('1/1 mutants killed');
+    expect(lines.join('\n')).toContain('2 mutants not run (operational error)');
+    expect(lines.join('\n')).not.toContain('✓ no survivors');
+    expect(mutateVerdictLine(partial, [])).toEqual({ level: 'warning', text: 'mutation run failed — fixture process unavailable' });
+  });
+
+  it.each([0, 1])('reports a process failure after %i earned verdicts without losing evidence', async earned => {
+    const repo = mkdtempSync(join(tmpdir(), 'agon-mutate-process-error-'));
+    const outDir = mkdtempSync(join(tmpdir(), 'agon-mutate-process-report-'));
+    const spawn = vi.spyOn(processRuntime, 'spawnWithTimeout');
+    try {
+      cpSync(FIXTURE, repo, { recursive: true });
+      const git = (args: string[]) => execFileSync('git', args, { cwd: repo, encoding: 'utf8' });
+      git(['init', '-q']);
+      git(['config', 'user.email', 'fixture@agon.test']);
+      git(['config', 'user.name', 'fixture']);
+      git(['add', 'src', 'check-real.mjs', 'check-tautology.mjs', 'check-loop.mjs', 'README.md']);
+      git(['commit', '-qm', 'fixture']);
+      spawn.mockResolvedValueOnce({ exitCode: 0, stdout: '', stderr: '', timedOut: false, durationMs: 1, pid: null });
+      if (earned) spawn.mockResolvedValueOnce({ exitCode: 1, stdout: '', stderr: 'assertion failed', timedOut: false, durationMs: 1, pid: null });
+      spawn.mockResolvedValue({ exitCode: 1, stdout: '', stderr: '', timedOut: false, durationMs: 1, pid: null,
+        spawnError: new Error('fixture process unavailable') });
+      const result = await runMutate({ repoRoot: repo, testCmd: 'node check-real.mjs', files: ['src/add.ts'],
+        engines: [], registry: {} as never, adapter: {} as never, semantic: false, maxMutants: 20,
+        perMutantTimeoutSec: 20, totalBudgetSec: 120, outputDir: outDir });
+      expect(result.report.baselineOk).toBe(true);
+      expect(result.report.killed).toBe(earned);
+      expect(result.report.notRun).toBe(result.report.generated - earned);
+      expect(result.report.aborted).toBe(false);
+      expect(result.report.budgetExhausted).toBe(false);
+      expect(result.ok).toBe(false);
+      expect(result.error).toContain('fixture process unavailable');
+      expect(result.verdict).toContain('fixture process unavailable');
+      expect(result.verdict).not.toContain('not run (aborted)');
+      expect(result.verdict).not.toContain('✓ no survivors');
+      expect(JSON.parse(readFileSync(join(outDir, 'mutation-report.json'), 'utf8'))).toEqual(result.report);
+      expect(git(['status', '--porcelain']).trim()).toBe('');
+      expect(git(['worktree', 'list']).trim().split('\n')).toHaveLength(1);
+    } finally {
+      spawn.mockRestore();
+      rmSync(repo, { recursive: true, force: true });
+      rmSync(outDir, { recursive: true, force: true });
+    }
+  });
+
   it('mutates uncommitted work in an isolated worktree and leaves the user tree untouched', async () => {
     const repo = mkdtempSync(join(tmpdir(), 'agon-mutate-e2e-'));
     const outDir = mkdtempSync(join(tmpdir(), 'agon-mutate-out-'));

@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { runCouncil } from '@kernlang/agon-forge';
+import { runCouncil } from '../../packages/forge/src/council.js';
 
 const VERDICT = 'Confidence: 72%\n## Recommendation\nDo the thing.\nKILL-SWITCH: if X then reverse.';
 const ok = (stdout: string, identity?: string) => ({ exitCode: 0, stdout, stderr: '', durationMs: 1, timedOut: false, ...(identity ? { identity } : {}) });

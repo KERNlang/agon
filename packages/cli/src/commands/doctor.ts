@@ -6,9 +6,10 @@ import { mkdtempSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 
 import { tmpdir, homedir } from 'node:os';
 
-import { join, basename } from 'node:path';
+import { join, basename, dirname } from 'node:path';
 
 import { EngineRegistry, loadConfig, resolveWorkingDir, repoRoot, headSha, worktreeCreate, worktreeRemoveBestEffort, resolveDedupSidecar, resolveSidecarPython, agonPath } from '@kernlang/agon-core';
+import { resolveHistorySearchSidecar } from '@kernlang/agon-support-persistence';
 
 import { resolveBuiltinEnginesDir } from '../lib/engines-dir.js';
 
@@ -21,6 +22,8 @@ import { runReviewCore, selectReviewEngines } from '../handlers/review.js';
 import { header, table, info, success, fail, warn, green, red, yellow, dim, bold } from '../blocks/output-format.js';
 
 import { readCesarToolReliability, formatCesarReliabilityLine, shouldDowngradeCesarToolWork } from '../cesar/reliability.js';
+import { ExternalActivationStore, TrustGrantStore, discoverUserFolderModsDetailed } from '@kernlang/agon-kernel';
+import { modularHostRoot } from '../surface-authority-runtime.js';
 
 export interface EngineDoctorEntry {
   id: string;
@@ -36,6 +39,43 @@ export interface HarnessDoctorReport {
   rows: string[][];
   summary: string;
   ok: boolean;
+}
+
+export interface ModularDoctorReport extends HarnessDoctorReport {}
+
+/** Read-only diagnosis of external mod discovery and local authority state. */
+export async function buildModularDoctorReport(hostRoot: string, modsRoot: string): Promise<ModularDoctorReport> {
+  const rows: string[][] = [];
+  let failing = 0;
+  let warned = 0;
+  try {
+    const discovery = await discoverUserFolderModsDetailed(modsRoot);
+    const status = discovery.diagnostics.length ? 'warn' : 'ok';
+    if (status === 'warn') warned += 1;
+    rows.push(['Folder discovery', modsRoot, status, `${discovery.candidates.length} valid; ${discovery.diagnostics.length} rejected without execution`]);
+  } catch (error) {
+    failing += 1;
+    rows.push(['Folder discovery', modsRoot, 'fail', error instanceof Error ? error.message : String(error)]);
+  }
+  try {
+    const store = new TrustGrantStore(hostRoot);
+    const [trust, grants] = await Promise.all([store.readTrust(), store.readGrants()]);
+    rows.push(['Trust and grants', hostRoot, 'ok', `${trust.length} trust; ${grants.length} grant records are canonical`]);
+  } catch (error) {
+    failing += 1;
+    rows.push(['Trust and grants', hostRoot, 'fail', `authority state is unreadable: ${error instanceof Error ? error.message : String(error)}`]);
+  }
+  try {
+    const store = new ExternalActivationStore(hostRoot);
+    const [records, failures] = await Promise.all([store.read(), store.readFailures()]);
+    if (failures.length) warned += 1;
+    rows.push(['Activation state', hostRoot, failures.length ? 'warn' : 'ok', `${records.length} activation records; ${failures.length} durable failures. Recovery: inspect, disable, or fix the named mod, then restart.`]);
+  } catch (error) {
+    failing += 1;
+    rows.push(['Activation state', hostRoot, 'fail', `activation state is unreadable: ${error instanceof Error ? error.message : String(error)}`]);
+  }
+  return { headers: ['Check', 'Subject', 'Status', 'Detail'], rows,
+    summary: `${rows.length - failing - warned} ok, ${warned} warn, ${failing} fail`, ok: failing === 0 };
 }
 
 export function shellQuoteForDoctor(value: string): string {
@@ -176,7 +216,7 @@ export interface PythonDoctorResult {
 }
 
 /**
- * Every Python file the bridges actually spawn. Doctor confirms ALL of them are reachable through resolveDedupSidecar — a bad package that ships only some is still a problem.
+ * Check each sidecar through the resolver used by its execution bridge.
  */
 export const EXPECTED_SIDECARS: string[] = ['history-search.py','syntax-validator.py','classifier.py','sidecar.py','embedder.py'];
 
@@ -223,25 +263,19 @@ export function diagnoseDedupPython(): PythonDoctorResult {
     };
   }
   if (result.status === 0) {
-    // Confirm EVERY expected sidecar resolves — a partial dedup package
-    // would otherwise pass the probe while leaving one or more bridges
-    // broken at runtime.
-    const missing = EXPECTED_SIDECARS.filter((name: string) => !resolveDedupSidecar(name));
-    if (missing.length === EXPECTED_SIDECARS.length) {
-      return {
-        status: 'fail',
-        detail: '@kernlang/agon-dedup not found in node_modules — Python sidecars unreachable',
-        installCommand: 'reinstall @kernlang/agon (or its workspace) — the dedup package should land automatically',
-      };
-    }
+    const sidecars = EXPECTED_SIDECARS.map((name) => name === 'history-search.py'
+      ? { name, path: resolveHistorySearchSidecar(), owner: '@kernlang/agon-support-persistence' }
+      : { name, path: resolveDedupSidecar(name), owner: '@kernlang/agon-support-dedup' });
+    const missing = sidecars.filter((sidecar) => !sidecar.path);
     if (missing.length > 0) {
+      const owners = [...new Set(missing.map((sidecar) => sidecar.owner))];
       return {
         status: 'fail',
-        detail: `@kernlang/agon-dedup is partial — missing sidecar(s): ${missing.join(', ')}`,
-        installCommand: 'reinstall @kernlang/agon-dedup — the published tarball should include all five .py files',
+        detail: `Python sidecar assets missing: ${missing.map((sidecar) => `${sidecar.name} (${sidecar.owner})`).join(', ')}`,
+        installCommand: `reinstall @kernlang/agon (or rebuild its workspace) to restore assets in ${owners.join(', ')}`,
       };
     }
-    const sample = resolveDedupSidecar('history-search.py');
+    const sample = sidecars.find((sidecar) => sidecar.name === 'history-search.py')?.path;
     return { status: 'ok', detail: `all sidecar deps importable via ${python}; all ${EXPECTED_SIDECARS.length} sidecars reachable (e.g. ${sample})` };
   }
   // Search the WHOLE stderr — Python emits a Traceback header before the
@@ -466,7 +500,7 @@ export const doctorCommand: any = defineCommand({
   args: {
     scope: {
       type: 'positional',
-      description: 'Scope: engines|harness|review',
+      description: 'Scope: engines|harness|review|mods',
       required: false,
     },
     engines: {
@@ -481,10 +515,20 @@ export const doctorCommand: any = defineCommand({
   },
   async run({ args }) {
     const scope = String(args.scope ?? 'engines').trim() || 'engines';
-    if (scope !== 'engines' && scope !== 'harness' && scope !== 'review') {
+    if (scope !== 'engines' && scope !== 'harness' && scope !== 'review' && scope !== 'mods') {
       fail(`Unknown doctor scope: ${scope}`);
-      info('Available: engines, harness, review');
+      info('Available: engines, harness, review, mods');
       process.exit(1);
+    }
+
+    if (scope === 'mods') {
+      const hostRoot = modularHostRoot();
+      const report = await buildModularDoctorReport(hostRoot, process.env.AGON_MODS_ROOT ?? join(dirname(hostRoot), 'mods'));
+      header('Modular Agon Doctor');
+      table(report.headers, report.rows.map((row) => [row[0]!, row[1]!, formatDoctorStatus(row[2] as 'ok' | 'warn' | 'fail'), row[3]!]));
+      if (report.ok) success(`Summary: ${report.summary}`);
+      else { warn(`Summary: ${report.summary}`); process.exitCode = 1; }
+      return;
     }
 
     const registry = new EngineRegistry();

@@ -1,0 +1,5591 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "serialNumber": "urn:uuid:3468f150-dbea-5bda-9ba7-64f302bb1a19",
+  "version": 1,
+  "metadata": {
+    "component": {
+      "type": "application",
+      "name": "@kernlang/agon-modular",
+      "version": "1.0.0"
+    },
+    "properties": [
+      {
+        "name": "agon:evidence-kind",
+        "value": "local-unpublished-release-candidate"
+      },
+      {
+        "name": "agon:npm-provenance",
+        "value": "externally-blocked-until-registry-publication"
+      },
+      {
+        "name": "agon:dependency-scope",
+        "value": "release-set packages and frozen external npm closure, including nested, optional and peer relationships"
+      },
+      {
+        "name": "agon:license-status",
+        "value": "declared metadata; distribution policy review is not established by this inventory"
+      }
+    ]
+  },
+  "components": [
+    {
+      "type": "application",
+      "bom-ref": "@kernlang/agon@1.0.0",
+      "group": "@kernlang",
+      "name": "agon",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "094fcdac55c93b0387d94d8eb0fe0b9c6cbd4f3a8c08d1e7cab0d427fb94d5f4"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-sKggJcD/fZHwCMnxCEYSIKqzao1v2031Bsgz4AnZia3jXKUI+nbH0uVNqMykunzUwZPcK4yTnu5MYUxtsbAaqw=="
+        },
+        {
+          "name": "agon:class",
+          "value": "managed-launcher"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-kernel@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-kernel",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "e59435e58a8d1d6eb3ecf6108b5fd7ad96912206e5aa1556d76383122a167acf"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-RHWWhRrjVZCo3P6VZbNm8ctHucQabcztuaM5SQcCZDAvveR5XlWH+TuqFDts2SULLNGMyWwIrGzfc54P3M2liw=="
+        },
+        {
+          "name": "agon:class",
+          "value": "minimal-kernel-machinery"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-api@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-api",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "5ab4980d738ea001c308d6657e7ed6bd5c838a16d7eb1631929a5a567fb19208"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-SoQrJxHpemUEDoUPcq09iVz06UpczJ5/olMaja8MjDb9K7o9LWUgnFIsopporFWz9Z/9jK+TvPxyqaN7/M8cXw=="
+        },
+        {
+          "name": "agon:class",
+          "value": "minimal-kernel-machinery"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-support-engine-runtime@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-support-engine-runtime",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "41bd7eb6bc531114d9e19e07a5c12a5c1cd68eb8a308f2a6e669ff4c6af56f4c"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-RFiakLIINTLXEJgsgVopMX0FnvoA4LZYxZWjI3t2b6luBVdGyn+lBKwQIG/Ir4eBXIARvAnIMS6yaeWlGtej2g=="
+        },
+        {
+          "name": "agon:class",
+          "value": "hidden-shared-support-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-support-engine-catalog@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-support-engine-catalog",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "1a515bb37da3df8839360c3703a6d1c1afb546070df25b0981062dcf0b0e0458"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-N2U6KBdGKn32/lxWxhTWAegD8FTgIVJusBkbDGywUNHgip0kFykNjkQVuh8IsrnT+9DPh2uY5iLoEgh1Lt90kw=="
+        },
+        {
+          "name": "agon:class",
+          "value": "hidden-shared-support-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-support-persistence@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-support-persistence",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "bb4cc53c599dad2f2922a374b7dc42766b6d08a01d61c35508fb5c257f5a1015"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-EnizTSrYVM8FG83zUkDFojCOI6DxMwEpnpuoM3IVKRGSYl6OotwFe0CL7W4VL/d1U6e1JzqXsEyJn81bXVnXmA=="
+        },
+        {
+          "name": "agon:class",
+          "value": "hidden-shared-support-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-support-verification@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-support-verification",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "4e33d88e38fff4c7446ff54918399b1ec9e32d5c60e5b03756e5debada21eaef"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-EJ7nnRtfQN+9VGGvNVV0NY7BP/nTP/XzDnCTyn8uuvYE0LWP4azxV1Py3ziw/sjiW6tctbMzio3wWxVnsdi6gA=="
+        },
+        {
+          "name": "agon:class",
+          "value": "hidden-shared-support-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-support-worktree@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-support-worktree",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "74f740fa6b057e0a2d7b127fcebe50c5372642c593de25d797718d558eb71064"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-yrM8a1OTtZIVOiPuSaRMUUomffHb70idiguaG/ta1KCSm7Dn0N7gal/NU9b07DjM2lOJ673XgjRdbb9HOB7fbQ=="
+        },
+        {
+          "name": "agon:class",
+          "value": "hidden-shared-support-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-support-panel@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-support-panel",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "6d39374ca59d12923feb75c1febd2143ccae6512d45fdb0957cf2a79716d1aae"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-91KZS+lcfhYCPS9JInMSzI0Bp9jd4CwagFMVbq9L0ffgyVtPy6d/na6u5HRzdWjNBMdCYup42tcu+/zczlfj1A=="
+        },
+        {
+          "name": "agon:class",
+          "value": "hidden-shared-support-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-support-judge@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-support-judge",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "ddff86e665a14f2729c75bf4604153ccd0649bb41443a9560a7f17115a8696ad"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-e2c0F1L6rsrHmA0o6bY/I2efHqfXE0/xrJUJ4UVAw5YiUxc9k9R7v1W4U1w8hJPAhMfNL2QD1gHeTY8hFzoQgw=="
+        },
+        {
+          "name": "agon:class",
+          "value": "hidden-shared-support-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-support-agent-runtime@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-support-agent-runtime",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "97b773a89f0b48d59b0fb7a2b0db0ce6acab3d95c2c2b8bc114a32fa4e07c61c"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-FNbujevy+LA6FwNP8SztTsqjznPTymcI79yX3o8x5ql+RTYUY/YE2GLEjTktXCD16ue2aXrpTAcVfuqRVc6hkw=="
+        },
+        {
+          "name": "agon:class",
+          "value": "hidden-shared-support-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-support-dedup@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-support-dedup",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "e288c0fabc953aaaef80fe37281587984ea32888269d2088285246c860b121a6"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-bMxQzg4T4t0/Snu7hYEKf7jxEawmD3ghdSRkSjIEx4ro5yrBTM99ZqVt11QvwyAQTFQjK59KlC0NVb+eZh/YGQ=="
+        },
+        {
+          "name": "agon:class",
+          "value": "hidden-shared-support-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-support-browser-bridge@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-support-browser-bridge",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "807614ef3d09dddb8dcc23f892ccea2047b3f048ec5d030af3be698f2fafb082"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-LczOTlqSXZ5H4RDmqTsfffdik+6knLS5aJbif9JwSorZw021TXnxjOrldN5zfEwgAReNMqxR7iPn41Xf4iH02A=="
+        },
+        {
+          "name": "agon:class",
+          "value": "hidden-shared-support-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-support-saas-api@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-support-saas-api",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "da053f3b4c2c5cff4758cfe7086e835a322c49353e3658e71f510b58fbb9cdba"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-7z++c800bhwtuOgmF2mzCQla7FJYR0Q7CbXFI7p59VJ1oaSGrURBn+tb/xKDunJuhIand0BLn+0J33qJsWbCFw=="
+        },
+        {
+          "name": "agon:class",
+          "value": "hidden-shared-support-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-ask@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-ask",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "58140a090c4f78c28fb38787d84d6ef8f7478a28674f690954266ff9bca6e0a9"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-LdJTJ4s5kEtezY+E5G+DEx0bOIcENOfjyA8GejFHiBr8TCQ+Yg3dVIMKMq4as8lpVUi8BdkvRjK2XGO2wb8VzQ=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-plan@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-plan",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "f5df44840c7737983c267082df59699222e688faad25da6fe7a277eeaadebc0f"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-amx5ubBaeDZs3SxRQnu5bYXZ1cuQnTAehZda3zkBo5D/fSmF8YM5W5SlonjGotmJ5PcEusa++zvecODGwNN+mQ=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-think@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-think",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "33c4e26b344a9cd8922cbcb9265c52efb89db83600250912c9c595e4d69b1a67"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-e4OLa3/PDQBtjp3HPJEiVabwiHO7ZHBi3IF7b8mMrk7KKMiVxH0ZW8tck3D0TmnKS/bEweYUXrCs5yZIdbk+ew=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-brainstorm@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-brainstorm",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "a01e928f1497d84f3de99f2361eb319060a9d153190686e8e602d0144cb68740"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-80XiTlw0zD/lmTehRFLDSdaPJA1Ir0VEHpsY+4XDnDEasPT1FljQyg1yHB0fNP9S9taDH4EvpkP8hN42jdtYzA=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-team-brainstorm@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-team-brainstorm",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "35f43f04cb7c3152acf9b59e198750e257ff4323e11e171e62c1e2c27055a425"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-ouNOlzIvBc7furxOTMrPg9VySOlP4/Nrrzwrm6cuFH3lhMArvGsctQbj+UwnTNCQQHEzIdkkgVa8PaJTwgE6Bw=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-tribunal@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-tribunal",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "d875e4e2a805b34a26bd316b6d0e793de483d71d135741ffee40b435612967f5"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-Tto6r7FNWV/FgqL8V13KElIHQgdA85pAoc9+wke7Pb9JvmdLTe7A+btpAerSYHC2gM/pNviZjIcmrB3cNIVaDw=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-team-tribunal@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-team-tribunal",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "69d1b9ec95bf7d391422984e3f3c248165212a9394362374b9f206133b7a170b"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-6/R1iw58wdqTERaAggfvCqc9AWHu2DExAPudTt7mpDjiUggjWQaP4LIatNXoyYGj3M7pUUpNbnlLGyO8xf3bWA=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-campfire@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-campfire",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "e10142218afc51658fc13ad060748024a2820762539328bab4480a730711d8f0"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-eKGjKrDXhLtD8hwaVmocglyOzXgqEqQVmmjWd0l6+Qx7JDX2Nxco46UHMMp9cb9rrddTQHbEwfie/HZqwN5Cyw=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-forge@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-forge",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "cbdd134c796d8ea7639d64a9134d172b932d567f3cfd563d6d51270c1fc7a7df"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-nEjb9X9t+6KO/n7ZgDikInoxjz5nJ0nW3A1zGxTYAxHNSAFFovPOixXxOpafT2ojpOyLQUoOs94foe7GxLZbVw=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-team-forge@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-team-forge",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "217456e11dbbdf623c93fcb81173806a65f6e68537c268bf2eecc3729de69d43"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-hqR+NlokgYiCNqQ2fjhXdPDrfQmoqxpca+AGSeXNCcmgEmc77KS8MnGvi6zn+w5DkTr5wL+OLI834yM2eWoVyQ=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-synthesis@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-synthesis",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "9d523c4a48629e3bb5a78241f3b2a89b27096c5d561ab9bf687ff053c0464bc5"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-khERetEPDe4YJqOp2lFrNnsinHu2m3swz1w6jW24SJ6dgPm1v5yeC7Hvc6XowHxxE9Tg2CKSfRCWteZE+rwo/A=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-review@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-review",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "39b5aef29ffeaeb86f41aab728ffd389a5274240017a24f067b42e06ca2c22f6"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-gvshdUqFzUrtI97WPRM3PwLxRb0NvSr5wxKhAfIAxHyKrQqA1ETSbjLLGg9XFJgrG/iasNMu6+6lkInzF7k7jw=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-pipeline-orchestration@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-pipeline-orchestration",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "321016073091ae726c6d803bc5be1e55577e17fe63ed4549782a4046e2f0b634"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-P5uO9wjwk6yXMvtu2DUZfcgP6DzyPNQRduLCWOAss4n7YZEela4IT/4B7rcmcZF9Oijo8oF+kyRhevm8Q4BOZg=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-pipeline-delivery@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-pipeline-delivery",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "023c33145bf1182f6b5269f50f9dcca44d968a5c76f3784aeb704c81e59d4758"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-KQPgfL8ac7vXHdHjehA87XrDZXLC6mrev95e6TWf41F+dUgDaKO3V6kTZa33dk/9jHK+fbgi3cQCHDwSZHFu3Q=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-agent@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-agent",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "c878c8d6526c366196bf1ec2fba85990fd1b868937797fa93f834ea944fb9a4f"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-63raxpn5b/4ahDUAyCJxvPV2WWjziK07K8uI4DkZPwneGh6kBwEBFSIz/2WrR1X3hrjwlDurxjPK+W1YNhy+RA=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-goal@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-goal",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "2f7681da51780e637cd9891360873e238e89bb9ff92619ffed59fca75c4e997a"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-43HrdbPSibIyKklG+6KS8tZ/JQhNWBSE3SuCOzWyu+TXid2N3QrymRjlMUyhFcc8Ej6b90DqGoFHS6HasmzC7A=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-conquer@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-conquer",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "d1ec35cefb7b6af40ccd169c599afaa28cfa8198a142efa1443da50f05ba35f5"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-nr4JlUmDyRvMZycdGgZXK3CtSER9/enURDQ61FEbJUP1f1hfnoPFgjvGAi5DbSHM7ngsuMu9ry5wyImeJgSwMg=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-nero@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-nero",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "49ab33d354ea17271e1660010d021f25bac6f2b3fac63aab770e1fdaf91f323a"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-2Tk6Pd3jCIs41FSu8lOf8XVHx+ysorF/WU8Q5CpJ9jmeAZAHskMIExpfGEQlStS3gbammAdxVzbfnfziVm163A=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-council@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-council",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "88219f3c091856edda96505fc874f33de9c4b25b4c16616644d3b09923598f27"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-yvjhgAcVbdUlVU7kAKToIjXUQ3aqYyWcQjlElmbmJE8UjiblvN/eGOQq0D+fh8DTFp8KjNl25hwIuxUrN+znOg=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-research@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-research",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "202e81e18aa9a38141e9b31985e496903fec00791fb614843ab5fc656f87b9f7"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-/cOjOOYDCiTC+CGx41//upp1zVe92I9XDdw41syBWP9wYEJpXFPGULHHQp4NwT3/OncrPlTSuTg1559BWrYozg=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-rag@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-rag",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "9071977a2af7da2d8b476c84f1e78cf476f543442596c16c8c5d889814796e94"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-7DhzR+GcD9j1j53J+ki31T/fOtHF4cLED0zqGFVnim/3imCtPTh1CYwTEDhcLYsPAEMGeV3e0CdPd3KM21OqRw=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-mutate@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-mutate",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "06e9ba75bca3bb5532ccb5ad06883a1c2189fa134cb282f52817793520330ce1"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-c+qGEN2PQtaKgMFhjVMPxi/EgTWr9WYy0LxpqG1BEkbaDIA1awLAFAClpGBJNTmvSAExX/xrXkOtulQAt8SAKQ=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-naturalize@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-naturalize",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "6e4b2f3ada08f24386cd6bd6e93e49071dadcf311ec5541fb64253b806dd13f6"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-YXuBbw5qNk2yWP0JP+acuNi5a/xq3BLzMvdDjIXBfaUw2thj/DjQJ2QQuRBqv5L4aqMrIrGsXYJqWp+Aa7XnNQ=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-sanitize@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-sanitize",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "21eb728d396497efc8b7c1020635754df9e18e3cab8266a75e7d7aeda2f1e952"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-TEC5MU20IJtPpG6dPScDcHXtFes24NU9S5Y1/1ueCS/9e0+hD089he/3kWtdNSKZFauVOEOEwFfJLey39ipeSQ=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-rooms@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-rooms",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "08dee63ef308329fdace07f2eac850cce26a80998f44813a9fa4be097376a948"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-bex+Wo+TmhzXK7vk+xY3IygrqhhCE4VzLKy3oupPJCYIiZ3RE0t18YJMD82btSE5ytzcLTz9/a/nKxnsclQRUA=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-jobs@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-jobs",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "66a2db26d18b51c24ee20510ec43281d64481eac4eb7e2c8ab40817321483086"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-0oqaoP/B1Fhci359GhG+wp3KXOjjks9p0ytVP4+DuAD1Y5LQ2zwXTtzP+kaCwcdro0+czA++5JeJSHNw7oaMSA=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-browser@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-browser",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "d5f7514e0fed11d9d09575f2df6a11c19400b9f8e39662897e530823cae680a5"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-prD7nCLOHrJWzcv4P376KOCXKcwxqajEAYFpLsILJXZwRTpvKjLKY/4b1TkO+VqcAmdZXMRJ1IDbve8a5nR1+Q=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-ratings@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-ratings",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "a707694b37581eade73db90f5d35f4338b95ae87dcc09a86070659b2501c3d1b"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-TfiR7Auk69utyNyTztDGT/E35PX+x8PXTc6naJVLwiS5AyQv9Zcchsu6GgGwOYwk552zLDfbPHX8yszsB2EOeg=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-history@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-history",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "41431cb3e40e94a98707957432d384c2dcc6a38e78b20b72b8e7913baabf4c26"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-uU+Ua1Xxw6I60/P2hVXcF/EaPsdTflXDxbEpCiFDzMCJw7cbiGiHOUb448ebFLUXgANnWanMXgJssqGyy3Hyww=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-provenance@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-provenance",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "e6b77e980e7bd73b21784b02caa41e5a0e2c7e3f663551d4e317743f5b6b2ce5"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-Ctzdgrmj88VqwUHQtydHBarTFA9dbf70gVZaZmk/qX2w+Ece1wd9TGByD5t3hUXBUw/23n3WlGb+E5TnN4Xq0w=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-flow@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-flow",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "7e28a5317706e8b69501ea523d824f071295518eb957020afe6144d99cc75cb5"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-Luk0iAexyHBkX4X86PguKfuFDIAeiixGBQdZRHKMjP5jp8QFSvRJugnY4oBXlPhDMcfmpq0xKT2t+NOI5tvtMg=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-memory@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-memory",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "d19d487e629a926bd1e4a21b5aa25bab7f544388d3c00438a128d48445e664d3"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-jSL+Z4fGDNcHZv3jEXkFv0jY40hgWrDcJ5cbrnZJuwHL0Ue5HCnl34FIt412hf4sH99xP17pj+nDisYFZQuFIQ=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-worktrees@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-worktrees",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "fc5e5d373aa4355347afc99db3b7ac46f9802cf4ec3ba7b1627aab08484b34d0"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-qPWGroedy5PvtTTIy4yIix9A79MzId5bR7si/2nqtcmxCOWhk/aB1mcTIjZ9k9UgC95eEK/rQDrIctLEApFCfQ=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-skill-authoring@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-skill-authoring",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "21e234ffacb6b54b536469863ad0b98041b6a9aa1715bd8c08c3e3ef6f689781"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-v0PRnv89Bysu1wmAj7g/tEK8zD1nRgWJPHqD5YyrFa0kuLTPrzaNlGfemZPYzT5ipkJYFkaEfafzbV07nH+h6w=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-git-actions@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-git-actions",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "a42673bdfdc9ae48803bfed81e0c2268c190e729959e8f2f259f6f19b69e7db9"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-GIQRAXCnnPvmN4DRjUk22AHmxGXAuxMb+gep3idmqhSwpZVnrNjaA4hT0u0zGHEw69+zVy/FYR6JTpFZFipwxQ=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-mod-routing-docs@1.0.0",
+      "group": "@kernlang",
+      "name": "agon-mod-routing-docs",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "1dd5604ec369b6dbadc6bee84445068e8476731eff4bc97d601f1e80f1465bf1"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-NZjVj621hokJu4HyCfHlvtB5SI7sPVVgCM9XWHegjyB/88KTLY1rRTHTWi1edA1VlgbAutsW1S55tADX8P8YfA=="
+        },
+        {
+          "name": "agon:class",
+          "value": "user-toggleable-mod-package"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "@kernlang/agon-dedup@0.2.5",
+      "group": "@kernlang",
+      "name": "agon-dedup",
+      "version": "0.2.5",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "40dfacf6cc7f25d553f72757fb0ef36aa0b25f8f3bc2112db568999784df7200"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "npm:integrity",
+          "value": "sha512-2UH7L1Jsx6JfO/UxhKKXeDnADNf4kb5+sP/7gDhZ6scCCMZbI1OgJz5Mjzgeq1RNlA7MED90DegkzOhEw0Zljw=="
+        },
+        {
+          "name": "agon:class",
+          "value": "legacy-sidecar-compatibility"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/@ai-sdk/anthropic@3.0.111",
+      "group": "@ai-sdk",
+      "name": "anthropic",
+      "version": "3.0.111",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "6ad8015bc8d93ebfcab9a297e45bc3207b97048f150a897a9157a80f83f4eb9efe55747bdd0b0ba205d054dfd9b79147b6af56ce974866c7822625cfaa4830c0"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "Apache-2.0"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/@ai-sdk/anthropic"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-atgBW8jZPr/KuaKX5FvDIHuXBI8VCol6kVeoD4P0657+VXR73QsLogXQVN/Zt5FHtq9WzpdIZseCJiXPqkgwwA=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:11fa82c073a82a16f510b3a62e2cc100e656a15d182806cea0105d01db4970dc"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/@ai-sdk/anthropic/-/anthropic-3.0.111.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/@ai-sdk/gateway@3.0.179",
+      "group": "@ai-sdk",
+      "name": "gateway",
+      "version": "3.0.179",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "51ab8231c6ae0607183658dbed13f81c4b94663ddd964ff2cf4a0e1dd846af7717a1efaec3037dab04252e50768676a35ee7526ad236c693c6f0b8873d18302d"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "Apache-2.0"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/@ai-sdk/gateway"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-UauCMcauBgcYNljb7RP4HEuUZj3dlk/yz0oOHdhGr3cXoe+uwwN9qwQlLlB2hnajXudSatI2xpPG8LiHPRgwLQ=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:1895f48c2448abd18ddb1726a543c7a3b317ab8db81ec74da08c854a3719926a"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/@ai-sdk/gateway/-/gateway-3.0.179.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/@ai-sdk/openai-compatible@2.0.70",
+      "group": "@ai-sdk",
+      "name": "openai-compatible",
+      "version": "2.0.70",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "d8e51ff377b3bbc526c8df649cfa3602027e0a826ba27c6f50b81251d0351a04d4d02a1d92eed79c78f0287a6993d14f2c35b47a0f98e15ea238a58c4e5a84cc"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "Apache-2.0"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/@ai-sdk/openai-compatible"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-2OUf83ezu8UmyN9knPo2AgJ+CoJronxvULgSUdA1GgTU0Codku7XnHjwKHppk9FPLDW0eg+Y4V6iOKWMTlqEzA=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:8a6a91ec0dcc37871a90dd96b4ca5c45bbb46e0d41182f200d66a7abab2e9925"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/@ai-sdk/openai-compatible/-/openai-compatible-2.0.70.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/@ai-sdk/provider@3.0.15",
+      "group": "@ai-sdk",
+      "name": "provider",
+      "version": "3.0.15",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "5de656d4270317618c6c7e307a35bac41448d9008e8279156149f1a1e0da741d667fce6b88bd9b314783a21fba809febe268cd7f350f5bc3a32e3bf04cfd2ed5"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "Apache-2.0"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/@ai-sdk/provider"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-XeZW1CcDF2GMbH4wejW6xBRI2QCOgnkVYUnxoeDadB1mf85riL2bMUeDoh+6gJ/r4mjNfzUPW8OjLjvwTP0u1Q=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:9eb901ec6f2746b66cf3589aa674ff2e6ada49d9aa1845357b6569560a16356c"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/@ai-sdk/provider/-/provider-3.0.15.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/@ai-sdk/provider-utils@4.0.46",
+      "group": "@ai-sdk",
+      "name": "provider-utils",
+      "version": "4.0.46",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "b44b6577dee994216261ebec26e3a41a47ae8509dd78c585055ac94b80239db0f902aacd4974427b4a7e059dc28eefecc4379e67dca6deaf58515f1f01203b69"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "Apache-2.0"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/@ai-sdk/provider-utils"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-tEtld97plCFiYevsJuOkGkeuhQndeMWFBVrJS4AjnbD5AqrNSXRCe0p+BZ3Cju/sxDeeZ9ym3q9YUV8fASA7aQ=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:438f4c9fad414317248bf12a4f99005c33410a4b146519b6b1713b50b9ac3884"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/@ai-sdk/provider-utils/-/provider-utils-4.0.46.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/@alcalzone/ansi-tokenize@0.3.0",
+      "group": "@alcalzone",
+      "name": "ansi-tokenize",
+      "version": "0.3.0",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "a7e08c289f771c598b9235ca9578951a531012e45be87d0ca24052c14b17f92e81457f1e5799da159a502457c91e34596341e69eacb5febe945a5df1fb5f7360"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/@alcalzone/ansi-tokenize"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-p+CMKJ93HFmLkjXKlXiVGlMQEuRb6H0MokBSwUsX+S6BRX8eV5naFZpQJFfJHjRZY0Hmnqy1/r6UWl3x+19zYA=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:f7b9ad55a56bb81e2a3c8522fc23ef571656eca70deec83ab43c8cdc8bbfc2ed"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/@alcalzone/ansi-tokenize/-/ansi-tokenize-0.3.0.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/@alcalzone/ansi-tokenize/node_modules/ansi-styles@6.2.3",
+      "name": "ansi-styles",
+      "version": "6.2.3",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "e038fa336f0907ea001fc9059132d4a3e6b68f038592ea9bdf2b9c53408035c45151bc52d1c3f49d96021a371cdc1357c1122c5159831a0cdac267bbcef247be"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/@alcalzone/ansi-tokenize/node_modules/ansi-styles"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-4Dj6M28JB+oAH8kFkTLUo+a2jwOFkuqb3yucU0CANcRRUbxS0cP0nZYCGjcc3BNXwRIsUVmDGgzawme7zvJHvg=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:ac8130a84d9e5fee39dbaed8012431e8ed165aafd994dc8ccebf80783254c018"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/ansi-styles/-/ansi-styles-6.2.3.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/@alcalzone/ansi-tokenize/node_modules/is-fullwidth-code-point@5.1.0",
+      "name": "is-fullwidth-code-point",
+      "version": "5.1.0",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "e571d8692ca2a800dbe119d9d4175a77a70fa7c4e88ac7b84f312370e6031d991309b2a089497b593502a4d587bb1983b7dd709ec64173dc629cdce8a6fdc931"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/@alcalzone/ansi-tokenize/node_modules/is-fullwidth-code-point"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-5XHYaSyiqADb4RnZ1Bdad6cPp8Toise4TzEjcOYDHZkTCbKgiUl7WTUCpNWHuxmDt91wnsZBc9xinNzopv3JMQ=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:c23f8f892750f1e37f58d30f5aa661b6734c97ca1e2123a0ba553c4097a244dd"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/is-fullwidth-code-point/-/is-fullwidth-code-point-5.1.0.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/@kernlang/agon-engines@0.1.3",
+      "group": "@kernlang",
+      "name": "agon-engines",
+      "version": "0.1.3",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "a65d40ac32a0638610a64971c48329b23e7fd666d055340226626153096869010a9b561203de6092dfbb2d203bf56a35e622ef87d972edb15ffea8c3caa8594d"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/@kernlang/agon-engines"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-pl1ArDKgY4YQpklxxIMpsj5/1mbQVTQCJmJhUwloaQEKm1YSA95gkt+7LSA79Wo15iLvh9ly7bFf/qjDyqhZTQ=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:eaf109338aa39e3023d75f5415b1213d61112c4efcb00b279b911767f7cecb95"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/@kernlang/agon-engines/-/agon-engines-0.1.3.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/@kernlang/protocol@4.5.0",
+      "group": "@kernlang",
+      "name": "protocol",
+      "version": "4.5.0",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "cc1807ceb8275e8e2cafd3756dd26be5d7a16a77861b74feb72555709b67c1436312f9461dcc7ad64a0d8660510c9800759b36f73e45996a4265b3a1acd31981"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "AGPL-3.0"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/@kernlang/protocol"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-zBgHzrgnXo4sr9N1bdJr5dehaneGG3T+tyVVcJtnwUNjEvlGHcx61koNhmBRDJgAdZs29z5FmWpCZbOhrNMZgQ=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:e5a7c30d1808bbca0aa60ba4735d9d8bbe40249b61f0e1e93246c0f0d09b4f1e"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/@kernlang/protocol/-/protocol-4.5.0.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/@opentelemetry/api@1.9.1",
+      "group": "@opentelemetry",
+      "name": "api",
+      "version": "1.9.1",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "80bc8994f1cf658740935244340f4b7877a365ed538bbeffa537859bf9cc5e6407fc715995c4bf3b65c907e2fc7e46eb352aa176d96f8c1563c705186a7347e5"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "Apache-2.0"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/@opentelemetry/api"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-gLyJlPHPZYdAk1JENA9LeHejZe1Ti77/pTeFm/nMXmQH/HFZlcS/O2XJB+L8fkbrNSqhdtlvjBVjxwUYanNH5Q=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:5c4a98877329393921dde1661c715da9eff2f46002dc6f91f688fb5811683aa0"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/@opentelemetry/api/-/api-1.9.1.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/@standard-schema/spec@1.1.0",
+      "group": "@standard-schema",
+      "name": "spec",
+      "version": "1.1.0",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "976685cb98c02e19e21b91e0aab0fa8d72e2feb516acabea37fa89c7aca826c80a85b95577e8aaa94e110976af9bf8cf8adc83a394c2bca327a632a73ab8b2d3"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/@standard-schema/spec"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:75172ec5f31034bb8b35fd12b8c17b1f0c5fe1c4696a253c8b48dc5714a014cb"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/@standard-schema/spec/-/spec-1.1.0.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/@vercel/oidc@3.2.0",
+      "group": "@vercel",
+      "name": "oidc",
+      "version": "3.2.0",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "532729ac7dd3ea7de31f4938e0d1cc6bba671471aefcdd39323a2362bf8c73a23ba1b9282c826e8d25b08a7d690af772fde3b1ac8fe5dee0cb42c99cace6f8ba"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "Apache-2.0"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/@vercel/oidc"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-UycprH3T6n3jH0k44NHMa7pnFHGu/N05MjojYr+Mc6I7obkoLIJujSWwin1pCvdy/eOxrI/l3uDLQsmcrOb4ug=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:c18456a5d2720b3ad994a863f5ad817a7ed957d94c037fc1e869bd75e7bfc084"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/@vercel/oidc/-/oidc-3.2.0.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/ai@6.0.264",
+      "name": "ai",
+      "version": "6.0.264",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "b5ee7d800ac3357a10616b8e91935d33b9f731c11300f585bb04ff88a591257c9257f76822e2a6f00cf85fa20e6a5686a772bccea193fc80a7d3ccf9659343bb"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "Apache-2.0"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/ai"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-te59gArDNXoQYWuOkZNdM7n3McETAPWFuwT/iKWRJXySV/doIuKm8Az4X6IOalaGp3K8zqGT/ICn08z5ZZNDuw=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:74ca2cbf68cdf191f4335c5260393fe41eba22e29e3891277cc1e66a68d4a8e4"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/ai/-/ai-6.0.264.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/ansi-escapes@7.3.0",
+      "name": "ansi-escapes",
+      "version": "7.3.0",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "06f53c9d8806401c5c98cb84794126353beb3158c93521fb4605b6e2f5dec4de157a7eaa0afcb84e7b67be59f09cc2d356571141075b458f0d2a7688a1e58336"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/ansi-escapes"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-BvU8nYgGQBxcmMuEeUEmNTvrMVjJNSH7RgW24vXexN4Ven6qCvy4TntnvlnwnMLTVlcRQQdbRY8NKnaIoeWDNg=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:44b472d3edbf897194b48509e17719f93c12a2f8ad41fcb07fbe3e9514cde449"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/ansi-escapes/-/ansi-escapes-7.3.0.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/ansi-regex@6.3.0",
+      "name": "ansi-regex",
+      "version": "6.3.0",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "5a90df2fb34eea3eed1fcf080c13557542710e1f67982b5e0155bd76c7a9f38e977701789da0812befed18b5f728981ca603115c21654ccda1286a0af45b1dad"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/ansi-regex"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-WpDfL7NO6j7tH88IDBNVdUJxDh9nmCteAVW9dsep846XdwF4naCBK+/tGLX3KJgcpgMRXCFlTM2hKGoK9FsdrQ=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:03274831cd05282e788b58b092e932a6069ad3342a160caec6378db4bd9e8f5b"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/ansi-regex/-/ansi-regex-6.3.0.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/ansi-styles@4.3.0",
+      "name": "ansi-styles",
+      "version": "4.3.0",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "cdb07dac22404f5adb8e25436f686a2851cd60bc60b64f0d511c59dc86700f717a36dc5b5d94029e74a2d4b931f880e885d3e5169db6db05402c885e64941212"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/ansi-styles"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-zbB9rCJAT1rbjiVDb2hqKFHNYLxgtk8NURxZ3IZwD3F6NtxbXZQCnnSi1Lkx+IDohdPlFp222wVALIheZJQSEg=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:7ae441e1faf6d43d6a1d6b1fe2d7bc117e0fa138a54314221b2918282450b1ee"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/ansi-styles/-/ansi-styles-4.3.0.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/auto-bind@5.0.1",
+      "name": "auto-bind",
+      "version": "5.0.1",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "a28be2a9dc3081f21f3660f0a3de3096c85c7737ceeb85d5d0283aa03b0360125f2130f3d449e00f6cfb0e46ef0969fe5c832c22a5b6eec11517aa9ca49ad172"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/auto-bind"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-ooviqdwwgfIfNmDwo94wlshcdzfO64XV0Cg6oDsDYBJfITDz1EngD2z7DkbvCWn+XIMsIqW27sEVF6qcpJrRcg=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:548aa9f74e31e5d0fe8393f93b562d983f8cbd3c6e46c1c1dc0816a7412bfa9b"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/auto-bind/-/auto-bind-5.0.1.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/chalk@4.1.2",
+      "name": "chalk",
+      "version": "4.1.2",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "a0a9db845c91217a54b9ecfc881326c846b89db8f820e432ba173fc32f6463bfd654f73020ef5503aebc3eef1190eefed06efa48b44e7b2c3d0a9434eb58b898"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/chalk"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-oKnbhFyRIXpUuez8iBMmyEa4nbj4IOQyuhc/wy9kY7/WVPcwIO9VA668Pu8RkO7+0G76SLROeyw9CpQ061i4mA=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:120a889cf0d3011ad3d2632ab3a73a04d508c4d6cfe7bcfb32f3207543d85482"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/chalk/-/chalk-4.1.2.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/citty@0.1.6",
+      "name": "citty",
+      "version": "0.1.6",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "b6c90f3ca12cf03d8a3da7d4ca9bf6831c093fc87f39a2660bcd9040618341c1ef5d7e37c45d950c009c255999d04b92c64a4ef4a738325ac0dead3e146e7c01"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/citty"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-tskPPKEs8D2KPafUypv2gxwJP8h/OaJmC82QQGGDQcHvXX43xF2VDACcJVmZ0EuSxkpO9Kc4MlrA3q0+FG58AQ=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:b18d8d17b718f801ed121f9ca3a99329b98034390d8c35b3e3b90d734cc26131"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/citty/-/citty-0.1.6.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/cli-boxes@4.0.1",
+      "name": "cli-boxes",
+      "version": "4.0.1",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "e483a7fa370210712b698a2504fb3fb13e01c5809eda71e0dfbe0e3e222d0753bde8a645b1e4b682d854e2dc326337837057b0e0369433fc707390507f4f0927"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/cli-boxes"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-5IOn+jcCEHEraYolBPs/sT4BxYCe2nHg374OPiItB1O96KZFseS2gthU4twyYzeDcFew4DaUM/xwc5BQf08JJw=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:d509a31674b62f70c8c976b792411d4e16b1bd80d4bf79f3e1155deb804b7638"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/cli-boxes/-/cli-boxes-4.0.1.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/cli-cursor@4.0.0",
+      "name": "cli-cursor",
+      "version": "4.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "546b6532edf1ff80ceb4853012445ecf1519da505a70d2421dab21d0dd167990c14beed4c75766dd75808166312c914c31d39e5cc1d7a2bb2110585b31219e96"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/cli-cursor"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-VGtlMu3x/4DOtIUwEkRezxUZ2lBacNJCHash0N0WeZDBS+7Ux1dm3XWAgWYxLJFMMdOeXMHXorshEFhbMSGelg=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:97a0c15b1fce60d821be58a1267e4e57b012289540de92947181c55fecb42fc1"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/cli-cursor/-/cli-cursor-4.0.0.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/cli-spinners@2.9.2",
+      "name": "cli-spinners",
+      "version": "2.9.2",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "cb0a95fb9326c8be04ef26d780acace03ba065b5f4142e8b9f0ae18eeca42239caf64f0e41a710edac462a78c35d63619ecd31a2dddb648e61e791fcca8f5c26"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/cli-spinners"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-ywqV+5MmyL4E7ybXgKys4DugZbX0FC6LnwrhjuykIjnK9k8OQacQ7axGKnjDXWNhns0xot3bZI5h55H8yo9cJg=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:45a566e03830286e71ae8f00584de9ae165f772ca8a2e8cf8143f420c4290e13"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/cli-spinners/-/cli-spinners-2.9.2.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/cli-truncate@6.1.1",
+      "name": "cli-truncate",
+      "version": "6.1.1",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "d3aa7dbf22da84b6b8ce419c82c1b153a8849123a2b88e1f8421fa12685eda53c072852fef79fbd839ce0ec9c703ee70c171a75749fd33dfea3902528d884587"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/cli-truncate"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-06p9vyLahLa4zkGcgsGxU6iEkSOiuI4fhCH6Emhe2lPAcoUv73n72DnODsnHA+5wwXGnV0n9M9/qOQJSjYhFhw=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:902f7512b190c4504bb7c74d0ab871eb839232836f0e1555d0166487d576a226"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/cli-truncate/-/cli-truncate-6.1.1.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/cli-truncate/node_modules/string-width@8.2.2",
+      "name": "string-width",
+      "version": "8.2.2",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "19a3d487981f76b633a9e54d66f51f4f6def618c57cca62275472732d260ff7af1455eb7105672de4eb17ca9667de243d35efa967515fd4b2bdd77304af173a6"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/cli-truncate/node_modules/string-width"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-GaPUh5gfdrYzqeVNZvUfT23vYYxXzKYidUcnMtJg/3rxRV63EFZy3k6xfKlmfeJD0176lnUV/Usr3XcwSvFzpg=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:bff5a452a9e630d41d95099fa3c891387eb948a22ca681328bd27b17ecd525be"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/string-width/-/string-width-8.2.2.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/code-excerpt@4.0.0",
+      "name": "code-excerpt",
+      "version": "4.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "c71a1d0a605e9f78b2da2d16b402bc16514dad1ce352a8d1b0c7e1a39f314ffc2f654d584ccddf0a7463732d6024f31ea5a465826ff47bac3c4a9587a67dff70"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/code-excerpt"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-xxodCmBen3iy2i0WtAK8FlFNrRzjUqjRsMfho58xT/wvZU1YTM3fCnRjcy1gJPMepaRlgm/0e6w8SpWHpn3/cA=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:9ab5852a5fd74af252e0180e528d2f0ecf26a4d434a66d81cb00917d665cea8e"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/code-excerpt/-/code-excerpt-4.0.0.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/color-convert@2.0.1",
+      "name": "color-convert",
+      "version": "2.0.1",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "4511023ec8fb8aeff16f9a0a61cb051d2a6914d9ec8ffe763954d129be333f9a275f0545df3566993a0d70e7c60be0910e97cafd4e7ce1f320dfc64709a12529"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/color-convert"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-RRECPsj7iu/xb5oKYcsFHSppFNnsj/52OVTRKb4zP5onXwVF3zVmmToNcOfGC+CRDpfK/U584fMg38ZHCaElKQ=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:a16afe0c1799e612a6b92339896302b76e0a3533de790bbaa8bebf3e4ee78ccf"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/color-convert/-/color-convert-2.0.1.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/color-name@1.1.4",
+      "name": "color-name",
+      "version": "1.1.4",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "74ecbedc0b96ddadb035b64722e319a537208c6b8b53fb812ffb9b71917d3976c3a3c7dfe0ef32569e417f479f4bcb84a18a39ab8171edd63d3a04065e002c40"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/color-name"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-dOy+3AuW3a2wNbZHIuMZpTcgjGuLU/uBL/ubcZF9OXbDo8ff4O8yVp5Bf0efS8uEoYo5q4Fx7dY9OgQGXgAsQA=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:3da71e5a1d7710a0eee167083e272ae92d669876c6f5bb50209cc01fe630576b"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/color-name/-/color-name-1.1.4.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/consola@3.4.2",
+      "name": "consola",
+      "version": "3.4.2",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "e4829c757d279d86af8ba1bb4ed3a1c24633ca37c995ab5b8cc8ee2d27c4da4613e693033a2959e0ebcc862eb7ec27032024e6cf7c0044fa3286ac97d58f97bc"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/consola"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-5IKcdX0nnYavi6G7TtOhwkYzyjfJlatbjMjuLSfE2kYT5pMDOilZ4OvMhi637CcDICTmz3wARPoyhqyX1Y+XvA=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:cbee9cb7b7dceb7f624bc5a0ab5fca5de4ae816ab0b0eecc09391e36de0ffc98"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/consola/-/consola-3.4.2.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/convert-to-spaces@2.0.1",
+      "name": "convert-to-spaces",
+      "version": "2.0.1",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "adc4356ec40ef7bf7dc2adb8b84e40336b4020bcb88171882bf9e315671542418d67de9e765a58f80edb8f0bf38d8bcb0f2ce61b532630b661a5cb1bfa494d31"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/convert-to-spaces"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-rcQ1bsQO9799wq24uE5AM2tAILy4gXGIK/njFWcVQkGNZ96edlpY+A7bjwvzjYvLDyzmG1MmMLZhpcsb+klNMQ=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:77b81c2404b1c6072d3589d1627d481973f476d7c9763d33115aa54d182b7858"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/convert-to-spaces/-/convert-to-spaces-2.0.1.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/environment@1.1.0",
+      "name": "environment",
+      "version": "1.1.0",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "c54b683e432081bcf430fc8f8885abd4aa7869e5898c367a48cbd44618a68dd660b11b83a65179fecf617201a1c97321b3eeafa67ba8899da4162bb714c9d2f1"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/environment"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-xUtoPkMggbz0MPyPiIWr1Kp4aeWJjDZ6SMvURhimjdZgsRuDplF5/s9hcgGhyXMhs+6vpnuoiZ2kFiu3FMnS8Q=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:f567a76cba08f89cf56d993e1daf122bb10fac0972b3e759b2785f5f0c81c8a7"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/environment/-/environment-1.1.0.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/es-toolkit@1.51.0",
+      "name": "es-toolkit",
+      "version": "1.51.0",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "cc2da540690ced05fe1a6ea2337f9621d649ced86c11dd782ef44d2677923b6873cb3ff334110d47cf985d6a3570ac603c1b55ea4b0f60710b6dcc0147399d0b"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/es-toolkit"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-zC2lQGkM7QX+Gm6iM3+WIdZJzthsEd14LvRNJneSO2hzyz/zNBENR8+YXWo1cKxgPBtV6ksPYHELbcwBRzmdCw=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:a61e2ee9baae9ce70128a2ed07f387f953a8cf68bfceeab479558fbffeab5f68"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/es-toolkit/-/es-toolkit-1.51.0.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/eventsource-parser@3.1.1",
+      "name": "eventsource-parser",
+      "version": "3.1.1",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "10a375bca00c719f0c95832968dbb137a47dc9a9331fab9a8c7707553a96273beee695b0f43ca16cfdf91c7f0c54143e7598c07c3c64f80f0d891f4a59a5e2c9"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/eventsource-parser"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-EKN1vKAMcZ8MlYMpaNuxN6R9yakzH6uajHcHVTqWJzvu5pWw9DyhbP35HH8MVBQ+dZjAfDxk+A8NiR9KWaXiyQ=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:03083c07068a76c5b66f317a05a004f486df078d93ef0846b8b8450b0e6ee890"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/eventsource-parser/-/eventsource-parser-3.1.1.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/get-east-asian-width@1.6.0",
+      "name": "get-east-asian-width",
+      "version": "1.6.0",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "4116ef0c86f1e9892551ee91c5e4de95e311d32bf77181fa3ec3d91dc9d59fbc6fef33b504737caf45c44eef27e987b743e6a1b526ab7375a0b4d5a67a12017c"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/get-east-asian-width"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-QRbvDIbx6YklUe6RxeTeleMR0yv3cYH6PsPZHcnVn7xv7zO1BHN8r0XETu8n6Ye3Q+ahtSarc3WgtNWmehIBfA=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:f8bb084cb62d82d50b575e36bf5b6addedf3318f61f03cbf3596f75d4c4b4188"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/get-east-asian-width/-/get-east-asian-width-1.6.0.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/has-flag@4.0.0",
+      "name": "has-flag",
+      "version": "4.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "1329094ff4352a34d672da698080207d23b4b4a56e6548e180caf5ee4a93ba6325e807efdc421295e53ba99533a170c54c01d30c2e0d3a81bf67153712f94c3d"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/has-flag"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-EykJT/Q1KjTWctppgIAgfSO0tKVuZUjhgMr17kqTumMl6Afv3EISleU7qZUzoXDFTAHTDC4NOoG/ZxU3EvlMPQ=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:fda39bb4ca784c471eafdc5a4d7bb3f6e7228249ca661b55e9eed461ace1771d"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/has-flag/-/has-flag-4.0.0.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/indent-string@5.0.0",
+      "name": "indent-string",
+      "version": "5.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "9ba140a3fb299ac5b601bd9f537e494d8c2d38a6b6c80c174b08234afd53273878321ee60b797300e54b069adbef65ec4eb824108b25ed8ac53408838918481a"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/indent-string"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-m6FAo/spmsW2Ab2fU35JTYwtOKa2yAwXSwgjSv1TJzh4Mh7mC3lzAOVLBprb72XsTrgkEIsl7YrFNAiDiRhIGg=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:edc9bc5eb2e2d0ca12fee22f6a8194d4e71d6abdac1312568296a10c76bd20ce"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/indent-string/-/indent-string-5.0.0.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/ink@7.1.1",
+      "name": "ink",
+      "version": "7.1.1",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "638df1c5ad5948fbe999f2c770de68f8e74ff117fcca490d244b8a60e50d64a4fcc1754d2c54ed126d6748331091f047f9800d1785eebb48616787a3a80b4ddb"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/ink"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-Y43xxa1ZSPvpmfLHcN5o+OdP8Rf8ykkNJEuKYOUNZKT8wXVNLFTtEm1nSDMQkfBH+YANF4Xuu0hhZ4ejqAtN2w=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:45e7232a6e4e9a9b76d52af27809a3dd0b254dbc90af4f6bc19ee8762952a03f"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/ink/-/ink-7.1.1.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/ink-spinner@5.0.0",
+      "name": "ink-spinner",
+      "version": "5.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "11811ab1b12392a2c6c8f39473c84125936e0b91af5c630bbb4c3981d4cdb243dcec8cdce6f3b7b5d404627cefb21b9cc860815dcf3a8a0d2e8d73cc59a40274"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/ink-spinner"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-EYEasbEjkqLGyPOUc8hBJZNuC5GvXGMLu0w5gdTNskPc7Izc5vO3tdQEYnzvshucyGCBXc86ig0ujXPMWaQCdA=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:adf64ac174f9cea07e1eea3a2752cdad9f279b4774864a6920b72ff5f31f1f34"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/ink-spinner/-/ink-spinner-5.0.0.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/ink-text-input@6.0.0",
+      "name": "ink-text-input",
+      "version": "6.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "170eb89fb6216b975e6f5ac7635dfbcc74c06d24cd7a550ab81e4a924d870025c4b702070427fd387dad3ff2d0f5f4584e5d45d1d6606d6d333e7664e8503d2f"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/ink-text-input"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-Fw64n7Yha5deb1rHY137zHTAbSTNelUKuB5Kkk2HACXEtwIHBCf9OH2tP/LQ9fRYTl1F0dZgbW0zPnZk6FA9Lw=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:af2335b5bfba678cc86263510dfcf2bd4239575aefad1996d75f524e65ba1e5f"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/ink-text-input/-/ink-text-input-6.0.0.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/ink-text-input/node_modules/chalk@5.6.2",
+      "name": "chalk",
+      "version": "5.6.2",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "ecdcc12f4acde9f3145be7fb03a228e21e34a90946fb11a6b4cc5f6e71ff2bb4c0b6df094165502beea0d145ca31e549a3257912490db04ad0f29543ddb2c76c"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/ink-text-input/node_modules/chalk"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-7NzBL0rN6fMUW+f7A6Io4h40qQlG+xGmtMxfbnH/K7TAtt8JQWVQK+6g0UXKMeVJoyV5EkkNsErQ8pVD3bLHbA=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:f39b3b8281d52b594c9c5f4de64bd0d800d27355d90bb8423fd0acdb216172f4"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/chalk/-/chalk-5.6.2.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/ink-text-input/node_modules/type-fest@4.41.0",
+      "name": "type-fest",
+      "version": "4.41.0",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "4de4d243a1f9607be9a95c0145c9cb0c20670ce1d662eec8bc66c74fa37c00eca672bf4f2468dcd464ed896653620d0d0a0630be761612454285002bf5b8dfc0"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "(MIT OR CC0-1.0)"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/ink-text-input/node_modules/type-fest"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-TeTSQ6H5YHvpqVwBRcnLDCBnDOHWYu7IvGbHT6N8AOymcr9PJGjc1GTtiWZTYg0NCgYwvnYWEkVChQAr9bjfwA=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:1c29645adeb24759e7d7879e8ec54311f9780ceea36fd2c16e5e09231afb3b26"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/type-fest/-/type-fest-4.41.0.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/ink/node_modules/ansi-styles@6.2.3",
+      "name": "ansi-styles",
+      "version": "6.2.3",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "e038fa336f0907ea001fc9059132d4a3e6b68f038592ea9bdf2b9c53408035c45151bc52d1c3f49d96021a371cdc1357c1122c5159831a0cdac267bbcef247be"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/ink/node_modules/ansi-styles"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-4Dj6M28JB+oAH8kFkTLUo+a2jwOFkuqb3yucU0CANcRRUbxS0cP0nZYCGjcc3BNXwRIsUVmDGgzawme7zvJHvg=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:ac8130a84d9e5fee39dbaed8012431e8ed165aafd994dc8ccebf80783254c018"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/ansi-styles/-/ansi-styles-6.2.3.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/ink/node_modules/chalk@5.6.2",
+      "name": "chalk",
+      "version": "5.6.2",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "ecdcc12f4acde9f3145be7fb03a228e21e34a90946fb11a6b4cc5f6e71ff2bb4c0b6df094165502beea0d145ca31e549a3257912490db04ad0f29543ddb2c76c"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/ink/node_modules/chalk"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-7NzBL0rN6fMUW+f7A6Io4h40qQlG+xGmtMxfbnH/K7TAtt8JQWVQK+6g0UXKMeVJoyV5EkkNsErQ8pVD3bLHbA=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:f39b3b8281d52b594c9c5f4de64bd0d800d27355d90bb8423fd0acdb216172f4"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/chalk/-/chalk-5.6.2.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/ink/node_modules/signal-exit@3.0.7",
+      "name": "signal-exit",
+      "version": "3.0.7",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "c270f6644fa5f923c2feea12d2f5de13d2f5fb4c2e68ca8a95fcfd00c528dfc26cc8b48159215c1d1d51ae2eb62d9735daf2ebd606f78e5ee2c10860c2901b19"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "ISC"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/ink/node_modules/signal-exit"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-wnD2ZE+l+SPC/uoS0vXeE9L1+0wuaMqKlfz9AMUo38JsyLSBWSFcHR1Rri62LZc12vLr1gb3jl7iwQhgwpAbGQ=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:dd612f658ef0c1d00dbc56566ddd9d0fc2214ae4bda9d8feb4bca052dac977b8"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/signal-exit/-/signal-exit-3.0.7.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/ink/node_modules/string-width@8.2.2",
+      "name": "string-width",
+      "version": "8.2.2",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "19a3d487981f76b633a9e54d66f51f4f6def618c57cca62275472732d260ff7af1455eb7105672de4eb17ca9667de243d35efa967515fd4b2bdd77304af173a6"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/ink/node_modules/string-width"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-GaPUh5gfdrYzqeVNZvUfT23vYYxXzKYidUcnMtJg/3rxRV63EFZy3k6xfKlmfeJD0176lnUV/Usr3XcwSvFzpg=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:bff5a452a9e630d41d95099fa3c891387eb948a22ca681328bd27b17ecd525be"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/string-width/-/string-width-8.2.2.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/ink/node_modules/wrap-ansi@10.0.1",
+      "name": "wrap-ansi",
+      "version": "10.0.1",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "334378c73cb3a2c888a24decbd8944a35b1d2d9b6cffc14f8181ff18f0b7c2f9663e846f9e831a9c632b139e306988f7b48480f30ea5b1d7ac7d5bfaeea4abf1"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/ink/node_modules/wrap-ansi"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-M0N4xzyzosiIok3svYlEo1sdLZts/8FPgYH/GPC3wvlmPoRvnoManGMrE54waYj3tISA8w6lsdesfVv67qSr8Q=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:e1ca4b11c003a208c06def47e0867770d6c9e94ad6b990c62767ff2b4706ac66"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/wrap-ansi/-/wrap-ansi-10.0.1.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/is-in-ci@2.0.0",
+      "name": "is-in-ci",
+      "version": "2.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "70579eac7ae202786b4126e90312f7ed6d70709294517d3b1f22d66425b5511253feb6b71b2513cc18149e1db84cc55f3535761e28f61cbc643c71597ce672e7"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/is-in-ci"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-cFeerHriAnhrQSbpAxL37W1wcJKUUX07HyLWZCW1URJT/ra3GyUTzBgUnh24TMVfNTV2Hij2HLxkPHFZfOZy5w=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:e4f27f529d1add37f1a398b25fe54aef6cb66d1b130624cf3aeefe33d0a7b4ec"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/is-in-ci/-/is-in-ci-2.0.0.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/json-schema@0.4.0",
+      "name": "json-schema",
+      "version": "0.4.0",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "7acf783379d321fb043e2b1169f6a4f870cb7c75e7281855def5397aa3dc4b77e5216a9cc495a05c75e27b2dd8ae968db1a9d8e5e8b55686046cece28eeabd04"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "(AFL-2.1 OR BSD-3-Clause)"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/json-schema"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-es94M3nTIfsEPisRafak+HDLfHXnKBhV3vU5eqPcS3flIWqcxJWgXHXiey3YrpaNsanY5ei1VoYEbOzijuq9BA=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:dd9da6051056e0a6cbec3468a44ab465d4ccfaae8fb309d6967b30346746e817"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/json-schema/-/json-schema-0.4.0.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/mimic-fn@2.1.0",
+      "name": "mimic-fn",
+      "version": "2.1.0",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "3aa6ce939a0441e019f165d6c9d96ef47263cfd59574422f6a63027179aea946234e49c7fecaac5af850def830285451d47a63bcd04a437ee76c9818cc6a8672"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/mimic-fn"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-OqbOk5oEQeAZ8WXWydlu9HJjz9WVdEIvamMCcXmuqUYjTknH/sqsWvhQ3vgwKFRR1HpjvNBKQ37nbJgYzGqGcg=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:d4f71fbe627c58f751c06343784b0f8ce7d1ac4ea5b1d53f745ea0a1ecbd9f2c"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/mimic-fn/-/mimic-fn-2.1.0.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/onetime@5.1.2",
+      "name": "onetime",
+      "version": "5.1.2",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "91ba5a4921894d674063928f55e30e2974ab3edafc0bc0bbc287496dcb1de758d19e60fe199bbc63456853a0e6e59e2f5abd0883fd4d2ae59129fee3e5a6984a"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/onetime"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-kbpaSSGJTWdAY5KPVeMOKXSrPtr8C8C7wodJbcsd51jRnmD+GZu8Y0VoU6Dm5Z4vWr0Ig/1NKuWRKf7j5aaYSg=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:233b09c43feb698090bbf1204b16e57ed5aba6b0f0d55ef7b9795acd5c9ded22"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/onetime/-/onetime-5.1.2.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/patch-console@2.0.0",
+      "name": "patch-console",
+      "version": "2.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "d1835d51c78c75a430a0a71ed606ad0d2726328e69bbfb5f0017e7cc4a9e1b482d4e677b9a1fd67308148ed01e394ecdf2714595b4019c52b68175b97c6be630"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/patch-console"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-0YNdUceMdaQwoKce1gatDScmMo5pu/tfABfnzEqeG0gtTmd7mh/WcwgUjtAeOU7N8nFFlbQBnFK2gXW5fGvmMA=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:8638e5338972fc9e07dfae27b1cfb7607f307e65331e577a6f3e93d153e6b412"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/patch-console/-/patch-console-2.0.0.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/pidusage@4.0.1",
+      "name": "pidusage",
+      "version": "4.0.1",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "c821f676d2c77c4067ce51d4272991fd9d6737678f1b79b7f7632ff131654cfd41d319293103470277e46349f6b408ba71e28ee985a1c587d9f7a578bd5921fe"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/pidusage"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-yCH2dtLHfEBnzlHUJymR/Z1nN2ePG3m392Mv8TFlTP1B0xkpMQNHAnfkY0n2tAi6ceKO6YWhxYfZ96V4vVkh/g=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:23e9cd56f5c36c7cdc35ab0cd6024f77d4d0eee1067413eae99efd09003554e0"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/pidusage/-/pidusage-4.0.1.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/react@19.2.8",
+      "name": "react",
+      "version": "19.2.8",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "3d66980352ffabdbb6bbbc58422f98dcbdd87e789eed7c8b79a248095d4c183e8ba6bb01c5c02a1a3632af4798de9f9076c03ec7f22b92de1089ff03eb7f926f"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/react"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-PWaYA1L/q9u2u7xYQi+Y3L3Yfnie7XyLeaJICV1MGD6LprsBxcAqGjYyr0eY3p+QdsA+x/Irkt4Qif8D63+Sbw=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:704d478493145dcaa3625f23f3f0579e4cf5e1115df766e4f27d60d6b1ea826f"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/react/-/react-19.2.8.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/react-reconciler@0.33.0",
+      "name": "react-reconciler",
+      "version": "0.33.0",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "29eb56472b45bf57a976925cdc9e06ef92385aba65644e6338bed8ab4a77e3e39538a17849eed6add21d542e395ec4929944e586dd8533f7ccd4565bd667d078"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/react-reconciler"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-KetWRytFv1epdpJc3J4G75I4WrplZE5jOL7Yq0p34+OVOKF4Se7WrdIdVC45XsSSmUTlht2FM/fM1FZb1mfQeA=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:0f29948c7edc3dc8f86cd16efe5f3a816555071a07d38926eb124c727021f706"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/react-reconciler/-/react-reconciler-0.33.0.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/restore-cursor@4.0.0",
+      "name": "restore-cursor",
+      "version": "4.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "23d7cf5d4f6078ef5b1ceb7da471ce84e9187ab20cb2655a581d2b036008f44461ffec7f8bb315e4728136b83e9633b97a83d580272716e46327db87e88ff77a"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/restore-cursor"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-I9fPXU9geO9bHOt9pHHOhOkYerIMsmVaWB0rA2AI9ERh/+x/i7MV5HKBNrg+ljO5eoPVgCcnFuRjJ9uH6I/3eg=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:9e633eb98d64c98cd66c029775b4dfd255b0f877f84b09c7cf4f4e15349f4e3f"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/restore-cursor/-/restore-cursor-4.0.0.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/restore-cursor/node_modules/signal-exit@3.0.7",
+      "name": "signal-exit",
+      "version": "3.0.7",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "c270f6644fa5f923c2feea12d2f5de13d2f5fb4c2e68ca8a95fcfd00c528dfc26cc8b48159215c1d1d51ae2eb62d9735daf2ebd606f78e5ee2c10860c2901b19"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "ISC"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/restore-cursor/node_modules/signal-exit"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-wnD2ZE+l+SPC/uoS0vXeE9L1+0wuaMqKlfz9AMUo38JsyLSBWSFcHR1Rri62LZc12vLr1gb3jl7iwQhgwpAbGQ=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:dd612f658ef0c1d00dbc56566ddd9d0fc2214ae4bda9d8feb4bca052dac977b8"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/signal-exit/-/signal-exit-3.0.7.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/safe-buffer@5.2.1",
+      "name": "safe-buffer",
+      "version": "5.2.1",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "ae9dd2a34eca71d9a629b1af81a37141226bedb1954959394bd12ad45fa9a5b468ef4f9879a0f1930e4377c34f37e183e9b8e7626d95b8fb825e6a6e62f9825d"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/safe-buffer"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-rp3So07KcdmmKbGvgaNxQSJr7bGVSVk5S9Eq1F+ppbRo70+YeaDxkw5Dd8NPN+GD6bjnYm2VuPuCXmpuYvmCXQ=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:80dd4600645120df52984c6433e3b237973f2bc816cb11828f389549bc5e7482"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/safe-buffer/-/safe-buffer-5.2.1.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/scheduler@0.27.0",
+      "name": "scheduler",
+      "version": "0.27.0",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "78dbfe5ab55b2aed5fdef6d8253ff1b62179b320391cf20cb5ff48818fe72a0d2c5aacc0504bea63fc66ece71973fa9a7cbc7f88ef4580e99e480a78bf9b62fd"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/scheduler"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-eNv+WrVbKu1f3vbYJT/xtiF5syA5HPIMtf9IgY/nKg0sWqzAUEvqY/xm7OcZc/qafLx/iO9FgOmeSAp4v5ti/Q=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:23b363b60bfe80f5a3704260b65972ff251554c42f9adb0acd20680ec6f6fcab"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/scheduler/-/scheduler-0.27.0.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/semver@7.8.5",
+      "name": "semver",
+      "version": "7.8.5",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "63bfca0ec6fc2e3a28669c1aa86cae94ee8342592c8029dc7211c693eb19218e1206f52870c044147e54af57c8e1d57e26f974c3a723bee71a222e34a6e462a0"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "ISC"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/semver"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-Y7/KDsb8LjooZpwaqGyulO6DQlksgCncchHGk+sZIY4SBvUocMBEFH5Ur1fI4dV+Jvl0w6cjvucaIi40puRioA=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:85d95e7ff06e9a3ed6d9caa1824e7ce07857cef1de6a9ba011e458b80f1872a5"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/semver/-/semver-7.8.5.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/slice-ansi@9.0.0",
+      "name": "slice-ansi",
+      "version": "9.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "48eff78982f94b75b9ecb2c49e2b1c3863d980ea9950f0b1e9dddd07ee7607cd322745ecb73b02fde57c827038b4cdcc1c3acacfe3821522cd8ecc1d482fbf6c"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/slice-ansi"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-SO/3iYL5S3W57LLEniscOGPZgOqZUPCx6d3dB+52B80yJ0XstzsC/eV8gnA4tM3MHDrKz+OCFSLNjswdSC+/bA=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:88df263a595fdab219d07b05ac13b3586f920e4a3e55ee07bd7a2cb9c283ba8f"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/slice-ansi/-/slice-ansi-9.0.0.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/slice-ansi/node_modules/ansi-styles@6.2.3",
+      "name": "ansi-styles",
+      "version": "6.2.3",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "e038fa336f0907ea001fc9059132d4a3e6b68f038592ea9bdf2b9c53408035c45151bc52d1c3f49d96021a371cdc1357c1122c5159831a0cdac267bbcef247be"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/slice-ansi/node_modules/ansi-styles"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-4Dj6M28JB+oAH8kFkTLUo+a2jwOFkuqb3yucU0CANcRRUbxS0cP0nZYCGjcc3BNXwRIsUVmDGgzawme7zvJHvg=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:ac8130a84d9e5fee39dbaed8012431e8ed165aafd994dc8ccebf80783254c018"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/ansi-styles/-/ansi-styles-6.2.3.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/slice-ansi/node_modules/is-fullwidth-code-point@5.1.0",
+      "name": "is-fullwidth-code-point",
+      "version": "5.1.0",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "e571d8692ca2a800dbe119d9d4175a77a70fa7c4e88ac7b84f312370e6031d991309b2a089497b593502a4d587bb1983b7dd709ec64173dc629cdce8a6fdc931"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/slice-ansi/node_modules/is-fullwidth-code-point"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-5XHYaSyiqADb4RnZ1Bdad6cPp8Toise4TzEjcOYDHZkTCbKgiUl7WTUCpNWHuxmDt91wnsZBc9xinNzopv3JMQ=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:c23f8f892750f1e37f58d30f5aa661b6734c97ca1e2123a0ba553c4097a244dd"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/is-fullwidth-code-point/-/is-fullwidth-code-point-5.1.0.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/stack-utils@2.0.6",
+      "name": "stack-utils",
+      "version": "2.0.6",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "5e5916bdf226e919ac5ad349c7ebaab4a2d2f1ea856f1520d19ccb5ea63471a132f65ee1aee5fc2298839e3b0b6afa0182a08247bd53a963bc31a5d885e27745"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/stack-utils"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-XlkWvfIm6RmsWtNJx+uqtKLS8eqFbxUg0ZzLXqY0caEy9l7hruX8IpiDnjsLavoBgqCCR71TqWO8MaXYheJ3RQ=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:207c09ac6c88651bea5f3287a8a90d478a936d022bcbd19d57127da57a742676"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/stack-utils/-/stack-utils-2.0.6.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/stack-utils/node_modules/escape-string-regexp@2.0.0",
+      "name": "escape-string-regexp",
+      "version": "2.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "529cdc2c25e895459c36ee47b5530761d5c98c0ae3b05f42d1a367aae658638b96fd5bb49a2cb96285af6d5df8e476ae56f700527a51ba130c72a4dc18e636fb"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/stack-utils/node_modules/escape-string-regexp"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-UpzcLCXolUWcNu5HtVMHYdXJjArjsF9C0aNnquZYY4uW/Vu0miy5YoWvbV345HauVvcAUnpRuhMMcqTcGOY2+w=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:88bb25547db5d5d2d64352514c884719a499a45b09feba7d0af989a0bce4c288"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/escape-string-regexp/-/escape-string-regexp-2.0.0.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/strip-ansi@7.2.0",
+      "name": "strip-ansi",
+      "version": "7.2.0",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "c833cc363a785b27d80641e78c844b7dc6b58ba28cc860adb1582829eff3d7eeafba481a10d76018166df9998a3dce206afbc46793a01df1ddadace180dc86ef"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/strip-ansi"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-yDPMNjp4WyfYBkHnjIRLfca1i6KMyGCtsVgoKe/z1+6vukgaENdgGBZt+ZmKPc4gavvEZ5OgHfHdrazhgNyG7w=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:523d5ddbd58878c0137e6e44b0cce1b728d98eae7bcf14a0464d7b11f300e473"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/strip-ansi/-/strip-ansi-7.2.0.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/supports-color@7.2.0",
+      "name": "supports-color",
+      "version": "7.2.0",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "aa9080bd197db2db8e1ef78ab27ec79dc251befe74d6a21a70acd094effe2f0c5cf7ed2adb02f2bf80dfbedf34fc33e7da9a8e06c25d0e2a205c647df8ebf047"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/supports-color"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-qpCAvRl9stuOHveKsn7HncJRvv501qIacKzQlO/+Lwxc9+0q2wLyv4Dfvt80/DPn2pqOBsJdDiogXGR9+OvwRw=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:d31aeae14c16d00524e09dfbce0f276bef5f11fe08fcf70d4ed6d18344852cc0"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/supports-color/-/supports-color-7.2.0.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/tagged-tag@1.0.0",
+      "name": "tagged-tag",
+      "version": "1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "c84158ad586877e85d372c7b8390679246f41bab22f0726eacea0e1200bc07f3b4b972c795a7b2ffae4a46fe9cb9604d84180728044e56973b43262a1398059e"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/tagged-tag"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-yEFYrVhod+hdNyx7g5Bnkkb0G6si8HJurOoOEgC8B/O0uXLHlaey/65KRv6cuWBNhBgHKAROVpc7QyYqE5gFng=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:b7ebaaabb026caba51f0799a324e9f08d4a428cbfecb8db1821c6dd4f83a810d"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/tagged-tag/-/tagged-tag-1.0.0.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/terminal-size@4.0.1",
+      "name": "terminal-size",
+      "version": "4.0.1",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "6af30b0d0a5423d2395c5ae49440b0d591143c986acdcc125accb223c6e58512d3fbc3758cb2562d6598429076ab6c6d86af310ef8d93c8495879dd3ffe08b61"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/terminal-size"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-avMLDQpUI9I5XFrklECw1ZEUPJhqzcwSWsyyI8blhRLT+8N1jLJWLWWYQpB2q2xthq8xDvjZPISVh53T/+CLYQ=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:2f67c7489a72cc4b72585e3e4009c169ac3bf098ca11051b8b7a3ab5daf54f16"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/terminal-size/-/terminal-size-4.0.1.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/type-fest@5.8.0",
+      "name": "type-fest",
+      "version": "5.8.0",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "606604573dc59b98b2fc0c9bb80d28c8d16aec7e0281035f469fea7def27bab13592e09e366dffbdf9bd5f832d97ea8bc9a289521e71ac5670a20af8d5232360"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "(MIT OR CC0-1.0)"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/type-fest"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-YGYEVz3Fm5iy/AybuA0oyNFq7H4CgQNfRp/qfe8nurE1kuCeNm3/vfm9X4Mtl+qLyaKJUh5xrFZwogr41SMjYA=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:53b7429390fc2fd408bf5b41a018baf870da6e16796fad2efabc684fe3af4f77"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/type-fest/-/type-fest-5.8.0.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/undici@6.28.0",
+      "name": "undici",
+      "version": "6.28.0",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "2c863dd7483d4c8d77612f7996b305aecf119bfbbf8ab8077935a8282a2d79e274e02509f767847e3d2b567fbb54a30f06950f894a0129f84dc8b236dc413f28"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/undici"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-LIY910g9TI13YS95lrMFrs8Rm/u/irgHeTWoKCoteeJ04CUJ92eEfj0rVn+7VKMPBpUPiUoBKfhNyLI23EE/KA=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:609b82084802a61b140ff488b350e383361b0396951d2c1b5769566358a474ed"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/undici/-/undici-6.28.0.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/widest-line@6.0.0",
+      "name": "widest-line",
+      "version": "6.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "53cf40b3211e02cca8174cd5241906f730607a48e08caef293db237b7178210a57049d744c5e81c8b9487e33217261cc2601d9238287b78add35f92dcf120030"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/widest-line"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-U89AsyEeAsyoF0zVJBkG9zBgekjgjK7yk9sje3F4IQpXBJ10TF6ByLlIfjMhcmHMJgHZI4KHt4rdNfktzxIAMA=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:9710729f428ecf0754950e69bdb5a5c8bd2fdd24e89820615eb1073be8aa798f"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/widest-line/-/widest-line-6.0.0.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/widest-line/node_modules/string-width@8.2.2",
+      "name": "string-width",
+      "version": "8.2.2",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "19a3d487981f76b633a9e54d66f51f4f6def618c57cca62275472732d260ff7af1455eb7105672de4eb17ca9667de243d35efa967515fd4b2bdd77304af173a6"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/widest-line/node_modules/string-width"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-GaPUh5gfdrYzqeVNZvUfT23vYYxXzKYidUcnMtJg/3rxRV63EFZy3k6xfKlmfeJD0176lnUV/Usr3XcwSvFzpg=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:bff5a452a9e630d41d95099fa3c891387eb948a22ca681328bd27b17ecd525be"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/string-width/-/string-width-8.2.2.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/ws@8.21.3",
+      "name": "ws",
+      "version": "8.21.3",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "db4d5367f90f5b1a0faff38a5a3aae651d5258a5dcbf1747f9ed71af1f3d6f761b9b32cc1422df9da1b51c52205b324e11667b32fa4afbea1d66e7e0611e7447"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/ws"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-201TZ/kPWxoPr/OKWjquZR1SWKXcvxdH+e1xrx89b3YbmzLMFCLfnaG1HFIgWzJOEWZ7MvpK++odZufgYR50Rw=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:ddec9032a24accc353b4f631f64624e234fb6f7ba3ffeb7e8d9b89fb995105a1"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/ws/-/ws-8.21.3.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/yoga-layout@3.2.1",
+      "name": "yoga-layout",
+      "version": "3.2.1",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "d0b3ceb770312aa31d141640dc7040b7fb7ff2f20aabb55a4186ee03c5b10a0ba783ea7d4d5c8a458769bc26fcd0771d4cdd8d91b20a6e13702947e6ded432c1"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/yoga-layout"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-0LPOt3AxKqMdFBZA3HBAt/t/8vIKq7VaQYbuA8WxCgung+p9TVyKRYdpvCb80HcdTN2NkbIKbhNwKUfm3tQywQ=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:b8038aafcc71d8c37a6e7c6e58f061ca14e52e2ad9ce56ad5a5bca4facd2014b"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/yoga-layout/-/yoga-layout-3.2.1.tgz"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "npm:node_modules/zod@4.4.3",
+      "name": "zod",
+      "version": "4.4.3",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "cad10d163209165d94c1882575eda37215b61f09b818914b0e249759d4eb25004837d15cca9ee7e0387124489634024c575fc1a967d6fe4920ef55037072724d"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "agon:npm-location",
+          "value": "node_modules/zod"
+        },
+        {
+          "name": "npm:integrity",
+          "value": "sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ=="
+        },
+        {
+          "name": "agon:payload-sha256",
+          "value": "sha256:84f6ec0c9d78a8336c07da4cea553037351ce2b0829319b7315c207b4c880f72"
+        },
+        {
+          "name": "agon:class",
+          "value": "external-npm-dependency"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/zod/-/zod-4.4.3.tgz"
+        }
+      ]
+    }
+  ],
+  "dependencies": [
+    {
+      "ref": "@kernlang/agon-dedup@0.2.5",
+      "dependsOn": []
+    },
+    {
+      "ref": "@kernlang/agon-kernel@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-mod-api@1.0.0",
+        "npm:node_modules/semver@7.8.5"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-agent@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-kernel@1.0.0",
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-agent-runtime@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-api@1.0.0",
+      "dependsOn": [
+        "npm:node_modules/semver@7.8.5",
+        "npm:node_modules/zod@4.4.3"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-ask@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-kernel@1.0.0",
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-brainstorm@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-kernel@1.0.0",
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-dedup@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-support-panel@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-browser@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-kernel@1.0.0",
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-agent-runtime@1.0.0",
+        "@kernlang/agon-support-browser-bridge@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-campfire@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-kernel@1.0.0",
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-support-panel@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-conquer@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-kernel@1.0.0",
+        "@kernlang/agon-mod-agent@1.0.0",
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-mod-brainstorm@1.0.0",
+        "@kernlang/agon-mod-council@1.0.0",
+        "@kernlang/agon-mod-nero@1.0.0",
+        "@kernlang/agon-mod-tribunal@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-support-verification@1.0.0",
+        "@kernlang/agon-support-worktree@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-council@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-kernel@1.0.0",
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-support-judge@1.0.0",
+        "@kernlang/agon-support-panel@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-flow@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-kernel@1.0.0",
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-support-persistence@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-forge@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-kernel@1.0.0",
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-support-judge@1.0.0",
+        "@kernlang/agon-support-panel@1.0.0",
+        "@kernlang/agon-support-verification@1.0.0",
+        "@kernlang/agon-support-worktree@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-git-actions@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-kernel@1.0.0",
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-support-verification@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-goal@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-kernel@1.0.0",
+        "@kernlang/agon-mod-agent@1.0.0",
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-mod-forge@1.0.0",
+        "@kernlang/agon-mod-git-actions@1.0.0",
+        "@kernlang/agon-mod-jobs@1.0.0",
+        "@kernlang/agon-mod-plan@1.0.0",
+        "@kernlang/agon-mod-review@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-support-verification@1.0.0",
+        "@kernlang/agon-support-worktree@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-history@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-kernel@1.0.0",
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-support-persistence@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-jobs@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-kernel@1.0.0",
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-support-persistence@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-memory@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-kernel@1.0.0",
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-support-persistence@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-mutate@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-kernel@1.0.0",
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-support-verification@1.0.0",
+        "@kernlang/agon-support-worktree@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-naturalize@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-kernel@1.0.0",
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-mod-sanitize@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-nero@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-kernel@1.0.0",
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-support-judge@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-pipeline-delivery@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-kernel@1.0.0",
+        "@kernlang/agon-mod-agent@1.0.0",
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-mod-review@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-pipeline-orchestration@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-kernel@1.0.0",
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-mod-brainstorm@1.0.0",
+        "@kernlang/agon-mod-forge@1.0.0",
+        "@kernlang/agon-mod-tribunal@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-plan@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-kernel@1.0.0",
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-support-persistence@1.0.0",
+        "@kernlang/agon-support-verification@1.0.0",
+        "@kernlang/agon-support-worktree@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-provenance@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-kernel@1.0.0",
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-support-persistence@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-rag@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-kernel@1.0.0",
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-dedup@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-support-persistence@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-ratings@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-kernel@1.0.0",
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-support-persistence@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-research@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-kernel@1.0.0",
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "npm:node_modules/undici@6.28.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-review@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-kernel@1.0.0",
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-support-panel@1.0.0",
+        "@kernlang/agon-support-verification@1.0.0",
+        "@kernlang/agon-support-worktree@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-rooms@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-kernel@1.0.0",
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-support-persistence@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-routing-docs@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-kernel@1.0.0",
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-support-persistence@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-sanitize@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-kernel@1.0.0",
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-skill-authoring@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-kernel@1.0.0",
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-support-persistence@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-synthesis@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-kernel@1.0.0",
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-support-judge@1.0.0",
+        "@kernlang/agon-support-panel@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-team-brainstorm@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-kernel@1.0.0",
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-mod-brainstorm@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-support-panel@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-team-forge@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-kernel@1.0.0",
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-mod-forge@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-support-panel@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-team-tribunal@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-kernel@1.0.0",
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-mod-tribunal@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-support-panel@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-think@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-kernel@1.0.0",
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-tribunal@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-kernel@1.0.0",
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-support-judge@1.0.0",
+        "@kernlang/agon-support-panel@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-mod-worktrees@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-kernel@1.0.0",
+        "@kernlang/agon-mod-api@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-support-worktree@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-support-agent-runtime@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-kernel@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-support-persistence@1.0.0",
+        "@kernlang/agon-support-verification@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-support-browser-bridge@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-kernel@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-support-dedup@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-kernel@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-support-engine-catalog@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-kernel@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "npm:node_modules/@kernlang/agon-engines@0.1.3"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-support-engine-runtime@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-kernel@1.0.0",
+        "npm:node_modules/zod@4.4.3"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-support-judge@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-kernel@1.0.0",
+        "@kernlang/agon-support-panel@1.0.0",
+        "@kernlang/agon-support-verification@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-support-panel@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-kernel@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-support-persistence@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-kernel@1.0.0",
+        "@kernlang/agon-support-browser-bridge@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "npm:node_modules/@kernlang/agon-engines@0.1.3"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-support-saas-api@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-kernel@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-support-verification@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-kernel@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-support-persistence@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon-support-worktree@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-kernel@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-support-verification@1.0.0"
+      ]
+    },
+    {
+      "ref": "@kernlang/agon@1.0.0",
+      "dependsOn": [
+        "@kernlang/agon-dedup@0.2.5",
+        "@kernlang/agon-kernel@1.0.0",
+        "@kernlang/agon-mod-agent@1.0.0",
+        "@kernlang/agon-mod-ask@1.0.0",
+        "@kernlang/agon-mod-brainstorm@1.0.0",
+        "@kernlang/agon-mod-browser@1.0.0",
+        "@kernlang/agon-mod-campfire@1.0.0",
+        "@kernlang/agon-mod-conquer@1.0.0",
+        "@kernlang/agon-mod-council@1.0.0",
+        "@kernlang/agon-mod-flow@1.0.0",
+        "@kernlang/agon-mod-forge@1.0.0",
+        "@kernlang/agon-mod-git-actions@1.0.0",
+        "@kernlang/agon-mod-goal@1.0.0",
+        "@kernlang/agon-mod-history@1.0.0",
+        "@kernlang/agon-mod-jobs@1.0.0",
+        "@kernlang/agon-mod-memory@1.0.0",
+        "@kernlang/agon-mod-mutate@1.0.0",
+        "@kernlang/agon-mod-naturalize@1.0.0",
+        "@kernlang/agon-mod-nero@1.0.0",
+        "@kernlang/agon-mod-pipeline-delivery@1.0.0",
+        "@kernlang/agon-mod-pipeline-orchestration@1.0.0",
+        "@kernlang/agon-mod-plan@1.0.0",
+        "@kernlang/agon-mod-provenance@1.0.0",
+        "@kernlang/agon-mod-rag@1.0.0",
+        "@kernlang/agon-mod-ratings@1.0.0",
+        "@kernlang/agon-mod-research@1.0.0",
+        "@kernlang/agon-mod-review@1.0.0",
+        "@kernlang/agon-mod-rooms@1.0.0",
+        "@kernlang/agon-mod-routing-docs@1.0.0",
+        "@kernlang/agon-mod-sanitize@1.0.0",
+        "@kernlang/agon-mod-skill-authoring@1.0.0",
+        "@kernlang/agon-mod-synthesis@1.0.0",
+        "@kernlang/agon-mod-team-brainstorm@1.0.0",
+        "@kernlang/agon-mod-team-forge@1.0.0",
+        "@kernlang/agon-mod-team-tribunal@1.0.0",
+        "@kernlang/agon-mod-think@1.0.0",
+        "@kernlang/agon-mod-tribunal@1.0.0",
+        "@kernlang/agon-mod-worktrees@1.0.0",
+        "@kernlang/agon-support-browser-bridge@1.0.0",
+        "@kernlang/agon-support-dedup@1.0.0",
+        "@kernlang/agon-support-engine-catalog@1.0.0",
+        "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-support-judge@1.0.0",
+        "@kernlang/agon-support-persistence@1.0.0",
+        "@kernlang/agon-support-verification@1.0.0",
+        "@kernlang/agon-support-worktree@1.0.0",
+        "npm:node_modules/@ai-sdk/anthropic@3.0.111",
+        "npm:node_modules/@ai-sdk/openai-compatible@2.0.70",
+        "npm:node_modules/@kernlang/agon-engines@0.1.3",
+        "npm:node_modules/@kernlang/protocol@4.5.0",
+        "npm:node_modules/ai@6.0.264",
+        "npm:node_modules/chalk@4.1.2",
+        "npm:node_modules/citty@0.1.6",
+        "npm:node_modules/ink-spinner@5.0.0",
+        "npm:node_modules/ink-text-input@6.0.0",
+        "npm:node_modules/ink@7.1.1",
+        "npm:node_modules/pidusage@4.0.1",
+        "npm:node_modules/react@19.2.8"
+      ]
+    },
+    {
+      "ref": "npm:node_modules/@ai-sdk/anthropic@3.0.111",
+      "dependsOn": [
+        "npm:node_modules/@ai-sdk/provider-utils@4.0.46",
+        "npm:node_modules/@ai-sdk/provider@3.0.15",
+        "npm:node_modules/zod@4.4.3"
+      ]
+    },
+    {
+      "ref": "npm:node_modules/@ai-sdk/gateway@3.0.179",
+      "dependsOn": [
+        "npm:node_modules/@ai-sdk/provider-utils@4.0.46",
+        "npm:node_modules/@ai-sdk/provider@3.0.15",
+        "npm:node_modules/@vercel/oidc@3.2.0",
+        "npm:node_modules/zod@4.4.3"
+      ]
+    },
+    {
+      "ref": "npm:node_modules/@ai-sdk/openai-compatible@2.0.70",
+      "dependsOn": [
+        "npm:node_modules/@ai-sdk/provider-utils@4.0.46",
+        "npm:node_modules/@ai-sdk/provider@3.0.15",
+        "npm:node_modules/zod@4.4.3"
+      ]
+    },
+    {
+      "ref": "npm:node_modules/@ai-sdk/provider-utils@4.0.46",
+      "dependsOn": [
+        "npm:node_modules/@ai-sdk/provider@3.0.15",
+        "npm:node_modules/@standard-schema/spec@1.1.0",
+        "npm:node_modules/eventsource-parser@3.1.1",
+        "npm:node_modules/undici@6.28.0",
+        "npm:node_modules/zod@4.4.3"
+      ]
+    },
+    {
+      "ref": "npm:node_modules/@ai-sdk/provider@3.0.15",
+      "dependsOn": [
+        "npm:node_modules/json-schema@0.4.0"
+      ]
+    },
+    {
+      "ref": "npm:node_modules/@alcalzone/ansi-tokenize@0.3.0",
+      "dependsOn": [
+        "npm:node_modules/@alcalzone/ansi-tokenize/node_modules/ansi-styles@6.2.3",
+        "npm:node_modules/@alcalzone/ansi-tokenize/node_modules/is-fullwidth-code-point@5.1.0"
+      ]
+    },
+    {
+      "ref": "npm:node_modules/@alcalzone/ansi-tokenize/node_modules/ansi-styles@6.2.3",
+      "dependsOn": []
+    },
+    {
+      "ref": "npm:node_modules/@alcalzone/ansi-tokenize/node_modules/is-fullwidth-code-point@5.1.0",
+      "dependsOn": [
+        "npm:node_modules/get-east-asian-width@1.6.0"
+      ]
+    },
+    {
+      "ref": "npm:node_modules/@kernlang/agon-engines@0.1.3",
+      "dependsOn": []
+    },
+    {
+      "ref": "npm:node_modules/@kernlang/protocol@4.5.0",
+      "dependsOn": []
+    },
+    {
+      "ref": "npm:node_modules/@opentelemetry/api@1.9.1",
+      "dependsOn": []
+    },
+    {
+      "ref": "npm:node_modules/@standard-schema/spec@1.1.0",
+      "dependsOn": []
+    },
+    {
+      "ref": "npm:node_modules/@vercel/oidc@3.2.0",
+      "dependsOn": []
+    },
+    {
+      "ref": "npm:node_modules/ai@6.0.264",
+      "dependsOn": [
+        "npm:node_modules/@ai-sdk/gateway@3.0.179",
+        "npm:node_modules/@ai-sdk/provider-utils@4.0.46",
+        "npm:node_modules/@ai-sdk/provider@3.0.15",
+        "npm:node_modules/@opentelemetry/api@1.9.1",
+        "npm:node_modules/zod@4.4.3"
+      ]
+    },
+    {
+      "ref": "npm:node_modules/ansi-escapes@7.3.0",
+      "dependsOn": [
+        "npm:node_modules/environment@1.1.0"
+      ]
+    },
+    {
+      "ref": "npm:node_modules/ansi-regex@6.3.0",
+      "dependsOn": []
+    },
+    {
+      "ref": "npm:node_modules/ansi-styles@4.3.0",
+      "dependsOn": [
+        "npm:node_modules/color-convert@2.0.1"
+      ]
+    },
+    {
+      "ref": "npm:node_modules/auto-bind@5.0.1",
+      "dependsOn": []
+    },
+    {
+      "ref": "npm:node_modules/chalk@4.1.2",
+      "dependsOn": [
+        "npm:node_modules/ansi-styles@4.3.0",
+        "npm:node_modules/supports-color@7.2.0"
+      ]
+    },
+    {
+      "ref": "npm:node_modules/citty@0.1.6",
+      "dependsOn": [
+        "npm:node_modules/consola@3.4.2"
+      ]
+    },
+    {
+      "ref": "npm:node_modules/cli-boxes@4.0.1",
+      "dependsOn": []
+    },
+    {
+      "ref": "npm:node_modules/cli-cursor@4.0.0",
+      "dependsOn": [
+        "npm:node_modules/restore-cursor@4.0.0"
+      ]
+    },
+    {
+      "ref": "npm:node_modules/cli-spinners@2.9.2",
+      "dependsOn": []
+    },
+    {
+      "ref": "npm:node_modules/cli-truncate@6.1.1",
+      "dependsOn": [
+        "npm:node_modules/cli-truncate/node_modules/string-width@8.2.2",
+        "npm:node_modules/slice-ansi@9.0.0"
+      ]
+    },
+    {
+      "ref": "npm:node_modules/cli-truncate/node_modules/string-width@8.2.2",
+      "dependsOn": [
+        "npm:node_modules/get-east-asian-width@1.6.0",
+        "npm:node_modules/strip-ansi@7.2.0"
+      ]
+    },
+    {
+      "ref": "npm:node_modules/code-excerpt@4.0.0",
+      "dependsOn": [
+        "npm:node_modules/convert-to-spaces@2.0.1"
+      ]
+    },
+    {
+      "ref": "npm:node_modules/color-convert@2.0.1",
+      "dependsOn": [
+        "npm:node_modules/color-name@1.1.4"
+      ]
+    },
+    {
+      "ref": "npm:node_modules/color-name@1.1.4",
+      "dependsOn": []
+    },
+    {
+      "ref": "npm:node_modules/consola@3.4.2",
+      "dependsOn": []
+    },
+    {
+      "ref": "npm:node_modules/convert-to-spaces@2.0.1",
+      "dependsOn": []
+    },
+    {
+      "ref": "npm:node_modules/environment@1.1.0",
+      "dependsOn": []
+    },
+    {
+      "ref": "npm:node_modules/es-toolkit@1.51.0",
+      "dependsOn": []
+    },
+    {
+      "ref": "npm:node_modules/eventsource-parser@3.1.1",
+      "dependsOn": []
+    },
+    {
+      "ref": "npm:node_modules/get-east-asian-width@1.6.0",
+      "dependsOn": []
+    },
+    {
+      "ref": "npm:node_modules/has-flag@4.0.0",
+      "dependsOn": []
+    },
+    {
+      "ref": "npm:node_modules/indent-string@5.0.0",
+      "dependsOn": []
+    },
+    {
+      "ref": "npm:node_modules/ink-spinner@5.0.0",
+      "dependsOn": [
+        "npm:node_modules/cli-spinners@2.9.2",
+        "npm:node_modules/ink@7.1.1",
+        "npm:node_modules/react@19.2.8"
+      ]
+    },
+    {
+      "ref": "npm:node_modules/ink-text-input@6.0.0",
+      "dependsOn": [
+        "npm:node_modules/ink-text-input/node_modules/chalk@5.6.2",
+        "npm:node_modules/ink-text-input/node_modules/type-fest@4.41.0",
+        "npm:node_modules/ink@7.1.1",
+        "npm:node_modules/react@19.2.8"
+      ]
+    },
+    {
+      "ref": "npm:node_modules/ink-text-input/node_modules/chalk@5.6.2",
+      "dependsOn": []
+    },
+    {
+      "ref": "npm:node_modules/ink-text-input/node_modules/type-fest@4.41.0",
+      "dependsOn": []
+    },
+    {
+      "ref": "npm:node_modules/ink@7.1.1",
+      "dependsOn": [
+        "npm:node_modules/@alcalzone/ansi-tokenize@0.3.0",
+        "npm:node_modules/ansi-escapes@7.3.0",
+        "npm:node_modules/auto-bind@5.0.1",
+        "npm:node_modules/cli-boxes@4.0.1",
+        "npm:node_modules/cli-cursor@4.0.0",
+        "npm:node_modules/cli-truncate@6.1.1",
+        "npm:node_modules/code-excerpt@4.0.0",
+        "npm:node_modules/es-toolkit@1.51.0",
+        "npm:node_modules/indent-string@5.0.0",
+        "npm:node_modules/ink/node_modules/ansi-styles@6.2.3",
+        "npm:node_modules/ink/node_modules/chalk@5.6.2",
+        "npm:node_modules/ink/node_modules/signal-exit@3.0.7",
+        "npm:node_modules/ink/node_modules/string-width@8.2.2",
+        "npm:node_modules/ink/node_modules/wrap-ansi@10.0.1",
+        "npm:node_modules/is-in-ci@2.0.0",
+        "npm:node_modules/patch-console@2.0.0",
+        "npm:node_modules/react-reconciler@0.33.0",
+        "npm:node_modules/react@19.2.8",
+        "npm:node_modules/scheduler@0.27.0",
+        "npm:node_modules/slice-ansi@9.0.0",
+        "npm:node_modules/stack-utils@2.0.6",
+        "npm:node_modules/terminal-size@4.0.1",
+        "npm:node_modules/type-fest@5.8.0",
+        "npm:node_modules/widest-line@6.0.0",
+        "npm:node_modules/ws@8.21.3",
+        "npm:node_modules/yoga-layout@3.2.1"
+      ]
+    },
+    {
+      "ref": "npm:node_modules/ink/node_modules/ansi-styles@6.2.3",
+      "dependsOn": []
+    },
+    {
+      "ref": "npm:node_modules/ink/node_modules/chalk@5.6.2",
+      "dependsOn": []
+    },
+    {
+      "ref": "npm:node_modules/ink/node_modules/signal-exit@3.0.7",
+      "dependsOn": []
+    },
+    {
+      "ref": "npm:node_modules/ink/node_modules/string-width@8.2.2",
+      "dependsOn": [
+        "npm:node_modules/get-east-asian-width@1.6.0",
+        "npm:node_modules/strip-ansi@7.2.0"
+      ]
+    },
+    {
+      "ref": "npm:node_modules/ink/node_modules/wrap-ansi@10.0.1",
+      "dependsOn": [
+        "npm:node_modules/ink/node_modules/ansi-styles@6.2.3",
+        "npm:node_modules/ink/node_modules/string-width@8.2.2"
+      ]
+    },
+    {
+      "ref": "npm:node_modules/is-in-ci@2.0.0",
+      "dependsOn": []
+    },
+    {
+      "ref": "npm:node_modules/json-schema@0.4.0",
+      "dependsOn": []
+    },
+    {
+      "ref": "npm:node_modules/mimic-fn@2.1.0",
+      "dependsOn": []
+    },
+    {
+      "ref": "npm:node_modules/onetime@5.1.2",
+      "dependsOn": [
+        "npm:node_modules/mimic-fn@2.1.0"
+      ]
+    },
+    {
+      "ref": "npm:node_modules/patch-console@2.0.0",
+      "dependsOn": []
+    },
+    {
+      "ref": "npm:node_modules/pidusage@4.0.1",
+      "dependsOn": [
+        "npm:node_modules/safe-buffer@5.2.1"
+      ]
+    },
+    {
+      "ref": "npm:node_modules/react-reconciler@0.33.0",
+      "dependsOn": [
+        "npm:node_modules/react@19.2.8",
+        "npm:node_modules/scheduler@0.27.0"
+      ]
+    },
+    {
+      "ref": "npm:node_modules/react@19.2.8",
+      "dependsOn": []
+    },
+    {
+      "ref": "npm:node_modules/restore-cursor@4.0.0",
+      "dependsOn": [
+        "npm:node_modules/onetime@5.1.2",
+        "npm:node_modules/restore-cursor/node_modules/signal-exit@3.0.7"
+      ]
+    },
+    {
+      "ref": "npm:node_modules/restore-cursor/node_modules/signal-exit@3.0.7",
+      "dependsOn": []
+    },
+    {
+      "ref": "npm:node_modules/safe-buffer@5.2.1",
+      "dependsOn": []
+    },
+    {
+      "ref": "npm:node_modules/scheduler@0.27.0",
+      "dependsOn": []
+    },
+    {
+      "ref": "npm:node_modules/semver@7.8.5",
+      "dependsOn": []
+    },
+    {
+      "ref": "npm:node_modules/slice-ansi@9.0.0",
+      "dependsOn": [
+        "npm:node_modules/slice-ansi/node_modules/ansi-styles@6.2.3",
+        "npm:node_modules/slice-ansi/node_modules/is-fullwidth-code-point@5.1.0"
+      ]
+    },
+    {
+      "ref": "npm:node_modules/slice-ansi/node_modules/ansi-styles@6.2.3",
+      "dependsOn": []
+    },
+    {
+      "ref": "npm:node_modules/slice-ansi/node_modules/is-fullwidth-code-point@5.1.0",
+      "dependsOn": [
+        "npm:node_modules/get-east-asian-width@1.6.0"
+      ]
+    },
+    {
+      "ref": "npm:node_modules/stack-utils@2.0.6",
+      "dependsOn": [
+        "npm:node_modules/stack-utils/node_modules/escape-string-regexp@2.0.0"
+      ]
+    },
+    {
+      "ref": "npm:node_modules/stack-utils/node_modules/escape-string-regexp@2.0.0",
+      "dependsOn": []
+    },
+    {
+      "ref": "npm:node_modules/strip-ansi@7.2.0",
+      "dependsOn": [
+        "npm:node_modules/ansi-regex@6.3.0"
+      ]
+    },
+    {
+      "ref": "npm:node_modules/supports-color@7.2.0",
+      "dependsOn": [
+        "npm:node_modules/has-flag@4.0.0"
+      ]
+    },
+    {
+      "ref": "npm:node_modules/tagged-tag@1.0.0",
+      "dependsOn": []
+    },
+    {
+      "ref": "npm:node_modules/terminal-size@4.0.1",
+      "dependsOn": []
+    },
+    {
+      "ref": "npm:node_modules/type-fest@5.8.0",
+      "dependsOn": [
+        "npm:node_modules/tagged-tag@1.0.0"
+      ]
+    },
+    {
+      "ref": "npm:node_modules/undici@6.28.0",
+      "dependsOn": []
+    },
+    {
+      "ref": "npm:node_modules/widest-line@6.0.0",
+      "dependsOn": [
+        "npm:node_modules/widest-line/node_modules/string-width@8.2.2"
+      ]
+    },
+    {
+      "ref": "npm:node_modules/widest-line/node_modules/string-width@8.2.2",
+      "dependsOn": [
+        "npm:node_modules/get-east-asian-width@1.6.0",
+        "npm:node_modules/strip-ansi@7.2.0"
+      ]
+    },
+    {
+      "ref": "npm:node_modules/ws@8.21.3",
+      "dependsOn": []
+    },
+    {
+      "ref": "npm:node_modules/yoga-layout@3.2.1",
+      "dependsOn": []
+    },
+    {
+      "ref": "npm:node_modules/zod@4.4.3",
+      "dependsOn": []
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "mode": "brainstorm",
+  "label": "modular-s9-final-brainstorm-56938",
+  "startedAt": "2026-09-04T23:15:06.227Z",
+  "endedAt": "2026-09-04T23:15:33.699Z",
+  "engines": [
+    {
+      "id": "ollama-direct-qwen4b",
+      "status": "ok",
+      "detail": "confidence=85"
+    },
+    {
+      "id": "ollama-direct-llama3b",
+      "status": "ok",
+      "detail": "confidence=80"
+    }
+  ],
+  "summary": "2/2 bid; winner=ollama-direct-llama3b; synthesis=completed; dedup=unavailable",
+  "ok": true
+}

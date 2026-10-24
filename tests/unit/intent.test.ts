@@ -1,4 +1,12 @@
-import { describe, it, expect } from 'vitest';
+import { afterAll, beforeAll, describe, it, expect } from 'vitest';
+import { disposeProcessSurfaceAuthority, initializeProcessSurfaceAuthority } from '../../packages/cli/src/surface-authority-runtime.js';
+
+beforeAll(async () => {
+  await initializeProcessSurfaceAuthority('/tmp/agon-intent-production-authority-absent');
+});
+afterAll(async () => {
+  await disposeProcessSurfaceAuthority();
+});
 import { detectIntent, SLASH_COMMANDS } from '../../packages/cli/src/intent.js';
 
 // ── Slash Commands ──────────────────────────────────────────────────

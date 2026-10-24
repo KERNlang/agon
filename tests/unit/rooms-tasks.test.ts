@@ -3,9 +3,8 @@ import { join } from 'node:path';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 
-import { createRoom, readEvents, appendEvent } from '../../packages/core/src/rooms/store.js';
-import { foldTasks, pickNextTask, postTask, claimTask, postTaskResult, shouldStopWork } from '../../packages/core/src/rooms/tasks.js';
-import type { RoomActor, RoomEvent, WorkConfig, WorkState } from '../../packages/core/src/rooms/types.js';
+import { createRoom, readEvents, appendEvent, foldTasks, pickNextTask, postTask, claimTask, postTaskResult, shouldStopWork } from '@kernlang/agon-mod-rooms';
+import type { RoomActor, RoomEvent, WorkConfig, WorkState } from '@kernlang/agon-mod-rooms';
 
 let home: string;
 beforeEach(() => { home = mkdtempSync(join(tmpdir(), 'agon-tasks-')); process.env.AGON_HOME = home; });

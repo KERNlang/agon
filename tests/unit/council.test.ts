@@ -19,8 +19,8 @@ import {
   buildChairmanPrompt,
   parseCouncilConfidence,
   runCouncil,
-} from '@kernlang/agon-forge';
-import { chairmanPickLabel } from '../../packages/cli/src/commands/council.js';
+} from '../../packages/forge/src/council.js';
+import { chairmanPickLabel } from '../../packages/mod-council/src/presentation.js';
 
 const rating = (mu: number, phi = 50): GlickoRating => ({
   mu,

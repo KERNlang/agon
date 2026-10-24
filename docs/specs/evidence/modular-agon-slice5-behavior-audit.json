@@ -1,0 +1,129 @@
+{
+  "schemaVersion": 1,
+  "qualification": "modular-agon-slice5-behavior-audit",
+  "status": "red",
+  "supersedes": "any S5 acceptance claim based only on package, owner-ID, generated-surface, or disable-matrix parity",
+  "verifiedAt": "2026-09-04",
+  "oracle": "tests/unit/modular-cli-contract-parity.test.ts",
+  "cliContracts": {
+    "total": 33,
+    "passing": 33,
+    "failing": 0,
+    "failingCommands": []
+  },
+  "knownBehaviorGapsAfterCliParity": [],
+  "closedBehaviorGaps": [
+    {
+      "mod": "room",
+      "resolution": "The complete room ledger, presence, unread, lock, lease, auto-policy, incremental-tail, task, and worker runtime is physically owned by @kernlang/agon-mod-rooms. Both legacy CLI/MCP adapters and the generated physical command consume that owner; core no longer contains or re-exports the room runtime.",
+      "evidence": [
+        "packages/mod-rooms/src/implementation.test.ts",
+        "tests/unit/rooms.test.ts",
+        "tests/unit/rooms-lock.test.ts",
+        "tests/unit/rooms-unread-locks.test.ts",
+        "tests/unit/rooms-auto.test.ts",
+        "tests/unit/rooms-tail.test.ts",
+        "tests/unit/rooms-tasks.test.ts",
+        "tests/unit/rooms-work.test.ts",
+        "tests/unit/rooms-mcp.test.ts"
+      ],
+      "environmentalCell": "Native fs.watch positive-path tests are locally blocked when macOS returns EMFILE. The isolated probe reproduces EMFILE outside Agon; the explicit degraded-poll path remains tested. This is not recorded as a green native-watch cell until rerun in a fresh native process environment."
+    },
+    {
+      "mod": "worktrees",
+      "resolution": "The physical Worktrees command now uses the shared worktree package for collision-safe session creation, dirty-state protection, age-aware dry-run pruning, dependency overlays, artifact rehydration, and exact managed-path removal. Install mode is separately network-gated, and ephemeral agent/competition worktrees are included in prune handling.",
+      "evidence": [
+        "packages/mod-worktrees/src/implementation.test.ts",
+        "tests/unit/worktree-session.test.ts"
+      ]
+    },
+    {
+      "mod": "workspaces",
+      "resolution": "Workspace bookmarks and session worktrees are no longer conflated. The shared support package owns bookmark persistence, the Worktrees mod exposes distinct add/remove/switch/list behavior, and a narrow bundled-only host port applies session grounding.",
+      "evidence": [
+        "packages/support-worktree/src/workspace-bookmarks.ts",
+        "packages/mod-worktrees/src/workspaces.ts",
+        "packages/mod-worktrees/src/implementation.test.ts",
+        "tests/unit/workspace-grounding.test.ts"
+      ]
+    },
+    {
+      "mod": "rag",
+      "resolution": "The physical RAG owner now rejects unknown actions, preserves compact machine JSON, renders grounded file/line/score citations for humans, and reports index/stats in the established readable form.",
+      "evidence": [
+        "packages/mod-rag/src/grounding.ts",
+        "packages/mod-rag/src/implementation.test.ts",
+        "tests/unit/rag-core.test.ts"
+      ]
+    },
+    {
+      "mod": "sanitize-naturalize",
+      "resolution": "Sanitize owns its established human and JSONL reporting without inventing a legacy run artifact. Naturalize now uses the narrow bundled host run-record port for durable run directories and terminal green/red status while retaining its physical output and JSONL presentation.",
+      "evidence": [
+        "packages/mod-sanitize/src/implementation.test.ts",
+        "packages/mod-naturalize/src/implementation.test.ts",
+        "packages/mod-api/src/index.ts",
+        "packages/cli/src/first-party-services.ts",
+        "packages/mcp/src/first-party-services.ts"
+      ]
+    },
+    {
+      "mod": "research",
+      "resolution": "Research now uses host ranking when no engine is forced, preserves human/quiet/JSON presentation, and records durable run-directory and terminal citation-grounding status through the bundled host run-record port.",
+      "evidence": [
+        "packages/mod-research/src/implementation.test.ts",
+        "packages/mod-api/src/index.ts",
+        "packages/cli/src/first-party-services.ts",
+        "packages/mcp/src/first-party-services.ts"
+      ]
+    },
+    {
+      "mod": "review",
+      "resolution": "The physical Review handler now executes the established isolated mutation pass when explicitly requested, treats it as advisory without changing the review verdict, makes a lens imply semantic mutation, honors test/build overrides, warns on inert mutation-only flags, and records durable review status. The existing mutation sandbox is reached through a bundled-only compatibility port until its planned shared-runtime extraction; external folder mods receive no such authority.",
+      "evidence": [
+        "packages/mod-review/src/implementation.test.ts",
+        "tests/unit/review-mutate.test.ts",
+        "tests/unit/modular-s8-review-acceptance.test.ts",
+        "packages/mod-api/src/index.ts",
+        "packages/cli/src/first-party-services.ts",
+        "packages/mcp/src/first-party-services.ts"
+      ]
+    },
+    {
+      "mod": "forge",
+      "resolution": "The physical Forge owner now resolves an explicit cwd, orders and validates the starter, runs pre-flight health probes with visible skips, honors both early-finalization controls by aborting unfinished seats, accepts substantive no-diff validation output only when requested, preserves baseline-as-warning semantics, records durable status and candidate artifacts, emits provenance artifacts, and implements quiet run-directory presentation.",
+      "evidence": [
+        "packages/mod-forge/src/implementation.test.ts",
+        "packages/mod-forge/src/implementation.ts",
+        "packages/mod-api/src/index.ts",
+        "packages/cli/src/first-party-services.ts",
+        "packages/mcp/src/first-party-services.ts"
+      ]
+    },
+    {
+      "mod": "goal",
+      "resolution": "The physical Goal owner now supports read-only status, missing-field resume from persisted state, dependency ordering, bounded attempts, spend/time/no-progress/sliding-window breakers, pre-task oracle discrimination, test-change witnessing, mutation thresholds, panel review with independent judge adjudication, pre-run decomposition, durable result/summary/status artifacts, and bounded host re-exec supervision. Push/PR requests become an explicit operator promotion plan rather than an implicit network side effect.",
+      "evidence": [
+        "packages/mod-goal/src/implementation.test.ts",
+        "tests/unit/goal-breaker-window.test.ts",
+        "tests/unit/goal-journal.test.ts",
+        "tests/unit/goal-mutation-gate.test.ts",
+        "tests/unit/goal-oracle-jit.test.ts",
+        "tests/unit/goal-supervisor.test.ts",
+        "tests/unit/goal-verify-oracle.test.ts",
+        "packages/mod-api/src/index.ts",
+        "packages/cli/src/first-party-services.ts"
+      ],
+      "migrationNote": "The process-supervisor and mutation-sandbox host ports remain explicitly transitional owners until the shared runtime extraction kill-list gates pass; they are bundled-only and absent from folder mods. This behavior audit does not waive those physical cutover gates."
+    }
+  ],
+  "verifiedDefectClasses": [
+    "missing or generic CLI projections",
+    "missing required positional metadata",
+    "missing aliases and defaults",
+    "different commands incorrectly sharing one schema",
+    "accepted arguments whose physical handler omits the established behavior"
+  ],
+  "acceptanceRule": "S5 and every dependent slice remain red until exact CLI contract parity and per-argument behavioral parity pass from a clean committed checkout.",
+  "negativeControl": "Removing a required field, alias, default, or nested command from a physical contribution must make the CLI parity oracle fail."
+}

@@ -1,0 +1,263 @@
+{
+  "submit": {
+    "meta": {
+      "name": "submit",
+      "description": "Submit a safe registered workflow to the daemon"
+    },
+    "args": {
+      "kind": {
+        "type": "positional",
+        "required": true,
+        "description": "Registered workflow kind (for example brainstorm, forge, review)"
+      },
+      "input": {
+        "type": "positional",
+        "required": false,
+        "description": "Prompt, task, topic, or review target"
+      },
+      "payload": {
+        "type": "string",
+        "description": "Additional structured workflow options as a JSON object"
+      },
+      "cwd": {
+        "type": "string",
+        "description": "Working directory"
+      },
+      "engines": {
+        "type": "string",
+        "alias": "e",
+        "description": "Comma-separated engine roster"
+      },
+      "timeout": {
+        "type": "string",
+        "description": "Per-engine timeout in seconds"
+      },
+      "wait": {
+        "type": "boolean",
+        "description": "Wait for the terminal result",
+        "default": false
+      },
+      "waitTimeoutMs": {
+        "type": "string",
+        "description": "Overall wait/follow timeout; 0 means no deadline",
+        "default": "0"
+      },
+      "json": {
+        "type": "boolean",
+        "description": "Print machine-readable JSON",
+        "default": false
+      },
+      "pollMs": {
+        "type": "string",
+        "description": "Polling interval in milliseconds",
+        "default": "500"
+      },
+      "connectTimeoutMs": {
+        "type": "string",
+        "description": "Daemon startup timeout in milliseconds",
+        "default": "5000"
+      },
+      "requestTimeoutMs": {
+        "type": "string",
+        "description": "Socket request timeout in milliseconds",
+        "default": "2000"
+      }
+    }
+  },
+  "list": {
+    "meta": {
+      "name": "list",
+      "description": "List retained daemon jobs"
+    },
+    "args": {
+      "json": {
+        "type": "boolean",
+        "description": "Print machine-readable JSON",
+        "default": false
+      },
+      "pollMs": {
+        "type": "string",
+        "description": "Polling interval in milliseconds",
+        "default": "500"
+      },
+      "connectTimeoutMs": {
+        "type": "string",
+        "description": "Daemon startup timeout in milliseconds",
+        "default": "5000"
+      },
+      "requestTimeoutMs": {
+        "type": "string",
+        "description": "Socket request timeout in milliseconds",
+        "default": "2000"
+      }
+    }
+  },
+  "status": {
+    "meta": {
+      "name": "status",
+      "description": "Show one job snapshot"
+    },
+    "args": {
+      "jobId": {
+        "type": "positional",
+        "required": true,
+        "description": "Job ID"
+      },
+      "json": {
+        "type": "boolean",
+        "description": "Print machine-readable JSON",
+        "default": false
+      },
+      "pollMs": {
+        "type": "string",
+        "description": "Polling interval in milliseconds",
+        "default": "500"
+      },
+      "connectTimeoutMs": {
+        "type": "string",
+        "description": "Daemon startup timeout in milliseconds",
+        "default": "5000"
+      },
+      "requestTimeoutMs": {
+        "type": "string",
+        "description": "Socket request timeout in milliseconds",
+        "default": "2000"
+      }
+    }
+  },
+  "events": {
+    "meta": {
+      "name": "events",
+      "description": "Replay job events and optionally follow until terminal"
+    },
+    "args": {
+      "jobId": {
+        "type": "positional",
+        "required": true,
+        "description": "Job ID"
+      },
+      "after": {
+        "type": "string",
+        "description": "Replay events after this sequence",
+        "default": "0"
+      },
+      "limit": {
+        "type": "string",
+        "description": "Maximum events per request",
+        "default": "100"
+      },
+      "follow": {
+        "type": "boolean",
+        "alias": "f",
+        "description": "Poll until the job is terminal",
+        "default": false
+      },
+      "waitTimeoutMs": {
+        "type": "string",
+        "description": "Overall wait/follow timeout; 0 means no deadline",
+        "default": "0"
+      },
+      "json": {
+        "type": "boolean",
+        "description": "Print machine-readable JSON",
+        "default": false
+      },
+      "pollMs": {
+        "type": "string",
+        "description": "Polling interval in milliseconds",
+        "default": "500"
+      },
+      "connectTimeoutMs": {
+        "type": "string",
+        "description": "Daemon startup timeout in milliseconds",
+        "default": "5000"
+      },
+      "requestTimeoutMs": {
+        "type": "string",
+        "description": "Socket request timeout in milliseconds",
+        "default": "2000"
+      }
+    }
+  },
+  "result": {
+    "meta": {
+      "name": "result",
+      "description": "Read or wait for a job result"
+    },
+    "args": {
+      "jobId": {
+        "type": "positional",
+        "required": true,
+        "description": "Job ID"
+      },
+      "wait": {
+        "type": "boolean",
+        "alias": "w",
+        "description": "Poll until the result is ready",
+        "default": false
+      },
+      "waitTimeoutMs": {
+        "type": "string",
+        "description": "Overall wait/follow timeout; 0 means no deadline",
+        "default": "0"
+      },
+      "json": {
+        "type": "boolean",
+        "description": "Print machine-readable JSON",
+        "default": false
+      },
+      "pollMs": {
+        "type": "string",
+        "description": "Polling interval in milliseconds",
+        "default": "500"
+      },
+      "connectTimeoutMs": {
+        "type": "string",
+        "description": "Daemon startup timeout in milliseconds",
+        "default": "5000"
+      },
+      "requestTimeoutMs": {
+        "type": "string",
+        "description": "Socket request timeout in milliseconds",
+        "default": "2000"
+      }
+    }
+  },
+  "cancel": {
+    "meta": {
+      "name": "cancel",
+      "description": "Request idempotent cancellation of a job"
+    },
+    "args": {
+      "jobId": {
+        "type": "positional",
+        "required": true,
+        "description": "Job ID"
+      },
+      "reason": {
+        "type": "string",
+        "description": "Cancellation reason"
+      },
+      "json": {
+        "type": "boolean",
+        "description": "Print machine-readable JSON",
+        "default": false
+      },
+      "pollMs": {
+        "type": "string",
+        "description": "Polling interval in milliseconds",
+        "default": "500"
+      },
+      "connectTimeoutMs": {
+        "type": "string",
+        "description": "Daemon startup timeout in milliseconds",
+        "default": "5000"
+      },
+      "requestTimeoutMs": {
+        "type": "string",
+        "description": "Socket request timeout in milliseconds",
+        "default": "2000"
+      }
+    }
+  }
+}

@@ -1,16 +1,18 @@
-import { resolveWorkingDir, buildExtensionContext } from '@kernlang/agon-core';
+import { resolveWorkingDir } from '@kernlang/agon-core';
+import type { RegistryRecord } from '@kernlang/agon-kernel';
 
 import type { DispatchCallbacks, DispatchResult } from '../dispatch.js';
 
-import { findResumableCesarPlan, shouldApprovePendingCesarPlanInput, isCesarPlanResumeInput, isCesarPlanStatusInput, formatCesarPlanRuntimeStatus } from './plan-queries.js';
-
-import { resumeCesarPlan, approvePendingCesarPlan } from './plan-execution.js';
+import { dispatchPlanNaturalInput } from '@kernlang/agon-mod-plan';
+import { createPlanExecutionSession } from '../../blocks/plan-execution-effects.js';
 
 import { emitPostDispatch } from './utils.js';
 
 import { dispatchOrchestrationIntent } from './intent-orchestration.js';
 
-import { dispatchSessionInfoIntent } from './intent-session.js';
+import { dispatchSessionInfoIntent, runPhysicalTuiContribution } from './intent-session.js';
+
+import { assertProcessSurfaceAvailable, captureProcessSurfaceAuthority, processSurfaceClient } from '../../surface-authority-runtime.js';
 
 import { dispatchMetaIntent } from './intent-meta.js';
 
@@ -27,39 +29,63 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
     await cb.eventBus.emit('pre:dispatch', { input, intentType: intent.type, cwd: resolveWorkingDir() });
   }
   
-  if (shouldApprovePendingCesarPlanInput(input, cb.ctx)) {
-    if (await approvePendingCesarPlan(cb)) {
+  const execution = createPlanExecutionSession(cb);
+  if (await dispatchPlanNaturalInput(input, {
+    snapshot: () => ({ proposedPlan: cb.ctx.cesar?.proposedPlan, activePlan: cb.ctx.activePlan }),
+    assertAvailable: action => assertProcessSurfaceAvailable('tui', action),
+    approve: () => execution.approvePending(),
+    resume: plan => execution.resume(plan),
+    notify: (type, message) => cb.dispatch({ type, message }),
+  })) {
+    emitPostDispatch(intent, input, cb);
+    return { handled: true, ranAsJob: false };
+  }
+
+  if (intent._modSurface) {
+    const marker = intent._modSurface as { publicId: string; registryId: string; kind: string; value: unknown };
+    let record: RegistryRecord | undefined;
+    let assertSelected: () => void;
+    try {
+      assertSelected = captureProcessSurfaceAuthority();
+      record = processSurfaceClient('tui').project().entries.find((candidate) =>
+        candidate.id === marker.registryId && candidate.kind === marker.kind);
+    } catch (error) {
+      cb.dispatch({ type: 'error', message: error instanceof Error ? error.message : String(error) });
       emitPostDispatch(intent, input, cb);
       return { handled: true, ranAsJob: false };
     }
-  }
-  const resumablePlan = findResumableCesarPlan(cb.ctx);
-  if (resumablePlan && isCesarPlanResumeInput(input)) {
-    await resumeCesarPlan(resumablePlan, cb);
-    emitPostDispatch(intent, input, cb);
-    return { handled: true, ranAsJob: false };
-  }
-  if (resumablePlan && isCesarPlanStatusInput(input)) {
-    cb.dispatch({ type: 'info', message: formatCesarPlanRuntimeStatus(resumablePlan) });
-    emitPostDispatch(intent, input, cb);
-    return { handled: true, ranAsJob: false };
-  }
-  
-  // ── Registry-first dispatch — extensions and real handlers get priority ──
-  if (cb.commandRegistry) {
-    const cmdName = intent.type === 'extension-command' ? intent.commandName : intent.type;
-    const registryHandler = cb.commandRegistry.get(cmdName);
-    if (registryHandler && registryHandler.definition.source !== 'builtin') {
-      // Real handler (not a builtin shim) — always use parseArgs for consistent contract
-      const rawArgs = intent.type === 'extension-command'
-        ? (intent.args ?? '')
-        : (intent.input ?? intent.task ?? intent.question ?? intent.topic ?? '');
-      const args = registryHandler.parseArgs(rawArgs);
-      // Build sandboxed context for extension handlers
-      const extCtx = buildExtensionContext(cb, registryHandler.definition.source ?? 'unknown');
-      const result = await registryHandler.execute(args, extCtx);
-      if (result.handled) return result;
+    if (!record) {
+      cb.dispatch({ type: 'error', message: `generated TUI contribution is unavailable: ${marker.publicId}/${marker.registryId}` });
+      emitPostDispatch(intent, input, cb);
+      return { handled: true, ranAsJob: false };
     }
+    if (record.owner.id === 'agon.think' || (record.owner.id === 'agon.council' && marker.publicId === 'council')) {
+      // Generated and legacy-shaped intents share their workflow job boundary.
+      const type = record.owner.id === 'agon.think' ? 'think' : 'council';
+      const result = await dispatchOrchestrationIntent({ ...(marker.value as object), type }, input, cb);
+      emitPostDispatch(intent, input, cb);
+      return result!;
+    }
+    const label = marker.publicId.slice(0, 40);
+    if (record.owner.id === 'agon.jobs') {
+      try {
+        await runPhysicalTuiContribution(record, marker.value as any, marker.publicId, cb, new AbortController().signal);
+      } catch (error) {
+        cb.dispatch({ type: 'error', message: error instanceof Error ? error.message : String(error) });
+      }
+      emitPostDispatch(intent, input, cb);
+      return { handled: true, ranAsJob: false };
+    }
+    cb.runAsJob(marker.publicId, label, async (signal) => {
+      try {
+        assertSelected();
+        await runPhysicalTuiContribution(record, marker.value as any, marker.publicId, cb, signal);
+      } catch (error) {
+        cb.dispatch({ type: 'error', message: error instanceof Error ? error.message : String(error) });
+      }
+    });
+    emitPostDispatch(intent, input, cb);
+    return { handled: true, ranAsJob: true };
   }
   
   const _r = (await dispatchOrchestrationIntent(intent, input, cb))

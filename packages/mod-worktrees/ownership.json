@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "package": "@kernlang/agon-mod-worktrees",
+  "assignments": [
+    {
+      "category": "builtinCommandMetadata",
+      "id": "workspace",
+      "source": "packages/core/src/blocks/builtin-commands.ts:44",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-worktrees",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "builtinCommandMetadata",
+      "id": "worktree",
+      "source": "packages/core/src/blocks/builtin-commands.ts:73",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-worktrees",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cliCommands",
+      "id": "worktree",
+      "source": "packages/cli/src/lazy-commands.ts:322",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-worktrees",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cliCommands",
+      "id": "wt",
+      "source": "packages/cli/src/lazy-commands.ts:323",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-worktrees",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "intentVariants",
+      "id": "workspace",
+      "source": "packages/cli/src/signals/intent-types.ts:15",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-worktrees",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "tuiSlashCommands",
+      "id": "/workspace",
+      "source": "packages/cli/src/signals/intent.ts:56",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-worktrees",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "tuiSlashCommands",
+      "id": "/ws",
+      "source": "packages/cli/src/signals/intent.ts:56",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-worktrees",
+      "rule": "exact-user-surface"
+    }
+  ]
+}

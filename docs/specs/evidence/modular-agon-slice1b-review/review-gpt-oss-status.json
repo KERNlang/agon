@@ -1,0 +1,20 @@
+{
+  "mode": "ask",
+  "startedAt": "2026-08-23T18:22:51.045Z",
+  "endedAt": "2026-08-23T18:23:08.568Z",
+  "engines": [
+    {
+      "id": "ollama-direct-gpt-oss",
+      "status": "ok",
+      "exitCode": 0,
+      "durationMs": 17481,
+      "detail": "exit=0"
+    }
+  ],
+  "summary": "ollama-direct-gpt-oss answered",
+  "ok": true,
+  "requested": [
+    "ollama-direct-gpt-oss"
+  ],
+  "timeoutSec": 300
+}

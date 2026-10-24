@@ -1,0 +1,6 @@
+command: ["node","scripts/spec/generate-modular-agon-fixtures.mjs"]
+exitCode: 0
+signal:
+error:
+
+generated Modular Agon contract fixtures

@@ -1,0 +1,79 @@
+import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, unlinkSync, statSync } from 'node:fs';
+
+import { join, resolve } from 'node:path';
+
+import { createHash } from 'node:crypto';
+
+import { homedir } from 'node:os';
+
+import { ensurePersistenceHome } from './paths.js';
+
+function getPasteStoreDir(): string {
+  const override = process.env.AGON_HOME?.trim();
+  const home = override ? resolve(override) : join(homedir(), '.agon');
+  return join(home, 'paste-cache');
+}
+
+/**
+ * Max age in ms before cleanup removes a paste (7 days)
+ */
+export const PASTE_MAX_AGE: number = 7 * 24 * 60 * 60 * 1000;
+
+export interface PasteStoreResult {
+  hash: string;
+  preview: string;
+  lineCount: number;
+}
+
+function ensurePasteDir(): void {
+  ensurePersistenceHome();
+  mkdirSync(getPasteStoreDir(), { recursive: true });
+}
+
+/**
+ * Content-addressed storage for large pastes. SHA-256 hash as filename.
+ */
+export class PasteStore {
+
+  store(text: string): PasteStoreResult {
+    ensurePasteDir();
+    const hash = createHash('sha256').update(text).digest('hex');
+    const filePath = join(getPasteStoreDir(), `${hash}.txt`);
+    if (!existsSync(filePath)) {
+      writeFileSync(filePath, text);
+    }
+    const lines = text.split('\n');
+    const preview = text.slice(0, 200).replace(/\n/g, ' ').trim();
+    return { hash: hash, preview: preview, lineCount: lines.length };
+  }
+
+  retrieve(hash: string): string|null {
+    const filePath = join(getPasteStoreDir(), `${hash}.txt`);
+    if (!existsSync(filePath)) {
+      return null;
+    }
+    return readFileSync(filePath, 'utf-8');
+  }
+
+  cleanup(maxAge?: number): number {
+    const age = maxAge ?? PASTE_MAX_AGE;
+    const now = Date.now();
+    let deleted = 0;
+    ensurePasteDir();
+    try {
+      const pasteStoreDir = getPasteStoreDir();
+      const files = readdirSync(pasteStoreDir).filter((f: string) => f.endsWith('.txt'));
+      for (const f of files) {
+        const fp = join(pasteStoreDir, f);
+        try {
+          const stat = statSync(fp);
+          if (now - stat.mtimeMs > age) {
+            unlinkSync(fp);
+            deleted++;
+          }
+        } catch (_e) { console.warn(`[agon] paste-store: cleanup failed for ${fp}: ${_e instanceof Error ? _e.message : String(_e)}`); }
+      }
+    } catch (err) { console.warn(`[agon] paste cleanup failed: ${err instanceof Error ? err.message : String(err)}`); }
+    return deleted;
+  }
+}

@@ -1,0 +1,100 @@
+{
+  "schemaVersion": 1,
+  "subject": {
+    "kind": "commit",
+    "hash": "sha256:f7a94c449f40d61cfa4f54fd2f2a8081f5a7a5fddf3c842a179344952d2e0b81"
+  },
+  "disposition": "passed",
+  "runs": [
+    {
+      "engine": "ollama-direct-gpt-oss",
+      "status": "completed",
+      "artifacts": [
+        {
+          "path": "docs/specs/evidence/verification-logs/slice4/review-gpt-oss20b.txt",
+          "hash": "sha256:1d007bfa7ac5036f72c33c55ba163d4f1934df15369832050548464c72d18e0b"
+        },
+        {
+          "path": "docs/specs/evidence/verification-logs/slice4/tribunal-gpt-oss20b.txt",
+          "hash": "sha256:637dc3ae1bf7f1b4eda52f9b2f8105e510c4e7a528d1a68a09c532409c26d87e"
+        }
+      ]
+    },
+    {
+      "engine": "ollama-local-qwen14",
+      "status": "completed",
+      "artifacts": [
+        {
+          "path": "docs/specs/evidence/verification-logs/slice4/review-qwen14b.txt",
+          "hash": "sha256:707cd4d73ad9ff3fd1b33e186b24ec529669bd86805ecfd946bdde618569523c"
+        },
+        {
+          "path": "docs/specs/evidence/verification-logs/slice4/tribunal-qwen14b.txt",
+          "hash": "sha256:a217deab69d748cc4cd1d199bfefa0d0a227a09ccb0094651643468b229f3d33"
+        }
+      ]
+    },
+    {
+      "engine": "codex-local-source-adjudicator",
+      "status": "completed",
+      "artifacts": [
+        {
+          "path": "docs/specs/evidence/verification-logs/slice4/adjudication-f7.md",
+          "hash": "sha256:ce7e9adff63e217462498b5e9c69d47647562032fd5a16e4754c50a6a6326ade"
+        }
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "id": "S4-REVIEW-001",
+      "status": "resolved",
+      "summary": "Removed mutable process-global support runtime configurators and added invocation-scoped capability and isolation gates."
+    },
+    {
+      "id": "S4-REVIEW-002",
+      "status": "resolved",
+      "summary": "Removed the Node Buffer ambient type leak from the browser-bridge public contract."
+    },
+    {
+      "id": "S4-REVIEW-003",
+      "status": "resolved",
+      "summary": "Frozen compatibility capability objects and made the boundary verifier reject mutable adapters."
+    },
+    {
+      "id": "S4-REVIEW-004",
+      "status": "refuted",
+      "summary": "Ownership conflicts for AgentDispatchResult, AgentSession, FileSnapshot, BrainstormResult, and other named types contradicted per-source generated ownership evidence."
+    },
+    {
+      "id": "S4-REVIEW-005",
+      "status": "refuted",
+      "summary": "Claims about runtime-boundary.ts, validateRuntimeConfig, skipped runtime tests, and codebase imports cited files and symbols absent from the repository."
+    },
+    {
+      "id": "S4-REVIEW-006",
+      "status": "refuted",
+      "summary": "Claims that compatibility adapters were marked removed or that generatedAt controls dependency order contradicted the migration ledger and generator implementation."
+    },
+    {
+      "id": "S4-REVIEW-007",
+      "status": "resolved",
+      "summary": "Corrected rollback semantics and added a two-commit clean-checkout gate proving the retained qualified S3 subject and S4 adapter re-entry."
+    },
+    {
+      "id": "S4-REVIEW-008",
+      "status": "refuted",
+      "summary": "Exact-subject ownership, timestamp, phantom-file, performance-average, and loose-evidence claims contradicted generated records and executable source."
+    },
+    {
+      "id": "S4-REVIEW-009",
+      "status": "resolved",
+      "summary": "Replaced a flaky scheduler elapsed-time proxy with direct old-holder-stale and new-lock-fresh assertions; all 16 file-lock tests pass."
+    },
+    {
+      "id": "S4-REVIEW-010",
+      "status": "refuted",
+      "summary": "Final exact-subject ownership and clock-skew claims contradicted the generated occurrence records, same-host test, and repository contents."
+    }
+  ]
+}

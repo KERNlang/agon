@@ -1,0 +1,142 @@
+{
+  "schemaVersion": 1,
+  "package": "@kernlang/agon-mod-review",
+  "assignments": [
+    {
+      "category": "builtinCommandMetadata",
+      "id": "review",
+      "source": "packages/core/src/blocks/builtin-commands.ts:28",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-review",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cesarRoutes",
+      "id": "review",
+      "source": "packages/cli/src/cesar/routing.ts:17",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-review",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cesarRoutes",
+      "id": "review",
+      "source": "packages/cli/src/cesar/routing.ts:19",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-review",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cesarRoutes",
+      "id": "review",
+      "source": "packages/cli/src/cesar/routing.ts:25",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-review",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cesarRoutes",
+      "id": "review",
+      "source": "packages/cli/src/cesar/routing.ts:27",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-review",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cesarRoutes",
+      "id": "review",
+      "source": "packages/cli/src/models/handler-types.ts:113",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-review",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cesarRoutes",
+      "id": "review",
+      "source": "packages/core/src/cesar/plan.ts:52",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-review",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cesarTools",
+      "id": "Review",
+      "source": "packages/cli/src/cesar/tools.ts:45",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-review",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "cliCommands",
+      "id": "review",
+      "source": "packages/cli/src/lazy-commands.ts:305",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-review",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "configKeys",
+      "id": "autoReviewAfterImpl",
+      "source": "packages/core/src/models/types.ts:176",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-review",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "configKeys",
+      "id": "goalReviewEngines",
+      "source": "packages/core/src/models/types.ts:75",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-review",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "intentVariants",
+      "id": "review",
+      "source": "packages/cli/src/signals/intent-types.ts:42",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-review",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "mcpTools",
+      "id": "Review",
+      "source": "packages/mcp/src/agon-orchestration.ts:24",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-review",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "resultAndEnvelopeTypes",
+      "id": "ReviewCoreResult",
+      "source": "packages/cli/src/handlers/review.ts:332",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-review",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "resultAndEnvelopeTypes",
+      "id": "ReviewEvent",
+      "source": "packages/cli/src/blocks/controls.tsx:36",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-review",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "tuiSlashCommands",
+      "id": "/review",
+      "source": "packages/cli/src/signals/intent.ts:56",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-review",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "tuiSlashCommands",
+      "id": "/review role",
+      "source": "packages/cli/src/signals/intent.ts:56",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-review",
+      "rule": "exact-user-surface"
+    }
+  ]
+}

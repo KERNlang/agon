@@ -16,8 +16,10 @@ import type { Dispatch, HandlerContext, EngineProgress } from './types.js';
 
 import { filterDefaultOrchestrationEngines } from './engine-filter.js';
 
-export async function handleSynthesis(prompt: string, dispatch: Dispatch, ctx: HandlerContext, opts?: {swaps?:number, judge?:string}): Promise<void> {
+export async function handleSynthesis(prompt: string, dispatch: Dispatch, ctx: HandlerContext, opts?: {swaps?:number, judge?:string, signal?: AbortSignal}): Promise<void> {
   const syAbort = new AbortController();
+  const signal = opts?.signal ? AbortSignal.any([opts.signal, syAbort.signal]) : syAbort.signal;
+  signal.throwIfAborted();
   try {
     ensureAgonHome();
     
@@ -45,6 +47,7 @@ export async function handleSynthesis(prompt: string, dispatch: Dispatch, ctx: H
     
     const startTime = Date.now();
     const progressInterval = setInterval(() => {
+      if (signal.aborted) { clearProgress(); return; }
       const elapsed = Math.floor((Date.now() - startTime) / 1000);
       const progress: EngineProgress[] = engines.map((id: string) => ({ id, status: `synthesizing… ${elapsed}s`, elapsed, done: false, failed: false }));
       dispatch({ type: 'progress-update', engines: progress });
@@ -69,13 +72,14 @@ export async function handleSynthesis(prompt: string, dispatch: Dispatch, ctx: H
         judge: opts?.judge,
         timeout: 120,
         outputDir,
-        signal: syAbort.signal,
+        signal,
       });
     } catch (err) {
       clearProgress();
       throw err;
     }
     clearProgress();
+    signal.throwIfAborted();
     
     const drafts = result.drafts ?? [];
     const scores = result.scores ?? [];

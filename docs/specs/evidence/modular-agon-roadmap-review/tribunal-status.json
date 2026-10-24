@@ -1,0 +1,19 @@
+{
+  "mode": "tribunal",
+  "startedAt": "2026-08-23T16:43:35.053Z",
+  "endedAt": "2026-08-23T16:45:59.176Z",
+  "engines": [
+    {
+      "id": "zai-coding-plan-glm-5.2",
+      "status": "ok",
+      "detail": "1 arguments"
+    },
+    {
+      "id": "minimax-api",
+      "status": "ok",
+      "detail": "1 arguments"
+    }
+  ],
+  "summary": "2/2 engines argued across 1 round(s) (mode=adversarial, protocol=hybrid)",
+  "ok": true
+}

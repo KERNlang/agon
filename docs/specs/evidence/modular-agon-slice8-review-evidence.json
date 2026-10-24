@@ -1,0 +1,117 @@
+{
+  "schemaVersion": 1,
+  "subject": {
+    "kind": "commit",
+    "hash": "sha256:6e9f8e13647f7bf2b1c3de7cc93796ec7f091c8a97fd7ab14158c5115cc277a6"
+  },
+  "disposition": "passed",
+  "scopeNote": "The GLM/M3 Tribunal covers predecessor full S8 subject ba8c411f. Later bounded deltas resolve defects found by repeated clean-checkout qualification; Codex locally reviewed the exact final subject using those discriminating failures and reruns. Unavailable attempts are disclosed but not counted.",
+  "runs": [
+    {
+      "engine": "zai-coding-plan-glm-5.2",
+      "status": "completed",
+      "artifacts": [
+        {
+          "path": "docs/specs/evidence/verification-logs/slice8/final-tribunal-glm.txt",
+          "hash": "sha256:002661ed4a38de7536f195db4828cabcfbdbffce390d55dc28df50c100c471d0"
+        },
+        {
+          "path": "docs/specs/evidence/verification-logs/slice8/final-tribunal-status.json",
+          "hash": "sha256:d48915885f6c35166fd085ac0a4989791282772562e9d606666169476bd31281"
+        }
+      ]
+    },
+    {
+      "engine": "minimax-coding-plan-minimax-m3",
+      "status": "completed",
+      "artifacts": [
+        {
+          "path": "docs/specs/evidence/verification-logs/slice8/final-tribunal-m3-visible.txt",
+          "hash": "sha256:de4515d58de7153fe8c625edbf0e200703c6264a51ce8d91fc6b0720f1a2c41e"
+        }
+      ]
+    },
+    {
+      "engine": "opencode-source-review",
+      "status": "completed",
+      "artifacts": [
+        {
+          "path": "docs/specs/evidence/verification-logs/slice8/source-review-opencode.txt",
+          "hash": "sha256:48b0094def5d7e8e880a3e5db7ace49837f5a7b209c8ef631e3170efeea59e4e"
+        }
+      ]
+    },
+    {
+      "engine": "codex-local-source-adjudicator",
+      "status": "completed",
+      "artifacts": [
+        {
+          "path": "docs/specs/evidence/verification-logs/slice8/adjudication-ba8c411f.md",
+          "hash": "sha256:dad15fbabd197a610dc7ca07f008c920005b9a56906d7022844db8646962eb91"
+        }
+      ]
+    },
+    {
+      "engine": "codex-local-final-delta-adjudicator",
+      "status": "completed",
+      "artifacts": [
+        {
+          "path": "docs/specs/evidence/verification-logs/slice8/adjudication-6e9f8e13.md",
+          "hash": "sha256:d881ea5789b86adf189016df87c3ee9f6d9552eaf1057c781efd7b670060c2cc"
+        }
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "id": "S8-REVIEW-001",
+      "status": "resolved",
+      "summary": "Bounded worker-to-host service concurrency and added a flood negative control."
+    },
+    {
+      "id": "S8-REVIEW-002",
+      "status": "resolved",
+      "summary": "Propagated invocation cancellation and the original host signal into engine dispatch, with identity, abort, and fail-stop controls."
+    },
+    {
+      "id": "S8-REVIEW-003",
+      "status": "resolved",
+      "summary": "Preserved external AsyncIterable event streams and bounded abandoned-stream buffering."
+    },
+    {
+      "id": "S8-REVIEW-004",
+      "status": "resolved",
+      "summary": "Expanded receipt redaction for URL credentials and sensitive query parameters."
+    },
+    {
+      "id": "S8-REVIEW-005",
+      "status": "resolved",
+      "summary": "Added NFC portable-key normalization and filesystem-discriminating collision coverage."
+    },
+    {
+      "id": "S8-REVIEW-006",
+      "status": "refuted",
+      "summary": "Revocation, generation validation, snapshot TOCTOU, wildcard resource, and performance claims contradicted exact source and discriminating gates."
+    },
+    {
+      "id": "S8-REVIEW-007",
+      "status": "refuted",
+      "summary": "AbortSignal cross-dispatch claims confused a read-only signal with its undisclosed AbortController; the host dispatcher identity test proves the actual boundary."
+    },
+    {
+      "id": "S8-REVIEW-008",
+      "status": "refuted",
+      "summary": "Cryptographic containment of already-full-trust same-user code is outside the explicit consent model and would not reduce that code’s authority."
+    },
+    {
+      "id": "S8-REVIEW-009",
+      "status": "refuted",
+      "summary": "Early iterator return is explicit abandonment and correctly cancels/fail-stops rather than falsely claiming delivery of later events."
+    },
+    {
+      "id": "S8-REVIEW-010",
+      "status": "resolved",
+      "summary": "Generated/physical ownership, fixed surface oracles, roadmap/ledgers, and the non-polluting clean-checkout harness now agree and discriminate all observed defects."
+    }
+  ]
+}

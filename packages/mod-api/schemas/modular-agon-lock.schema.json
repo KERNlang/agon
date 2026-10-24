@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "type": "number",
+      "const": 1
+    },
+    "kernelVersion": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$"
+    },
+    "apiVersion": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$"
+    },
+    "desiredStateHash": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "graphHash": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "packages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 256,
+            "pattern": "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)+$"
+          },
+          "version": {
+            "type": "string",
+            "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "bundled",
+              "registry",
+              "user-folder",
+              "explicit-dev"
+            ]
+          },
+          "sourceLocator": {
+            "type": "string",
+            "minLength": 1
+          },
+          "contentHash": {
+            "type": "string",
+            "pattern": "^sha256:[a-f0-9]{64}$"
+          },
+          "manifestHash": {
+            "type": "string",
+            "pattern": "^sha256:[a-f0-9]{64}$"
+          },
+          "platform": {
+            "type": "string",
+            "enum": [
+              "darwin-arm64",
+              "darwin-x64",
+              "linux-arm64",
+              "linux-x64"
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "resolutionOrder": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "dependencies": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 256,
+              "pattern": "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)+$"
+            }
+          },
+          "trustRecordId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "grantRecordIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "source",
+          "sourceLocator",
+          "contentHash",
+          "manifestHash",
+          "platform",
+          "enabled",
+          "resolutionOrder",
+          "dependencies",
+          "trustRecordId",
+          "grantRecordIds"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "kernelVersion",
+    "apiVersion",
+    "desiredStateHash",
+    "graphHash",
+    "packages"
+  ],
+  "additionalProperties": false,
+  "$id": "https://kernlang.dev/schemas/agon/modular/v1/lock.schema.json",
+  "title": "Modular Agon v1 lock"
+}

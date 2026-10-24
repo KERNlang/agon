@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "subject": {
+    "kind": "commit",
+    "hash": "sha256:51ac3696585f273c3a65910472e84a35562f916a67faefa7abf58c1b9072d503"
+  },
+  "disposition": "passed",
+  "runs": [
+    {
+      "engine": "ollama-local-qwen3-4b-16k",
+      "status": "completed",
+      "artifacts": [
+        {
+          "path": "docs/specs/evidence/verification-logs/slice3/review-qwen4b.txt",
+          "hash": "sha256:e65b9b02fa66166a32d3b70bbd256084c84daac2a467ec5554fc227cbdd4e009"
+        },
+        {
+          "path": "docs/specs/evidence/verification-logs/slice3/tribunal-qwen4b.txt",
+          "hash": "sha256:1b13c2e8d4764bc2407bacd4085a86bef1c6adfe41929618874df16551280c32"
+        }
+      ]
+    },
+    {
+      "engine": "qwen-local-qwen3-14b-16k",
+      "status": "completed",
+      "artifacts": [
+        {
+          "path": "docs/specs/evidence/verification-logs/slice3/review-qwen14b.txt",
+          "hash": "sha256:4cc924d66ea79daac7b6cc9b6464ee9a4310d9340567c6ec7e823227704fdd17"
+        },
+        {
+          "path": "docs/specs/evidence/verification-logs/slice3/tribunal-qwen14b.txt",
+          "hash": "sha256:40a46d13183068ae139dfbcdef65623fe1a5cef286844b42601318a16a0d542b"
+        }
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "id": "S3-REVIEW-001",
+      "status": "resolved",
+      "summary": "Generated UI ownership now includes Campfire and requires every first-party mod exactly once."
+    },
+    {
+      "id": "S3-REVIEW-002",
+      "status": "resolved",
+      "summary": "Applied profile snapshots now verify their canonical definition hash."
+    },
+    {
+      "id": "S3-REVIEW-003",
+      "status": "resolved",
+      "summary": "Default-enabled hidden support packages are implicit in package resolution."
+    },
+    {
+      "id": "S3-REVIEW-004",
+      "status": "resolved",
+      "summary": "Activation rejects a stale expected generation inside the writer fence."
+    },
+    {
+      "id": "S3-REVIEW-005",
+      "status": "refuted",
+      "summary": "Tribunal false positives about missing cascades, rollback, schema/UI, performance, and accessibility contradicted executable local evidence."
+    },
+    {
+      "id": "S3-REVIEW-006",
+      "status": "refuted",
+      "summary": "Independent-review findings about repeated focus indices, missing-mod handling, temporary checkout races, GC, and generated validation contradicted source and gates."
+    }
+  ]
+}

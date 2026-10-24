@@ -44,6 +44,8 @@ export function updateEngineVitals(v: EngineVitals, partial: Partial<EngineVital
 }
 
 export function markEngineStalled(v: EngineVitals, stallThresholdMs: number): EngineVitals {
+  // Missing heartbeats are a work-stall signal only for assigned work.
+  if (v.state === 'idle' || v.state === 'offline') return v;
   const now = hostNowMs();
   const elapsed = now - v.lastHeartbeatAt;
   if (elapsed >= stallThresholdMs && v.state !== 'stalled') {

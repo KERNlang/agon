@@ -186,6 +186,16 @@ export function buildCallCommands(opts: CallCommandOptions): BuiltCallCommands {
     // branch) before handing the refined spec to forge/goal. --strategy is
     // linear|reflexion here (distinct from campfire's lead-first/all-respond).
     const problem = requireInput(workflow, opts.input);
+    const requestedThinkEngines = opts.engines?.split(',').map((id) => id.trim()).filter(Boolean) ?? [];
+    if (requestedThinkEngines.length > 1) {
+      throw new Error('agon call think accepts one reasoner. Use --engine <id> (or a single id via --engines) and --critic <id> for the second engine.');
+    }
+    const rosterEngine = requestedThinkEngines[0];
+    const explicitEngine = opts.engine?.trim();
+    if (explicitEngine && rosterEngine && explicitEngine !== rosterEngine) {
+      throw new Error(`agon call think received conflicting engines: --engine ${explicitEngine} and --engines ${rosterEngine}.`);
+    }
+    const thinkEngine = explicitEngine || rosterEngine;
     commands.push([
       'think',
       problem,
@@ -194,7 +204,7 @@ export function buildCallCommands(opts: CallCommandOptions): BuiltCallCommands {
       ...textFlag('--branches', opts.branches),
       ...textFlag('--critic', opts.critic),
       ...timeout,
-      ...engines,
+      ...textFlag('--engine', thinkEngine),
     ]);
   } else if (workflow === 'nero') {
     // Adversarial self-challenge — Agon's /evil-twin for external CLIs. The
@@ -541,7 +551,7 @@ export const callCommand: any = defineCommand({
     },
     engine: {
       type: 'string',
-      description: 'For review/research/chrome: force a specific engine (review: narrow the panel; research: draft the answer; chrome: per-turn engine override)',
+      description: 'For think/review/research/chrome: force a specific engine (think: reasoner; review: narrow the panel; research: draft the answer; chrome: per-turn engine override)',
     },
     'auto-approve': {
       type: 'boolean',

@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
+import { existsSync, readFileSync } from 'node:fs';
 
-import { JobService } from '../../packages/core/src/jobs/job-service.js';
+import { JobService } from '../../packages/mod-jobs/src/job-service.js';
+import { DEFAULT_AGON_CONFIG, JobService as PublicCoreJobService } from '@kernlang/agon-core';
+import { JobService as PublicModJobService } from '@kernlang/agon-mod-jobs';
 
 const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
@@ -13,6 +16,41 @@ const retainedExecutor = (jobs: JobService, id: string) => (
 );
 
 describe('JobService', () => {
+  it('keeps one physical scheduler behind the Core compatibility export', () => {
+    expect(PublicCoreJobService).toBe(PublicModJobService);
+    expect(existsSync(new URL('../../packages/core/src/jobs/job-service.ts', import.meta.url))).toBe(false);
+    const ledger = JSON.parse(readFileSync(new URL('../../docs/specs/evidence/modular-agon-slice5-migration-ledger.json', import.meta.url), 'utf8'));
+    const declarations = ledger.assignments.filter((row: { legacyPath: string }) => row.legacyPath === 'packages/core/src/jobs/job-service.ts');
+    expect(declarations.map((row: { id: string }) => row.id).sort()).toEqual(['JobEvent', 'JobRecord', 'JobSnapshot']);
+    for (const row of declarations) {
+      expect(row.implementationPaths).toEqual(['packages/mod-jobs/src/job-service.ts']);
+      expect(row.legacyPresent).toBe(false);
+      expect(row.removalEvidence).toBe('tests/unit/job-service.test.ts');
+    }
+  });
+
+  it('preserves configured scheduler defaults after the physical move', async () => {
+    const jobs = new JobService();
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const submitted = Array.from({ length: DEFAULT_AGON_CONFIG.jobMaxConcurrency + 1 }, () =>
+      jobs.submit('fixture', 'defaults', { run: async () => { await gate; } }));
+    expect(jobs.list().filter(job => job.state === 'running')).toHaveLength(DEFAULT_AGON_CONFIG.jobMaxConcurrency);
+    expect(jobs.list().filter(job => job.state === 'queued')).toHaveLength(1);
+    release();
+    await Promise.all(submitted.map(job => jobs.wait(job.id)));
+    const noisy = jobs.submit('fixture', 'events', { run: async ({ emit }) => {
+      for (let index = 0; index < DEFAULT_AGON_CONFIG.jobEventLimit + 10; index++) emit('progress', index);
+    } });
+    await jobs.wait(noisy.id);
+    expect(jobs.events(noisy.id)?.events).toHaveLength(DEFAULT_AGON_CONFIG.jobEventLimit);
+    for (let index = 0; index < DEFAULT_AGON_CONFIG.jobRetentionLimit + 1; index++) {
+      const job = jobs.submit('fixture', 'retention', { run: async () => index });
+      await jobs.wait(job.id);
+    }
+    await tick();
+    expect(jobs.list()).toHaveLength(DEFAULT_AGON_CONFIG.jobRetentionLimit);
+  });
   it('runs a submitted job to success with ordered replayable events and a result', async () => {
     const jobs = new JobService({ eventLimit: 8, retentionLimit: 4, maxConcurrency: 2 });
     const job = jobs.submit('call', 'safe task', {

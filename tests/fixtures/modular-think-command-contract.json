@@ -1,0 +1,67 @@
+{
+  "sourceCommit": "f222e17b832de533fefffb6dcfbfc78e40028630",
+  "sourcePath": "packages/cli/src/commands/think.ts",
+  "sourceSha256": "8f0d8c67bb3372f8decfc38ad9d4bed93e44fa60ed59d0adf337ad98a9ca2ec6",
+  "command": {
+    "meta": {
+      "name": "think",
+      "description": "Sequential thinking — decompose a problem into structured thoughts before acting. `agon think \"...\" --strategy reflexion`. Opt-in; surfaces open questions and a goal handoff."
+    },
+    "args": {
+      "problem": {
+        "type": "positional",
+        "description": "The task / problem to think through.",
+        "required": false
+      },
+      "strategy": {
+        "type": "string",
+        "description": "Thinking method: linear | reflexion (forced critique+revision) | tot (self-scored branches, prune to winner) | graph (branch then merge) | hypothesis (competing hypotheses, eliminate losers).",
+        "default": "linear"
+      },
+      "critic": {
+        "type": "string",
+        "description": "A SECOND engine that adversarially attacks the chain after it is produced (cross-engine critique). e.g. --critic codex."
+      },
+      "engine": {
+        "type": "string",
+        "description": "Engine id to think with. Omit to use the default (first active) engine."
+      },
+      "steps": {
+        "type": "string",
+        "description": "Max thoughts (steps of thought) to produce. Clamped to 1..20.",
+        "default": "6"
+      },
+      "branches": {
+        "type": "string",
+        "description": "Explore N alternative reasoning branches (emission only — v1 does not auto-score/prune). Clamped to 1..8. e.g. --steps 20 --branches 5.",
+        "default": "1"
+      },
+      "timeout": {
+        "type": "string",
+        "description": "Timeout in seconds.",
+        "default": "120"
+      },
+      "ground": {
+        "type": "boolean",
+        "description": "Verify file paths cited in thoughts against the repo and flag phantom ones. On by default; --no-ground to disable.",
+        "default": true
+      },
+      "goal": {
+        "type": "boolean",
+        "description": "Print a ready-to-run `agon goal` handoff built from the refined spec."
+      },
+      "json": {
+        "type": "boolean",
+        "description": "Emit the full ThinkResult as JSON on stdout (the handoff artifact; pipe-friendly)."
+      },
+      "quiet": {
+        "type": "boolean",
+        "description": "Print only the summary."
+      },
+      "label": {
+        "type": "string",
+        "description": "Human-readable suffix baked into the run dir name."
+      }
+    }
+  }
+}

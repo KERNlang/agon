@@ -11,6 +11,8 @@ import { hostResolvedVoid, hostSet } from '../lib/kern-host.js';
 import type { IncomingMessage, ServerResponse, Server } from 'node:http';
 
 import { randomUUID, timingSafeEqual } from 'node:crypto';
+import { SurfaceGenerationError } from '@kernlang/agon-kernel';
+import { assertProcessSurfaceAvailable, captureProcessSurfaceAuthority, withProcessSurfaceAuthority } from '../surface-authority-runtime.js';
 
 export const MAX_SEND_BODY_BYTES: number = Math.ceil((MAX_DISPATCH_IMAGES * MAX_DISPATCH_IMAGE_BYTES * 4) / 3) + 1024 * 1024;
 
@@ -41,8 +43,12 @@ export class AgonServe {
   private jobs: JobService;
   private jobShutdownTimeoutMs: number;
   private resolveJob: AgonServeJobResolver|undefined;
+  private readonly assertHostCurrent: () => void;
 
   constructor(opts: { brain: BrainClient, sessionId: string, allowedOrigins?: string[], engines?: string[], engineId?: string, jobService?: JobService, jobShutdownTimeoutMs?: number, resolveJob?: AgonServeJobResolver }) {
+    // Keep non-Jobs routes available when this host is already stale.
+    try { this.assertHostCurrent = captureProcessSurfaceAuthority(); }
+    catch (error) { this.assertHostCurrent = () => { throw error; }; }
     this.brain = opts.brain;
     this.sessionId = opts.sessionId;
     this.token = randomUUID();
@@ -146,7 +152,14 @@ export class AgonServe {
       if (method === 'POST' && path === '/send') { await this.handleSend(req, res, origin); return; }
       if (method === 'POST' && path === '/cancel') { await this.handleCancel(req, res, origin); return; }
       if (path === '/v1/jobs' || path.startsWith('/v1/jobs/')) {
-        await this.handleJobs(req, res, method, path, url, origin);
+        try {
+          await this.handleJobs(req, res, method, path, url, origin);
+        } catch (error) {
+          if (!(error instanceof SurfaceGenerationError)) throw error;
+          this.sendJson(res, error.restartRequired ? 409 : 403, {
+            error: error.message, code: error.code, restartRequired: error.restartRequired,
+          }, origin);
+        }
         return;
       }
       // Agent tool-loop control plane — these call the brain DIRECTLY (never chained
@@ -168,10 +181,17 @@ export class AgonServe {
     }
   }
 
+  private assertJobsAvailable(): void {
+    this.assertHostCurrent();
+    assertProcessSurfaceAvailable('cli', 'job');
+  }
+
   private async handleJobs(req: IncomingMessage, res: ServerResponse, method: string, path: string, url: URL, origin: string): Promise<void> {
+    this.assertJobsAvailable();
     if (method === 'POST' && path === '/v1/jobs') {
       if (!this.resolveJob) { this.sendJson(res, 503, { error: 'job execution is not configured' }, origin); return; }
       const body = await this.readJson(req);
+      this.assertJobsAvailable();
       const kind = typeof body.kind === 'string' ? body.kind.trim() : '';
       const rawPayload = body.payload;
       if (!kind || !rawPayload || typeof rawPayload !== 'object' || Array.isArray(rawPayload)) {
@@ -180,7 +200,15 @@ export class AgonServe {
       }
       try {
         const definition = this.resolveJob.resolve(kind, rawPayload as Record<string, unknown>);
-        const job = this.jobs.submit(kind, definition.label, definition.executor);
+        const job = this.jobs.submit(kind, definition.label, {
+          run: ctx => withProcessSurfaceAuthority(ctx.signal, () => this.assertJobsAvailable(), async signal => {
+            this.assertJobsAvailable();
+            const result = await definition.executor.run({ ...ctx, signal: signal ?? ctx.signal });
+            (signal ?? ctx.signal).throwIfAborted();
+            this.assertJobsAvailable();
+            return result;
+          }),
+        });
         this.sendJson(res, 202, { job }, origin);
       } catch (err) {
         this.sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) }, origin);
@@ -219,6 +247,7 @@ export class AgonServe {
     }
     if (method === 'POST' && action === 'cancel') {
       const body = await this.readJson(req);
+      this.assertJobsAvailable();
       const reason = typeof body.reason === 'string' ? body.reason : undefined;
       const accepted = this.jobs.cancel(id, reason);
       const current = this.jobs.get(id) ?? job;

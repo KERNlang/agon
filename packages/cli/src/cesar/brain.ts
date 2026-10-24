@@ -1,4 +1,6 @@
 import { join } from 'node:path';
+import { captureProcessSurfaceAuthority, withProcessInvocationScope } from '../surface-authority-runtime.js';
+import { sessionCleanupFailed, SESSION_CLEANUP_FAILURE_MESSAGE } from './session-health.js';
 
 import { mkdirSync, appendFileSync, existsSync, readFileSync, unlinkSync, readdirSync, writeFileSync } from 'node:fs';
 
@@ -24,7 +26,7 @@ import { asLiveTodos } from '../signals/todos.js';
 
 import { parseAskMarker } from './ask-marker.js';
 
-import { ensureCesarSession, buildCesarSystemPrompt, resolveCesarBackend, renderToolPermissionCommand } from './session.js';
+import { ensureCesarSession, buildCesarSystemPrompt, resolveCesarBackend, renderToolPermissionCommand, captureToolRefusal } from './session.js';
 
 import { enforceContextBudget } from './context-budget.js';
 
@@ -70,9 +72,10 @@ import { resolveCesarHarnessProfile, evaluateAgenticTaskState, buildAgenticProgr
 
 import { canonicalStepSignature, normalizeStepSignature } from '@kernlang/agon-core';
 
-import { yieldToInk, recordCesarTurn, splitBeforeToolMarkup, XML_TOOL_MARKUP_HOLD_CHARS, chunkMayCompleteToolCall, textHasToolCalls, classifyPreambleHead, createTodosDisplayStripper, createAskDisplayStripper, createPreambleStripper, findTrailingUserQuestion, detectAwaitingUserInput, detectNarratedToolStall, detectMutationIntentStall, detectFabricatedDelegation, shouldDeescalateGuard, withEagerToolCallId, claimEagerToolExecution, eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, buildReviewFollowupPrompt, extractDelegation, isBashToolName, isWriteToolName, forwardContinuationStatus } from './brain-helpers.js';
+import { yieldToInk, recordCesarTurn, splitBeforeToolMarkup, XML_TOOL_MARKUP_HOLD_CHARS, chunkMayCompleteToolCall, classifyPreambleHead, createTodosDisplayStripper, createAskDisplayStripper, createPreambleStripper, findTrailingUserQuestion, detectAwaitingUserInput, detectNarratedToolStall, detectMutationIntentStall, detectFabricatedDelegation, shouldDeescalateGuard, withEagerToolCallId, claimEagerToolExecution, eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, buildReviewFollowupPrompt, extractDelegation, isBashToolName, isWriteToolName, forwardContinuationStatus } from './brain-helpers.js';
 
 import { runCesarConfirmationFollowUp } from './confirmation-follow-up.js';
+import { createFollowUpDisplay } from './follow-up-display.js';
 
 import { consumeCesarPlanControlSignals } from './plan-control-signals.js';
 
@@ -140,8 +143,45 @@ export async function commitTurnAndSuggest(suggestion: {action:string, rest?:str
   return { delegated: false, responded: true, decisionReason: 'suggestion-cancelled', ...telemetry ?? {} };
 }
 
-export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<CesarTurnOutcome> {
+export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[], parentSignal?: AbortSignal, assertOwnerAvailable?: () => void): Promise<CesarTurnOutcome> {
+  return withProcessInvocationScope(() => enterCesarBrain(input, dispatch, ctx, images, parentSignal, assertOwnerAvailable));
+}
+
+async function enterCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[], parentSignal?: AbortSignal, assertOwnerAvailable?: () => void): Promise<CesarTurnOutcome> {
+  parentSignal?.throwIfAborted();
+  assertOwnerAvailable?.();
   const abort = new AbortController();
+  const cancel = () => abort.abort(parentSignal?.reason);
+  parentSignal?.addEventListener('abort', cancel, { once: true });
+  if (parentSignal?.aborted) cancel();
+  try {
+    abort.signal.throwIfAborted();
+    return await runCesarBrain(input, dispatch, ctx, images, abort, !parentSignal, assertOwnerAvailable);
+  } finally {
+    parentSignal?.removeEventListener('abort', cancel);
+  }
+}
+
+async function runCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images: ImageAttachment[] | undefined, abort: AbortController, ownsActiveAbort: boolean, assertOwnerAvailable?: () => void): Promise<CesarTurnOutcome> {
+  const assertHostCurrent = captureProcessSurfaceAuthority();
+  let _runtimeHost: any = null;
+  let _turnRuntime: any = null;
+  const assertExecutionAvailable = (): void => {
+    abort.signal.throwIfAborted();
+    if (_turnRuntime && (ctx.cesarRuntimeHost !== _runtimeHost || _runtimeHost.active !== _turnRuntime || _turnRuntime.terminalAccepted)) {
+      const error = new Error('DENIED: Owning workflow turn is no longer active.');
+      abort.abort(error);
+      throw error;
+    }
+    try { assertOwnerAvailable?.(); }
+    catch (error) { abort.abort(error); throw error; }
+  };
+  if (sessionCleanupFailed(ctx.cesarSession)) {
+    dispatch({ type: 'warning', message: SESSION_CLEANUP_FAILURE_MESSAGE });
+    return { terminalState: 'failed', decisionReason: 'session-cleanup-failed', delegated: false, responded: false };
+  }
+  // Retain the entry session across awaits: detachment does not erase a failure.
+  const _entrySession = ctx.cesarSession;
       const _turnStart = Date.now();
       const _turnId = createCesarTurnId();
       let _turnTerminalState: 'completed' | 'failed' | 'timed_out' = 'completed';
@@ -175,7 +215,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       // uses bare names ('Bash'/'Edit'/'Write'/...), while the default companion/MCP
       // path surfaces the orchestration aliases ('AgonBash'/'AgonEdit'/'AgonWrite')
       // — done.tool on the MCP completion is the ORIGINAL alias, not the mapped kern
-      // tool (see agon-orchestration.kern handleWriteToolCall: writeToolCompletion is
+      // tool (see executeApprovedKernelWrite: writeToolCompletion is
       // called with `name`, not `kernTool`). A strict bare-name check silently missed
       // every MCP write/bash, so the verify-before-done gate never armed on the default
       // path. isBashToolName/isWriteToolName (brain-helpers, unit-tested) strip the
@@ -569,7 +609,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               }
               ctx.cesar!.queue = null;
             }
-            ctx.setActiveAbort(null);
+            if (ownsActiveAbort) ctx.setActiveAbort(null);
             dispatch({ type: 'warning', message: `Recovered a stale Cesar turn after ${Math.round(busyAge / 1000)}s; starting with a fresh lease.` });
           }
         }
@@ -606,18 +646,17 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       ctx.cesar!.readSpiralNoted = false;
       ctx.cesar!.turnIntakeKind = undefined;
       ctx.cesar!.turnId = _turnId;
-      let _runtimeHost: any = null;
-      let _turnRuntime: any = null;
       const _brainStartMs = Date.now();
 
       try {
         _runtimeHost = ctx.cesarRuntimeHost ?? createCesarTurnRuntimeHost(ctx.chatSession.id);
         ctx.cesarRuntimeHost = _runtimeHost;
-        _turnRuntime = beginCesarTurn(_runtimeHost, _turnId, 'cesar-brain');
+        _turnRuntime = beginCesarTurn(_runtimeHost, _turnId, 'cesar-brain', undefined, assertExecutionAvailable);
         ctx.cesar!.planDispatch = dispatch;
         // Claim the steering channel only after the runtime lease exists.
         markSteeringTurn(_turnId);
         if (ctx.eventBus) await ctx.eventBus.emit('pre:cesar-brain', { input });
+        assertExecutionAvailable();
         ensureAgonHome();
         const config = ctx.config;
         const harnessProfile = resolveCesarHarnessProfile(ctx);
@@ -707,7 +746,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         }
 
         const color = ENGINE_COLORS[cesarEngineId] ?? 124;
-        ctx.setActiveAbort(abort);
+        if (ownsActiveAbort) ctx.setActiveAbort(abort);
         // Expose this turn's abort signal on the shared cesar state so a message
         // submitted during teardown can tell "Cesar is busy working" apart from
         // "Cesar was just interrupted" — without a listener (cleared in finally).
@@ -744,12 +783,35 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             return { turnId: _turnId, terminalState: 'failed', delegated: false, responded: false };
           }
         } catch { /* budget gate must never break a turn */ }
+        assertExecutionAvailable();
+
+        // Cleanup can fail while the gate or acquisition awaits (telemetry
+        // handoff, compaction). Refuse before any replacement session send or
+        // adapter fallback; the router's outer guard cannot retract a launch.
+        let _cleanupRefusalWarned = false;
+        const hasCleanupFailure = (candidate?: PersistentSession): boolean =>
+          [_entrySession, ctx.cesarSession, candidate].some(sessionCleanupFailed);
+        const refuseAfterCleanupFailure = (candidate?: PersistentSession): CesarTurnOutcome | null => {
+          if (!hasCleanupFailure(candidate)) return null;
+          if (!_cleanupRefusalWarned) {
+            _cleanupRefusalWarned = true;
+            dispatch({ type: 'warning', message: SESSION_CLEANUP_FAILURE_MESSAGE });
+          }
+          _turnTerminalState = 'failed';
+          return { turnId: _turnId, terminalState: 'failed', decisionReason: 'session-cleanup-failed', delegated: false, responded: false };
+        };
+        const _refusedAfterGate = refuseAfterCleanupFailure();
+        if (_refusedAfterGate) return _refusedAfterGate;
 
         // ── Boot or reuse persistent session ──
         let session: PersistentSession;
         try {
           session = await ensureCesarSession(ctx);
+          assertExecutionAvailable();
         } catch (err) {
+          assertExecutionAvailable();
+          const _refusedAcquisition = refuseAfterCleanupFailure();
+          if (_refusedAcquisition) return _refusedAcquisition;
           const errMsg = err instanceof Error ? err.message : String(err);
           // Gate the spinner error on the backend we're actually using.
           // Engines on the API path (no CLI binary chosen) don't need a noisy
@@ -779,19 +841,24 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             // and forces a single-pass text answer — exactly why agy could not run tools
             // as Cesar. Fall back to 'exec' for engines without an agent mode (no regression).
             const fallbackMode = ((engine as any)?.agent ? 'agent' : 'exec') as any;
+            assertExecutionAvailable();
             const freshResult = await ctx.adapter.dispatch({
               engine, prompt: primedPrompt, cwd: resolveWorkingDir(), mode: fallbackMode,
               timeout: config.timeout ?? 120, outputDir, signal: abort.signal, systemPrompt: buildCesarSystemPrompt(ctx),
             });
+            // Usage already incurred remains evidence even when publication is refused.
+            if (freshResult.usage && freshResult.usage.totalTokens > 0) {
+              tracker.record(cesarEngineId, { usage: freshResult.usage });
+            } else if (freshResult.stdout.trim()) {
+              tracker.record(cesarEngineId, { prompt: input, response: freshResult.stdout.trim() });
+            }
+            assertExecutionAvailable();
+            const refusedResult = refuseAfterCleanupFailure();
+            if (refusedResult) return refusedResult;
             dispatch({ type: 'spinner-stop' });
             if (freshResult.stdout.trim()) {
               dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: freshResult.stdout.trim() });
               appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: freshResult.stdout.trim(), timestamp: new Date().toISOString() });
-              if (freshResult.usage && freshResult.usage.totalTokens > 0) {
-                tracker.record(cesarEngineId, { usage: freshResult.usage });
-              } else {
-                tracker.record(cesarEngineId, { prompt: input, response: freshResult.stdout.trim() });
-              }
               return { turnId: _turnId, terminalState: 'completed', delegated: false, responded: true };
             }
             // Empty stdout — persist the user turn idempotently so the next
@@ -822,10 +889,15 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             _turnTerminalState = 'failed';
             return { turnId: _turnId, terminalState: 'failed', delegated: false, responded: false };
           } catch { /* truly failed */ }
+          assertExecutionAvailable();
+          const refusedFallback = refuseAfterCleanupFailure();
+          if (refusedFallback) return refusedFallback;
           dispatch({ type: 'spinner-stop' });
           _turnTerminalState = 'failed';
           return { turnId: _turnId, terminalState: 'failed', delegated: false, responded: false };
         }
+        const _refusedSession = refuseAfterCleanupFailure(session);
+        if (_refusedSession) return _refusedSession;
 
         // Per-response lease binding: every model round-trip (session.send) must
         // carry a FRESH responseSeq so a mutation tool dispatched by a superseded
@@ -857,7 +929,27 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         // a consumer that `break`s still closes the inner generator via the normal
         // for-await return path. A source-level test asserts session.send is called
         // in exactly one place so a new raw send site cannot bypass this.
+        // Every provider send funnels through here, so this is the one mid-turn
+        // cleanup boundary: a judge or handoff can fail a session while the turn
+        // streams. Abort first so each send site unwinds as a cancellation.
+        const toolExecutionRefusal = captureToolRefusal(ctx);
+        const _refuseSendAfterCleanupFailure = (): void => {
+          if (!refuseAfterCleanupFailure(session)) return;
+          abort.abort();
+          throw new Error(SESSION_CLEANUP_FAILURE_MESSAGE);
+        };
+        const assertSendAvailable = (): void => {
+          assertExecutionAvailable();
+          _refuseSendAfterCleanupFailure();
+          const refusal = toolExecutionRefusal();
+          if (refusal !== undefined) {
+            const error = new Error(refusal);
+            abort.abort(error);
+            throw error;
+          }
+        };
         const _cesarSend = (opts: any) => {
+          assertSendAvailable();
           const _inner = session.send({
             gateMatchers: _gate.matchers,
             shouldYield: () => hasPendingSteering(_turnId),
@@ -865,10 +957,14 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             controlPlane: nextCesarResponseSeq(_turnRuntime),
           });
           const _wrapped = async function* () {
+            assertSendAvailable();
             for await (const chunk of _inner) {
+              assertSendAvailable();
               _noteDoneChunk(chunk);
               yield chunk;
+              assertSendAvailable();
             }
+            assertSendAvailable();
           };
           return _wrapped();
         };
@@ -1275,6 +1371,14 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                   input: reqArgs,
                 });
               };
+              const denyInactiveMcpPermission = (): boolean => {
+                const reason = toolExecutionRefusal();
+                if (reason === undefined) return false;
+                logMcpApproval('blocked', 'mcp.turn-authority', reason);
+                writeFileSync(respPath, JSON.stringify({ type: 'permission-response', id: req.id, approved: false, reason }));
+                return true;
+              };
+              if (denyInactiveMcpPermission()) continue;
               // Unified resolver decision — same seam as the native preflight and
               // buildOnApproval: deny-all kill switch first, then CC-parity rules
               // (deny always wins, F2/F3-hardened), the turn's task lease, allow
@@ -1339,6 +1443,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                 catch { /* diff is best-effort — fall back to command preview */ }
               }
               dispatch({ type: 'permission-ask', tool: req.tool, command: askCommand, reason: askReason, diffPreview: permDiffPreview && Array.isArray(permDiffPreview.files) ? permDiffPreview : undefined, fallbackNote: permDiffPreview && typeof permDiffPreview.fallback === 'string' ? permDiffPreview.fallback : undefined, resolve: (approved: boolean | string) => {
+                if (denyInactiveMcpPermission()) return;
                 const wasApproved = isApprovedPermissionResponse(approved);
                 logMcpApproval(wasApproved ? 'approved' : 'denied', 'mcp.user-prompt', wasApproved ? 'user approved' : 'user denied');
                 // Rule persistence for Always/Never is owned by the permission
@@ -1375,6 +1480,17 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         }, 2_000);
 
         // ── Stream response ──
+        const refuseStreamAfterCleanupFailure = (): CesarTurnOutcome | null => {
+          const refused = refuseAfterCleanupFailure(session);
+          if (refused && (streaming || previewShown)) {
+            // Finish already-visible text or discard a preview-only pane. Never
+            // render the failed chunk or persist a completed engine answer.
+            dispatch({ type: 'streaming-end', engineId: cesarEngineId });
+            streaming = false;
+            previewShown = false;
+          }
+          return refused;
+        };
         try {
           const sendOptions: any = { message: enrichedInput, signal: abort.signal, images: images?.map(img => img.path) };
           if (cesarFastPath) {
@@ -1384,6 +1500,8 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           const gen = _cesarSend(sendOptions);
 
           for await (const chunk of gen) {
+            const refusedChunk = refuseStreamAfterCleanupFailure();
+            if (refusedChunk) return refusedChunk;
             if (abort.signal.aborted) break;
 
             if (chunk.type === 'preview') {
@@ -1500,7 +1618,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                 const eagerMeta = withEagerToolCallId(meta, fallbackId);
                 if (!claimEagerToolExecution(_claimedEagerToolCallIds, eagerMeta.toolCallId)) continue;
                 dispatchToolCall({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'running' } as any, { toolCallId: eagerMeta.toolCallId as string, eager: true });
-                if (!eagerToolCtx) eagerToolCtx = createEagerToolContext(ctx, config, abort.signal, dispatch);
+                if (!eagerToolCtx) eagerToolCtx = createEagerToolContext(ctx, config, abort.signal, dispatch, toolExecutionRefusal);
                 const eagerPromise = executeEagerTool(toolName, eagerMeta, toolRegistry, eagerToolCtx, dispatch, cesarEngineId);
                 eagerPromises.push(fallbackKey
                   ? eagerPromise.finally(() => {
@@ -1686,6 +1804,8 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               }
             }
           }
+          const refusedStreamEnd = refuseStreamAfterCleanupFailure();
+          if (refusedStreamEnd) return refusedStreamEnd;
           // Flush any leading text the preamble stripper is still holding (a marker
           // that never saw its terminating newline before stream end). Route the
           // flushed remainder through the same downstream stripper the live path
@@ -1718,6 +1838,8 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             }
           }
           } catch (err) {
+            const refusedStreamError = refuseStreamAfterCleanupFailure();
+            if (refusedStreamError) return refusedStreamError;
             dispatch({ type: 'spinner-stop' });
             console.error(`[cesar:claude] send error: ${(err as Error).message ?? err}`);
             // Some adapters reject their stream with an AbortError instead of
@@ -1809,7 +1931,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                 if (shouldRunEagerRepairTool(toolName, meta, failedTools, repairUsed)) {
                   repairUsed.push(toolName);
                   dispatch({ type: 'spinner-update', message: `Cesar: retrying ${toolName} with corrected input…` });
-                  if (!eagerToolCtx) eagerToolCtx = createEagerToolContext(ctx, config, abort.signal, dispatch);
+                  if (!eagerToolCtx) eagerToolCtx = createEagerToolContext(ctx, config, abort.signal, dispatch, toolExecutionRefusal);
                   repairResults.push(await executeEagerTool(toolName, meta, toolRegistry, eagerToolCtx, dispatch, cesarEngineId));
                   continue;
                 }
@@ -2035,7 +2157,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             reason: taskActionApprovalMessage(evaluation),
             diffPreview: diffPreview && Array.isArray(diffPreview.files) ? diffPreview : undefined,
             fallbackNote: diffPreview && typeof diffPreview.fallback === 'string' ? diffPreview.fallback : undefined,
-            resolve: (approved: boolean | string) => resolve(isApprovedPermissionResponse(approved)),
+            resolve: (approved: boolean | string) => resolve(toolExecutionRefusal() === undefined && isApprovedPermissionResponse(approved)),
           } as any);
         });
         const authorizeXmlTaskAction = async (tool: string, args: Record<string, unknown>): Promise<boolean | string> => {
@@ -2051,6 +2173,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         };
         const toolCtx: ToolContext = {
               cwd, readFileState: (fileStateCache as any).cache, abortSignal: abort.signal,
+              executionRefusal: toolExecutionRefusal,
               permissionMode: (config as any).permissionMode ?? 'ask', explorationMode,
               allowedCommands: (config as any).allowedCommands ?? [], toolPermissions: (config as any).toolPermissions ?? {},
               onProgress: (msg: string) => dispatch({ type: 'spinner-update', message: `Cesar: ${msg}` }),
@@ -2090,7 +2213,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           return new Promise<boolean>((resolve) => {
             let command = '';
             try { command = renderToolPermissionCommand(tool, args); } catch { command = lastInput; }
-            dispatch({ type: 'permission-ask', tool, command, reason: message, resolve: (approved: boolean | string) => resolve(isApprovedPermissionResponse(approved)) } as any);
+            dispatch({ type: 'permission-ask', tool, command, reason: message, resolve: (approved: boolean | string) => resolve(toolExecutionRefusal() === undefined && isApprovedPermissionResponse(approved)) } as any);
           });
         };
         const xmlToolBridge = createStreamBridge(dispatch as (event: Record<string,unknown>) => void, { initialEngineId: cesarEngineId });
@@ -3486,85 +3609,16 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           const _runInteractiveChoice = async (answer: string, message?: string, echoLabel?: string) => {
             if (echoLabel) _echoChoice(echoLabel);
             dispatch({ type: 'spinner-start', message: `${cesarEngineId} continuing…`, color });
-            // The follow-up is a fresh stream — it needs its own display strippers
-            // so a [TODOS]/[ASK] block emitted mid-follow-up never leaks raw into
-            // the transcript (the bug: a pretty-printed [ASK] JSON wall on screen).
-            const stripFollowUpTodos = createTodosDisplayStripper();
-            const stripFollowUpAsk = createAskDisplayStripper();
-            // ── Live follow-up streaming ──
-            // The follow-up used to render only after the whole send completed, so a
-            // long continuation looked frozen. Forward text chunks the way the main
-            // stream does (streaming-chunk → streaming-end commits the block), with
-            // the same XML-markup gate so a follow-up that answers with tool markup
-            // never leaks raw <tool …> into the pane. `_fuStreamedText` records what
-            // was streamed so the completion callback renders it exactly once.
-            let _fuSuppressXml = false;
-            let _fuHold = '';
-            let _fuStreaming = false;
+            // Display state is shared by live chunks and the completion sink.
+            // Capture and de-duplication stay here; display never executes tools.
             let _fuStreamedText = '';
-            // Tool-markup detection runs on the follow-up stream REGARDLESS of
-            // ctx.cesar.hasNativeTools — deliberately unlike the main turn stream.
-            // runCesarConfirmationFollowUp exists precisely because "a Yes or option
-            // follow-up can return XML tool calls even when the original turn used
-            // native tools": it re-parses the follow-up text with parseToolCalls on
-            // every session and routes a hit into the tool loop. Gating the DISPLAY
-            // on hasNativeTools would therefore stream (and, via streaming-end,
-            // COMMIT) as prose exactly the text the executor is about to treat as a
-            // tool call. Same predicate on both sides, one rule.
-            let _fuToolTail = '';
-            let _fuScanPending = false;
-            let _fuRaw = '';
-            const _fuDisplayChunk = (chunkText: string, force = false): string => {
-              if (_fuSuppressXml) { _fuHold = ''; return ''; }
-              const combined = _fuHold + chunkText;
-              const split = splitBeforeToolMarkup(combined);
-              if (split.hasToolMarkup) { _fuSuppressXml = true; _fuHold = ''; return split.visible; }
-              // The marker split above covers the XML forms and [TOOL_CALLS], and it
-              // releases the prose that precedes them — so it must be consulted
-              // FIRST. What it does not cover (Gemini print(default_api…), Functionary
-              // >>>name, Cohere Action fences) is caught here by the executor's own
-              // predicate over the accumulated RAW text. A hit is unsplittable (the
-              // formats carry no leading open marker to slice on), so the held tail
-              // goes with it: at most XML_TOOL_MARKUP_HOLD_CHARS of prose is lost,
-              // against streaming and committing a whole tool call as an answer.
-              if (_fuScanPending) {
-                _fuScanPending = false;
-                if (textHasToolCalls(_fuRaw)) { _fuSuppressXml = true; _fuHold = ''; return ''; }
-              }
-              if (force) { _fuHold = ''; return combined; }
-              const hold = Math.min(XML_TOOL_MARKUP_HOLD_CHARS, combined.length);
-              const visible = combined.slice(0, combined.length - hold);
-              _fuHold = combined.slice(combined.length - hold);
-              return visible;
-            };
-            // Strip the block markers FIRST (they are chunk-stateful and hold back a
-            // partial marker), then apply the tool-markup gate to what is left — so
-            // a [TODOS]/[ASK] block never trips XML suppression and silences the
-            // prose around it, while real <tool …> markup still suppresses display.
-            const _fuEmit = (raw: string, force = false) => {
-              _fuRaw += raw;
-              // Cheap per-chunk gate before the full-buffer parse, exactly as the main
-              // stream does it (chunkMayCompleteToolCall): a tool call can only have
-              // COMPLETED when the arriving text carries a close-marker terminator, so
-              // a long follow-up never pays an O(n) scan per chunk. Latched here — not
-              // inside the display gate — so a chunk swallowed whole by the [TODOS]/[ASK]
-              // stripper still advances the carry-over tail and still arms the scan.
-              const toolGate = chunkMayCompleteToolCall(_fuToolTail, raw);
-              _fuToolTail = toolGate.tail;
-              if (toolGate.scan) _fuScanPending = true;
-              const stripped = stripFollowUpAsk(stripFollowUpTodos(raw, force), force);
-              if (!stripped) return;
-              const visible = _fuDisplayChunk(stripped, force);
-              if (!visible) return;
-              _fuStreaming = true;
-              dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: visible });
-            };
-            const _fuEndStream = () => {
-              _fuEmit('', true);
-              if (_fuStreaming) {
-                dispatch({ type: 'streaming-end', engineId: cesarEngineId });
-                _fuStreaming = false;
-              }
+            const followUpDisplay = createFollowUpDisplay({
+              onChunk: (chunk) => dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk }),
+              onEnd: () => dispatch({ type: 'streaming-end', engineId: cesarEngineId }),
+            });
+            const _fuEndStream = () => followUpDisplay.end({ flush: !hasCleanupFailure(session) });
+            const assertFollowUpHealthy = () => {
+              if (hasCleanupFailure(session)) throw new Error(SESSION_CLEANUP_FAILURE_MESSAGE);
             };
             try {
               const followUp = await runCesarConfirmationFollowUp({
@@ -3575,17 +3629,19 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                   let streamError = '';
                   const gen = _cesarSend({ message: nextMessage, signal: abort.signal });
                   for await (const chunk of gen) {
+                    assertFollowUpHealthy();
                     if (abort.signal.aborted) break;
                     if (forwardContinuationStatus(chunk, dispatch)) continue;
                     if (_forwardContinuationToolCall(chunk)) continue;
                     if (chunk.type === 'text') {
                       text += chunk.content;
                       // Render as it arrives instead of after the whole send.
-                      _fuEmit(chunk.content);
+                      followUpDisplay.push(chunk.content);
                     }
                     if (chunk.type === 'error') streamError = String(chunk.content ?? 'Cesar follow-up stream failed.');
                     if (chunk.type === 'done' || chunk.type === 'error') break;
                   }
+                  assertFollowUpHealthy();
                   _fuEndStream();
                   _fuStreamedText = text;
                   return streamError ? { text, error: streamError } : text;
@@ -3594,6 +3650,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                   const _followUpOpts = _buildContToolLoopOpts();
                   const toolResult = await runToolLoop(
                     async (nextMessage: string) => {
+                      assertFollowUpHealthy();
                       if (ctx.cesar!.pendingDelegation || !session.alive || abort.signal.aborted) return '';
                       let next = '';
                       const gen = _cesarSend({
@@ -3603,6 +3660,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                         toolLoopMaxBudget: cesarFastPath ? fastPathMaxBudget : undefined,
                       });
                       for await (const chunk of gen) {
+                        assertFollowUpHealthy();
                         if (forwardContinuationStatus(chunk, dispatch)) continue;
                         if (_forwardContinuationToolCall(chunk)) continue;
                         const chunkType = String((chunk as any).type);
@@ -3612,6 +3670,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                         }
                         if (chunkType === 'done' || chunkType === 'error') break;
                       }
+                      assertFollowUpHealthy();
                       return next.trim();
                     },
                     toolResponse,
@@ -3631,10 +3690,11 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                   // already render — otherwise the follow-up appears twice.
                   const captured = extractAsk(emitLiveTodos(text));
                   if (_fuStreamedText && String(text ?? '').trim() === _fuStreamedText.trim()) return;
-                  const visible = stripFollowUpAsk(stripFollowUpTodos(captured));
+                  const visible = followUpDisplay.stripMarkers(captured);
                   if (visible) dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: visible });
                 },
                 onExchange: (nextMessage: string, exchange: any) => {
+                  assertFollowUpHealthy();
                   appendMessage(ctx.chatSession, { role: 'user', content: nextMessage, timestamp: hostNowIso() });
                   if (exchange.content) {
                     appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: exchange.content, timestamp: hostNowIso() });
@@ -3644,7 +3704,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               });
               // Stream-end flush: release any held partial-marker tail so display
               // text is never silently dropped (mirrors the main path's force flush).
-              const heldTail = stripFollowUpAsk(stripFollowUpTodos('', true), true).trim();
+              const heldTail = followUpDisplay.stripMarkers('', true).trim();
               if (heldTail) dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: heldTail });
               _toolCallTurns += Number.isFinite(followUp.turns) ? followUp.turns : 0;
               if (followUp.content) {
@@ -3665,7 +3725,11 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                     ? 'Cesar executed the follow-up tools but produced no final result; the turn is incomplete.'
                     : 'Cesar accepted the choice but produced no follow-up result; the turn is incomplete.' });
               }
-              return followUp;
+              return null;
+            } catch (err) {
+              const refused = refuseAfterCleanupFailure(session);
+              if (refused) return refused;
+              throw err;
             } finally {
               // End-of-stream is guaranteed on EVERY exit, not just the happy path:
               // when _cesarSend rejects mid-iteration (adapter error, an AbortError
@@ -3674,7 +3738,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               // never committed, spinner-less ghost block never cleared. This is the
               // same "hoist cleanup into the exit path that always runs" shape the
               // main stream uses (its catch/stream-cleanup block). Idempotent: after
-              // a normal end the strippers are flushed and _fuStreaming is false, so
+              // a normal end the strippers are flushed and the stream is closed, so
               // the second call dispatches nothing.
               _fuEndStream();
               dispatch({ type: 'spinner-stop' });
@@ -3730,6 +3794,8 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             const picked = String(await hostWaitForInteractiveChoice(abort.signal, (resolve) => {
               dispatch({ type: 'question', prompt: `${cesarEngineId} asks: ${_ask.question}`, choices: _askChoices, resolve } as any);
             })).toLowerCase();
+            const refusedChoice = refuseAfterCleanupFailure(session);
+            if (refusedChoice) return refusedChoice;
             // '__other:<text>' routes the typed answer as a fresh user turn via
             // handleSubmit (app.kern); Esc resolves 'n'/'' — both leave chosen null.
             const _chosenIdx = _askChoices.findIndex((c) => c.key === picked);
@@ -3747,7 +3813,8 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               _noteChoiceNotContinued(chosen.label);
             }
             if (chosen && session.alive && !abort.signal.aborted) {
-              await _runInteractiveChoice(picked, `Answer to your question "${_ask.question}": ${chosen.label}${chosen.description ? ` (${chosen.description})` : ''}. Continue with this choice.`, chosen.label);
+              const refusedFollowUp = await _runInteractiveChoice(picked, `Answer to your question "${_ask.question}": ${chosen.label}${chosen.description ? ` (${chosen.description})` : ''}. Continue with this choice.`, chosen.label);
+              if (refusedFollowUp) return refusedFollowUp;
               if (interactivePlanControl?.error) console.warn(`[agon] Interactive plan control failed: ${interactivePlanControl.error}`);
               if (interactivePlanControl?.planProposed) {
                 return { mode: 'self', delegated: false, responded: true, decisionReason: 'plan-proposed', ...buildToolTelemetry() };
@@ -3771,6 +3838,8 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             const picked = String(await hostWaitForInteractiveChoice(abort.signal, (resolve) => {
               dispatch({ type: 'question', prompt: `${cesarEngineId} — pick one (Esc to decide later):`, choices: _choices, resolve } as any);
             })).toLowerCase();
+            const refusedChoice = refuseAfterCleanupFailure(session);
+            if (refusedChoice) return refusedChoice;
             const chosen = _forkOptions.find((o) => o.key === picked);
             if (!chosen && !picked.startsWith('__other:') && !abort.signal.aborted) {
               // Esc / decide-later: same never-lose fallback the [ASK] branch has —
@@ -3782,7 +3851,8 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               _noteChoiceNotContinued(`${chosen.key.toUpperCase()}) ${chosen.label}`);
             }
             if (chosen && session.alive && !abort.signal.aborted) {
-              await _runInteractiveChoice(picked, `Go with option ${chosen.key.toUpperCase()}: ${chosen.full}. Proceed and finish it.`, `${chosen.key.toUpperCase()}) ${chosen.label}`);
+              const refusedFollowUp = await _runInteractiveChoice(picked, `Go with option ${chosen.key.toUpperCase()}: ${chosen.full}. Proceed and finish it.`, `${chosen.key.toUpperCase()}) ${chosen.label}`);
+              if (refusedFollowUp) return refusedFollowUp;
               if (interactivePlanControl?.error) console.warn(`[agon] Interactive plan control failed: ${interactivePlanControl.error}`);
               if (interactivePlanControl?.planProposed) {
                 return { mode: 'self', delegated: false, responded: true, decisionReason: 'plan-proposed', ...buildToolTelemetry() };
@@ -3808,6 +3878,8 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               ], resolve } as any);
             });
             const _confirmAnswer = String(answer ?? '');
+            const refusedChoice = refuseAfterCleanupFailure(session);
+            if (refusedChoice) return refusedChoice;
             if (_confirmAnswer !== 'y' && !_confirmAnswer.startsWith('__other:') && !abort.signal.aborted) {
               // No / Esc: keep the question findable instead of dropping it — the
               // same never-lose fallback the [ASK] branch has.
@@ -3817,7 +3889,8 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               _noteChoiceNotContinued('Yes');
             }
             if (answer === 'y' && session.alive && !abort.signal.aborted) {
-              await _runInteractiveChoice(answer, undefined, 'Yes');
+              const refusedFollowUp = await _runInteractiveChoice(answer, undefined, 'Yes');
+              if (refusedFollowUp) return refusedFollowUp;
               if (interactivePlanControl?.error) console.warn(`[agon] Interactive plan control failed: ${interactivePlanControl.error}`);
               if (interactivePlanControl?.planProposed) {
                 return { mode: 'self', delegated: false, responded: true, decisionReason: 'plan-proposed', ...buildToolTelemetry() };
@@ -3925,7 +3998,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           // Clear them before an idle/late callback can observe stale authority or
           // dispatch into a completed turn; a queued successor installs fresh ones.
           releaseCesarTurnHandles(ctx.cesar!);
-          ctx.setActiveAbort(null);
+          if (ownsActiveAbort) ctx.setActiveAbort(null);
 
           // Release the steering channel for this turn. On a NORMAL end the marker
           // is cleared but any unconsumed steering stays buffered for the app-side
@@ -3942,9 +4015,14 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           if (queued) {
             ctx.cesar!.queue = null;
             setTimeout(() => {
-              handleCesarBrain(queued.input, queued.dispatch, ctx, queued.images).catch((err: any) => {
+              void Promise.resolve().then(() => {
+                assertHostCurrent();
+                return handleCesarBrain(queued.input, queued.dispatch, ctx, queued.images);
+              }).catch((err: any) => {
                 console.error(`[cesar:queue] drain failed: ${err.message ?? err}`);
-                ctx.cesar!.busy = false;
+                // A stale callback must not reset a replacement host or turn.
+                try { assertHostCurrent(); } catch { return; }
+                if (!ctx.cesar!.turnId) ctx.cesar!.busy = false;
               });
             }, _wasInterrupted ? 0 : 100);
           }

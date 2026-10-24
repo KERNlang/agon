@@ -1,6 +1,6 @@
 import { defineCommand } from 'citty';
 
-import { agonShim, codexSkillMarkdown, codexSkillOpenAiYaml } from './agent-guide-text.js';
+import { agonShim, codexSkillMarkdown, codexSkillOpenAiYaml } from '@kernlang/agon-mod-routing-docs';
 
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 

@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 1,
+  "entries": [
+    {
+      "id": "KL-001",
+      "target": "packages/cli/src/lazy-commands.ts static mode imports/map",
+      "replacement": "resolver-built command registry",
+      "phase": "surface-cutover"
+    },
+    {
+      "id": "KL-002",
+      "target": "packages/core/src/blocks/builtin-commands.ts monolithic builtins array",
+      "replacement": "kernel commands plus manifest contributions",
+      "phase": "surface-cutover"
+    },
+    {
+      "id": "KL-003",
+      "target": "packages/cli/src/signals/intent.ts monolithic slash switch",
+      "replacement": "registry-owned parsers with kernel fallback",
+      "phase": "surface-cutover"
+    },
+    {
+      "id": "KL-004",
+      "target": "packages/cli/src/cesar/tools.ts hard-coded registry",
+      "replacement": "capability registry assembled from resolved mods",
+      "phase": "runtime-cutover"
+    },
+    {
+      "id": "KL-005",
+      "target": "packages/mcp/src/agon-orchestration.ts static tool arrays and dispatch switch",
+      "replacement": "MCP projection of resolved capabilities",
+      "phase": "surface-cutover"
+    },
+    {
+      "id": "KL-006",
+      "target": "packages/core/src/blocks/extension-loader.ts legacy extension discovery/last-wins registration",
+      "replacement": "trusted deterministic mod resolver",
+      "phase": "resolver-cutover"
+    },
+    {
+      "id": "KL-007",
+      "target": "packages/cli/tsup.config.ts feature chunks and duplicated engine copies",
+      "replacement": "kernel bundle plus physical first-party mod packages",
+      "phase": "packaging-cutover"
+    },
+    {
+      "id": "KL-008",
+      "target": "root postinstall patch-package and optional Python install side effects",
+      "replacement": "explicit transactional setup actions with receipts",
+      "phase": "install-cutover"
+    },
+    {
+      "id": "KL-009",
+      "target": "global updater npm install -g in active process",
+      "replacement": "candidate-prefix qualification and atomic promotion",
+      "phase": "update-cutover"
+    },
+    {
+      "id": "KL-010",
+      "target": "project .agon.json activation semantics",
+      "replacement": "user-global activation; project settings-only validation",
+      "phase": "config-cutover"
+    },
+    {
+      "id": "KL-011",
+      "target": "independent CLI/TUI/MCP/Cesar command catalogs",
+      "replacement": "one manifest capability projected to every surface",
+      "phase": "surface-cutover"
+    },
+    {
+      "id": "KL-012",
+      "target": "ambiguous pipeline name (MCP brainstorm→forge→tribunal vs TUI build→review→fix)",
+      "replacement": "separate stable workflow ids with compatibility aliases per surface",
+      "phase": "workflow-cutover"
+    },
+    {
+      "id": "KL-013",
+      "target": "unversioned persisted mode-specific result shapes",
+      "replacement": "versioned plan/result/session envelopes with migrations",
+      "phase": "state-cutover"
+    },
+    {
+      "id": "KL-014",
+      "target": "implicit hook permissions and fail-open extension loading",
+      "replacement": "declared capabilities, grants, trust records, and journaled activation",
+      "phase": "security-cutover"
+    },
+    {
+      "id": "KL-015",
+      "target": "generated docs maintained from separate source lists",
+      "replacement": "resolved manifest catalog generator with handwritten-region preservation",
+      "phase": "docs-cutover"
+    }
+  ]
+}

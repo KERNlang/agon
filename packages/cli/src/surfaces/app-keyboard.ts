@@ -42,7 +42,7 @@ export interface CancelOrExitDeps {
 }
 
 export function runHandleCancelOrExit(opts: CancelOrExitDeps): void {
-  if (opts.questionState) { opts.questionState.resolve(''); opts.setQuestionState(null); opts.setQuestionAnswer(''); opts.setSelectedChoiceIndex(0); opts.setQuestionOtherActive(false); }
+  if (opts.questionState) { opts.questionState.resolve('n'); opts.setQuestionState(null); opts.setQuestionAnswer(''); opts.setSelectedChoiceIndex(0); opts.setQuestionOtherActive(false); }
   if (opts.replState !== 'idle') {
     opts.interruptActiveRun(opts.activeAbortRef.current ? 'Cancelled.' : 'Interrupted.', false);
     return;
@@ -498,7 +498,7 @@ export function runHandleKeyboardInput(opts: KeyboardInputDeps, input: string, k
     case 'closeEnginePicker':
       opts.setEnginePickerOpen(false); return;
     case 'cancelQuestion':
-      if (opts.questionState) { opts.questionState.resolve(''); opts.setQuestionState(null); opts.setQuestionAnswer(''); }
+      if (opts.questionState) { opts.questionState.resolve('n'); opts.setQuestionState(null); opts.setQuestionAnswer(''); }
       return;
     case 'interrupt':
       opts.interruptActiveRun('Interrupted.', false); return;

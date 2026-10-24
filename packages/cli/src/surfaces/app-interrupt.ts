@@ -1,4 +1,6 @@
 import { saveCesarPlan, cancelCesarPlan } from '@kernlang/agon-core';
+import { revokePlanFallback } from '../signals/plan-fallback.js';
+import type { QueuedInput } from '../signals/queued-input.js';
 
 import type { PersistentSession } from '@kernlang/agon-core';
 
@@ -30,7 +32,8 @@ export const _lastSigintAt: { value: number } = { value: 0 };
 
 export const _pauseState: { value: PauseState | null } = { value: null };
 
-export function runTrackAbort(abort: AbortController | null, activeAbortRef: {current: AbortController | null}, setActiveAbort: (abort:AbortController | null) => void): void {
+export function runTrackAbort(abort: AbortController | null, activeAbortRef: {current: AbortController | null}, setActiveAbort: (abort:AbortController | null) => void, expectedOwner?: AbortController): void {
+  if (expectedOwner && activeAbortRef.current !== expectedOwner) return;
   if (activeAbortRef.current) {
     _activeAborts.delete(activeAbortRef.current);
   }
@@ -71,7 +74,7 @@ export interface InterruptRunDeps {
   pendingBellRef: {current: boolean};
   bell: () => void;
   setWindowTitle: (title:string) => void;
-  setInputQueue: (updater:(prev:string[]) => string[]) => void;
+  setInputQueue: (updater:(prev:QueuedInput[]) => QueuedInput[]) => void;
 }
 
 export function cancelLatestRunningJob(jobManager: JobManager, reason?: string): Job|null {
@@ -82,6 +85,7 @@ export function cancelLatestRunningJob(jobManager: JobManager, reason?: string):
 }
 
 export function runInterruptActiveRun(opts: InterruptRunDeps, message: string, clearChat: boolean): void {
+  opts.setInputQueue(prev => prev.filter(entry => typeof entry === 'string'));
   const abort = opts.activeAbortRef.current;
   const foregroundTurn = opts.activeTurnRef.current;
   let interruptedInput = String(foregroundTurn?.input ?? '').trim();
@@ -93,6 +97,7 @@ export function runInterruptActiveRun(opts: InterruptRunDeps, message: string, c
     transitionCesarTurn(opts.cesarRuntimeHost, activeRuntime.envelope, 'cancelling');
   }
   if (abort) {
+    revokePlanFallback(abort.signal);
     abort.abort();
   } else if (opts.replState === 'idle') {
     interruptedJob = cancelLatestRunningJob(opts.jobManager, 'Interrupted by user');
@@ -136,7 +141,7 @@ export function runInterruptActiveRun(opts: InterruptRunDeps, message: string, c
     const raw = leftover
       .map((msg) => String(msg.input ?? ''))
       .filter((text) => !!text.trim());
-    if (raw.length > 0) opts.setInputQueue((prev: string[]) => [...prev, ...raw]);
+    if (raw.length > 0) opts.setInputQueue((prev: QueuedInput[]) => [...prev, ...raw]);
   }
   // Drop any remaining unconsumed steering state (count mirror zeroes → the
   // "Queued (N)" hint clears). Drafts are untouched — a half-typed draft is
@@ -191,6 +196,7 @@ export function runInterruptActiveRun(opts: InterruptRunDeps, message: string, c
  * Explicit dependencies for buildCancelCallback — the refs and setState fns the SIGINT hard-cancel callback resets. Distinct from InterruptRunDeps: also clears agent-progress + tool-detail and FINISHES the repl (vs cancel).
  */
 export interface CancelCallbackDeps {
+  setInputQueue: (updater:(prev:QueuedInput[]) => QueuedInput[]) => void;
   activeAbortRef: {current: AbortController | null};
   activePlanRef: {current: any};
   cesarRuntimeHost: any;
@@ -216,11 +222,13 @@ export interface CancelCallbackDeps {
 
 export function buildCancelCallback(opts: CancelCallbackDeps): () => void {
   return () => {
+    opts.setInputQueue(prev => prev.filter(entry => typeof entry === 'string'));
     const activeRuntime = opts.cesarRuntimeHost?.active;
     if (activeRuntime && activeRuntime.state === 'running') {
       transitionCesarTurn(opts.cesarRuntimeHost, activeRuntime.envelope, 'cancelling');
     }
-    for (const abort of _activeAborts) abort.abort();
+    for (const abort of _activeAborts) { revokePlanFallback(abort.signal); abort.abort(); }
+    if (opts.activeAbortRef.current) revokePlanFallback(opts.activeAbortRef.current.signal);
     _activeAborts.clear();
     // Hard cancel also drops any mid-turn steering (no carryover).
     clearSteering();
@@ -267,7 +275,7 @@ export function handleSigint(cesarSessionHolder: {session: PersistentSession | n
   if (_pauseState.value?.active) {
     // Second Ctrl+C during pause — hard cancel
     _pauseState.value = dismissPauseState();
-    for (const abort of _activeAborts) abort.abort();
+    for (const abort of _activeAborts) { revokePlanFallback(abort.signal); abort.abort(); }
     _activeAborts.clear();
     _lastSigintAt.value = now;
     if (_cancelCallback.fn) _cancelCallback.fn();

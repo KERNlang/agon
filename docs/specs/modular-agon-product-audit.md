@@ -1,0 +1,3739 @@
+# Installed-product audit and repair ledger
+
+## Synthesis development-base repairs — 2026-10-24
+
+Immediate operator checkpoint: merge-ready development base, not release
+acceptance. The full roadmap remains required after Nico merges and work moves
+to a new branch. This entry does not authorize a merge or installation.
+
+The physical Synthesis command now shares its winner/score parser with the
+legacy runtime through mod-synthesis. Entry labels, engine IDs, markdown and
+terminal punctuation select the intended winner. Forge retains compatibility
+exports; the parser has one implementation owner.
+
+Cancellation propagates through physical discovery/dispatch/receipts and legacy
+draft/swap/judge dispatch. Session cancellation clears progress but does not
+publish late results, history or telemetry. The fallback session route rejects
+disabled Synthesis before creating a job and checks its captured generation
+before execution and after completion.
+
+The isolated Agon/Codex review found four confirmed defects: missing cancellation
+after discovery, skipped progress cleanup, punctuation around markdown winner
+labels, and swallowed legacy dispatch cancellation. All have reproduced failing
+tests and passing regressions. Review log SHA-256:
+`9df8ac63382106cdb1a93b42dc69366b3ea8d2914b1269f99856981aa1c96f5c`.
+
+Full gate `synthesis-reviewed-full-gate` failed: 11,433 tests passed, one failed,
+six skipped. Its metadata regeneration test correctly detected missing Synthesis
+exports in the package generator. The generator now retains both exports and the
+parser declaration asset. `synthesis-generator-repair` passed the unchanged
+23-test package-graph suite. Full gate log SHA-256:
+`ec6598fc8a7f1d97c3b34c85c98b4867d1a6ececb7213dd4137d96e8ac32725f`.
+
+Native probes exposed a separate disabled fallback defect: even with Synthesis
+disabled, a legacy-shaped intent started a job and attempted engine dispatch.
+`synthesis-native-dev-base-v2` records that failure. The first session probe
+timed out because its fixture had not selected its local-only engine roster;
+explicit isolated configuration corrected the probe. No external provider was
+launched. The first stale-generation unit fixture was incomplete; corrected
+`synthesis-fallback-guard-red-v2` proves both invalid cases resolved normally
+before the production guard was added.
+
+`synthesis-fallback-guard-green` passed 48 focused tests, typecheck, diff check,
+and nine native subprocess cases: CLI entry/markdown winners, disabled CLI,
+failed drafts, MCP winner/cancellation, generated session winner, disabled
+generated session, and disabled fallback session. Local fixture engines only;
+zero external providers. Log SHA-256:
+`a62dcd17f87044380b99a816cc2d44eaf341114af365fb591e61a519d19364e3`.
+These session checks exercise dispatch and job completion, not terminal rendering.
+
+Final gate `synthesis-reviewed-full-gate-v3` passed in 981.961 seconds:
+11,436 tests passed, six skipped (682 files passed, one skipped), build,
+catalog/release/SBOM checks, types, lint, re-export guard and diff check, then
+nine native subprocess probes. Zero external providers. Log SHA-256:
+`f4264aecc93425801ee194a19d2fdf90ac56a4f6195462884388bf23352695f1`.
+The earlier v2 build passed but catalog drift failed before tests; regeneration
+corrected the manifest hash without weakening its check. Both failed gates are
+retained in the 52-file Synthesis evidence supplement linked from the handoff.
+
+Still open: upstream-main integration, clean committed development-base qualification,
+Synthesis runtime/session ownership and swap/output parity. Physical ring swaps
+and legacy paired swaps remain different. These parser/cancellation repairs do
+not prove full Synthesis extraction or release acceptance. Known dependency
+advisories remain recorded; no dependency upgrade is included.
+
+## Council review adjudication — 2026-10-24
+
+All three findings from the isolated Agon/Codex review are source-confirmed and
+repaired. Session roster validation now follows chairman resolution and removes
+duplicates. Exhausted role/critique retries mark an otherwise successful verdict
+degraded. Non-CLI JSON output takes precedence over quiet, including retained
+results when receipt persistence fails. Quiet-only output remains plain text.
+
+Negative controls: `council-session-roster-red`,
+`council-degraded-red-verified`, and `council-json-precedence-red` each fail before
+their corresponding fix. The first degradation probe used a wrong role-prompt
+match; it is retained but superseded by the verified red probe. Historical
+runtime fixtures are unchanged; parity explicitly allows only the demonstrated
+degraded-flag correction and still compares requests, effects and events.
+
+`council-review-fixes-build-native` passed build, types, lint, export guard,
+180 focused tests and 19 native probes (7 session, 6 CLI, 6 nested MCP-host).
+Log SHA-256: `9fa44cb9a36ba3cfaf1bfc8f10f7e95adcd26291eec7d10f444f81de1c438088`.
+`council-review-fixes-native-boundaries-v2` additionally passed external-chair
+session selection and advisor-failure CLI behavior with real fixture processes.
+Log SHA-256: `a71a64324d33aeb146bccf926c3ed8eccb2376dc62b621052228c8807be8793f`.
+Its initial probe lacked the host registry; the corrected fixture uses the real
+isolated registry. No production change was needed for that fixture failure.
+All runs recorded zero external provider launches. These are development probes,
+not installed-candidate acceptance or a terminal-rendering test. Full-suite and
+clean committed-subject qualification were pending at that checkpoint.
+
+Final development gate `council-reviewed-full-qualification` passed in 669.669
+seconds: release-set/SBOM refresh, 11,414 tests passed (6 skipped), followed by
+21 native probes (8 session, 7 CLI, 6 MCP-host) and diff check. Zero providers.
+Log SHA-256: `3f079c05b7983bf9b99fb795dd9ef7ddcfc37dc71595c5c96b18c09012771b6e`.
+This closes the three review findings for the Council increment, not the full
+Modular Agon release. Synthesis migration and final installed acceptance remain.
+
+## Council ownership cutover in progress — 2026-10-24
+
+Council now owns the runtime, CLI presentation and session policy. The CLI binds
+session effects to the original chat, selected generation and job signal. Slash
+and Cesar routes use the same session owner. Legacy CLI command and TUI handler
+are removed. Forge keeps a public compatibility facade, not another algorithm.
+Frozen runtime, command and session source fixtures retain the historical oracle.
+
+Cesar now preserves explicit advisor roles and chairman through handoff. Tests
+cover delegated, recovered and fallback cancellation before and during execution.
+No cancelled result reaches history, result storage or successful telemetry.
+Generated help was missing descriptions; the frozen command contract exposed
+that regression and the mod-owned metadata now preserves the original help.
+
+Latest retirement check: 92 tests, typecheck and export guard passed. Log hash:
+`d667af96dc013012ac26a23ba2481dc5dad2a1aeecb01335c11d878d307314d0`.
+Shared TUI/Cesar session check: 64 tests and typecheck passed. Log hash:
+`ba825f00da3ff46d74ca7f16c279ba1d2addfa74258335e7956b359f2c359d35`.
+All test runs used isolated state and launched zero external providers.
+
+Native session tests exposed a generated-job error handler reporting failed
+Council runs as done. Generated and fallback Council now share the same job
+boundary. Receipt failure preserves a completed verdict and saved run, returns
+typed failure and recovery instructions, and does not record success telemetry.
+
+Fresh local gate: full build, types, lint, export guard and 191 focused tests
+passed. Eighteen native processes passed: seven session, six CLI and five nested
+MCP-host cases. Cancellation terminated the local engine and saved no late result.
+Log hash: `a580f1d100ad18fe608776bd49d7f1e25c43a7bf9c88c28bab150ad7fbfb2182`.
+These are compiled workspace probes, not installed-candidate or terminal-rendering
+qualification. MCP coverage exercises the nested host, not JSON-RPC transport.
+
+Full repository qualification now passes: 11,406 tests passed, six skipped;
+build, typecheck, lint, export guard, catalog and release/SBOM generation passed.
+The preceding run failed four tests: three stale generated Council manifest
+hashes and one Brainstorm isolation fixture with an invalid Council result.
+The catalog was regenerated; the fixture now also proves Council result and
+telemetry ownership. No production oracle was weakened.
+Qualification log hash:
+`28e518f3042fcbb6b86929eda5b4dfe3f2231bc6079ec725bb7dfdac814de8f5`.
+
+After the rebuild, all eighteen native processes passed again. Catalog,
+release-set and SBOM drift checks also passed. Native log hash:
+`eed6b14469c6b1cf4505559d0d3a48b6c73b003f438aefb258f34f8aca4b613c`.
+Both runs launched zero external providers. These are working-tree receipts,
+not clean committed release qualification. npm provenance remains external;
+SBOM checks do not mean known dependency vulnerabilities are resolved.
+
+This is not Council acceptance. Raphael approved the expanded packet and the
+isolated Codex review completed. It raised three hypotheses: effective session
+roster with an external chair, missing degraded status after advisor failures,
+and quiet/JSON precedence outside CLI. Adjudication and confirmed fixes remain
+open. Review log SHA-256:
+`14b9141d087cde5b224f357750430c59cab90318144862ce71e5c242088e2f95`.
+Legacy Forge public compatibility and its Conquer
+binding remain; the current CLI routes do not call that legacy Council facade.
+Final ownership reconciliation must distinguish these bindings from the single
+physical algorithm owner. No release acceptance is claimed.
+
+## Think session ownership — 2026-10-24
+
+Think now owns its session display and persistence policy. The CLI binds that
+policy to the captured chat, generation, timers and existing stores. Generated
+and fallback routes share the existing job/outcome/continuation path. The old
+handler is removed; its byte-exact fixture stays available to clean checkouts.
+
+Independent Codex review identified stale progress cleanup, hidden completed
+results after receipt failure, lost engine diagnostics, and generated jobs that
+swallowed failures. Each finding has a reproduced negative control and local
+repair. Receipt failure keeps the completed chain visible and stored, warns,
+and fails the job without recording successful telemetry. Inactive-critic
+warnings now use the existing command output envelope to reach the transcript.
+
+The first full run was RED: 11,296 passed, one failed, six skipped. Apply's
+negative-owner test caught the Think binding handling another command. The
+binding now requires both the Think owner and command name. No test was weakened.
+After that repair and warning delivery, 34 focused tests, types and lint pass.
+
+Six native compiled-source workflow processes passed: generated and fallback
+success/failure, disabled Think, and pending cancellation. Cancellation kills
+the local fixture engine and stores no late result. The parent verifies the
+interrupted status after host exit. This preserves host-exit finalization; it
+does not claim immediate run-status finalization or terminal rendering coverage.
+All checks use isolated state and launch zero external providers.
+
+Review packet SHA-256: `e68772773d0b0272689b4170ade3d21f551d86ec9df3425337e9caf26ae85c4b`.
+Review log SHA-256: `4d25d27e31730754625b18b712a982ca3de38beb273f72e1accab4b8da859a51`.
+Failed full log SHA-256: `1126c86ebffee3fa30cdcd3429484844eb105cefc4f15c454f87cf6fbe313f7e`.
+Focused log SHA-256: `bf86d730bee354cab5bbd6eb73a2a480908c3b030d29fd38375874f0e4e99324`.
+Native cancellation/finalization log SHA-256: `1305c4758bb409e2a12115739d21ab2373792b8690a0212aa83e6602b2b14c44`.
+
+Fresh full qualification passed in 843.769 seconds: 11,302 tests passed, six
+skipped. Full build, types, lint, export guard, generator checks, offline packs,
+SBOM self-test and migration ledger passed. Five compiled CLI and seven
+compiled-source TUI processes passed, including alias attribution and pending
+cancellation. No external provider launched. Log SHA-256:
+`ffaf72aa528e44a1d6729420934043eb4fce63a824c1d930217af0d3d3f17b5b`.
+This verifies the working-tree slice, not a clean-checkout release candidate.
+Council still has distinct physical and legacy runtime implementations; its
+ownership/parity gap remains open. npm publishing provenance remains external.
+
+## Think runtime and CLI ownership — 2026-10-24
+
+The physical Think package now owns execution, critic dispatch, grounding,
+validation and human/JSON presentation. Legacy Forge exports are narrow public
+compatibility wrappers; the old CLI command is retired. Exact legacy runtime
+and command fixtures remain available to clean checkouts. The new host captures
+engine selection and generation authority and injects the existing adapter and
+run store. No external dependency changed; legacy Forge uses the approved existing
+Think workspace package. Goal's dependency selection is unchanged.
+
+Frozen-source tests compare raw requests, results and warnings across strategies,
+failures, critique, grounding, malformed output and thought caps. Presentation
+tests compare the actual legacy renderer, including quiet-mode extra sections.
+Independent Codex review confirmed three defects, each reproduced before repair:
+buffered failure output was lost, a TUI problem was overwritten, and receipt
+failure suppressed completed results. Receipt failure now preserves the result
+and stored engine outcome but returns a typed command failure with recovery
+instructions. Cancellation/generation tests also exposed stale failure-status
+writes; revoked invocations now stop before later effects.
+
+108 focused tests passed. After declaration and catalog regeneration, 90
+surface/setup tests and five fresh compiled CLI processes passed. Native runs
+exercise JSON, human, quiet, engine failure and disabled Think with local fixture
+engines. Actual argument parsing is compared with the frozen legacy Citty schema.
+All test receipts report zero external provider launches.
+
+Review packet SHA-256: `f7d98d40573fa5577e1d962f768095d5bf3db7930a05cf60becae6c6048f04bb`.
+Review log SHA-256: `c2b9d7c1e2452adfca970dac1265b66824ed07e0c5ff0d3a16fe8db81e2b6c3c`.
+Focused log SHA-256: `e65795d4d3febca4c022f43e69c85a126fd6cf8861c36aef30b07ecd9cd6060c`.
+Setup/native/package log SHA-256: `e6f8cc194971f81ecc39f706a192fca714d854a7011ffea6f36a1e990ab43c44`.
+
+The fresh full run passed: 11,268 tests passed, six skipped. Types, lint,
+re-export guard, generated catalogs, offline release packs, SBOM self-test and
+migration ledger also passed, followed by five fresh compiled CLI processes.
+The complete chain took 675.417 seconds and launched zero external providers.
+Full log SHA-256: `1fee1acebf5780cf6267791af671325e0b17e56faff8717aae0e19ca53b5c7dd`.
+The earlier three catalog-drift failures remain in the durable evidence archive;
+regeneration changed only the two Think owner hashes before this successful run.
+Think's TUI session effects and legacy handler remain a separate ownership gap.
+This entry does not claim whole-release acceptance or completed Think extraction.
+
+## Think result ownership and generator preservation — 2026-10-24
+
+ThinkResult now belongs to Think, not the surrounding legacy Forge package.
+Exactly one of the 872 frozen assignments changed owner. Its occurrence ID and
+source locator stay intact; the 49 packages and 158 dependency edges are unchanged.
+The result reader moved with it, retaining its schema, readable version range,
+JSON rendering and disposal. This does not complete Think runtime extraction.
+
+The first-party package generator had stale templates for existing public exports
+and engine permissions. Regeneration would remove nine files' current content.
+Templates now preserve those exports and permissions. A non-writing generator
+test compares all 257 generated outputs with the current files. Its failing run
+preceded the repair. AST comparison against the prior commit separately confirmed
+unchanged export declarations for six affected packages; Ratings only reordered
+two exports. No new dependency or external package was introduced.
+
+An isolated Codex review reported missing removal from Forge's ownership file.
+That file was omitted from the review packet, but already contained the removal.
+Local checks refuted the finding: both ownership files, manifest byte counts and
+SHA-256 asset hashes agree. The review correctly distinguished generation
+stability from historical API compatibility. Both were checked separately.
+
+Verification: full build, typecheck, lint, re-export guard, offline release packs,
+SBOM and migration ledger pass. All 29 focused tests pass. The first runtime test
+used stale compiled packages and failed; rebuilding resolved it. Final full suite:
+11,211 passed, six skipped, 590.011 seconds. Two compiled native bootstrap cases
+then passed: normal mode owns and renders the historical Think result; safe mode
+does not activate it. Disposal removes the registration. All test runs recorded
+zero provider launches. Native evidence is macOS arm64, Node 26.12.1 only.
+
+Durable evidence: `/Users/ra/dev/modular-agon-remediation/think-owner-*`.
+Full-suite log SHA-256: `0a9521680b637a92de4f2ae3f995bad85a3a7dbe5ba77b254cdd84c9fd08687a`.
+Native log SHA-256: `feaf46a428ae4404b48994d5fc4acc56533b66233c2f15b58eb14df08f7bb46f`.
+Review packet SHA-256: `bb5d4c5af768be9dbd9addba496b3c3c583a99c2cd756796a7f082de6157d563`.
+Review log SHA-256: `47e58945a7a8a98b25832ca07812ddd6e108b6e1444edc9d9e2fb79a9f3d371b`.
+Legacy runtime, CLI and session sources were archived byte-exactly from
+`f222e17b832de533fefffb6dcfbfc78e40028630`; fourteen raw fake-engine runtime
+cases were captured for the next extraction. Neither is full workflow acceptance.
+Global installation and personal state remain unchanged. No push.
+
+## Plan uses the physical Campfire runtime — 2026-10-24
+
+Plan now invokes the Campfire owner directly, with its captured working directory,
+guarded engine adapter and explicit generation/cancellation checks. The returned
+`topic`/`rounds` envelope stays unchanged. Forge's public compatibility export stays
+available; this change removes Plan's dependency on that adapter, not the API.
+
+Tests cover workspace changes after executor creation, imported context, result
+formatting, generation replacement and cancellation. Direct runtime tests use an
+unguarded adapter and prove pending siblings receive abort and settle. An isolated
+in-memory negative control removed only the runtime authority callback: the mutant
+returned stale output while the original rejected it. The ten frozen runtime cases
+also retain public Forge compatibility and raw dispatch/result parity.
+
+One isolated Agon Codex review found no concrete regression and requested stronger
+coverage. Those checks were added or matched to existing evidence. The first full
+suite exposed six stale test bindings in the Plan panel oracle. Its binding now
+targets the physical API and separately checks the added host inputs; the original
+policy inputs and outcomes remain compared against the frozen legacy fixture.
+
+Final verification: 11,210 tests passed, six skipped; full suite plus lint and
+re-export checks completed in 663.968 seconds. Full build, offline packs and SBOM
+checks passed. The migration ledger needed regeneration because the Plan source
+hash changed; comparison proved only binding/assignment hashes changed, not claims.
+Eight compiled native cases passed twice (5.960 and 5.859 seconds), the second run
+after the final suite. All runs recorded zero provider launches. Platform evidence
+is macOS arm64, Node 26.12.1 only; this is not aggregate release acceptance.
+
+Durable evidence: `/Users/ra/dev/modular-agon-remediation/plan-campfire-*`.
+Final suite log SHA-256: `cc4bf6b8fbd28f8f1392fff561f5b4f27aeb41a3a0b6f71b6072203d4abe0070`.
+Final native log SHA-256: `a4bab71e31fde77274c65e2812d32fd82b3996609e4e6eaf88a3579ae64bea4f`.
+Review packet SHA-256: `03ce20f7ea1c124108687c4479079593f3e8166dce17532e9a8e92d5d7624c82`.
+Review log SHA-256: `b9457027439e1497caf9b18ea75494215e3eeaa5d4a8b6468f1dcfb858e0cb36`.
+No dependencies, global installation or personal state changed.
+
+## Campfire CLI ownership — 2026-10-24
+
+The physical CLI now renders the existing Campfire heading, engine list, strategy,
+individual responses, output location and `AGON_SUMMARY`. Quiet output contains
+the run path and summary only. The flag no longer changes process-wide quiet
+configuration. Other surfaces keep structured results and their existing stdout
+behavior. Persisted status retains the requested label and per-engine round count.
+
+The unused standalone command is removed. Its complete metadata and argument
+definitions were extracted from commit `98402af66579fb9fe05845e215f2b6ac8a082f1d`
+into `tests/fixtures/modular-campfire-command-contract.json`. Git source hash and
+AST equality were independently checked. Clean-checkout parity uses that fixture;
+it does not require historical Git objects. Consumer tracing found no remaining
+runtime import. A file-absence guard rejects reintroduction.
+
+One isolated Agon Codex review identified missing help-text coverage. A failing
+test reproduced missing flag descriptions, then exact legacy descriptions were
+restored. Metadata and every argument description are now checked, in addition
+to types, aliases, defaults and requiredness. Successful injected-output tests
+check one path, one summary and no duplicate stdout. Native generated CLI tests
+use the real decorator and noisy local Node engines; quiet output remains exactly
+two lines. Runtime diagnostics remain on stderr, not silently suppressed.
+
+Verification: 96 focused tests pass. Full suite: 11,205 passed, six skipped
+(607.131 seconds). Build, types, lint, re-export, migration-ledger, offline package
+and SBOM gates pass. Eight compiled native cases passed twice (6.083 and 5.815
+seconds); the last run followed the full suite and help correction. All test runs
+record zero provider launches. Native evidence is macOS arm64, Node 26.12.1 only.
+Full-suite log SHA-256:
+`e8ba195a93a961f7556f420a3e0e78aab7a356ce5e2cc77a9fdad9eb90f51eaf`.
+Post-review build/package log SHA-256:
+`e545b057facc6e4412307bb5f987bd1ba47ecad2f67664b9ebfc2c8847aec36a`.
+Native log SHA-256:
+`a4bab71e31fde77274c65e2812d32fd82b3996609e4e6eaf88a3579ae64bea4f`.
+Frozen native helper SHA-256:
+`64f2fe662b14b5a39079d15069861d54b04be458b3f71468746e23555e35a1e2`.
+Review packet SHA-256:
+`ff7f64c349440016af333a2bddd9d1cb857a8b6676a5129b662d80f3ba7ac342`.
+Review log SHA-256:
+`2d933cf7f623930810510f6085e76bd569aee6f48eec7cb33f493b5f89ed4999`.
+Evidence remains in the durable `campfire-cli-*` archive. No dependencies,
+global installation or personal state changed. This is not release acceptance.
+
+## Campfire session ownership — 2026-10-24
+
+Campfire now owns session preparation, progress, response presentation and ordered
+history/result/telemetry effects. CLI binds existing stores and display functions.
+The old 121-line session handler and its unused export are removed. Its source is
+preserved in parent commit `5b6d358b552c1665388d478a76ce1ab39c4454e2`.
+TUI dispatch selects the owner by identity, not public command name. Cesar and
+intent jobs forward their cancellation signal and captured working directory.
+
+One isolated Agon Codex review found three defects. All were reproduced before
+fixing: responses could follow a changed chat-session pointer; interval display
+errors could escape cleanup; positional topics could differ in stored history.
+The binding now captures the originating session. Progress failures stop optional
+progress while execution settles. One Campfire-owned topic normalizer serves
+execution and session recording. All four job callback routes have executable
+signal-forwarding tests.
+
+Storage remains ordered, not transactional. A failed result-store write leaves
+earlier history/tracker writes intact and prevents completed telemetry. Cancellation
+is checked between effects. Optional summary and progress cleanup cannot reverse
+an already saved outcome. Generic rejected-execution unit cases prove rejection
+handling only; they do not by themselves prove disabled-mod enforcement.
+
+Verification: 21 focused session cases pass. Full suite: 11,195 passed, six skipped
+(606.879 seconds), with zero provider launches. Full build, types, lint,
+re-export, migration-ledger, offline package-content and SBOM checks pass.
+Seven compiled native cases passed twice (5.405 and 5.169 seconds), including
+real persisted chat reload and actual disabled-mod rejection before response or
+run writes. Local Node fixture engines exercise process execution; this is not
+live-provider evidence. The last native run followed the full suite.
+Native platform: macOS arm64, Node 26.12.1 only. Whole-release acceptance is not
+claimed. No new dependency or vulnerability clearance is implied.
+
+Full-suite log SHA-256:
+`9975cda3e0a3fe67a202090818f8e6d7c8409bcdd14d3b1087f8581ea18675fe`.
+Build/package log SHA-256:
+`557af51b6f080e16a2ee3477f89ef96b24a4499bcbbe727614a023793c0459b8`.
+Native log SHA-256:
+`e6c1ee8f2f0929bcf06f2f0ab06a9bb99879f804917e860b4dcf12c03c5f39e6`.
+Frozen native helper SHA-256:
+`fda75c79fcbb8b5f82b7c88b4d401bd476a58068861d2f9db3e020523d69bb8f`.
+Review packet SHA-256:
+`fa4e4c876aac8a3e7c8914d9090df491138588729c9f23debc8fbabb02734c11`.
+Durable raw evidence: `/Users/ra/dev/modular-agon-remediation/`, filenames beginning
+`campfire-session-`. No dependency, global installation or personal state changed.
+
+Still separate: standalone Campfire CLI presentation, Plan's compatibility import,
+other remaining ownership assignments and aggregate clean-checkout acceptance.
+
+## Campfire runtime owner — 2026-10-24
+
+Campfire now owns its discussion runtime. The legacy Forge export delegates to
+that owner and preserves its public `topic`/`rounds` result. The separate simplified
+mod algorithm was removed. CLI and MCP inject guarded registry, adapter and config
+effects. Only two existing workspace edges were added: Forge/MCP → Campfire 1.0.0.
+No external version or installation changed.
+
+The extracted runtime preserves prompts, project context, prior assessments,
+quarantine filtering, opt-in health probes, plain-text dispatch, observer filtering
+and raw rounds. Cancellation and generation checks now prevent stale results.
+Parallel seats settle before failure recording; authority loss aborts sibling
+dispatches. Recording failures cannot replace an existing cancellation.
+
+Isolated Agon Codex review returned five findings, checked against source:
+
+1. Cancellation hidden by successful-run persistence failure: reproduced, fixed.
+2. Parallel seats outliving workflow return: reproduced with deferred tests and
+   compiled local Node processes, fixed. The same compiled check then passed.
+3. Receipt writes are not atomic with authority changes: true limitation, not
+   treated as authorization or final success. The receipt records historical
+   response counts only. Consumer tracing found no success/permission promotion;
+   a new test requires command rejection after revocation during recording.
+4. Frozen oracle shares live support code: retained as a workflow-policy oracle,
+   not a frozen transitive implementation. Independent checks constrain quarantine
+   and configured API probes, including their non-project scratch directory.
+5. Missing facade/distinct-cwd coverage: added public wrapper comparisons and
+   a different invocation directory. All now pass.
+
+Verification: 11,174 tests passed, six skipped (605.644 seconds). Ten frozen
+legacy comparisons cover prompts, dispatch fields and raw public results. Child
+signal identity deliberately differs to support cancellation; it is tested
+separately. All 17 focused mod cases, build, types, lint, re-export, migration-ledger,
+release-set, supply-chain and whitespace gates passed.
+
+Native macOS arm64/Node 26.12.1 checks exercised real durable generations and
+local Node engines through compiled Plan, generated CLI and MCP. Five cases
+passed: normal Plan execution, disabled admission, drained cancellation, CLI and
+MCP. CLI/MCP each persisted one successful run. The final five-case run followed
+the full suite (3.868 seconds). All qualification runs recorded zero live providers.
+
+One earlier full suite was deliberately interrupted after review defects were
+proved; its exit -15 receipt remains, not a pass. An early native surface harness
+counted the documented `latest` symlink twice; corrected enumeration counts real
+directories and still requires exactly one run. Both failures remain archived.
+OSV reported 24 vulnerabilities in 10 dependency entries: two critical, nine high,
+11 medium and two low. Package-integrity checks do not clear those findings.
+
+Durable evidence remains in `/Users/ra/dev/modular-agon-remediation/`:
+
+- `campfire-review-full-suite`: log SHA-256
+  `626c0961c37ea16a9f0fc0887f82bb95c661f9a2ffabccce669308be44cb54af`.
+- `campfire-review-final-build`: log SHA-256
+  `b9f387887a82d23da067634a44d141adffa5bdd4ba153393398fe79539b23dda`.
+- `campfire-native-final`: log SHA-256
+  `0972a81d95bee12e886cbf0d4441283758e8b863dbe4cdf3895323c5925dce45`.
+- Frozen native helper SHA-256
+  `28791db0510f5d728539f235e367bdcdd07eaed81d6f977345c67e2328cc4971`.
+- Review packet SHA-256
+  `7667302909b0f2e8faa02415898661ace6fbc8ae288548d35361152baf967f00`;
+  review log SHA-256
+  `0acff531ff4e625cc31642e73001bf683e9e36abc7523682faf91174e1828a6a`.
+
+This is not full release acceptance. Campfire's legacy CLI presentation and
+session handler still need retirement, including job-signal propagation. The
+Forge facade remains for public consumers and is not counted as retired; Campfire
+owns it until caller migration and public compatibility evidence permit removal.
+Other platform, clean-subject and aggregate acceptance gates remain open.
+
+## Conquer standalone command retirement — 2026-10-24
+
+Removed the unused 233-line legacy CLI command. The generated CLI already used
+the physical Conquer contribution. Its option contract remains in
+`tests/fixtures/modular-conquer-command-contract.json`, extracted from Git object
+`e8b1f2dd2528646df18ba4e6298e77a53cf44dc0`. A negative control proved that the
+retirement guard fails while the old file exists. The old mocked publication
+test now runs through the registered physical command in the existing real-Git
+matrix: one push, saved publication receipt, no disabled Forge dispatch, and
+readable merge instructions. The public Forge facade remains for its consumers.
+
+Isolated Agon Codex review identified two evidence limits. The option-parity
+test checks behavior, not exact help descriptions; generated descriptions already
+differed before this removal. The fixture provenance is independently verified
+against the recorded Git object, including a mutated-description negative
+control, but is not a recurring history-dependent suite gate. Neither limit is
+reported as byte-identical generated help or ongoing provenance qualification.
+
+Full suite: 11,150 passed, six skipped (645.041 seconds). Build, types, lint,
+re-export, migration-ledger, release-set and supply-chain gates passed. One final
+compiled run passed all 27 workflow cases (20.781 seconds), with isolated durable
+state, local fixture engines and zero provider launches. Native evidence is
+macOS arm64, Node 26.12.1. This is not aggregate release acceptance.
+
+Durable receipts remain outside the shipping tree in
+`/Users/ra/dev/modular-agon-remediation/`:
+
+- `conquer-command-retirement-suite`: log SHA-256
+  `ed6e188adb845c2899efab90a2dc6d60981596e7a493ae29801491a3193937c5`.
+- `conquer-command-retirement-build`: log SHA-256
+  `e192682630b446f2d293520c5e8cc963d7f5fde615d479cf1c7cd901097b8101`.
+- `conquer-command-retirement-built-final`: log SHA-256
+  `26d6c608e17f722f5508a311fdc23be15e3765520d230e92663285af80f9e724`.
+- Review packet SHA-256
+  `ad7a4b2d6f89ac8be7f6265b7ce8a8822bed19ed6ad97513cd207b405f2a1682`;
+  review log SHA-256
+  `1bdbd1e2178172e04c664975f48d725b1947aa4a9cdd255e4a40a009bac8c25e`.
+- `conquer-command-contract-provenance.receipt.json`: exact read-only extraction
+  verification command, source hash, exit code and negative-control result.
+
+## Conquer physical CLI presentation — 2026-10-24
+
+The registered CLI contribution now prints readable progress, worktree recovery,
+falsifier details and publication/PR hints. Structured results and exit codes stay
+intact. CLI and sessions share progress and publication rendering; the CLI host
+binds the existing terminal writer. The backend remains the single executor.
+
+Isolated Agon Codex review found three confirmed defects. Four failing regression
+cases proved them: published sessions still requested a commit, generic failure
+text hid the oracle reason, and a rejected cleanup diagnostic replaced either
+success or cancellation. All now pass. Additional checks cover display failure,
+failed recovery display, observer failure and cancellation during final output.
+
+Full suite: 11,151 passed, six skipped. All 198 focused checks, build, types, lint,
+re-export, migration-ledger, release-set, supply-chain and whitespace gates passed.
+Two compiled-runtime runs each passed all 27 cases, including generated CLI
+execution through the real terminal writer. Local fixture subprocesses, durable
+generations, Git worktrees and persisted sessions were exercised. No live provider
+launched. Native evidence remains macOS arm64, Node 26.12.1.
+
+The first package gate failed because its disposable cache lacked locked runtime
+archives. That failure remains recorded. The existing cache-fill command restored
+68 locked registry URLs in isolated state; the complete offline package gate then
+passed. No version, dependency, global installation or personal cache changed.
+
+Durable evidence: `/Users/ra/dev/modular-agon-remediation/`.
+Full suite: `conquer-cli-presentation-full-suite.receipt.json`, log SHA-256
+`f0e2fc91672f9369ef3a9e15b662847be72d5bb7aca6403b4862d463a13bf0e2`.
+Build gates: `conquer-cli-presentation-final.receipt.json`, log SHA-256
+`de9e96239344c412294cc6c9adc8268dc913122f07624af4c5c20196a19cf30d`.
+Review: `conquer-cli-presentation-codex-review.log`, SHA-256
+`63d9b5f84c89f501226f1dec3a4a68e3321505384da6a44a08290e20684770dc`.
+Final live run: `conquer-cli-presentation-built-final.receipt.json`, log SHA-256
+`26d6c608e17f722f5508a311fdc23be15e3765520d230e92663285af80f9e724`.
+Negative controls: `conquer-cli-presentation-red-v2` and `conquer-cli-review-red`.
+The initial `conquer-cli-presentation-red` failed executable lookup, not behavior.
+All failed logs remain archived. The frozen live helper has SHA-256
+`9e8652a91bc68d17389fea7eea869d25f48e9db0059633cddb81578009a5c28f`.
+
+Remaining: retire the unused standalone Conquer command while retaining its
+flag contract and publication test coverage; complete other original ownership
+and release requirements. This is increment evidence, not aggregate release
+acceptance. No push or active/global installation change.
+
+## Conquer session owner — 2026-10-24
+
+Conquer now owns session presentation, history and outcome settlement. TUI,
+Cesar and the orchestration fallback execute the selected physical contribution
+with the job's signal. The CLI binds display and persistence effects. The obsolete
+142-line session handler is removed; its absence has a regression guard.
+The standalone CLI command and its human output remain a separate migration gap.
+
+Isolated Agon Codex review exposed three confirmed issues, now fixed: progress
+observers leaked into PR drafting, late cancellation could contradict committed
+history, and receipt failure could hide the execution error. History is now the
+session settlement boundary. A further negative control caught publication
+failure being recorded as an aborted workflow despite completed build work;
+the session now records a crash and preserves the publication error.
+
+Full suite: 11,139 passed, six skipped. Build, types, lint, re-export, release-set,
+supply-chain, migration-ledger and whitespace checks passed. Release metadata
+changes affect only CLI and Conquer payloads; no dependency was added.
+Two compiled smoke runs passed: eight Conquer cases, then all 25 combined
+Plan/Tribunal/Conquer cases. The final run used real durable generations, local
+Git worktrees and persisted session state. Fixture engines ran local subprocesses;
+no live provider launched. Native evidence: macOS arm64, Node 26.12.1.
+
+Durable evidence: `/Users/ra/dev/modular-agon-remediation/`.
+Full suite: `conquer-session-final-suite.receipt.json`, log SHA-256
+`bd93f3a5d2d75fd6ed16f4ac9d8be8f8190aeeff280b5109b8092d94dd63b154`.
+Build gates: `conquer-session-final-build.receipt.json`, log SHA-256
+`8c79f589bc5937195bea0f326d58f2a0cf6e6ead86d22fdcc083dd7c2b6ac6b1`.
+Review: `conquer-session-owner-codex-review.log`, SHA-256
+`c2e11e4bd03eebdbae5519ea3a5cc393411e92e4b0f4a507ce669fe5ead48811`.
+Final live run: `conquer-session-built-smoke-final.receipt.json`, log SHA-256
+`5da420f0288f4116a0c85d2a6fcdf9f41867a05880384df4c06334313c4ad30d`.
+Negative controls: `conquer-session-events-red`, `conquer-session-display-red`
+and `conquer-session-failure-status-red` receipts. Failed intermediate checks
+remain archived. The retirement-red run includes stale-build failures as well
+as the meaningful obsolete-file guard; it is not seven independent defects.
+
+This is increment evidence, not clean-commit aggregate release acceptance.
+Other ownership and release requirements remain open. Global Agon and personal
+state remain untouched. Nothing was pushed.
+
+## Plan Tribunal owner binding — 2026-10-23
+
+Plan now binds the physical Tribunal runtime directly. Both the panel step and
+the pipeline step keep their existing options and Plan-owned artifact paths.
+The public Forge facade remains for other consumers; it is not retired here.
+No dependency was added.
+
+Four negative cases exposed a real settlement defect: after generation changes,
+ratings could update before the periodic authority monitor noticed revocation.
+The binding now checks Plan's captured authority at Tribunal runtime boundaries.
+Tests hold the monitor pending and verify refusal after rounds and summary,
+cancellation, no success export, and no completed event after refusal.
+
+Isolated Agon Codex review found no concrete regression. Its coverage questions
+were checked against runtime tests and actual built CLI adapter subprocesses.
+Two built smoke runs passed all 17 scenarios, including real ratings-file
+creation, Ratings disabled, and Tribunal revocation. All engines were local
+fixtures; no live provider launched. Native evidence is macOS arm64, Node 26.12.1.
+
+Full suite: 11,119 passed, six skipped. Build, types, lint, re-export, release-set,
+supply-chain and whitespace gates passed. The first full run correctly rejected
+stale Plan binding hashes in the migration ledger. The existing generator changed
+only 29 binding/derived hashes, not owners or acceptance requirements. Its 15
+focused checks and the complete suite then passed. Failed evidence is retained.
+
+Durable evidence: `/Users/ra/dev/modular-agon-remediation/`.
+Full suite: `plan-tribunal-qualified-suite-ledger.receipt.json`, log SHA-256
+`7204fccfab7e0b888be3492c6334fa2ff73f214962754a606a2d52530235113a`.
+Build gates: `plan-tribunal-qualified-build.receipt.json`, log SHA-256
+`d67745f12038d881cb78f2eb57a07da38546b4fc1d2a7085cfc35a70ec757e66`.
+Review: `plan-tribunal-owner-codex-review.log`, SHA-256
+`acbe12a900bc474a65024ef51f641d5a6b654ae415e9b859773ffd4b203eda88`.
+Negative control: `plan-tribunal-settlement-red.receipt.json`.
+Final live run: `plan-tribunal-built-smoke-final.receipt.json`, log SHA-256
+`4028873e2f1ad6adf4a66218dd7fa87e9c7502efabfd30f26e4e3ec4d5bb0b1b`.
+
+Remaining: legacy Conquer session ownership and other original migration and
+release requirements. This is increment evidence, not clean-commit aggregate
+release acceptance. Global Agon and personal state remain untouched. No push.
+
+## Standalone Tribunal command retired — 2026-10-23
+
+Removed the unused 203-line standalone CLI command. Generated dispatch remains
+authoritative. The existing guard rejects reintroducing the legacy file. Its
+original flags remain in a frozen parity fixture, with source commit, path and
+SHA-256. TypeScript AST extraction from that Git object verified the exact
+metadata and arguments. Dynamic glob consumers must be checked when retiring
+files: the first run exposed this parity-test consumer, which was repaired
+without weakening its assertions. The failed run remains archived.
+
+Isolated Codex review found no concrete runtime regression. The removal guard
+failed before deletion and passed afterward. All 11,109 tests passed, six skipped;
+build, types, release metadata and supply-chain checks passed. The combined
+20-minute harness timed out during lint and remains recorded as failed. Lint,
+re-export and whitespace checks then passed separately on unchanged source.
+Two rebuilt CLI runs, normal and quiet, passed with persisted status and fixture
+judging. No live provider launched.
+
+Durable evidence: `/Users/ra/dev/modular-agon-remediation/`.
+Combined run: `tribunal-retirement-contract-qualified.receipt.json`, log SHA-256
+`3d9c873e69f9f6a074f61ceebdd975dcae0d65887d55834e13e936e678742f69`.
+Remaining gates: `tribunal-retirement-final-checks.receipt.json`, log SHA-256
+`6f2d6aeb00d52ab976ae92de86d238b8d457b7602dc3b9aa179bc83baeaa3eca`.
+Review: `tribunal-command-retirement-codex-review.log`, SHA-256
+`4d8d7800c2e39a613a0fa604e4eef72369e6b383d2b7d7488ec06502c4cd6d3d`.
+Negative control: `tribunal-command-retirement-red.receipt.json`.
+Live runs: `tribunal-cli-smoke-v6.receipt.json`.
+
+Plan and legacy Conquer still consume the Forge runtime binding; it is not
+retired. Original aggregate release acceptance remains incomplete. Global Agon
+and personal state remain untouched. Nothing was installed or pushed.
+
+## Tribunal session ownership — 2026-10-23
+
+Tribunal now owns session preparation, progress, result presentation and ordered
+history/telemetry writes. CLI binds existing host effects and executes the selected
+registry contribution. The legacy CLI session handler is removed. TUI dispatch
+uses contribution ownership, not its public name. Explicit, suggested, recovered
+and fallback Cesar paths forward the job cancellation signal.
+
+Independent Codex review found cancellation during settlement could publish a
+verdict after a host callback aborted. Two tests reproduced this before signal
+checks were added. Tracking now precedes the success receipt; optional summary
+display cannot reverse a saved outcome. History writes remain ordered effects,
+not an atomic transaction. A second review hypothesis, external replacement of
+the Tribunal Cesar route, is rejected: bootstrap reserves all first-party surface
+names, and external catalog entries are not selectable `plan-step` routes.
+
+Full local gate: 11,109 tests passed, six skipped. Build, typecheck, lint,
+re-export, package release metadata, supply-chain and whitespace checks passed.
+Normal and quiet built CLI smoke runs passed with fixture engines, persisted
+status and configured judging. No live providers launched.
+
+Durable evidence: `/Users/ra/dev/modular-agon-remediation/`.
+Receipt `tribunal-session-qualified.receipt.json`, log SHA-256
+`afd9cd6a259a8be7d347c76c095d016e420a0726feca0f4bead1826c6de34448`.
+Review `tribunal-session-owner-codex-review.log`, SHA-256
+`1c5293febfb4c2f6303d85bf4185cc8c34507293241a35a6dc29e1d9287e7fd7`.
+Negative controls: `tribunal-session-settlement-red.receipt.json`.
+Live smoke: `tribunal-cli-smoke-v4.receipt.json`.
+The interrupted pre-fix gate and stale-build test failure remain archived.
+
+Remaining: unused standalone Tribunal command retirement, legacy runtime binding
+consumers in Plan and Conquer, and original aggregate release qualification.
+This increment is not whole-product acceptance. Global Agon and personal state
+remain untouched; no installation or push.
+
+## Tribunal command runtime cutover — 2026-10-23
+
+The physical command now invokes its canonical Tribunal runtime. Its duplicate
+debate scheduler is removed. Configured judging, retries, panel health, ratings,
+sidechain logging and cancellation use that runtime. Only CLI contributions use
+human rendering; nested contributions retain structured results. CLI output
+streams before completion and quiet mode retains run-path/summary output.
+
+Independent Codex review identified two confirmed defects. CLI and MCP run
+finalization now reject failed status writes. CLI retains its immutable outcome
+and exit retry. Command completion is published after command-owned durable
+effects, so an observer cannot cancel already-completed work retroactively.
+Real blocked status writes and completion-triggered cancellation failed before
+the fixes. A built CLI smoke exposed duplicate JSON after streamed output;
+the generated CLI fallback now distinguishes absent stdout from explicit empty
+stdout. The new empty-output regression failed before this one-line repair.
+
+Final local gate: 11,083 tests passed, six skipped; build, typecheck, lint,
+re-export, release-set, supply-chain and whitespace checks passed. Two final
+built CLI runs (normal and quiet) passed with isolated fixture engines and no
+live provider launches. This is incremental evidence, not release acceptance.
+The earlier sandbox run failed on local socket/watch restrictions; all nine
+affected files passed unchanged with the required permissions before the full
+gate was repeated. Failed evidence is retained, not relabelled green.
+
+Durable evidence directory: `/Users/ra/dev/modular-agon-remediation/`.
+Full receipt: `tribunal-command-output-qualified.receipt.json`; log SHA-256
+`dbea1a0c1771209bddbca6c1fc4107d6f90a92e6f86398c4f9d7405a6e65e9b4`.
+Review: `tribunal-command-cutover-codex-review.log`; SHA-256
+`bf400cc661c62b222e4ec88205856b60d8cd688a6ef012d170655213c1742c9c`.
+Final live receipt: `tribunal-cli-smoke-v3.receipt.json`.
+Remaining: Tribunal session/TUI effect ownership and legacy handler retirement,
+plus the original aggregate acceptance and platform requirements. Global Agon
+and personal state were not modified; nothing was installed or pushed.
+
+## Tribunal policy ownership and review repairs — 2026-10-21
+
+`mod-tribunal/src/modes.ts` owns the existing mode, role and prompt policies.
+Legacy `forge/src/tribunal-modes.ts` is a public-package re-export facade.
+Forge's approved parent dependency and build reference preserve old consumers.
+The physical Tribunal command now uses this policy instead of its duplicate
+role table and generic prompts. The legacy facade can retire only when its
+public consumers migrate; its presence is not full runtime extraction.
+
+Independent Codex review found an inherited Investigator prompt mismatch,
+exposed by the policy consolidation. A dedicated investigation instruction now
+keeps the two-engine postmortem's first seat distinct from prevention. The
+registered intent runners also normalize parsed mode/protocol fields; previously
+they silently executed defaults. Both fixes have failing-before regressions.
+
+Coverage includes six mode policies, participant-specific instructions, default
+and explicit automatic protocols, round caps, intent parse-to-execution, raw team
+results, and deferred-response parallel/chained/hybrid scheduling. Forcing all
+rounds parallel fails the chained and hybrid tests. Review packet SHA-256:
+`88c7a8125f8b7bd72229c9a03ea84c8cbad7c9c2c123fbc08d19b2361ce7ed93`.
+Review log SHA-256:
+`c43896f829a0c5863c04deb25a489bf8e910a267ac85ce311a49b110bc2a5d9f`.
+Detailed receipts and adjudications remain in the durable remediation archive.
+
+This does not establish full Tribunal runtime parity: retry, result, logging and
+host cancellation differences remain. The extracted Team Tribunal cooperative
+executor is not yet the production match owner. No team-mod/MCP dependency edges
+were added. Repository-wide and clean-commit release qualification remain open.
+
+Audit subject: `667317911ce04bae2dbe70946fe7cff937e17ca7` (2026-09-05).
+Disposition: **not release-ready**. The earlier 33-gate pressure run did not
+exercise these installed-user contracts. Its passing executions are not a
+whole-product compatibility verdict. No active installation may be promoted
+on the strength of that receipt.
+
+## Team Brainstorm physical runtime and command — 2026-10-20
+
+The physical mod now owns the rich team draft, synthesis and judge workflow.
+Its lazy invocation host injects registry, configuration and rating effects.
+CLI binds that host; the command preserves raw results in the existing run store.
+Missing host capabilities fail explicitly instead of selecting another algorithm.
+
+Legacy and physical Brainstorm run the same frozen behavior tests. Additional
+tests cover task-specific rated composition, disabled Ratings, and cancellation
+or retirement during draft, synthesis, judge and persistence operations.
+`ratingsEnabled` retains its legacy meaning: it suppresses updates, not reads.
+Disabling the Ratings mod suppresses both reads and writes.
+
+The isolated Codex review found two confirmed contract defects in this command:
+failure-status writes lacked a post-await authority check, and the plan-step
+result schema described its request. Both now have failing-before/passing-after
+tests. Completion persistence also preserves both errors on a double failure
+and never rewrites success because receipt recording failed.
+Review packet SHA-256:
+`6344e29d68844a493f94f985a660bb498067a69d28de0b2b77745105689ff3c9`.
+Review log SHA-256:
+`a7125c9079984ef05426c84aa4466adf0b9f1bc3c930c48db8d99381c4d81890`.
+72 focused tests, typecheck and diff checks passed; log SHA-256:
+`360fbec7c523158693f7d6080c963ea75f3a4e5f905ebe87c78b2f4eb6843add`.
+
+The built CLI also ran with two real local fixture subprocess engines. Its
+parser, registry, host, five dispatches, raw result, success status and latest-run
+symlink were checked. No live providers launched. Two runs: the first exposed
+a test counting the symlink as a second directory; the corrected check passed.
+Passing log SHA-256:
+`da9b37c90d1716154065e391308230c43cc34bdbe01ca4fc8a1bea0e7b6699d1`.
+
+Full gate `team-physical-command-full` passed in 855.69 seconds: build, offline
+release inventory, supply-chain checks, types, 10,883 tests, lint, re-export
+guard and diff checks. Six tests and one file skipped; zero provider launches.
+Log SHA-256:
+`c7449096906798aec86ae9b42fa8f3a5cb54f2ae24cba2d7802aa268d7d7c7ef`.
+
+This is not complete extraction. Legacy Forge still owns its callable team
+facade, and MCP host wiring is pending the internal dependency grant. Remove
+the legacy algorithm only after routing every consumer through the physical
+owner and repeating parity/disabled-mod checks. Team Tribunal and Team Forge
+remain separate unfinished migrations. Tribunal tests repeated under the
+legacy/physical test headings still call legacy code; they do not prove
+Tribunal extraction. Final clean-subject acceptance remains open.
+
+## Pre-extraction team workflow baseline — 2026-10-20
+
+`tests/unit/team-prompt-routing.test.ts` now captures raw cooperative and match
+contracts before physical team workflow migration. It exercises real legacy
+workflows with fixture provider responses, not live providers. Coverage includes
+structured drafts, unequal draft ordering, non-first architect selection,
+partial member failure, synthesis and judge failures, Tribunal phase failures,
+two-round context, capped rounds, tokens, elapsed time, events and match envelopes.
+Distinct proposals verify Alpha/Beta judge wiring. Test cwd and home are isolated.
+
+Codex review identified six coverage gaps. Each was checked against source and
+addressed locally. Review packet SHA-256:
+`c51116694c34bb699494b530127b166edcaed588b8b2d4db96777d613541d67f`.
+Review log SHA-256:
+`b20ce00e4437bd7b7999b788961acf458209ccf378131ce5f1c2acefd0ab74bb`.
+Twelve focused cases and typecheck pass; log SHA-256:
+`45e89e342a815992a4c1e421699928d1eb4b93879db985f158460a4c71a06206`.
+Negative controls reject missing Tribunal token accounting and reversed
+Brainstorm draft ordering. Both mutations were restored; production is unchanged.
+The ordering control fails exactly two cases; log SHA-256:
+`9c580a58752449f4084e4ea30e0396802fc8f46869adafefd10ca2cd131be484`.
+
+This preserves inherited behavior, including thrown-error versus returned-error
+handling. It does not claim current physical team implementations have parity,
+or replace the full workflow corpus and final clean-subject qualification.
+Full gate `team-raw-baselines-full` passed in 846.072 seconds: build, offline
+release inventory, supply-chain checks, types, 10,843 tests, lint, re-export
+guard and diff checks. Six tests and one file skipped; zero provider launches.
+Log SHA-256:
+`c47bffeda0d0b21ca9a96b47afcdca79f57ee67e50bf33159243d770decca4f0`.
+This is baseline verification, not final modular release qualification.
+
+## Optional Ratings in team workflows — 2026-10-20
+
+Team confidence loading now returns before reading history when the invocation
+disables Ratings. Panel uses stable roster order without random rating ties;
+the existing neutral aggregate remains 100. Team Elo updates return before
+locking, loading or writing. Enabled and unspecified invocation behavior is
+unchanged. Historical load, get and prediction readers remain available.
+
+Three regressions failed before the repair: updates with an absent store,
+updates with an existing store, and disabled confidence loading. Expanded
+tests cover all three composition modes, enabled selection and updates,
+unchanged historical bytes, and registered async execution of real legacy
+Brainstorm/Tribunal workflows with fixture provider responses. These workflows
+still produce winners and scorecards without Ratings effects. This does not
+prove every surface enters the scope or that physical team workflows have
+legacy parity.
+
+Independent Codex review found no concrete production regression. Packet:
+`9842cde7a28da358f0d8178a9c531af9c8786fbf3b262f08636893b0a91a34f9`.
+Review log: `d2e909e7b6fd63127f3562058810dd3a3ba99417bd2687be57aa8e3122139e01`.
+Its neutral-score and async-registry coverage suggestions were implemented.
+47 focused tests, typecheck and diff checks passed, with zero provider launches.
+Log: `98cdfd8804a9da7b27f0614027a68c9db8a81caced9764d6376669589653b5f3`.
+The expanded enabled test initially used the wrong registry identity shape;
+the fixture was corrected without changing its expected ranking.
+
+Full gate `team-ratings-reviewed-full` failed under the restricted sandbox:
+socket listeners returned EPERM and file watchers fell back to watchdogs.
+With authorized socket/watch permissions and unchanged source, all nine
+affected files passed (109 tests, zero provider launches). Diagnostic log:
+`349f546e489a2a150fa2de6f3ba944c05939644ca112fd3abfaa82fdaa8815b9`.
+The failed receipt is retained, not accepted. Complete rerun
+`team-ratings-reviewed-full-permitted` passed in 857.571 seconds: build,
+offline package inventory, supply chain, typecheck, 10,833 tests, lint,
+re-export and diff checks. 658 files passed; six tests and one file skipped.
+Zero providers launched. Log SHA-256:
+`894af6dea9fc808128a21aae7f2880e09d20ad634e413b6d54d94895b27a9cbf`.
+This qualifies the repair increment, not complete release acceptance.
+
+## Shared team owners — 2026-10-20
+
+Kernel now owns the existing team contract types. Panel owns composition and
+role assignment with an injected confidence-floor snapshot loader. Ratings
+owns team Elo persistence, updates and contribution weights. Core retains
+compatibility exports and the existing public composition signatures. No new
+dependency is required. This moves ownership; it does not change team policy.
+
+Literal baseline tests passed before extraction and after it. Sixty focused
+tests cover task-specific composition, role weights, exact Elo changes,
+published store bytes, malformed historical reads, and facade identity.
+Enabled behavior retains three rating snapshots per composition, random
+role ties, rounded composition floors, UUID format and the existing lock.
+Lock cleanup assertions alone do not prove concurrent-update correctness.
+
+Independent Codex review found no concrete extraction regression. Packet
+SHA-256: `dfc036a588173383f5ff9b7ca04f03859cfed6bcd578a7b8c1e099c1e2e258c0`.
+Review log: `719bf66f69f9a6578375e000bb9da1690e5fb0d318da89cb30b322c309fe26c0`.
+The new probabilistic UUID uniqueness assertion was replaced with format
+checks; production UUID behavior was not changed. Focused receipt log:
+`aa8e6a126cb8627c18e9c1e8fa7b544984df655e4e127871c2b7648d08b960e1`.
+Full gate `team-shared-reviewed-full` passed in 852.151 seconds: build, offline
+inventory, supply chain, typecheck, 10,825 tests, lint, re-export and diff checks.
+658 test files passed; six tests and one file skipped. No providers launched.
+Log SHA-256: `32a2bdb78d16d146dda34f4d1466a4e3f9be0333a9e27a156cb0cfd0a6b65a5a`.
+This is an incremental verification receipt, not clean-checkout release acceptance.
+
+Still open: disabled-Ratings selection/update guards, the inherited static
+team-store path, and rich physical team workflow parity. Historical readers
+must stay available when Ratings is disabled. The frozen oracle remains an
+artifact-integrity check, not evidence of candidate workflow equivalence.
+
+## Physical team intent contracts — 2026-10-20
+
+The three team intent runners now consume their existing parser fields:
+membersPerSide, tribunalMode, and fitnessCmd. Parser output and ordinary CLI
+inputs remain unchanged. Previously a parsed 3v3 request ran 2v2, red-team
+ran adversarial, and Forge replaced the requested fitness command with true.
+Three parse-to-run regressions failed before the mapping fix.
+
+Codex review identified an inherited host boundary defect: Forge's intent
+schema required the CLI-only test field. A real runPhysicalTuiContribution
+regression reproduced rejection before execution. The intent now requires
+task, while the CLI still requires task and test. Missing-task input still
+fails before dispatch. The separate Forge workflow fixture verifies actual
+fitness results, worktree isolation, and winning patch contents.
+
+Review packet SHA-256:
+`ead413a54d27e2eabaafb1536ad34d68716778abf92278cf8c2b6d91d19430f7`.
+Review log SHA-256:
+`031c52812c1d02156bd4b7bfa8bfed4531b2f80867dd162e0a2645e41019bb17`.
+The confirmed schema finding was fixed and checked locally. Twenty-three
+focused tests pass. Full gate `team-intent-reviewed-full` passed in 865.857
+seconds: build, offline inventory, SBOM, typecheck, 10,817 tests, lint,
+re-export and diff checks. 657 files passed; six tests and one file skipped.
+No providers launched. Log SHA-256:
+`8dd0bd5f08c13fef60bd8f72ecf3105393da85a3294df7b85254475fc8a444e4`.
+
+Team ownership and full legacy behavior parity remain open. In particular,
+the frozen oracle verifier checks archived artifact integrity, not current
+candidate equivalence. Its two named team Forge cases do not establish
+Brainstorm/Tribunal event, result, composition, judge or rating parity.
+
+## Physical team role assignment — 2026-10-20
+
+The shared panel composer now assigns roles by position within each team,
+not by the interleaved engine index. Engine assignment remains unchanged.
+Two-member teams previously received duplicate roles; larger teams could
+omit architects or reviewers. Nonfinite team sizes now fail before dispatch.
+Finite rounding and minimum-size behavior remain unchanged.
+
+Negative controls failed for sizes two through four before the fix.
+Nineteen focused tests cover exact roles, engine ordering, odd-roster wrapping,
+malformed sizes, and real Git/worktree/fitness execution with fixture engines.
+The Forge fixture verifies separate worktrees, an untouched source checkout,
+Alpha passing, Beta failing, and the winning patch contents.
+
+Independent Codex review found no blocking production regression. Its test
+improvements were applied and verified locally. Packet SHA-256:
+`57b1c8fc59009bac7acbefdff56aad775d0d58a47d7982a4a13bcccc540ce82e`.
+Review log SHA-256:
+`e6f7cd797e00c8aad58b9e50afaa89d24eb706c45bd42238f8bbeb179f94b761`.
+
+`team-role-reviewed-full` passed in 872.778 seconds: build, offline release
+inventory, SBOM, typecheck, 10,813 tests, lint, re-export and diff checks.
+657 test files passed; six tests and one file remain skipped. No provider
+launched. Log SHA-256:
+`c5e209fc0326be0931a6cd90e7b62d3dceb8a6bb7cd42308304fb10f586d5362`.
+Detailed receipts remain in the durable remediation archive.
+
+This does not qualify complete team compatibility. Separate probes found
+physical intent field mismatches: Brainstorm ignores parsed team size,
+Tribunal ignores parsed size and mode, and Forge does not consume the parsed
+fitness field. Those remain open, alongside rich legacy team ownership and
+optional Ratings behavior.
+
+## Ratings routing and queued-host scope — 2026-10-20
+
+Ordinary Cesar routing and direct brain entry now reuse the selected registry's
+async invocation scope. Nested Plan/job scopes remain intact. This does not add
+a lease or replace cancellation controllers. Disabled Ratings no longer
+reorders task roles or supplies rating summaries, Elo spread, or win-rate labels
+to routing prompts. Historical readers and qualitative engine memory remain.
+
+Independent Codex review found that queued successors could inherit the old
+host's scope after replacement. A real brain-entry regression reproduced the
+successor dispatch. Queue callbacks now validate captured host authority before
+entry and cannot reset a replacement host's busy state. Healthy successors and
+direct calls are covered without mocking the brain wrapper.
+
+Review packet SHA-256:
+`82008552e818d5c2e7607871284fa284b2b23c6f43ce73be3efb43ba79cb3589`.
+Review log SHA-256:
+`a9b4562ab5a6d1f10056f9955cd3fb392d8a4462287768687ee5689d2417765e`.
+Both findings were resolved with local regression evidence. The obsolete
+full-gate attempt was deliberately cancelled during build, not counted as pass.
+
+`ratings-tui-reviewed-full` passed in 845.514 seconds: build, offline release
+inventory refresh, SBOM, typecheck, 10,799 tests, lint, re-export and diff checks.
+Six tests and one test file remain skipped; 657 test files passed. No provider
+launched. Log SHA-256:
+`22c8c7558a0a82338b8d8d240df90f8bf443e3a176c101b10fdcdf519da7fe71`.
+Npm provenance remains externally blocked.
+
+Full optional-Ratings acceptance remains open for other legacy selection
+consumers, generic slash-command scope, and team composition/Elo ownership.
+A read-only probe also confirmed incorrect per-team role indexing in
+`support-panel/src/teams.ts`; that separate defect is not fixed by this change.
+Detailed negative controls and adjudication remain in the durable archive.
+
+## Optional Ratings invocation boundary — 2026-10-20
+
+The registry now carries live mod availability through its existing invocation
+scope. Plan and background-job callbacks use that same scope, alongside their
+existing leases and cancellation checks. Outside a modular invocation, legacy
+defaults remain unchanged.
+
+Brainstorm calibration, Forge rating-derived roles and updates, engine fallback
+ordering, CLI/MCP ranking, and physical Conquer critic selection skip Ratings
+when unavailable. Ratings-owned lineage seeding and ranked updates return before
+acquiring a lock. Historical readers remain available. Engine-defined prompts
+and qualitative outcome memory remain active.
+
+Negative controls reproduced the scope, calibration, ranking, Forge seeding
+and owner-lock defects before their fixes. Tests cover populated and absent
+stores, exact unchanged bytes, promise/iterator scope isolation, disposal,
+actual Plan entry, and real Forge/Tribunal workflows with fixture engines.
+Forge assertions inspect dispatched text and persisted outcome notes, not only
+callback counts.
+
+Codex review packet SHA-256:
+`344d21adcd606f2a2d8a29894a97f18bb026ab4257863afd6a13b4068519144d`.
+Review log SHA-256:
+`121b3e5e60830ff90df36d36b58871632795186ea0be1bb0b673ae49f31084e7`.
+The Forge evidence gap was corrected. The proposed Brainstorm asynchronous
+regression was refuted: the service contracts return `void` and callers never
+awaited them. Host callbacks currently return completed results; generic lazy
+result leasing is not claimed or added by this change.
+
+The first full gate passed build/typecheck and 10,753 tests, but failed 38 setup
+tests because rebuilding changed CLI chunk names before release inventory
+refresh. Its failure remains recorded:
+`4afd048e99414fa1e54850597703d55b8eda5316e8c87de9d3ed5ea4a79978b4`.
+After offline release-set/SBOM refresh, all 105 setup/Forge tests, typecheck,
+lint and re-export checks passed with zero provider launches. Log SHA-256:
+`f912278b7ddc80e639bc86c2f32a17135b01bdb78c1edb56de437d38e9589ff1`.
+The corrected full-suite run passed in 654.72 seconds: 10,791 tests passed,
+six skipped, with 657 passing test files and one skipped file. Typecheck,
+lint, re-export guards, supply-chain checks and diff checks also passed.
+No provider launched. Run: `ratings-invocation-full-corrected`. Log SHA-256:
+`8f7a0f810747a8a67345778d4c7ae109bff63dc5b30bed1f163f3c052d068de0`.
+
+This is not full optional-Ratings acceptance. Legacy selection consumers,
+team composition and its separate Elo store, Cesar rating hints, and direct
+administrative mutation APIs still need reconciliation. No dependency changed.
+Detailed receipts and review adjudication remain in the durable local
+remediation archive; no active installation was modified.
+
+## Composed configuration owner — 2026-10-20
+
+Persistence now owns composed config, its memo cache, defaults and generated
+first-party settings. Core preserves explicit compatibility exports. The moved
+config implementation body is byte-identical to its previous owner. Engine
+and browser normalizers remain in their existing packages, reached through the
+two approved workspace dependencies. The target graph now has 158 unique edges.
+
+`modular-config-owner-full-corrected` passed typecheck and the complete suite:
+10,771 tests passed, six skipped, 598.928s, zero provider launches. Log SHA-256:
+`5b4587320110f55442c13b5a174f205b3ced0c6492a7e18b057d15f77b61292a`.
+`modular-config-owner-platform-and-runtime` passed 71 platform/graph tests,
+built-runtime export/default/cache identity, cross-surface writes, cloned reads,
+dynamic-home isolation, lint, re-export guard and SBOM negative controls.
+Log SHA-256:
+`ba43d9f3cacdb0a4f58e800c943799706d920b000faa89caf9b6a5fb489092df`.
+
+Build passed before release inventory regeneration. Offline release-set/SBOM
+refresh and setup tests passed in `modular-config-owner-release-cache-retry`.
+Log SHA-256:
+`dd489ceaceb3b225ca641dae80a4b40d8efc7ecf4bb35c52329cf71e29355afa`.
+The first refresh failed on an absent cached tarball; an existing isolated
+pressure cache resolved it without downloads or relaxed integrity checks.
+The first full gate exposed two stale graph-count mocks. Both now reflect the
+approved edges; malformed-evidence and graph rejection tests remain intact.
+
+Isolated Codex review found no concrete regression in its source packet.
+Review log SHA-256:
+`2d759ac8a9c128dbc53ea4ad6208e51a04764ef867f6e3bf3a075f524e11a5fd`.
+Receipts and raw logs remain in the durable local remediation archive.
+This is development evidence, not final clean-committed release qualification.
+The existing OSV findings remain unresolved; no external version changed.
+Ratings-disabled workflow behavior and remaining host ownership are still open.
+MCP has not gained an unapproved Persistence dependency.
+
+## Shared token accounting owner — 2026-10-19
+
+Engine Catalog now owns the existing token tracker, pricing helpers and shared
+singleton. The implementation matches the previous Core source byte-for-byte
+after changing only its catalog lookup import. Core preserves explicit public
+compatibility exports. CLI and MCP common hosts use the physical owner directly.
+No dependency, pricing rule, validation, aggregation or reset policy changed.
+
+The ownership identity regression failed before extraction:
+`modular-token-owner-red`, log SHA
+`434f58e7de7636a64af743440c3ff9c2e6faa1d8381786bb39017451d220d43b`.
+Independent catalog build, 114 focused tests, types and diff checks passed:
+`modular-token-owner-focused`, log SHA
+`33508dc9333fa5ee59093b0deaa63ccd062ca02acb9616f582017416188413d6`.
+Codex found no blocking defect. Packet SHA:
+`480118add8a64300c5706834a0c24b7f4e605d425aa940c005c8a1297fcf4c10`;
+review log SHA:
+`893d86e8d60570290d0c077c850bc434340ccaaba4660b9620e868f12afa5587`.
+The existing zero-price test used a subscription name that bypassed catalog
+lookup. It now also checks a metered-named zero-rate model on both pricing paths.
+The existing support boundary gate rejects reverse imports into Core; identity
+alone does not prove ownership direction. Reviewed focused checks and the
+boundary self-test passed (`modular-token-owner-reviewed`, log SHA
+`504637939645e460507e46775dbfb9678c0175d323cde9bb8d3cc43987955bef`).
+Full development qualification passed in 861.775s: 10,770 tests, six skips,
+build, types, lint, re-export guard, generated/boundary checks, release-set
+and supply-chain self-tests. No provider launched. Receipt
+`modular-token-owner-full`, log SHA
+`57c75c8e6e8fa29e417356f1260f513f93235799a27a511991eea1a33a4481e4`.
+The final built probe verifies Core's public entrypoint and Catalog share the
+same tracker/helpers, records and resets cross those entrypoints, and CLI/MCP
+bundles import external accounting without a duplicate tracker implementation.
+Receipt `modular-token-owner-built`, log SHA
+`45add01607e282df86cc4a773f6b095231808d77302ac6ca88e7c939e95148e1`.
+This proves same-process identity, not cross-process sharing or live-provider
+dispatch. Common-host isolation remains incomplete.
+
+## Plan default error adapter retirement and persisted status — 2026-10-19
+
+Worktree support now creates its own canonical `PlanStateError` by default.
+Core's four error-injecting wrappers become direct compatibility re-exports;
+CLI no longer injects the same constructor. Custom invocation-scoped error
+factories remain supported. Transition logic is unchanged; the separate
+persistence status correction is described below.
+No dependency was added.
+
+`modular-plan-default-red` failed on four physical error types and wrapper
+identity before the change. Its log SHA:
+`79e7d3961d042ebd5dec5a75477c57170ec49191db824cc0018c626928f71636`.
+Codex found no blocking defect and identified test gaps. The tests now check
+exact custom error identity and arguments for all four transitions, canonical
+constructor identity, fields/messages, and absence of CLI default injection.
+The existing test name now accurately describes interleaved invocation isolation,
+not untested import-order independence. Review packet SHA:
+`26552d26aa294e108a5d28f39d2ce40ed85815faf4f9506382eaccebddf7dde3`;
+log SHA: `78ebda0e32faa474bad2091691882cc3ef701e9ce1639c8a74936b39483dd25f`.
+Reviewed focused run: 111 tests, types and diff checks passed; zero providers.
+Receipt `modular-plan-default-reviewed`, log SHA:
+`8e5c7d70a6292a1998f2d0caff435ce55d38204baf3622aeefe6a1624d5b1b3f`.
+The first full gate passed in 874.827s with 10,760 passing tests and six skips
+(`modular-plan-default-full`, log SHA
+`32ec01181addffae9a9e44705675141394f4cc4de0363b36e59bfeac546a5846`).
+The final built persistence probe then found an existing contract defect:
+`approved` payloads received `draft` envelope status. The other six states
+matched. The failed receipt is retained as `modular-plan-built-status`.
+
+The persistence owner now maps `approved` explicitly. No payload, historical
+record, other state, or alias is rewritten. Nine raw-envelope regression cases
+cover seven states and both legacy aliases; the approved case failed first.
+The rebuilt status probe passes (`modular-plan-built-status-fixed`, log SHA
+`275f0eb7d826d12c8dbf7d6b11b162f0d18ae3c21bc60a7edba6ad94e0ee8002`).
+Codex found no correctness finding in this bounded fix. Review packet SHA:
+`010a36e1d2ca4f3d8513f9922fd2bb07d1b8244f2a9c03336929b7b734b30bbe`;
+log SHA: `bd90ee71a0372b42fdc2971f8f26a49883856dd4e05fbaa036e02c2f44dbb75a`.
+The new full gate passed in 873.344s: 10,769 tests passed, six skipped;
+build, types, lint, re-export, generated artifacts, support boundaries,
+release-set and supply-chain self-tests passed. No provider launched.
+Receipt `modular-plan-default-full-fixed`, log SHA:
+`ef23d68a8bdbe8f1c7a50232a44a6514526abe237cf60e934817719612254ef1`.
+Two final built-package probes passed after the final build. Status replay
+checks all seven raw envelope states and Core/owner binding identity:
+`modular-plan-built-status-final`, log SHA
+`27b6cf5deec933f20262d6b6c7097bf248fad00e7b084ae5bb9571b2d84d5ac7`.
+The physical Plan workflow uses real isolated persistence and verifies dismissed
+disk-draft approval, explicit approval, cancellation, failed/paused retries,
+retained attempts/artifacts, and default/custom errors. Every save checks the
+raw envelope and reload. Its Forge effect records dispatch rather than invoking
+providers; it is not live-provider qualification. Receipt
+`modular-plan-workflow-built-final`, log SHA
+`7660839daf3e6075fa4bbb688b0c3ed1c5d0757504719b7b352f4a4c3d51d8bc`.
+Common-host isolation and whole-product acceptance remain open.
+
+## Shared Git/worktree owner — 2026-10-19
+
+The first full run failed one stale test spy after 10,743 passing tests and six
+skips. CLI now imports attribution from Worktree, but the test still replaced
+Core's compatibility binding. The spy now targets the physical owner with all
+original assertions retained. `modular-git-owner-host-spy` passes; the full
+failure remains archived (`modular-git-owner-full`, log SHA
+`6e5f83020f6de54a9a050d9be5f220d4e34d5ddc8d32691b21255e894c447f5f`).
+
+The separate support boundary gate also exposed a stale duplicate dependency
+table. It omitted the previously approved Worktree to Engine Runtime edge.
+The verifier now reads the canonical package map, retains the exact eleven
+support owners, and rejects invalid or duplicate dependencies. Source, asset,
+kernel-peer and dependency-mutation checks remain. The regular test suite now
+runs this gate with its self-test; it previously only imported source checks.
+The regression failed before the fix (`modular-support-map-red`). Damaged-map
+controls and the reviewed gate pass (`modular-support-map-reviewed`, log SHA
+`17c22dcb35b5672fc35c86200b64c77fa018b983593caad4112508a2dafe30fd`).
+Codex found no blocking defect; its request to run mutation controls in the
+regular suite was verified and applied. Packet SHA:
+`ce425dfdee753e1900b852ed577d7021c87368ff28aa1b24426028d42b43402a`;
+review log SHA: `9da89de7abe125723306c7f22055e17eeec226d32479fbb0aed217190f762a54`.
+This gate checks conformance to canonical policy, not approval of policy changes.
+
+Git operations moved from Core to the existing Worktree support package. Core
+preserves its 40 public bindings; the CLI host imports moved operations from
+the physical owner. No dependency was added. The move retains Git flags,
+timeouts, error messages, retries, cleanup, global active-worktree tracking,
+patch handling and attribution behavior. The physical Worktrees mod's stricter
+setup semantics remain separate; this extraction does not silently change them.
+
+`modular-git-owner-source-parity` proves the implementation matches the prior
+committed file after only local import changes and replacing two identity
+wrappers with native Set/String.split. Log SHA:
+`41f21dc6f7038882c4db5bd66c190b86238d4450d3dcc62bd69c4b9eb76dd2cd`.
+
+Codex review found no demonstrated extraction regression, but identified weak
+ownership assertions. The test now pins the exact export set and compares
+reference identity, not deep equality. `modular-git-owner-map-negative` rejects
+a copied empty map; `modular-git-owner-export-negative` rejects a removed export.
+Both mutations were restored. The patch test now invokes the moved `applyPatch`
+directly as well as the separate `applyPatchToTree` API. Review packet SHA:
+`44042b4e8f6ba0b84d2487bfd709056ae0f72e66849e25404496c76596089110`;
+log SHA: `43b1e88a88c4145ca820eef38d53a1b02391028f8a580659fc9ff10ff1ba5304`.
+
+`modular-git-owner-review-fixed` passed eight files / 152 tests, types and diff
+checks in 18.36s. Log SHA:
+`ba5b5bdc6d934ac48d02674ccc39336dca6f5fefe648e2b2f2e325c44d51371b`.
+The built owner probe (`modular-git-owner-built-flow-canonical`, 0.293s) exercises
+real ephemeral/persistent worktrees, idempotent hooks, raw patch application,
+index and stash preservation, cleanup and typed errors. Its initial assertion
+confused macOS `/tmp` with canonical `/private/tmp`; that failed probe is kept,
+and the corrected check compares the actual canonical fixture path. Log SHA:
+`1e1fa3764d81b00b0276b797c752e0d4e7e2b1a37c1619d9d5d8f76c7437f4f0`.
+
+Two initial focused commands could not locate Vitest; they are not regression
+evidence. The first post-move test run used stale built support exports and
+failed; rebuilding the owning package fixed that boundary. All receipts remain
+in the durable archive. All verification runs launched zero providers.
+The full retry passed in 866.717s: 10,751 tests passed, six skipped; build,
+types, lint, generated drift, boundary mutations, release and supply-chain gates
+passed. Receipt: `modular-git-owner-full-retry`; log SHA:
+`e548c9dc3f0426683b3d7a1a19b4fad04d30578f5ecb27a7d86cc0577f3787de`.
+Final rebuilt probes also passed: `modular-git-owner-final-identity` verifies
+40 legacy bindings, 37 public Core bindings, shared constructors/map and
+idempotent hooks; `-final-flow` exercises real Git operations; `-final-goal`
+exercises seven CLI invocations; `-final-mcp` checks five permission cases.
+These are development-checkout receipts, not clean release qualification.
+Minimal-profile isolation and the remaining common-host ownership are not done.
+
+## Shared host error owners — 2026-10-19
+
+Configuration, Git and Plan imports reached Forge through Core's mixed error
+barrel. A throwing Forge-import control reproduced this before the change.
+The existing base `AgonError` and `ConfigError` now live in Kernel;
+`GitError`, `WorktreeError` and `PlanStateError` live in Worktree support.
+Core retains public re-exports and Forge retains its own `FitnessError`.
+Runtime and Worktree use their existing Kernel peers; no dependency was added.
+Their minimum peer version is now 1.0.0, the existing locked release-set version,
+because older Kernels do not provide the new exports. The metadata generator
+and lockfile carry the same requirement. This is not a package upgrade.
+
+Codex review found no confirmed blocking code defect. Its requested inheritance
+and FitnessError identity checks were added. Kernel's built output has only
+Mod API package imports; Runtime and Worktree import Kernel's actual base class,
+not private copies. This bounds the cycle/identity evidence to inspected output,
+not every possible installation. Review packet SHA:
+`cecf7637ebe1baccfa4c9aacc7c64bd92860564bae472d0f8b4b3eb209cbe028`;
+log SHA: `21313e97eefd7d3652faec11aae01be34acf985a85f5e17d4d9e561a305d825a`.
+
+Archived development evidence:
+
+- `modular-host-error-isolation-red`: common imports failed on missing Forge.
+- `modular-host-error-owners-red`: canonical physical exports were absent.
+- `modular-host-error-direct-owners`: six test files and types passed in 4.637s.
+- `modular-host-error-peer-controls`: identity tests, types, generated metadata
+  and pre-release N−1/N−2 API compatibility checks passed in 2.622s. Log SHA:
+  `7ea7c00210aae7ad4462db7d1e25d625d86d11b9baa1d85661a6ec5ae5f2b404`.
+- `modular-host-error-built-red`: despite its ID, this probe PASSED. Typecheck
+  had already emitted updated Core files. It is built constructor-identity
+  evidence, not a negative control. Log SHA:
+  `444a5c9e6ed04a38ad29bbe066ffcc5498459534f3211b4f8d46c7eb8f236b28`.
+
+The required OSV scan (`modular-host-error-osv`) returned findings: 16 advisories
+across nine packages, two critical, seven high, six medium, one low. Tinypool
+1.1.1 has both critical dev findings; Undici 6.28.0 has runtime findings. The
+lockfile diff changes only two peer ranges, not resolved dependency versions.
+No advisory is waived or fixed by this extraction. Dependency remediation and
+security release acceptance remain open. Scan log SHA:
+`57aefcb56dfe4c3a6080e4f02403c9b753e092e1470fa1f349e4163cc29f99be`.
+
+The first full gate rejected two stale Engine Runtime identity hashes in the
+generated surface catalog after the peer-range correction. Regeneration changed
+only those hashes. The failure is retained as `modular-host-error-full`.
+
+`modular-host-error-full-retry` passed in 859.507s: 10,743 tests passed and six
+were skipped. Build, types, lint, generated artifacts, re-export guard, release-set
+and supply-chain checks passed. Log SHA:
+`745af57446b5cf61c4b46eec9e91cffe082e6f68a2397354972f286f4bfc4050`.
+The supply-chain checks validate package contents and metadata; they do not
+supersede the separate OSV findings above.
+
+Final rebuilt checks passed: `modular-host-error-final-identity` (0.185s),
+`modular-host-error-final-goal` (seven CLI invocations, 2.501s), and
+`modular-host-error-final-mcp` (five MCP processes, 1.488s). Their logs retain
+the identity, supervisor recovery and permission/safe-mode assertions.
+All recorded verification runs launched zero providers. This is development
+verification, not clean committed release qualification. Core's other feature
+imports and the Ratings-disabled workflow contract remain unresolved boundaries.
+
+## Awaitable selected-host setup — 2026-10-19
+
+Kernel package bootstrap now awaits host decoration before calling a mod
+factory. Existing synchronous decorators remain valid. CLI setup loads its
+direct Goal/Plan host bindings inside the matching owner branches. Default
+configuration, engine dispatch and runtime policies are unchanged.
+
+This does not complete optional-package isolation. Core retains Plan exports;
+shared host imports still include other mods, and CLI bundling remains open.
+The Goal control rejects the entire Goal module while allowing unrelated host
+setup. The Plan control rejects only its session-host binding: it must not be
+reported as evidence that Plan can already be physically absent.
+
+Codex review packet SHA:
+`9d0c501a71071acb03362f6990933965964dea33a3f581b2bebd9cb8195447fa`;
+review log SHA:
+`5b2641a661845f88db8fcb0f3b6fa74dcabd31829f8e792cf4f09eefa38ec978`.
+Review found missed aliased callers in engine-dispatch tests. Their failures
+were reproduced and callers now await construction. Factory spies strengthen
+the setup tests: resolved services arrive before factory creation, and a
+rejected decorator prevents its factory. An unchanged candidate pointer alone
+was insufficient proof and is not used as the primary oracle.
+
+Archived receipts in `/Users/ra/dev/modular-agon-remediation/`:
+
+- `modular-async-host-red`: actual Ask dispatch failed before the await.
+- `modular-async-host-aliased-caller-red`: reproduced missed test callers.
+- `modular-async-host-review-controls`: 103 tests/types passed; log SHA
+  `e7d909bd15b09e330a00efd8ed83f808918ab1983ff00e5156489ae5b9d62060`.
+- `modular-async-host-plan-control`: 14 host tests/types passed; log SHA
+  `302576d2a31a396d5e422e43833e20027a89931d34e2ea6b84ad0292079d98e2`.
+
+An earlier mixed-source/built-kernel run failed; rebuilding the kernel fixed
+the mismatch. A Vitest wrapper-message assertion was corrected to inspect its
+exact cause. Those failed logs remain archived, not counted as passing.
+Full-gate and rebuilt-process results follow; clean release qualification is separate.
+
+The first full gate (`modular-async-host-full`) failed one ownership assertion:
+it required a static Plan host import. The other 10,740 tests passed, with six
+skips. A focused rerun reproduced the failure. The ownership check now compares
+the actual decorated session host with the physical Plan export; it still
+rejects the retired CLI owner and checks the interactive dispatch import.
+`modular-async-host-owner-fixed` passed the four affected test files and types
+in 2.849s, with zero provider launches. Log SHA:
+`988a846e4f51baaf884388f665f1800e033f6cdb8363c2135e6bde255cfef79d`.
+The failed full-gate log is retained with SHA
+`03d7bc36e6f500f00d3d94129b0a865ee7664beff5aa6d74fd592c9e9d0dceea`.
+The full rerun `modular-async-host-full-retry` passed in 866.632s:
+10,741 tests passed, six skipped; build, types, lint, generated metadata,
+re-export, release and supply-chain gates passed. Log SHA:
+`b87c3a274196ead8ba625c5efa29779e018ed644a21a757aab48a2b66f5a4c0d`.
+
+Final rebuilt-process verification:
+
+- `modular-async-host-goal-built`: seven real CLI invocations passed in 2.513s,
+  covering supervised startup, unknown resume, collision, token mismatch,
+  matching recovery and manual resume. Log SHA:
+  `a89f93c6ba9936fcddcd0118027fc78850d28bb2a0d0b4171694e49e1b03f7f1`.
+- `modular-async-host-mcp-built`: five MCP processes passed in 1.478s,
+  covering approved memory writes, denied and non-boolean approval, missing
+  approval channel, and safe-mode unreachability. Log SHA:
+  `1e6b54fae1b7f53319218e67d1a71eae9df465154663933227a65af9d45e39cb`.
+
+All three runs recorded zero provider launches. No active installation changed.
+These are development-subject checks, not final clean-checkout release receipts.
+
+## MCP legacy memory owner retirement — 2026-10-19
+
+The kernel write helper no longer implements SaveMemory. Production dispatch
+already sent only AgonBash, AgonEdit and AgonWrite to that helper. SaveMemory
+has one MCP execution owner: the physical memory mod. Unknown helper names,
+including inherited object keys, now return before permission signaling.
+The transport's unused Core formatter imports were removed with the branch.
+Core's exported legacy factory remains for compatibility; this does not claim
+that all Core feature imports have been retired.
+
+The three rejection tests failed before the cut. Existing AgonWrite completion
+and sixteen physical MCP authority tests passed afterward. Codex review found
+no blocker; its coverage suggestion was applied by configuring a signal
+directory and proving that rejected names leave it empty.
+Review packet SHA: `de37ee24edbe93f92f8b68b976cec32d43697a1fe650530eb1bee6d1c7b59c82`.
+Review log SHA: `3b5ad1643ffca6eb2a9f6fb32123ccc6085b566f505f8fca66a788917afd2b50`.
+
+An attempted Core-import runtime negative control was rejected as evidence:
+the first probe had a quoting error; the corrected probe passed against the
+old built artifact too. It cannot distinguish the source import change under
+the existing bundle layout. Both logs remain archived.
+
+`modular-mcp-memory-retirement-full` passed in 867.875s: 10,737 tests passed,
+six skipped, plus build/types/lint/generated/re-export/release/supply-chain gates.
+Log SHA: `b839a23f6a23da4c029289548dc089fdab2861eb7776cdee3b25a5cc90cd8842`.
+`modular-mcp-memory-retirement-built` then passed the five real MCP-process
+memory cases in 1.487s. Log SHA:
+`1e6b54fae1b7f53319218e67d1a71eae9df465154663933227a65af9d45e39cb`.
+Both recorded zero provider launches. Final clean-checkout release acceptance
+and selectable-package isolation are still open.
+
+## Project-memory contract repair — 2026-10-19
+
+The physical SaveMemory mod had replaced the original `memory`/`section`
+contract with engine-observation fields. It now writes dated, deduplicated
+facts to the invocation's `.agon/project.md`, preserving the original section
+cap and unrelated content. Engine-memory support remains unchanged. The pure
+formatter moved byte-identically to shared persistence; Core retains exports.
+
+MCP and Cesar obtain explicit per-call approval. Missing or denied approval
+cannot write. Cancellation, host replacement and canonical-generation changes
+are checked before execution. A synchronous invocation authority check also
+runs after the asynchronous write-grant check, before file I/O. Cesar updates
+the caller's actual read-before-write cache, not a global replacement.
+
+The additive Mod API fields are `ToolContribution.requiresConfirmation` and
+optional local invocation callbacks `assertCurrent`/`didWriteFile`. Hosts
+currently supply those callbacks only to the bundled memory owner; they do
+not cross third-party worker serialization. No dependency was added.
+
+Codex review packet `modular-project-memory` found the post-grant authority
+gap and caller-cache mismatch. Both received focused regression controls and
+source fixes. Its approval-reason concern was checked against
+`core/src/signals/tool-registry.ts`: `ask` always invokes the approval handler,
+or denies if no handler exists; `save-memory` is not an override token.
+Packet SHA-256: `4fd63557ea175e97d40d0d4633bf19351215ba57445b7e478943a62560e506e7`.
+Review log SHA-256: `9d415dc8abc572f443c2cf7c0336f9c3717e5cf5435428953ca4d911f7424836`.
+
+Evidence remains outside Git in `/Users/ra/dev/modular-agon-remediation/`:
+
+- `modular-memory-project-contract-red`: original schema regression failed.
+- `modular-memory-review-fixes`: separate caller cache failed against the old
+  built mod; 29 other tests passed. Preserved, not counted as green.
+- `modular-memory-review-fixes-built`: rebuilt mod passed 30 tests and types;
+  log SHA `8964553b1636937f9b576df949625d9b20769f6090e778e0144683317ac501b2`.
+- `modular-memory-generation-control`: ten Cesar tests and types passed,
+  including a real canonical-pointer change during the write-grant check;
+  log SHA `b88bc3c815d7b6321af8cf6ecbede9b5650bbd059e403c18a4f1c3411590b69d`.
+
+`modular-memory-full-gate` passed in 866.083s: 10,734 tests passed, six skipped;
+build, types, lint, re-export guard, generated metadata, release-set and
+supply-chain gates passed. Log SHA-256:
+`ccd72bf2639a0a6ff589d274c77e914269ab027c65e5c0795aa5abc243a8a7cd`.
+`modular-memory-final-built` then passed five rebuilt MCP-process cases in
+1.539s: approval, denial, non-boolean approval, missing approval channel and
+safe-mode rejection. It checked real files and permission-file cleanup.
+Log SHA-256: `1e6b54fae1b7f53319218e67d1a71eae9df465154663933227a65af9d45e39cb`.
+Both runs recorded zero provider launches. Final clean-subject qualification,
+package isolation and whole-release acceptance remain open.
+
+## MCP safe-mode startup repair — 2026-10-19
+
+Development subject: descendant of `e140d078c`. MCP authority now defers feature
+host services until ordinary bootstrap. Safe mode does not import that module
+or construct its engine services. Invocation configuration loads only after
+tool/schema checks; cancellation and captured host authority are checked again
+after the asynchronous import and before configuration or tool execution.
+
+| Receipt | Result | Log SHA-256 |
+|---|---|---|
+| modular-mcp-safe-import-red | Feature import broke authority loading before the fix | 0920363f0d1fb3bb12c62133b47ff5b6bfc8d959dece50e00306552185d56155 |
+| modular-mcp-safe-review-controls | Nine tests, types and full lint passed in 60.716s | a6ac215f3a443b0fb841c79e38a3be8b03f0a8d6d8f4d8b2b6fc87cfa1dbd7c2 |
+| modular-mcp-safe-full-gate | Failed under OS sandbox: socket EPERM and watcher failures; not waived | 5dc7fec7a5440efe0237cfc242ae71811ee9fc2d0ac805f9d887a1ef7c8d175e |
+| modular-mcp-safe-full-gate-local-sockets | Passed in 861.445s; 10,719 tests passed, six skipped | d33fe74960e443691e9ffff7789292c3af1662ac5a7f20acffa2ede1ed07e1bb |
+| modular-mcp-safe-final-built | Two rebuilt MCP processes passed in 0.454s | e0a6814966f757f4acef1157c623e41f0f236e27da84d29e9a10041da37381a8 |
+
+The full-gate retry used the same source with local socket/watch access. It kept
+isolated homes and provider/browser blockers. All receipts record zero provider
+launches. The built probe rejects feature-services imports: ordinary startup
+fails, while safe startup answers initialize, lists no tools and refuses Forge.
+
+Isolated Codex review found no blocking regression. Packet SHA-256:
+`bac41cfbdf36edf2d459fa88834aa82d8960ff92b1908447285fa03f1044204d`.
+Review log SHA-256:
+`cdb20d75ec4e9d84026d1ab7f8ebd22bba2fe2b8cb7536fa27def8f02ae9c385`.
+The temporary auth copy was removed. Additional tests cover cancellation,
+disposal, replacement, pointer change, import rejection and successful
+continuation. The proposed nonempty safe catalog assertion was rejected:
+kernel management currently contributes CLI/TUI entries only. Exact empty
+catalog assertions replace the vacuous owner check. Overlapping initialization
+remains a hypothetical limitation, not a demonstrated production flow: MCP
+initializes once before starting its server; disposal callers are tests.
+
+Raw logs and exact commands remain in `/Users/ra/dev/modular-agon-remediation/`.
+This repairs the feature-host import boundary, not final optional-mod packaging.
+The transport still imports Core memory helpers; selectable mods remain in
+the CLI bundle. A separate source trace found that modular SaveMemory replaced
+the existing project-memory contract with engine notes and lost per-fact
+approval. That compatibility repair and final package isolation remain open.
+No global installation, promotion or push occurred.
+
+## CLI safe-mode startup repair — 2026-10-19
+
+Development subject: descendant of `cd60a459e`. Safe-mode bootstrap previously
+imported feature host services and constructed engine services before entering
+the kernel-only branch. CLI startup now skips those effects in safe mode.
+Ordinary startup retains its decorator and engine services. Pristine safe-mode
+help now lists kernel management commands instead of the all-feature catalog.
+`--version` remains independent of host state. Citty does not support `-v` as a
+version alias; its existing error behavior is preserved.
+
+| Receipt | Result | Log SHA-256 |
+|---|---|---|
+| modular-safe-host-import-red-control | Safe-mode import failed before the fix | f2f0fb847209d647ec355b61eaa72868fd053cd6ba5a6cdc55c4ffe699a1cea4 |
+| modular-safe-pristine-help-red | Both pristine help aliases failed before the catalog fix | 8845c62a22934fbfdee780dd79efc08719470ea78e00d8aa7e6c6d9f74a698c9 |
+| modular-safe-startup-final-focused | 44 tests, types and targeted lint passed | ff8ae7ccc820ff45ad5b3751d7339d764e3441e93766665bc482b40e772c76f2 |
+| modular-safe-startup-full-gate | Passed in 865.677s; 10,712 tests passed, six skipped | ce541b3f269389d085210bfac77d4650174f2feff7a60cf19fb1bc50e752be85 |
+| modular-safe-startup-final-built | Three rebuilt CLI checks passed in 0.568s | 1ca196ed16d859ad9ec5b4878162b9745aaf919d8bf340d567d0e4cbcd824d7b |
+
+The built probe refuses feature-services imports through a Node resolver hook.
+Ordinary `mod list` fails on that control; safe-mode help and `mod list` succeed.
+Source tests also reject an injected throwing decorator in safe mode. Both
+metadata forms preserve an unusable host file. Child help tests explicitly set
+Consola's log level because its test-environment default suppresses info output.
+Initial harness/PATH, wrapped-error and unsupported-alias assumptions produced
+failed receipts; they remain retained, not counted as production defects.
+
+Isolated Codex review found no blocking finding. Packet SHA-256:
+`64158eddbe8b6522bdbeff82135a493ef0ff2adfb8bd308af43dc51c7bda5cbf`.
+Review log SHA-256:
+`4e47500ca93bd1d3d62f71b787303dccfe6a1c5bbd6a9e670eeba199b897dfeb`.
+Suggested controls were verified locally; the proposed `-v` alias assumption
+was refuted against Citty source. The temporary auth copy was removed.
+
+All test receipts record zero providers. Logs and exact commands remain in
+`/Users/ra/dev/modular-agon-remediation/`. No global installation or push occurred.
+This is CLI recovery evidence, not final packed optional-mod isolation. MCP has
+a matching eager-import path still to repair. A separate diagnostic build proved
+that mods remain embedded in the CLI; its temporary externalization was reverted.
+Packaging cutover and final clean-subject release acceptance remain unfinished.
+
+## Findings and clean repair plan
+
+| ID | Finding | Repair boundary and required regression | Status |
+| --- | --- | --- | --- |
+| A01 | Disabling Think commits a lock rejected on the next boot; re-enable cannot restore filtered records | Build selection from a retained, identity-bound installed inventory, not the previous active subset. Validate lock integrity and resolved closure before committing. Exercise disable → fresh boot → enable → fresh boot, dependencies, stale approval, missing inventory and rollback. | Repaired; 36-mod fresh-bootstrap matrix and installed lifecycle verified |
+| A02 | Successful lifecycle mutation subsequently fails the lazy parent generation check | Check authority before dispatch, not after a child has deliberately changed generation. Keep stale-client rejection for new invocations. Exercise the real nested CLI. | Repaired; nested CLI and stale-client regressions verified |
+| A03 | Packaged MCP searches nonexistent engine asset paths | Use the shared engine-runtime asset resolver, just as CLI does; test a relocated packaged MCP without repository fallback or credentials. | Repaired; shared resolver test and guarded packaged MCP probe verified |
+| A04 | TUI Think emits `input`/numeric flags while its handler expects `problem`/string flags | Normalize each surface into the same validated domain request; test parser → schema → handler, including flags and malformed input. | Repaired; legacy intent shape retained, parser/schema/handler test verified |
+| A05 | TUI plan-task is dispatched to existing-plan lookup | Restore task planning/resume semantics through an explicit modular contract, not an unowned legacy bypass. Test new task, inspect, resume, approval and persistence. | Open |
+| A06 | Brainstorm silently drops synthesis, calibration, dedup and retry behavior | Extract the actual workflow behind injected capabilities. Compare raw results and engine-call sequences with the frozen legacy oracle; do not substitute a simplified algorithm or maintain two authoritative implementations. | Open |
+| A07 | Linux CI lint exhausts V8 memory | Measure typed lint scope and partition work without omitting files/rules. Prove complete coverage and run within CI resources. | Repaired locally; 4 GiB lint passes; Linux CI rerun pending |
+| A08 | External folder-mod engine capability delegates to a throwing compatibility stub | Provide a real host engine capability to both CLI and MCP while preserving trust/grant checks. Test granted dispatch, refusal/revocation and error propagation with fixture engines. | Repaired; real worker dispatch and live grant revocation verified |
+| A09 | First-party semantic receipts return hashes without persisted records; logging is a no-op | Use durable owner-attributed, redacted receipt/log storage; test retrieval, uniqueness, redaction and write failure. Separate these receipts from run artifacts. | Repaired; shared durable/redacted evidence writer verified |
+| A10 | Claimed mutation coverage is not an actual implementation-mutation score | Inject targeted behavioral mutants and require discriminating tests to kill them. Label negative controls separately. | Six explicit implementation faults now tested by the foundation gate; no whole-program mutation score claimed. Final clean-subject qualification remains required. |
+| A11 | Legacy algorithms remain beside replacement mod implementations | Reconcile every runtime owner and route with the extraction ledger; retain only explicitly owned compatibility adapters with removal tests. | Open |
+
+## Reproduction and positive evidence
+
+### Remaining Brainstorm intent routes (2026-10-12)
+
+The direct orchestration intent and approved `suggest-brainstorm` intent still
+called a duplicate CLI session handler. Both now use the existing physical Cesar
+route and forward the job's cancellation signal. Their thread capture, approval,
+workflow hooks and continuation guards remain. The unused 255-line internal
+handler and its barrel export are removed; an ownership guard prevents return.
+
+Both routes failed the new regression before the change by reaching the legacy
+execution sentinel. The repaired routes propagate generated-authority refusal,
+record successful results through the mod, and reject cancelled queued jobs.
+These focused tests mock the authority boundary, not proof of all disable paths.
+The full run passed 9,124 tests with six skipped, plus build, release-set,
+supply-chain, typecheck, lint and re-export checks. No provider launched.
+Isolated source review found no concrete defect. A06/A11 remain open for their
+other ownership and installed-product requirements; this is not release approval.
+
+### Running interactive follow-up result refusal (2026-10-08)
+
+Deferred follow-up tests reproduced late answer persistence and ordinary
+empty/error outcomes after cleanup failed during the second send. Nine red
+cases covered entry/current/acquired session failure crossed with text,
+completion without text and rejected iteration. Three healthy controls passed.
+Pre-fix focused log SHA-256:
+`c63af59aa360b3ed2ee0e633977604772a5214dd43c95d3c3db56dd4fbc6c0df`.
+
+The shared interactive follow-up now checks cleanup health before consuming each
+chunk and before completing its send callback. Its catch translates known cleanup
+failure into the existing typed refusal; unrelated exceptions still propagate.
+All three choice callers propagate that refusal instead of treating it as a
+completed follow-up. Final display cleanup does not flush buffered text after
+cleanup failure, but still closes a live pane containing already-visible text.
+
+The expanded 36-case matrix covers `[ASK]`, option forks and yes/no, each crossed
+with entry/current/acquired failure or healthy control and text/empty/rejection.
+It exercises real question callbacks, the brain and confirmation workflow using
+deferred fixture streams. Failure preserves pre-follow-up messages, closes the
+iterator, emits the cleanup warning and releases turn handles without another
+provider send. The source-wiring checks now require the health check before
+stream completion and condition buffer flushing on healthy state; they retain
+their stream-end assertions.
+
+This covers the direct interactive follow-up stream, not all continuations or
+tool execution. A provider may already have performed effects before yielding.
+Tool-loop callbacks, asynchronous tool completion, MCP authorization, provider
+termination and durable recovery remain separately open. Already-visible text
+is not retracted, and original pre-choice messages remain persisted.
+
+Development gates passed: build, typecheck, lint, re-export guard, first-party
+generation check, release-set packs, supply-chain self-test, 6,406 tests (six
+skips across 543 files), and 72 offline isolated installed-product checks.
+Full-suite log SHA-256:
+`4b38539c04c3e669e089834be84fa59675a41e77cb78ac2dd8b9735b22cf59e2`.
+Release-set and SBOM hashes were regenerated. These are development checks,
+not independent clean-commit release qualification. No active installation was
+updated, and no live provider was needed.
+
+### Interactive-choice continuation launch refusal (2026-10-08)
+
+Real-brain tests reproduced a second provider send after cleanup failed while
+the user-choice overlay was pending. Nine failing cases crossed the structured
+`[ASK]`, inferred option fork and yes/no confirmation with failure of the entry,
+current replacement or acquired session. Three healthy controls still sent the
+selected follow-up. The tests resolve the actual dispatched question callback;
+they do not stub the choice-wait helper or the confirmation follow-up workflow.
+Pre-fix focused log SHA-256:
+`280eed81a5b62b4024c6d32ee4d48495ff0e5837c775936816df65cc7d0f1209`.
+
+Each choice boundary now reuses the existing captured/current/acquired cleanup
+guard before selecting or sending the follow-up. Refusal returns the specific
+`session-cleanup-failed` outcome and restart warning, launches no second send or
+adapter fallback, and leaves the messages saved before the question unchanged.
+The outer turn cleanup still releases busy and abort handles. All 110 focused
+tests pass, including the three healthy follow-up controls.
+
+This qualifies follow-up launch after user approval, not the lifetime of that
+follow-up. Cleanup failure during the follow-up stream, its tool execution,
+other continuation paths, MCP side-channel authorization, provider termination
+and durable recovery remain separate work. The original question may already
+be visible and persisted before the failure; this guard does not retract it.
+
+Development gates passed: build, typecheck, lint, re-export guard, first-party
+generation check, release-set packs, supply-chain self-test, 6,370 tests (six
+skips across 543 files), and 72 offline isolated installed-product checks.
+Full-suite log SHA-256:
+`3aa493feaa50eb50e51a8c0ebcc31ecbb50b6315e8743682675482d7437861ee`.
+Release-set and SBOM hashes were regenerated. These are development checks,
+not independent clean-commit release qualification. No active installation was
+updated, and no live provider was needed.
+
+### Initial persistent stream cleanup refusal (2026-10-08)
+
+Deferred-stream tests reproduced late text acceptance and ordinary empty/error
+outcomes after cleanup failed. Nine failures covered the captured entry session,
+the current replacement, and the acquired session, crossed with text, empty
+completion and rejection. Three healthy controls retained existing behavior.
+Pre-fix focused log SHA-256:
+`764417188b9880b8ec93210d15adf0628ac1ce89c6d3b4738518dd27f9e4a11e`.
+
+The initial stream now checks those three identities before consuming each
+chunk, before flushing buffered display text at stream end, and before classifying
+a stream exception. Refusal returns `session-cleanup-failed` without a completed
+engine answer or an ordinary recovery outcome. The iterator closes normally.
+
+Six additional regressions reproduced a stranded live pane after refusal, using
+an already-visible preview or text prefix followed by text, completion or
+rejection. The text fixture must exceed the existing 40-character display buffer;
+after correcting that fixture, all six failed on the missing `streaming-end`.
+That red log SHA-256:
+`f531af92c435901b854dbef2565a789907518641d604fb5206d0b61e9805b68b`.
+Refusal now closes the pane: existing output handling discards a preview-only
+draft or finishes text already visible before failure. It does not retract that
+earlier text or persist it as a completed engine answer. All 98 focused tests pass.
+
+Scope is the initial stream's consumption boundary, not the entire turn. This
+does not stop effects performed inside a provider before it yields a chunk.
+MCP side-channel authorization, pending tools, continuation sends, concurrent
+acquisition ownership and durable recovery still require separate qualification.
+
+Development gates passed: build, typecheck, lint, re-export guard, first-party
+generation check, release-set packs, supply-chain self-test, 6,358 tests (six
+skips across 543 files), and 72 offline isolated installed-product checks.
+Full-suite log SHA-256:
+`c99e8185ceea3335924b671f0fec1bc2089be4c079e25cf15b22db87d6575694`.
+Release-set and SBOM hashes were regenerated. These are development checks,
+not independent clean-commit release qualification. No active installation was
+updated, and no live provider was needed.
+
+### Brain in-flight fallback result refusal (2026-10-08)
+
+Deferred adapter tests reproduced the brain accepting a fallback answer after
+cleanup failed during dispatch. Empty and rejected dispatches also lost the
+specific cleanup-failure outcome. The brain now reuses its captured/current
+health guard after adapter completion and after the fallback catch, before
+rendering/persisting a reply or returning an ordinary fallback failure.
+
+Nine cases cover original/current cleanup failure crossed with response, empty
+output and rejection, plus three healthy controls. Six failed before the fix;
+the healthy controls passed. Failed cleanup retains the already-persisted user
+turn without adding an engine answer, returns `session-cleanup-failed`, stops
+the spinner, and clears busy/abort handles. Only one adapter dispatch occurs.
+The pre-fix log SHA-256 was
+`d4c5aec2bd6a4a725420410acc5a566c8693021547c1bcdbb9ba61da94b1b0af`.
+
+This checks the real brain with a deferred fixture adapter. It cannot retract
+provider effects already performed. Persistent-session streaming, tool loops,
+continuation sends, concurrent acquisition ownership, provider termination and
+durable recovery remain separate work; this is not whole-turn safety qualification.
+
+Development gates passed: build, typecheck, lint, re-export guard, first-party
+generation check, release-set packs, supply-chain self-test, 6,340 tests (six
+skips across 543 files), and 72 offline isolated installed-product checks.
+Full-suite log SHA-256:
+`5f64aa6378a3d281cbec92f77a28534851aede04a26fe4017ccae476c536a214`.
+Installed-product log SHA-256:
+`2114e82e9f54af521abe145d88146966910f788cf1a8e9099c82d3d465fa96d0`.
+Release-set and SBOM hashes were regenerated. These are development checks,
+not independent clean-commit release qualification. No active installation was
+updated, and no live provider was needed.
+
+### Team-forge recovery preparation guards (2026-10-08)
+
+Deferred fitness-preparation tests reproduced job scheduling after cleanup failed
+in both recovered-delegation and one-shot suggestion paths. Four red cases covered
+failure of the captured original session or the replacement current session in
+each path. Two healthy controls still scheduled the approved team-forge job.
+
+Both paths now recheck the existing captured/current cleanup guard after fitness
+preparation and before choosing a fallback command or scheduling work. The dense
+one-line branches were expanded for readability without changing command selection,
+approval, task arguments, or healthy dispatch behavior. A failed cleanup emits
+the restart warning and does not schedule a job or inspect alternate engines.
+
+The tests exercise the real router with deferred preparation, fixture providers,
+and a non-executing job dispatcher. They verify scheduling decisions, not a live
+team-forge run or cancellation of effects already performed by preparation.
+Pre-fix focused run: four failures, 67 passes; SHA-256:
+`78c666de312b9c43a8351fce64d392e3d6622ee4d3c84ed2a5ac9f58a02b4521`.
+
+Later in-turn awaits, concurrent acquisition ownership, provider termination,
+durable recovery and the broader extraction/release findings remain open.
+
+Development gates passed: build, typecheck, lint, re-export guard, first-party
+generation check, release-set packs, supply-chain self-test, 6,331 tests (six
+skips across 543 files), and 72 offline isolated installed-product checks.
+Full-suite log SHA-256:
+`115f404fdbb837a30d54c53d727d95713a051c5fd3f513f2c900c409bd395cd8`.
+Release-set and SBOM hashes were regenerated. These are development checks,
+not independent clean-commit release qualification. No active installation was
+updated, and no live provider was needed.
+
+### Claude integration and acquisition cleanup gaps (2026-10-08)
+
+Integrated Claude's branch through `31a23825` into the existing router repair
+branch based on `68453724`. Claude contributed brain budget/acquisition checks,
+close-failure marking, a first-party generator drift repair, and explicit opt-in
+for live-provider probes. His historical evidence note remains preserved; its
+33-step committed receipt covers `ab98be8f`, not this combined implementation.
+
+Independent fixture review reproduced two incomplete boundaries in that work:
+`ensureCesarSession` could start a new provider after cleanup failed while prompt
+preparation awaited, and detachment exceptions did not mark the old session.
+The combined implementation now retains the entry session inside acquisition,
+checks entry/current health after dead-session restart and prompt preparation,
+and treats close plus detachment as one guarded operation. This also covers
+compaction and fingerprint-change cleanup. A partial detachment does not erase
+the captured failure or imply a rollback.
+
+Nine acquisition regressions cover original/current failure during prompt
+preparation, resolved/rejected restart, engine/fingerprint/compaction detachment
+failure, and two healthy replacement controls. Before the fix, seven failed and
+the healthy controls passed; afterward all 65 focused recovery tests passed.
+Providers and context-spine construction are fixtures; acquisition, compaction,
+and cleanup health are real. The test-first red-run SHA-256 was
+`8976177eefa7eab0febe05052fe0f35f638800bfac351762d6b3218c17ed37bf`.
+
+Remaining scope includes cleanup failure during a replacement's own in-flight
+start, concurrent healthy acquisition ownership, later brain/tool-loop awaits,
+team-forge preparation, actual provider termination, durable recovery, and the
+broader ownership/extraction and release findings. These checks do not make a
+WeakSet durable, prove process death, or qualify the full release.
+
+Combined development gates passed: build, typecheck, lint, re-export guard,
+first-party generation check (36 packages/290 files), release-set packs,
+supply-chain self-test, 6,325 tests (six skips across 543 files), and 72 offline
+isolated installed-product checks. The increased skip count reflects explicit
+live-provider opt-in, not removed coverage claimed as passing. Full-suite log
+SHA-256: `0dac593cf41888fd7eb8f4386c4efcb5fdd9f438535db71809b4271e4ecee45a`.
+
+The first full run failed the new provider-stub assertion because the temporary
+diagnostic preload rejected bare fixture executable names. The preload now allows
+only exact script contents resolved inside the owned fixture directory; four
+non-fixture refusal controls passed. No test oracle was changed. Both generated
+metadata merge conflicts were resolved by regeneration, not by selecting stale
+hashes. These are working-tree development checks, not a clean committed-source
+release receipt. No active/global Agon installation or personal state was updated.
+
+### Acting-Cesar asynchronous cleanup guards (2026-10-06)
+
+Six failing regression cases reproduced unsafe alternate-engine recovery after
+cleanup failure: approval of a one-time switch, approval of persistent automatic
+fallback, failure during asynchronous imports, and a pending adapter returning
+text, empty output, or rejection. A healthy alternate answer passed before the fix.
+
+The router now rechecks its captured/current session guard after approval, before
+dispatch following imports, after adapter completion, and after the error catch.
+It does not save automatic fallback configuration or start a new adapter after
+failed cleanup. It does not persist/render late results or misreport cleanup
+failure as all engines being unavailable. The existing restart warning remains.
+
+Tests run the real recovery ladder, question callback and isolated chat store.
+The configuration writer and providers are fixtures. A microtask places cleanup
+failure after approval but before asynchronous imports complete; deferred adapter
+promises cover completion/error boundaries without live engines. These checks
+cannot cancel or undo effects already performed by an in-flight provider.
+
+The brain-internal fallback, team-forge preparation await, actual provider
+termination, durable config/session recovery and whole-product extraction remain
+open. Claude's separate brain task is unchanged.
+
+Development gates passed: build, typecheck, lint, re-export guard, 6,302 tests
+(five existing skips across 541 files), release-set packs, supply-chain self-test
+and 72 offline isolated installed-product checks. Full-suite log SHA-256:
+`ae21890baa3c7b02a7bcb741b45bbde1c0d220aa1b03d55713a7b3dd8ef8aa29`.
+The pre-fix focused run had six expected assertion failures and 36 passes;
+its log SHA-256 was
+`f36e5b1384e73738734b93bddb90542953cf26b1f9dcc69ba509e6fb2eb79efc`.
+Temporary development logs are not immutable clean-commit release receipts.
+Release-set and SBOM hashes were refreshed. The active installation was not
+updated, and no provider or browser was needed.
+
+### One-shot suggestion approval cleanup guard (2026-10-06)
+
+A deferred approval regression reproduced a campfire job being scheduled after
+the captured session was marked cleanup-failed while the prompt was open. The
+failure assertion returned `true` instead of the required `false`; the healthy
+control passed before the fix. The router now rechecks the existing captured/current
+cleanup guard immediately after approval and before interpreting the answer.
+
+Both cases pass after the fix. Tests use real recovery routing and isolated chat
+persistence, a fixture brain/adapter, and a non-executing job callback. They prove
+refusal to schedule new work, not cancellation of prior provider effects. Messages
+persisted before the approval remain valid history; this is not transcript rollback.
+
+Acting-Cesar approval/dispatch, team-forge's preparation await, the brain's internal
+fallback, provider termination and durable recovery remain separate work. The
+[Claude handover](modular-agon-claude-handover.md) records the architecture, safety
+constraints, evidence limits, remaining work and a non-overlapping brain task.
+
+Development gates passed: build, typecheck, lint, re-export guard, 6,295 tests
+(five existing skips across 541 files), release-set packs, supply-chain self-test
+and 72 isolated installed-product checks. The installed check passed offline
+using the existing temporary dependency cache. Full-suite log SHA-256:
+`300fd2541b1ceda07ac1fc509a17537643aa64170bf4e5db5bf56c40c7c3832d`.
+Installed-check log SHA-256:
+`2114e82e9f54af521abe145d88146966910f788cf1a8e9099c82d3d465fa96d0`.
+Release-set and SBOM hashes were refreshed. These are development checks, not
+independent clean-commit release qualification. The active installation was not
+updated; no provider or browser was needed for this fix.
+
+### One-shot result and escalation cleanup guards (2026-10-05)
+
+Deferred adapter tests reproduced recovery reaching alternate-engine selection
+after cleanup failed during one-shot dispatch. The router now rechecks its
+captured/current session after asynchronous imports, after adapter completion,
+and before alternate-engine escalation following errors. A failed cleanup stops
+result processing and further recovery with the existing restart-required warning.
+
+Tests cover an empty result, nonempty result, rejected dispatch and a healthy
+empty-result control. Failed cleanup leaves transcript messages unchanged and
+does not inspect alternate engines; healthy empty output still reaches alternate
+selection. The adapter and brain are fixtures, while the recovery ladder is real.
+This cannot retract effects already performed by the in-flight adapter.
+
+The brain's internal fallback, approval and dispatch boundaries in alternate-engine
+recovery, verified provider termination and durable recovery remain open. These
+checks do not qualify the whole release or prove a running provider has stopped.
+
+Development gates passed: build, typecheck, lint, re-export guard, 6,293 tests
+(five existing skips across 541 files), release-set packs, supply-chain self-test
+and 72 isolated installed-product checks. Missing offline dependencies required
+scripts-disabled hydration of the temporary npm cache/prefix before the offline
+installation check passed. Full-suite log SHA-256:
+`dddec24aaf5bb0015639f6ff47da064e75a614072256cfd75ce6b4fefcb659f4`.
+Release-set and SBOM hashes were refreshed. These are development checks, not
+independent clean-commit release qualification.
+
+### Initial-turn and recovered-approval cleanup guards (2026-09-24)
+
+Deferred initial-brain tests reproduced the router consuming a pending delegation
+after cleanup failed, on both resolved and rejected turns. The router now checks
+its captured entry session and current session immediately after the brain await
+and before exception recovery. It leaves the pending delegation untouched and
+does not enter the fallback ladder on that failure. Both references matter when
+the current session is replaced while the turn is pending.
+
+A second regression reproduced an approved recovered delegation launching after
+cleanup failed while its approval prompt was open. The recovered-delegation entry
+and post-approval boundary now use the same captured cleanup guard, and the router
+rechecks before subsequent fallback. A healthy-session positive control still
+launches the approved job. The guard is shared with the existing fallback ladder
+instead of duplicating the identity/warning policy.
+
+Tests run the real router and recovered-delegation code with a deferred brain,
+fixture routing hints and non-executing job dispatcher. They prove these boundary
+decisions, not live-provider termination or job completion. Failures inside the
+brain's own fallback path, during one-shot dispatch, and after recovered-job launch
+remain separate verification work, as do transactional recovery and the broader
+release blockers.
+
+Development gates passed: build, typecheck, lint, re-export guard, 6,289 tests
+(five existing skips across 541 files), release-set packs, supply-chain self-test
+and 72 isolated installed-product checks. Full-suite log SHA-256:
+`094d67b32c39fb5ca30828aa9c24b197ba153f8dc6e3642a4d3dcf3e2eeab765`.
+Release-set and SBOM hashes were refreshed. These are development checks, not
+independent clean-commit release qualification.
+
+### Recovery-ladder cleanup refusal (2026-09-23)
+
+Regression tests showed that the non-API recovery ladder swallowed session-close
+errors and started another brain attempt. Detachment errors fell through to
+replacement dispatch. Recovery now refuses a previously failed session and marks
+close/detach failures before returning a restart-required warning, without starting
+replacement work. Successful cleanup still permits the existing retry.
+
+Deferred retry tests for both CLI and API paths mark cleanup failed while the
+retry awaits completion. The ladder now rechecks both its captured session and
+the current session before interpreting the result or escalating further. The
+captured reference prevents detachment from hiding that failure. There is also a
+check before one-shot escalation after retry exceptions.
+
+These tests execute the real recovery ladder with brain/backend/provider seams
+replaced; they are not live-provider shutdown evidence. Initial-brain recovery,
+pending-delegation recovery, failure during one-shot dispatch, provider termination
+and durable transactional recovery still require separate qualification. This
+does not change the whole-product release disposition.
+
+Development gates passed: build, typecheck, lint, re-export guard, 6,283 tests
+(five existing skips across 541 files), release-set packs, supply-chain self-test
+and 72 isolated installed-product checks. The installation check initially lacked
+an offline npm dependency; a scripts-disabled install hydrated only the temporary
+cache/prefix, then the offline check passed. Full-suite log SHA-256:
+`a130da20097910ca1fb61ce62c488c8e5f46dc89a60d94886473798f9e272421`.
+Release-set and SBOM hashes were refreshed. These are development checks, not
+independent clean-commit release qualification.
+
+### Manual entry guards for failed session cleanup (2026-09-19)
+
+Positive-then-negative tests reproduced manual session acquisition returning the
+same session after a telemetry close or detach failure. The session-health record
+is now shared by telemetry, session acquisition, the brain entry point and the
+router. Acquisition refuses reuse, dead-session restart and changed-engine
+cleanup for that failed object. Router and brain entry guards refuse before
+normal turn setup or the router's generic recovery ladder can dispatch work.
+The warning asks for restart and explicitly does not claim the provider stopped.
+The router leaves pending attachments untouched.
+
+Tests first acquire a healthy session, induce failure through the real telemetry
+callback, then check refusal with alive/dead and changed-engine state. Deliberately
+unavailable downstream configuration proves brain/router rejection happens before
+turn setup. A new healthy session remains usable, and the existing poller restart
+and replacement-session tests still pass. Provider cleanup and config persistence
+remain mocked; no live provider or active installation was exercised.
+
+This closes these entry-time manual reuse paths, not every in-flight race. A
+session becoming unhealthy after entry, verified provider termination, and durable
+transactional recovery remain open. The shared weak identity record is CLI-local
+compatibility machinery, not a new persisted or public Mod API contract.
+
+Development gates passed: build, typecheck, lint, re-export guard, 6,277 tests
+(five existing skips across 540 files), release-set packs, supply-chain self-test
+and 72 isolated installed-product checks. Full-suite log SHA-256:
+`e47adc0906c572af99924e34deefca51d30a718546d66eaa58beb1565633166c`.
+The built CLI contains one shared `failedCleanupSessions` definition. Release-set
+and SBOM hashes were refreshed. These are development checks, not independent
+clean-commit release qualification.
+
+### Visible, fail-closed telemetry handoff failures (2026-09-19)
+
+Config-write, session-close and session-detachment exceptions previously escaped
+into the poller's silent callback catch. Tests reproduced missing diagnostics and
+uncancelled work after a partial session transition. Config-write failure now
+reports that selection could not be saved and starts no retry. Once selection
+has been saved, a cleanup failure aborts the affected work, creates no prompt or
+plan retry, and reports that the selected engine changed but the old session may
+not have stopped. It advises restarting before retrying. Raw exception text is
+not copied into the UI.
+
+A weak, session-identity-bound failure fence prevents another automatic handoff
+against that session, including after an effect restart with a new controller.
+Replacing the failed session permits recovery. Regression tests exercise both
+prompt and plan paths, close and detach failures, repeated ticks, effect restart,
+absence of plan fallback authority, and recovery with a new session. Config
+persistence and provider cleanup are replaced by deterministic test boundaries;
+these are not live-provider termination or filesystem rollback receipts.
+
+This is explicit partial-failure handling, **not transactional rollback**. It
+cannot reconstruct a partially closed provider session or prove its process
+exited. Durable handoff recovery, verified provider cleanup, manual reuse guards,
+and config/session-switch atomicity remain open. The existing broad release
+disposition is unchanged.
+
+Development gates passed: build, typecheck, lint, re-export guard, 6,275 tests
+(five existing skips across 540 files), release-set packs, supply-chain self-test
+and 72 isolated installed-product checks. Full-suite log SHA-256:
+`13a289d83647d9a4f940964b7919f06867ecf27c053ec003843eaaa9ce83c660`.
+Release-set and SBOM hashes were refreshed. These are development checks, not
+an independent clean-commit release acceptance receipt.
+
+### Queue handoff without detached timers (2026-09-19)
+
+The idle drain removed an entry and created an unowned 50 ms timeout. Before
+submit could transition busy, another idle queue render could remove another
+entry; the detached callbacks could also outlive cancellation or UI disposal.
+There was no required delay contract in this path. The drain now calls submit
+directly, so the normal submit busy transition and queue pop occur in the same
+effect execution. No replacement scheduler or timer ownership layer was added.
+
+Failing tests required immediate tagged-entry delivery, zero queue timers, no
+later submission after time advances, and FIFO draining gated by the consumer's
+busy transition. Separate real interrupt-handler tests demonstrated that queued
+automatic retries survived both Esc and hard cancel; those handlers now discard
+tagged retries while preserving independent plain-text user messages. The app
+wires its queue setter into the hard-cancel callback. A pre-existing interrupt
+fixture was completed with the already-required queue setter; its assertions
+were retained.
+
+This closes the detached queue timer and queued automatic-retry cancellation
+paths. The FIFO test models successive effect calls, not a mounted React renderer;
+it is not evidence that every UI lifecycle or provider handoff is qualified.
+Config/session-switch failure atomicity and full live recovery remain open.
+
+Development gates passed: full build, typecheck, lint, re-export guard, 6,271
+tests (five existing skips across 540 test files), release-set packs,
+supply-chain self-test and 72 isolated installed-product checks. Full-suite
+log SHA-256:
+`00cf9c6e4961a8c55024e4571d14adcf676c3edaa678f2ee77c4889158b8903f`.
+Release-set and SBOM hashes were regenerated. These are development checks,
+not an independently reproduced clean-commit release acceptance receipt.
+
+### Queued prompt retry identity (2026-09-19)
+
+Telemetry retries previously became ordinary queue strings, then acquired
+`retried: false` on submission. The queue now supports an internal tagged retry
+entry alongside normal strings. The actual drain passes that entry intact;
+submission unwraps only its text for parsing, history, transcript and dispatch,
+and carries the spent allowance into the new active turn. Busy requeueing keeps
+the tag and cannot turn an automatic retry into mid-turn steering. The displayed
+queue is a memoized text projection, preserving existing visible labels.
+
+Tests execute the real queue drain and submit path with the engine dispatcher
+replaced: a retry arrives with `retried: true`, whereas a manually submitted
+identical string arrives with `retried: false`. Producer tests require tagged
+entries. Further failing tests demonstrated replay into changed mode, side chat,
+plan mode, approval or redirect contexts; these now refuse automatic replay with
+a warning and leave explicit resubmission available. Existing steering/interrupt
+tests remain green. This is run-local control metadata, not a persisted format
+or model instruction.
+
+This resolves allowance loss through the existing queue path. It does not prove
+live model recovery or transactional config/session switching. Queued callback
+timer disposal/cancellation was subsequently repaired above; A06 and the
+whole-product release remain open.
+
+Development gates passed: full build, typecheck, lint, re-export guard, 6,268
+tests (five existing skips), release-set packs, supply-chain self-test and 72
+isolated installed-product checks. Full-suite log SHA-256:
+`5f76ba7358a052911ed27b11c2e6cdd186acd472f5af1c1595942f92bd929360`.
+Release-set and SBOM hashes were regenerated. These are development checks,
+not an independently reproduced clean-commit release acceptance receipt.
+
+### Explicit plan fallback authority (2026-09-19)
+
+Three executor-level negative controls reproduced automatic second executions
+after user cancellation, timeout text alone and a cancelled plan. The executor
+previously took the target from global config and treated retry-looking text as
+authority. That automatic path now requires a one-use, in-memory request bound
+to the execution's AbortSignal, plan ID and exact step ID. The telemetry callback
+creates the request before aborting; the executor consumes it and uses its
+captured target only for a paused, eligible failed step with retry budget left.
+The existing pure `preparePlanFallbackRetry` transformation remains compatible;
+it is not itself an execution authorization API.
+
+Esc, hard cancel and the tracked Ctrl+C hard-cancel path revoke pending requests.
+Requests are never persisted, cannot be imported from plan JSON or error text,
+and cannot be reused on restart or a different execution. Tests cover authorized
+retry, wrong plan/step/run, revocation, spent budget, semantic failure, cancelled
+plan, single consumption and already-aborted controllers. The app callback test
+now checks the actual request identity. Interrupt tests exercise real Esc and
+hard-cancel handlers. Executor tests replace the engine execution/persistence
+boundaries: they prove dispatch authority, not successful live model work.
+
+This resolves the inference-based automatic retry boundary noted below. Still
+open: queued prompt retry identity (subsequently repaired above), config/session-close failure atomicity,
+parallel-step recovery policy and full installed/live handoff qualification.
+This host-side compatibility repair does not complete A06 or release acceptance.
+
+Development gates passed: full build, typecheck, lint, re-export guard, 6,261
+tests (five existing skips), release-set packs, supply-chain self-test and 72
+isolated installed-product checks. Full-suite log SHA-256:
+`53319140fcc7f441546a3b1a84e89c3649443502dfdc89693cc9db2140caeb8c`.
+Release-set and SBOM hashes were regenerated. Built CLI inspection found one
+shared request/consume/revoke implementation. These are development checks,
+not an independently reproduced clean-commit release acceptance receipt.
+
+### App telemetry handoff boundaries (2026-09-18)
+
+The real `startTelemetryPoller` effect and real poller now have an eleven-case
+callback harness. Only the OS/network probe and configuration-write boundary
+are replaced; registry selection, polling, callback dispatch and queue updates
+execute locally. No personal configuration or provider session is used.
+
+Five failing tests demonstrated: closing the captured rather than current
+session; replaying an already-aborted turn; consuming its retry before a failed
+config write; consuming a prompt retry when the plan branch was selected; and
+old effect cleanup clearing the replacement's ref. The callback now consults
+the live session holder, declines already-aborted work, marks only a prompt retry
+after setup succeeds, and clears the poller ref only if it still owns it.
+Additional refusal tests cover no active work, unrelated engines, spent prompt
+and plan retries, and an empty current session holder.
+
+This proves callback/queue boundaries, not completion of a retried model task.
+Remaining handoff dimensions include config-write/session-close failure
+atomicity, retry identity across queue resubmission (`app-submit.ts` currently
+constructs a fresh `retried: false` turn), and plan retry authority:
+`executeApprovedPlan` currently derives retryability from failure text and the
+configured engine, rather than an explicit telemetry request (superseded by the
+2026-09-19 authority repair above). User cancellation
+must be distinguished from authorized fallback before claiming full plan
+recovery qualification. A06 and whole-product release acceptance remain open.
+
+Development gates passed: full build, typecheck, lint, re-export guard,
+6,248 tests (five existing skips), release-set packs, supply-chain self-test and
+72 isolated installed-product checks. Full-suite log SHA-256:
+`c0c0b424d44ab338ab8a096416caec0d51453d1451f5679b80249b70dd3d77b4`.
+Release-set and SBOM hashes were regenerated. These are development checks,
+not an independently reproduced clean-commit release receipt.
+
+### Live TelemetryPoller lifecycle and approval fencing (2026-09-18)
+
+Unlike TelemetryService, this poller is constructed by
+`packages/cli/src/surfaces/app-lifecycle.ts`. Deferred injected probes reproduced
+post-stop fallback callbacks and snapshot writes, restart blocked by an old
+in-flight tick, and surviving probe-timeout timers. Deferred approvals reproduced
+both auto/ask completion after stop and fallback after a healthy observation.
+
+Stop now invalidates the lifecycle signal, releases timeout waits and frees the
+new generation to probe immediately. Retired ticks cannot mutate state, notify,
+clear a replacement's in-flight guard or schedule catch-up work. Stall episodes
+have distinct tokens: repeated observations preserve pending approval; recovery,
+removal and stop invalidate it. Restart permits fresh approval. Auto/ask paths
+share the same completion fence and contain callback rejection without marking
+handoff successful. One-shot stopped polling and the existing timeout/fallback
+tests remain supported.
+
+Eleven new deterministic tests cover these boundaries, including recovery then
+a second stall, repeated observations, and rejection in both fallback modes.
+Tests use the real registry and poller with injected local probes/callbacks;
+no live provider or personal configuration is involved. Cancellation cannot undo
+effects already performed by a caller's callback and does not terminate the
+underlying injected probe. The app's actual retry/config/session-changing
+callback still needs separate end-to-end handoff qualification. This is not a
+claim that A06 or the overall release acceptance is complete.
+
+Development gates passed: build, typecheck, lint, re-export guard, 6,237 tests
+(five existing skips), release-set packs, supply-chain self-test and 72 isolated
+installed-product checks. Full-suite log SHA-256:
+`0cb5bcb6e98a90b406f2d21896e058a1c30ac3f5b7566f5fdd4e7203f09b3142`.
+The app bundle contains the new lifecycle/episode implementation; release-set
+and SBOM hashes were regenerated. These are local development checks, not an
+independently reproduced clean-commit release receipt.
+
+### TelemetryService stop/restart fencing (2026-09-18)
+
+Controlled deferred-probe tests reproduced two lifecycle defects: a background
+probe emitted a heartbeat after `stop()`, and a retired sampler overwrote its
+replacement's snapshot after a stop/start sequence. The former shared boolean
+also allowed both loops to continue after restart.
+
+Each background run now owns an AbortController. Cancellation is checked after
+PID and network awaits, before state/event processing and before publication.
+Stopping wakes and clears the interval sleep; retiring one run cannot clear the
+replacement's running state. Explicit `probeNow()` remains usable while stopped
+and is deliberately independent of background cancellation. Tests cover late
+completion, restart ordering, PID-boundary cancellation, timer cleanup, repeated
+start and one-shot sampling. OS/network probes already in flight are not forcibly
+terminated by this change; their late results are discarded.
+
+Scope remains the TelemetryService implementation, currently constructed only
+by tests in this checkout. This does not qualify TelemetryPoller lifecycle or
+live provider handoff, nor does it complete A06 or the release acceptance gates.
+
+Development gates passed: full build, typecheck, lint, re-export guard,
+6,226 tests (five existing skips), release-set pack checks, supply-chain
+self-test and 72 isolated installed-product checks. Full-suite log SHA-256:
+`7581da686a44cb57a8bfe223d1cb1bf88c9419589bfd655792b264124a2562ff`.
+These are local development checks, not independent release receipts. Packed
+release-set and SBOM outputs were unchanged; the unused service is not newly
+wired into the bundled runtime.
+
+### A21 deterministic telemetry boundaries (2026-09-18)
+
+Source inspection confirmed that the intermittent fixture awaited fallback
+before starting Forge, supplied no active assignment, and sampled real OS PID
+and network health. Its delayed mock adapter had not yet run. Consequently it
+was not a controlled test of that adapter stalling. Forge later dispatched both
+configured engines independently; a backup result did not prove telemetry had
+activated a successor.
+
+New failing tests separately demonstrated two code defects: the shared
+`markEngineStalled` classified old idle/offline heartbeats as work stalls, and
+TelemetryService substituted the host PID for unknown engine PIDs. The helper
+now leaves idle/offline states alone. The service does not sample PID usage
+without an explicit positive engine PID and gives a newly assigned engine its
+own heartbeat window. Explicit engine PID sampling remains covered.
+
+The fallback fixture now supplies a busy assignment, controls only the external
+PID/network probes, and advances a fake clock across the exact threshold. It
+requires zero early events, exactly staller → backup at the boundary, an idle
+backup, no duplicate event on another sample, and the original scoreboard,
+notification and fixture Forge-result assertions. Registry selection, state
+transitions, event delivery and Forge execution are not stubbed. Cleanup and
+environment restoration run even on assertion failure. No real network probe
+or host PID happens to determine the oracle anymore.
+
+This replaces the flawed A21 fixture with deterministic coverage and repairs
+the demonstrated state defects, rather than accepting another unchanged rerun.
+The shared helper also serves TelemetryPoller. The current source search finds
+TelemetryService construction only in tests; these changes are not evidence
+of a newly wired live automatic-handoff feature. Poller auto-fallback tests
+remain separate. PID/network health is still not proof of model progress;
+full live watchdog, lifecycle and handoff qualification remains separate.
+
+Development gates passed: full build, typecheck, lint, re-export guard,
+6,221 tests (five existing skips), release-set packs, supply-chain self-test,
+and 72 isolated installed-product checks. The full suite passed on the first
+run while lint and packaging ran concurrently; log SHA-256
+`a3c521c1e7a12b908e9da7c932eafa21c935054fe4d38f72a063c52b37d3247b`.
+These are development checks, not independent release-acceptance receipts.
+
+### Read-only inspection of unpublished results (2026-09-17)
+
+When `status.json` is missing, both modular and compatibility `agon last
+--status` now append a staged-candidate diagnostic alongside the owner
+observation. Exit status remains 1 and stdout does not contain a substitute
+result. Existing finalized results keep their original read behavior.
+
+The persistence package's `describeStagedRunStatus` opens only a regular file,
+refuses a final-component symlink, uses nonblocking open and a bounded 1 MiB
+read, and rejects malformed UTF-8/JSON. It checks basic required result fields,
+ordered parseable timestamps, and recognized engine outcome names. A candidate
+passing this limited shape check is still labelled **unpublished, not verified
+or authorized for recovery**. Size and SHA-256 identify the observed bytes;
+no model-generated summary, engine text, or arbitrary file content is printed.
+Optional-field semantics, provenance and correspondence to actual workflow
+effects are deliberately not claimed by this basic shape diagnostic.
+
+Tests first demonstrated the missing helper and missing reader diagnostic.
+They cover absent, malformed, partial, invalid-shape, oversized and symlink
+candidates, retained bytes, absent final output, and suppressed result text.
+Separate reader processes after real SIGKILL/SIGTERM also inspect an unpublished
+candidate without promoting or changing it. This operation has no write,
+cleanup, takeover or replay path. Its hash describes an observation, not an
+immutable snapshot or authorization token. Explicit recovery remains open.
+
+Development verification passed: full build, typecheck, lint, re-export guard,
+6,217 tests (five existing skips), release-set packs, supply-chain self-test,
+and 72 isolated installed-product checks. The full suite passed on its first
+run; the previously observed A21 telemetry intermittency is not thereby fixed.
+These are development checks, not independent release-acceptance receipts.
+
+### Exclusive, flushed result staging and crash boundaries (2026-09-17)
+
+The result writer previously opened the shared `.status.json.tmp` path with
+truncation and removed it after any error. Failing tests demonstrated that it
+could overwrite another writer's candidate, follow a pre-existing symlink,
+and delete a complete candidate when publication failed. It also omitted
+file/directory flushes; instrumented kill tests confirmed those boundaries
+were absent before the repair.
+
+`writeRunStatus` now serializes before opening storage, creates staging
+exclusively with mode 0600, writes and flushes the file, flushes the containing
+directory, atomically renames to `status.json`, then flushes the directory
+again. It returns true only after that sequence succeeds. Existing staging
+is not overwritten or removed. On failure it retains whatever staging remains
+and warns with its path. A failure after rename can leave the new final result
+visible but its durability uncertain; the return value remains false.
+
+Seven real SIGKILL tests stop the source writer during a partial stage write,
+before/after file sync, after staging-directory sync, before/after rename,
+and after final-directory sync. Each asserts the process actually died at
+the requested boundary and the final result is whole old or whole new data.
+Before publication the candidate remains separate, including a deliberately
+invalid partial JSON candidate. Tests also cover pre-existing staging files,
+pre-existing symlinks, and failed publication preserving both the existing
+target and the candidate. All fixtures live in temporary directories.
+
+**Retained staging is not an accepted result or permission to replay.** A stale
+candidate intentionally blocks another write until inspected; there is no
+automatic promotion, deletion, owner takeover, or workflow rerun. Exclusive
+creation coordinates cooperating writers, not arbitrary hostile same-user
+filesystem mutation. These macOS process-kill checks are not power-loss,
+hardware-cache, network-filesystem, native Linux, or whole-run-directory
+durability qualification. Validated explicit recovery remains open under A06.
+
+Development gates: build, typecheck, lint, re-export guard, release packs,
+supply-chain self-test and 72 isolated installed checks passed. The first full
+suite hit the previously tracked A21 assertion at `telemetry-fallback.test.ts:170`
+(6,215 passed, one failed, five existing skips). Its preserved local log is
+`/tmp/agon-status-staging-full-first.log`, SHA-256
+`3d45f0abce2446cd6da4e4c8c7f12e0ba14717e16c1011b4a03b6eae8eeb6798`.
+The isolated telemetry check and unchanged full-suite rerun passed; the latter
+had 6,216 passing tests and five existing skips. No test, timeout or oracle was
+weakened. A21 remains open, not waived or declared fixed. These are development
+checks, not independent release-acceptance receipts.
+
+### Failed final-result writes retain the actual outcome (2026-09-17)
+
+An injected filesystem failure exposed a loss of host bookkeeping:
+`writeRunStatus` warned and returned normally after a failed write, while the
+CLI host unconditionally removed the run from its pending set. Even if storage
+recovered before normal host exit, the real outcome was no longer available
+for persistence. Successful and unsuccessful result fixtures both reproduced
+this failure before the repair.
+
+The persistence helper now reports write success as a boolean while retaining
+warning-only failure behavior for legacy callers. The CLI run service removes
+tracking only after a successful write. Before attempting it, the service
+clones the supplied JSON outcome so later caller mutations cannot change it.
+Normal exit makes one final persistence attempt with that actual outcome;
+only runs that never supplied an outcome receive the interruption record.
+Already-persisted outcomes remain untouched by exit cleanup.
+
+Tests use a real filesystem obstruction, not a mocked successful writer. They
+cover successful/unsuccessful outcomes, nested caller mutation, recovery before
+exit, continued storage failure, independent-run finalization, bounded retries,
+and explicit retry releasing the shared exit handler. Continued failure leaves
+no fabricated status and emits another warning. No workflow is rerun.
+
+This is in-memory retention until normal exit, not a durable write-ahead queue.
+SIGKILL/power loss can still lose an unpersisted outcome. Persistent storage
+failure still requires operator attention; no cross-process recovery, disk-full
+simulation, or recovery acceptance is claimed. The public Mod API and final
+status shape are unchanged; the shared helper's return value is additive for
+existing callers that ignore it. A06 remains open.
+
+Development gates passed: full build, typecheck, lint, re-export guard,
+6,206 tests (five existing skips), release-set packs, supply-chain self-test,
+and 72 isolated installed-product checks. The new storage-failure cases are
+local source-level regressions; this is not an independent release receipt.
+
+### Read-only run-owner observations (2026-09-17)
+
+New CLI run-service handles now write an exclusive `owner.json` before they
+are returned. Schema version 1 contains the run ID, PID, per-process UUID,
+OS boot-session UUID (nullable), and PID namespace identity (nullable).
+The hidden persistence package owns the writer, bounded reader, and diagnostic
+probe; no Mod API, finalized-result schema, registry ownership, or dependency
+edge changed. Existing records are never replaced. Failure to create the
+owner record propagates before workflow work begins.
+
+`agon last --status` still returns 1 when the final result is missing, but now
+appends an owner observation. A matching boot UUID and PID namespace plus
+an OS `ESRCH` response permits **process-absent**, at the instant observed.
+PID presence is explicitly **ownership unverified** because PIDs are reused.
+Different/missing boot or namespace evidence, permissions errors, unsupported
+platforms, old runs, malformed/oversized records and symlink records stay
+unknown. Linux namespace identity prevents treating another container's PID
+as a local owner. macOS uses the native boot-session UUID; Linux uses procfs.
+No shell is used; the macOS identity subprocess is bounded and cached once.
+
+The process UUID is diagnostic attribution, not a live challenge-response
+proof. These user-controlled records are **not leases, authenticated trust,
+or recovery authorization**. No scan, termination, result rewrite, takeover, or
+effect replay follows an observation. Status files remain authoritative when
+present. Power-loss durability, network-home provenance, and safe replay
+remain outside this change; A06 is still open.
+
+Test-first evidence: missing owner records, mismatched namespace acceptance,
+and the absent CLI diagnostic were each observed failing before their repair.
+Regression coverage includes immutable records, run-ID mismatch, invalid PID
+ranges, format/version errors, oversized/symlink files, unavailable probes,
+boot/namespace mismatch, present/reused-PID uncertainty and absent PID. Real
+isolated host processes are terminated with SIGKILL and SIGTERM; separate
+reader processes preserve partial artifacts and never fabricate a result.
+The native macOS run with `AGON_TEST_REQUIRE_OWNER_PROBE=1` explicitly requires
+boot evidence and observes live-unknown → process-absent. The restricted run
+verifies fallback behavior. Linux native qualification remains unperformed.
+
+Development gates passed: full build, typecheck, lint, re-export guard,
+6,202 tests (five existing skips), release-set packs, supply-chain self-test,
+and 72 isolated installed-product checks. Native owner-probe reproduction:
+`AGON_TEST_REQUIRE_OWNER_PROBE=1 ./node_modules/.bin/vitest run tests/unit/modular-run-abrupt-exit.test.ts`.
+These are development results, not independent release-acceptance receipts.
+
+### Abrupt host death and unresolved ownership (2026-09-16)
+
+The run-record exit handler cannot execute after SIGKILL or an unhandled
+SIGTERM. Run directories currently contain no durable host identity suitable
+for deciding whether an unfinished run is still owned by a live process.
+Missing `status.json` therefore cannot establish either success or a crash.
+
+`modular-run-abrupt-exit.test.ts` starts an isolated host using transpiled
+current run-service source and the built persistence package. It writes a
+partial artifact, then launches separate reader processes before and after
+real SIGKILL/SIGTERM termination. Both reads must return an unsuccessful
+missing-result diagnostic without fabricating `status.json`, changing the
+partial artifact, or retrying the workflow. The signal assertion verifies
+actual termination rather than treating fixture cleanup as the test result.
+The new diagnostic assertion failed against the old crash-only warning
+before the warning was updated in both modular and compatibility commands.
+
+The warning now says the run may still be running or may have been
+interrupted and asks the operator to inspect partial artifacts before
+retrying. This is a diagnostic correction, not a liveness detector or crash
+recovery implementation. Tests use no providers or personal configuration.
+They do not establish power-loss durability, descendant cleanup following
+SIGKILL, installed-binary signal handling, or workflow resumption.
+
+Remaining recovery design must bind ownership to a host incarnation (not
+just a reusable PID), distinguish unknown from confirmed-dead ownership,
+preserve finalized outcomes, and prevent concurrent recovery from replaying
+effects twice. A06 remains open; no recovery or release acceptance is claimed.
+
+Development verification: full build, typecheck, lint, re-export guard,
+6,199 tests (five existing skips), release-set packs, supply-chain self-test,
+and all 72 isolated npx checks passed. The latter retains the installed normal
+exit regression; the new abrupt-death checks are source-level subprocess
+tests, not an expansion of installed recovery coverage. These development
+checks are not an independent release-acceptance receipt.
+
+### Durable explanation after active host exit (2026-09-16)
+
+The restart check demonstrated that active TUI exit stopped the fixture engine
+but left no `status.json`: a fresh installed `agon last --status` returned 1
+with the existing missing-status warning. That warning was honest, not a false
+success, but did not explain the host-controlled interruption.
+
+`run-record-host.ts` now owns the CLI's existing first-party run service. It
+tracks only handles started through that service and uses one lazy exit
+handler to write an unsuccessful record for unfinished runs. The record says
+the host exited before finalization, retains partial artifacts, and explicitly
+does not claim automatic resumption. Engine outcomes are left empty rather
+than fabricated. Existing status files are never replaced by exit cleanup;
+normal finish preserves workflow-supplied status bytes and releases tracking.
+No public API or persisted status schema changed.
+
+Tests cover interrupted records, retained artifacts, unowned runs left alone,
+completed/already-written outcomes unchanged, concurrent handler cleanup, and
+artifact traversal rejection. The installed exit case additionally launches a
+fresh process to read `last --status`; its missing-status assertion failed
+before implementation. This is limited final-outcome persistence on a normal
+host exit, not transactionally complete session/telemetry/checkpoint flushing.
+SIGKILL/power loss, disk-write failure, cross-process stale-run recovery and
+actual resumable workflow reconstruction remain open. Writes retain the
+existing persistence service's logged best-effort error behavior.
+
+Local gates pass: build, typecheck, lint, re-export guard, 6,197 tests (five
+existing skips), package/SBOM checks and 72 installed checks including the
+fresh-process interrupted-status read. This does not close whole-product
+release qualification or automatic recovery/resumption.
+
+### Active TUI exit: owned-process safeguard (2026-09-16)
+
+A real PTY probe started a long-running fixture engine and pressed Ctrl+C
+twice. The TUI exited 0 without driver intervention, but its engine remained
+alive with no stop receipt. The probe cleaned up that exact fixture PID.
+Separate buffered/streaming host-exit regressions reproduced this before repair.
+
+The shared process runners now register their spawned process groups in one
+private ownership set. One lazy synchronous `exit` handler terminates groups
+still owned when the host exits. Normal child closure removes ownership; when
+the set empties, the handler is removed. Concurrent-run tests verify that twelve
+runs share one handler and leave no handler afterward. No public Mod API or
+personal/global state is added.
+
+The packed PTY verifier now has a separate active-exit case: wait for engine
+readiness, double-Ctrl+C, require an unforced app exit 0 and disappearance of
+the recorded engine PID. This is emergency SIGKILL cleanup, **not graceful
+shutdown or durable run/session finalization**. A host killed by SIGKILL cannot
+run this handler; OS-signal termination paths, providers outside these runners,
+escaped process groups, persisted interrupted-run recovery and native platform
+coverage remain open. No live provider was used.
+
+Full-suite verification exposed a fixture publication race: `existsSync`
+could observe a newly opened, still-empty readiness file; converting its empty
+contents to a number yielded PID 0. Positive-PID assertions reproduced this
+before correction. Descendant and host-exit fixtures now publish readiness by
+atomic rename; the installed engine fixture publishes both start/stop receipts
+the same way. The process-disappearance oracle is retained, and PID 0 is
+explicitly rejected. No timeout was widened to hide this failure.
+
+Local verification after repair: build, typecheck, lint, re-export guard,
+6,193 tests (five existing skips), package/SBOM checks and all 72 installed
+checks pass. Active/global Agon and personal provider state remain untouched.
+This is development evidence, not independent release qualification.
+
+### Cancelled process-group survivor repair (2026-09-16)
+
+The next shutdown audit found a lower-level leak in both buffered and streaming
+process runners. A group leader could exit on SIGTERM while its child ignored
+SIGTERM and had independent stdio. The leader's `close` handler cleared the
+SIGKILL escalation timer, leaving that child alive. Two real-process tests
+reproduced the leak before the repair; test cleanup explicitly killed the
+fixture group.
+
+The shared engine-runtime package now finishes process-group termination when
+the cancelled/timed-out leader closes, before discarding escalation timers.
+Normal exits do not take this path. Unexpected termination errors are logged;
+an already absent group is expected. Four regressions cover buffered/streaming
+dispatch × cancellation/timeout with a SIGTERM-resistant descendant and require
+ESRCH for its recorded PID after cleanup. These fixtures use temporary paths,
+bounded lifetimes and no provider code.
+
+The same fixture revealed a second defect: a parent's SIGTERM handler exiting
+0 overrode the runner's cancellation/timeout result. Four additional result
+assertions failed before correcting the precedence. Both runners now return
+130 for cancellation and 124 for timeout even when the parent exits cleanly;
+ordinary exits still preserve the child's status.
+
+This proves teardown of descendants that remain in the runner's POSIX process
+group on this Mac. It does not claim containment of children that create a new
+session/process group, nor qualify quitting the entire TUI during active work.
+That broader shutdown check remains open; this leak was repaired first.
+
+Local gates after both fixes: build, typecheck, lint, re-export guard, 6,189
+tests (five existing skips), regenerated package/SBOM checks and all 71
+installed-candidate checks pass. These are development checks, not independent
+native-platform release qualification.
+
+### Installed Escape cancellation and recovery (2026-09-16)
+
+The installed Brainstorm PTY scenario now covers failure → running-engine
+cancellation → two successful commands → idle keyboard exit. Before pressing
+Escape, the driver waits for a readiness file written by the fixture engine
+after installing signal handlers. The engine otherwise waits thirty seconds
+and fails; its configured adapter timeout is sixty seconds. Cancellation must
+produce a signal receipt within three seconds, so ordinary completion or
+engine timeout cannot satisfy the gate.
+
+The verifier checks matching started/stopped PIDs, SIGTERM/SIGINT receipt,
+process absence, exactly seven draft/expansion invocations, four persisted
+run outcomes, and an explicit `aborted` summary on the cancelled run. The
+local installed probe received SIGTERM and passed subsequent command/exit
+checks. No production runtime change was needed for this path.
+
+Two test-first PTY-driver regressions prove that missing readiness fails and
+input is not sent before readiness. Both failed before `waitForFile` support.
+The previous four exit regressions remain in place. Public npm dependencies
+were rehydrated into temporary storage with lifecycle scripts disabled after
+the earlier temporary cache disappeared; no personal npm configuration or
+active/global Agon was used.
+
+This closes the narrow fixture-engine Escape path, not all A06 cancellation:
+live providers, descendant process trees, cancellation during other phases,
+shutdown during active work, session flush completeness, managed profiles,
+native platform coverage and independent review remain unqualified.
+
+Local development gates pass: build, typecheck, lint, re-export guard,
+6,185 repository tests (five existing skips), and all 71 freshly packed
+installation checks. This is not an independent release-readiness receipt.
+
+### Installed idle keyboard exit (2026-09-15)
+
+The installed PTY check now sends two Ctrl+C key bytes after its three
+completed Brainstorm runs and requires the app to exit with status 0 within
+five seconds, without any driver cleanup signal. `pty-drive.py` exposes an
+explicit `waitForExit` step: nonzero child exits and signal termination remain
+failures; exceeding the deadline returns 124 even if forced cleanup could
+otherwise exit successfully. Existing performance-probe cleanup is unchanged.
+
+Four subprocess regression tests cover normal exit, exit 7, SIGTERM, and a
+hung child whose SIGINT handler would exit 0. The original driver failed all
+three initial normal/crash/timeout assertions before implementation. The
+installed 71-check qualification passes with the stronger exit requirement.
+
+This supersedes the forced-cleanup limitation of the PTY case below **only
+for idle keyboard exit**. It does not establish shutdown during active work,
+provider-process termination, descendant cleanup, session flush completeness,
+or cross-platform terminal parity. A06 remains open on those dimensions.
+
+Development gates: full build, typecheck, lint, re-export guard, four PTY
+driver tests, full repository suite and the 71 installed checks pass. These
+are local development observations, not independent release qualification.
+
+### Real slash-command entry point and installed PTY coverage (2026-09-15)
+
+A real terminal probe exposed a gap missed by the component and Cesar-route
+checks: `/brainstorm` executed its physical TUI contribution through the
+generic renderer, printing raw result JSON rather than Brainstorm progress,
+drafts and the winner response. The existing presenter was not wired into this
+entry point. This supersedes any inference that the earlier component checks
+qualified normal slash-command rendering.
+
+`blocks/brainstorm-session.ts` now owns the shared session effects, context
+enrichment, presentation and cleanup previously embedded in the Cesar route.
+Cesar still executes its Cesar contribution; the TUI still executes its
+selected TUI contribution. The TUI bridge selects this behavior using the
+registry owner's `agon.brainstorm` identity, not a command-name match. No
+second workflow executor or cross-surface availability bypass was introduced.
+Test-first cases cover readable results, session-selected engines/context,
+cancellation of a late success, and an external command with the same name
+remaining on the generic path. Existing Cesar/session recovery checks pass.
+
+The new `verify-packed-brainstorm-tui.mjs` runs the installed npm bin on a real
+120x40 PTY, sends a failing slash command followed by two successful commands,
+and requires draft rendering, winner expansion, exactly six fixture-engine
+calls and corresponding failed/successful persisted run statuses. Driver exit
+alone is not accepted. The existing Python PTY driver
+forcibly stops its child during cleanup, so this is **not** graceful-exit or
+keyboard-cancellation qualification. Python 3 with POSIX PTY support is required.
+
+The effect guard initially prevented UI startup by refusing Yoga's embedded
+WASM `data:` fetch. It now decodes bounded inline WASM bytes locally, without
+delegating to network fetch. Network requests, other data types, arbitrary
+Node commands, shells and provider launches remain blocked. This remains a
+diagnostic guard, not a security sandbox. All homes and engine definitions are
+temporary fixtures; no active/global installation or personal state is used.
+
+**A06 remains open:** actual provider termination, keyboard cancellation,
+graceful shutdown, managed-profile interactive activation, broader terminal
+matrix and independent review are not closed by this positive PTY case.
+
+Development verification passes: the pre-refactor full/type/lint baseline,
+17 focused slash/Cesar/recovery checks after extraction, full build, typecheck,
+lint, re-export guard, 6,179 tests with five existing skips across 524 files,
+release-set/SBOM checks and 71 npx checks including the installed PTY case.
+An initial installed probe retained an empty `CI` key and captured only part
+of the terminal output; the interactive child now removes that key, as the
+successful diagnostic probe did. The output assertion was retained unchanged.
+Full-suite log SHA-256:
+`027d7d9fd63c136384f79214b6196a316ad149ad9fe3223c5ee2107c986748d9`.
+Packed qualification log SHA-256:
+`726d41d170314ff908fd186e1b9d7d621ea2460075bad3e8837725d7647a2332`.
+Temporary logs are development diagnostics, not immutable independent release
+receipts. The new shared session helper remains CLI-owned A06 session machinery;
+this does not close the KL-011 migration boundary.
+
+### Brainstorm validation and interactive recovery (2026-09-15)
+
+The physical mod now rejects unsupported styles before opening host
+capabilities, selecting engines or creating a run. The accepted values remain
+`divergent` and `grounded`, with `divergent` as the omitted-value default,
+matching the legacy CLI's supported styles. Empty, null and non-string styles
+are rejected, not silently replaced. Rendering and execution use the same
+validated value. No schema, public API or dependency boundary was added.
+
+Four test-first cases reproduced engine work for malformed styles; all now
+stop before host/run effects. Both valid styles retain successful execution.
+The packed CLI fixture also checks that an unknown style emits the actionable
+validation error, no stdout and no run directory—even with an invalid engine
+ID, so an engine failure cannot masquerade as successful validation.
+
+`modular-brainstorm-interactive-recovery.test.ts` exercises the actual Cesar
+route and presenter together, replacing only registry execution and session
+recording effects. It verifies failure → cleared progress → successful next
+invocation, and cancellation → rejected late success → ignored old progress
+events → successful next invocation. Timers are drained and stale answers are
+not rendered or recorded as successes. These paths already worked; this adds
+behavioral coverage rather than changing cancellation machinery.
+
+**A06 remains open.** This does not qualify keyboard-driven cancellation,
+physical provider process termination, a full installed interactive session,
+managed-profile activation or independent review. Session recording is mocked
+in the recovery checks; no claim of new persistence qualification is made.
+Active/global Agon and personal state remain untouched.
+
+Development gates pass: 58 focused mod/oracle/MCP checks, 24 presenter/route
+checks, the full suite (6,174 passing tests, five existing skips, 523 files),
+build, typecheck, lint, re-export guard, release-set packing, supply-chain
+check/self-test and all 70 npx checks. Release-channel integrity, release-set
+contents and SBOM were refreshed for the changed package bytes. Full-suite
+log SHA-256:
+`a05d5cc9b1c54e8cc99d199bc80beddc1142127f4af11685938931267a5d498e`.
+Temporary logs are development diagnostics, not immutable independent release
+acceptance receipts.
+
+### Brainstorm terminal draft metrics (2026-09-15)
+
+The modular terminal presenter now displays each bid's confidence separately
+from its quality score. Previously its draft header retained only the score,
+even though the workflow result includes calibrated confidence. The confidence
+label is a model-derived, history-adjusted value, not a measured probability of
+correctness. This changes presentation only; ranking and calibration are not
+recomputed by the UI. Historical results without a finite confidence omit that
+label instead of inventing a value, and zero remains visible.
+
+Two test-first cases reproduced missing confidence in the actual transcript-row
+projection. Additional tests pass the presenter's winner and non-winner draft
+events through `renderBlockOwnRows`, `TranscriptRowView` and Ink's existing
+pseudo-TTY frame capture at 40 and 100 columns. Both metrics and rationale text
+survive terminal wrapping. Existing progress, retry, finalization, fallback and
+session-route cases remain in the focused gate. The unused legacy `BidGroup`
+export is not the active transcript renderer and was not modified.
+
+This is a bounded component-render qualification, not a full interactive
+session or keyboard/resize/cancellation acceptance receipt. **A06 remains
+open**, including installed managed-profile activation, full interactive
+session qualification and independent review. No live engine, login, active
+installation or personal state is used.
+
+Development verification: the 22 focused presenter/session-route checks pass;
+the full suite passes 6,166 tests with five existing skips across 522 files.
+Build, typecheck, lint and re-export checks pass. The release-set and SBOM
+were regenerated for the changed CLI bundle. Full-suite log SHA-256:
+`e7f438616f0ef3d45916ad1b6da1a8d7b8beac957cfaf4f98db2d441153d22dc`.
+Logs in `/tmp/agon-brainstorm-verify-7YFkOIQh` remain development diagnostics,
+not independent immutable release acceptance receipts.
+
+### Installed Brainstorm command qualification (2026-09-15)
+
+`scripts/spec/verify-packed-brainstorm.mjs` now runs as part of the existing
+`verify-modular-npx.mjs` gate, after all release tarballs are installed offline
+into the disposable npm prefix. It invokes that prefix's real `.bin/agon` via
+Node, exercising argument parsing, the bundled modular registry, CLI host,
+engine registry, adapter subprocess dispatch, workflow and persisted status.
+No source-module replacement or mocked host is used. Only the engine is a
+deterministic local protocol fixture registered in a fresh temporary Agon home.
+
+Cases cover human output, `--quiet`, `AGON_QUIET=1`, failed-seat retry and a
+deliberately buffered-output negative control. The fixture cannot finish its
+draft until the parent observes the run path on stdout. Buffering stdout until
+exit causes both attempts to fail with the specific missing-stream diagnostic;
+normal output reaches synthesis and records a successful engine status. Checks
+also distinguish quality from confidence, prohibit duplicate run announcements,
+require exactly two quiet lines, and verify draft/expansion dispatch counts.
+
+A test-only preload refuses subprocesses except the exact local fixture via
+the running Node executable, and refuses fetch. Separate guard tests cover
+allowed dispatch and rejected arbitrary Node code, shell execution and fetch.
+This is an effect guard, not a security sandbox. Homes and modular-host roots
+are isolated; no provider, credential, browser login or active installation is
+used. The first negative-control harness run incorrectly assumed a separate
+stderr artifact existed; the assertion now reads the actual persisted engine
+detail in `status.json` instead. No production behavior was changed.
+
+This closes the positive **installed npm-bin/parser** gap for these cases,
+not every launcher variant. The durable minimal-profile launcher still has
+its existing separate lifecycle checks; enabling Brainstorm through that
+managed profile, live-provider behavior, cancellation/input edge cases, exact
+terminal styling, interactive UI and independent review remain unqualified
+here. **A06 remains open.** Temporary development logs are not independent,
+immutable release acceptance receipts.
+
+Development gates pass: full build, typecheck, lint, re-export guard, release-set
+packing, supply-chain check/self-test, and all 70 npx qualification checks.
+The full suite passes 6,161 tests with five existing skips across 522 files.
+Full-suite log SHA-256:
+`adf3befc3f38fd4a9cb177c74cd6c43b54d59d2cd233d57e4bec990d0ecf55eb`.
+The final packed-command run occurred after the build completed; no tarball
+or SBOM drift was introduced by this test-only change.
+
+### Brainstorm CLI streaming repair (2026-09-15)
+
+The existing bundled Brainstorm host interface now accepts an optional
+`writeCliOutput` sink. Only the CLI host for `agon.brainstorm` supplies stdout;
+the pipeline host does not gain it, and the common Mod API is unchanged.
+Only the CLI contribution consumes the sink. A host without it retains buffered
+final output, preserving the prior embedded invocation behavior.
+
+The run path is emitted after run creation and before workflow preflight.
+Human mode emits the question/roster/style header and each completed seat's
+attempt count or failure detail. Quiet mode emits the bare path without those
+lines. Final success/failure output emits the summary without repeating the
+already announced path. Streaming is disabled as soon as workflow rejection is
+observed and on normal completion, preventing late seat callbacks from printing
+after the command ends. Raw workflow observer semantics remain unchanged.
+
+Test-first evidence covers early ordering, human/quiet behavior, failure-path
+deduplication, machine-output isolation, late completions, and CLI host wiring.
+The late-callback regression initially observed a third output chunk after a
+failed run had already returned; it now remains at two. The reusable public
+entrypoint fixture also covers buffered and streaming human/quiet output.
+
+**A06 remains open:** actual installed launcher/parser and terminal/UI visual
+qualification, exact legacy styling, and independent review remain outstanding.
+The sink uses the CLI's existing synchronous stdout-write convention; this is
+not a new generic backpressure or asynchronous streaming API. No active/global
+installation, personal state or provider login is used by these checks.
+
+Development checks: full package build followed by a CLI rebuild after the
+host-construction cleanup; typecheck, lint and re-export guard pass. The complete
+suite passes 6,156 tests with five existing skips across 521 files. Full-suite
+log SHA-256: `84528d289fb8dd3ab16436d6a73ad14456e6519bd3552bc5b3fbf626704f498b`.
+Final CLI build log SHA-256:
+`a4a732f110225051d76193c8a3d837a32c32b3a4100e1884ff0fb1a7b6c86375`.
+Temporary logs under `/tmp/agon-brainstorm-verify-7YFkOIQh` are development
+diagnostics, not independent immutable acceptance receipts. The initial suite
+caught an outdated exact host-shape assertion; it now explicitly allows the
+writer on CLI Brainstorm only, retaining exact shapes for MCP and pipeline.
+
+### Brainstorm CLI final-output repair (2026-09-15)
+
+The CLI contribution now renders human-readable final bids (quality and
+confidence separately), winner response, degraded-panel/dedup/synthesis warnings,
+`AGON_RUN` and `AGON_SUMMARY`. Quiet CLI output is the plain run directory plus
+the summary, including failed runs. `AGON_QUIET=1` applies to CLI rendering only;
+the mod does not mutate the environment. Machine/TUI/Cesar/MCP invocation paths
+retain their previous structured result and stdout behavior.
+
+Tests first exposed JSON as human output, answer text as quiet output, and a
+missing failure summary. Fixtures now assert exact quiet lines, human headings,
+structured-result preservation and environment isolation. Existing outcome tests
+read the structured `result` instead of parsing human CLI stdout.
+
+`scripts/spec/fixtures/brainstorm-cli-output.mjs` accepts a public built/installed
+package entrypoint URL and checks human/quiet output with injected fixture seats.
+It passed against `packages/mod-brainstorm/dist/index.js` with the provider/login
+guard enabled. This is a built public-entrypoint check, not a complete installed
+launcher/parser test. Reproduce with `node scripts/spec/fixtures/brainstorm-cli-output.mjs`
+followed by the absolute `file:` URL of the candidate package's `dist/index.js`.
+
+**A06 remains open.** This is final-output parity, not byte-identical legacy
+color/table layout. Run-path announcements and seat streaming still arrive only
+at completion on this generated path, not at legacy timing. Installed positive
+terminal/UI verification and independent qualification remain outstanding. Quiet
+mode does not promise silent stderr: workflow warnings retain their existing
+diagnostic behavior. No active/global installation or personal state is changed.
+
+Development verification: full build, typecheck, lint and re-export guard pass;
+6,150 tests pass with five existing skips across 520 files. Full-suite log SHA-256:
+`80a9907c4b40936f8cf43d91533f37b0ab2ee8c864323428b7da1599aaf7ce1d`.
+Build log SHA-256:
+`e07525d95bd5f1d0c88d6c0958299957519099753e340ebad5c7931269b37b98`.
+Logs under `/tmp/agon-brainstorm-verify-7YFkOIQh` are temporary development
+diagnostics, not independent immutable acceptance receipts.
+
+### Brainstorm scoreboard repair (2026-09-13)
+
+The invocation-local presenter now reuses the existing scoreboard renderer.
+The Cesar route supplies its selected engine roster before execution, keeping
+preflight-skipped/nonresponding engines visible. Seat events update the board;
+successful completion finalizes bid scores and marks missing bids `no response`,
+matching the legacy finalization policy. Workflow failure preserves known seat
+errors and marks remaining entries `brainstorm aborted before a usable draft`.
+That inherited wording also covers cancellation; it is not a separate claim
+that no draft existed before a later synthesis failure.
+
+Completion/failure stops the polling timer and seals presentation against late
+events or repeated terminal rendering. Finally-disposal still clears progress.
+The board is local to the invocation and performs no persistence or execution.
+Two scoreboard assertions and two route-wiring assertions failed before the
+repair. Renderer comparisons cover successful/degraded and failed boards,
+including a requested engine with no events; existing tests cover retries,
+concurrent presenter state and disposal. This is output/event evidence, **not**
+installed terminal screenshot or concurrent arena-ownership qualification.
+
+**A06 remains open:** CLI human/quiet formatting, installed positive terminal/UI
+behavior and independent qualification remain. The shared renderer's ANSI and
+icon behavior is unchanged; this repair does not claim a new accessibility or
+non-color fallback qualification.
+
+The first full-suite attempt encountered the already tracked daemon-survival
+`pong` failure while package rebuilding was still running. The log is retained
+as `scoreboard-full-concurrent-build.log` under the temporary verification
+directory (SHA-256 `4681846d134074c4de72ade7b0092ed70a298c21233ed7a66a0799edb024ff90`).
+Concurrent build interference is plausible, not established; this attempt is
+not clean qualification and does not close the daemon finding.
+
+After the full build finished, the complete suite passed: 6,146 tests, five
+existing skips, 520 files. Full build, typecheck, lint, re-export guard,
+release-set and SBOM self-check also pass. Full-suite log SHA-256:
+`216e4bd40467a395923d1165b028c0b406d719dbd5345f93703e22e047e2cc81`.
+Build log SHA-256:
+`acb66fcbdc63ee60db62390f6b2243ffd4b3332ea33916b61dd9ff3da2bdc5e8`.
+Logs are temporary development diagnostics under
+`/tmp/agon-brainstorm-verify-7YFkOIQh`, not independent immutable receipts.
+No active/global installation, personal state or live provider was used.
+
+### Brainstorm project-context repair and clean-tree test correction (2026-09-13)
+
+The physical Cesar Brainstorm route now reuses `scanProjectContext` with the
+session's `projectContext` and `contextFormat` settings. Scanning and execution
+share one captured working directory. The scan happens after input validation
+and before session recording; cancellation prevents scanning. Explicit context,
+including an empty string, bypasses scanning. Non-string context is rejected.
+This restores the legacy context source without moving workflow logic into the
+CLI or introducing a second scanner. Scanner policy and truncation are unchanged.
+
+Six route cases cover enrichment, explicit/empty context, malformed context,
+cancellation and scanner failure. Three assertions failed before implementation.
+A separate physical-mod characterization verifies that supplied context reaches
+both real draft prompts. Existing scanner tests cover the filesystem behavior;
+the route tests inject scanning and execution, not live providers.
+
+The initial clean-worktree baseline at `34418eb6` was red: MCP Review's generic
+failure-conversion test used the ambient uncommitted diff. A clean checkout
+correctly returned no-diff success before reaching the expected error. The test
+now supplies a fixed nonempty review target, while a separate empty-target test
+requires successful empty results and no engine dispatch. No runtime behavior or
+rejection oracle was weakened. Earlier dirty-tree green runs do not establish
+clean-checkout qualification for that test.
+
+**A06 remains open:** scoreboard behavior, CLI human/quiet formatting, installed
+positive terminal/visual behavior and independent qualification remain. This
+repair covers the Cesar session path, not automatic scanning on every surface.
+
+Development verification: 6,144 tests pass, five existing skips, 520 files;
+full build, typecheck, lint and re-export guard pass. Build log SHA-256:
+`083a1b24b3d6a3d29df16bf380451c12c30a235294cf84cc17e2b0182482091c`.
+Full-suite log SHA-256:
+`a08d70dddabb92bb3c0548a3211f9b47acc99eb71ccbd548ffe478dc62651fb7`.
+Logs remain temporary development diagnostics under
+`/tmp/agon-brainstorm-verify-7YFkOIQh`, not independent immutable receipts.
+No active/global installation, personal state or live provider was used.
+
+### Brainstorm session-effect repair (2026-09-11)
+
+The physical Cesar Brainstorm route now records legacy-shaped chat messages,
+tracker entries, in-memory session results, pre/post checkpoints and terminal
+telemetry through `blocks/brainstorm-session-record.ts`. This is temporary
+**A06-SESSION-EFFECTS (KL-011)**, owned by CLI presentation/session integration;
+it must be removed when these effects are injected through the public host
+boundary. The mod remains the only execution owner. The session-effect and
+route tests guard this adapter's contract for its eventual removal.
+
+The default roster comes from the current session, with the existing default
+orchestration filter. An explicit roster is retained. The same roster goes to
+the physical mod and the session recorder. Invocation checkpoint IDs now use
+UUIDs to avoid timestamp collisions. No new persistence format is introduced.
+Existing checkpoint writes remain best-effort, and the ordered history writes
+are **not** an atomic transaction. The session-result store remains in-memory.
+
+Twelve isolated-effect regressions cover exact legacy payloads, idempotent
+terminal recording, failure versus cancellation, late-result rejection, failed
+history writes, summary-format failure after recording, route wiring, explicit
+engine selection, invalid input, and unrelated-workflow isolation. Before the
+repair, four recording assertions and two route-wiring assertions failed.
+Execution failures retain their original error if failure telemetry also fails.
+
+**A06 remains open:** project-context enrichment, scoreboard behavior, CLI
+human/quiet formatting, installed positive terminal/visual behavior and
+independent qualification are still outstanding. This is development evidence,
+not a release receipt or a claim that all Brainstorm surfaces are complete.
+
+Development verification: 6,136 tests pass, five existing skips, 520 files;
+full build, typecheck, lint, re-export guard, release-set, 69 isolated npm/npx
+checks and SBOM self-check pass. Temporary diagnostic logs are under
+`/tmp/agon-brainstorm-verify-7YFkOIQh` (not independent immutable receipts).
+Full-suite SHA-256: `2067e76e2efe1c56705e010023f31aef21895ee21d5c87897896b305d6df9399`.
+Build SHA-256: `82ea050964408e554807ac20785eb6b959f3abdd0334513c2ca4ee4e743d4014`.
+No live provider, active/global installation or personal state was used.
+
+### Brainstorm progress and run-record repair (2026-09-11)
+
+The physical Cesar route now carries an invocation-local, mod-owned event
+observer into the extracted workflow. The common Mod API is unchanged. The ten
+frozen workflow comparisons now include the **raw event sequence**, rather than
+omitting UI callbacks from the comparison. Failed run records preserve per-seat
+diagnostics; summaries preserve the degraded-panel banner; absent labels are
+omitted instead of written as null, matching serialized legacy status behavior.
+
+`packages/cli/src/blocks/brainstorm-presentation.ts` owns presentation only:
+seat progress, elapsed ticks, retry counts, draft quality scores, dedup/synthesis
+status, degraded/fallback warnings and the winning engine's response. State is
+invocation-local; finally-disposal clears the timer and progress, and late events
+are ignored. It does not execute the workflow or import the legacy handler.
+The existing no-legacy-handler guard remains unchanged.
+
+Normal, recovered and fallback job launches now pass their job-owned abort
+signal. A regression exposed cancellation during synthesis being converted
+into a successful fallback. The generated handler now rethrows cancellation
+and records a failed run; the normal continuation does not propose recovery
+after the operator cancelled. This is a deliberate correctness repair, not
+a claim of byte-equivalence to that legacy cancellation bug.
+
+Negative evidence before fixes: ten event/record assertions failed, the physical
+route lacked progress/draft/warning output, the job-signal gate failed, and the
+synthesis cancellation test resolved successfully instead of rejecting. Tests
+now cover those cases, renderer timer disposal and late events, isolated renderer
+state, fallback visibility and cancellation before dispatch through the physical
+route. The launch-site AST check is wiring evidence, not a live job-system test.
+
+**A06 is still open.** This restores the bounded progress/result presentation
+and status fields, not the entire legacy TUI lifecycle. Still reconcile project
+context enrichment, chat/tracker/session-result persistence, scoreboard and
+checkpoint/telemetry effects, CLI human/quiet formatting, and installed positive
+workflow/terminal rendering with independent qualification. In particular, the
+renderer tests do not prove visual layout or concurrent job-arena ownership.
+No active installation, personal configuration or provider login was used.
+
+Development verification: 6,124 tests pass with five existing skips across 518
+files; full build plus the final CLI rebuild, typecheck, typed lint, re-export
+guard and refreshed release/SBOM checks pass. Full-suite log SHA-256:
+`c4a54360fa8a2c6642d57904ee8615118a68e8d0f847d7dda941831b3a49bce7`.
+Lint log SHA-256:
+`e385583285cd174dfac4b953e9703e348d29541088cadb8e1072f6478d28227d`.
+These fixture-based development checks are not independent clean-commit release
+receipts, native cross-platform qualification or a live terminal visual review.
+The refreshed offline packaged-install run also passes all 69 checks, including
+the guarded MCP failure contract, lifecycle, cache deletion and idempotence.
+
+### Brainstorm generated-handler integration (2026-09-11)
+
+The generated handler now calls the extracted `createBrainstormRuntime`; its
+competing simplified parsing, scoring and seat loop have been removed. The
+mod-owned `BrainstormHostServices` contract supplies host effects, not a callback
+to a second workflow implementation. The common Mod API remains mode-neutral.
+CLI and MCP supply the capability to Brainstorm and its bundled orchestration
+consumer; unrelated mods do not receive it. Missing capabilities fail explicitly
+instead of silently selecting a reduced workflow.
+
+**A06-HOST-CAPABILITIES (KL-011)** is the temporary adapter owned by
+`packages/core/src/blocks/brainstorm-host.ts`. It wires registry/adapter access,
+ratings, protocol parsing, preflight, dedup and logs to the extracted runtime.
+It binds dispatch to invocation cwd and cancellation. Remove it when those host
+effects have final physical owners and both host decorators use those owners;
+retain the raw workflow/effect-order and host-wiring tests as removal gates.
+The existing forge compatibility exports are not retired by this change.
+
+Ten frozen-oracle scenarios now compare the generated handler plus actual host
+adapter with legacy raw results, dispatches, logger/rating/dedup effects: divergent,
+grounded, empty/failed/throwing synthesis, no drafts, quarantine, partial panels,
+dedup failure and retry-once. No successful-result normalization is used.
+UI callbacks are outside that comparison; six existing scout comparisons remain.
+MCP and physical Cesar route tests exercise the restored synthesis and degraded
+panel shape. Host-wiring negative controls caught the missing capability in the
+dependent orchestration mod before its CLI/MCP correction. These tests use fixture
+engines, not live model providers or the operator's build pipeline.
+
+Fresh development verification: **6,119 passed, five existing skips, 516 files**;
+build, subsequent CLI rebuild, typecheck, lint, re-export guard, support source
+boundaries, generated-dispatch self-tests and supply-chain metadata checks pass.
+Full-suite log SHA-256:
+`47cf25f9126e207df93ff1b6e14234acf3165de3ed4480aa071d959df4122f6d`.
+Lint log SHA-256:
+`4f0b5b843e2800efff7d6aa08a5b0a43ba8c083e0c5ddce3a968a419a9a6eeeb`.
+Logs are in `/tmp/agon-brainstorm-verify-7YFkOIQh`; these are temporary diagnostic
+artifacts, not repository-bound independent-review or clean-commit receipts.
+Homes/config/cache prefixes were isolated and inherited credentials stripped.
+A subprocess guard blocked live provider/browser commands; it is not a sandbox.
+
+The installed MCP failure probe retains `isError: true` and now also requires
+the real workflow's retry/drop diagnostic. Its restored run artifacts exposed
+a verifier cleanup defect: file-mode chmod followed a run-directory symlink and
+removed directory traversal permission. Cleanup now skips symlinks, retries
+bounded transient removals and finishes before publishing a success receipt.
+An injected final-cleanup `EACCES` exits nonzero with `FIXTURE_CLEANUP_DENIED` and
+no success output (negative-control log SHA-256:
+`2a130f1cf1c79d11f9353ccfd8152045a96a4fa7190f453c7226896cc0024ac3`).
+The corrected offline packaged-install run exits zero with all **69 checks**,
+15-package selected closure, cache-deletion survival and idempotence. Log SHA-256:
+`4dc4f3278ab9cb7329ca0b88eca6d32ce2f4677c5c23f3bac74c298883ca5095`.
+Its disposable cache was seeded from public dependency entries and the missing
+React/Zod tarballs fetched with lifecycle scripts disabled; this is not evidence
+that an arbitrary empty offline cache can install the product.
+
+**A06 remains open** for installed workflow execution/oracle coverage, complete
+UI event and persisted run-envelope parity, and independent qualification.
+Run status formatting is not claimed byte-equivalent to the legacy handler.
+The wider extraction, mutation, platform and release findings remain open.
+No active/global installation or personal configuration was changed.
+
+### Architecture gate recheck (2026-09-06)
+
+The source-boundary gate previously inspected only `.ts` files with a regex for
+static imports. It missed dynamic imports, `require`, import types, private
+package subpaths and other source extensions, and could mistake comments for
+imports. Its extracted old scanner failed 19 of 21 focused cases. It now uses
+the TypeScript parser for canonical static/dynamic import, export, import-type,
+import-equals, `require` and `require.resolve` syntax; includes TS/TSX/JS/JSX/MJS/
+CJS/MTS/CTS files; rejects unparseable source and computed module targets; and
+retains executable positive and negative controls. All eleven shared-support
+packages pass that stronger source check.
+
+Scope is explicit: this is not alias/data-flow analysis, an evaluation sandbox,
+symlink qualification, whole-product behavior parity or runtime singleton proof.
+The success message no longer claims runtime kernel uniqueness from peer
+declarations alone. Aliased loaders and injected/native behavior still require
+their own evidence; this check must not be cited as proof of their absence.
+
+The S6 declaration/cutover verifier also failed because its old string marker
+expected a two-argument MCP invocation. The implementation already forwards
+`controller.signal` as its third argument. The verifier now inspects call syntax,
+requires the request-bound signal, and rejects source mutants that remove the
+signal, swap inputs or remove dispatch. Its output labels the empty *declared*
+surface-adapter list and explicitly does not claim legacy adapters were removed.
+The separate kill-list ownership check passes 15 assigned entries; assignment
+is not removal evidence. Hardcoded zero-adapter coverage claims in older slice
+qualification scripts remain superseded by this product audit, not accepted.
+
+The architecture is still **not release-ready**: A05, A06, A10 and A11 remain
+open, alongside the later product findings below. Source checks and catalog
+counts cannot close those behavioral, migration and independent-review gaps.
+
+Gate-repair development evidence: 21 focused source-boundary cases pass, as do
+the source/cutover CLI self-tests, full build, typecheck, lint and re-export guard.
+Full suite: 6,105 passed, five existing skips, 516 files. Full log SHA-256:
+`35632b736a4d4911f8c64f0b3ebebc3e0f805b302ff60fb223ca4fc6f23d4bf6`.
+Build log SHA-256:
+`9934bb65fa97343ef2afc38b362c664ed535ac23d8b72ed3809e4df3262ae44e`.
+All 69 isolated packaged-install checks, supply-chain self-tests and 27 canonical/
+compatibility asset-pair checks pass. npm provenance remains externally blocked.
+No runtime source or active/global Agon installation changed in this gate repair.
+These are development checks, not an independent release qualification receipt.
+
+The read-only audit packed all 49 target packages and the CLI, then installed
+offline in a temporary prefix. Initial CLI startup, engine listing, mod listing
+and full-compat setup worked. After approved Think disable, fresh commands
+failed with `selected canonical lock does not match the resolved package
+closure`. Kernel safe mode successfully restored generation 1 and normal
+startup. Packaged MCP separately returned `Engine "codex" not found`, while
+packaged CLI recognized Codex. Fixture calls reproduced A04–A06 without calling
+providers. A08–A11 were source-traced and must not be represented as completed
+end-to-end reproductions.
+
+Original local diagnostics: `/tmp/agon-product-audit-01jLeK/REVIEW.md` and its
+adjacent scripts/logs. These ephemeral paths are investigation aids, not
+portable release receipts. Permanent regression tests and recorded verification
+must replace them before any finding is closed.
+
+CI failure: <https://github.com/KERNlang/agon/actions/runs/33962141678/job/101295755942>
+(lint, heap exhaustion, exit 134).
+
+## Re-audit scope
+
+Recheck installed CLI/MCP/TUI dispatch, activation/dependency/profile/restart
+sequences, package assets and boundaries, raw workflow parity, persisted state,
+trust/grants, recovery, negative controls, performance and CI. Test behavior at
+the real composition boundary rather than only isolated legacy helpers.
+Every repair requires a failing-before/passing-after regression. Do not weaken
+acceptance gates or update clean-subject receipts to describe dirty code.
+
+Native platform qualification, publishing and live-provider coverage remain
+separate. Dependency vulnerability auditing requires authorization to disclose
+dependency metadata to the registry; the blocked network audit was not bypassed.
+No claim of exhaustive security or perfection follows from local green tests.
+
+## Repair contracts
+
+- `first-party-activation.ts` owns selection changes against a qualified
+  inventory. `installed-index.json.lockedPackages` retains exact lock identities
+  across disable/re-enable. Older generations seed it from their verified
+  active lock; missing packages require setup, never an invented identity or
+  implicit download. Selection preserves `installation.json` byte-for-byte.
+- Activation recomputes the effective package closure from the desired state,
+  then validates graph hash, ordering and closure before the commit point.
+  An internally self-consistent but incomplete lock is a negative control.
+- CLI authority checks run in citty's setup phase, before nested commands.
+  A command may complete its own approved generation change; a subsequent
+  invocation by a stale host still fails.
+- TUI-specific schemas/adapters preserve existing intent fields and convert
+  them into the domain handler's request. CLI schemas are not loosened.
+- Folder-mod engine calls use an explicit host capability, through existing
+  trust/grant wrappers, not a compatibility-tool stub. Bundled and external
+  callers share the host engine implementation; external callers retain their
+  authority checks and live revocation.
+- `mod-observability.ts` owns immutable UUID receipts, owner/content attribution,
+  redaction, size limits and log receipts. First-party receipts live under
+  `first-party-mod-data/<mod-id>/receipts`; external receipt paths stay compatible.
+  No receipt is returned before its write completes.
+- Lint discovers the exact file scope using ESLint, then validates every file
+  with unchanged rules in isolated workspace processes. Discovery is not a
+  passing lint result. No directory/rule exclusion or warning allowance was added.
+
+## Deeper review findings
+
+**A12 — Chrome and Synthesis TUI contracts (repaired).** A census of 89 parsed
+samples exposed forbidden `input` on Chrome and missing `prompt`/numeric `swaps`
+on Synthesis. Explicit TUI schemas and adapters now preserve legacy intent
+shape while delivering the correct domain request. Tests exercise the actual
+registered parser, schema and handler with fixture capabilities.
+
+**A13 — Apply-patch routing repaired; backend extraction remains open.**
+The registered Apply intent previously used the Forge task schema and competition
+handler: `/apply <patch-path>` failed for missing `task`. Apply now has its own
+schema, parser and handler in `packages/mod-forge/src/apply.ts`. It never starts
+a Forge competition. The existing preflight, current-plan artifact selection,
+preview and approval remain behind an explicitly temporary host adapter.
+
+Adapter ledger entry **A13-APPLY-HOST**, under **KL-011** surface cutover:
+
+**Follow-up status:** the backend moved in `34e094d3`. The subsequent workflow
+increment removes `handleApplyPatch` and the whole-workflow host callback.
+See [completion ledger](modular-agon-completion-progress.md#apply-workflow-extraction--development-qualification)
+for current ownership, review adjudications, and the stricter explicit-yes
+approval repair. The bullets below record the earlier adapter state, not a
+claim that the old body remains. Final release qualification is still open.
+
+- Contribution owner: `agon.forge`, IDs `intentVariants:0002`,
+  `builtinCommandMetadata:0002`, and `tuiSlashCommands:0002`.
+- Adapter owner: CLI interactive host, `packages/cli/src/patch-application-host.ts`;
+  legacy workflow: `packages/cli/src/handlers/plan.ts::handleApplyPatch`;
+  legacy backend: `packages/core/src/blocks/patch-apply.ts`.
+- Boundary: optional public `PatchApplicationHostServices`, injected only into
+  bundled `agon.forge`. UI context stays inside the host. Invocation-scoped
+  approval callbacks reject headless, mismatched and expired sessions and keep
+  concurrent sessions separate. Availability is not approval or sandboxing.
+- Removal condition: extract the patch workflow/backend into its physical
+  mod/support owner, leaving only preview/approval UI capabilities in the host;
+  prove parity and legacy-adapter unreachability before deleting this bridge.
+  This entry is **retained**, not a completed kill-list removal.
+- Evidence: `tests/unit/modular-apply-route.test.ts`,
+  `modular-apply-approval.test.ts`, `modular-apply-host-scope.test.ts`, and
+  `modular-apply-tui-integration.test.ts` in the same directory. Tests cover the
+  registered parser/schema/runner and actual TUI dispatch/approval bridge with
+  a fixture patch backend; they do not prove every real Git failure mode.
+
+The approval repair accepts only empty input (the existing `[Y/n]` default),
+`y`, or `yes`; previously only literal `n` cancelled. Cancellation after the
+prompt prevents the write. The workspace is pinned before preview, and relative
+patch/manifest paths resolve against that workspace. `--force` bypasses the
+dirty-tree refusal, not human approval. These checks do not supply a repository
+transaction lock or complete concurrent-writer recovery. Full artifact/backend
+parity and extraction remain part of A11/A13.
+
+Apply repair development verification (2026-09-05): 12 focused tests and the
+rebuilt full suite pass (5,970 passed, five existing skips, 496 files). Build,
+typecheck, lint, re-export guard, all 49 package packs plus launcher, 69 isolated
+npx checks, and SBOM validation pass. Packed total: 1,820,382 bytes. Full-run
+log SHA-256: `3bf16be4401b145fe2b1118e5dd2850510427b9fea2ae1bfad52d7f8080e61bb`;
+npx log: `4dc4f3278ab9cb7329ca0b88eca6d32ce2f4677c5c23f3bac74c298883ca5095`.
+These are local development results, not independent clean-commit release
+qualification or proof of complete workflow parity. npm provenance remains
+externally blocked. Active/global Agon was not installed, linked or promoted.
+
+The census also rejects empty `/forge` and `/team-forge` inputs lacking a test
+command. Those are incomplete inputs, not by themselves proof of a regression.
+
+**A14 — MCP command failure envelopes (repaired; workflow parity remains separate).** The guarded packaged Brainstorm probe
+reaches a deliberately blocked provider dispatch, but emits an ordinary MCP
+result containing failed seats instead of an error result. Command-to-tool
+adapters currently discard some nonzero exit codes. Establish one consistent
+failure projection and test all-failed, partially degraded, cancelled and
+successful panels across the generated MCP surface. Do not confuse this
+remaining failure-contract bug with the repaired engine asset discovery.
+
+Follow-up after repair commit `7095456a`: the public Mod API now supplies
+`commandResultToToolResult` and `CommandExecutionError`. Successful payloads
+retain their existing shape; nonzero exits throw a typed error preserving the
+exit code, typed failure metadata and diagnostic result. Brainstorm, Campfire,
+Tribunal, Nero, Synthesis, Forge, Review and RAG use this common conversion.
+Plan, Jobs, Agent and pipeline-orchestration adapters also use this conversion;
+pipeline coverage here stops at invalid-input validation and runs no stages.
+The generated MCP transport maps that error to `result.isError: true`, not a
+successful payload or an internal JSON-RPC error. Internal result diagnostics
+are not automatically copied into the wire response.
+
+Regression coverage includes every migrated adapter, an all-failed Brainstorm
+panel, a degraded successful panel, actual server wire serialization, successful
+falsy payloads, and failure/cancellation exit metadata. The npx qualification now
+launches the installed MCP server with provider subprocesses/fetch blocked and
+asserts successful RoomList, failed Brainstorm, missing JobStatus, cyclic
+ProposePlan, and unknown-tool protocol behavior. This checks the actual packed
+API/error-class boundary, not only source imports.
+
+**A17 — Array schema constraints rejected (repaired).** The packed ProposePlan
+probe exposed that the shared validator rejected the owner's `minItems` keyword
+before invoking the handler. It now enforces nonnegative safe-integer
+`minItems`/`maxItems`, inclusive limits and per-item validation. Seven negative
+and boundary tests pass. Unknown keywords remain rejected; the Plan constraint
+was not removed or weakened.
+
+**A18 — MCP cancellation signal disconnected (repaired at the generated
+transport boundary).** Dynamic calls now own per-request controllers, forward
+their signals to the generated invocation context, accept matching cancellation
+notifications and suppress cancelled replies. Numeric/string IDs stay distinct;
+unknown cancellation is ignored; duplicate in-flight IDs cannot overwrite the
+controller; transport close aborts active controllers. Tests cover cancellation
+before dispatch and cancellation of one concurrent request without cancelling
+the other. This follows the server's advertised
+[2024-11-05 MCP cancellation contract](https://modelcontextprotocol.io/specification/2024-11-05/basic/utilities/cancellation).
+This is cooperative cancellation, not a claim that every engine immediately
+terminates or that kernel write-tool cancellation has been implemented.
+
+Updated verification: full suite **5,958 passed, five existing skips**, 492 files;
+installed npx **69 checks**; build, kernel rebuild, typecheck, lint, re-export,
+pack-content and local SBOM checks pass. Full-run log SHA-256:
+`fa134847548762e02df861902f2cfbd8599f7e760d450380d2a95b2e4aaf6cbb`.
+Installed-run log SHA-256:
+`4dc4f3278ab9cb7329ca0b88eca6d32ce2f4677c5c23f3bac74c298883ca5095`.
+These development checks do not supersede release acceptance receipts or close
+the Plan/Apply/Brainstorm behavioral parity, extraction or mutation findings.
+
+**A15 — Intermittent daemon survival test (unresolved observation).** One
+unsandboxed full run returned no pong; the isolated three-test daemon suite and
+subsequent full runs passed. No root cause was established and no timeout was
+raised. Retain this observation for load/repetition tests; it is not evidence
+that the flake was fixed. Earlier EPERM socket/watch failures were environmental
+and were rerun with local permissions, without skips.
+
+Apply-repair verification also produced one daemon readiness failure (5,969
+passed, one failed, five skipped). That run overlapped a build rewriting the
+CLI distribution used by this test, so it is not a valid stable-artifact
+qualification run. Failed log SHA-256:
+`d7c45f26eb8a076a9f1e696a85cd3489f4bc4b96505b17e8190b5a23d5554a84`.
+Build completion must precede the rerun. This interference is a plausible
+explanation, not a verified root cause of the earlier no-pong observation.
+
+## Remaining clean implementation order
+
+**A06 — Brainstorm workflow controller physically extracted (partial progress).**
+`packages/mod-brainstorm/src/workflow.ts` now owns the existing preflight-to-result
+sequence: panel degradation reporting, bid assembly, deduplication coordination,
+rating-update ordering, synthesis prompt construction, synthesis failure fallback,
+events, sidechain records and final result assembly. It imports no private core,
+CLI or forge implementation. Engine/storage/native effects are injected through
+`BrainstormWorkflowServices`; the public package compiles independently.
+
+**A06-BRAINSTORM-HOST (KL-011)** in `packages/forge/src/brainstorm.ts` is a
+temporary capability adapter. It delegates the workflow controller but still
+supplies host capabilities only. Collection, scout orchestration and policy are
+now extracted as described below. Its removal condition is connection of the
+generated surfaces to the same workflow, and installed raw-oracle parity. The
+simplified `mod-brainstorm/src/implementation.ts` surface implementation still
+exists and is **not** accepted as equivalent. A06/A11 remain open.
+
+The independent frozen source fixture is from `f68d41e4`, with relative imports
+relocated only. Nine comparisons check raw results/errors, dispatch arguments,
+events, logger records, dedup inputs and rating writes: divergent, grounded,
+empty/nonzero/throwing synthesis, no usable drafts, full quarantine, partial
+quarantine and a dedup abort. No normalization hides missing fields or reorders
+events. The ownership guard failed before extraction and passes afterward.
+These fixture tests do not constitute live-provider or installed-surface parity.
+
+Development verification: independent mod build, repository build, typecheck,
+lint and re-export guard pass. Full suite: 6,033 passed, five skipped, 507 files.
+Full log SHA-256:
+`14974322ef355e2014f81b59338d50471a53086b0ab0a5c8b1a64f0bc505112b`.
+Build log SHA-256:
+`e4146c69028700f8896b11b5f00d0b41385c51e0c22e0e9cc8a9733dbb6d02fa`.
+The unrelated timing-oracle failure and its mutation-checked repair are recorded
+in [the lock-test repair receipt](evidence/modular-agon-file-lock-test-repair.md).
+This is not an independent clean-commit release qualification receipt.
+
+**A06-BRAINSTORM-POLICY (KL-011), subsequent extraction.**
+`packages/mod-brainstorm/src/policy.ts` owns structural/scout scoring, stance
+assignment, fallback parsing, confidence calibration, quality scoring and stable
+ranking. The legacy module retains exports and supplies the rating reader only;
+the policy reads history on each call rather than caching a stale snapshot.
+The injected history shape exposes wins/losses, not private registry or store
+implementations. The remaining collector and scout use these physical helpers.
+
+An ownership regression failed before the move. Eleven additional parity cases
+compare against the frozen source, including score thresholds/caps, grounded vs
+divergent scoring, cold-start history, mode/global precedence, live history
+changes, stable ties, entry identity, fallback parsing and stance pool overflow.
+The nine workflow-oracle comparisons remain green. This moves policy ownership;
+it does not yet replace the simplified generated-surface handler. A06 remains
+open until collection/scout extraction and installed-surface parity are complete.
+
+Policy-extraction development checks: independent package build, repository
+build, typecheck, lint and re-export guard pass; 6,045 tests pass with five
+existing skips across 509 files. Full-suite log SHA-256:
+`2eb0271415b8013bf8d43f61b4a87d424a152d441b80524550f778f5de247952`.
+Build log SHA-256:
+`bc34a0fd6d59b888454df3504689b10f330b9219499b3b0a82a096312e10722f`.
+The initial lint pass identified a leftover unused import; it was removed and
+the complete lint rerun passed. These checks do not close release qualification.
+
+**A06 collector/scout extraction.** `collector.ts` and `scout.ts` in the physical
+Brainstorm package now own prompt/stance assembly, seat event ordering, parsing,
+collection, ranking, scout selection, timeout capping and scout result assembly.
+They import no private core, forge or CLI code. The compatibility module supplies
+protocol functions, rating reads/writes, engine dispatch, health and dedup effects;
+it no longer contains those workflow algorithms.
+
+The ownership guard failed before extraction. Six scout cases compare raw bids,
+engine lookups and dispatches against the frozen implementation, including zero,
+one/default/overflow counts, partial quarantine and failed seats. A positive
+retry case checks the full workflow's four seat attempts plus one synthesis.
+The workflow/scout oracle now covers sixteen cases. These are fixture results,
+not installed-surface or live-provider acceptance.
+
+Surface integration is still required: the generated handler must gain the real
+protocol, history, preflight, dedup and run-record capabilities and use these
+factories. Its simplified implementation must then be removed, with negative
+reachability and installed raw-oracle checks. A06 is not closed by this move.
+
+Collector/scout development verification (2026-09-06): independent mod build,
+repository build, typecheck, lint and re-export guard pass. The full isolated
+suite passes 6,053 tests, with five existing skips across 510 files. Full log
+SHA-256: `13efa6527e29c4c6eb7f74ca6af56a04a3c678ca7be3ae087064ce582fcb2441`.
+Build log SHA-256:
+`f0b092cd9c4fe851f373b62a6a2d5c40e002662bf8c4550ad983bb8577eac8d3`.
+All 69 packaged-install checks pass; the release set and SBOM agree on 50
+components including the launcher. Supply-chain negative controls pass; npm
+provenance remains externally blocked. No live-provider call or active/global
+installation was used. These are development checks, not an independent
+clean-commit release qualification or closure of the remaining product audit.
+
+**A06 dispatch-contract prerequisite (2026-09-06).** The public engine-dispatch
+options now include the adapter's optional `textOnly` control. Both CLI and MCP
+hosts forward it; the generated Brainstorm handler requests it for every seat,
+as the legacy collector already does. No other mode's default is changed. This
+is adapter control, not a sandbox or a guarantee that every provider supports
+disabling tools.
+
+The same trace found that folder-mod dispatch discarded *all* options in the
+worker proxy, parent worker bridge, grant wrapper and bootstrap adapter. These
+layers now forward the options through to the host. Invocation context and
+cancellation remain host-bound, and live grants are still checked before calls.
+
+One parameterized contract harness exercises the actual CLI/MCP host functions
+against a recording adapter, covering true/false/omitted text-only controls,
+timeouts, modes, prompts, context, unchanged defaults, raw results and thrown
+failures. Tests failed before the forwarding repair. The physical folder-mod
+bootstrap test also failed with missing options; it now checks the complete
+worker path, rejects a caller-supplied working-directory substitution, and proves
+grant revocation prevents a second dispatch. Existing raw Brainstorm oracle
+comparisons remain in place. Tests use local fixtures, not live providers.
+
+This fixes dispatch-contract loss, not the still-open synthesis/calibration/
+dedup integration in A06. The simplified generated workflow is not accepted as
+equivalent to the physically extracted workflow.
+
+Dispatch repair development checks: build, typecheck, lint and re-export guard
+pass. Full suite: 6,063 passed, five existing skips, 511 files. Full log SHA-256:
+`8e2c1c73fad546c7f9d0a280721628fbf0eb041319db8860b3f5161e568bc674`.
+Build log SHA-256:
+`fed6456554eb8be888c9a6e68fce043debbaf0df7b6440efb2d740033267aff0`.
+The complete build was rerun after the worker changes, so source tests and
+packed runtime artifacts do not refer to different implementations. These
+checks are not independent clean-commit release qualification. All 69 isolated
+packaged-install checks and supply-chain self-tests pass; npm provenance remains
+externally blocked. The active/global installation was not modified.
+
+**A06 dedup bridge extraction (2026-09-06).** Shared dedup support now physically
+owns `brainstorm-dedup.ts`: optional sidecar discovery, JSON-lines input/output,
+status conversion, timeout, cancellation and child termination. Its group/status
+types also have one owner; core retains type re-exports. The legacy forge bridge
+is only the **A06-DEDUP (KL-011)** compatibility export and declares its support
+dependency explicitly. Remove that export when the last legacy Brainstorm
+capability adapter is removed; the ownership test forbids restoring its controller.
+
+The test harness freezes the exact bridge body from `192ab0d3`, protected by
+SHA-256 `018cf770c252baf8a8b3b49dedc0d32bf7ca346de13b2e56d25221fb1577312e`.
+Sixteen scenarios compare raw results, errors, child-process arguments, stdin
+writes, termination signals and remaining timers. Cases cover zero/one drafts,
+missing sidecar, synchronous/asynchronous spawn failure, split output chunks,
+success, invalid JSON, malformed/missing groups, unavailable/failed exit,
+timeout, cancellation before/after spawn, late close and stdin failure. No
+Python process or provider runs in this simulated-process harness. The existing
+real-process timeout test remains part of the repository suite.
+
+Ownership tests failed before the controller/type move; the new comparisons and
+existing Brainstorm workflow oracle pass afterward. This is a behavior-preserving
+extraction, not a redesign of sidecar output validation. Generated Brainstorm
+surface integration, native dependency qualification and A06 closure remain open.
+
+Dedup extraction development verification: independent support-package build,
+repository build, typecheck, lint and re-export guard pass. Full isolated suite:
+6,081 passed, five existing skips, 513 files. Full log SHA-256:
+`9889d97365670d082394a197f921cf8caa4936a04821de4f1582596b5e274e15`.
+Build log SHA-256:
+`0a5818b54ff35b8b7d9791c0c647cb4f434834a67d150264a98a0f76daa2cb23`.
+All 69 isolated packaged-install checks and supply-chain self-tests pass. The
+release set contains 50 components including the launcher; npm provenance is
+still externally blocked. The active/global installation was not modified.
+This is development evidence, not independent clean-commit release qualification.
+
+**A06 runtime composition (2026-09-06).** `mod-brainstorm/src/runtime.ts` now
+provides one `createBrainstormRuntime` factory assembling scoring, collection,
+scouting and the full workflow. Its public `BrainstormRuntimeServices` contract
+contains injected host effects, not private core/forge types. Construction is
+lazy: it does not read ratings, dispatch engines, create logs or touch state.
+The compatibility adapter now supplies effects to this factory rather than
+assembling the four components independently. Its options are a readable typed
+extension of `BrainstormWorkflowOptions`, not a duplicate inline shape.
+
+The ownership regression failed before the move. Existing ownership guards now
+check factory assembly in the physical runtime while retaining prohibitions on
+legacy algorithms and private imports. All sixteen workflow/scout and eleven
+policy oracle comparisons remain unchanged and pass. New runtime checks cover
+effect-free construction, immutable scout options, timeout capping, retained
+host state and omission of scout-inapplicable style/event/count controls.
+
+The generated surface handler still needs to consume this runtime with qualified
+host capabilities; it has not been silently redirected to the legacy entrypoint.
+A06 remains open until that integration and installed-surface parity are proven.
+
+Runtime composition development verification: independent mod build, full build,
+typecheck, lint and re-export guard pass. Full suite: 6,084 passed, five existing
+skips, 515 files. Full log SHA-256:
+`f2637d683445ef80dcbe2be8923d67b71e1cbf76822b551881d07ac3a9236e9d`.
+Build log SHA-256:
+`051a4dba2337aea7236d63e2592983994924eb04c7fa98e165611d2baf72ca73`.
+All 69 isolated packaged-install checks and supply-chain self-tests pass;
+npm provenance remains externally blocked. Active/global Agon was not modified.
+This is not independent clean-commit release qualification.
+
+**A20 — Plan scheduler physically extracted (partial A05/A11 progress).**
+`packages/mod-plan/src/executor.ts` now owns the scheduling loop: dependency-ready
+selection, parallel/sequential execution, running-state publication, output
+summarization fallback, context export, cost callbacks, budget warnings and abort
+return state. `execution-model.ts` owns the existing public execution-plan types
+and step-type constants. Neither module imports private core or CLI code.
+
+The initial scheduler factory injected the step transition and cost-recording
+operations. State/store extraction moved the transition implementation into
+Plan. The execution-coordinator increment now removes the host transition hook:
+the scheduler calls its canonical, package-owned transition directly. Cost-history
+recording remains a best-effort host operation, with an error-reporting hook.
+The old core scheduler is replaced, not duplicated. Compatibility entry
+**A20-PLAN-SCHEDULER**, under **KL-011**, is the narrow wrapper in
+`packages/core/src/cesar/plan-executor.ts`. Core's model module re-exports the
+Plan-owned types instead of defining a second model. Core's explicit dependency
+on the physical Plan package and TypeScript project reference preserve clean
+build ordering. No new dependency is added within the 49-package release graph.
+
+Removal condition: migrate remaining runtime callers to Plan activation with
+injected estimation services and prove the wrapper unreachable, then delete
+the core dependency/export. Until then this adapter is retained and A11 is open.
+
+Oracle: `tests/fixtures/modular-plan-executor-legacy.ts`, frozen from `f6fc22f2`
+with import paths adjusted only. The ownership/parity test compares raw event
+order, context, results and cost records for sequential, parallel, failed,
+paused, thrown, missing-executor, aborted and summarizer-failure cases. The
+oracle shares the unchanged legacy transition function, so it qualifies the
+scheduler extraction, not independent state-machine correctness. The guard
+rejects a scheduler loop restored in core or a private-core import in the mod.
+
+Separate actual mutation evidence:
+`tests/unit/modular-plan-scheduler-mutations.test.ts` transforms the scheduler's
+own TypeScript source in memory, compiles and executes each candidate, proves
+the unmodified implementation satisfies the oracle, and proves three deliberate
+changes violate it: ignored cancellation, dropped ready steps and suppressed
+budget warnings. **3/3 targeted scheduler mutants detected**. This is not a
+whole-project mutation score and does not close A10's manifest/resolver/registry
+mutation requirements. No production file is mutated by the test.
+
+Development verification: 6,003 passed, five existing skips, 500 test files;
+build, post-build typecheck, lint, re-export guard, 49-package/launcher packing,
+69 isolated npx checks and SBOM checks pass. Full-run log SHA-256:
+`cbeeb570987556b22a07e0660de740d8c429916a6779a1e2b5ba6a7e21360c0a`.
+No active/global installation was promoted. These checks do not close the
+session-routing, persisted-model reconciliation or final native-release cells.
+
+Follow-up physical extraction: `execution-state.ts` owns creation, approval,
+step transitions/dependency release, cancellation and exit. `execution-store.ts`
+owns canonical JSON/Markdown paths, atomic save, canonical/legacy reads and
+listing. It uses the public support-persistence path/envelope helpers. The old
+core `plan.ts` is now only explicit compatibility exports, tagged
+**A20-PLAN-STATE/STORE** under KL-011. No state or filesystem implementation remains
+there. The scheduler adapter injects the Plan-owned transition directly.
+
+Frozen state/store fixtures and `modular-plan-state-owner.test.ts` /
+`modular-plan-store-owner.test.ts` compare full state payloads, persisted envelope
+bytes, readers and malformed-file isolation. The existing core-import Plan
+tests continue through the compatibility facade. The equivalent host-clock
+wrapper is replaced by `new Date().toISOString()`; timestamp call semantics are
+retained. Path resolution uses `persistencePath`, whose implementation matches
+the legacy `runtimeAgonPath`, including the dynamic AGON_HOME override.
+
+These facades must be deleted after owner-checked consumers migrate. They do
+not authorize disabled Plan workflows. The separate simplified persisted-plan
+controller in `implementation.ts` is **not yet reconciled** with the extracted
+execution model. A05/A11 remain open until session routing, approvals, execution,
+historical reads and disabled reachability use one verified path. Preservation
+of existing storage behavior is not proof against every concurrent-write or
+malformed-payload case; those remain qualification dimensions.
+
+State/store follow-up verification: 6,008 tests pass with five existing skips
+across 502 files; build, post-build typecheck and re-export guard pass. Full-run
+log SHA-256: `4d5caa8d1ba1f9dfff681be373f004316df9f1a89e582dd9ec7436396d0797a2`.
+The final full suite ran after build completion without concurrent build/lint
+work. This does not resolve the earlier intermittent telemetry observation.
+Lint, all 49 modular package packs plus launcher, 69 isolated npx checks and
+SBOM validation also pass for the follow-up. npm provenance remains external;
+no active/global installation was changed.
+
+**A21 — Telemetry fallback intermittently misses the expected successor (historical observation; deterministic repair above).**
+The first full scheduler-extraction run passed 6,002 tests and failed
+`telemetry-fallback.test.ts:170` (expected a staller → backup fallback). Failed
+log SHA-256: `b5c9c61bc42fa8b92a6e424b5c56cf11544f96c1c512cf83e2e110d00ab01338`.
+An unchanged rerun without concurrent lint/package load passed. Inspection shows
+the test samples live time, PID/network heartbeat and fallback availability,
+and waits for fallback before starting its fixture Forge. This is a diagnostic
+lead, not a proven cause. No assertion, timeout or production behavior was
+changed to make it pass. Retain this for deterministic telemetry qualification;
+do not report the intermittency fixed on that evidence alone. Superseded by
+the 2026-09-18 deterministic boundary tests and fixture repair documented above;
+this historical failed-run evidence is retained.
+
+**A19 — Plan approval interprets refusal as consent (repaired at the legacy boundary).**
+While tracing A05, `handlePlanShow` was found to reject only literal `n`;
+`no`, `cancel`, and arbitrary text entered the approval branch. It now accepts
+only empty input (the displayed `[Y/n]` default), `y`, or `yes`, ignoring case
+and surrounding whitespace. Other replies cancel and persist the cancelled plan.
+`resumeCesarPlan` likewise treated every answer except its three cancellation
+aliases as permission to resume. It now requires `1`/`resume` or
+`2`/`r`/`restart`; blank and unknown responses leave the paused plan unchanged.
+The choice UI maps Enter to the selected choice key, not blank input.
+
+The actual keyboard path also resolved Ctrl+C and free-text Escape dismissal
+as `''`, accidentally selecting affirmative defaults. Both now return `n`,
+matching the existing choice-question refusal path. Two failing-before tests
+in `tests/unit/question-cancel-refusal.test.ts` cover the real keyboard handlers.
+This retains the legacy string-answer interface; it is not a universal typed
+cancellation contract for every free-text workflow.
+
+Development verification: 21 focused regressions pass; the full rebuilt suite
+passes 5,991 tests with five existing skips across 498 files. Full-run log
+SHA-256: `3c57c3adde26d60563aa83a36d50fe4eb3e21a0b0a11e12c09f057dfe07a1117`.
+All 49 modular packages plus the launcher pack successfully (1,820,402 bytes),
+69 isolated npx checks pass, and SBOM validation passes. The final post-build
+typecheck passes; an intermediate typecheck overlapped the build's declaration
+cleanup and reported missing built declarations, so it is not qualification
+evidence. Active/global Agon and personal state were not promoted or modified.
+
+`tests/unit/plan-approval-refusal.test.ts` exercises the actual handlers with
+fixture persistence/execution: ten refusal cases failed before the repair;
+all 19 cases pass afterward, including affirmative/default draft approval and
+explicit resume/restart. No model or live plan storage is needed by this test.
+This is a prerequisite safety repair, **not** closure of A05 or A11. Cancellation
+signal propagation, current-session selection, persistence-format compatibility,
+and physical Plan workflow extraction still need integrated qualification.
+
+The A05 source trace distinguishes three contracts that must not be collapsed:
+
+- New task: `/plan <task>` enters Cesar plan mode and proposes a new plan.
+- Resume: `/plan resume [id]` resumes only a live session plan without an ID;
+  an explicit ID/path permits loading a saved plan. It must not silently use
+  the newest persisted plan.
+- Control: approve/cancel must address the visible Cesar proposal or the legacy
+  session plan and execute/persist the corresponding state transition, not merely
+  change the state of an unrelated `cplan-*` record.
+
+The physical Plan mod now routes TUI controls through `PlanSessionHostServices`,
+an invocation-scoped public contract. Task, resume, inspect, approve, retry,
+cancel and autonomous task requests remain distinct. No interactive host means
+exit 2, never fallback to selecting or modifying the latest persisted record.
+`/plan resumeDatabase` is a task, not a resume command.
+
+**A05-PLAN-SESSION-HOST (KL-011)** is a temporary CLI-owned adapter in
+`packages/cli/src/plan-session-host.ts` and `signals/dispatch/intent-session.ts`.
+Only the bundled Plan mod receives it. It rejects missing, mismatched, expired
+and already-aborted invocations. UI callbacks do not cross the public API.
+The adapter preserves the existing session handlers, including proposal
+approval and explicit-ID resume, rather than duplicating their algorithms.
+
+Removal condition: migrate session coordination and approval/execution policy
+to the physical owner, prove raw event/state parity, then delete this adapter
+and assert no imports of the legacy Plan session handlers remain. That removal
+gate is not satisfied. Fifteen new route/scope/TUI tests cover this increment;
+they do not qualify live-provider execution, nested job cancellation, all
+installed surfaces, or MCP/Cesar's separate persisted-record controller.
+A05/A11 therefore remain open, not accepted as complete extraction.
+
+Regression evidence: all eleven new routing cases failed against the previous
+controller and passed after the session split. The first full run had 6,022
+passing tests, five skips and one obsolete expectation in the Plan package test:
+it required headless TUI approval to mutate a saved record. That assertion is
+replaced with exit-2 refusal **and exact persisted-record equality**; proposal,
+listing, exit and cycle-validation assertions remain. Existing interactive
+approval/refusal tests remain unchanged. Failed-run SHA-256:
+`884c476883f763f9b514773c7e5b6fa6c6293bad50eda0cf97f48e81326bbc3f`.
+
+Final development verification: build, typecheck, lint and re-export guard pass;
+6,023 tests pass, five remain skipped, across 505 files. Full-suite log SHA-256:
+`834e8da3ebf8cc06494f019c866c2e7605dc978d4358f1435247234b9c6c9ff9`.
+Build log SHA-256:
+`9253f472377af8dfd0c6f41b51f3c61df32894e8e3f13fe44c56082ce3a305a2`.
+This is a working-branch repair receipt, not independent clean-commit release
+qualification or closure of the outstanding architecture findings.
+
+**A16 — Serve readiness/shutdown race (repaired; regression suite passing).**
+The latest combined run had 5,923 passing tests, five skips and one failure:
+`serve-command.test.ts` received a null process exit code after SIGINT rather
+than zero. Source inspection found that `runServe` published its connection
+before registering signal handlers. A deterministic regression emits SIGINT
+at publication and fails before the fix. Shutdown handlers now precede the
+ready line; concurrent abort/signal requests share one disposal, synchronous
+stop errors enter the existing error path, and the abort listener is removed.
+The four browser delegation tests, package compilation and targeted lint pass.
+This establishes the readiness defect, not proof that it explains every
+previous daemon flake. The rebuilt full suite subsequently passed: 5,925 tests,
+five existing skips, 488 files. Build, typecheck, lint and re-export checks pass.
+The diagnostic launch guard initially misclassified harmless argument strings;
+it was corrected to inspect executables, without changing application tests.
+Guarded full-run log SHA-256:
+`65f6a2fc54cdd578739d2b5ead488bec225ee732944b0d1c11838adff793f7d4`.
+
+During this run the operator reported unexpected OpenAI login tabs. Their
+origin was not established. Subsequent narrow tests block child processes
+(except the exact local esbuild service) and fetch, using fixture browser
+services; no browser or provider authentication is needed by those tests.
+
+1. **Plan session boundary (A05/A11):** extract plan state transitions and
+   execution ownership into the plan package. Give the UI an explicit event,
+   approval and session bridge; do not pass the whole CLI callback/context
+   object into mods. Preserve new-task planning, in-session selection, explicit
+   resume, approval, cancellation, retry and self-review gates. A typed,
+   owner-tagged temporary adapter may bridge the old session implementation,
+   but must have a removal test and must not be mistaken for completed extraction.
+2. **Brainstorm workflow owner (A06/A11):** move the actual preflight → seat/retry
+   → calibration/ranking → dedup → ratings → synthesis workflow behind injected
+   host capabilities. Replace legacy exports with a narrow compatibility adapter
+   to that one implementation. Preserve raw result fields, event order, degraded
+   panels, cancellation and synthesis fallback. Use deterministic fixture engines
+   to compare old/new raw outputs and dispatch sequences before retiring the owner.
+3. **Apply extraction (A13/A11):** routing is separated from competition and
+   MCP failure projection is repaired. Retire A13-APPLY-HOST only after physical
+   backend extraction and artifact/approval parity pass; keep the approval gate.
+4. **Acceptance truth (A10/A11):** inject actual implementation mutants, reconcile
+   remaining legacy owners, then run raw workflow parity through installed surfaces.
+   Existing legacy-only tests cannot close these findings.
+
+## Verification recorded during this repair batch
+
+- All 36 first-party mods: durable disable/re-enable, fresh surface bootstrap,
+  identity retention and disabled-owner rejection across CLI/TUI/MCP/Cesar/docs.
+  This is registration/activation coverage, not execution of all 36 workflows.
+- Installed npx test: **68 checks**, including cache deletion, Think lifecycle,
+  fresh process startup, disabled rejection and preserved idempotent setup.
+- Full suite before the new 36-case matrix: **5,888 passed, 5 existing skips**,
+  487 test files. Matrix separately passes all 36 cases.
+- Typecheck and re-export guard pass. Typed lint passes under a 4 GiB heap;
+  the latest recorded scope before the matrix file was 1,300 files/55 partitions.
+- Rebuilt package BOM/channel and matching local SBOM; these are artifact
+  metadata, not an assertion of completed release qualification or publication.
+- Packaged MCP resolves Codex and reaches dispatch with process/network effects
+  deliberately blocked by a probe preload. No live provider or credentials used.
+- Regression tests were observed failing before their corresponding repairs.
+  Existing Think intent assertions were retained; an initial incompatible parser
+  change was corrected by an adapter, not by relaxing those assertions.
+
+Local logs for this batch: `/tmp/agon-product-repair-6JKB0sFB/`. They are development
+diagnostics, not clean committed release receipts. This is an incremental repair
+batch, not a release acceptance receipt. No active/global installation or personal-state changes were
+intentionally performed; absence of indirect authentication side effects has
+not been independently established. The PR is
+still **not release-ready** because the open behavior and acceptance findings
+above remain locally actionable.

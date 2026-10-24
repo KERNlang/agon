@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kernlang.dev/schemas/brainstorm/config.schema.json",
+  "title": "brainstorm configuration",
+  "type": "object",
+  "additionalProperties": true
+}

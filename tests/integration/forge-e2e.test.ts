@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
-import type { DispatchOptions, DispatchResult, EngineAdapter, EngineDefinition } from '../../packages/core/src/models/types.js';
+import type { AgentDispatchResult, DispatchOptions, DispatchResult, EngineAdapter, EngineDefinition } from '../../packages/core/src/models/types.js';
 import { setupTestAgonHome, cleanupTestAgonHome, agonHomePath } from '../helpers/agon-home.js';
 
 function git(cwd: string, args: string[]): string {
@@ -420,6 +420,116 @@ describe('Forge E2E', () => {
     } finally {
       process.env.PATH = fakeNpx.originalPath;
       rmSync(fakeNpx.binDir, { recursive: true, force: true });
+      cleanupTestAgonHome(agonHome);
+      rmSync(repoDir, { recursive: true, force: true });
+      rmSync(forgeDir, { recursive: true, force: true });
+    }
+  });
+
+  it('binds refinement parsing and errors to the Forge owner', async () => {
+    const owner = await import('@kernlang/agon-mod-forge');
+    const legacy = await import('../../packages/forge/src/synthesis.js');
+    const core = await import('@kernlang/agon-core');
+    expect(owner).toHaveProperty('parseCritiques', legacy.parseCritiques);
+    expect(owner).toHaveProperty('FitnessError', core.FitnessError);
+    expect(owner).toHaveProperty('createForgeSynthesis', expect.any(Function));
+  });
+
+  it.each([
+    { agent: false, fitnessPasses: true, throws: false },
+    { agent: true, fitnessPasses: true, throws: false },
+    { agent: false, fitnessPasses: false, throws: false },
+    { agent: true, fitnessPasses: false, throws: false },
+    { agent: false, fitnessPasses: true, throws: true },
+    { agent: true, fitnessPasses: true, throws: true },
+  ].flatMap(test => [false, true].map(accountingThrows => ({ ...test, accountingThrows }))))('refines the winner in a real worktree: agent=$agent fitness=$fitnessPasses throws=$throws accounting=$accountingThrows', async ({ agent, fitnessPasses, throws, accountingThrows }) => {
+    const agonHome = setupTestAgonHome('forge-refinement');
+    const repoDir = createRepo('refinement');
+    const forgeDir = join(tmpdir(), `agon-forge-refinement-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(forgeDir, { recursive: true });
+    const worktrees: Array<{ engineId: string; path: string; repoRoot: string }> = [];
+    try {
+      vi.resetModules();
+      const { EngineRegistry } = await import('../../packages/core/src/index.js');
+      const { runSynthesis } = await import('../../packages/forge/src/synthesis.js');
+      const registry = new EngineRegistry();
+      const winner = makeEngine('winner');
+      if (agent) winner.agent = { args: [] };
+      registry.register(winner);
+      registry.register(makeEngine('critic'));
+      writeFileSync(join(repoDir, 'README.md'), '# Winner\n');
+      const patchPath = join(forgeDir, 'winner.patch');
+      writeFileSync(patchPath, git(repoDir, ['diff', 'HEAD']) + '\n');
+      writeFileSync(join(repoDir, 'README.md'), '# Forge E2E\n');
+      const fitnessCmd = fitnessPasses ? 'test "$(cat README.md)" = "# Refined"' : 'exit 1';
+      const events: string[] = [];
+      const refinementModes: string[] = [];
+      const onDispatch = vi.fn(() => { if (accountingThrows) throw new Error('fixture accounting failure'); });
+      const refine = async (options: DispatchOptions): Promise<AgentDispatchResult> => {
+        expect(readFileSync(join(options.cwd, 'README.md'), 'utf8')).toBe('# Winner\n');
+        expect(options.prompt).toContain('Clarify the title');
+        expect(options.engine.id).toBe('winner');
+        refinementModes.push(options.mode);
+        if (throws) throw new Error('refinement dispatch failed');
+        writeFileSync(join(options.cwd, 'README.md'), '# Refined\n');
+        return { exitCode: 0, stdout: 'refined', stderr: '', durationMs: 1, timedOut: false,
+          diff: git(options.cwd, ['diff', 'HEAD']), diffLines: 2, filesChanged: 1 };
+      };
+      const adapter: EngineAdapter = {
+        dispatch: async options => {
+          if (options.mode !== 'review') {
+            expect(agent).toBe(false);
+            expect(options.mode).toBe('exec');
+            return refine(options);
+          }
+          expect(options.engine.id).toBe('critic');
+          return { exitCode: 0, stdout: JSON.stringify([{ file: 'README.md', lines: '1',
+            problem: 'Clarify the title', minimal_fix: '# Refined' }]),
+          stderr: '', durationMs: 1, timedOut: false };
+        },
+        dispatchAgent: options => {
+          expect(agent).toBe(true);
+          expect(options.mode).toBe('agent');
+          return refine(options);
+        },
+        isAvailable: async () => true,
+        getVersion: async () => 'test',
+      };
+      const pending = runSynthesis({
+        manifest: {
+          forgeId: 'refinement', forgeDir, task: 'Clarify the title', fitnessCmd,
+          timestamp: '2026-01-01T00:00:00.000Z', engines: ['winner', 'critic'],
+          results: { winner: { engineId: 'winner', pass: true, score: 0, diffLines: 2,
+            filesChanged: 1, durationSec: 0, lintWarnings: 0, styleScore: 100, patchPath } },
+          patches: { winner: patchPath }, winner: 'winner', closeCall: true,
+          stage1Accepted: false, baselinePasses: false, starter: 'winner', enginesDispatched: 2,
+        },
+        winner: 'winner', losers: ['critic'], registry, adapter, forgeDir, fitnessCmd,
+        timeout: 10, fitnessTimeout: 10, maxCritiques: 3, repoRoot: repoDir,
+        headSha: git(repoDir, ['rev-parse', 'HEAD']), worktrees,
+        onEvent: event => { events.push(event.type); },
+        onDispatch,
+      });
+      if (throws) {
+        await expect(pending).rejects.toThrow('refinement dispatch failed');
+        expect(events).toEqual(['synthesis:start', 'synthesis:critique', 'synthesis:refine']);
+      } else {
+        const result = await pending;
+        expect(result.pass).toBe(fitnessPasses);
+        expect(result.wins).toBe(fitnessPasses);
+        expect(result.critiques).toEqual([{ file: 'README.md', lines: '1',
+          problem: 'Clarify the title', minimalFix: '# Refined' }]);
+        expect(readFileSync(result.patchPath, 'utf8')).toContain('+# Refined');
+        expect(events).toEqual(['synthesis:start', 'synthesis:critique', 'synthesis:refine',
+          'synthesis:score', 'synthesis:done']);
+      }
+      expect(refinementModes).toEqual([agent ? 'agent' : 'exec']);
+      expect(onDispatch).toHaveBeenCalledTimes(2);
+      expect(worktrees).toHaveLength(1);
+      expect(existsSync(worktrees[0].path)).toBe(false);
+      expect(git(repoDir, ['worktree', 'list', '--porcelain'])).not.toContain('synth-worktree');
+      expect(readFileSync(join(repoDir, 'README.md'), 'utf8')).toBe('# Forge E2E\n');
+    } finally {
       cleanupTestAgonHome(agonHome);
       rmSync(repoDir, { recursive: true, force: true });
       rmSync(forgeDir, { recursive: true, force: true });

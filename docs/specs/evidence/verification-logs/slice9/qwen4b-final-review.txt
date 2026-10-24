@@ -1,0 +1,4 @@
+BLOCKING: none
+
+**Review Explanation**:  
+The acceptance-harness diff introduces no false-green defects in the specified domains. After thorough inspection of the Git-object review binding,

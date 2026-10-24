@@ -4,6 +4,105 @@ import { spawnWithTimeout } from '../../packages/core/src/blocks/process.js';
 // ── Basic spawn behavior ────────────────────────────────────────────
 
 describe('spawnWithTimeout', () => {
+  it('bounds decoded malformed output and incomplete EOF characters', async () => {
+    for (const [bytes, limit, expected] of [
+      [[255, 255, 255, 255], 4, '�'], [[226], 1, ''],
+    ] as const) {
+      const result = await spawnWithTimeout({ command: process.execPath,
+        args: ['-e', `process.stdout.write(Buffer.from(${JSON.stringify(bytes)}))`],
+        cwd: process.cwd(), timeout: 5000, maxCapturedBytesPerStream: limit });
+      expect(result.stdout).toBe(expected);
+      expect(Buffer.byteLength(result.stdout)).toBeLessThanOrEqual(limit);
+      expect(result.outputTruncated).toBe(true);
+      expect(result.exitCode).toBe(0);
+    }
+  });
+  it('captures each stream separately without terminating on capture overflow', async () => {
+    const result = await spawnWithTimeout({ command: process.execPath,
+      args: ['-e', "process.stdout.write('abcdef'); process.stderr.write('uvwxyz');"],
+      cwd: process.cwd(), timeout: 5000, maxCapturedBytesPerStream: 4 });
+    expect(result).toMatchObject({ exitCode: 0, stdout: 'abcd', stderr: 'uvwx',
+      aborted: false, outputTruncated: true });
+  });
+
+  it('keeps exact capture limits and drops a UTF-8 character cut by truncation', async () => {
+    for (const [text, limit, expected, truncated] of [
+      ['éé', 4, 'éé', false], ['éé', 3, 'é', true], ['abc', 4, 'abc', false],
+    ] as const) {
+      const result = await spawnWithTimeout({ command: process.execPath,
+        args: ['-e', `process.stdout.write(${JSON.stringify(text)})`],
+        cwd: process.cwd(), timeout: 5000, maxCapturedBytesPerStream: limit });
+      expect(result.stdout).toBe(expected);
+      expect(result.outputTruncated).toBe(truncated);
+      expect(Buffer.byteLength(result.stdout)).toBeLessThanOrEqual(limit);
+    }
+  });
+
+  it('observes cancellation from onSpawn before the listener is registered', async () => {
+    const controller = new AbortController();
+    const result = await spawnWithTimeout({ command: process.execPath,
+      args: ['-e', 'setTimeout(() => {}, 5000)'], cwd: process.cwd(), timeout: 10000,
+      maxCapturedBytesPerStream: 4, signal: controller.signal,
+      onSpawn: () => controller.abort() });
+    expect(result).toMatchObject({ exitCode: 130, aborted: true, timedOut: false });
+    expect(result.durationMs).toBeLessThan(3000);
+  });
+
+  it('rejects invalid capture limits without spawning', async () => {
+    for (const limit of [0, -1, 1.5, NaN, Infinity]) {
+      await expect(spawnWithTimeout({ command: process.execPath, args: [],
+        cwd: process.cwd(), timeout: 1000, maxCapturedBytesPerStream: limit,
+        onSpawn: () => { throw new Error('must not spawn'); } }))
+        .rejects.toThrow('maxCapturedBytesPerStream must be a positive safe integer');
+    }
+  });
+
+  it('preserves default result fields when bounded capture is not selected', async () => {
+    const result = await spawnWithTimeout({ command: process.execPath, args: ['-e', ''],
+      cwd: process.cwd(), timeout: 5000 });
+    expect(result).not.toHaveProperty('aborted');
+    expect(result).not.toHaveProperty('outputTruncated');
+    expect(result).not.toHaveProperty('spawnError');
+  });
+
+  it('decodes UTF-8 split across output chunks', async () => {
+    const result = await spawnWithTimeout({
+      command: process.execPath,
+      args: ['-e', "process.stdout.write(Buffer.from([0xc3])); setTimeout(() => process.stdout.write(Buffer.from([0xa9])), 50);"],
+      cwd: process.cwd(),
+      timeout: 5000,
+      maxOutputBytes: 2,
+    });
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe('é');
+  });
+
+  it('bounds combined stdout and stderr by bytes', async () => {
+    const result = await spawnWithTimeout({
+      command: process.execPath,
+      args: ['-e', "process.stdout.write('é'.repeat(40)); process.stderr.write('x'.repeat(40));"],
+      cwd: process.cwd(),
+      timeout: 5000,
+      maxOutputBytes: 100,
+    });
+    expect(result.exitCode).toBe(1);
+    expect(result.timedOut).toBe(false);
+    expect(result.stderr).toContain('output exceeded 100 bytes');
+    expect(Buffer.byteLength(result.stdout)).toBeLessThanOrEqual(100);
+  });
+
+  it('preserves output at the exact byte limit', async () => {
+    const result = await spawnWithTimeout({
+      command: process.execPath,
+      args: ['-e', "process.stdout.write('é'.repeat(50));"],
+      cwd: process.cwd(),
+      timeout: 5000,
+      maxOutputBytes: 100,
+    });
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe('é'.repeat(50));
+  });
+
   it('captures stdout from a simple command', async () => {
     let spawnedPid: number | null = null;
     const result = await spawnWithTimeout({

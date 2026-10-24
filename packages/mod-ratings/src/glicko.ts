@@ -1,0 +1,414 @@
+import { mkdirSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+
+import { homedir } from 'node:os';
+
+import type { GlickoRating, RatingRecord, EngineMeta } from './types.js';
+import type { TaskClass, EngineDefinition } from '@kernlang/agon-support-engine-runtime';
+import { readRatingsFile, writeRatingsFile } from './storage.js';
+
+import { withFileLock, loadConfig, DEFAULT_AGON_CONFIG } from '@kernlang/agon-support-persistence';
+import { identityChanged, noteEngineIdentities } from './identity.js';
+import type { EngineIdentities } from '@kernlang/agon-support-engine-runtime';
+import { currentInvocationOwnerAvailable } from '@kernlang/agon-kernel';
+
+type RatingEngineRegistry = { list(): EngineDefinition[] };
+// ── Module: GlickoRatings ──
+
+function ratingsPath(): string {
+  const override = process.env.AGON_HOME?.trim();
+  const home = override ? resolve(override) : join(homedir(), '.agon');
+  return join(home, 'ratings.json');
+}
+
+/**
+ * Cross-process lock next to ratings.json. Every load→mutate→save of the ratings record MUST run under withFileLock(ratingsLockPath()) — two concurrent run completions doing unlocked RMW was how parallel agon sessions silently corrupted ratings.
+ */
+function ratingsLockPath(): string {
+  return ratingsPath() + '.lock';
+}
+
+export const GLICKO_SCALE: number = 173.7178;
+
+export const DEFAULT_MU: number = 1500;
+
+export const DEFAULT_PHI: number = 350;
+
+export const DEFAULT_SIGMA: number = 0.06;
+
+/**
+ * System constant — constrains volatility change. Lower = more conservative.
+ */
+export const TAU: number = 0.5;
+
+export const CONVERGENCE_TOLERANCE: number = 0.000001;
+
+export function defaultGlickoRating(): GlickoRating {
+  return { mu: DEFAULT_MU, phi: DEFAULT_PHI, sigma: DEFAULT_SIGMA, wins: 0, losses: 0, lastActive: new Date().toISOString() };
+}
+
+export function defaultEngineMeta(): EngineMeta {
+  const now = new Date().toISOString();
+  return { firstSeen: now, lastActive: now, matchCount: 0, derivedFrom: null, versions: [] };
+}
+
+export function loadRatings(): RatingRecord {
+  return readRatingsFile(ratingsPath, err => {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+      console.warn(`[agon] failed to load ratings: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }) as RatingRecord;
+}
+
+export function saveRatings(record: RatingRecord): void {
+  const path = ratingsPath();
+  mkdirSync(dirname(path), { recursive: true });
+  record.lastUpdated = new Date().toISOString();
+  writeRatingsFile(path, record, path + '.tmp');
+}
+
+/**
+ * Load current Glicko-2 ratings.
+ */
+export function getRatings(): RatingRecord {
+  return loadRatings();
+}
+
+/**
+ * Get a single engine's Glicko-2 rating, optionally for a specific mode.
+ */
+export function getEngineGlickoRating(engineId: string, mode?: string): GlickoRating {
+  const record = loadRatings();
+  if (mode && record.byMode[mode as keyof typeof record.byMode]) {
+    return record.byMode[mode as keyof typeof record.byMode][engineId] ?? defaultGlickoRating();
+  }
+  return record.global[engineId] ?? defaultGlickoRating();
+}
+
+/**
+ * Glicko-2 g(phi) function — reduces impact of uncertain opponents.
+ */
+export function glickoG(phi: number): number {
+  return 1 / Math.sqrt(1 + 3 * phi * phi / (Math.PI * Math.PI));
+}
+
+/**
+ * Glicko-2 expected score.
+ */
+export function glickoE(mu: number, muJ: number, phiJ: number): number {
+  return 1 / (1 + Math.exp(-glickoG(phiJ) * (mu - muJ)));
+}
+
+/**
+ * Apply one pairwise Glicko-2 update to an in-memory record. Pure relative to the fs — load/lock/save are the caller's job, so a ranked batch can run N*(N-1)/2 pair updates under ONE lock with ONE load and ONE save.
+ */
+function applyGlickoPair(record: RatingRecord, winnerId: string, loserId: string, taskClass: TaskClass, mode: 'forge'|'brainstorm'|'tribunal'|'critique'): void {
+  const now = new Date().toISOString();
+
+  // Ensure all scopes exist
+  record.byMode[mode] ??= {};
+  record.byTaskClass[taskClass] ??= {};
+  record.engineMeta[winnerId] ??= defaultEngineMeta();
+  record.engineMeta[loserId] ??= defaultEngineMeta();
+
+  const scopes: Array<Record<string, GlickoRating>> = [
+    record.global,
+    record.byMode[mode],
+    record.byTaskClass[taskClass],
+  ];
+
+  for (const scope of scopes) {
+    scope[winnerId] ??= defaultGlickoRating();
+    scope[loserId] ??= defaultGlickoRating();
+
+    const w = scope[winnerId];
+    const l = scope[loserId];
+
+    // Convert to Glicko-2 internal scale
+    const muW = (w.mu - DEFAULT_MU) / GLICKO_SCALE;
+    const phiW = w.phi / GLICKO_SCALE;
+    const muL = (l.mu - DEFAULT_MU) / GLICKO_SCALE;
+    const phiL = l.phi / GLICKO_SCALE;
+
+    // Winner update (score = 1)
+    const gL = glickoG(phiL);
+    const eW = glickoE(muW, muL, phiL);
+    const vW = 1 / (gL * gL * eW * (1 - eW));
+    const deltaW = vW * gL * (1 - eW);
+    const sigmaW = computeNewSigma(w.sigma, phiW, vW, deltaW);
+    const phiStarW = Math.sqrt(phiW * phiW + sigmaW * sigmaW);
+    const phiNewW = 1 / Math.sqrt(1 / (phiStarW * phiStarW) + 1 / vW);
+    const muNewW = muW + phiNewW * phiNewW * gL * (1 - eW);
+
+    // Loser update (score = 0)
+    const gW = glickoG(phiW);
+    const eL = glickoE(muL, muW, phiW);
+    const vL = 1 / (gW * gW * eL * (1 - eL));
+    const deltaL = vL * gW * (0 - eL);
+    const sigmaL = computeNewSigma(l.sigma, phiL, vL, deltaL);
+    const phiStarL = Math.sqrt(phiL * phiL + sigmaL * sigmaL);
+    const phiNewL = 1 / Math.sqrt(1 / (phiStarL * phiStarL) + 1 / vL);
+    const muNewL = muL + phiNewL * phiNewL * gW * (0 - eL);
+
+    // Convert back to display scale
+    w.mu = Math.round(muNewW * GLICKO_SCALE + DEFAULT_MU);
+    w.phi = Math.round(phiNewW * GLICKO_SCALE * 10) / 10;
+    w.sigma = sigmaW;
+    w.wins++;
+    w.lastActive = now;
+
+    l.mu = Math.round(muNewL * GLICKO_SCALE + DEFAULT_MU);
+    l.phi = Math.round(phiNewL * GLICKO_SCALE * 10) / 10;
+    l.sigma = sigmaL;
+    l.losses++;
+    l.lastActive = now;
+  }
+
+  // Update meta
+  record.engineMeta[winnerId].lastActive = now;
+  record.engineMeta[winnerId].matchCount++;
+  record.engineMeta[loserId].lastActive = now;
+  record.engineMeta[loserId].matchCount++;
+}
+
+/**
+ * Single pairwise Glicko-2 update. The full read-modify-write runs under the cross-process ratings lock so concurrent agon processes can't lose each other's updates.
+ */
+export function updateGlicko(winnerId: string, loserId: string, taskClass: TaskClass, mode: 'forge'|'brainstorm'|'tribunal'|'critique'): {winnerMu:number, loserMu:number} {
+  let result = { winnerMu: DEFAULT_MU, loserMu: DEFAULT_MU };
+  withFileLock(ratingsLockPath(), () => {
+    const record = loadRatings();
+    applyGlickoPair(record, winnerId, loserId, taskClass, mode);
+    saveRatings(record);
+    result = { winnerMu: record.global[winnerId].mu, loserMu: record.global[loserId].mu };
+  });
+  return result;
+}
+
+/**
+ * Glicko-2 volatility update via Illinois algorithm (Step 5).
+ */
+export function computeNewSigma(sigma: number, phi: number, v: number, delta: number): number {
+  const a = Math.log(sigma * sigma);
+  const tau2 = TAU * TAU;
+
+  function f(x: number): number {
+    const ex = Math.exp(x);
+    const phi2 = phi * phi;
+    const num1 = ex * (delta * delta - phi2 - v - ex);
+    const den1 = 2 * (phi2 + v + ex) * (phi2 + v + ex);
+    return num1 / den1 - (x - a) / tau2;
+  }
+
+  // Set initial bounds
+  let A = a;
+  let B: number;
+  if (delta * delta > phi * phi + v) {
+    B = Math.log(delta * delta - phi * phi - v);
+  } else {
+    let k = 1;
+    while (f(a - k * TAU) < 0) k++;
+    B = a - k * TAU;
+  }
+
+  // Illinois algorithm to find root
+  let fA = f(A);
+  let fB = f(B);
+  while (Math.abs(B - A) > CONVERGENCE_TOLERANCE) {
+    const C = A + (A - B) * fA / (fB - fA);
+    const fC = f(C);
+    if (fC * fB <= 0) {
+      A = B;
+      fA = fB;
+    } else {
+      fA = fA / 2;
+    }
+    B = C;
+    fB = fC;
+  }
+  return Math.exp(A / 2);
+}
+
+/**
+ * Pairwise Glicko-2 updates for all ranked positions. Higher score beats lower score. The WHOLE batch runs under one ratings lock with a single load and save — previously each pair did its own unlocked load→save (up to 15 RMW cycles for a 6-engine run), which is what let two concurrent run completions clobber each other.
+ */
+export function updateGlickoRanked(ranked: Array<{engineId:string,score:number}>, taskClass: TaskClass, mode: 'forge'|'brainstorm'|'tribunal'|'critique', identities?: EngineIdentities): void {
+  if (currentInvocationOwnerAvailable('agon.ratings') === false || ranked.length < 2) return;
+  const observed: EngineIdentities = {};
+  for (const { engineId } of ranked) if (identities?.[engineId]) observed[engineId] = identities[engineId];
+  const confirmRuns = Object.keys(observed).length > 0 ? identityConfirmRuns() : 0;
+  withFileLock(ratingsLockPath(), () => {
+    const record = loadRatings();
+    noteEngineIdentities(record, observed, { confirmRuns, phiMax: DEFAULT_PHI, newMeta: defaultEngineMeta });
+    for (let i = 0; i < ranked.length; i++) {
+      for (let j = i + 1; j < ranked.length; j++) {
+        if (ranked[i].score === ranked[j].score) continue;
+        applyGlickoPair(record, ranked[i].engineId, ranked[j].engineId, taskClass, mode);
+      }
+    }
+    saveRatings(record);
+  });
+}
+
+/**
+ * Conservative rating estimate for advisor/starter selection. Returns mu - 2*phi (lower bound of 95% CI).
+ */
+export function advisorScore(engineId: string, mode: 'forge'|'brainstorm'|'tribunal'|'critique'): number {
+  const rating = getEngineGlickoRating(engineId, mode);
+  // Apply inactivity: increase phi if engine hasn't competed recently
+  const daysSinceActive = (Date.now() - new Date(rating.lastActive).getTime()) / 86400000;
+  let phi = rating.phi;
+  if (daysSinceActive > 14) {
+    // Glicko-2 standard: phi grows with inactivity, capped at initial value
+    phi = Math.min(Math.sqrt(phi * phi + rating.sigma * rating.sigma * daysSinceActive), DEFAULT_PHI);
+  }
+  return Math.round((rating.mu - 2 * phi));
+}
+
+function identityConfirmRuns(): number {
+  const configured = Math.floor(Number(loadConfig(process.cwd()).ratingIdentityConfirmRuns));
+  return configured >= 1 ? configured : DEFAULT_AGON_CONFIG.ratingIdentityConfirmRuns;
+}
+
+export interface RatingRankOptions {
+  now?: number;
+  staleHorizonDays?: number;
+  identities?: EngineIdentities;
+}
+
+/**
+ * Rating deviation used for ranking: the stored phi widened linearly toward DEFAULT_PHI by how long the rating has gone without an update, reaching DEFAULT_PHI at horizonDays. Stored phi only shrinks when a match is played, so without this a rating that stopped updating stays confident forever. horizonDays <= 0 or a missing/unparseable lastActive returns the stored phi. nowMs is epoch milliseconds.
+ */
+export function effectivePhi(rating: GlickoRating, nowMs: number, horizonDays: number): number {
+  const lastActiveMs = Date.parse(rating.lastActive ?? '');
+  if (!(horizonDays > 0) || !Number.isFinite(lastActiveMs)) return rating.phi;
+  const daysInactive = Math.max(0, (nowMs - lastActiveMs) / 86400000);
+  return rating.phi + (DEFAULT_PHI - rating.phi) * Math.min(1, daysInactive / horizonDays);
+}
+
+/**
+ * Rank engines by Glicko-2 confidence floor (mu - 2*phi), highest first, WITHIN a scope, where phi is effectivePhi (stale ratings lose confidence; rank.now defaults to the current clock, rank.staleHorizonDays to the ratingStaleHorizonDays config default), or DEFAULT_PHI for an engine whose current identity in rank.identities differs from its stored one (read-only; nothing is written). When `mode` is given, ranking uses that discipline's byMode ratings (e.g. mode='tribunal' = adversarial/critique skill — the right proxy for a Nero-style critic, since the best BUILDER is not the best CRITIC); otherwise the global pool. Only engines that already hold a rating record IN THAT SCOPE are returned; the rest are omitted so callers can fall back. Ties break on mu, then engine id for determinism.
+ */
+export function rankEnginesByRating(engineIds: string[], ratings: RatingRecord, mode?: 'forge'|'brainstorm'|'tribunal'|'critique', rank?: RatingRankOptions): string[] {
+  const scope = mode ? (ratings.byMode[mode] ?? {}) : ratings.global;
+  const rated = engineIds.filter((id) => scope[id] !== undefined);
+  const nowMs = rank?.now ?? Date.now();
+  const horizonDays = rank?.staleHorizonDays ?? DEFAULT_AGON_CONFIG.ratingStaleHorizonDays;
+  const phiOf = (id: string) => identityChanged(ratings.engineMeta?.[id], rank?.identities?.[id]) ? DEFAULT_PHI : effectivePhi(scope[id], nowMs, horizonDays);
+  const floors = new Map(rated.map((id) => [id, scope[id].mu - 2 * phiOf(id)]));
+  return rated.sort((a, b) => {
+    const ra = scope[a];
+    const rb = scope[b];
+    const floorA = floors.get(a)!;
+    const floorB = floors.get(b)!;
+    if (floorB !== floorA) return floorB - floorA;
+    if (rb.mu !== ra.mu) return rb.mu - ra.mu;
+    return a.localeCompare(b);
+  });
+}
+
+/**
+ * Pick the single best engine for a role. Tries each discipline in opts.modes IN ORDER (e.g. ['critique','tribunal'] for Nero — prefer a proven critic, fall back to adversarial-debate skill), then the GLOBAL ranking, then a random engine when NO engine has any rating yet. opts.mode is shorthand for a single-element modes list. opts.exclude drops engines from the pool (e.g. the author being challenged, to avoid grading-own-homework) but is ignored if it would empty the pool. rng is injectable for deterministic tests. scope reports WHICH rating decided the pick.
+ */
+export function pickTopRatedEngine(engineIds: string[], ratings: RatingRecord, opts?: { mode?:'forge'|'brainstorm'|'tribunal'|'critique'; modes?:Array<'forge'|'brainstorm'|'tribunal'|'critique'>; exclude?:string[]; rng?:() => number } & RatingRankOptions): { engineId: string; reason: 'top-rated' | 'random' | 'none'; scope: 'forge' | 'brainstorm' | 'tribunal' | 'critique' | 'global' | null } {
+  const exclude = new Set(opts?.exclude ?? []);
+  let pool = engineIds.filter((id) => !exclude.has(id));
+  if (pool.length === 0) pool = engineIds.slice();
+  if (pool.length === 0) return { engineId: '', reason: 'none' as const, scope: null };
+
+  const tiers = opts?.modes ?? (opts?.mode ? [opts.mode] : []);
+  const rank: RatingRankOptions = { now: opts?.now, staleHorizonDays: opts?.staleHorizonDays, identities: opts?.identities };
+  for (const m of tiers) {
+    const ranked = rankEnginesByRating(pool, ratings, m, rank);
+    if (ranked.length > 0) return { engineId: ranked[0], reason: 'top-rated' as const, scope: m };
+  }
+  const global = rankEnginesByRating(pool, ratings, undefined, rank);
+  if (global.length > 0) return { engineId: global[0], reason: 'top-rated' as const, scope: 'global' as const };
+
+  const r = opts?.rng ? opts.rng() : Math.random();
+  const idx = Math.min(pool.length - 1, Math.max(0, Math.floor(r * pool.length)));
+  return { engineId: pool[idx], reason: 'random' as const, scope: null };
+}
+
+export const PHI_INHERIT_MULT: number = 1.5;
+
+export const MIN_INHERIT_GAMES: number = 5;
+
+/**
+ * Compute the cold-start rating a NEW model version should inherit from its predecessor (engineMeta.derivedFrom). Pure — exported for testing. Returns null when the predecessor is too green to inherit from (caller uses fresh defaults). ANTI-GAMING: a below-average predecessor (mu < 1500) is inherited FULLY with no phi inflation — you can't shed a bad rating by version-bumping; a strong predecessor (mu >= 1500) inherits its mu with inflated (capped) phi so a better model converges quickly. W/L always reset.
+ */
+export function seedSuccessorRating(predecessor: GlickoRating): GlickoRating | null {
+  const totalGames = predecessor.wins + predecessor.losses;
+  if (totalGames < MIN_INHERIT_GAMES) return null;
+  const now = new Date().toISOString();
+  if (predecessor.mu < DEFAULT_MU) {
+    // Low-side clamp: keep the low mu AND the converged (low) phi — no fast-climb
+    // benefit. A successor of a weak model must earn its way up.
+    return { mu: predecessor.mu, phi: predecessor.phi, sigma: DEFAULT_SIGMA, wins: 0, losses: 0, lastActive: now };
+  }
+  return {
+    mu: predecessor.mu,
+    phi: Math.min(predecessor.phi * PHI_INHERIT_MULT, DEFAULT_PHI),
+    sigma: DEFAULT_SIGMA,
+    wins: 0,
+    losses: 0,
+    lastActive: now,
+  };
+}
+
+/**
+ * Seed cold-start GLOBAL ratings for new engines that declare a predecessor (lineage: engineId -> derivedFrom id). Mutates `ratings` in place and returns the ids it seeded. Pure (no IO) — exported for testing. Skips an engine that already has a global rating, whose predecessor has no rating yet, or whose predecessor is too green (seedSuccessorRating -> null). Records provenance via the existing engineMeta.derivedFrom + predecessor.versions scaffolding.
+ */
+export function seedEnginesFromLineage(ratings: RatingRecord, lineage: Record<string,string>): string[] {
+  const seeded: string[] = [];
+  const disciplines = ['forge', 'brainstorm', 'tribunal', 'critique'] as const;
+  for (const [engineId, predId] of Object.entries(lineage)) {
+    if (!predId || predId === engineId) continue;
+    if (ratings.global[engineId] !== undefined) continue;
+    const pred = ratings.global[predId];
+    if (!pred) continue;
+    const seed = seedSuccessorRating(pred);
+    if (!seed) continue;
+    ratings.global[engineId] = seed;
+    // Inherit per-discipline too, so "applies to all ratings" holds: seed each
+    // discipline where the predecessor has actually competed (gated the same way).
+    for (const disc of disciplines) {
+      const predDisc = ratings.byMode[disc]?.[predId];
+      if (!predDisc) continue;
+      const discSeed = seedSuccessorRating(predDisc);
+      if (discSeed) (ratings.byMode[disc] ??= {})[engineId] = discSeed;
+    }
+    ratings.engineMeta[engineId] ??= defaultEngineMeta();
+    ratings.engineMeta[engineId].derivedFrom = predId;
+    ratings.engineMeta[predId] ??= defaultEngineMeta();
+    ratings.engineMeta[predId].versions ??= [];
+    if (!ratings.engineMeta[predId].versions.includes(engineId)) ratings.engineMeta[predId].versions.push(engineId);
+    seeded.push(engineId);
+  }
+  return seeded;
+}
+
+/**
+ * Build an engineId -> derivedFrom map from the registered engine definitions (EngineDefinition.derivedFrom). Engines with no declared predecessor are omitted.
+ */
+export function lineageFromRegistry(registry: RatingEngineRegistry): Record<string,string> {
+  const map: Record<string, string> = {};
+  for (const def of registry.list() as EngineDefinition[]) {
+    if (def.derivedFrom && def.derivedFrom !== def.id) map[def.id] = def.derivedFrom;
+  }
+  return map;
+}
+
+/**
+ * One-shot cold-start seeding: read engine lineage from the registry, seed any new engine's global rating from its predecessor, and persist if anything changed. Safe to call repeatedly (idempotent — only seeds engines with no rating yet). Call before a competition so a freshly-dropped model version enters ranked play near its family's strength instead of from 1500.
+ */
+export function seedNewEnginesFromRegistry(registry: RatingEngineRegistry): string[] {
+  if (currentInvocationOwnerAvailable('agon.ratings') === false) return [];
+  let seeded: string[] = [];
+  withFileLock(ratingsLockPath(), () => {
+    const ratings = loadRatings();
+    seeded = seedEnginesFromLineage(ratings, lineageFromRegistry(registry));
+    if (seeded.length > 0) saveRatings(ratings);
+  });
+  return seeded;
+}

@@ -1,0 +1,443 @@
+{
+  "schemaVersion": 1,
+  "kind": "development-increment-not-release-qualification",
+  "parentCommit": "34e094d394b509583ac2e92086382340fa1243e4",
+  "subjectKind": "git-index-blobs",
+  "subjects": [
+    {
+      "path": "packages/cli/release-channel.json",
+      "gitIndexBlob": "ebe01e9d9141485c86843dbc0a504fc84c2f3e1f"
+    },
+    {
+      "path": "packages/cli/src/blocks/engine.tsx",
+      "gitIndexBlob": "8671911e32c11106aca73d513650b894a4f2d946"
+    },
+    {
+      "path": "packages/cli/src/blocks/literal-patch.ts",
+      "gitIndexBlob": "628f33b51063f3432becb80a0d8a2032f4421ba5"
+    },
+    {
+      "path": "packages/cli/src/blocks/literal-text.ts",
+      "gitIndexBlob": "8cd25eb8d7ea1cfcaecc516b34b9a6ad767a33e2"
+    },
+    {
+      "path": "packages/cli/src/commands/attach.ts",
+      "gitIndexBlob": "38ff86cf84b8dbe18a999cf1e5e7c7de2dfb5d6a"
+    },
+    {
+      "path": "packages/cli/src/handlers/index.ts",
+      "gitIndexBlob": "34b089a4eecf6a98cd106524296af0187a3c6df9"
+    },
+    {
+      "path": "packages/cli/src/handlers/plan.ts",
+      "gitIndexBlob": "6f07a889105cfd524c7c9e49b4467b597b7edb00"
+    },
+    {
+      "path": "packages/cli/src/models/handler-types.ts",
+      "gitIndexBlob": "69c9de07d719da4cc77c0481cd3730f55fc7ba91"
+    },
+    {
+      "path": "packages/cli/src/patch-application-host.ts",
+      "gitIndexBlob": "8bb764820ece4af9bfe7289691c7011e4c54b68d"
+    },
+    {
+      "path": "packages/cli/src/signals/dispatch/intent-session.ts",
+      "gitIndexBlob": "5937701f847d0ceb359da79500f001856925da7d"
+    },
+    {
+      "path": "packages/cli/src/signals/output.ts",
+      "gitIndexBlob": "fd634f818960cadf977086b69e7a3bedfa627506"
+    },
+    {
+      "path": "packages/cli/src/surfaces/app-blocks.ts",
+      "gitIndexBlob": "3edda6d84711b64048e5eca9a0f26b31a9c29aab"
+    },
+    {
+      "path": "packages/cli/src/surfaces/app-layout.ts",
+      "gitIndexBlob": "95636b34366c944f325de985815adebca3dc6a57"
+    },
+    {
+      "path": "packages/cli/src/surfaces/app-rendering.ts",
+      "gitIndexBlob": "2dee071f3d279afa0a2971ef16f9cba18de358e1"
+    },
+    {
+      "path": "packages/mod-api/src/index.ts",
+      "gitIndexBlob": "309b9deb52e9daa38771d2966ee69738341ed7b0"
+    },
+    {
+      "path": "packages/mod-forge/src/apply.ts",
+      "gitIndexBlob": "caac692c6288a5cf787ba2143d1d3902cac83dce"
+    },
+    {
+      "path": "packages/support-worktree/src/patch-apply.ts",
+      "gitIndexBlob": "a737e0503dcd7905e7252e8745209ca26d6742ea"
+    },
+    {
+      "path": "tests/integration/daemon-survival.test.ts",
+      "gitIndexBlob": "eb2b7201cfa928ae2470b290990022a394a223c3"
+    },
+    {
+      "path": "tests/unit/modular-apply-approval.test.ts",
+      "gitIndexBlob": "74f8e497b0ee896744339a0d8e73e257ab2a9939"
+    },
+    {
+      "path": "tests/unit/modular-apply-authority.test.ts",
+      "gitIndexBlob": "fbf7628719e0a3c4144ba6abd266ae8163c011b6"
+    },
+    {
+      "path": "tests/unit/modular-apply-host-scope.test.ts",
+      "gitIndexBlob": "f60c218d406d12a148f478ad846cb6599f8255cc"
+    },
+    {
+      "path": "tests/unit/modular-apply-preview.test.ts",
+      "gitIndexBlob": "eb6c989c1baeefccd7f37165d62bea706e88e0d6"
+    },
+    {
+      "path": "tests/unit/modular-apply-route.test.ts",
+      "gitIndexBlob": "3b2038653f5cbe8ddac6e22f4dfc7539810fce51"
+    },
+    {
+      "path": "tests/unit/modular-apply-tui-integration.test.ts",
+      "gitIndexBlob": "20ec60a6a164eeef241306b2d09809b9b446be77"
+    },
+    {
+      "path": "tests/unit/modular-apply-workflow.test.ts",
+      "gitIndexBlob": "14ff184d66ecb8e5163bf00b8820c60dcc9e5b12"
+    },
+    {
+      "path": "tests/unit/output-control-events.test.ts",
+      "gitIndexBlob": "e86067c3925978d93c5f39b8274439b7f39e49c4"
+    }
+  ],
+  "steps": [
+    {
+      "id": "apply-workflow-red",
+      "status": "negative-control",
+      "log": "apply-workflow-red.log",
+      "logSha256": "aa7e86909a7049ef62d4a81ab842a061df98e85192b9fb17d556254970b73353",
+      "bytes": 15900
+    },
+    {
+      "id": "apply-workflow-lease-mutation",
+      "status": "negative-control",
+      "log": "apply-workflow-lease-mutation.log",
+      "logSha256": "b19bc5f63b41c5f5fdee319b86fc891dd51b6639dc37a6462948a4ddfe2d9997",
+      "bytes": 5305
+    },
+    {
+      "id": "apply-review-findings-red",
+      "status": "negative-control",
+      "log": "apply-review-findings-red.log",
+      "logSha256": "2be2e88157974898e04a6f4fa3fb252d4ca9ad48f72d13e04c5abc39f08ce99b",
+      "bytes": 10122
+    },
+    {
+      "id": "apply-question-abort-red",
+      "status": "negative-control",
+      "log": "apply-question-abort-red.log",
+      "logSha256": "7a7c9237fe852cb94c22ddd670985182770c28b09aaa89e43588c33a28490d22",
+      "bytes": 5225
+    },
+    {
+      "id": "apply-literal-red",
+      "status": "negative-control",
+      "log": "apply-literal-red.log",
+      "logSha256": "69e3559ecf1d39c055bb4a92f23b8dc322b0eb266f21e47277beea088c851e79",
+      "bytes": 15628
+    },
+    {
+      "id": "apply-review2-red",
+      "status": "negative-control",
+      "log": "apply-review2-red.log",
+      "logSha256": "ba4ac57aade5e143d2d4fb8e1f5c23a9d830c1eab920eca86bfef90358ca46c9",
+      "bytes": 12407
+    },
+    {
+      "id": "apply-prompt-collision-red",
+      "status": "negative-control",
+      "log": "apply-prompt-collision-red.log",
+      "logSha256": "88536d9d720aa55e4af4ea1f82a6ced21f71ad020cbd764d9b4fd5025ca85ccd",
+      "bytes": 2998
+    },
+    {
+      "id": "apply-review3-red",
+      "status": "negative-control",
+      "log": "apply-review3-red.log",
+      "logSha256": "9945dcb4fcc0808640902477081f4226fe1082df70cfb3c601d4f5dd0d7377df",
+      "bytes": 6007
+    },
+    {
+      "id": "apply-footer-red",
+      "status": "negative-control",
+      "log": "apply-footer-red.log",
+      "logSha256": "204d4ac09d52f436e0aa01ffb6f5794b792f5053bf71201529611f06f056f495",
+      "bytes": 6711
+    },
+    {
+      "id": "apply-owned-question-red",
+      "status": "negative-control",
+      "log": "apply-owned-question-red.log",
+      "logSha256": "100078a15ada608e0d4b596ff117a2063ef12ce239463bcb5bf5e09076a1dcaa",
+      "bytes": 2863
+    },
+    {
+      "id": "daemon-trace-red",
+      "status": "negative-control",
+      "log": "daemon-trace-red.log",
+      "logSha256": "34e96863a3f2c843e040cbe51ea59583b1d011c289a102783cbcfd33dc8c9bdb",
+      "bytes": 2637
+    },
+    {
+      "id": "apply-target-full-build",
+      "status": "passed",
+      "log": "apply-target-full-build.log",
+      "logSha256": "6ae22e21bbc5a8dd6de2a0064fb285fd8942ea06383550db9efc1e59a8924abb",
+      "bytes": 35216
+    },
+    {
+      "id": "apply-owned-build",
+      "status": "passed",
+      "log": "apply-owned-build.log",
+      "logSha256": "44d9bd0ff7eeaa38b2497a1d57c9b808be7769d71f1c1c0df5f2f9e186f20131",
+      "bytes": 8499
+    },
+    {
+      "id": "apply-owned-types",
+      "status": "passed",
+      "log": "apply-owned-types.log",
+      "logSha256": "be1cf12bc2c9d30c2cc1484ecb5ad9f709e037352543b5aeaf93337177ed2a06",
+      "bytes": 23
+    },
+    {
+      "id": "apply-owned-lint",
+      "status": "passed",
+      "log": "apply-owned-lint.log",
+      "logSha256": "27f0c4c5f74020842cc2e7a279dbb4fe91963a619ef4bc82a6f65715c7b7673a",
+      "bytes": 2121
+    },
+    {
+      "id": "apply-owned-guard",
+      "status": "passed",
+      "log": "apply-owned-guard.log",
+      "logSha256": "de95be878ed3034819e11e168353c9f410a639a5c6304bc61e26718877a0291a",
+      "bytes": 130
+    },
+    {
+      "id": "apply-target-generated",
+      "status": "passed",
+      "log": "apply-target-generated.log",
+      "logSha256": "d4f6d6eaaf2a06407d8bd6ade8c7c197929f5d19226bf328f7c2c82ef5d6a829",
+      "bytes": 47
+    },
+    {
+      "id": "apply-owned-release-set",
+      "status": "passed",
+      "log": "apply-owned-release-set.log",
+      "logSha256": "3ebb8a596d7c482ebccc7ad9dc935599273df33cf68acf9665a58589e0554066",
+      "bytes": 136
+    },
+    {
+      "id": "apply-owned-supply-check",
+      "status": "passed",
+      "log": "apply-owned-supply-check.log",
+      "logSha256": "f44576629da0ad72e310722e282906311403f9bbe01720732c92896dad0709e0",
+      "bytes": 112
+    },
+    {
+      "id": "apply-owned-npx",
+      "status": "passed",
+      "log": "apply-owned-npx.log",
+      "logSha256": "40045ac44272f57e36e8b54e779c5b8e5273580723a297c93d4010e9f1d39464",
+      "bytes": 202
+    },
+    {
+      "id": "apply-observed-full",
+      "status": "passed",
+      "log": "apply-observed-full.log",
+      "logSha256": "461c1d4a6c7d6f06b814a6c8baffea7bae19db74674218f518a3a336933f0d90",
+      "bytes": 184847
+    },
+    {
+      "id": "apply-final-tests",
+      "status": "unresolved-A15-failure",
+      "log": "apply-final-tests.log",
+      "logSha256": "935ae63e22f86f7512cf85a20099c824cf44581f31d9441bab2ecc9156a13417",
+      "bytes": 187048
+    },
+    {
+      "id": "daemon-trace-green",
+      "status": "contaminated-build-overlap",
+      "log": "daemon-trace-green.log",
+      "logSha256": "cdcb8945e1d8dd70df188193b62e15bfd7647c201bea52ebb1243262c14b83a1",
+      "bytes": 2498
+    },
+    {
+      "id": "apply-abandoned-red",
+      "status": "negative-control",
+      "log": "apply-abandoned-red.log",
+      "logSha256": "bc3d5b47d33c150af1ba2a32b628d56e975b9d5dcab38fbd61129e4e6ffc9d8a",
+      "bytes": 3341
+    },
+    {
+      "id": "apply-abandoned-green",
+      "status": "passed",
+      "log": "apply-abandoned-green.log",
+      "logSha256": "b0947537ed5b45af821c1c9878a6e91af5159b2224488ed787470214e42e1977",
+      "bytes": 738
+    },
+    {
+      "id": "apply-boundary-red",
+      "status": "negative-control",
+      "log": "apply-boundary-red.log",
+      "logSha256": "4ce1b53060968e722ce9dd3ec7050453d4888fa9701c07c2b3eef67137242264",
+      "bytes": 7772
+    },
+    {
+      "id": "apply-boundary-confirm",
+      "status": "passed",
+      "log": "apply-boundary-confirm.log",
+      "logSha256": "0fd3477acd6fe19b9c342da37fb7a9e731eb003e05d620a8d58426672fccf660",
+      "bytes": 727
+    },
+    {
+      "id": "apply-boundary-build",
+      "status": "passed",
+      "log": "apply-boundary-build.log",
+      "logSha256": "0e96b899b8093d824ea24b13bd8ab3330f77d7409d358e1f4c5764f4915f9483",
+      "bytes": 8499
+    },
+    {
+      "id": "apply-boundary-types",
+      "status": "passed",
+      "log": "apply-boundary-types.log",
+      "logSha256": "be1cf12bc2c9d30c2cc1484ecb5ad9f709e037352543b5aeaf93337177ed2a06",
+      "bytes": 23
+    },
+    {
+      "id": "apply-boundary-full",
+      "status": "passed",
+      "log": "apply-boundary-full.log",
+      "logSha256": "7d710fe47e78339ad719930e78c887c27bd713c8ecb08f56d719aadf4cff98e3",
+      "bytes": 186928
+    },
+    {
+      "id": "apply-boundary-lint",
+      "status": "passed",
+      "log": "apply-boundary-lint.log",
+      "logSha256": "27f0c4c5f74020842cc2e7a279dbb4fe91963a619ef4bc82a6f65715c7b7673a",
+      "bytes": 2121
+    },
+    {
+      "id": "apply-boundary-release",
+      "status": "passed",
+      "log": "apply-boundary-release.log",
+      "logSha256": "bfdbbedb965d848fd70136ca935c35d74daa0ba37182c0f98d34c2be6a00bf37",
+      "bytes": 136
+    },
+    {
+      "id": "apply-boundary-supply-check",
+      "status": "passed",
+      "log": "apply-boundary-supply-check.log",
+      "logSha256": "f44576629da0ad72e310722e282906311403f9bbe01720732c92896dad0709e0",
+      "bytes": 112
+    },
+    {
+      "id": "apply-boundary-npx",
+      "status": "passed",
+      "log": "apply-boundary-npx.log",
+      "logSha256": "40045ac44272f57e36e8b54e779c5b8e5273580723a297c93d4010e9f1d39464",
+      "bytes": 202
+    },
+    {
+      "id": "apply-boundary-guard",
+      "status": "passed",
+      "log": "apply-boundary-guard.log",
+      "logSha256": "de95be878ed3034819e11e168353c9f410a639a5c6304bc61e26718877a0291a",
+      "bytes": 130
+    },
+    {
+      "id": "apply-boundary-generated",
+      "status": "passed",
+      "log": "apply-boundary-generated.log",
+      "logSha256": "d4f6d6eaaf2a06407d8bd6ade8c7c197929f5d19226bf328f7c2c82ef5d6a829",
+      "bytes": 47
+    }
+  ],
+  "reviews": [
+    {
+      "path": "docs/specs/evidence/modular-agon-claude-apply-boundary-review-input.json",
+      "sha256": "b1a8aab5aa91319cc8c56689b434f70c5ceb84433d0634aec082c7caaaaeff8b"
+    },
+    {
+      "path": "docs/specs/evidence/modular-agon-claude-apply-boundary-review.json",
+      "sha256": "3bd084857530369d93dabfd3a1a34c123ebd476672ee1d70b2c031f61f8d861d"
+    },
+    {
+      "path": "docs/specs/evidence/modular-agon-claude-apply-display-input.json",
+      "sha256": "2ab53528ee3d092039fb3085def1c666700a4c151c6e82a3622929854a6f2c6a"
+    },
+    {
+      "path": "docs/specs/evidence/modular-agon-claude-apply-display-review-final-input.json",
+      "sha256": "9468414bab21e0960e249afc8f47aa8d182dca41a499af4fb2548b77dd3b5f81"
+    },
+    {
+      "path": "docs/specs/evidence/modular-agon-claude-apply-display-review-final.json",
+      "sha256": "11b5499f3829ea3fd3317acbc4ae6e21e8ebcdc76dbeb5a56dd3e6148a6ab4f8"
+    },
+    {
+      "path": "docs/specs/evidence/modular-agon-claude-apply-display.json",
+      "sha256": "3f0d7e40ede3833d89187750f3a0d87eb821c6202ad37062a11a9cab14cdb16a"
+    },
+    {
+      "path": "docs/specs/evidence/modular-agon-claude-apply-followup-input.json",
+      "sha256": "a80f2250332963744332dda83fdd54797d9c04c0e2827718528f8f6f6e768fb2"
+    },
+    {
+      "path": "docs/specs/evidence/modular-agon-claude-apply-followup.json",
+      "sha256": "a4d3d3b4f2f29b08080ac128b52b7c044956cf968ea9fb2826f541b0ae24d593"
+    },
+    {
+      "path": "docs/specs/evidence/modular-agon-claude-apply-followup2-input.json",
+      "sha256": "d35ba4434747cd86ebb9b68f98ad3e71e4b4135ecca6c1d5975570174821597d"
+    },
+    {
+      "path": "docs/specs/evidence/modular-agon-claude-apply-followup2.json",
+      "sha256": "79b79bf9d504ccf799daf7d19167cef5523b3f139198b57ca4243f9a716b07e9"
+    },
+    {
+      "path": "docs/specs/evidence/modular-agon-claude-apply-review-input.json",
+      "sha256": "cf5eb1c1ab723a331130f102dcc4d8d4663f4fdac6fa1ca88d1531f823a93b0a"
+    },
+    {
+      "path": "docs/specs/evidence/modular-agon-claude-apply-review.json",
+      "sha256": "866b3d1e7c71e3cad31550f33b1d39247f32ab7debf8f0f12440911184b6e551"
+    }
+  ],
+  "verification": {
+    "fullSuite": {
+      "passed": 6527,
+      "skipped": 6
+    },
+    "packages": 49,
+    "dependencyEdges": 151,
+    "artifacts": 50,
+    "packedBytes": 1860751,
+    "npxChecks": 72
+  },
+  "logRoot": "/tmp/agon-plan-check-ShdTwz/",
+  "providerFixtureLaunches": [],
+  "isolation": {
+    "runner": "scripts/spec/pressure_modular.py::isolated_environment",
+    "preloadSha256": "7e0e14415b2a320dbcfce4b0c49a8ef6ee3925d596c709fd5679f0af078ea13f",
+    "globalAgonModified": false,
+    "personalStateModified": false
+  },
+  "limits": [
+    "Development evidence, not a clean-checkout release receipt",
+    "Full workspace build followed by final CLI rebuild and typecheck",
+    "A15 ping failure remains open despite subsequent green runs",
+    "Known inherited backend issues remain scheduled implementation work",
+    "Reviews cover supplied source; final release review remains required",
+    "Native macOS arm64 only; no live-provider workflow or publication qualification"
+  ]
+}

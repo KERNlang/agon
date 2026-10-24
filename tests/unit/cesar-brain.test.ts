@@ -1,10 +1,29 @@
-import { describe, it, expect } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterAll, beforeAll, describe, it, expect } from 'vitest';
 import { parseSuggestion, parseConfidence, confidenceBadge, CONFIDENCE_TIERS, CESAR_SYSTEM_PROMPT, buildReviewFollowupPrompt, detectNarratedToolStall, extractStrictConfidence, buildEscalationSuggestionLine, ESCALATION_SUGGESTION_THRESHOLD } from '../../packages/cli/src/handlers/cesar-brain.js';
 import { claimEagerToolExecution, eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, splitBeforeToolMarkup, isUserDirectedQuestion, findTrailingUserQuestion, detectAwaitingUserInput, detectMutationIntentStall, detectFabricatedDelegation, stripNonAssertionSpans, shouldDeescalateGuard, isBashToolName, isWriteToolName, stripAgonToolPrefix, withEagerToolCallId } from '../../packages/cli/src/cesar/brain-helpers.js';
-import { createReportConfidenceTool, createForgeTool, createBrainstormTool, createTribunalTool, createCampfireTool, createPipelineTool } from '../../packages/core/src/tools.js';
+import { createReportConfidenceTool } from '../../packages/core/src/tools.js';
+import { createCesarToolRegistry } from '../../packages/cli/src/cesar/tools.js';
+import { disposeProcessSurfaceAuthority, initializeProcessSurfaceAuthority } from '../../packages/cli/src/surface-authority-runtime.js';
 // Rigid DECISION/CONFIDENCE parser for ACTUALLY-FIRED nero/advisor results — C4
 // must leave this untouched (downstream escalation routing depends on it).
 import { parseQuickNeroDecision } from '../../packages/cli/src/cesar/escalation.js';
+
+const modularRoot = mkdtempSync(join(tmpdir(), 'agon-cesar-brain-'));
+
+beforeAll(() => initializeProcessSurfaceAuthority(join(modularRoot, 'host')));
+afterAll(async () => {
+  await disposeProcessSurfaceAuthority();
+  rmSync(modularRoot, { recursive: true, force: true });
+});
+
+const modularTool = (name: string) => {
+  const tool = createCesarToolRegistry('codex').get(name);
+  if (!tool) throw new Error(`missing physical Cesar tool: ${name}`);
+  return tool;
+};
 
 describe('Cesar Brain', () => {
   describe('splitBeforeToolMarkup', () => {
@@ -779,20 +798,20 @@ describe('Cesar Brain', () => {
     });
 
     it('Forge requires task param', () => {
-      const tool = createForgeTool();
+      const tool = modularTool('Forge');
       expect(tool.validate({ task: 'fix auth' }, {} as any)).toBeNull();
       expect(tool.validate({}, {} as any)).toContain('task');
       expect(tool.validate({ task: '' }, {} as any)).toContain('task');
     });
 
     it('Tribunal validates mode enum', () => {
-      const tool = createTribunalTool();
+      const tool = modularTool('Tribunal');
       expect(tool.validate({ question: 'which?', mode: 'adversarial' }, {} as any)).toBeNull();
-      expect(tool.validate({ question: 'which?', mode: 'invalid' }, {} as any)).toContain('Invalid mode');
+      expect(tool.validate({ question: 'which?', mode: 'invalid' }, {} as any)).toMatch(/mode|schema/i);
     });
 
     it('read-only orchestration tools are marked safe', () => {
-      const tools = [createForgeTool(), createBrainstormTool(), createTribunalTool(), createCampfireTool(), createReportConfidenceTool()];
+      const tools = ['Forge', 'Brainstorm', 'Tribunal', 'Campfire'].map(modularTool).concat(createReportConfidenceTool());
       for (const t of tools) {
         expect(t.definition.isReadOnly).toBe(true);
         expect(t.definition.isConcurrencySafe).toBe(true);
@@ -801,7 +820,7 @@ describe('Cesar Brain', () => {
     });
 
     it('Pipeline is marked mutating because it can apply review fixes', () => {
-      const tool = createPipelineTool();
+      const tool = modularTool('Pipeline');
       expect(tool.definition.isReadOnly).toBe(false);
       expect(tool.definition.isConcurrencySafe).toBe(false);
       expect(tool.checkPermission({}, {} as any).behavior).toBe('allow');

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { mkdtempSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -12,6 +12,8 @@ import { join } from 'node:path';
 // observable without a real network call; everything else stays real.
 const mockState = {
   apiCalled: false,
+  apiGate: undefined as Promise<void> | undefined,
+  apiStarted: undefined as (() => void) | undefined,
   apiStreamCalled: false,
   apiStreamResult: { exitCode: 0, stdout: 'api-stream-output', stderr: '', durationMs: 1, timedOut: false },
   apiAgentCalled: false,
@@ -39,10 +41,14 @@ vi.mock('@kernlang/agon-core', async (importOriginal) => {
       engine?.capabilities?.includes('vision') === true || engine?.id === 'catalog-attachment-engine',
     apiDispatch: async () => {
       mockState.apiCalled = true;
+      mockState.apiStarted?.();
+      await mockState.apiGate;
       return { exitCode: 0, stdout: 'api-fallback-output', stderr: '', durationMs: 1, timedOut: false };
     },
     apiDispatchToolsHistory: async (_config: unknown, messages: Array<Record<string, unknown>>, _timeout: number, _signal: unknown, tools: unknown) => {
       mockState.apiHistoryCalled = true;
+      mockState.apiStarted?.();
+      await mockState.apiGate;
       mockState.apiHistoryMessages = messages;
       mockState.apiHistoryTools = tools;
       return { exitCode: 0, stdout: 'api-history-output', stderr: '', durationMs: 1, timedOut: false };
@@ -110,6 +116,8 @@ function makeOptions(): DispatchOptions {
 describe('CliAdapter.dispatch — api fallback gated on key presence (Finding 1)', () => {
   beforeEach(() => {
     mockState.apiCalled = false;
+    mockState.apiGate = undefined;
+    mockState.apiStarted = undefined;
     mockState.apiStreamCalled = false;
     mockState.apiStreamResult = { exitCode: 0, stdout: 'api-stream-output', stderr: '', durationMs: 1, timedOut: false };
     mockState.apiAgentCalled = false;
@@ -152,6 +160,35 @@ describe('CliAdapter.dispatch — api fallback gated on key presence (Finding 1)
     const result = await adapter.dispatch(makeOptions());
     expect(mockState.apiCalled).toBe(true);
     expect(result.stdout).toBe('api-fallback-output');
+  });
+
+  it.each(['plain', 'history'])('does not publish late %s API output after abort', async path => {
+    process.env.FINDING1_FIXTURE_KEY = 'sk-test-123';
+    const started = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    mockState.apiStarted = started.resolve;
+    mockState.apiGate = release.promise;
+    const controller = new AbortController();
+    const reason = new Error('ballot deadline');
+    const options = { ...makeOptions(), signal: controller.signal, includeProjectContext: false,
+      ...(path === 'history' ? { messages: [{ role: 'user', content: 'hello' }] } : {}) } as DispatchOptions;
+    const output = join(options.outputDir, `${ENGINE.id}-output.txt`);
+    writeFileSync(output, 'retained evidence');
+    const beforeHealth = engineHealth.get(ENGINE.id);
+    const pending = makeAdapter().dispatch(options);
+    try {
+      await started.promise;
+      expect(mockState.apiHistoryCalled).toBe(path === 'history');
+      controller.abort(reason);
+      release.resolve();
+      await expect(pending).rejects.toBe(reason);
+      expect(readFileSync(output, 'utf8')).toBe('retained evidence');
+      expect(engineHealth.get(ENGINE.id)).toEqual(beforeHealth);
+    } finally {
+      release.resolve();
+      await pending.catch(() => {});
+      rmSync(options.outputDir, { recursive: true, force: true });
+    }
   });
 
   it('catalog-derived vision (attachment:true, NO declared capabilities) still attaches images — codex regression', async () => {
@@ -261,6 +298,57 @@ describe('CliAdapter.dispatch — api fallback gated on key presence (Finding 1)
     expect(result.stderr).toBe('upstream stream closed');
     expect(result.timedOut).toBe(false);
     expect(result.engineFault).toBe(true);
+  });
+
+  it.each([
+    [{}, 0], [{ failed: true }, 1], [{ timedOut: true }, 124], [{ cancelled: true }, 130],
+  ])('preserves reported usage through both public agent methods: %#', async (status, exitCode) => {
+    process.env.FINDING1_FIXTURE_KEY = 'sk-test-123';
+    const usage = { promptTokens: 300, completionTokens: 50, totalTokens: 350,
+      cachedInputTokens: 230, source: 'sdk' as const };
+    mockState.apiAgentResult = { response: 'partial or complete', toolCalls: 1, steps: 2, ...status, usage };
+    const adapter = makeAdapter();
+    const result = await adapter.dispatchAgent({ ...makeOptions(), mode: 'agent' });
+    expect(result).toMatchObject({ exitCode, usage });
+    const stream = adapter.dispatchAgentStream({ ...makeOptions(), mode: 'agent' });
+    let terminal = await stream.next();
+    while (!terminal.done) terminal = await stream.next();
+    expect(terminal.value).toMatchObject({ exitCode, usage });
+  });
+
+  it.each([
+    ['dispatchAgent', {}, 1], ['dispatchAgentStream', {}, 1],
+    ['dispatchAgent', { failed: true }, 1], ['dispatchAgentStream', { failed: true }, 1],
+    ['dispatchAgent', { timedOut: true }, 124], ['dispatchAgentStream', { timedOut: true }, 124],
+    ['dispatchAgent', { cancelled: true }, 130], ['dispatchAgentStream', { cancelled: true }, 130],
+    ['dispatchAgent', { failed: true, engineFault: true }, 1], ['dispatchAgentStream', { failed: true, engineFault: true }, 1],
+  ] as const)('%s preserves billed usage when the output artifact cannot be written: %#', async (method, status, exitCode) => {
+    process.env.FINDING1_FIXTURE_KEY = 'sk-test-123';
+    const usage = { promptTokens: 300, completionTokens: 50, totalTokens: 350,
+      cachedInputTokens: 200, source: 'sdk' as const };
+    mockState.apiAgentResult = { response: 'completed model work', toolCalls: 1, steps: 2, usage,
+      ...status, errorReason: 'original terminal reason' };
+    const baseOptions = makeOptions();
+    const options = { ...baseOptions, outputDir: join(baseOptions.outputDir, 'unauthorized'), mode: 'agent' as const };
+    mkdirSync(join(options.outputDir, `${ENGINE.id}-output.txt`), { recursive: true });
+    try {
+      const adapter = makeAdapter();
+      const result = method === 'dispatchAgent' ? await adapter.dispatchAgent(options) : await (async () => {
+        const stream = adapter.dispatchAgentStream(options);
+        let terminal = await stream.next();
+        while (!terminal.done) terminal = await stream.next();
+        return terminal.value;
+      })();
+      expect(result).toMatchObject({ exitCode, stdout: 'completed model work', usage });
+      expect(result.stderr).toContain('output artifact');
+      expect(result.stderr).toContain('EISDIR');
+      expect(result.timedOut).toBe('timedOut' in status);
+      if (Object.keys(status).length) expect(result.stderr).toContain('original terminal reason');
+      expect(result.engineFault).toBe('engineFault' in status ? status.engineFault : undefined);
+      expect(engineHealth.get(ENGINE.id)).toBeUndefined();
+    } finally {
+      rmSync(baseOptions.outputDir, { recursive: true, force: true });
+    }
   });
 
   it('dispatchAgent returns the conventional cancellation exit code', async () => {

@@ -1,0 +1,265 @@
+import { readFileSync, existsSync } from 'node:fs';
+import type { DispatchResult, EngineAdapter } from '@kernlang/agon-support-engine-runtime';
+import type { ForgeManifest, Critique, SynthesisResult, ForgeEventCallback, WorktreeEntry } from './types.js';
+import type { ForgeStageRegistry, ForgeStageRuntime } from './stages.js';
+import { FitnessError } from './errors.js';
+import { buildCritiquePrompt, buildSynthesisPrompt } from './prompts.js';
+import { buildStageContext, renderStageContext } from './stage-context.js';
+import { runFitness as runOwnedFitness } from './fitness.js';
+import type { ForgeFitnessRuntime } from './fitness.js';
+
+export interface ForgeSynthesisRuntime extends Pick<ForgeStageRuntime, 'worktreeCreate' | 'worktreeRemoveBestEffort'> {
+  applyPatch(cwd: string, patch: string): void;
+  fitness: ForgeFitnessRuntime;
+}
+
+export function parseCritiques(output: string): Critique[] {
+  const allMatches = [...output.matchAll(/\[[\s\S]*?\]/g)];
+  const jsonMatch = allMatches.length > 0 ? [allMatches[allMatches.length - 1][0]] : null;
+  if (!jsonMatch) return [];
+
+  try {
+    const parsed = JSON.parse(jsonMatch[0]) as Array<{
+      file?: string;
+      lines?: string;
+      problem?: string;
+      minimal_fix?: string;
+      minimalFix?: string;
+    }>;
+
+    return parsed
+      .filter((c) => c.file && c.problem)
+      .map((c) => ({
+        file: c.file!,
+        lines: c.lines ?? '',
+        problem: c.problem!,
+        minimalFix: c.minimal_fix ?? c.minimalFix ?? '',
+      }));
+  } catch (_parseErr) {
+    return [];
+  }
+}
+
+/** Bind effects without starting a refinement or touching a worktree. */
+export function createForgeSynthesis(runtime: ForgeSynthesisRuntime) {
+  const { worktreeCreate, worktreeRemoveBestEffort, applyPatch } = runtime;
+  const runFitness = (options: Parameters<typeof runOwnedFitness>[0]) => runOwnedFitness(options, runtime.fitness);
+
+  async function runSynthesis(opts: {manifest:ForgeManifest, winner:string, losers:string[], registry:ForgeStageRegistry, adapter:EngineAdapter, forgeDir:string, fitnessCmd:string, timeout:number, fitnessTimeout:number, maxCritiques:number, repoRoot:string, headSha:string, synthEngine?:string, worktrees?:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal,
+    onDispatch?: (record: { engineId: string; prompt: string; result?: DispatchResult; error?: string; durationMs: number }) => void,
+  }): Promise<SynthesisResult> {
+    const { manifest, winner, losers, registry, adapter, forgeDir } = opts;
+    const measuredDispatch = async <T extends DispatchResult>(engineId: string, prompt: string, dispatch: () => Promise<T>): Promise<T> => {
+      const startedAt = Date.now();
+      let result: T | undefined;
+      let error: string | undefined;
+      try {
+        result = await dispatch();
+        return result;
+      } catch (cause) {
+        error = cause instanceof Error ? cause.message : String(cause);
+        throw cause;
+      } finally {
+        try {
+          opts.onDispatch?.({ engineId, prompt, result, error, durationMs: Date.now() - startedAt });
+        } catch (cause) {
+          console.warn(`[agon] synthesis dispatch accounting failed: ${cause instanceof Error ? cause.message : String(cause)}`);
+        }
+      }
+    };
+    // The engine that performs the refine pass — a configurable synthesizer
+    // (goal: judge; interactive: Cesar), defaulting to the winner's own engine
+    // (forge's historical behavior). It must be a real, registered engine; an
+    // unknown synthEngine falls back to the winner.
+    const refineEngineId = (opts.synthEngine && registry.get(opts.synthEngine)) ? opts.synthEngine : winner;
+
+    const winnerResult = manifest.results[winner];
+    if (!winnerResult.patchPath) {
+      throw new FitnessError('Winner has no patch path — cannot synthesize');
+    }
+    const winnerPatch = readFileSync(winnerResult.patchPath, 'utf-8');
+    // Bail early on empty patches — synthesis can't refine zero changes, and
+    // applyPatch would silently no-op leaving synthesis on a clean checkout
+    // that re-runs fitness against the baseline. Wasted compute with a
+    // misleading "synthesis didn't improve" outcome.
+    opts.onEvent?.({ type: 'synthesis:start' });
+    if (!winnerPatch.trim()) {
+      opts.onEvent?.({ type: 'synthesis:done', engineId: winner, data: { wins: false, score: winnerResult.score, originalScore: winnerResult.score, keptWinner: winner, reason: 'empty-patch' } });
+      return {
+        pass: winnerResult.pass,
+        score: winnerResult.score,
+        wins: false,
+        patchPath: winnerResult.patchPath,
+        originalWinnerScore: winnerResult.score,
+        critiques: [],
+        reason: 'empty-patch',
+      };
+    }
+
+    // Build StageContext for each loser — gives critics richer context about what was tried
+    const loserContexts: string[] = [];
+    for (const loserId of losers) {
+      const loserResult = manifest.results[loserId];
+      if (loserResult) {
+        const loserCtx = buildStageContext({
+          engineId: loserId,
+          pass: loserResult.pass,
+          score: loserResult.score,
+          prompt: manifest.task,
+          diff: loserResult.patchPath ? (() => { try { return readFileSync(loserResult.patchPath!, 'utf-8'); } catch { return ''; } })() : '',
+          fitnessLogPath: loserResult.fitnessLogPath,
+          dispatchStdout: loserResult.dispatchStdout,
+        });
+        loserContexts.push(renderStageContext(loserCtx));
+      }
+    }
+
+    // Read winner's fitness log for richer critique context
+    let winnerFitnessLog = '';
+    if (winnerResult.fitnessLogPath) {
+      try {
+        if (existsSync(winnerResult.fitnessLogPath)) {
+          winnerFitnessLog = readFileSync(winnerResult.fitnessLogPath, 'utf-8').slice(0, 3000);
+        }
+      } catch { /* best effort */ }
+    }
+
+    const critiquePromises = losers.map(async (loserId: string) => {
+      opts.onEvent?.({ type: 'synthesis:critique', engineId: loserId });
+      const engine = registry.get(loserId);
+      let prompt = buildCritiquePrompt({
+        winnerEngine: winner,
+        diff: winnerPatch,
+        maxCritiques: opts.maxCritiques,
+      });
+
+      // Enrich critique prompt with loser context + fitness log
+      if (loserContexts.length > 0) {
+        prompt += `\n\n## OTHER APPROACHES ATTEMPTED\nThe following engines also attempted this task. Their approaches may highlight issues the winner missed:\n\n${loserContexts.join('\n\n---\n\n')}`;
+      }
+      if (winnerFitnessLog) {
+        prompt += `\n\n## WINNER FITNESS OUTPUT\n\`\`\`\n${winnerFitnessLog}\n\`\`\``;
+      }
+
+      try {
+        const result = await measuredDispatch(loserId, prompt, () => adapter.dispatch({
+          engine,
+          prompt,
+          cwd: forgeDir,
+          mode: 'review',
+          timeout: opts.timeout,
+          outputDir: forgeDir,
+          signal: opts.signal,
+        }));
+        return parseCritiques(result.stdout);
+      } catch (err) {
+        console.warn(`[agon] synthesis critique (${loserId}) failed: ${err instanceof Error ? err.message : String(err)}`);
+        return [] as Critique[];
+      }
+    });
+
+    const critiqueArrays = await Promise.all(critiquePromises);
+    const allCritiques = critiqueArrays.flat().slice(0, opts.maxCritiques);
+
+    if (opts.signal?.aborted) {
+      opts.onEvent?.({ type: 'synthesis:done', engineId: winner, data: { wins: false, score: winnerResult.score, originalScore: winnerResult.score, keptWinner: winner, reason: 'aborted' } });
+      return {
+        pass: winnerResult.pass,
+        score: winnerResult.score,
+        wins: false,
+        patchPath: winnerResult.patchPath,
+        originalWinnerScore: winnerResult.score,
+        critiques: allCritiques,
+        reason: 'aborted',
+      };
+    }
+
+    if (allCritiques.length === 0) {
+      opts.onEvent?.({ type: 'synthesis:done', engineId: winner, data: { wins: false, score: winnerResult.score, originalScore: winnerResult.score, keptWinner: winner, reason: 'no-structured-critiques' } });
+      return {
+        pass: winnerResult.pass,
+        score: winnerResult.score,
+        wins: false,
+        patchPath: winnerResult.patchPath,
+        originalWinnerScore: winnerResult.score,
+        critiques: [],
+        reason: 'no-structured-critiques',
+      };
+    }
+
+    opts.onEvent?.({ type: 'synthesis:refine', engineId: winner });
+
+    const synthWtPath = `${forgeDir}/synth-worktree`;
+
+    try {
+      worktreeCreate(opts.repoRoot, synthWtPath, opts.headSha);
+      // Register the synth worktree in the shared cleanup list when provided —
+      // if this function is killed between worktreeCreate and the finally below
+      // (or the host process is hard-killed), the outer forge cleanup still
+      // catches the orphan.
+      opts.worktrees?.push({ engineId: 'synthesis', path: synthWtPath, repoRoot: opts.repoRoot });
+      applyPatch(synthWtPath, winnerPatch);
+
+      const synthPrompt = buildSynthesisPrompt({
+        diff: winnerPatch,
+        critiques: allCritiques,
+        fitnessCmd: opts.fitnessCmd,
+      });
+
+      const winnerEngine = registry.get(refineEngineId);
+      const synthMode = winnerEngine.agent && adapter.dispatchAgent ? 'agent' : 'exec';
+      if (synthMode === 'agent') {
+        await measuredDispatch(refineEngineId, synthPrompt, () => adapter.dispatchAgent!({
+          engine: winnerEngine,
+          prompt: synthPrompt,
+          cwd: synthWtPath,
+          mode: 'agent',
+          timeout: opts.timeout,
+          outputDir: forgeDir,
+          signal: opts.signal,
+        }));
+      } else {
+        await measuredDispatch(refineEngineId, synthPrompt, () => adapter.dispatch({
+          engine: winnerEngine,
+          prompt: synthPrompt,
+          cwd: synthWtPath,
+          mode: 'exec',
+          timeout: opts.timeout,
+          outputDir: forgeDir,
+          signal: opts.signal,
+        }));
+      }
+
+      opts.onEvent?.({ type: 'synthesis:score' });
+
+      const synthResult = await runFitness({
+        engineId: 'synthesis',
+        worktreePath: synthWtPath,
+        fitnessCmd: opts.fitnessCmd,
+        timeout: opts.fitnessTimeout,
+        forgeDir,
+        signal: opts.signal,
+      });
+
+      const wins = synthResult.pass && synthResult.score > winnerResult.score;
+
+      opts.onEvent?.({
+        type: 'synthesis:done',
+        data: { wins, score: synthResult.score, originalScore: winnerResult.score },
+      });
+
+      return {
+        pass: synthResult.pass,
+        score: synthResult.score,
+        wins,
+        patchPath: synthResult.patchPath ?? '',
+        originalWinnerScore: winnerResult.score,
+        critiques: allCritiques,
+      };
+    } finally {
+      worktreeRemoveBestEffort(opts.repoRoot, synthWtPath);
+    }
+  }
+
+  return { runSynthesis };
+}

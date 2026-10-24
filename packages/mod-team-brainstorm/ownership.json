@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "package": "@kernlang/agon-mod-team-brainstorm",
+  "assignments": [
+    {
+      "category": "builtinCommandMetadata",
+      "id": "team-brainstorm",
+      "source": "packages/core/src/blocks/builtin-commands.ts:20",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-team-brainstorm",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cesarRoutes",
+      "id": "team-brainstorm",
+      "source": "packages/cli/src/models/handler-types.ts:113",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-team-brainstorm",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cliCommands",
+      "id": "team-brainstorm",
+      "source": "packages/cli/src/lazy-commands.ts:292",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-team-brainstorm",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "intentVariants",
+      "id": "team-brainstorm",
+      "source": "packages/cli/src/signals/intent-types.ts:7",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-team-brainstorm",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "tuiSlashCommands",
+      "id": "/team-brainstorm",
+      "source": "packages/cli/src/signals/intent.ts:56",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-team-brainstorm",
+      "rule": "exact-user-surface"
+    }
+  ]
+}

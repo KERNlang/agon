@@ -1,0 +1,29 @@
+{
+  "mode": "review",
+  "label": "slice2-probe-focused-final",
+  "startedAt": "2026-08-23T21:02:37.451Z",
+  "endedAt": "2026-08-23T21:05:01.112Z",
+  "engines": [
+    {
+      "id": "ollama-direct-qwen",
+      "status": "ok",
+      "durationMs": 143660,
+      "detail": "ok, 2 important, 2 nits",
+      "outputPath": "/private/tmp/modular-agon-s2-agon/runs/review-1787518957451-6mb7ei-slice2-probe-focused-final/ollama-direct-qwen-output.txt"
+    },
+    {
+      "id": "ollama-direct-gpt-oss",
+      "status": "blocking",
+      "durationMs": 140117,
+      "detail": "blocking, 2 blocking, 1 important",
+      "outputPath": "/private/tmp/modular-agon-s2-agon/runs/review-1787518957451-6mb7ei-slice2-probe-focused-final/ollama-direct-gpt-oss-output.txt"
+    }
+  ],
+  "requested": [
+    "ollama-direct-qwen",
+    "ollama-direct-gpt-oss"
+  ],
+  "timeoutSec": 600,
+  "summary": "1/2 reviewed cleanly; ollama-direct-gpt-oss: blocking",
+  "ok": false
+}

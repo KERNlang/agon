@@ -1,0 +1,46 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "outDir": "dist",
+    "rootDir": "src",
+    "baseUrl": ".",
+    "paths": {
+      "@kernlang/agon-mod-api": [
+        "../mod-api/src/index.ts"
+      ],
+      "@kernlang/agon-support-engine-runtime": [
+        "../support-engine-runtime/src/index.ts"
+      ],
+      "@kernlang/agon-support-persistence": [
+        "../support-persistence/src/index.ts"
+      ],
+      "@kernlang/agon-support-dedup": [
+        "../support-dedup/src/index.ts"
+      ]
+    },
+    "sourceMap": false,
+    "declarationMap": false,
+    "emitDeclarationOnly": true
+  },
+  "references": [
+    {
+      "path": "../mod-api"
+    },
+    {
+      "path": "../support-engine-runtime"
+    },
+    {
+      "path": "../support-persistence"
+    },
+    {
+      "path": "../support-dedup"
+    }
+  ],
+  "include": [
+    "src"
+  ],
+  "exclude": [
+    "src/**/*.test.ts"
+  ]
+}

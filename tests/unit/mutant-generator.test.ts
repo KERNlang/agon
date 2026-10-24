@@ -3,9 +3,54 @@
 // pinned here is which LINES earn a mutant at all, and that the operator classes
 // did not move when comment skipping landed.
 import { describe, it, expect } from 'vitest';
-import { commentOnlyLines, generateMutants } from '../../packages/core/src/tools/mutant-generator.js';
+import { commentOnlyLines, generateMutants, applyMutantToSource } from '../../packages/core/src/tools/mutant-generator.js';
+import * as shared from '../../packages/support-worktree/src/index.js';
+import * as packaged from '@kernlang/agon-support-worktree';
 
 const allLines = (src: string): number[] => src.split('\n').map((_, i) => i + 1);
+
+describe('one canonical mechanical mutation owner', () => {
+  it('keeps legacy exports bound to the shared owner', () => {
+    expect(packaged.generateMutants).toBe(generateMutants);
+    expect(packaged.commentOnlyLines).toBe(commentOnlyLines);
+    expect(packaged.applyMutantToSource).toBe(applyMutantToSource);
+  });
+
+  it.each(['i++;', 'i--;', '/*\n a + b\n*/', '#!/usr/bin/env -S node', '  #value = true;'])('does not generate false evidence from %s', source => {
+    expect(shared.generateMechanicalMutants(source, 'example.js')).toEqual([]);
+  });
+
+  it('uses canonical subtraction matching and return classification', () => {
+    expect(shared.generateMechanicalMutants('a-b', 'example.js')).toEqual([]);
+    expect(shared.generateMechanicalMutants('a - b', 'example.js')).toEqual([
+      { id: 'example.js:arith:-→+@L1', file: 'example.js', line: 1, before: 'a - b',
+        after: 'a + b', operator: 'arith:-→+', class: 'high-signal', origin: 'mechanical' },
+    ]);
+    expect(shared.generateMechanicalMutants('return value;', 'example.js')).toEqual([
+      { id: 'example.js:ret:→undefined@L1', file: 'example.js', line: 1, before: 'return value;',
+        after: 'return undefined;', operator: 'ret:→undefined', class: 'equiv-prone', origin: 'mechanical' },
+    ]);
+  });
+
+  it.each([
+    'return a + b;',
+    'const xs: string[] = [];',
+    'const ok = a === b && c > 0;',
+    'const text = `\n/* data\n`;\nconst value = a + b;',
+  ])('preserves the canonical operators and classes for %s', source => {
+    const expected = generateMutants(source, allLines(source), 'example.ts');
+    expect(shared.generateMechanicalMutants(source, 'example.ts')).toEqual(expected);
+  });
+
+  it('preserves file order, unique lines and required file metadata', () => {
+    const source = 'const a = true;\nconst b = false;';
+    const result = shared.generateMechanicalMutants(source, '', [2, 1, 2, 0, 999]);
+    expect(result.map(mutant => mutant.line)).toEqual([1, 2]);
+    expect(result.map(mutant => mutant.id)).toEqual([':bool:true→false@L1', ':bool:false→true@L2']);
+    expect(result.every(mutant => mutant.file === '' && mutant.origin === 'mechanical')).toBe(true);
+    expect(shared.generateMechanicalMutants(source, 'example.ts', [])).toEqual([]);
+  });
+});
 
 describe('commentOnlyLines — which lines carry no executable code', () => {
   it('flags line comments, block comments and their continuations', () => {

@@ -1,4 +1,7 @@
-import type { GuardCall, GuardSnapshot, GuardVerdict } from './guard-types.js';
+import type { GuardCall, GuardSnapshot } from './guard-types.js';
+
+import { applyShadow, type BatchVerdict, type ShadowableVerdict } from '@kernlang/agon-support-verification';
+export { applyShadow, type BatchVerdict, type ShadowableVerdict } from '@kernlang/agon-support-verification';
 
 import { consultGroundedWrite, isWriteTool, writeTargetPath } from './grounded-write.js';
 
@@ -7,20 +10,10 @@ import { consultConfidenceGate } from './confidence-gate.js';
 /**
  * A verdict the pipeline returns. In strict/invariants modes it IS the verdict. In shadow mode the effective verdict is forced to 'allow' and the original (block/nudge/escalate) is preserved in `shadowed` so telemetry can record what WOULD have happened — and the live turn is never blocked.
  */
-export interface ShadowableVerdict {
-  verdict: GuardVerdict;
-  shadowed?: GuardVerdict;
-}
 
 /**
  * Apply shadow-mode semantics. In 'shadow' mode a non-allow verdict is downgraded to allow with the original kept in `shadowed`. In strict/invariants the verdict passes through unchanged (shadowed undefined). Pure.
  */
-export function applyShadow(verdict: GuardVerdict, mode: string): ShadowableVerdict {
-  if (mode === 'shadow' && verdict.action !== 'allow') {
-    return { verdict: { action: 'allow' }, shadowed: verdict };
-  }
-  return { verdict };
-}
 
 /**
  * Consult the per-call guards for ONE tool call, in order: grounded-write (block an ungrounded Edit/Write/MultiEdit), then confidence-gate (escalate a risky/broad/dispatch call when confidence is unreported). The FIRST non-allow verdict wins (grounded-write's block dominates the confidence escalation for the same write). The result is shadow-wrapped per snap.mode. distinctFileCount is the step's broad-write tally for the confidence gate (default 0). Pure — composes the pure per-call guards. In strict mode every guard internally allows except grounded-write, which the D3 wiring does NOT call in strict (strict runs the inline guard); callers gate the whole pipeline on mode !== 'strict'.
@@ -39,11 +32,6 @@ export function consultGuard(call: GuardCall, snap: GuardSnapshot, distinctFileC
 /**
  * One call's verdict within a consultBatch result: the call's index in the input array + its shadow-wrapped verdict.
  */
-export interface BatchVerdict {
-  index: number;
-  call: GuardCall;
-  result: ShadowableVerdict;
-}
 
 /**
  * Map consultGuard over a step's calls (loop convenience). Returns one BatchVerdict per input call, in order. distinctFileCount is the step's broad-write tally (the same value applies to each write call in the step — the caller computes the distinct-file count across the whole step's writes). Pure.

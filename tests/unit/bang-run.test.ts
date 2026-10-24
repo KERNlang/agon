@@ -1,5 +1,6 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll } from 'vitest';
 import { detectIntent } from '../../packages/cli/src/intent.js';
+import { disposeProcessSurfaceAuthority, initializeProcessSurfaceAuthority } from '../../packages/cli/src/surface-authority-runtime.js';
 import { handleRun } from '../../packages/cli/src/handlers/run.js';
 import { buildMentionedFilesContext, isLiteralCommandLine } from '../../packages/cli/src/surfaces/app-submit.js';
 import { extractImagesFromInput } from '@kernlang/agon-core';
@@ -8,6 +9,9 @@ import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setupTestAgonHome, cleanupTestAgonHome } from '../helpers/agon-home.js';
+
+beforeAll(() => initializeProcessSurfaceAuthority('/tmp/agon-bang-run-authority'));
+afterAll(() => disposeProcessSurfaceAuthority());
 
 // Pins the B4 `! <cmd>` inline-bash contract (Claude-Code parity):
 //   1. bang-SPACE triggers the /run executor; bare `!`, `!!`, `!important` do NOT,

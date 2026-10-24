@@ -1,0 +1,38 @@
+**Verdict**
+
+The **“Against”** position presents the stronger argument.  
+While the for‑side confidently claims that the current test matrix suffices, the against‑side pinpoints concrete, realistic failure modes that are not exercised by any existing test.  The five defects described – from missing receipt validation after a committed journal to stale leases reclaimed under PID reuse – represent legitimate safety violations that could surface in real deployments.  Without evidence that the code handles these edge‑cases, the claim of *complete* safety is unsubstantiated.
+
+---
+
+### Key Insights
+
+| Insight | Why it matters |
+|---------|----------------|
+| **Tests ≠ exhaustive state space** | The test harness runs *single* fault‑injection points per run.  It does not explore the combinatorial explosion of interleavings (e.g., crash ↔︎ partial receipt ↔︎ stale lease).  A system can still be unsafe even if every *isolated* failure path passes. |
+| **Receipts are assumed present when “committed”** | The recovery logic treats a journal state of “committed” as synonymous with a fully persisted receipt.  If the receipt is missing (e.g., write‑after‑commit error), the host would boot to an inconsistent generation.  This is a real crash‑consistency breach that must be explicitly guarded. |
+| **Container‑reused PIDs pose a lease‑leak risk** | In cloud or containerised environments, the same numeric PID can appear in successive processes on the same node, sometimes with identical CWD.  Relying solely on PID + cwd is insufficient; the lease system must incorporate a stronger uniqueness factor (e.g., hmac of (pid, cwd, host‑id, timestamp)). |
+
+---
+
+### Recommendation
+
+1. **Implement a “receipt‑present” guard in `DurableHost.recovery()`**  
+   *Before* accepting a journal as “committed”, confirm that the corresponding commit receipt (`receipt-commit-*.json`) exists and its hash matches the manifest hash.  If absent, downgrade the state to *verified* and boot into safe‑mode.
+
+2. **Strengthen lease identification**  
+   Augment the lease record with a cryptographic timestamp or random nonce and store an HMAC of `(pid, cwd, hostname, timestamp, nonce)`.  On lease reclamation, recompute the HMAC and only accept the lease if it cannot be produced by the current process.  This prevents accidental lease take‑over when PIDs are recycled.
+
+3. **Add SHA‑256 length validation**  
+   Ensure `strictParsePointer()` enforces `^[0‑9a‑f]{64}$`.  During recovery, any malformed pointer should trigger an immediate safe‑mode entry instead of a speculative dispatch.
+
+4. **Verify receipt hash during rollback**  
+   In `rollbackGeneration()`, compare the old generation’s receipt hash against the manifest it refers to.  Reject rollback if there is a mismatch, and fall back to safe‑mode.
+
+5. **Rewrite `redactHostValue()` to avoid in‑place mutation**  
+   Use a pure, non‑mutating traversal (e.g., `JSON.parse(JSON.stringify(obj))` or a recursive copy) before redaction, ensuring secrets never leak into serialized logs.
+
+6. **Add targeted unit tests**  
+   For each of the five items above, write minimalistic, deterministic tests (e.g., `crash-between-committed-journal-and-commit-receipt`, `lease-reclaim-under-pid-reuse`, etc.) to bring the failure modes into the test matrix.
+
+By applying these focused, S2‑slice‑level fixes, we close the most critical safety gaps without moving to later slices.  Once the new tests all pass, the durable‑host can be confidently promoted to production for the modular‑agon‑S2 scope.

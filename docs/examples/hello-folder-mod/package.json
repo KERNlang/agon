@@ -1,0 +1,9 @@
+{
+  "name": "example.hello-folder-mod",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": { "build": "tsc -p tsconfig.json" },
+  "dependencies": { "@kernlang/agon-mod-api": "1.0.0" },
+  "devDependencies": { "typescript": "^5.9.3" }
+}

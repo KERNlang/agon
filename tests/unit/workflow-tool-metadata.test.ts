@@ -1,11 +1,22 @@
-import { describe, expect, it } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { createPipelineTool } from '../../packages/core/src/tools.js';
-import { ORCHESTRATION_TOOLS, listMcpTools, workflowToolMetadata } from '../../packages/mcp/src/agon-orchestration.js';
+import { createCesarToolRegistry } from '../../packages/cli/src/cesar/tools.js';
+import { disposeProcessSurfaceAuthority, initializeProcessSurfaceAuthority } from '../../packages/cli/src/surface-authority-runtime.js';
+
+const root = mkdtempSync(join(tmpdir(), 'agon-workflow-metadata-'));
+
+beforeAll(() => initializeProcessSurfaceAuthority(join(root, 'host')));
+afterAll(async () => {
+  await disposeProcessSurfaceAuthority();
+  rmSync(root, { recursive: true, force: true });
+});
 
 describe('workflow tool metadata', () => {
-  it('exposes certified workflow metadata on the core Pipeline tool', () => {
-    const tool = createPipelineTool();
+  it('exposes certified workflow metadata on the physical Pipeline mod tool', () => {
+    const tool = createCesarToolRegistry('codex').get('Pipeline')!;
     expect(tool.definition.metadata?.workflow).toEqual({
       id: 'agon.build-review-fix',
       version: 'v1',
@@ -13,38 +24,5 @@ describe('workflow tool metadata', () => {
       phases: ['build', 'review', 'fix'],
       conformance: 'core-workflow-registry',
     });
-  });
-
-  it('exposes certified workflow metadata for MCP Pipeline discovery', () => {
-    const mcpPipelineTool = ORCHESTRATION_TOOLS.find((tool) => tool.name === 'Pipeline');
-
-    expect(mcpPipelineTool?.annotations?.workflow).toEqual({
-      id: 'agon.brainstorm-forge-tribunal',
-      version: 'v1',
-      alias: 'agon.brainstorm-forge-tribunal@v1',
-      phases: ['brainstorm', 'forge', 'tribunal'],
-      conformance: 'core-workflow-registry',
-    });
-    expect(workflowToolMetadata('Pipeline')?.workflow).toEqual({
-      id: 'agon.brainstorm-forge-tribunal',
-      version: 'v1',
-      alias: 'agon.brainstorm-forge-tribunal@v1',
-      phases: ['brainstorm', 'forge', 'tribunal'],
-      conformance: 'core-workflow-registry',
-    });
-    expect(workflowToolMetadata('Forge')).toBeUndefined();
-  });
-
-  it('includes Pipeline workflow annotations in the MCP tools/list payload', () => {
-    const pipelineTool = listMcpTools().find((tool) => tool.name === 'Pipeline');
-
-    expect(pipelineTool?.annotations?.workflow).toEqual({
-      id: 'agon.brainstorm-forge-tribunal',
-      version: 'v1',
-      alias: 'agon.brainstorm-forge-tribunal@v1',
-      phases: ['brainstorm', 'forge', 'tribunal'],
-      conformance: 'core-workflow-registry',
-    });
-    expect(pipelineTool?.metadata).toBeUndefined();
   });
 });

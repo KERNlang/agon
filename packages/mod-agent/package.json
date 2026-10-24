@@ -1,0 +1,37 @@
+{
+  "name": "@kernlang/agon-mod-agent",
+  "version": "1.0.0",
+  "private": false,
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./manifest": "./agon.mod.json",
+    "./ownership": "./ownership.json"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "schemas",
+    "agon.mod.json",
+    "ownership.json",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup && tsc -b tsconfig.json --force",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@kernlang/agon-kernel": ">=0.0.0-0 <2"
+  },
+  "dependencies": {
+    "@kernlang/agon-mod-api": "1.0.0",
+    "@kernlang/agon-support-engine-runtime": "1.0.0",
+    "@kernlang/agon-support-agent-runtime": "1.0.0"
+  }
+}

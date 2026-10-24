@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Historical artifacts only; not current release acceptance evidence",
+  "archiveId": "2026-10-10-2b59937b",
+  "archiveManifestSha256": "60e2f3f3a5bfc5ff1d32ea2e95fea02ff50f55b0fdeb86732145d4ec3f886a65",
+  "subjectCommit": "2b59937ba55d21fbd9649cc6f2d64d423e58f59c",
+  "retention": "Never delete the durable archive without Raphael's explicit approval",
+  "artifacts": [
+    {
+      "originalPath": "docs/specs/evidence/verification-logs/slice1a-full-repository-suite.log",
+      "archivePath": "repository/docs/specs/evidence/verification-logs/slice1a-full-repository-suite.log",
+      "sha256": "56c66d595a05d6a6b57652661d7353d3f6b9cdd04814481efd8fc2453a193870",
+      "gitBlob": "fb7a4aba11b345eeb6ae2eee46e364840a395503",
+      "lastPathCommit": "3385fef25a4e6e28c64b60873ee45672f6bcf218",
+      "bytes": 2097343,
+      "lines": 54967,
+      "disposition": "Superseded Slice 1A receipt output; already truncated when captured",
+      "references": ["docs/specs/evidence/modular-agon-slice1a-verification-receipt.json"]
+    },
+    {
+      "originalPath": "docs/specs/evidence/verification-logs/slice7/host-manifest-c88b2200.json",
+      "archivePath": "repository/docs/specs/evidence/verification-logs/slice7/host-manifest-c88b2200.json",
+      "sha256": "bea3972910aa27334d4c091b0147e0a3e93e821c53ac3d774d4d3777e8e83a0d",
+      "gitBlob": "da32f87a7c78d5957bb52399ba7b4791567c74ae",
+      "lastPathCommit": "46546bd8166ce26591f7fdd65ca9d382e683268b",
+      "bytes": 1261902,
+      "lines": 22337,
+      "disposition": "Historical captured host manifest; no source or acceptance reader",
+      "references": []
+    }
+  ]
+}

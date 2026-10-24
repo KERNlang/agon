@@ -1,0 +1,153 @@
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { collectSubjectContamination, hashReviewSubject, isSourceBearingPath, initializeMaterializedGitSubject, materializeGitSubject, pinGitSubject, validateDependencyGraph, validateSliceReview } from './slice1b-qualification-gates.mjs';
+import { loadEvidencePasses } from './measure-modular-load.mjs';
+
+const root = fileURLToPath(new URL('../..', import.meta.url));
+const commitSubject = pinGitSubject(root, 'commit');
+const indexSubject = pinGitSubject(root, 'index', commitSubject.revision);
+const excluded = ['docs/specs/evidence/modular-agon-slice9-review-evidence.json', 'docs/specs/evidence/modular-agon-slice9-verification-receipt.json'];
+const runtimeRoot = mkdtempSync(join(tmpdir(), 'agon-modular-s9-runtime-'));
+
+function run(command, args, cwd = root) {
+  const result = spawnSync(command, args, { cwd, encoding: 'utf8', maxBuffer: 128 * 1024 * 1024, env: {
+    ...process.env, AGON_HOME: join(runtimeRoot, 'agon-home'), npm_config_cache: process.env.AGON_QUALIFICATION_NPM_CACHE ?? join(runtimeRoot, 'npm-cache'),
+    npm_config_logs_dir: join(runtimeRoot, 'npm-logs'), npm_config_ignore_scripts: 'true', NODE_OPTIONS: '--max-old-space-size=8192',
+  } });
+  if (result.error) throw result.error;
+  return result;
+}
+
+function materialize(checkout, subject) {
+  const pinned = subject === 'index' ? indexSubject : commitSubject;
+  materializeGitSubject(root, checkout, pinned);
+  initializeMaterializedGitSubject(root, checkout, pinned);
+}
+
+function cleanSteps(subject) {
+  const checkout = mkdtempSync(join(tmpdir(), `agon-modular-s9-${subject}-`));
+  const steps = [];
+  const commands = [
+    ['npm-ci', 'npm', ['ci', '--ignore-scripts', '--offline']],
+    ['clean-build', 'npm', ['run', 'build:cli:workspaces']],
+    ['s9-negative-controls', 'node', ['scripts/spec/qualify-modular-agon-slice9.mjs', '--self-test']],
+    ['generated-negative-controls', 'npm', ['run', 'spec:modular-generated:self-test']],
+    ['generated-artifacts', 'npm', ['run', 'spec:modular-generated:check']],
+    ['first-party-generation', 'npm', ['run', 'spec:modular-first-party:check']],
+    ['release-set', 'npm', ['run', 'test:modular-release']],
+    ['supply-chain', 'npm', ['run', 'test:modular-supply-chain']],
+    ['npx-install', 'npm', ['run', 'test:modular-npx', '--', '--no-write']],
+    ['platform-matrix', 'node', ['scripts/spec/verify-modular-platform-matrix.mjs', '--no-write', '--json', ...(process.argv.includes('--native-runner') ? ['--native-runner'] : [])]],
+    ['state-migrations', 'npm', ['run', 'test:modular-state-migrations', '--', '--no-write']],
+    ['physical-cutover', 'npm', ['run', 'test:modular-physical-cutover', '--', '--no-write']],
+    ['manifest-capabilities', 'npm', ['run', 'test:modular-manifest-capabilities']],
+    ['legacy-kill-list', 'node', ['scripts/spec/verify-modular-kill-list.mjs']],
+    ['slice8-regression', 'npm', ['run', 'test:modular-slice8']],
+    ['representative-workflows', 'npm', ['run', 'test:representative-workflows']],
+    ['typecheck', 'npm', ['run', 'typecheck']],
+    ['lint', 'npm', ['run', 'lint']],
+    ['full-repository-suite', 'npm', ['run', 'test:ts']],
+    ['spec-consistency', 'node', ['scripts/spec/check-modular-agon-consistency.mjs']],
+    ['roadmap-contract', 'node', ['scripts/spec/verify-modular-agon-roadmap.mjs']],
+    ['performance-release', 'node', ['scripts/spec/measure-modular-release.mjs']],
+    ['sustained-load', 'node', ['scripts/spec/measure-modular-load.mjs']],
+  ];
+  try {
+    materialize(checkout, subject);
+    for (const [id, command, args] of commands) {
+      const result = run(command, args, checkout);
+      const output = `${result.stdout ?? ''}${result.stderr ?? ''}`;
+      let evidence;
+      let evidenceError;
+      if (['platform-matrix', 'performance-release', 'sustained-load'].includes(id)) {
+        try { evidence = JSON.parse(result.stdout); }
+        catch (error) { evidenceError = String(error); }
+      }
+      const passed = result.status === 0 && evidenceError === undefined;
+      steps.push({ id, command: [command, ...args], status: result.status, passed, outputTail: output.slice(-4000),
+        ...(evidence ? { evidence } : {}), ...(evidenceError ? { evidenceError } : {}) });
+      if (!passed) break;
+    }
+    if (steps.every(({ passed }) => passed)) {
+      const ignored = collectSubjectContamination(checkout, ['.']).ignored.filter((path) => isSourceBearingPath(path));
+      steps.push({ id: 'final-ignored-source-contamination', command: ['git', 'ls-files', '--others', '--ignored', '--exclude-standard'], status: ignored.length ? 1 : 0, passed: ignored.length === 0, outputTail: JSON.stringify(ignored) });
+    }
+    if (steps.every(({ passed }) => passed)) {
+      const result = run('git', ['status', '--porcelain', '--untracked-files=all'], checkout);
+      const output = `${result.stdout ?? ''}${result.stderr ?? ''}`;
+      steps.push({ id: 'final-clean-worktree', command: ['git', 'status', '--porcelain', '--untracked-files=all'], status: result.status, passed: result.status === 0 && output.trim() === '', outputTail: output.slice(-4000) });
+    }
+  } finally { rmSync(checkout, { recursive: true, force: true }); }
+  return steps;
+}
+
+const subjectKind = process.argv.includes('--subject=commit') ? 'commit' : 'index';
+const contaminationRaw = collectSubjectContamination(root, ['.']);
+const contamination = Object.fromEntries(Object.entries(contaminationRaw).map(([kind, paths]) => [kind, paths.filter((path) => isSourceBearingPath(path, { nonSourcePaths: excluded }))]));
+const indexHash = hashReviewSubject(root, indexSubject, 'S9');
+const commitHash = hashReviewSubject(root, commitSubject, 'S9');
+const expectedHash = subjectKind === 'index' ? indexHash : commitHash;
+const reviewEvidence = validateSliceReview(root, 'S9', subjectKind === 'index' ? indexSubject : commitSubject);
+const packageMap = JSON.parse(readFileSync(join(root, 'docs/specs/evidence/modular-agon-package-map.json'), 'utf8'));
+const ownership = JSON.parse(readFileSync(join(root, 'docs/specs/evidence/modular-agon-ownership.json'), 'utf8'));
+const release = JSON.parse(readFileSync(join(root, 'docs/specs/evidence/modular-agon-release-set.json'), 'utf8'));
+const storedPlatform = JSON.parse(readFileSync(join(root, 'docs/specs/evidence/modular-agon-platform-matrix.json'), 'utf8'));
+const physical = JSON.parse(readFileSync(join(root, 'docs/specs/evidence/modular-agon-physical-cutover.json'), 'utf8'));
+const storedPerformances = ['1a', '2', '3', '4', '5', '6', '7', '8'].map((slice) => JSON.parse(readFileSync(join(root, `docs/specs/evidence/modular-agon-slice${slice}-performance.json`), 'utf8')));
+const graph = validateDependencyGraph(packageMap.packages);
+const steps = process.argv.includes('--run-clean') ? cleanSteps(subjectKind) : [];
+const performanceStep = steps.find(({ id }) => id === 'performance-release');
+const loadStep = steps.find(({ id }) => id === 'sustained-load');
+const freshLoadPassed = loadStep?.passed === true && loadEvidencePasses(loadStep.evidence);
+const freshPerformanceSteps = performanceStep?.evidence?.steps;
+const freshPerformancePassed = performanceStep?.passed === true && performanceStep.evidence?.passed === true
+  && Array.isArray(freshPerformanceSteps) && freshPerformanceSteps.length === 8
+  && ['1a', '2', '3', '4', '5', '6', '7', '8'].every((slice, index) => freshPerformanceSteps[index]?.slice === slice && freshPerformanceSteps[index]?.passed === true);
+const performances = Array.isArray(freshPerformanceSteps) ? freshPerformanceSteps.map(step => step?.evidence) : storedPerformances;
+const platformStep = steps.find(({ id }) => id === 'platform-matrix');
+const platform = platformStep?.evidence ?? storedPlatform;
+const freshPlatformPassed = platformStep?.passed === true && platformStep.evidence?.passed === true
+  && platformStep.evidence?.status === 'completed'
+  && platformStep.evidence?.runnerProvenance === 'caller-attested-native'
+  && platformStep.evidence?.cells?.filter(cell => cell.status === 'passed' && cell.native === true).length === 3;
+const coverage = { packages: packageMap.packages.length, firstPartyMods: packageMap.packages.filter(({ class: kind }) => kind === 'user-toggleable-mod-package').length, ownershipAssignments: ownership.assignments.length,
+  releaseArtifacts: release.artifactCount, physicalMods: physical.counts.physical, platformPassed: platform.summary.passed, platformExternallyBlocked: platform.summary.externallyBlocked,
+  platformFailed: platform.summary.failed, measuredPerformanceSlices: performances.length };
+const coveragePasses = (candidate) => candidate.packages === 49 && candidate.firstPartyMods === 36 && candidate.ownershipAssignments === 872
+  // 49 modular packages, one launcher, and the dedup compatibility sidecars.
+  && candidate.releaseArtifacts === 51 && candidate.physicalMods === 36 && candidate.platformPassed === 3 && candidate.platformExternallyBlocked === 9
+  && candidate.platformFailed === 0 && candidate.measuredPerformanceSlices === 8;
+const performancePasses = (evidence) => {
+  if (!evidence || typeof evidence !== 'object' || Array.isArray(evidence)) return false;
+  if (Object.hasOwn(evidence, 'passed') && evidence.passed !== true) return false;
+  const greenBudgets = Object.entries(evidence.budgets ?? {}).filter(([key]) => key.endsWith('Green'));
+  return (evidence.passed === true || greenBudgets.length > 0) && greenBudgets.every(([, value]) => value === true);
+};
+if (process.argv.includes('--self-test')) {
+  // Test the predicates without requiring a previous successful qualification.
+  const baseline = { packages: 49, firstPartyMods: 36, ownershipAssignments: 872,
+    releaseArtifacts: 51, physicalMods: 36, platformPassed: 3, platformExternallyBlocked: 9,
+    platformFailed: 0, measuredPerformanceSlices: 8 };
+  if (!coveragePasses(baseline)) throw new Error('S9 coverage rejected valid fixture evidence');
+  for (const releaseArtifacts of [50, 52]) {
+    if (coveragePasses({ ...baseline, releaseArtifacts })) throw new Error('S9 coverage accepted a missing or extra release artifact');
+  }
+  if (coveragePasses({ ...baseline, platformPassed: 0, platformExternallyBlocked: 12 })) throw new Error('S9 coverage accepted an all-blocked platform matrix');
+  if (!performancePasses({ passed: true }) || !performancePasses({ budgets: { latencyGreen: true, memoryGreen: true } })) throw new Error('S9 performance rejected valid fixture evidence');
+  if (performancePasses({ budgets: { latencyGreen: true, memoryGreen: false } })) throw new Error('S9 performance accepted a red named budget');
+  if (performancePasses({ budgets: { latencyMs: 10 } })) throw new Error('S9 performance accepted evidence without a verdict');
+  console.log('S9 qualification negative controls passed');
+  rmSync(runtimeRoot, { recursive: true, force: true });
+  process.exit(0);
+}
+const receipt = { schemaVersion: 1, qualification: 'modular-agon-slice9-release-candidate', subject: { ...(subjectKind === 'index' ? indexSubject : commitSubject), hash: expectedHash, indexHash, commitHash, indexEqualsCommit: indexHash === commitHash }, contamination, graph, coverage, reviewEvidence, cleanCheckoutSteps: steps };
+receipt.passed = Object.values(contamination).every((paths) => paths.length === 0) && (subjectKind === 'index' || indexHash === commitHash) && reviewEvidence.passed
+  && graph.duplicateEdges.length === 0 && graph.uniqueEdges === 158 && coveragePasses(coverage) && freshPlatformPassed
+  && freshPerformancePassed && performances.every(performancePasses) && freshLoadPassed
+  && steps.length > 0 && steps.every(({ passed }) => passed);
+console.log(JSON.stringify(receipt, null, 2));
+rmSync(runtimeRoot, { recursive: true, force: true });
+if (!receipt.passed) process.exitCode = 1;

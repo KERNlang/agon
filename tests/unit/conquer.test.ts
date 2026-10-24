@@ -2,6 +2,7 @@
 // stuck classifier, escalation gate, worktree auto-approve guard, and the compact
 // consult-feedback formatter. All pure; no engine dispatch.
 import { describe, expect, it } from 'vitest';
+import * as conquerOwner from '@kernlang/agon-mod-conquer';
 import {
   pickEscalationMode,
   classifyStuck,
@@ -31,6 +32,8 @@ import {
 } from '@kernlang/agon-forge';
 import type { RatingRecord } from '@kernlang/agon-core';
 import { tmpdir } from 'node:os';
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 // Empty injected ratings → rankNeroCritics' cascade finds no rated engine and falls
 // back to the random branch; with a single-element advisor pool that deterministically
@@ -275,6 +278,9 @@ describe('buildConquerTurnPrompt', () => {
 });
 
 describe('doneOracleDecision — mechanical layers', () => {
+  it('uses the physical Conquer policy through the historical Forge export', () => {
+    expect(conquerOwner).toHaveProperty('doneOracleDecision', doneOracleDecision);
+  });
   const ok: DoneOracleInput = { gateOk: true, oracleTampered: false, weakenedTests: false, claim: 'X works', neroFalsified: false };
   it('passes when all layers clean', () => {
     expect(doneOracleDecision(ok).passed).toBe(true);
@@ -358,6 +364,96 @@ describe('parseFalsifierOutput', () => {
 });
 
 describe('runDoneFalsifier — evidence-based, mechanically verified', () => {
+  it.each(['critic-file', 'inline', 'application-file'] as const)('distinguishes reproduction setup from application failure: %s', async kind => {
+    const root = mkdtempSync(join(tmpdir(), 'agon-falsifier-repro-file-'));
+    const source = join(root, 'source');
+    const outputDir = join(root, 'output');
+    mkdirSync(source); mkdirSync(outputDir);
+    writeFileSync(join(source, 'answer.txt'), '42\n');
+    if (kind === 'application-file') writeFileSync(join(source, 'application.cjs'), "require('./required.cjs');\n");
+    try {
+      const result = await conquerOwner.runDoneFalsifier({
+        claim: 'answer is 42', cwd: source, engines: ['critic'], timeout: 5, outputDir,
+      }, {
+        rankCritics: ids => ids.map(engineId => ({ engineId })),
+        getEngine: id => ({ id, binary: id, agent: {} }) as any,
+        adapter: { dispatchAgent: async options => {
+          if (kind === 'critic-file') writeFileSync(join(options.cwd!, 'repro.cjs'),
+            "require('node:assert').strictEqual(require('node:fs').readFileSync('answer.txt', 'utf8'), '42\\n');\n");
+          const command = kind === 'critic-file' ? 'node repro.cjs'
+            : kind === 'application-file' ? 'node application.cjs'
+            : "node -e \"require('node:assert').strictEqual(require('node:fs').readFileSync('answer.txt', 'utf8').trim(), '42')\"";
+          return { exitCode: 0, stderr: '', durationMs: 1, timedOut: false, diff: '', diffLines: 0, filesChanged: 0,
+            stdout: `COUNTEREXAMPLE: ${command}\nVERDICT: FLAWED` };
+        } },
+      });
+      expect(result.falsified, JSON.stringify(result)).toBe(kind === 'application-file');
+      expect(result.advisoryOnly).toBe(kind === 'critic-file');
+      if (kind === 'critic-file') expect(result.note).toContain('setup is not reproducible');
+      expect(readFileSync(join(source, 'answer.txt'), 'utf8')).toBe('42\n');
+      expect(readdirSync(outputDir)).toEqual([]);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+  it.each([['42', false], ['43', true]] as const)('reproduces against source answer %s, not critic edits', async (answer, falsified) => {
+    const root = mkdtempSync(join(tmpdir(), 'agon-falsifier-clean-'));
+    const source = join(root, 'source');
+    const outputDir = join(root, 'output');
+    mkdirSync(source); mkdirSync(outputDir);
+    writeFileSync(join(source, 'answer.txt'), `${answer}\n`);
+    try {
+      const result = await conquerOwner.runDoneFalsifier({
+        claim: 'answer is 42', cwd: source, engines: ['critic'], timeout: 5, outputDir,
+      }, {
+        rankCritics: ids => ids.map(engineId => ({ engineId })),
+        getEngine: id => ({ id, binary: id, agent: {} }) as any,
+        adapter: { dispatchAgent: async options => {
+          writeFileSync(join(options.cwd!, 'answer.txt'), answer === '42' ? '43\n' : '42\n');
+          return { exitCode: 0, stderr: '', durationMs: 1, timedOut: false, diff: '', diffLines: 0, filesChanged: 0,
+            stdout: 'COUNTEREXAMPLE: grep -qx 42 answer.txt\nVERDICT: FLAWED' };
+        } },
+      });
+      expect(result).toMatchObject({ falsified, advisoryOnly: false,
+        verification: { exitCode: falsified ? 1 : 0, timedOut: false } });
+      expect(readFileSync(join(source, 'answer.txt'), 'utf8')).toBe(`${answer}\n`);
+      expect(readdirSync(outputDir)).toEqual([]);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+  it.each([['42', false], ['43', true]] as const)('mechanically verifies a real copied fixture against %s', async (expected, falsified) => {
+    const root = mkdtempSync(join(tmpdir(), 'agon-falsifier-owner-'));
+    const source = join(root, 'source');
+    const outputDir = join(root, 'output');
+    mkdirSync(source); mkdirSync(outputDir);
+    writeFileSync(join(source, 'answer.txt'), '42\n');
+    let dispatches = 0;
+    try {
+      const result = await conquerOwner.runDoneFalsifier({
+        claim: 'answer is correct', cwd: source, engines: ['critic'], timeout: 5, outputDir,
+      }, {
+        rankCritics: ids => ids.map(engineId => ({ engineId })),
+        getEngine: id => ({ id, binary: id, agent: {} }) as any,
+        adapter: { dispatchAgent: async options => {
+          dispatches++;
+          expect(options.cwd).not.toBe(source);
+          expect(readFileSync(join(options.cwd!, 'answer.txt'), 'utf8')).toBe('42\n');
+          return { exitCode: 0, stderr: '', durationMs: 1, timedOut: false, diff: '', diffLines: 0, filesChanged: 0,
+            stdout: `COUNTEREXAMPLE: test "$(cat answer.txt)" = ${expected}\nVERDICT: FLAWED` };
+        } },
+      });
+      expect(result).toMatchObject({ falsified, advisoryOnly: false, critic: 'critic' });
+      expect(dispatches).toBe(1);
+      expect(readFileSync(join(source, 'answer.txt'), 'utf8')).toBe('42\n');
+      expect(readdirSync(outputDir)).toEqual([]);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+  it('uses the mod-owned falsifier policy through the legacy public exports', () => {
+    const owner = conquerOwner as unknown as Record<string, unknown>;
+    expect(owner.parseFalsifierOutput).toBe(parseFalsifierOutput);
+    expect(owner.buildFalsifierPrompt).toBe(buildFalsifierPrompt);
+    expect(owner.isAgentCapableEngine).toBe(isAgentCapableEngine);
+    expect(owner.isSafeCounterexample).toBe(isSafeCounterexample);
+    expect(owner.runDoneFalsifier).toBeTypeOf('function');
+    expect(owner.runDoneOracle).toBeTypeOf('function');
+  });
   const agentCapableRegistry = { get: (id: string) => ({ id, binary: id, agent: {} }) } as any;
   const apiOnlyRegistry = { get: (id: string) => ({ id, api: {} }) } as any;
   const mkSandbox = (over: Partial<SandboxOps> = {}): SandboxOps => ({
@@ -376,6 +472,32 @@ describe('runDoneFalsifier — evidence-based, mechanically verified', () => {
     ...over,
   } as any);
 
+  it.each(['false', 'throw', 'abort'] as const)('does not execute when the clean verification copy returns %s', async failure => {
+    const controller = new AbortController();
+    const copies: string[] = [];
+    const removed: string[] = [];
+    let executions = 0;
+    const result = await runDoneFalsifier(base({ signal: controller.signal,
+      adapter: agentReply('COUNTEREXAMPLE: false\nVERDICT: FLAWED'),
+      sandbox: mkSandbox({
+        clone: async (_source, destination) => {
+          copies.push(destination);
+          if (copies.length === 1) return true;
+          if (failure === 'throw') throw new Error('verification copy failed');
+          if (failure === 'abort') { controller.abort(); return true; }
+          return false;
+        },
+        exec: async () => { executions++; return { exitCode: 1, stdout: '', stderr: '', timedOut: false }; },
+        remove: async destination => { removed.push(destination); },
+      }),
+    }));
+    expect(result).toMatchObject({ falsified: false, advisoryOnly: true });
+    expect(executions).toBe(0);
+    expect(copies).toHaveLength(2);
+    expect(copies[0]).not.toBe(copies[1]);
+    expect(removed.sort()).toEqual([...copies].sort());
+  });
+
   it('FALSIFIES only when FLAWED + counterexample AND the sandbox re-run reproduces (non-zero exit)', async () => {
     let ran = '';
     const sandbox = mkSandbox({ exec: async (cmd) => { ran = cmd; return { exitCode: 1, stdout: '', stderr: '', timedOut: false }; } });
@@ -387,6 +509,7 @@ describe('runDoneFalsifier — evidence-based, mechanically verified', () => {
     expect(res.advisoryOnly).toBe(false);
     expect(res.counterexample).toBe('test 2 -eq 3');
     expect(res.critic).toBe('critic');
+    expect(res.verification).toMatchObject({ exitCode: 1, timedOut: false });
     expect(ran).toBe('test 2 -eq 3'); // the proposed command was actually re-run
   });
 
@@ -490,6 +613,44 @@ describe('runDoneFalsifier — evidence-based, mechanically verified', () => {
     expect(res.falsified).toBe(false);
     expect(res.advisoryOnly).toBe(true);
     expect(res.note).toMatch(/errored|degraded/i);
+    expect(res.attackText).toContain('VERDICT: FLAWED');
+    expect(res.counterexample).toBe('test 1 -eq 2');
+  });
+
+  it.each(['false', 'throw'])('cleans a partially created copy when clone returns %s', async failure => {
+    let removed = '';
+    const res = await runDoneFalsifier(base({ adapter: agentReply('VERDICT: SOUND'),
+      sandbox: mkSandbox({ clone: async () => {
+        if (failure === 'throw') throw new Error('partial copy failed');
+        return false;
+      }, remove: async path => { removed = path; } }),
+    }));
+    expect(res.advisoryOnly).toBe(true);
+    expect(removed).toContain('sandbox-');
+  });
+
+  it('treats a ranking failure as advisory without dispatch', async () => {
+    const res = await conquerOwner.runDoneFalsifier({ claim: 'done', cwd: tmpdir(),
+      engines: ['critic'], timeout: 1, outputDir: tmpdir() }, {
+      rankCritics: () => { throw new Error('ratings unreadable'); },
+      getEngine: () => { throw new Error('must not resolve'); },
+      adapter: { dispatchAgent: async () => { throw new Error('must not dispatch'); } },
+    });
+    expect(res).toMatchObject({ falsified: false, advisoryOnly: true });
+    expect(res.note).toContain('ratings unreadable');
+  });
+
+  it('does not classify cancellation during mechanical verification as a reproduced failure', async () => {
+    const controller = new AbortController();
+    const res = await runDoneFalsifier(base({ signal: controller.signal,
+      adapter: agentReply('COUNTEREXAMPLE: test 1 -eq 2\nOBSERVED: mismatch\nVERDICT: FLAWED'),
+      sandbox: mkSandbox({ exec: async () => {
+        controller.abort();
+        return { exitCode: 143, stdout: '', stderr: 'terminated', timedOut: false };
+      } }),
+    }));
+    expect(res).toMatchObject({ falsified: false, advisoryOnly: true, observed: 'mismatch' });
+    expect(res.note).toContain('aborted');
   });
 });
 
@@ -559,6 +720,7 @@ describe('runDoneOracle — cheap blockers gate the expensive falsifier (orderin
     expect(res.passed).toBe(false);
     expect(res.falsified).toBe(true);
     expect(res.reason).toMatch(/nero|counterexample/i);
+    expect(res).toMatchObject({ note: expect.stringContaining('reproduced'), verification: { exitCode: 1 } });
   });
 
   it('passes (ready for the human gate) when the falsifier returns SOUND', async () => {
@@ -571,6 +733,72 @@ describe('runDoneOracle — cheap blockers gate the expensive falsifier (orderin
 });
 
 describe('runConquer — supervisory loop', () => {
+  it.each([
+    ['is this approach wrong?', 'nero'], ['choose 1. first or 2. second', 'tribunal'],
+    ['how do I start?', 'brainstorm'], ['is this architecture safe?', 'council'],
+  ])('routes %s through the owner and retains the objective', async (question, mode) => {
+    const prompts: string[] = [];
+    const consulted: string[] = [];
+    let checks = 0;
+    const result = await conquerOwner.runConquerWorkflow({
+      task: 'original objective', builderEngine: 'builder', outputDir: 'fixture',
+      caps: { maxTurns: 3, maxWallClockMs: 0 },
+    }, {
+      contextSpine: async () => 'project context',
+      build: async prompt => {
+        prompts.push(prompt);
+        return { exitCode: 0, stdout: prompts.length === 1 ? `CONQUER_ASK: ${question}` : 'CONQUER_DONE: verified work' };
+      },
+      consult: async (selected, asked) => {
+        consulted.push(selected);
+        expect(asked).toBe(question);
+        return { mode: selected, verdict: 'use the verified approach', confidence: 80, flawed: false };
+      },
+      evaluateDone: async claim => {
+        checks++;
+        expect(claim).toBe('verified work');
+        return { passed: true, reason: 'verified', falsified: false, attackText: '', counterexample: null, observed: null };
+      },
+    });
+    expect(consulted).toEqual([mode]);
+    expect(checks).toBe(1);
+    expect(result).toMatchObject({ done: true, stopReason: 'done', turnsUsed: 2, consultsRun: 1 });
+    expect(prompts).toHaveLength(2);
+    for (const prompt of prompts) expect(prompt).toContain('original objective');
+    expect(prompts[0]).toContain('project context');
+    expect(prompts[1]).not.toContain('project context');
+    expect(prompts[1]).toContain(`[Cesar consulted ${mode}] (confidence 80%) use the verified approach`);
+  });
+
+  it.each(['builder', 'oracle'] as const)('does not accept a late DONE after cancellation in the %s', async phase => {
+    const controller = new AbortController();
+    let checks = 0;
+    const result = await conquerOwner.runConquerWorkflow({
+      task: 'cancelled task', builderEngine: 'builder', outputDir: 'fixture', signal: controller.signal,
+    }, {
+      contextSpine: async () => '',
+      build: async () => {
+        if (phase === 'builder') controller.abort();
+        return { exitCode: 0, stdout: 'CONQUER_DONE: complete' };
+      },
+      consult: async () => { throw new Error('No consultation is authorized'); },
+      evaluateDone: async () => {
+        checks++;
+        controller.abort();
+        return { passed: true, reason: 'late success', falsified: false, attackText: '', counterexample: null, observed: null };
+      },
+    });
+    expect(result).toMatchObject({ done: false, stopReason: 'aborted', turnsUsed: 1 });
+    expect(checks).toBe(phase === 'builder' ? 0 : 1);
+  });
+
+  it('exposes the single supervisory loop from the physical owner', () => {
+    expect(conquerOwner).toHaveProperty('runConquerWorkflow', expect.any(Function));
+    expect(conquerOwner).toHaveProperty('classifyAsk', classifyAsk);
+    expect(conquerOwner).toHaveProperty('buildConquerTurnPrompt', buildConquerTurnPrompt);
+    expect(conquerOwner).toHaveProperty('capBreached', capBreached);
+  });
+
   const registry = { get: (id: string) => ({ id }) } as any;
   const turn = (stdout: string, exitCode = 0) => ({ exitCode, stdout, stderr: '', durationMs: 1, timedOut: false });
   // advisorEngines: [] short-circuits the real nero round in the done-oracle, keeping the loop unit-testable.

@@ -3,9 +3,11 @@
 // mode, task type, pass/fail, and timing. Rolling win rates are computed
 // over the last N runs per mode.
 
-import { readFileSync, writeFileSync, mkdirSync, statSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, statSync, openSync, closeSync, fsyncSync, renameSync, unlinkSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { join, resolve } from 'node:path';
 import { homedir } from 'node:os';
+import { withFileLock } from '@kernlang/agon-support-persistence';
 import { tracker, resolveWorkingDir } from '@kernlang/agon-core';
 import { runsStore } from '../signals/runs-store.js';
 import { summarizeIntentForEpisode } from '../cesar/experience.js';
@@ -25,6 +27,8 @@ export type TaskType =
   | 'unknown';
 
 export interface OrchestrationResult {
+  /** Stable receipt identity for retryable recording. Omit for a new run. */
+  id?: string;
   mode: string;
   intent?: string;
   winner?: string;
@@ -66,6 +70,21 @@ export interface WinRateEntry {
   total: number;
   wins: number;
   rate: number;
+}
+
+function isRunRecord(value: unknown): value is RunRecord {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const item = value as Record<string, unknown>;
+  return typeof item.id === 'string' && item.id.length > 0
+    && typeof item.mode === 'string' && item.mode.length > 0
+    && typeof item.taskType === 'string' && typeof item.success === 'boolean'
+    && typeof item.timestamp === 'number' && Number.isFinite(item.timestamp)
+    && typeof item.durationMs === 'number' && Number.isFinite(item.durationMs) && item.durationMs >= 0
+    && typeof item.completionState === 'string' && item.completionState.length > 0
+    && Array.isArray(item.engineIds) && item.engineIds.every(id => typeof id === 'string')
+    && ['winner', 'intentSummary', 'projectKey'].every(key => item[key] === undefined || typeof item[key] === 'string')
+    && (item.costEstimateUsd === undefined || (typeof item.costEstimateUsd === 'number'
+      && Number.isFinite(item.costEstimateUsd) && item.costEstimateUsd >= 0));
 }
 
 export const DEFAULT_WINDOW = 50;
@@ -151,18 +170,83 @@ export class TelemetryLedger {
     return { version: 1, runs: [] };
   }
 
-  /** Persist the ledger to disk atomically. */
+  /** Atomically replace the ledger. Use append for serialized updates. */
   write(data: TelemetryFile): void {
-    const dir = join(this.filePath, '..');
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(this.filePath, JSON.stringify(data, null, 2));
+    this.prepareDirectory();
+    const temporary = `${this.filePath}.${randomUUID()}.tmp`;
+    const fd = openSync(temporary, 'wx', 0o600);
+    try {
+      try {
+        writeFileSync(fd, JSON.stringify(data, null, 2));
+        fsyncSync(fd);
+      } finally { closeSync(fd); }
+      renameSync(temporary, this.filePath);
+      this.syncDirectory();
+    } finally {
+      this.cached = null;
+      this.cachedStamp = '';
+      try { unlinkSync(temporary); }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+          console.warn(`[agon] telemetry staging cleanup failed: ${String(error)}`);
+        }
+      }
+    }
   }
 
-  /** Append a single run record, trimming the ledger to MAX_LEDGER_RUNS. */
-  append(record: RunRecord): void {
-    const data = this.read();
-    const runs = [...data.runs, record];
-    this.write({ ...data, runs: runs.length > MAX_LEDGER_RUNS ? runs.slice(-MAX_LEDGER_RUNS) : runs });
+  private syncDirectory(path = join(this.filePath, '..')): void {
+    const fd = openSync(path, 'r');
+    try { fsyncSync(fd); }
+    finally { closeSync(fd); }
+  }
+
+  private prepareDirectory(): void {
+    const missing: string[] = [];
+    let path = resolve(this.filePath, '..');
+    while (true) {
+      try { statSync(path); break; }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+        missing.push(path);
+        path = resolve(path, '..');
+      }
+    }
+    mkdirSync(join(this.filePath, '..'), { recursive: true });
+    for (const created of missing.reverse()) {
+      this.syncDirectory(resolve(created, '..'));
+      this.syncDirectory(created);
+    }
+  }
+
+  /** Keep the first terminal receipt for an ID within the retained ledger. */
+  append(record: RunRecord): RunRecord {
+    if (!isRunRecord(record)) throw new Error('Invalid telemetry receipt');
+    this.prepareDirectory();
+    let stored = record;
+    withFileLock(`${this.filePath}.lock`, () => {
+      // A write must not treat corrupt or unreadable evidence as an empty ledger.
+      let data: TelemetryFile;
+      try {
+        data = JSON.parse(readFileSync(this.filePath, 'utf8')) as TelemetryFile;
+        if (data?.version !== 1 || !Array.isArray(data.runs) || !data.runs.every(isRunRecord)) {
+          throw new Error(`Invalid telemetry ledger at ${this.filePath}. Preserve the file and repair its version-1 receipt data before retrying.`);
+        }
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+        data = { version: 1, runs: [] };
+      }
+      const existing = data.runs.find(item => item.id === record.id);
+      if (existing) {
+        stored = existing;
+        this.syncDirectory();
+        return;
+      }
+      const runs = [...data.runs, record];
+      this.write({ ...data, runs: runs.length > MAX_LEDGER_RUNS ? runs.slice(-MAX_LEDGER_RUNS) : runs });
+    // A live publisher cannot lose its lock because it pauses beyond a TTL.
+    // Dead local owners remain reclaimable; remote owners require intervention.
+    }, { staleMs: Number.POSITIVE_INFINITY });
+    return stored;
   }
 
   /** Return the last N runs, optionally filtered by mode. */
@@ -232,10 +316,12 @@ export function recentRunRecords(limit: number = 200): RunRecord[] {
   return defaultLedger.recentRuns(limit);
 }
 
+/** Record or recover a terminal receipt. Throws on corrupt data, contention,
+ * or failed publication. Keep the same ID when retrying an uncertain write. */
 export function recordRun(result: OrchestrationResult): RunRecord {
   const stats = typeof tracker?.getStats === 'function' ? tracker.getStats() : null;
   const record: RunRecord = {
-    id: `run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    id: result.id ?? `run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     timestamp: Date.now(),
     mode: result.mode,
     taskType: classifyTaskType(result.mode, result.intent),
@@ -248,14 +334,14 @@ export function recordRun(result: OrchestrationResult): RunRecord {
     intentSummary: summarizeIntentForEpisode(result.intent ?? '') || undefined,
     projectKey: currentProjectKey(),
   };
-  defaultLedger.append(record);
+  const stored = defaultLedger.append(record);
   // A run record was written — forge also writes a ${forgeId}.json into
   // ~/.agon/runs around this point. Refresh the dashboard's cached runs
   // snapshot (debounced; coalesces forge's incremental writes) so the count
   // stays fresh without a render-path readdirSync. Best-effort: never let a
   // refresh failure affect recording.
   try { runsStore.scheduleRefresh(); } catch { /* non-critical */ }
-  return record;
+  return stored;
 }
 
 // ── formatRunSummary (CLI one-liner) ───────────────────────────────────

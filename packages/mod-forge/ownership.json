@@ -1,0 +1,278 @@
+{
+  "schemaVersion": 1,
+  "package": "@kernlang/agon-mod-forge",
+  "assignments": [
+    {
+      "category": "builtinCommandMetadata",
+      "id": "apply",
+      "source": "packages/core/src/blocks/builtin-commands.ts:32",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-forge",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "builtinCommandMetadata",
+      "id": "forge",
+      "source": "packages/core/src/blocks/builtin-commands.ts:14",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-forge",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cesarRoutes",
+      "id": "forge",
+      "source": "packages/cli/src/cesar/routing.ts:19",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-forge",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cesarRoutes",
+      "id": "forge",
+      "source": "packages/cli/src/models/handler-types.ts:113",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-forge",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cesarRoutes",
+      "id": "forge",
+      "source": "packages/core/src/cesar/plan.ts:52",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-forge",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cesarRoutes",
+      "id": "forge-full",
+      "source": "packages/cli/src/cesar/routing.ts:27",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-forge",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cesarRoutes",
+      "id": "forge-slice",
+      "source": "packages/cli/src/cesar/routing.ts:27",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-forge",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cesarRoutes",
+      "id": "forge-slice",
+      "source": "packages/cli/src/models/handler-types.ts:113",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-forge",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cesarTools",
+      "id": "Forge",
+      "source": "packages/cli/src/cesar/tools.ts:37",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-forge",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "cliCommands",
+      "id": "forge",
+      "source": "packages/cli/src/lazy-commands.ts:287",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-forge",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "configKeys",
+      "id": "autoReviewAfterForge",
+      "source": "packages/core/src/models/types.ts:175",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-forge",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "configKeys",
+      "id": "corpusReplayLimit",
+      "source": "packages/core/src/models/types.ts:111",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-forge",
+      "rule": "exact-forge-settings-owner"
+    },
+    {
+      "category": "configKeys",
+      "id": "forgeFitnessTimeout",
+      "source": "packages/core/src/models/types.ts:79",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-forge",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "configKeys",
+      "id": "gauntletEnabled",
+      "source": "packages/core/src/models/types.ts:108",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-forge",
+      "rule": "exact-forge-settings-owner"
+    },
+    {
+      "category": "configKeys",
+      "id": "gauntletMaxBreakers",
+      "source": "packages/core/src/models/types.ts:109",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-forge",
+      "rule": "exact-forge-settings-owner"
+    },
+    {
+      "category": "configKeys",
+      "id": "gauntletRepairTimeout",
+      "source": "packages/core/src/models/types.ts:110",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-forge",
+      "rule": "exact-forge-settings-owner"
+    },
+    {
+      "category": "intentVariants",
+      "id": "apply",
+      "source": "packages/cli/src/signals/intent-types.ts:31",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-forge",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "intentVariants",
+      "id": "forge",
+      "source": "packages/cli/src/signals/intent-types.ts:2",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-forge",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "intentVariants",
+      "id": "suggest-forge",
+      "source": "packages/cli/src/signals/intent-types.ts:57",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-forge",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "mcpTools",
+      "id": "Forge",
+      "source": "packages/mcp/src/agon-orchestration.ts:24",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-forge",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "resultAndEnvelopeTypes",
+      "id": "CorpusRecord",
+      "source": "packages/forge/src/corpus.ts:9",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-forge",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "resultAndEnvelopeTypes",
+      "id": "DelegateResult",
+      "source": "packages/forge/src/delegate.ts:5",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-forge",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "resultAndEnvelopeTypes",
+      "id": "FileSnapshot",
+      "source": "packages/core/src/forge/virtual-fs.ts:32",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-forge",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "resultAndEnvelopeTypes",
+      "id": "FitnessResult",
+      "source": "packages/core/src/models/types.ts:9",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-forge",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "resultAndEnvelopeTypes",
+      "id": "ForgeEvent",
+      "source": "packages/core/src/models/types.ts:451",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-forge",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "resultAndEnvelopeTypes",
+      "id": "GauntletResult",
+      "source": "packages/core/src/models/types.ts:551",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-forge",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "resultAndEnvelopeTypes",
+      "id": "PostSynthesisFitnessResult",
+      "source": "packages/core/src/cesar/agent-synthesis.ts:486",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-forge",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "resultAndEnvelopeTypes",
+      "id": "PrTextResult",
+      "source": "packages/forge/src/pr-text.ts:21",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-forge",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "resultAndEnvelopeTypes",
+      "id": "StageResult",
+      "source": "packages/forge/src/types-impl.ts:3",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-forge",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "resultAndEnvelopeTypes",
+      "id": "SyntaxCheckResult",
+      "source": "packages/forge/src/quality.ts:49",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-forge",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "resultAndEnvelopeTypes",
+      "id": "SynthPlan",
+      "source": "packages/forge/src/synth-plan.ts:16",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-forge",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "resultAndEnvelopeTypes",
+      "id": "SynthesisResult",
+      "source": "packages/forge/src/types-impl.ts:10",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-forge",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "tuiSlashCommands",
+      "id": "/apply",
+      "source": "packages/cli/src/signals/intent.ts:56",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-forge",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "tuiSlashCommands",
+      "id": "/forge",
+      "source": "packages/cli/src/signals/intent.ts:56",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-forge",
+      "rule": "exact-user-surface"
+    }
+  ]
+}

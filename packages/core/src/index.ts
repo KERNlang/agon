@@ -99,8 +99,8 @@ export { discoverEngines } from './blocks/engine-discover.js';
 export type { DiscoveryResult } from './blocks/engine-discover.js';
 export { preflightApply, applyPatchToTree, readPatchFromManifest, readPatchFromPath, applyPatchWithUndo, undoPatch } from './blocks/patch-apply.js';
 export type { PatchInfo, ApplyPreflight } from './blocks/patch-apply.js';
-export { parsePatch, patchSummary, invertPatch } from './blocks/patch-parser.js';
-export type { PatchFile, PatchHunk } from './blocks/patch-parser.js';
+export { parsePatch, patchSummary, invertPatch } from '@kernlang/agon-support-worktree';
+export type { PatchFile, PatchHunk } from '@kernlang/agon-support-worktree';
 export { takeSnapshot, revertSnapshot, listSnapshots, getLatestSnapshotId } from './blocks/file-history.js';
 export type { FileSnapshot, HistoryEntry } from './blocks/file-history.js';
 export { copyToClipboard } from './blocks/clipboard.js';
@@ -165,9 +165,9 @@ export { FileStateCache, fileStateCache, getProjectFileStateCache, clearProjectF
 export { ToolRegistry, executeToolCall, executeToolCalls, PERMISSION_DENIED_MESSAGE } from './signals/tool-registry.js';
 export { isDangerousCommand, isReadOnlyCommand, isPathUnderCwd } from './tools/tool-permissions.js';
 export { parsePermissionRule, parsePermissionRuleSet, ruleMatches, evaluatePermissionRules, evaluateToolRules, evaluateBashRules, evaluateFilePathRules, hasShellControl, hasRedirection, hasSubstitution, splitShellSegments, resolveRulePath, pathRuleMatches } from './tools/tool-permissions.js';
-export { createReadTool, createEditTool, createMultiEditTool, createWriteTool, createBashTool, createGrepTool, createGlobTool, createForgeTool, createBrainstormTool, createTribunalTool, createCampfireTool, createReportConfidenceTool, createDelegateTool, createPipelineTool, createGoalTool, createConquerTool, createReviewTool, createAgentTool, createProposePlanTool, createExitPlanModeTool, createListPlansTool, createRetrieveResultTool, createWebFetchTool, parseAndValidateUrl, htmlToText, createTodoWriteTool, normalizeTodos, createSaveMemoryTool, appendMemoryLine, normalizeMemoryLine, todayPrefix, canonicalMemorySection, MEMORY_SECTIONS, createWebSearchTool, buildSearchRequest, parseSearchResults, formatSearchResults, createQuickNeroTool, classifyQuery, cleanQuery, buildAuthoritativeRequest, parseAuthoritativeResults, extractCitations, judgeProbe, formatCitationReport, probeCitation, verifyCitations } from './tools.js';
+export { createReadTool, createEditTool, createMultiEditTool, createWriteTool, createBashTool, createGrepTool, createGlobTool, createReportConfidenceTool, createProposePlanTool, createExitPlanModeTool, createListPlansTool, createRetrieveResultTool, createWebFetchTool, parseAndValidateUrl, htmlToText, createTodoWriteTool, normalizeTodos, createSaveMemoryTool, appendMemoryLine, normalizeMemoryLine, todayPrefix, canonicalMemorySection, MEMORY_SECTIONS, createWebSearchTool, buildSearchRequest, parseSearchResults, formatSearchResults, classifyQuery, cleanQuery, buildAuthoritativeRequest, parseAuthoritativeResults, extractCitations, judgeProbe, formatCitationReport, probeCitation, verifyCitations } from './tools.js';
 export type { SearchResult, SearchRequest, ResearchIntent, CitationStatus, CitationProbe, CitationVerdict, CitationReport } from './tools.js';
-export { formatCesarPlanMarkdown } from './cesar/plan-formatter.js';
+export { formatCesarPlanMarkdown } from '@kernlang/agon-mod-plan';
 export { generateToolPrompt, toolsToOpenAIFormat } from './tools/tool-prompt.js';
 export { parseToolCalls, toolCallsToApiFormat, formatToolResults, formatToolResult } from './tools/tool-parser.js';
 export type { ParsedToolCall, ParseResult } from './tools/tool-parser.js';
@@ -190,19 +190,6 @@ export {
   decodeDataUrlToImageFile, parseImageDimensions, sniffImageMime, MAX_DISPATCH_IMAGES, MAX_DISPATCH_IMAGE_BYTES,
 } from './blocks/image.js';
 export type { DataUrlImageResult, ImageDimensions } from './blocks/image.js';
-// ── Agon Rooms — multi-party room ledger (file-first; CLI/MCP/daemon are adapters) ──
-export {
-  roomsDir, roomDir, createRoom, listRooms, roomExists, closeRoom, isRoomClosed,
-  appendEvent, readEvents, parseMentions, slugifyRoomId,
-} from './rooms/store.js';
-export { recordPresence, removePresence, listPresence, advanceReadCursor, getReadCursor, PRESENCE_TTL_MS } from './rooms/presence.js';
-export { getUnreadState, listUnreadStates, isUnreadKind } from './rooms/unread.js';
-export { foldLocks, listRoomLocks, claimRoomLock, releaseRoomLock, expiredLocksHeldBy } from './rooms/locks.js';
-export { acquireTurnLease, releaseTurnLease, readActiveLease } from './rooms/leases.js';
-export { detectTrigger, detectPingPong, evaluateStop } from './rooms/auto-policy.js';
-export { drainNdjson, drainRoom, readTailOffset, writeTailOffset, createRoomWaker } from './rooms/tail.js';
-export { foldTasks, pickNextTask, postTask, claimTask, postTaskResult, postTaskStop, shouldStopWork } from './rooms/tasks.js';
-export type { RoomActor, RoomEvent, RoomMeta, PresenceEntry, RoomLockState, RoomUnreadState, TurnLease, AutoConfig, AutoState, StopDecision, TriggerDecision, TailCursor, TailDrain, RoomTaskState, WorkConfig, WorkState } from './rooms/types.js';
 // ── EventLog — append-only per-session event ledger (client/server split M1) ──
 export {
   append as eventLogAppend, flush as eventLogFlush, replay as eventLogReplay,
@@ -224,8 +211,8 @@ export {
 } from './sessions/daemon-protocol.js';
 export type { DaemonRequest, DaemonResponse } from './sessions/daemon-protocol.js';
 // ── JobService — cancellable autonomous execution + bounded replay ──
-export { JobService } from './jobs/job-service.js';
-export type { JobState, JobSnapshot, JobEvent, JobEventPage, JobOutcome, JobTaskContext, JobExecutor, JobServiceOptions } from './jobs/job-service.js';
+export { JobService } from '@kernlang/agon-mod-jobs';
+export type { JobState, JobSnapshot, JobEvent, JobEventPage, JobOutcome, JobTaskContext, JobExecutor, JobServiceOptions } from '@kernlang/agon-mod-jobs';
 // ── BrainClient — daemon↔brain boundary for the Agon Everywhere bridge (client/server split M4) ──
 export { canonicalCapabilityInputDigest, conservativeControlCapabilities } from './sessions/brain-client.js';
 export type {
@@ -298,13 +285,12 @@ export {
 export type {
   ThreadMessage, ThreadCheckpoint, FileTouch, LoopMessage, ContextThreadConfig, ThreadSize,
 } from './cesar/context-thread.js';
-export { createCesarPlan, approveCesarPlan, advanceCesarStep, cancelCesarPlan, exitCesarPlan, saveCesarPlan, loadCesarPlan, listCesarPlans, getCesarPlansDir, cesarPlanJsonPath, cesarPlanMarkdownPath, CESAR_STEP_TYPES } from './cesar/plan.js';
-export type { CesarPlan, CesarPlanStep, CesarStepResult } from './cesar/plan.js';
-export { sanitizePlanSteps } from './cesar/plan-validation.js';
-export { planCostEstimator } from './cesar/plan-cost-estimator.js';
+export { createCesarPlan, approveCesarPlan, advanceCesarStep, cancelCesarPlan, exitCesarPlan, saveCesarPlan, loadCesarPlan, listCesarPlans, getCesarPlansDir, cesarPlanJsonPath, cesarPlanMarkdownPath, CESAR_STEP_TYPES } from '@kernlang/agon-mod-plan';
+export type { CesarPlan, CesarPlanStep, CesarStepResult } from '@kernlang/agon-mod-plan';
+export { planCostEstimator, sanitizePlanSteps, executePlan } from './cesar/plan-cost-estimator.js';
 export type { CostEstimate } from './cesar/plan-cost-estimator.js';
-export { executePlan, getReadySteps } from './cesar/plan-executor.js';
-export type { StepExecutor, PlanExecutorCallbacks } from './cesar/plan-executor.js';
+export { getReadySteps } from '@kernlang/agon-mod-plan';
+export type { StepExecutor, PlanExecutorCallbacks } from '@kernlang/agon-mod-plan';
 export { AgentSession, makeBudgetError } from './cesar/agent-session.js';
 export type {
   AgentBudget, AgentStepResult, AgentSessionStats, AgentSessionConfig,
@@ -360,8 +346,10 @@ export type { EngineNote, EngineProfile, EngineMemoryRecord, EngineStrengthObser
 export { rankByTaskClass, buildSpecializedPrompt, assignForgeRoles } from './blocks/role-specialization.js';
 export type { EngineRole } from './blocks/role-specialization.js';
 export type { Skill } from './blocks/skill-loader.js';
-export { createSidechainLogger } from './blocks/sidechain-logger.js';
-export type { SidechainEvent, SidechainLogger } from './blocks/sidechain-logger.js';
+export { createSidechainLogger } from '@kernlang/agon-kernel';
+export { createBrainstormHostServices } from './blocks/brainstorm-host.js';
+export { createForgeHostServices, createForgeWorkflowEffects } from './blocks/forge-host.js';
+export type { SidechainEvent, SidechainLogger } from '@kernlang/agon-kernel';
 export {
   buildForgeProvenance,
   renderProvenanceMarkdown,
@@ -375,7 +363,6 @@ export { validateManifest } from './models/extension-manifest.js';
 export type { ExtensionManifest, ExtensionContributions, CommandContribution, LoadedExtension } from './models/extension-manifest.js';
 export { CommandRegistry } from './signals/command-registry.js';
 export type { CommandDefinition, CommandHandler } from './signals/command-registry.js';
-export { initExtensions, loadExtensions, discoverExtensionDirs, buildExtensionContext } from './blocks/extension-loader.js';
 export { registerBuiltinCommands } from './blocks/builtin-commands.js';
 export { EventBus, bridgeShellHooks } from './signals/event-bus.js';
 export type { EventPayload, EventListener } from './signals/event-bus.js';

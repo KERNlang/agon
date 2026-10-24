@@ -1,6 +1,6 @@
 import { defineCommand } from 'citty';
 
-import { agentGuideMarkdown, modeDocsMarkdown } from './agent-guide-text.js';
+import { agentGuideMarkdown, modeDocsMarkdown } from '@kernlang/agon-mod-routing-docs';
 
 export const agentGuideCommand: any = defineCommand({
   meta: {

@@ -8,6 +8,11 @@
   },
   "include": ["src"],
   "references": [
+    { "path": "../mod-kernel" },
+    { "path": "../mod-routing-docs" },
+    { "path": "../mod-brainstorm" },
+    { "path": "../mod-team-brainstorm" },
+    { "path": "../mod-rooms" },
     { "path": "../core" },
     { "path": "../forge" },
     { "path": "../adapter-cli" }

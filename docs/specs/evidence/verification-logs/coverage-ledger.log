@@ -1,0 +1,14 @@
+command: ["node","scripts/spec/generate-modular-agon-coverage-ledger.mjs"]
+exitCode: 0
+signal:
+error:
+
+{
+  "cells": 1480,
+  "counts": {
+    "specified": 1366,
+    "tested": 34,
+    "blocked": 56,
+    "measured": 24
+  }
+}

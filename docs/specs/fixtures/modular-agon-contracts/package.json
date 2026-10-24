@@ -1,0 +1,10 @@
+{
+  "name": "modular-agon-contract-evidence",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "dependencies": {
+    "semver": "7.7.4",
+    "zod": "4.4.3"
+  }
+}

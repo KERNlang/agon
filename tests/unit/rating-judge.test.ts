@@ -1,5 +1,5 @@
 import { getEventListeners } from 'node:events';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -9,7 +9,8 @@ import { DEFAULT_AGON_CONFIG } from '@kernlang/agon-core';
 import type { EngineAdapter, EngineDefinition } from '@kernlang/agon-core';
 
 import { JUDGE_SYSTEM_PROMPT } from '../../packages/forge/src/ballot-prompt.js';
-import { bordaScores, judgeTribunal, parseBallot, planTribunalBallots, ratingJudgingMode } from '../../packages/forge/src/rating-judge.js';
+import { bordaScores, judgeTribunal, parseBallot, planTribunalBallots, ratingJudgingMode } from '../../packages/mod-ratings/src/rating-judge.js';
+import { createTribunalHostServices } from '../../packages/mod-tribunal/src/host.js';
 
 const scripted = (values: number[]) => {
   const queue = [...values];
@@ -22,6 +23,15 @@ const scripted = (values: number[]) => {
 const position = (engineId: string, text: string, role = 'Participant') => ({ engineId, role, text });
 
 describe('planTribunalBallots — blind peer ballots', () => {
+  it('excludes a peer outside the active allowed pool without excluding its position', () => {
+    const ballots = planTribunalBallots({
+      question: 'Ship?', positions: ['alpha', 'beta', 'gamma'].map(id => position(id, `${id} argument`)),
+      judgePool: ['alpha', 'beta'], canJudge: () => true, rng: () => 0.5,
+    });
+    expect(ballots.map(ballot => ballot.judge)).toEqual(['alpha', 'beta']);
+    expect(ballots.every(ballot => Object.values(ballot.labelMap).includes('gamma'))).toBe(true);
+  });
+
   const names = {
     claude: ['Claude (Anthropic)'],
     codex: ['Codex (OpenAI)'],
@@ -311,20 +321,98 @@ describe('ratingJudgingMode — an invalid value fails closed', () => {
 });
 
 describe('judgeTribunal — caller signal hygiene', () => {
-  it('leaves no abort listener on the caller signal once every ballot has settled', async () => {
+  it.each(['cancellation', 'deadline'])('waits for bounded ballot cleanup after %s', async cause => {
+    if (cause === 'deadline') vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const outputDir = mkdtempSync(join(tmpdir(), 'agon-judge-drain-'));
+    const controller = new AbortController();
+    const cleanup = Promise.withResolvers<void>();
+    const started = Promise.withResolvers<void>();
+    const childSignals: AbortSignal[] = [];
+    const engine = (id: string) => ({ id, displayName: id, api: { model: 'fixture' } }) as EngineDefinition;
+    const adapter = { dispatch: async (options: { signal: AbortSignal }) => {
+      childSignals.push(options.signal);
+      if (childSignals.length === 3) started.resolve();
+      await cleanup.promise;
+      return { exitCode: 130, stdout: '', stderr: 'cancelled', timedOut: false };
+    } } as unknown as EngineAdapter;
+    let settled = false;
+    const pending = judgeTribunal({
+      judging: 'on', question: 'Q', failed: [], rng: () => 0.5, outputDir, cwd: outputDir, adapter,
+      positions: ['alpha', 'beta', 'gamma'].map(engineId => ({ engineId, position: 'Participant', arguments: ['argument'] })),
+      registry: { get: engine, activeEngines: () => ['alpha', 'beta', 'gamma'].map(engine) },
+      config: { ...DEFAULT_AGON_CONFIG, ratingJudgeTimeoutSec: 1 }, signal: controller.signal,
+    }).finally(() => { settled = true; });
+    try {
+      await started.promise;
+      if (cause === 'cancellation') controller.abort();
+      else await vi.advanceTimersByTimeAsync(1000);
+      await new Promise<void>(resolve => setImmediate(resolve));
+      expect(childSignals.every(signal => signal.aborted)).toBe(true);
+      expect(settled).toBe(false);
+    } finally {
+      cleanup.resolve();
+      expect(await pending).toEqual([]);
+      expect(getEventListeners(controller.signal, 'abort')).toHaveLength(0);
+      rmSync(outputDir, { recursive: true, force: true });
+      vi.useRealTimers();
+    }
+  });
+
+  it.each(['direct', 'host'])('does not overwrite ballot evidence after generation authority is retired (%s)', async path => {
+    const outputDir = mkdtempSync(join(tmpdir(), 'agon-judge-authority-'));
+    let retired = false;
+    let before = '';
+    const engine = (id: string) => ({ id, displayName: id, api: { model: 'fixture' } }) as EngineDefinition;
+    const adapter = { dispatch: async () => {
+      if (!retired) before = readFileSync(join(outputDir, 'ballots.json'), 'utf8');
+      retired = true;
+      return { exitCode: 0, stdout: 'RANK: P1 > P2', stderr: '', timedOut: false };
+    } } as unknown as EngineAdapter;
+    const options = {
+      judging: 'on' as const, question: 'Q', failed: [], rng: () => 0.5, outputDir, cwd: outputDir, adapter,
+      positions: ['alpha', 'beta', 'gamma'].map(engineId => ({ engineId, position: 'Participant', arguments: ['argument'] })),
+      registry: { get: engine, activeEngines: () => ['alpha', 'beta', 'gamma'].map(engine) },
+      config: { ...DEFAULT_AGON_CONFIG },
+      assertAuthority: () => { if (retired) throw new Error('generation retired'); },
+    };
+    try {
+      let pending: Promise<unknown>;
+      if (path === 'direct') pending = judgeTribunal(options);
+      else {
+        const host = createTribunalHostServices({
+          openRegistry: () => options.registry, createAdapter: () => adapter,
+          captureAuthority: () => options.assertAuthority, seedRegistry: () => {},
+          loadConfig: () => options.config, classifyTask: () => 'general', updateRanked: () => {},
+          judgeForRating: request => judgeTribunal({ ...request, judging: 'on', config: options.config }),
+        });
+        const session = await host.open({ invocationId: 'fence', cwd: outputDir, platform: 'darwin-arm64',
+          signal: new AbortController().signal, config: {} });
+        const { assertAuthority: _unused, ...request } = options;
+        pending = session.effects.judgeForRating!({ ...request, adapter: session.adapter });
+      }
+      await expect(pending).rejects.toThrow('generation retired');
+      expect(readFileSync(join(outputDir, 'ballots.json'), 'utf8')).toBe(before);
+    } finally {
+      rmSync(outputDir, { recursive: true, force: true });
+    }
+  });
+
+  it.each([true, false])('leaves no abort listener after judging (active peers=%s)', async active => {
     const outputDir = mkdtempSync(join(tmpdir(), 'agon-judge-signal-'));
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {
       const apiEngine = (id: string) => ({ id, displayName: id, exec: { args: [] }, api: { baseUrl: 'https://api.example.test/v1', apiKeyEnv: 'UNUSED', model: 'm' } }) as unknown as EngineDefinition;
-      const adapter = { dispatch: async () => ({ exitCode: 0, stdout: 'RANK: P1 > P2', stderr: '', durationMs: 1, timedOut: false }) } as unknown as EngineAdapter;
+      const dispatch = vi.fn(async () => ({ exitCode: 0, stdout: 'RANK: P1 > P2', stderr: '', durationMs: 1, timedOut: false }));
+      const adapter = { dispatch } as unknown as EngineAdapter;
       const controller = new AbortController();
       const before = getEventListeners(controller.signal, 'abort').length;
       const scores = await judgeTribunal({
         judging: 'shadow', question: 'q', failed: [], rng: () => 0.5, outputDir, cwd: outputDir, signal: controller.signal, adapter,
         positions: ['alpha', 'beta', 'gamma'].map((engineId) => ({ engineId, position: 'Participant', arguments: [`text of ${engineId}`] })),
-        registry: { get: apiEngine, activeEngines: () => [] }, config: { ...DEFAULT_AGON_CONFIG },
+        registry: { get: apiEngine, activeEngines: () => active ? ['alpha', 'beta', 'gamma'].map(apiEngine) : [] }, config: { ...DEFAULT_AGON_CONFIG },
       });
-      expect(scores).toHaveLength(3);
+      expect(scores).toHaveLength(active ? 3 : 0);
+      expect(dispatch).toHaveBeenCalledTimes(active ? 3 : 0);
       expect(getEventListeners(controller.signal, 'abort')).toHaveLength(before);
     } finally {
       warn.mockRestore();

@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "package": "@kernlang/agon-mod-skill-authoring",
+  "assignments": [
+    {
+      "category": "builtinCommandMetadata",
+      "id": "create-skill",
+      "source": "packages/core/src/blocks/builtin-commands.ts:74",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-skill-authoring",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "intentVariants",
+      "id": "create-skill",
+      "source": "packages/cli/src/signals/intent-types.ts:66",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-skill-authoring",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "tuiSlashCommands",
+      "id": "/create-skill",
+      "source": "packages/cli/src/signals/intent.ts:56",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-skill-authoring",
+      "rule": "exact-user-surface"
+    }
+  ]
+}

@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "package": "@kernlang/agon-mod-rag",
+  "assignments": [
+    {
+      "category": "cliCommands",
+      "id": "rag",
+      "source": "packages/cli/src/lazy-commands.ts:317",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-rag",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "mcpTools",
+      "id": "ProjectContext",
+      "source": "packages/mcp/src/project-context.ts:4",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-rag",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "resultAndEnvelopeTypes",
+      "id": "RagEmbedResult",
+      "source": "packages/core/src/rag/embed.ts:15",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-rag",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "resultAndEnvelopeTypes",
+      "id": "RagIndexResult",
+      "source": "packages/mod-rag/src/types.ts:36",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-rag",
+      "rule": "physical-mod-owner"
+    },
+    {
+      "category": "resultAndEnvelopeTypes",
+      "id": "RagQueryResult",
+      "source": "packages/mod-rag/src/types.ts:44",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-rag",
+      "rule": "physical-mod-owner"
+    },
+    {
+      "category": "stateStoreModules",
+      "id": "packages/mod-rag/src/store.ts",
+      "source": "packages/mod-rag/src/store.ts",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-rag",
+      "rule": "physical-mod-owner"
+    }
+  ]
+}

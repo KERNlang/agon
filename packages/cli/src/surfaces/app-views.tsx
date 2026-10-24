@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 
 // ── Core ───────────────────────────────────────────────
@@ -681,8 +681,24 @@ const UpdateBanner = React.memo(function UpdateBanner({ updateInfo, updateChecki
 });
 export { UpdateBanner };
 
-const BottomChromeSection = React.memo(function BottomChromeSection({ updateInfo, updateChecking, questionState, pendingImages, imageVisionNote, inputQueue, steeringCount, liveSpinner, mode, statusDashboardOpen, telemetryVitals, recentFallbacks, termWidth, termHeight, statusDashboardFilter, replState, planModeQueued, autoModeQueued, permissionMode, activePlan, slashPickerOpen, atPickerOpen, atPickerFiles, atPickerPrefix, atPickerQuery, onAtSelect, onAtCancel, composerInput, onValueCommitted, handleInputChange, handlePasteInput, handleSubmit, allSlashCommands, availableEngines, onSlashSelect, onSlashCancel, questionAnswer, selectedChoiceIndex, questionOtherActive, onQuestionAnswerChange, onQuestionAnswerSubmit, updateBannerActive, onCtrlShortcut, cesarId, cesarConfidence, cesarContext, liveProgress, runningJobs, chatStartTime, streamSnippet, statusStats, statusCwd, statusBranch, explorationMode, toolOutputExpanded, fullscreenEnabled, uiMotion, interactionActive }: { updateInfo:any; updateChecking:boolean; questionState:any; pendingImages:any[]; imageVisionNote?:string|null; inputQueue:string[]; steeringCount:number; liveSpinner:any; mode:'chat'|'campfire'|'brainstorm'|'tribunal'; statusDashboardOpen:boolean; telemetryVitals:Map<string, EngineVitals>; recentFallbacks:any[]; termWidth:number; termHeight:number; statusDashboardFilter:any; replState:string; planModeQueued:boolean; autoModeQueued:boolean; permissionMode?:string; activePlan:CesarPlan|null; slashPickerOpen:boolean; atPickerOpen:boolean; atPickerFiles:string[]; atPickerPrefix:string; atPickerQuery:string; onAtSelect:(path:string) => void; onAtCancel:(typed:string) => void; composerInput:ComposerInputStore; onValueCommitted?:(length:number) => void; handleInputChange:(value:string) => void; handlePasteInput:(raw:string) => string; handleSubmit:(value:string) => void; allSlashCommands:any[]; availableEngines:string[]; onSlashSelect:(cmd:string) => void; onSlashCancel:() => void; questionAnswer:string; selectedChoiceIndex:number; questionOtherActive:boolean; onQuestionAnswerChange:(value:string) => void; onQuestionAnswerSubmit:(value:string) => void; updateBannerActive:boolean; onCtrlShortcut:(shortcut:string) => void; cesarId:string; cesarConfidence:any; cesarContext:any; liveProgress:EngineProgress[] | null; runningJobs:Job[]; chatStartTime:number; streamSnippet:any; statusStats:any; statusCwd:string; statusBranch:string; explorationMode:any; toolOutputExpanded:boolean; fullscreenEnabled:boolean; uiMotion?:'full'|'reduced'|'off'; interactionActive?:boolean }) {
+const BottomChromeSection = React.memo(function BottomChromeSection({ updateInfo, updateChecking, questionState, pendingImages, imageVisionNote, inputQueue, steeringCount, liveSpinner, mode, statusDashboardOpen, telemetryVitals, recentFallbacks, termWidth, termHeight, statusDashboardFilter, replState, planModeQueued, autoModeQueued, permissionMode, activePlan, slashPickerOpen, atPickerOpen, atPickerFiles, atPickerPrefix, atPickerQuery, onAtSelect, onAtCancel, composerInput, onValueCommitted, handleInputChange, handlePasteInput, handleSubmit, allSlashCommands, availableEngines, onSlashSelect, onSlashCancel, questionAnswer, selectedChoiceIndex, questionOtherActive, onQuestionAnswerChange, onQuestionAnswerSubmit, updateBannerActive, onCtrlShortcut, cesarId, cesarConfidence, cesarContext, liveProgress, runningJobs, chatStartTime, streamSnippet, statusStats, statusCwd, statusBranch, explorationMode, toolOutputExpanded, fullscreenEnabled, uiMotion }: { updateInfo:any; updateChecking:boolean; questionState:any; pendingImages:any[]; imageVisionNote?:string|null; inputQueue:string[]; steeringCount:number; liveSpinner:any; mode:'chat'|'campfire'|'brainstorm'|'tribunal'; statusDashboardOpen:boolean; telemetryVitals:Map<string, EngineVitals>; recentFallbacks:any[]; termWidth:number; termHeight:number; statusDashboardFilter:any; replState:string; planModeQueued:boolean; autoModeQueued:boolean; permissionMode?:string; activePlan:CesarPlan|null; slashPickerOpen:boolean; atPickerOpen:boolean; atPickerFiles:string[]; atPickerPrefix:string; atPickerQuery:string; onAtSelect:(path:string) => void; onAtCancel:(typed:string) => void; composerInput:ComposerInputStore; onValueCommitted?:(length:number) => void; handleInputChange:(value:string) => void; handlePasteInput:(raw:string) => string; handleSubmit:(value:string) => void; allSlashCommands:any[]; availableEngines:string[]; onSlashSelect:(cmd:string) => void; onSlashCancel:() => void; questionAnswer:string; selectedChoiceIndex:number; questionOtherActive:boolean; onQuestionAnswerChange:(value:string) => void; onQuestionAnswerSubmit:(value:string) => void; updateBannerActive:boolean; onCtrlShortcut:(shortcut:string) => void; cesarId:string; cesarConfidence:any; cesarContext:any; liveProgress:EngineProgress[] | null; runningJobs:Job[]; chatStartTime:number; streamSnippet:any; statusStats:any; statusCwd:string; statusBranch:string; explorationMode:any; toolOutputExpanded:boolean; fullscreenEnabled:boolean; uiMotion?:'full'|'reduced'|'off' }) {
   const isActive = replState !== 'idle' || runningJobs.length > 0;
+  const [interactionActive, setInteractionActive] = useState(false);
+  const interactionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onInputChange = useCallback((value: string) => {
+    // Keep the input timestamp ahead of the cosmetic update.
+    handleInputChange(value);
+    setInteractionActive(true);
+    if (interactionTimer.current) clearTimeout(interactionTimer.current);
+    interactionTimer.current = setTimeout(() => {
+      interactionTimer.current = null;
+      setInteractionActive(false);
+    }, 350);
+  }, [handleInputChange]);
+  useEffect(() => () => {
+    if (interactionTimer.current) clearTimeout(interactionTimer.current);
+  }, []);
+  const visibleStreamSnippet = interactionActive ? null : streamSnippet;
   return (
     <Box flexDirection="column" paddingX={1} marginTop={1}>
       {/* ── Update-available banner ──
@@ -732,7 +748,7 @@ const BottomChromeSection = React.memo(function BottomChromeSection({ updateInfo
           onAtCancel={onAtCancel}
           composerInput={composerInput}
           onValueCommitted={onValueCommitted}
-          handleInputChange={handleInputChange}
+          handleInputChange={onInputChange}
           handlePasteInput={handlePasteInput}
           handleSubmit={handleSubmit}
           allSlashCommands={allSlashCommands}
@@ -750,7 +766,7 @@ const BottomChromeSection = React.memo(function BottomChromeSection({ updateInfo
           termHeight={termHeight}
           onCtrlShortcut={onCtrlShortcut} />
       )}
-      <CesarStatusStrip cesarId={cesarId} confidence={cesarConfidence} context={cesarContext} spinner={liveSpinner} engines={liveProgress} jobs={runningJobs} startTime={chatStartTime} streamSnippet={streamSnippet} isActive={isActive} planModeQueued={planModeQueued} autoModeQueued={autoModeQueued} activePlanState={activePlan?.state ?? null} activePlan={activePlan} scoreboard={null} rationale={null} uiMotion={uiMotion} interactionActive={interactionActive} />
+      <CesarStatusStrip cesarId={cesarId} confidence={cesarConfidence} context={cesarContext} spinner={liveSpinner} engines={liveProgress} jobs={runningJobs} startTime={chatStartTime} streamSnippet={visibleStreamSnippet} isActive={isActive} planModeQueued={planModeQueued} autoModeQueued={autoModeQueued} activePlanState={activePlan?.state ?? null} activePlan={activePlan} scoreboard={null} rationale={null} uiMotion={uiMotion} interactionActive={interactionActive} />
       {mode === 'chat' && <StatusBar cesarId={statusStats.cesarId} chatMessageCount={statusStats.chatMessageCount} totalTokens={statusStats.totalTokens} totalCostUsd={statusStats.totalCostUsd} meteredCostUsd={statusStats.meteredCostUsd} hasPlanApiUsage={statusStats.hasPlanApiUsage} hasCliUsage={statusStats.hasCliUsage} cwd={statusCwd} branch={statusBranch} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} autoModeQueued={autoModeQueued} permissionMode={permissionMode} isActive={replState !== 'idle'} fullscreenEnabled={fullscreenEnabled} telemetryVitals={telemetryVitals} context={cesarContext} termWidth={termWidth} />}
     </Box>
   );

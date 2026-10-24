@@ -1,0 +1,13 @@
+command: ["npx","vitest","run","tests/spec/modular-agon-contracts.test.ts"]
+exitCode: 0
+signal:
+error:
+
+RUN  v3.2.7 /Users/ra/dev/agon-modular-slice-1a
+
+ ✓ tests/spec/modular-agon-contracts.test.ts (11 tests) 36ms
+
+ Test Files  1 passed (1)
+      Tests  11 passed (11)
+   Start at  23:13:24
+   Duration  328ms (transform 28ms, setup 13ms, collect 43ms, tests 36ms, environment 0ms, prepare 30ms)

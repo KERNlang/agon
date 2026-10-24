@@ -19,13 +19,10 @@ export interface SynthesisSwap {
   reasoning: string;
 }
 
-export interface SynthesisScore {
-  engineId: string;
-  score: number;
-  breakdown: string;
-  confidence?: number;
-  unhandled?: string;
-}
+import { parseSynthesisJudgeOutput } from '@kernlang/agon-mod-synthesis';
+import type { SynthesisScore } from '@kernlang/agon-mod-synthesis';
+export { normalizeSynthesisWinner, parseSynthesisJudgeOutput } from '@kernlang/agon-mod-synthesis';
+export type { SynthesisScore } from '@kernlang/agon-mod-synthesis';
 
 export interface SynthesisResult {
   prompt: string;
@@ -125,64 +122,6 @@ export function shuffleSynthesisEnginesInPlace(arr: any[]): any[] {
   return arr;
 }
 
-export function normalizeSynthesisWinner(raw: string, engineIds: string[]): string {
-  if (engineIds.length === 0) return '';
-  const rawWinner = String(raw || '')
-    .trim()
-    .replace(/^["']|["']$/g, '')
-    .trim()
-    .replace(/^(?:\*\*|__|\*|_)\s*|\s*(?:\*\*|__|\*|_)$/g, '')
-    .trim()
-    .replace(/[.。]+$/g, '');
-  const entryMatch = rawWinner.match(/^(?:entry[_\s-]*)?(\d+)$/i);
-  const entryIndex = entryMatch ? parseInt(entryMatch[1], 10) - 1 : -1;
-  return entryIndex >= 0 && engineIds[entryIndex]
-    ? engineIds[entryIndex]
-    : engineIds.find((id) => id.toLowerCase() === rawWinner.toLowerCase()) ?? engineIds[0];
-}
-
-export function parseSynthesisJudgeOutput(text: string, engineIds: string[]): {scores:SynthesisScore[];winner:string;reasoning:string} {
-  const labelWrap = '(?:\\*\\*|__|\\*|_)?';
-  const labelPattern = (name: string, label?: string) => {
-    const suffix = label ? `[_\\s-]*${label}` : '';
-    return `${labelWrap}\\s*${name}${suffix}\\s*${labelWrap}\\s*:\\s*${labelWrap}`;
-  };
-  const scores: SynthesisScore[] = [];
-  for (let i = 0; i < engineIds.length; i += 1) {
-    const label = `${i + 1}`;
-    const re = new RegExp(`${labelPattern('SCORE', label)}\\s*(\\d{1,3})`, 'i');
-    const m = text.match(re);
-
-    let confidence: number | undefined;
-    const confMatch = text.match(new RegExp(`${labelPattern('CONFIDENCE', label)}\\s*([0-9]*\\.?[0-9]+)\\s*%?`, 'i'));
-    if (confMatch) {
-      let v = parseFloat(confMatch[1]);
-      if (v > 1) v = v / 100; // tolerate 0-100 / percentage outputs (e.g. "75" or "75%") instead of 0-1
-      confidence = Math.max(0, Math.min(1, v));
-    }
-
-    const unhMatch = text.match(new RegExp(`${labelPattern('UNHANDLED', label)}\\s*(.+)`, 'i'));
-    const unhandledRaw = unhMatch ? unhMatch[1].trim().replace(/^["']|["']$/g, '').trim() : undefined;
-    // Suppress "none" and its punctuated variants ("None.", "NONE!", "none ").
-    const unhandled = unhandledRaw && !/^none[.!\s]*$/i.test(unhandledRaw) ? unhandledRaw : undefined;
-
-    scores.push({
-      engineId: engineIds[i],
-      score: m ? Math.min(parseInt(m[1], 10), 100) : 0,
-      breakdown: '',
-      confidence,
-      unhandled,
-    });
-  }
-
-  const winnerMatch = text.match(new RegExp(`${labelPattern('WINNER')}\\s*"?([^"\\n]+)"?`, 'i'));
-  const winner = normalizeSynthesisWinner(winnerMatch ? winnerMatch[1] : '', engineIds);
-
-  const reasonMatch = text.match(new RegExp(`${labelPattern('REASONING')}\\s*"?([^"\\n]+)"?`, 'i'));
-  const reasoning = reasonMatch ? reasonMatch[1].trim() : 'No reasoning provided';
-
-  return { scores, winner, reasoning };
-}
 
 /**
  * Routing guard. synthesis selects a winner by LLM judgment with NO fitness test — fine for prose/design where no clean pass/fail exists, but a liability for testable code (an LLM judge once scored a broken implementation 91/100). For code-shaped tasks, advise forge, which selects by a real fitness test. Returns null for docs/ambiguous tasks (synthesis is the right tool).
@@ -203,11 +142,14 @@ export function synthesisRoutingAdvice(prompt: string): string | null {
 }
 
 export async function runSynthesisModus(opts: SynthesisOptions): Promise<SynthesisResult> {
+  const check = () => opts.signal?.throwIfAborted();
+  check();
   const { prompt, registry, adapter, timeout, outputDir } = opts;
   const swapRounds = Math.max(0, opts.swaps ?? 1);
   const cwd = resolveWorkingDir();
   // Pre-flight: drop session-quarantined engines (Layer 1, pure zero-dispatch). Probe opt-in.
   const __hc = await preflightHealthFilter({ engineIds: opts.engines, registry, adapter, signal: opts.signal });
+  check();
   for (const s of __hc.skipped) console.warn(`[agon] synthesis: skipping ${s.engineId} — ${s.status} (${s.reason})`);
   const engines = __hc.healthy;
   if (engines.length === 0) {
@@ -216,6 +158,7 @@ export async function runSynthesisModus(opts: SynthesisOptions): Promise<Synthes
 
   const drafts: SynthesisDraft[] = [];
   const draftPromises = engines.map(async (engineId) => {
+    check();
     const engine = registry.get(engineId);
     try {
       const result = await adapter.dispatch({
@@ -229,10 +172,12 @@ export async function runSynthesisModus(opts: SynthesisOptions): Promise<Synthes
         outputDir,
         signal: opts.signal,
       });
+      check();
       const content = result.stdout.trim();
       drafts.push({ engineId, content, round: 0 });
       opts.onEvent?.({ type: 'synthesis:draft' as any, engineId, data: { engineId, round: 0 } });
     } catch (err) {
+      check();
       const msg = err instanceof Error ? err.message : String(err);
       console.warn(`[agon] synthesis draft (${engineId}) failed: ${msg}`);
       drafts.push({ engineId, content: `[draft failed: ${msg}]`, round: 0 });
@@ -241,11 +186,13 @@ export async function runSynthesisModus(opts: SynthesisOptions): Promise<Synthes
   });
 
   await Promise.all(draftPromises);
+  check();
 
   const swaps: SynthesisSwap[] = [];
   let currentDrafts = new Map(drafts.map((d) => [d.engineId, d.content]));
 
   for (let round = 1; round <= swapRounds; round += 1) {
+    check();
     const shuffled = shuffleSynthesisEnginesInPlace([...engines]);
     const pairs: [string, string][] = [];
     for (let i = 0; i < shuffled.length; i += 2) {
@@ -255,6 +202,7 @@ export async function runSynthesisModus(opts: SynthesisOptions): Promise<Synthes
     }
 
     const swapPromises = pairs.map(async ([fromId, toId]) => {
+      check();
       const original = currentDrafts.get(fromId);
       if (!original) return;
       const engine = registry.get(toId);
@@ -270,6 +218,7 @@ export async function runSynthesisModus(opts: SynthesisOptions): Promise<Synthes
           outputDir,
           signal: opts.signal,
         });
+        check();
         const raw = result.stdout.trim();
         const parts = raw.split(/##\s*REASONING/i);
         const improved = parts[0].trim();
@@ -278,6 +227,7 @@ export async function runSynthesisModus(opts: SynthesisOptions): Promise<Synthes
         currentDrafts.set(toId, improved);
         opts.onEvent?.({ type: 'synthesis:swap' as any, engineId: toId, data: { round, from: fromId, to: toId } });
       } catch (err) {
+        check();
         const msg = err instanceof Error ? err.message : String(err);
         console.warn(`[agon] synthesis swap (${toId} improving ${fromId}) failed: ${msg}`);
         opts.onEvent?.({ type: 'engine:failed' as any, engineId: toId, data: { engineId: toId, phase: 'synthesis-swap', error: msg } });
@@ -285,6 +235,7 @@ export async function runSynthesisModus(opts: SynthesisOptions): Promise<Synthes
     });
 
     await Promise.all(swapPromises);
+    check();
   }
 
   const judgeId = opts.judge && engines.includes(opts.judge)
@@ -309,9 +260,11 @@ export async function runSynthesisModus(opts: SynthesisOptions): Promise<Synthes
       outputDir,
       signal: opts.signal,
     });
+    check();
     judgeText = judgeResult.stdout.trim();
     opts.onEvent?.({ type: 'synthesis:score' as any, engineId: judgeId, data: {} });
   } catch (err) {
+    check();
     const msg = err instanceof Error ? err.message : String(err);
     console.warn(`[agon] synthesis judge (${judgeId}) failed: ${msg}`);
     opts.onEvent?.({ type: 'engine:failed' as any, engineId: judgeId, data: { engineId: judgeId, phase: 'synthesis-judge', error: msg } });

@@ -1,0 +1,58 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "outDir": "dist",
+    "rootDir": "src",
+    "baseUrl": ".",
+    "paths": {
+      "@kernlang/agon-mod-api": [
+        "../mod-api/src/index.ts"
+      ],
+      "@kernlang/agon-support-engine-runtime": [
+        "../support-engine-runtime/src/index.ts"
+      ],
+      "@kernlang/agon-support-panel": [
+        "../support-panel/src/index.ts"
+      ],
+      "@kernlang/agon-support-judge": [
+        "../support-judge/src/index.ts"
+      ],
+      "@kernlang/agon-support-worktree": [
+        "../support-worktree/src/index.ts"
+      ],
+      "@kernlang/agon-support-verification": [
+        "../support-verification/src/index.ts"
+      ]
+    },
+    "sourceMap": false,
+    "declarationMap": false,
+    "emitDeclarationOnly": true
+  },
+  "references": [
+    {
+      "path": "../mod-api"
+    },
+    {
+      "path": "../support-engine-runtime"
+    },
+    {
+      "path": "../support-panel"
+    },
+    {
+      "path": "../support-judge"
+    },
+    {
+      "path": "../support-worktree"
+    },
+    {
+      "path": "../support-verification"
+    }
+  ],
+  "include": [
+    "src"
+  ],
+  "exclude": [
+    "src/**/*.test.ts"
+  ]
+}

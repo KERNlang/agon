@@ -1,0 +1,277 @@
+{
+  "schemaVersion": 2,
+  "id": "agon.forge",
+  "name": "Forge",
+  "version": "1.0.0",
+  "apiRange": ">=1.0.0 <2",
+  "execution": "executable",
+  "compatibility": {
+    "kernelRange": ">=0.0.0-0 <2",
+    "nodeRange": ">=22"
+  },
+  "packageClass": "user-toggleable-mod-package",
+  "entrypoints": {
+    "runtime": "dist/index.js",
+    "types": "dist/index.d.ts"
+  },
+  "display": {
+    "group": "Create and compete",
+    "order": 103
+  },
+  "dependencies": {
+    "required": [
+      {
+        "id": "agon.api",
+        "range": ">=0.0.0-0"
+      },
+      {
+        "id": "agon.engine-runtime",
+        "range": ">=0.0.0-0"
+      },
+      {
+        "id": "agon.panel",
+        "range": ">=0.0.0-0"
+      },
+      {
+        "id": "agon.judge",
+        "range": ">=0.0.0-0"
+      },
+      {
+        "id": "agon.worktree",
+        "range": ">=0.0.0-0"
+      },
+      {
+        "id": "agon.verification",
+        "range": ">=0.0.0-0"
+      }
+    ],
+    "optional": [],
+    "conflicts": []
+  },
+  "permissions": [
+    {
+      "capability": "engine.dispatch",
+      "resources": [],
+      "required": true
+    }
+  ],
+  "platforms": [
+    "darwin-arm64",
+    "darwin-x64",
+    "linux-arm64",
+    "linux-x64"
+  ],
+  "assets": [
+    {
+      "path": "ownership.json",
+      "kind": "documentation",
+      "mediaType": "application/json",
+      "contentHash": "sha256:c28a36fcc1036494b10a5360be0e9e6cca78307bc58d6a0d5ccfe89abf30dae9",
+      "bytes": 9055,
+      "executable": false,
+      "platforms": [
+        "darwin-arm64",
+        "darwin-x64",
+        "linux-arm64",
+        "linux-x64"
+      ]
+    },
+    {
+      "path": "schemas/config.schema.json",
+      "kind": "schema",
+      "mediaType": "application/schema+json",
+      "contentHash": "sha256:d1f46b58737f0da106b747f675d73f21a671848beb321066efdbbbe9b78e33a8",
+      "bytes": 817,
+      "executable": false,
+      "platforms": [
+        "darwin-arm64",
+        "darwin-x64",
+        "linux-arm64",
+        "linux-x64"
+      ]
+    }
+  ],
+  "contributes": {
+    "cliCommands": [
+      {
+        "id": "cliCommands:0022",
+        "aliases": []
+      }
+    ],
+    "tuiActions": [
+      {
+        "id": "intentVariants:0002",
+        "aliases": []
+      },
+      {
+        "id": "intentVariants:0032",
+        "aliases": []
+      },
+      {
+        "id": "intentVariants:0056",
+        "aliases": []
+      },
+      {
+        "id": "builtinCommandMetadata:0002",
+        "aliases": []
+      },
+      {
+        "id": "builtinCommandMetadata:0025",
+        "aliases": []
+      },
+      {
+        "id": "tuiSlashCommands:0002",
+        "aliases": []
+      },
+      {
+        "id": "tuiSlashCommands:0033",
+        "aliases": []
+      }
+    ],
+    "mcpTools": [
+      {
+        "id": "mcpTools:0009",
+        "aliases": []
+      }
+    ],
+    "cesarTools": [
+      {
+        "id": "cesarTools:0010",
+        "aliases": []
+      },
+      {
+        "id": "cesarRoutes:0023",
+        "aliases": []
+      },
+      {
+        "id": "cesarRoutes:0024",
+        "aliases": []
+      },
+      {
+        "id": "cesarRoutes:0025",
+        "aliases": []
+      },
+      {
+        "id": "cesarRoutes:0026",
+        "aliases": []
+      },
+      {
+        "id": "cesarRoutes:0027",
+        "aliases": []
+      },
+      {
+        "id": "cesarRoutes:0028",
+        "aliases": []
+      }
+    ],
+    "lifecycleHooks": [],
+    "resultTypes": [
+      {
+        "id": "resultAndEnvelopeTypes:0038",
+        "aliases": []
+      },
+      {
+        "id": "resultAndEnvelopeTypes:0043",
+        "aliases": []
+      },
+      {
+        "id": "resultAndEnvelopeTypes:0056",
+        "aliases": []
+      },
+      {
+        "id": "resultAndEnvelopeTypes:0058",
+        "aliases": []
+      },
+      {
+        "id": "resultAndEnvelopeTypes:0060",
+        "aliases": []
+      },
+      {
+        "id": "resultAndEnvelopeTypes:0063",
+        "aliases": []
+      },
+      {
+        "id": "resultAndEnvelopeTypes:0095",
+        "aliases": []
+      },
+      {
+        "id": "resultAndEnvelopeTypes:0098",
+        "aliases": []
+      },
+      {
+        "id": "resultAndEnvelopeTypes:0120",
+        "aliases": []
+      },
+      {
+        "id": "resultAndEnvelopeTypes:0124",
+        "aliases": []
+      },
+      {
+        "id": "resultAndEnvelopeTypes:0127",
+        "aliases": []
+      },
+      {
+        "id": "resultAndEnvelopeTypes:0128",
+        "aliases": []
+      }
+    ],
+    "configKeys": [
+      {
+        "id": "configKeys:0006",
+        "aliases": []
+      },
+      {
+        "id": "configKeys:0057",
+        "aliases": []
+      },
+      {
+        "id": "configKeys:0072",
+        "aliases": []
+      },
+      {
+        "id": "configKeys:0084",
+        "aliases": []
+      },
+      {
+        "id": "configKeys:0085",
+        "aliases": []
+      },
+      {
+        "id": "configKeys:0086",
+        "aliases": []
+      }
+    ],
+    "generatedDocs": []
+  },
+  "pack": {
+    "include": [
+      "LICENSE",
+      "agon.mod.json",
+      "dist/index.js",
+      "dist/index.d.ts",
+      "dist/implementation.d.ts",
+      "dist/result-policy.d.ts",
+      "dist/apply.d.ts",
+      "dist/competition.d.ts",
+      "dist/corpus.d.ts",
+      "dist/errors.d.ts",
+      "dist/fitness.d.ts",
+      "dist/gauntlet.d.ts",
+      "dist/host.d.ts",
+      "dist/manifest.d.ts",
+      "dist/pr-text.d.ts",
+      "dist/prompts.d.ts",
+      "dist/quality.d.ts",
+      "dist/scoring.d.ts",
+      "dist/stage-context.d.ts",
+      "dist/stages.d.ts",
+      "dist/synth-plan.d.ts",
+      "dist/synthesis.d.ts",
+      "dist/types.d.ts",
+      "dist/workflow.d.ts",
+      "ownership.json",
+      "schemas/config.schema.json"
+    ],
+    "executable": []
+  }
+}

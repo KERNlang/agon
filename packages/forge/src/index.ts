@@ -20,6 +20,7 @@ export { runBaseline, runStage1, runStage2, determineWinner } from './stages.js'
 export { runFitness } from './fitness.js';
 export { runLint, runStyleCheck } from './quality.js';
 export { writeManifest, readManifest, updateManifest } from './manifest.js';
+export { writeVersionedResultEnvelope } from './result-envelope.js';
 export type { StageResult, SynthesisResult, ForgeEventCallback, WorktreeEntry } from './types.js';
 export type { TribunalResult, TribunalRound, TribunalPosition } from './tribunal.js';
 export { getModeConfig, buildModePrompt, buildModeSummaryPrompt, isTribunalMode, isTribunalProtocol, TRIBUNAL_MODES, TRIBUNAL_PROTOCOLS } from './tribunal-modes.js';
@@ -86,7 +87,7 @@ export type { Mutant } from './goal/mutation.js';
 export { generateMutants, applyMutantToSource, mutationSurvivors } from './goal/mutation.js';
 export type { FrozenOracle, WitnessResult } from './goal/oracle.js';
 export { hashOracleInputs, snapshotOracle, oracleTampered, witnessTest } from './goal/oracle.js';
-export { isTestFile, parseChangedLines, newFilesInDiff } from './goal/diff.js';
+export { isTestFile, parseChangedLines, newFilesInDiff } from '@kernlang/agon-support-worktree';
 export { gateFailureSignature, taskParkDecision, globalBreaker, budgetExceeded, timeExceeded, pickImplementWinner, chooseImplementRoster } from './goal/policy.js';
 export { planSynthesis } from './synth-plan.js';
 export type { SynthCandidate, SynthPlanOpts, SynthPlan } from './synth-plan.js';

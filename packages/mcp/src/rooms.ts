@@ -1,8 +1,8 @@
 import { basename } from 'node:path';
 
-import { createRoom, listRooms, roomExists, isRoomClosed, appendEvent, readEvents, parseMentions, slugifyRoomId, recordPresence, removePresence, listPresence, advanceReadCursor, getReadCursor, getUnreadState, listUnreadStates, listRoomLocks, claimRoomLock, releaseRoomLock, expiredLocksHeldBy } from '@kernlang/agon-core';
+import { createRoom, listRooms, roomExists, isRoomClosed, appendEvent, readEvents, parseMentions, slugifyRoomId, recordPresence, removePresence, listPresence, advanceReadCursor, getReadCursor, getUnreadState, listUnreadStates, listRoomLocks, claimRoomLock, releaseRoomLock, expiredLocksHeldBy } from '@kernlang/agon-mod-rooms';
 
-import type { RoomActor } from '@kernlang/agon-core';
+import type { RoomActor } from '@kernlang/agon-mod-rooms';
 
 export const ROOM_TOOLS: Array<{name:string,description:string,inputSchema:Record<string,unknown>}> = [
   { name: 'RoomJoin', description: 'Join a shared Agon room (created if new) to chat with other live CLIs/agents over one persistent transcript. Returns the recent transcript so you have context. Human-mediated: post when prompted.', inputSchema: { type: 'object', properties: { room: { type: 'string', description: 'Room name or id' }, callsign: { type: 'string', description: 'Your handle in the room, e.g. codex, claude' }, engine: { type: 'string', description: 'Optional engine/CLI id (codex | claude | agy | agon); identifies you in presence. Defaults to mcp.' } }, required: ['room', 'callsign'] } },

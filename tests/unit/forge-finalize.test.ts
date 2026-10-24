@@ -6,7 +6,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { EngineRegistry } from '../../packages/core/src/signals/engine-registry.js';
 import { runForge } from '../../packages/forge/src/forge.js';
-import { cleanupTestAgonHome, setupTestAgonHome } from '../helpers/agon-home.js';
+import { createForgeWorkflow } from '@kernlang/agon-mod-forge';
+import { createForgeWorkflowEffects, estimateCostCacheAware } from '@kernlang/agon-core';
+import * as kernel from '@kernlang/agon-kernel';
+import { setupTestAgonHome, cleanupTestAgonHome } from '../helpers/agon-home.js';
 
 vi.mock('../../packages/forge/src/quality.js', () => ({
   runLint: vi.fn(async () => 0),
@@ -18,6 +21,9 @@ vi.mock('../../packages/forge/src/quality.js', () => ({
 }));
 
 const tempDirs: string[] = [];
+// This suite checks finalize policy, not subprocess speed. Keep fitness within
+// the test budget without treating full-suite scheduling delay as cancellation.
+const FITNESS_TIMEOUT_SECONDS = 5;
 
 afterEach(() => {
   for (const dir of tempDirs.splice(0)) {
@@ -35,7 +41,7 @@ function makeRepo(): string {
     forgeRequireBaselineCheck: false,
     forgeEnableSynthesis: false,
     forgeDispatchTimeout: 480,
-    forgeFitnessTimeout: 1,
+    forgeFitnessTimeout: FITNESS_TIMEOUT_SECONDS,
   }, null, 2));
   execFileSync('git', ['init'], { cwd: dir });
   execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: dir });
@@ -64,6 +70,64 @@ function makeRegistry(): EngineRegistry {
 }
 
 describe('forge validate dispatch routing', () => {
+  it.each([true, false])('completes Forge with Ratings available=%s', async enabled => {
+    const home = setupTestAgonHome('forge-optional-ratings');
+    const selected = new kernel.ModRegistry({ generation: 'forge-ratings-selection',
+      activeOwners: enabled ? [{ id: 'agon.ratings', version: '1.0.0', contentHash: `sha256:${'a'.repeat(64)}` }] : [],
+    });
+    try {
+      process.env.AGON_FINALIZE_TEST_KEY = 'test';
+      const repoDir = makeRepo();
+      const effects = createForgeWorkflowEffects();
+      const seedNewEnginesFromRegistry = vi.fn();
+      const assignForgeRoles = vi.fn(() => new Map([
+        ['fast', { role: 'lead', specialization: 'rating-derived fixture' }],
+        ['slow', { role: 'challenger', specialization: 'rating-derived fixture' }],
+      ]));
+      const updateGlickoRanked = vi.fn();
+      const buildSpecializedPrompt = vi.fn((_id: string, _task: string, prompt: string) =>
+        prompt + '\nengine-defined specialization');
+      const workflow = createForgeWorkflow({ ...effects,
+        loadConfig: cwd => ({ ...effects.loadConfig(cwd), ratingsEnabled: true }),
+        seedNewEnginesFromRegistry, assignForgeRoles, updateGlickoRanked, buildSpecializedPrompt,
+      });
+      const prompts: string[] = [];
+      await selected.runWithInvocationScope(async () => {
+        const manifest = await workflow.runForge({ task: 'write files', fitnessCmd: 'true',
+          cwd: repoDir, forgeDir: join(repoDir, 'ratings-run'), engines: ['fast', 'slow'],
+          healthCheckEnabled: false,
+        }, makeRegistry(), {
+          isAvailable: async () => true, getVersion: async () => 'fixture',
+          dispatch: async ({ engine, cwd, prompt }) => {
+            prompts.push(prompt);
+            writeFileSync(join(cwd, `${engine.id}.txt`), 'work\n');
+            return { exitCode: 0, stdout: 'done', stderr: '', timedOut: false, durationMs: 1 };
+          },
+        });
+        expect(manifest.status).toBe('completed');
+        expect(Object.values(manifest.results).every(result => result.pass)).toBe(true);
+        expect(Object.keys(manifest.results).sort()).toEqual(['fast', 'slow']);
+        expect(seedNewEnginesFromRegistry).toHaveBeenCalledTimes(enabled ? 1 : 0);
+        expect(assignForgeRoles).toHaveBeenCalledTimes(enabled ? 1 : 0);
+        expect(updateGlickoRanked).toHaveBeenCalledTimes(enabled ? 1 : 0);
+        expect(buildSpecializedPrompt).toHaveBeenCalledTimes(2);
+        expect(prompts).toHaveLength(2);
+        for (const prompt of prompts) {
+          expect(prompt).toContain('engine-defined specialization');
+          expect(prompt.includes('rating-derived fixture')).toBe(enabled);
+        }
+        const memory = JSON.parse(readFileSync(join(home, 'engine-memory.json'), 'utf8'));
+        for (const engine of ['fast', 'slow']) {
+          expect(memory.engines[engine].notes).toEqual(expect.arrayContaining([
+            expect.objectContaining({ forgeId: manifest.forgeId }),
+          ]));
+        }
+      });
+    } finally {
+      cleanupTestAgonHome(home);
+    }
+  });
+
   it('uses plain dispatch, not agent tools, for validate mode without required diff', async () => {
     process.env.AGON_FINALIZE_TEST_KEY = 'test';
     const repoDir = makeRepo();
@@ -197,6 +261,218 @@ describe('forge rating write', () => {
 });
 
 describe('caller-driven forge finalize', () => {
+  it.each([
+    { engines: ['fast'], exitCode: 1 }, { engines: ['fast', 'slow'], exitCode: 1 },
+    { engines: ['fast'], exitCode: 0 }, { engines: ['fast', 'slow'], exitCode: 0 },
+  ])('retains usage when patch capture fails: %j', async ({ engines, exitCode }) => {
+    process.env.AGON_FINALIZE_TEST_KEY = 'test';
+    const repoDir = makeRepo();
+    const forgeDir = join(repoDir, 'capture-failure-run');
+    const usage = { promptTokens: 1234, completionTokens: 56, totalTokens: 1290, source: 'sdk' as const };
+    const manifest = await runForge({ task: 'write files', fitnessCmd: 'true',
+      cwd: repoDir, forgeDir, engines, healthCheckEnabled: false,
+    }, makeRegistry(), {
+      isAvailable: async () => true, getVersion: async () => 'fixture',
+      dispatch: async ({ engine, cwd }) => {
+        writeFileSync(join(cwd, `${engine.id}.txt`), 'partial work\n');
+        mkdirSync(join(forgeDir, `${engine.id}-patch.diff`));
+        return { exitCode, stdout: 'partial response', stderr: 'transport failed',
+          timedOut: false, durationMs: 1, usage };
+      },
+    });
+    expect(manifest.winner).toBeNull();
+    for (const engine of engines) {
+      expect(manifest.results[engine].pass).toBe(false);
+      const metrics = manifest.dispatchLog?.filter(metric => metric.engineId === engine) ?? [];
+      expect(metrics).toHaveLength(1);
+      expect(metrics[0].tokens).toMatchObject({ prompt: 1234, response: 56, source: 'sdk' });
+      if (exitCode !== 0) {
+        expect(metrics[0].error).toContain('transport failed');
+        expect(metrics[0].error).toContain('patch capture failed');
+      } else {
+        expect(metrics[0].error).toContain('fitness failed');
+      }
+      expect(manifest.results[engine].patchPath).toBeUndefined();
+    }
+  });
+
+  it.each(['sdk', 'cli-reported', 'estimated'] as const)('retains %s usage through the manifest and tracker', async (source) => {
+    process.env.AGON_FINALIZE_TEST_KEY = 'test';
+    const repoDir = makeRepo();
+    const forgeDir = join(repoDir, 'usage-run');
+    const effects = createForgeWorkflowEffects();
+    const record = vi.fn();
+    const workflow = createForgeWorkflow({ ...effects, tracker: { ...effects.tracker, record,
+      getStats: () => ({ totalTokens: 0, totalCostUsd: 0 }) } });
+    const usage = { promptTokens: 12345, completionTokens: 789, totalTokens: 13140,
+      cachedInputTokens: 10000, source };
+    const manifest = await workflow.runForge({ task: 'write files', fitnessCmd: 'true',
+      cwd: repoDir, forgeDir, engines: ['fast', 'slow'], healthCheckEnabled: false,
+    }, makeRegistry(), {
+      isAvailable: async () => true, getVersion: async () => 'fixture',
+      dispatch: async ({ engine, cwd }) => {
+        writeFileSync(join(cwd, `${engine.id}.txt`), 'work\n');
+        return { exitCode: 0, stdout: 'done', stderr: '', timedOut: false, durationMs: 1, usage };
+      },
+    });
+    for (const engine of ['fast', 'slow']) {
+      const metrics = manifest.dispatchLog?.filter(metric => metric.engineId === engine) ?? [];
+      expect(metrics).toHaveLength(1);
+      expect(metrics[0].tokens).toMatchObject({ prompt: 12345, response: 789,
+        total: 13140, cachedInputTokens: 10000, source });
+      expect(metrics[0].tokens?.costUsd).toBe(estimateCostCacheAware(engine, 12345, 789, 10000));
+      expect(record).toHaveBeenCalledWith(engine, { usage });
+    }
+  });
+
+  it.each([
+    undefined,
+    { promptTokens: -1, completionTokens: 1, totalTokens: 0, source: 'sdk' },
+    { promptTokens: 1, completionTokens: NaN, totalTokens: 1, source: 'sdk' },
+    { promptTokens: 1, completionTokens: 1, totalTokens: 2, cachedInputTokens: 2, source: 'sdk' },
+    { promptTokens: 1, completionTokens: 1, totalTokens: 2, source: 'unknown' },
+  ])('labels missing or malformed usage as estimated: %j', async (usage) => {
+    process.env.AGON_FINALIZE_TEST_KEY = 'test';
+    const repoDir = makeRepo();
+    const manifest = await runForge({ task: 'write file', fitnessCmd: 'true',
+      cwd: repoDir, forgeDir: join(repoDir, 'usage-run'), engines: ['fast'], healthCheckEnabled: false,
+    }, makeRegistry(), {
+      isAvailable: async () => true, getVersion: async () => 'fixture',
+      dispatch: async ({ cwd }) => {
+        writeFileSync(join(cwd, 'work.txt'), 'work\n');
+        return { exitCode: 0, stdout: 'done', stderr: '', timedOut: false, durationMs: 1,
+          usage: usage as any };
+      },
+    });
+    expect(manifest.dispatchLog).toHaveLength(1);
+    const tokens = manifest.dispatchLog![0].tokens!;
+    expect(tokens.source).toBe('estimated');
+    expect(tokens.prompt).toBeGreaterThan(0);
+    expect(tokens.response).toBe(1);
+    expect(tokens.total).toBe(tokens.prompt + tokens.response);
+    expect(tokens.cachedInputTokens).toBeUndefined();
+    expect(Number.isFinite(tokens.costUsd)).toBe(true);
+  });
+
+  it.each([['fast'], ['fast', 'slow']])('retains dispatch cost when fitness throws for %j', async (...engines) => {
+    process.env.AGON_FINALIZE_TEST_KEY = 'test';
+    const repoDir = makeRepo();
+    const forgeDir = join(tmpdir(), `agon-fitness-throw-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    tempDirs.push(forgeDir);
+    const effects = createForgeWorkflowEffects();
+    const workflow = createForgeWorkflow({ ...effects, stages: { ...effects.stages,
+      estimateCost: () => 0.25, fitness: { ...effects.stages.fitness,
+        runSyntaxCheck: () => { throw new Error('fitness probe crashed'); } },
+    } });
+    const manifest = await workflow.runForge({ task: 'write files', fitnessCmd: 'true',
+      cwd: repoDir, forgeDir, engines, healthCheckEnabled: false,
+    }, makeRegistry(), {
+      isAvailable: async () => true, getVersion: async () => 'fixture',
+      dispatch: async ({ engine, cwd }) => {
+        writeFileSync(join(cwd, `${engine.id}.txt`), 'partial work\n');
+        return { exitCode: 0, stdout: 'paid response', stderr: '', timedOut: false, durationMs: 1 };
+      },
+    });
+    expect(manifest.winner).toBeNull();
+    for (const engine of engines) {
+      expect(manifest.results[engine].pass).toBe(false);
+      const metrics = manifest.dispatchLog?.filter(metric => metric.engineId === engine) ?? [];
+      expect(metrics).toHaveLength(1);
+      expect(metrics[0].tokens?.costUsd).toBe(0.25);
+      expect(metrics[0].error).toContain('fitness probe crashed');
+      expect(readFileSync(manifest.patches[engine], 'utf8')).toContain('partial work');
+    }
+  });
+
+  it('retains settled dispatch costs after the real stage2 hard timeout', async () => {
+    process.env.AGON_FINALIZE_TEST_KEY = 'test';
+    const repoDir = makeRepo();
+    const forgeDir = join(repoDir, 'timeout-run');
+    const callbacks: string[] = [];
+    const manifest = await runForge({
+      task: 'write fast.txt', fitnessCmd: 'test -f fast.txt', cwd: repoDir, forgeDir,
+      engines: ['fast', 'slow'], healthCheckEnabled: false, timeout: 1, fitnessTimeout: 1,
+      onResult: engineId => { callbacks.push(engineId); return 'continue'; },
+    }, makeRegistry(), {
+      isAvailable: async () => true, getVersion: async () => 'fixture',
+      dispatch: async ({ engine, cwd, signal }) => {
+        if (engine.id === 'slow') {
+          await new Promise<void>(resolve => signal!.addEventListener('abort', () => resolve(), { once: true }));
+          await new Promise<void>(resolve => setImmediate(resolve));
+          return { exitCode: 0, stdout: 'paid partial response', stderr: '', timedOut: false, durationMs: 1 };
+        }
+        writeFileSync(join(cwd, 'fast.txt'), 'winner\n');
+        return { exitCode: 0, stdout: 'done', stderr: '', timedOut: false, durationMs: 1 };
+      },
+    });
+    expect(manifest.winner).toBe('fast');
+    expect(manifest.results.slow.pass).toBe(false);
+    expect(callbacks.sort()).toEqual(['fast', 'slow']);
+    const metrics = manifest.dispatchLog?.filter(metric => metric.engineId === 'slow') ?? [];
+    expect(metrics).toHaveLength(1);
+    expect(metrics[0].timedOut).toBe(true);
+    expect(metrics[0].tokens?.response).toBeGreaterThan(0);
+    expect(metrics[0].tokens?.costUsd).toBeGreaterThan(0);
+    const persisted = JSON.parse(readFileSync(join(forgeDir, 'manifest.json'), 'utf8'));
+    expect(persisted.dispatchLog.filter((metric: any) => metric.engineId === 'slow')).toEqual(metrics);
+  });
+
+  it('drains a cancelled candidate before reporting stage2 complete', async () => {
+    process.env.AGON_FINALIZE_TEST_KEY = 'test';
+    const repoDir = makeRepo();
+    const forgeDir = join(tmpdir(), `agon-forge-drain-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    tempDirs.push(forgeDir);
+    let releaseSlow!: () => void;
+    const slowGate = new Promise<void>(resolve => { releaseSlow = resolve; });
+    let announceSlow!: () => void;
+    const slowStarted = new Promise<void>(resolve => { announceSlow = resolve; });
+    let announceAbort!: () => void;
+    const slowAborted = new Promise<void>(resolve => { announceAbort = resolve; });
+    let stageDone = false;
+    let slowFinished = false;
+    const invocation = runForge({
+      task: 'write fast.txt', fitnessCmd: 'test -f fast.txt', cwd: repoDir, forgeDir,
+      engines: ['fast', 'slow'], healthCheckEnabled: false,
+      onResult: engineId => engineId === 'fast' ? 'finalize' : 'continue',
+    }, makeRegistry(), {
+      isAvailable: async () => true, getVersion: async () => 'fixture',
+      dispatch: async ({ engine, cwd, signal }) => {
+        if (engine.id === 'slow') {
+          signal!.addEventListener('abort', announceAbort, { once: true });
+          announceSlow();
+          await slowGate;
+          slowFinished = true;
+          return { exitCode: 130, stdout: 'paid partial response', stderr: 'cancelled', timedOut: false, durationMs: 1 };
+        }
+        await slowStarted;
+        writeFileSync(join(cwd, 'fast.txt'), 'winner\n');
+        return { exitCode: 0, stdout: 'done', stderr: '', timedOut: false, durationMs: 1 };
+      },
+    }, event => { if (event.type === 'stage2:done') stageDone = true; });
+    try {
+      await slowAborted;
+      await new Promise<void>(resolve => setImmediate(resolve));
+      expect(slowFinished).toBe(false);
+      expect(stageDone).toBe(false);
+      releaseSlow();
+      const result = await invocation;
+      expect(slowFinished).toBe(true);
+      expect(stageDone).toBe(true);
+      expect(result.winner).toBe('fast');
+      expect(result.results.slow.pass).toBe(false);
+      const metrics = result.dispatchLog?.filter(metric => metric.engineId === 'slow') ?? [];
+      expect(metrics).toHaveLength(1);
+      expect(metrics[0].tokens?.prompt).toBeGreaterThan(0);
+      expect(metrics[0].tokens?.response).toBeGreaterThan(0);
+      expect(metrics[0].tokens?.costUsd).toBeGreaterThan(0);
+      const persisted = JSON.parse(readFileSync(join(forgeDir, 'manifest.json'), 'utf8'));
+      expect(persisted.dispatchLog.filter((metric: any) => metric.engineId === 'slow')).toEqual(metrics);
+    } finally {
+      releaseSlow();
+      await invocation;
+    }
+  });
+
   it('aborts in-flight stage2 engines when onResult requests finalize', async () => {
     process.env.AGON_FINALIZE_TEST_KEY = 'test';
     const repoDir = makeRepo();
@@ -350,7 +626,7 @@ describe('caller-driven forge finalize', () => {
       forgeRequireBaselineCheck: false,
       forgeEnableSynthesis: false,
       forgeDispatchTimeout: 480,
-      forgeFitnessTimeout: 1,
+      forgeFitnessTimeout: FITNESS_TIMEOUT_SECONDS,
       forgeEarlyFinalizeEnabled: true,
       forgeEarlyFinalizePassingCount: 3,
       forgeEarlyFinalizeMinScore: 50,
@@ -488,7 +764,10 @@ describe('caller-driven forge finalize', () => {
     // All 4 engines should have published — none aborted.
     expect(Object.keys(manifest.results).sort()).toEqual(['e1', 'e2', 'e3', 'e4']);
     for (const id of ids) {
-      expect(manifest.results[id].pass, `${id} should have completed`).toBe(true);
+      const result = manifest.results[id];
+      const fitnessLog = result.fitnessLogPath ? readFileSync(result.fitnessLogPath, 'utf8') : '';
+      expect(result.engineCompleted, `${id} dispatch must complete`).toBe(true);
+      expect(result.pass, `${id} should have completed: ${JSON.stringify(result)}\n${fitnessLog}`).toBe(true);
     }
   }, 15_000);
 });

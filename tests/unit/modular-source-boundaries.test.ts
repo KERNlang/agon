@@ -1,0 +1,78 @@
+import { expect, it } from 'vitest';
+import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import * as verifier from '../../scripts/spec/verify-modular-support-boundaries.mjs';
+
+it.each(['missing', 'duplicate', 'wrong-class', 'duplicate-edge', 'duplicate-support-edge', 'unknown-edge'])(
+  'rejects a damaged canonical support map: %s', damage => {
+    const map = JSON.parse(readFileSync(new URL('../../docs/specs/evidence/modular-agon-package-map.json', import.meta.url), 'utf8'));
+    const index = map.packages.findIndex((entry: { id: string }) => entry.id === '@kernlang/agon-support-worktree');
+    const owner = map.packages[index];
+    if (damage === 'missing') map.packages.splice(index, 1);
+    if (damage === 'duplicate') map.packages.push({ ...owner, class: 'minimal-kernel-machinery' });
+    if (damage === 'wrong-class') owner.class = 'minimal-kernel-machinery';
+    if (damage === 'duplicate-edge') owner.dependencies.push(owner.dependencies[0]);
+    if (damage === 'duplicate-support-edge') owner.dependencies.push('@kernlang/agon-support-engine-runtime');
+    if (damage === 'unknown-edge') owner.dependencies.push('@kernlang/agon-support-missing');
+    expect(() => verifier.supportDependencies(map)).toThrow();
+  },
+);
+
+it('verifies physical support dependencies against the canonical package map', () => {
+  const root = fileURLToPath(new URL('../../', import.meta.url));
+  expect(() => execFileSync(process.execPath, [
+    'scripts/spec/verify-modular-support-boundaries.mjs', '--self-test',
+  ], { cwd: root, encoding: 'utf8', stdio: 'pipe' })).not.toThrow();
+});
+
+it('preserves the committed support package contracts during regeneration', () => {
+  const root = fileURLToPath(new URL('../../', import.meta.url));
+  expect(() => execFileSync(process.execPath, [
+    'scripts/spec/generate-modular-support-package-metadata.mjs', '--check',
+  ], { cwd: root, encoding: 'utf8', stdio: 'pipe' })).not.toThrow();
+});
+
+function inspect(source: string, filename = '/fixture/support/src/test.ts') {
+  expect(verifier).toHaveProperty('inspectSourceImports');
+  return verifier.inspectSourceImports(source, filename, '/fixture/support');
+}
+
+it.each([
+  "import { x } from '@kernlang/agon-core';",
+  "export * from '@kernlang/agon-forge/private.js';",
+  "import('@kernlang/agon-cli');",
+  "import(`@kernlang/agon-core/private.js`);",
+  "require('@kernlang/agon-dedup');",
+  "require.resolve('@kernlang/agon-core/private.js');",
+  "type T = import('@kernlang/agon-core').Thing;",
+  "import core = require('@kernlang/agon-core');",
+])('rejects private imports in executable and type syntax: %s', source => {
+  expect(inspect(source).some((error: string) => error.includes('private legacy import'))).toBe(true);
+});
+
+it.each(['ts', 'tsx', 'js', 'jsx', 'mjs', 'cjs', 'mts', 'cts'])('checks %s source', extension => {
+  expect(inspect("import('@kernlang/agon-core')", `/fixture/support/src/test.${extension}`)).toHaveLength(1);
+});
+
+it('rejects relative escapes and absolute/file imports', () => {
+  for (const source of ["import '../../core/private.js'", "import('/fixture/core/private.js')", "require('file:///fixture/core/private.js')"]) {
+    expect(inspect(source).length).toBeGreaterThan(0);
+  }
+});
+
+it('does not mistake comments or ordinary string contents for imports', () => {
+  expect(inspect("// import '@kernlang/agon-core'\nconst example = \"require('@kernlang/agon-core')\";" )).toEqual([]);
+});
+
+it('permits public support imports and contained local imports', () => {
+  expect(inspect("import { x } from '@kernlang/agon-support-panel'; export * from './local.js'; import('node:fs');")).toEqual([]);
+});
+
+it('does not pretend computed imports are statically verified', () => {
+  expect(inspect('import(packageName)').some((error: string) => error.includes('computed module'))).toBe(true);
+});
+
+it('rejects syntax it cannot parse instead of silently skipping it', () => {
+  expect(inspect("import { from 'broken").some((error: string) => error.includes('parse error'))).toBe(true);
+});

@@ -65,6 +65,37 @@ const baseOpts = {
   timeout: 60,
 } as const;
 
+it.each(['edit', 'investigate'])('preserves execution authority through %s synthesis', async kind => {
+  const executionRefusal = () => undefined;
+  mockRun.mockResolvedValue({ response: 'done', toolCalls: 0, steps: 1 });
+  mockDiff.mockReturnValue(baseOpts.winnerDiff);
+  const opts = { ...baseOpts, executionRefusal, losers: [loser('other')],
+    winnerCwd: baseOpts.winnerWorktreePath, winnerResponse: 'original' };
+  await (kind === 'edit' ? runAgentTeamSynthesis : runAgentInvestigateSynthesis)(opts);
+  expect(mockRun.mock.calls[0][0].executionRefusal).toBe(executionRefusal);
+});
+
+it.each(['before', 'during', 'cancelled', 'broken-check', 'healthy'])(
+  'guards post-synthesis fitness: %s', async phase => {
+    let refused = phase === 'before';
+    const abort = new AbortController();
+    if (phase === 'cancelled') abort.abort();
+    mockSpawn.mockImplementation(async () => { if (phase === 'during') refused = true; return { exitCode: 0 }; });
+    const result = await runPostSynthesisFitnessCheck({ worktreePath: '/fixture', fitnessCmd: 'fixture-test',
+      signal: abort.signal,
+      executionRefusal: () => {
+        if (phase === 'broken-check') throw new Error('private fixture detail');
+        return refused ? 'fixture disabled' : undefined;
+      },
+    });
+    expect(result.passed).toBe(phase === 'healthy');
+    expect(mockSpawn).toHaveBeenCalledTimes(['healthy', 'during'].includes(phase) ? 1 : 0);
+    if (phase !== 'healthy') expect(result.error).toBeTruthy();
+    if (phase === 'before' || phase === 'during') expect(result.error).toBe('fixture disabled');
+    if (phase === 'broken-check') expect(result.error).not.toContain('private fixture detail');
+  },
+);
+
 describe('buildAgentSynthesisPrompt — prompt-injection defense', () => {
   it('wraps loser content in untrusted_data blocks', () => {
     const p = buildAgentSynthesisPrompt({

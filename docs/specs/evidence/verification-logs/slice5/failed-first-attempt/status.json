@@ -1,0 +1,19 @@
+{
+  "mode": "tribunal",
+  "startedAt": "2026-08-24T00:58:45.336Z",
+  "endedAt": "2026-08-24T00:58:45.386Z",
+  "engines": [
+    {
+      "id": "ollama-direct-gpt-oss",
+      "status": "error",
+      "detail": "tribunal-round-1: error: Engine \"ollama-direct-gpt-oss\" not found. Install: Direct Agon OpenAI-compatible API engine for local Ollama. Uses dummy OLLAMA_API_KEY because Ollama ig…"
+    },
+    {
+      "id": "ollama",
+      "status": "error",
+      "detail": "tribunal-round-1: error: WARNING: Using native backtrace. Set GGML_BACKTRACE_LLDB for more info.\nWARNING: GGML_BACKTRACE_LLDB may cause native MacOS Terminal.app to crash.\nSee: h…"
+    }
+  ],
+  "summary": "0/2 engines argued across 1 round(s) (mode=adversarial, protocol=hybrid)",
+  "ok": false
+}

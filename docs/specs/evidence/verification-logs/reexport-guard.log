@@ -1,0 +1,9 @@
+command: ["npm","run","guard:reexports"]
+exitCode: 0
+signal:
+error:
+
+> guard:reexports
+> node scripts/guard/reexport-surface.mjs
+
+guard:reexports — OK (no re-export-without-local-binding crashes)

@@ -1,21 +1,35 @@
+import { dirname, join } from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { createPatchApplicationUi, withPatchApplication } from '../../patch-application-host.js';
+import { escapeLiteralText } from '../../blocks/literal-text.js';
+import { withPlanSession, dispatchPlanSession, createPlanSessionActions, loadCesarPlan, shouldEmitPlanPostDispatch, selectResumablePlan } from '@kernlang/agon-mod-plan';
+import type { PlanSessionActions, PlanSessionDispatchResult } from '@kernlang/agon-mod-plan';
+import type { SessionJobsInvocationContext } from '@kernlang/agon-mod-jobs';
+import { runBrainstormSession } from '../../blocks/brainstorm-session.js';
+import { runTribunalSession } from '../../blocks/tribunal-session.js';
+import { runConquerSession } from '../../blocks/conquer-session.js';
+import { runCampfireSession } from '../../blocks/campfire-session.js';
+import { runThinkSession } from '../../blocks/think-session.js';
+import { runCouncilSession } from '../../blocks/council-session.js';
+import { worktreePlanHost } from '../../blocks/worktree-plan-effects.js';
 
 import { resolveWorkingDir, buildImageAttachment, sessionContext, visionSupportNote } from '@kernlang/agon-core';
 
 import { invalidateCwdCache } from '../../handlers/chat.js';
 
 import type { ImageAttachment } from '@kernlang/agon-core';
+import type { CommandResult, IntentContribution, Json, ModPlatform, PlanSessionRequest } from '@kernlang/agon-mod-api';
 
-import { loadCesarPlan } from '@kernlang/agon-core';
-
-import type { CesarPlan } from '@kernlang/agon-core';
+import { assertContributionInput, selectModSettings } from '@kernlang/agon-kernel';
+import { assertProcessSurfaceAvailable, modularHostRoot, processSurfaceCatalog, processSurfaceClient } from '../../surface-authority-runtime.js';
 
 import { ENGINE_COLORS } from '../../blocks/output-format.js';
 
-import { handleLeaderboard, handleCesarReport, handleCesarHints, handleHistory, handleEngines, handleDiscover, handleConfig, handlePermissions, handleUse, handleCesar, handleTokens, handleRaw, handleWorkspace, handleChats, handlePlanShow, handlePlansList, handleApprove, handleRetry, handleCancel, handleApplyPatch, handleCp, handleCpLast, handleCommit, handleFlowReport, handleFlowAnalysis, handleRun } from '../../handlers/index.js';
+import { handleLeaderboard, handleCesarReport, handleCesarHints, handleHistory, handleEngines, handleDiscover, handleConfig, handlePermissions, handleUse, handleCesar, handleTokens, handleRaw, handleWorkspace, handleChats, handleCp, handleCpLast, handleCommit, handleFlowReport, handleFlowAnalysis, handleRun } from '../../handlers/index.js';
 
 import { handleProvider } from '../../handlers/provider.js';
 
-import { diagnoseEngineDoctorEntry, checkDoctorWorktree, buildHarnessDoctorReport } from '../../commands/doctor.js';
+import { diagnoseEngineDoctorEntry, checkDoctorWorktree, buildHarnessDoctorReport, buildModularDoctorReport } from '../../commands/doctor.js';
 
 import { replayCesarHarnessLogs } from '../../cesar/tool-observability.js';
 
@@ -25,13 +39,54 @@ import type { TelemetrySnapshot } from '../../cesar/telemetry.js';
 
 import type { DispatchCallbacks, DispatchResult } from '../dispatch.js';
 
-import { findResumableCesarPlan } from './plan-queries.js';
-
-import { resumeCesarPlan, approvePendingCesarPlan, cancelPendingCesarPlan, handleProposedCesarPlan } from './plan-execution.js';
+import { createPlanExecutionSession } from '../../blocks/plan-execution-effects.js';
 
 import { routeWithCesar } from './cesar-router.js';
 
 import { emitPostDispatch } from './utils.js';
+
+/** Bind terminal effects without supplying another session dispatcher. */
+function interactivePlanActions(cb: DispatchCallbacks): PlanSessionActions {
+  const execution = createPlanExecutionSession(cb);
+  return createPlanSessionActions({
+    worktree: () => worktreePlanHost(cb.dispatch, cb.ctx),
+    taskSession: {
+      setActive: plan => cb.setActivePlan(plan),
+      prepare: () => {
+        if (!cb.ctx.cesar) cb.ctx.cesar = {
+          busy: false, busySince: null, queue: null,
+          toolRegistry: null, hasNativeTools: false, lastDispatch: null,
+          pendingDelegation: null, reportedConfidence: undefined, reportedConfidenceReasoning: undefined, confidenceSatisfied: false, blockedOnConfidence: null,
+          autoNero: false, advisorPending: false, lastEscalation: null,
+          mcpFingerprint: undefined, mcpSignalPath: undefined, planDispatch: null, proposedPlan: undefined, sessionMcpServers: [],
+        };
+        cb.ctx.cesar.planDispatch = cb.dispatch;
+      },
+      route: value => routeWithCesar(value, [], cb),
+      proposed: () => cb.ctx.cesar?.proposedPlan,
+      acceptProposal: plan => execution.propose(plan),
+    },
+    resumeSession: {
+      load: loadCesarPlan,
+      current: () => selectResumablePlan({ proposedPlan: cb.ctx.cesar?.proposedPlan, activePlan: cb.ctx.activePlan }),
+      resume: plan => execution.resume(plan),
+      notify: (type, message) => cb.dispatch({ type, message }),
+    },
+    approvePending: () => execution.approvePending(),
+    cancelPending: () => execution.cancelPending(),
+    auto: async intent => (await import('./intent-skills.js')).dispatchSkillsUiIntent(intent, '', cb),
+  });
+}
+
+function finishPlanDispatch(request: PlanSessionRequest, input: string, cb: DispatchCallbacks, result: PlanSessionDispatchResult | null): void {
+  if (shouldEmitPlanPostDispatch(request, result)) emitPostDispatch(request, input, cb);
+}
+
+async function runInteractivePlanRequest(request: PlanSessionRequest, input: string, cb: DispatchCallbacks) {
+  const result = await dispatchPlanSession(request, interactivePlanActions(cb));
+  finishPlanDispatch(request, input, cb, result);
+  return result;
+}
 
 export async function dispatchSessionInfoIntent(intent: any, input: string, cb: DispatchCallbacks): Promise<DispatchResult | null> {
   switch (intent.type) {
@@ -75,9 +130,17 @@ export async function dispatchSessionInfoIntent(intent: any, input: string, cb: 
         cb.dispatch({ type: report.ok ? 'success' : 'warning', message: `Summary: ${report.summary}` });
         break;
       }
+      if (scope === 'mods') {
+        const hostRoot = modularHostRoot();
+        const report = await buildModularDoctorReport(hostRoot, process.env.AGON_MODS_ROOT ?? join(dirname(hostRoot), 'mods'));
+        cb.dispatch({ type: 'header', title: 'Modular Agon Doctor' });
+        cb.dispatch({ type: 'table', headers: report.headers, rows: report.rows });
+        cb.dispatch({ type: report.ok ? 'success' : 'warning', message: `Summary: ${report.summary}` });
+        break;
+      }
       if (scope !== 'engines') {
         cb.dispatch({ type: 'error', message: `Unknown doctor scope: ${scope}` });
-        cb.dispatch({ type: 'info', message: 'Available: engines, harness' });
+        cb.dispatch({ type: 'info', message: 'Available: engines, harness, mods' });
         break;
       }
       const enabledIds = cb.ctx.config.forgeEnabledEngines ?? [];
@@ -140,6 +203,64 @@ export async function dispatchSessionInfoIntent(intent: any, input: string, cb: 
     case 'discover': await handleDiscover(cb.dispatch, cb.ctx); break;
     case 'provider': await handleProvider(intent.action, intent.args, cb.dispatch, cb.ctx); break;
     case 'config': handleConfig(intent, cb.dispatch, cb.ctx); break;
+    case 'mod': {
+      try {
+        const { loadModManagementView, runTuiModAction } = await import('../../commands/mod.js');
+        if (cb.setModPickerOpen && cb.setModPickerView && !String(intent.args ?? '').trim()) {
+          cb.setModPickerView(await loadModManagementView()); cb.setModPickerOpen(true);
+        } else cb.dispatch({ type: 'engine-block', engineId: 'mod-manager', color: ENGINE_COLORS.cesar ?? 124,
+          content: await runTuiModAction(String(intent.args ?? 'list')) });
+      } catch (error) {
+        cb.dispatch({ type: 'error', message: error instanceof Error ? error.message : String(error) });
+      }
+      break;
+    }
+    case 'mod-surface-command': {
+      try {
+        const publicId = `/${String(intent.commandName)}`;
+        const record = processSurfaceClient('tui').assertAvailable(publicId);
+        const contribution = record.payload as IntentContribution;
+        const parsed = typeof contribution.parse === 'function'
+          ? await contribution.parse(String(intent.args ?? ''))
+          : ({ input: String(intent.args ?? '') } as Json);
+        if (parsed === undefined) throw new TypeError(`mod command rejected its input: ${publicId}`);
+        const normalized = JSON.parse(JSON.stringify(parsed)) as Json;
+        assertContributionInput(contribution.inputSchema, normalized);
+        const platform = `${process.platform}-${process.arch === 'x64' ? 'x64' : process.arch}` as ModPlatform;
+        if (!['darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64'].includes(platform)) {
+          throw new TypeError(`unsupported mod platform: ${platform}`);
+        }
+        const output = await contribution.run(normalized, {
+          invocationId: `tui:${process.pid}:${Date.now()}`,
+          cwd: resolveWorkingDir(),
+          platform,
+          signal: new AbortController().signal,
+          config: selectModSettings(cb.ctx.config, record.owner?.id),
+        });
+        let result: CommandResult = { exitCode: 0 };
+        if (output && typeof output === 'object' && Symbol.asyncIterator in output) {
+          for await (const event of output) {
+            if (event.type === 'text') cb.dispatch({ type: 'info', message: event.text });
+            else if (event.type === 'progress') cb.dispatch({ type: 'info', message: event.message });
+            else if (event.type === 'result') result = event.result;
+          }
+        } else {
+          result = output as CommandResult;
+        }
+        if (result.stdout) cb.dispatch({ type: 'info', message: result.stdout });
+        if (result.stderr) cb.dispatch({ type: 'warning', message: result.stderr });
+        if (result.result !== undefined) cb.dispatch({
+          type: 'engine-block',
+          engineId: intent.commandName,
+          color: ENGINE_COLORS.cesar ?? 124,
+          content: typeof result.result === 'string' ? result.result : JSON.stringify(result.result, null, 2),
+        });
+        if (result.failure) cb.dispatch({ type: 'error', message: `${result.failure.code}: ${result.failure.message}` });
+      } catch (error) {
+        cb.dispatch({ type: 'error', message: error instanceof Error ? error.message : String(error) });
+      }
+      break;
+    }
     case 'permissions': handlePermissions(cb.dispatch, intent); break;
     case 'use': handleUse(intent.engineIds, cb.dispatch, cb.ctx, cb.setSessionEngines); break;
     case 'cesar': {
@@ -210,7 +331,7 @@ export async function dispatchSessionInfoIntent(intent: any, input: string, cb: 
       // Invalidate caches that depend on cwd — workspace just changed
       invalidateCwdCache();
       sessionContext.invalidate();
-      // Reload extensions from new workspace
+      // Refresh workspace-scoped UI state; executable mods remain user-global.
       if (cb.setWorkspacePath) cb.setWorkspacePath(resolveWorkingDir());
       break;
     }
@@ -219,76 +340,41 @@ export async function dispatchSessionInfoIntent(intent: any, input: string, cb: 
     case 'chats': handleChats(cb.dispatch, intent.sessionId); break;
   
     // ── Plan commands ──
-    case 'plan': await handlePlanShow(cb.dispatch, cb.ctx, intent.planId); break;
-    case 'plan-task': {
-      // Enter plan mode — Cesar thinks and proposes a plan
-      const { createCesarPlan } = await import('@kernlang/agon-core');
-      const cesarPlan = createCesarPlan(intent.task, []);
-      cb.setActivePlan(cesarPlan);
-      if (!cb.ctx.cesar) {
-        cb.ctx.cesar = {
-          busy: false, busySince: null, queue: null,
-          toolRegistry: null, hasNativeTools: false, lastDispatch: null,
-          pendingDelegation: null, reportedConfidence: undefined, reportedConfidenceReasoning: undefined, confidenceSatisfied: false, blockedOnConfidence: null,
-          autoNero: false, advisorPending: false, lastEscalation: null,
-          mcpFingerprint: undefined, mcpSignalPath: undefined, planDispatch: null, proposedPlan: undefined, sessionMcpServers: [],
-        };
+    case 'plan': case 'plan-task': case 'plan-resume': case 'plans':
+    case 'approve': case 'retry': case 'cancel':
+      try {
+        const command = intent.type === 'plan-task' || intent.type === 'plan-resume' ? 'plan' : intent.type;
+        assertProcessSurfaceAvailable('tui', `/${command}`);
+      } catch (error) {
+        cb.dispatch({ type: 'error', message: error instanceof Error ? error.message : String(error) });
+        break;
       }
-      cb.ctx.cesar.planDispatch = cb.dispatch;
-      const cesarInput = `[PLAN MODE] ${intent.task}`;
-      const wasJob = await routeWithCesar(cesarInput, [], cb);
-  
-      // After routeWithCesar, check if Cesar proposed a plan
-      const proposed: CesarPlan | undefined = cb.ctx.cesar?.proposedPlan;
-      if (proposed && proposed.state === 'awaiting_approval') {
-        await handleProposedCesarPlan(proposed, cb);
-      } else if (wasJob) {
+      return runInteractivePlanRequest(intent, input, cb);
+    case 'apply': {
+      // Legacy-shaped intents still execute the selected physical owner. There
+      // is no second Apply workflow and no fallback around mod enablement.
+      try {
+        assertProcessSurfaceAvailable('tui', '/apply');
+        const entry = processSurfaceCatalog('tui').find(candidate => candidate.kind === 'intent'
+          && candidate.owner.id === 'agon.forge' && candidate.publicId === 'apply');
+        const record = entry && processSurfaceClient('tui').project().entries.find(candidate =>
+          candidate.owner.id === entry.owner.id && candidate.kind === entry.kind && candidate.id === entry.registryId);
+        if (!record) throw new Error('The selected Forge generation has no Apply contribution. Restart Agon.');
+        cb.runAsJob('apply', 'apply', async signal => {
+          try {
+            await runPhysicalTuiContribution(record, { type: 'apply', force: intent.force === true,
+              ...(typeof intent.patchPath === 'string' ? { patchPath: intent.patchPath } : {}) }, 'apply', cb, signal);
+          } catch (error) {
+            cb.dispatch({ type: 'error', message: error instanceof Error ? error.message : String(error) });
+          }
+        });
+        emitPostDispatch(intent, input, cb);
         return { handled: true, ranAsJob: true };
-      } else {
-        cb.setActivePlan(null);
+      } catch (error) {
+        cb.dispatch({ type: 'error', message: error instanceof Error ? error.message : String(error) });
+        break;
       }
-      break;
     }
-    case 'plan-resume': {
-      // Explicit planId/path: load from disk. No arg: only resume the in-session active plan.
-      // Disk discovery is intentionally OFF so innocuous words like "go" cannot resurrect stale persisted plans.
-      const explicitArg = (intent.planId ?? '').trim();
-      let resumePlan: CesarPlan | null = null;
-      if (explicitArg) {
-        // Allow either a bare plan ID (cplan-…) or a full path. Strip dir + .json if a path was pasted.
-        const tail = explicitArg.split(/[\\/]/).pop() ?? explicitArg;
-        const planId = tail.endsWith('.json') ? tail.slice(0, -5) : tail;
-        resumePlan = loadCesarPlan(planId);
-        if (!resumePlan) {
-          cb.dispatch({ type: 'warning', message: `No plan found for id "${planId}". Tip: \`ls ~/.agon/plans\` to list saved plan IDs.` });
-          break;
-        }
-      } else {
-        resumePlan = findResumableCesarPlan(cb.ctx);
-        if (!resumePlan) {
-          cb.dispatch({ type: 'info', message: 'No active plan in this session. Pass an ID to resume a saved plan: `/plan resume <plan-id>`.' });
-          break;
-        }
-      }
-      await resumeCesarPlan(resumePlan, cb);
-      break;
-    }
-    case 'plans': handlePlansList(cb.dispatch); break;
-    case 'approve': {
-      if (await approvePendingCesarPlan(cb)) break;
-      await handleApprove(cb.dispatch, cb.ctx);
-      break;
-    }
-    case 'retry': await handleRetry(cb.dispatch, cb.ctx); break;
-    case 'cancel': {
-      // Cesar proposals first, legacy plan runner second — the exact mirror of
-      // 'approve' above. Both reject routes (typing /cancel, and the pinned
-      // approval prompt's '3. Reject', which submits /cancel) come through here.
-      if (cancelPendingCesarPlan(cb)) break;
-      handleCancel(cb.dispatch, cb.ctx);
-      break;
-    }
-    case 'apply': await handleApplyPatch(cb.dispatch, cb.ctx, intent.patchPath, intent.force); break;
     case 'cp': {
       if (intent.last) handleCpLast(cb.ctx.chatSession, cb.dispatch);
       else handleCp(intent.index, cb.dispatch);
@@ -301,4 +387,117 @@ export async function dispatchSessionInfoIntent(intent: any, input: string, cb: 
   // break-path cases land here — mirrors the original switch's shared _emitPost() tail
   emitPostDispatch(intent, input, cb);
   return { handled: true, ranAsJob: false };
+}
+
+export async function runPhysicalTuiContribution(
+  record: { readonly payload: unknown; readonly owner?: { readonly id: string } },
+  parsed: Json,
+  commandName: string,
+  cb: DispatchCallbacks,
+  signal: AbortSignal,
+  cwd = resolveWorkingDir(),
+): Promise<void> {
+  const contribution = record.payload as IntentContribution;
+  const normalized = JSON.parse(JSON.stringify(parsed)) as Json;
+  assertContributionInput(contribution.inputSchema, normalized);
+  const platform = `${process.platform}-${process.arch === 'x64' ? 'x64' : process.arch}` as ModPlatform;
+  if (!['darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64'].includes(platform)) {
+    throw new TypeError(`unsupported mod platform: ${platform}`);
+  }
+  const invocation: SessionJobsInvocationContext = {
+    invocationId: `tui:${randomUUID()}`,
+    cwd,
+    platform,
+    signal,
+    config: selectModSettings(cb.ctx.config, record.owner?.id),
+    ...(record.owner?.id === 'agon.jobs' ? {
+      sessionJobs: { manager: cb.jobManager, dispatch: cb.dispatch },
+    } : {}),
+  };
+  if (record.owner?.id === 'agon.think' && commandName === 'think') {
+    await runThinkSession(normalized as Record<string, unknown>, cb, invocation, async (prepared, context) => {
+      const output = await contribution.run(prepared as Json, { ...invocation, ...context });
+      if (output && typeof output === 'object' && Symbol.asyncIterator in output) {
+        throw new TypeError('Think returned an unexpected streaming command result.');
+      }
+      return output as CommandResult;
+    });
+    return;
+  }
+  if (record.owner?.id === 'agon.council' && commandName === 'council') {
+    await runCouncilSession(normalized as Record<string, unknown>, cb, invocation, async (prepared, context) => {
+      const output = await contribution.run(prepared as Json, { ...invocation, ...context });
+      if (output && typeof output === 'object' && Symbol.asyncIterator in output) {
+        throw new TypeError('Council returned an unexpected streaming command result.');
+      }
+      return output as CommandResult;
+    });
+    return;
+  }
+  if (record.owner?.id === 'agon.campfire') {
+    await runCampfireSession(normalized as Record<string, unknown>, cb, signal, async (prepared, context) => {
+      const output = await contribution.run(prepared as Json, { ...invocation, ...context });
+      if (output && typeof output === 'object' && Symbol.asyncIterator in output) {
+        throw new TypeError('Campfire returned an unexpected streaming command result.');
+      }
+      return output as CommandResult;
+    }, invocation.cwd);
+    return;
+  }
+  if (record.owner?.id === 'agon.conquer') {
+    await runConquerSession(normalized as Record<string, unknown>, cb, signal, async (prepared, context) => {
+      const output = await contribution.run(prepared as Json, { ...invocation, ...context });
+      if (output && typeof output === 'object' && Symbol.asyncIterator in output) {
+        throw new TypeError('Conquer returned an unexpected streaming command result.');
+      }
+      return output as CommandResult;
+    }, invocation.cwd);
+    return;
+  }
+  if (record.owner?.id === 'agon.tribunal') {
+    await runTribunalSession(normalized as Record<string, unknown>, cb, signal, async (prepared, context) => {
+      const output = await contribution.run(prepared as Json, { ...invocation, ...context });
+      if (output && typeof output === 'object' && Symbol.asyncIterator in output) {
+        throw new TypeError('Tribunal returned an unexpected streaming command result.');
+      }
+      return output as CommandResult;
+    }, invocation.cwd);
+    return;
+  }
+  if (record.owner?.id === 'agon.brainstorm') {
+    await runBrainstormSession(normalized as Record<string, unknown>, cb, signal, async (prepared, context) => {
+      const output = await contribution.run(prepared as Json, { ...invocation, ...context });
+      if (output && typeof output === 'object' && Symbol.asyncIterator in output) {
+        throw new TypeError('Brainstorm returned an unexpected streaming command result.');
+      }
+      return output as CommandResult;
+    });
+    return;
+  }
+  const run = () => withPlanSession(invocation.invocationId, {
+    actions: interactivePlanActions(cb),
+    onDispatched: (request, result) => finishPlanDispatch(request, '', cb, result),
+  }, async () => contribution.run(normalized, invocation));
+  const output = record.owner?.id === 'agon.forge' && commandName === 'apply'
+    ? await withPatchApplication(invocation.invocationId, createPatchApplicationUi(cb.dispatch, cb.ctx), run)
+    : await run();
+  let result: CommandResult = { exitCode: 0 };
+  if (output && typeof output === 'object' && Symbol.asyncIterator in output) {
+    for await (const event of output) {
+      if (event.type === 'text') cb.dispatch({ type: 'info', message: event.text });
+      else if (event.type === 'progress') cb.dispatch({ type: 'info', message: event.message });
+      else if (event.type === 'result') result = event.result;
+    }
+  } else {
+    result = output as CommandResult;
+  }
+  if (result.stdout) cb.dispatch({ type: 'info', message: result.stdout });
+  if (result.stderr) cb.dispatch({ type: 'warning', message: escapeLiteralText(result.stderr) });
+  if (result.result !== undefined) cb.dispatch({
+    type: 'engine-block',
+    engineId: commandName,
+    color: ENGINE_COLORS.cesar ?? 124,
+    content: typeof result.result === 'string' ? result.result : JSON.stringify(result.result, null, 2),
+  });
+  if (result.failure) cb.dispatch({ type: 'error', message: `${result.failure.code}: ${result.failure.message}` });
 }

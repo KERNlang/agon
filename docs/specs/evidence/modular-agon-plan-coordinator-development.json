@@ -1,0 +1,650 @@
+{
+  "schemaVersion": 1,
+  "kind": "development-increment-not-release-qualification",
+  "parentCommit": "400a087dd92d560271189537171ef9cceb5ca027",
+  "subjectKind": "git-index-blobs",
+  "subjects": [
+    {
+      "path": "docs/specs/evidence/modular-agon-apply-pressure-400a087d.json",
+      "gitIndexBlob": "107824e5e9c4edbfbda591967e50c5775c18e5fc"
+    },
+    {
+      "path": "docs/specs/evidence/modular-agon-apply-startup-recheck-400a087d.json",
+      "gitIndexBlob": "45e41210fe2380029b47d086a31860541b74eb82"
+    },
+    {
+      "path": "docs/specs/evidence/modular-agon-claude-plan-callback-reporting-review-input.json",
+      "gitIndexBlob": "dd5048f0192ffb127621d778e82695dfe579e158"
+    },
+    {
+      "path": "docs/specs/evidence/modular-agon-claude-plan-callback-reporting-review.json",
+      "gitIndexBlob": "177fa72fac418209d56c5436ddc3e75a1cc26a11"
+    },
+    {
+      "path": "docs/specs/evidence/modular-agon-claude-plan-coordinator-closure-input.json",
+      "gitIndexBlob": "79ff3dcd9d8b1e92bede3e829ed378284a0b5dfd"
+    },
+    {
+      "path": "docs/specs/evidence/modular-agon-claude-plan-coordinator-closure.json",
+      "gitIndexBlob": "00bc7852fb352380ebf571e20e199ddb42f34035"
+    },
+    {
+      "path": "docs/specs/evidence/modular-agon-claude-plan-coordinator-followup-input.json",
+      "gitIndexBlob": "feb226f66ff78dd59951e9624db83c8dad465ef6"
+    },
+    {
+      "path": "docs/specs/evidence/modular-agon-claude-plan-coordinator-followup.json",
+      "gitIndexBlob": "0d1ebf9c415005cefdabbc3db00245d4437ebd20"
+    },
+    {
+      "path": "docs/specs/evidence/modular-agon-claude-plan-coordinator-review-input.json",
+      "gitIndexBlob": "06750cac9433248e75439a053e49dba16cc4cd05"
+    },
+    {
+      "path": "docs/specs/evidence/modular-agon-claude-plan-coordinator-review.json",
+      "gitIndexBlob": "d2a9c1e253c1972f8df863281f3e59bf4862ae16"
+    },
+    {
+      "path": "docs/specs/evidence/modular-agon-claude-plan-estimation-review-input.json",
+      "gitIndexBlob": "3ccdfa921041e7194ee76f996e8c8a1fcdcb2395"
+    },
+    {
+      "path": "docs/specs/evidence/modular-agon-claude-plan-estimation-review.json",
+      "gitIndexBlob": "d47499f89d9049986d45d5979ae69935c259e665"
+    },
+    {
+      "path": "docs/specs/evidence/modular-agon-claude-plan-final-boundaries-review-input.json",
+      "gitIndexBlob": "192cf6c39ce83e9c2657d939d61599866d6092b5"
+    },
+    {
+      "path": "docs/specs/evidence/modular-agon-claude-plan-final-boundaries-review.json",
+      "gitIndexBlob": "fd916797ee9056268db6ada4f35f1d15948ac368"
+    },
+    {
+      "path": "docs/specs/evidence/modular-agon-claude-plan-increment-exit-review-input.json",
+      "gitIndexBlob": "64eb63aefacbc843366b2f226ec18be812916bfc"
+    },
+    {
+      "path": "docs/specs/evidence/modular-agon-claude-plan-increment-exit-review.json",
+      "gitIndexBlob": "0f94d912ead15cd817740baee9651e6818537da9"
+    },
+    {
+      "path": "docs/specs/evidence/modular-agon-claude-plan-owned-state-review-input.json",
+      "gitIndexBlob": "a43c3d393c088134f4600f2f28ca80fc4dcf7413"
+    },
+    {
+      "path": "docs/specs/evidence/modular-agon-claude-plan-owned-state-review.json",
+      "gitIndexBlob": "7ca18493fdb546dfa5b04c2e87f130a9c58e45d7"
+    },
+    {
+      "path": "docs/specs/evidence/modular-agon-claude-plan-phase-recovery-review-input.json",
+      "gitIndexBlob": "5992cd8fca9f9ba401ab419aabefae69f1c32f9e"
+    },
+    {
+      "path": "docs/specs/evidence/modular-agon-claude-plan-phase-recovery-review.json",
+      "gitIndexBlob": "a5aa4b18574df62b942853075b96919c46cc39a7"
+    },
+    {
+      "path": "docs/specs/evidence/modular-agon-claude-plan-phase-review-input.json",
+      "gitIndexBlob": "e06c394a8b72c66d962af78e7c53fc7b2b1059d4"
+    },
+    {
+      "path": "docs/specs/evidence/modular-agon-claude-plan-phase-review.json",
+      "gitIndexBlob": "e10efdd83d9c14386b4df1606afdc13ed3761caf"
+    },
+    {
+      "path": "docs/specs/evidence/modular-agon-claude-plan-phase-sealed-review-input.json",
+      "gitIndexBlob": "933a55469e43c9333e6115539a3d3073b85525e9"
+    },
+    {
+      "path": "docs/specs/evidence/modular-agon-claude-plan-phase-sealed-review.json",
+      "gitIndexBlob": "9f4ac4ba7ac35671f021707eadde5d510b2946ad"
+    },
+    {
+      "path": "docs/specs/evidence/modular-agon-claude-plan-reporting-review-input.json",
+      "gitIndexBlob": "ceb8b3093ef0cba3e72626fa43bbf35c021247db"
+    },
+    {
+      "path": "docs/specs/evidence/modular-agon-claude-plan-reporting-review.json",
+      "gitIndexBlob": "aff704535fbba8fc67d8917ede2dc80d36551558"
+    },
+    {
+      "path": "docs/specs/evidence/modular-agon-claude-plan-resume-gate-review-input.json",
+      "gitIndexBlob": "2d29ee81273a32bd144562cafef9785b208c6c89"
+    },
+    {
+      "path": "docs/specs/evidence/modular-agon-claude-plan-resume-gate-review.json",
+      "gitIndexBlob": "b358e6404b9d2b5175e3ebf9036856a0a05eee08"
+    },
+    {
+      "path": "docs/specs/evidence/modular-agon-claude-plan-storage-boundary-review-input.json",
+      "gitIndexBlob": "95f360fdd07f279d23f2aae1bf66586dfa7eef47"
+    },
+    {
+      "path": "docs/specs/evidence/modular-agon-claude-plan-storage-boundary-review.json",
+      "gitIndexBlob": "a9be6a799d6b005fcaca4cf78a8ade1b99e8a905"
+    },
+    {
+      "path": "docs/specs/evidence/modular-agon-release-set.json",
+      "gitIndexBlob": "e7d844524ada0443ad62f4f35575a6b52f29ee7d"
+    },
+    {
+      "path": "docs/specs/evidence/modular-agon-sbom.cdx.json",
+      "gitIndexBlob": "f5a34fef93b78400625ecbc2cc6a54dcf1f0c3af"
+    },
+    {
+      "path": "docs/specs/modular-agon-completion-progress.md",
+      "gitIndexBlob": "e28f730b5c650ed17107c06de8e47213fee8c186"
+    },
+    {
+      "path": "docs/specs/modular-agon-product-audit.md",
+      "gitIndexBlob": "c846d4d924e0a9f44c90883a4d86f55de9228f7d"
+    },
+    {
+      "path": "package-lock.json",
+      "gitIndexBlob": "3fa3bca5d19859b3d628702ef1b6222c2852f2d6"
+    },
+    {
+      "path": "packages/cli/package.json",
+      "gitIndexBlob": "ac1e88348c2d59333fd2b3d1c18902c342700194"
+    },
+    {
+      "path": "packages/cli/release-channel.json",
+      "gitIndexBlob": "e893941b0cd850b225fb12f4d5592ad6aae7cbfc"
+    },
+    {
+      "path": "packages/cli/src/models/handler-types.ts",
+      "gitIndexBlob": "d3ce7d0ef55f7a2e8f6b7d777d281f36c12803dc"
+    },
+    {
+      "path": "packages/cli/src/signals/dispatch/plan-execution.ts",
+      "gitIndexBlob": "9fb4f88aac167476380152b245a5d019f4699c92"
+    },
+    {
+      "path": "packages/cli/src/signals/job-abort-scope.ts",
+      "gitIndexBlob": "52bd665dbf982970791e39aaff2dbbb46d4e153f"
+    },
+    {
+      "path": "packages/cli/src/surfaces/app-interrupt.ts",
+      "gitIndexBlob": "489c6ea17a7fb1648a3b6fa66dd505df4827c3c0"
+    },
+    {
+      "path": "packages/cli/src/surfaces/app.tsx",
+      "gitIndexBlob": "9de0391e57bb4dd1fbd554e8a8bcd0bf0e1e27ed"
+    },
+    {
+      "path": "packages/core/src/cesar/plan-executor.ts",
+      "gitIndexBlob": "b4c9f8e3e5023c61441005846f96ec1006d0daf7"
+    },
+    {
+      "path": "packages/mod-plan/src/execution-coordinator.ts",
+      "gitIndexBlob": "dc52e2225272c3890654c81acd020822f38d8431"
+    },
+    {
+      "path": "packages/mod-plan/src/execution-model.ts",
+      "gitIndexBlob": "6dfd792b94396af0f750b33f1bd566de15f1ed82"
+    },
+    {
+      "path": "packages/mod-plan/src/executor.ts",
+      "gitIndexBlob": "61e16252911be70b10494c6437709ddd560dbe3c"
+    },
+    {
+      "path": "packages/mod-plan/src/index.ts",
+      "gitIndexBlob": "30f24e8b44ea46dc4b51ea660a0dbef94dd5624b"
+    },
+    {
+      "path": "packages/mod-plan/src/resume-policy.ts",
+      "gitIndexBlob": "652c490f69e4449d112913d134a0e8fdda6a5fd9"
+    },
+    {
+      "path": "scripts/spec/generate-modular-first-party-packages.mjs",
+      "gitIndexBlob": "fba117041f2bea3fbb8c2ce5fbc974c08f003284"
+    },
+    {
+      "path": "tests/unit/modular-plan-coordinator.test.ts",
+      "gitIndexBlob": "c0d4c6598fd962e8d44deb67a8816c41fa8bff6a"
+    },
+    {
+      "path": "tests/unit/modular-plan-executor-owner.test.ts",
+      "gitIndexBlob": "68f75047f7c2be84245bff4ab5449ba2fe7ea9c3"
+    },
+    {
+      "path": "tests/unit/modular-plan-scheduler-mutations.test.ts",
+      "gitIndexBlob": "c7f68dc0b64595090f25b6609cd993b463d5ceee"
+    },
+    {
+      "path": "tests/unit/plan-abort-owner.test.ts",
+      "gitIndexBlob": "4a4b7568d746a9123803456bb5a1920fc08412f7"
+    },
+    {
+      "path": "tests/unit/plan-coordinator-persistence.test.ts",
+      "gitIndexBlob": "7fd2d43b876e7c9b95008dae021dcb53b5fe7ce7"
+    },
+    {
+      "path": "tests/unit/plan-fallback-authority.test.ts",
+      "gitIndexBlob": "7191b3e059c7f9179ee4be101dfdef3b737c7c2e"
+    },
+    {
+      "path": "tests/unit/plan-worktree-verification.test.ts",
+      "gitIndexBlob": "d5df137923e79a0fb5e8369efa138f31d780fc83"
+    }
+  ],
+  "subjectSha256": "292c22f4e0f10e9afb6e516c57f11b179f63b36738ea1f1cecedeb6651e3c4f8",
+  "scope": "Physical Plan coordinator, canonical scheduler transitions, persistence ordering, verification checkpoints, abort ownership, fallback preparation, and regression evidence. A05 remains open.",
+  "logRoot": "/tmp/agon-plan-check-ShdTwz",
+  "logs": [
+    {
+      "id": "plan-final-full",
+      "log": "plan-final-full.log",
+      "logSha256": "f72a29fe089f6e4b7902a6e055d40d11e238c7c0952ffeaa8faa5e3e71d1a16a",
+      "bytes": 23591594,
+      "status": "passed"
+    },
+    {
+      "id": "plan-final-typecheck",
+      "log": "plan-final-typecheck.log",
+      "logSha256": "be1cf12bc2c9d30c2cc1484ecb5ad9f709e037352543b5aeaf93337177ed2a06",
+      "bytes": 23,
+      "status": "passed"
+    },
+    {
+      "id": "plan-final-lint",
+      "log": "plan-final-lint.log",
+      "logSha256": "51c1cf26d2d51ee80c79157b45658b8e79340700e0996f043fa51ad37e9c7266",
+      "bytes": 2122,
+      "status": "passed"
+    },
+    {
+      "id": "plan-transient-build",
+      "log": "plan-transient-build.log",
+      "logSha256": "75fb92e0767dceab0e241115ede006ee6a5f09705fe618891f2f55c7a9d471fe",
+      "bytes": 479,
+      "status": "passed"
+    },
+    {
+      "id": "plan-final-cli-build",
+      "log": "plan-final-cli-build.log",
+      "logSha256": "e58fdd26f1547ff5a9de27bffe48da6078e0777ef54bd47528fdb0a4895d4db0",
+      "bytes": 8498,
+      "status": "passed"
+    },
+    {
+      "id": "plan-final-release",
+      "log": "plan-final-release.log",
+      "logSha256": "a195dbf6c1764d43306b8eef4fe82a7b29bc10f4b4d691fb9f875cf2fb6eefed",
+      "bytes": 136,
+      "status": "passed"
+    },
+    {
+      "id": "plan-final-supply",
+      "log": "plan-final-supply.log",
+      "logSha256": "2c0a20a8822e092ec65a9021ef6fdb945e244e85e942c92ba20cd7376a8c14b1",
+      "bytes": 112,
+      "status": "passed"
+    },
+    {
+      "id": "plan-final-supply-negative",
+      "log": "plan-final-supply-negative.log",
+      "logSha256": "2c0a20a8822e092ec65a9021ef6fdb945e244e85e942c92ba20cd7376a8c14b1",
+      "bytes": 112,
+      "status": "passed"
+    },
+    {
+      "id": "plan-final-npx",
+      "log": "plan-final-npx.log",
+      "logSha256": "40045ac44272f57e36e8b54e779c5b8e5273580723a297c93d4010e9f1d39464",
+      "bytes": 202,
+      "status": "passed"
+    },
+    {
+      "id": "plan-storage-generator",
+      "log": "plan-storage-generator.log",
+      "logSha256": "d4f6d6eaaf2a06407d8bd6ade8c7c197929f5d19226bf328f7c2c82ef5d6a829",
+      "bytes": 47,
+      "status": "passed"
+    },
+    {
+      "id": "plan-storage-reexports",
+      "log": "plan-storage-reexports.log",
+      "logSha256": "de95be878ed3034819e11e168353c9f410a639a5c6304bc61e26718877a0291a",
+      "bytes": 130,
+      "status": "passed"
+    },
+    {
+      "id": "plan-worker-mutations-green",
+      "log": "plan-worker-mutations-green.log",
+      "logSha256": "4a756fac4987bf11d9f0bc83023dd852530de716c216ccd242f43262061ecbfb",
+      "bytes": 615,
+      "status": "passed"
+    },
+    {
+      "id": "plan-entry-matrix-green",
+      "log": "plan-entry-matrix-green.log",
+      "logSha256": "0a8cf8145f87f40afe7e86bff4e985e427cdf952b848f4b834046e9d648ba5d1",
+      "bytes": 1380,
+      "status": "passed"
+    },
+    {
+      "id": "plan-coordinator-red",
+      "log": "plan-coordinator-red.log",
+      "logSha256": "d3b9f0c1009f14b940404eac88e18f71d9b3466600fda36781a9a1a091706b5c",
+      "bytes": 11123,
+      "status": "negative-control"
+    },
+    {
+      "id": "plan-persist-red",
+      "log": "plan-persist-red.log",
+      "logSha256": "d6e6305adad1bc93ceea0d531ffd97c957cbc54b8c3ad239fc74ccac66bd5e70",
+      "bytes": 5971,
+      "status": "negative-control"
+    },
+    {
+      "id": "plan-markdown-isolated-red",
+      "log": "plan-markdown-isolated-red.log",
+      "logSha256": "64d1a74b2f7efb42395a81298fa3d5fc989eab0e1b8a182e05fb6e2bb7756f4c",
+      "bytes": 3523,
+      "status": "negative-control"
+    },
+    {
+      "id": "plan-abort-owner-red",
+      "log": "plan-abort-owner-red.log",
+      "logSha256": "85a9eebcdfc43bfeef73c6734995eb7c8f3907c5824b0368fc00c4155a284417",
+      "bytes": 3453,
+      "status": "negative-control"
+    },
+    {
+      "id": "plan-controller-release-red",
+      "log": "plan-controller-release-red.log",
+      "logSha256": "8e124abde0555d125774b9520d74c767eb16ae7f69280f670fb547d4aa1b6cc7",
+      "bytes": 2304,
+      "status": "negative-control"
+    },
+    {
+      "id": "plan-review-repairs-red",
+      "log": "plan-review-repairs-red.log",
+      "logSha256": "00de899e06f7d55fa0a973da530f088eae5e7245cf86b7a006e1125f2483b857",
+      "bytes": 4961,
+      "status": "negative-control"
+    },
+    {
+      "id": "plan-phase-lifecycle-red",
+      "log": "plan-phase-lifecycle-red.log",
+      "logSha256": "0de2ed7a9c66b936d9193cfaa966760ea4fec64e7392e587632cacd920449327",
+      "bytes": 6990,
+      "status": "negative-control"
+    },
+    {
+      "id": "plan-phase-seal-red",
+      "log": "plan-phase-seal-red.log",
+      "logSha256": "cc81304495931fe61b00f24be70fe943beb53a3a6a97acdc26cc11ec865cd774",
+      "bytes": 8781,
+      "status": "negative-control"
+    },
+    {
+      "id": "plan-final-review-red",
+      "log": "plan-final-review-red.log",
+      "logSha256": "d323fac3814fa3e38c1501230082c390505d3a757ea8a52cfcf8edc38f904975",
+      "bytes": 17805,
+      "status": "negative-control"
+    },
+    {
+      "id": "plan-reporting-red",
+      "log": "plan-reporting-red.log",
+      "logSha256": "7219d5fef5c33b61a2ac8ac404927d31112801c1008ce6ca8ea0becc96fd0641",
+      "bytes": 16248,
+      "status": "negative-control"
+    },
+    {
+      "id": "plan-callback-reporting-red",
+      "log": "plan-callback-reporting-red.log",
+      "logSha256": "40ca87a7eaa80abb1bd176729c993ff4a83460694c02b70e1733a6a62aadcab3",
+      "bytes": 11755,
+      "status": "negative-control"
+    },
+    {
+      "id": "plan-estimation-red",
+      "log": "plan-estimation-red.log",
+      "logSha256": "83268243de61344fc2f69da80e2c0addd051c9986358bcf73a94c0349fd574d8",
+      "bytes": 13183,
+      "status": "negative-control"
+    },
+    {
+      "id": "plan-resume-gate-red",
+      "log": "plan-resume-gate-red.log",
+      "logSha256": "bf54af632d7b0fdc05f12b1427af3c2f482db72d2d32d0d2fc2967baf1c2383b",
+      "bytes": 11009,
+      "status": "negative-control"
+    },
+    {
+      "id": "plan-review-probe-red",
+      "log": "plan-review-probe-red.log",
+      "logSha256": "1cc4316fc88420443aca7c878949dff29922b7c0a3988673e15dda75b30535c6",
+      "bytes": 10931,
+      "status": "negative-control"
+    },
+    {
+      "id": "plan-transition-owner-red",
+      "log": "plan-transition-owner-red.log",
+      "logSha256": "79ca58b884179f0bc5f9442d78796235a52311f4a612b5f7ff5724ece07bf9be",
+      "bytes": 10800,
+      "status": "negative-control"
+    },
+    {
+      "id": "plan-scheduler-observer-red",
+      "log": "plan-scheduler-observer-red.log",
+      "logSha256": "1dd6be972bc32ef2b185d27f35ebd20a5b1ba8629228c0aed928bd7c19f72bae",
+      "bytes": 5384,
+      "status": "negative-control"
+    },
+    {
+      "id": "plan-verification-checkpoint-red",
+      "log": "plan-verification-checkpoint-red.log",
+      "logSha256": "a483a816f870a14fe0671ddf4f3a54e88d4c2f9a97428aa8c3464ae8a4471749",
+      "bytes": 13119,
+      "status": "negative-control"
+    },
+    {
+      "id": "plan-real-git-red",
+      "log": "plan-real-git-red.log",
+      "logSha256": "abd47c6d73a03286536870129d1bb7f7a4b3986e646d07802d4e2de0a514ef6b",
+      "bytes": 3306,
+      "status": "negative-control"
+    },
+    {
+      "id": "plan-final-boundaries-red",
+      "log": "plan-final-boundaries-red.log",
+      "logSha256": "74e390ce8b7f5f08b105e3db69aaed76842ddbbaaec45989fb9011378809bb2d",
+      "bytes": 19287,
+      "status": "negative-control"
+    },
+    {
+      "id": "plan-start-cancellation-red",
+      "log": "plan-start-cancellation-red.log",
+      "logSha256": "d43b39a792bd664647f8c42f84d0f39a1ff0c193fb9449748682998268ac565e",
+      "bytes": 11531,
+      "status": "negative-control"
+    },
+    {
+      "id": "plan-approval-storage-red",
+      "log": "plan-approval-storage-red.log",
+      "logSha256": "4ddccd05fb91475c841eaeaf3c57eb8033695a40c0167cb94439ea4465ccadf0",
+      "bytes": 3383,
+      "status": "negative-control"
+    },
+    {
+      "id": "plan-proposal-retention-red",
+      "log": "plan-proposal-retention-red.log",
+      "logSha256": "0536b37ae866a43d37045c43282d84ef655998f01bfd88d3493d04c58ceb0d16",
+      "bytes": 3729,
+      "status": "negative-control"
+    },
+    {
+      "id": "plan-terminal-format-red",
+      "log": "plan-terminal-format-red.log",
+      "logSha256": "2ee19daa21bf208056a4ede7744c8ff79179596bc73e7d046395c108228eb4c7",
+      "bytes": 11379,
+      "status": "negative-control"
+    },
+    {
+      "id": "plan-initial-transient-red",
+      "log": "plan-initial-transient-red.log",
+      "logSha256": "e259f59f02c02dc712a0835b06d635c13aa0a8c06b750a6d1e554351d1e6814d",
+      "bytes": 4242,
+      "status": "negative-control"
+    }
+  ],
+  "verification": {
+    "testsPassed": 6622,
+    "testsSkipped": 6,
+    "testFilesPassed": 553,
+    "testFilesSkipped": 1,
+    "implementationMutantsKilled": 4,
+    "implementationMutantsTotal": 4,
+    "packages": 49,
+    "dependencyEdges": 151,
+    "artifacts": 50,
+    "npxChecks": 72,
+    "cleanCommittedQualification": "pending; this receipt is not release acceptance"
+  },
+  "reviews": {
+    "route": "isolated candidate Agon ask claude; no tools, MCP, session persistence or personal settings",
+    "artifacts": [
+      {
+        "path": "docs/specs/evidence/modular-agon-claude-plan-callback-reporting-review-input.json",
+        "gitIndexBlob": "dd5048f0192ffb127621d778e82695dfe579e158"
+      },
+      {
+        "path": "docs/specs/evidence/modular-agon-claude-plan-callback-reporting-review.json",
+        "gitIndexBlob": "177fa72fac418209d56c5436ddc3e75a1cc26a11"
+      },
+      {
+        "path": "docs/specs/evidence/modular-agon-claude-plan-coordinator-closure-input.json",
+        "gitIndexBlob": "79ff3dcd9d8b1e92bede3e829ed378284a0b5dfd"
+      },
+      {
+        "path": "docs/specs/evidence/modular-agon-claude-plan-coordinator-closure.json",
+        "gitIndexBlob": "00bc7852fb352380ebf571e20e199ddb42f34035"
+      },
+      {
+        "path": "docs/specs/evidence/modular-agon-claude-plan-coordinator-followup-input.json",
+        "gitIndexBlob": "feb226f66ff78dd59951e9624db83c8dad465ef6"
+      },
+      {
+        "path": "docs/specs/evidence/modular-agon-claude-plan-coordinator-followup.json",
+        "gitIndexBlob": "0d1ebf9c415005cefdabbc3db00245d4437ebd20"
+      },
+      {
+        "path": "docs/specs/evidence/modular-agon-claude-plan-coordinator-review-input.json",
+        "gitIndexBlob": "06750cac9433248e75439a053e49dba16cc4cd05"
+      },
+      {
+        "path": "docs/specs/evidence/modular-agon-claude-plan-coordinator-review.json",
+        "gitIndexBlob": "d2a9c1e253c1972f8df863281f3e59bf4862ae16"
+      },
+      {
+        "path": "docs/specs/evidence/modular-agon-claude-plan-estimation-review-input.json",
+        "gitIndexBlob": "3ccdfa921041e7194ee76f996e8c8a1fcdcb2395"
+      },
+      {
+        "path": "docs/specs/evidence/modular-agon-claude-plan-estimation-review.json",
+        "gitIndexBlob": "d47499f89d9049986d45d5979ae69935c259e665"
+      },
+      {
+        "path": "docs/specs/evidence/modular-agon-claude-plan-final-boundaries-review-input.json",
+        "gitIndexBlob": "192cf6c39ce83e9c2657d939d61599866d6092b5"
+      },
+      {
+        "path": "docs/specs/evidence/modular-agon-claude-plan-final-boundaries-review.json",
+        "gitIndexBlob": "fd916797ee9056268db6ada4f35f1d15948ac368"
+      },
+      {
+        "path": "docs/specs/evidence/modular-agon-claude-plan-increment-exit-review-input.json",
+        "gitIndexBlob": "64eb63aefacbc843366b2f226ec18be812916bfc"
+      },
+      {
+        "path": "docs/specs/evidence/modular-agon-claude-plan-increment-exit-review.json",
+        "gitIndexBlob": "0f94d912ead15cd817740baee9651e6818537da9"
+      },
+      {
+        "path": "docs/specs/evidence/modular-agon-claude-plan-owned-state-review-input.json",
+        "gitIndexBlob": "a43c3d393c088134f4600f2f28ca80fc4dcf7413"
+      },
+      {
+        "path": "docs/specs/evidence/modular-agon-claude-plan-owned-state-review.json",
+        "gitIndexBlob": "7ca18493fdb546dfa5b04c2e87f130a9c58e45d7"
+      },
+      {
+        "path": "docs/specs/evidence/modular-agon-claude-plan-phase-recovery-review-input.json",
+        "gitIndexBlob": "5992cd8fca9f9ba401ab419aabefae69f1c32f9e"
+      },
+      {
+        "path": "docs/specs/evidence/modular-agon-claude-plan-phase-recovery-review.json",
+        "gitIndexBlob": "a5aa4b18574df62b942853075b96919c46cc39a7"
+      },
+      {
+        "path": "docs/specs/evidence/modular-agon-claude-plan-phase-review-input.json",
+        "gitIndexBlob": "e06c394a8b72c66d962af78e7c53fc7b2b1059d4"
+      },
+      {
+        "path": "docs/specs/evidence/modular-agon-claude-plan-phase-review.json",
+        "gitIndexBlob": "e10efdd83d9c14386b4df1606afdc13ed3761caf"
+      },
+      {
+        "path": "docs/specs/evidence/modular-agon-claude-plan-phase-sealed-review-input.json",
+        "gitIndexBlob": "933a55469e43c9333e6115539a3d3073b85525e9"
+      },
+      {
+        "path": "docs/specs/evidence/modular-agon-claude-plan-phase-sealed-review.json",
+        "gitIndexBlob": "9f4ac4ba7ac35671f021707eadde5d510b2946ad"
+      },
+      {
+        "path": "docs/specs/evidence/modular-agon-claude-plan-reporting-review-input.json",
+        "gitIndexBlob": "ceb8b3093ef0cba3e72626fa43bbf35c021247db"
+      },
+      {
+        "path": "docs/specs/evidence/modular-agon-claude-plan-reporting-review.json",
+        "gitIndexBlob": "aff704535fbba8fc67d8917ede2dc80d36551558"
+      },
+      {
+        "path": "docs/specs/evidence/modular-agon-claude-plan-resume-gate-review-input.json",
+        "gitIndexBlob": "2d29ee81273a32bd144562cafef9785b208c6c89"
+      },
+      {
+        "path": "docs/specs/evidence/modular-agon-claude-plan-resume-gate-review.json",
+        "gitIndexBlob": "b358e6404b9d2b5175e3ebf9036856a0a05eee08"
+      },
+      {
+        "path": "docs/specs/evidence/modular-agon-claude-plan-storage-boundary-review-input.json",
+        "gitIndexBlob": "95f360fdd07f279d23f2aae1bf66586dfa7eef47"
+      },
+      {
+        "path": "docs/specs/evidence/modular-agon-claude-plan-storage-boundary-review.json",
+        "gitIndexBlob": "a9be6a799d6b005fcaca4cf78a8ade1b99e8a905"
+      }
+    ],
+    "adjudications": "docs/specs/modular-agon-completion-progress.md",
+    "latest": "plan-increment-exit-review",
+    "postReviewRepair": "Transient initial-save finding fixed with failing-before test; no recovery record before a successful initial save. Test-quality findings corrected. No independent full-release approval claimed."
+  },
+  "remaining": [
+    "Plan session and callback ownership, persisted-model reconciliation and session-policy findings",
+    "Brainstorm workflow/session/host-effect ownership",
+    "Apply backend hardening and compatibility-adapter retirement",
+    "Generation checks after awaited decisions and per-execution disabled enforcement",
+    "A15 daemon diagnosis, serialized clean-checkout release qualification, final release review",
+    "Native platform/provider/publishing evidence per authoritative roadmap"
+  ],
+  "safety": {
+    "globalAgonModified": false,
+    "personalStateModified": false,
+    "pushed": false,
+    "unrelatedWorktreesPreserved": true
+  },
+  "limitations": [
+    "Earlier apply clean pressure 400a087d failed the startup budget; retained unchanged.",
+    "Its serialized startup diagnostic is not a substitute for full clean qualification.",
+    "plan-final-boundaries-green hung in a deliberately broken mutant and was terminated; not a passing gate.",
+    "Intermediate fixture failures are not claimed as production regressions.",
+    "Skip counts and existing product requirements are not waived."
+  ]
+}

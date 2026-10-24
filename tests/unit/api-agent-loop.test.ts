@@ -10,6 +10,7 @@ vi.mock('../../packages/core/src/api/dispatch.js', () => ({
 }));
 
 import { repairToolName, runApiAgentLoop } from '../../packages/core/src/api/agent-loop.js';
+import { normalizeApiAgentOutcome } from '../../packages/adapter-cli/src/execution-plan.js';
 
 async function* streamChunks(chunks: string[]) {
   for (const chunk of chunks) yield chunk;
@@ -92,6 +93,139 @@ describe('runApiAgentLoop', () => {
   });
   beforeEach(() => {
     apiStreamDispatchWithHistoryMock.mockReset();
+  });
+
+  it.each([
+    { exitCode: 0, firstCache: 80, secondCache: 150 },
+    { exitCode: 1, firstCache: 80, secondCache: 150 },
+    { exitCode: 124, firstCache: 80, secondCache: 150 },
+    { exitCode: 130, firstCache: 80, secondCache: 150 },
+    { exitCode: 0, firstCache: undefined, secondCache: 150 },
+    { exitCode: 0, firstCache: 80, secondCache: undefined },
+    { exitCode: 0, firstCache: 0, secondCache: 0 },
+    { exitCode: 0, firstCache: 0, secondCache: undefined },
+  ])('retains complete multi-call usage: %j', async ({ exitCode, firstCache, secondCache }) => {
+    const cwd = join(tmpdir(), `agon-usage-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(cwd, { recursive: true });
+    const first = { promptTokens: 100, completionTokens: 20, totalTokens: 120, cachedInputTokens: firstCache, source: 'sdk' as const };
+    const second = { promptTokens: 200, completionTokens: 30, totalTokens: 230, cachedInputTokens: secondCache, source: 'sdk' as const };
+    apiStreamDispatchWithHistoryMock
+      .mockImplementationOnce(async function* () {
+        yield '<tool name="Read">{"file_path":"missing.txt"}</tool>';
+        return { exitCode: 0, stderr: '', usage: first };
+      })
+      .mockImplementationOnce(async function* () {
+        yield 'done';
+        return { exitCode, stderr: exitCode ? 'terminal failure' : '', timedOut: exitCode === 124, usage: second };
+      });
+    try {
+      const result = await runApiAgentLoop({
+        api: { baseUrl: 'https://example.invalid/v1', apiKeyEnv: 'AGON_TEST_API_KEY', model: 'test-model' },
+        prompt: 'Read missing.txt', cwd, timeout: 10, maxSteps: 3,
+      });
+      const usage = { promptTokens: 300, completionTokens: 50, totalTokens: 350, source: 'sdk',
+        ...(firstCache !== undefined && secondCache !== undefined ? { cachedInputTokens: firstCache + secondCache } : {}) };
+      expect(apiStreamDispatchWithHistoryMock).toHaveBeenCalledTimes(2);
+      expect(result.usage).toEqual(usage);
+      expect(normalizeApiAgentOutcome(result)).toMatchObject({ exitCode, usage });
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it.each(['missing', 'malformed', 'negative', 'fractional', 'source', 'cache', 'overflow', 'throw', 'callback', 'callback-cleanup'])('does not report partial usage as complete after %s', async (failure) => {
+    const cwd = join(tmpdir(), `agon-usage-incomplete-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(cwd, { recursive: true });
+    const usage = { promptTokens: 100, completionTokens: 20, totalTokens: 120, source: 'sdk' as const };
+    let closed = false;
+    apiStreamDispatchWithHistoryMock
+      .mockImplementationOnce(async function* () {
+        yield '<tool name="Read">{"file_path":"missing.txt"}</tool>';
+        return { exitCode: 0, stderr: '', usage };
+      })
+      .mockImplementationOnce(async function* () {
+        try {
+          yield 'done';
+          if (failure === 'throw') throw new Error('stream broke');
+          const invalid = failure === 'malformed' ? { completionTokens: NaN }
+            : failure === 'negative' ? { promptTokens: -1 }
+              : failure === 'fractional' ? { totalTokens: 1.5 }
+                : failure === 'source' ? { source: 'unknown' }
+                  : failure === 'cache' ? { cachedInputTokens: 101 }
+                    : failure === 'overflow' ? { totalTokens: Number.MAX_SAFE_INTEGER } : {};
+          return { exitCode: 0, stderr: '', usage: failure === 'missing' ? undefined : { ...usage, ...invalid } };
+        } finally {
+          closed = true;
+          if (failure === 'callback-cleanup') throw new Error('cleanup failed');
+        }
+      });
+    try {
+      const result = await runApiAgentLoop({
+        api: { baseUrl: 'https://example.invalid/v1', apiKeyEnv: 'AGON_TEST_API_KEY', model: 'test-model' },
+        prompt: 'Read missing.txt', cwd, timeout: 10, maxSteps: 3,
+        onChunk: text => { if (failure.startsWith('callback') && text === 'done') throw new Error('consumer failed'); },
+      });
+      expect(apiStreamDispatchWithHistoryMock).toHaveBeenCalledTimes(2);
+      expect(result.usage).toBeUndefined();
+      expect(normalizeApiAgentOutcome(result).usage).toBeUndefined();
+      expect(closed).toBe(true);
+      if (failure === 'callback-cleanup') expect(result.errorReason).toBe('consumer failed');
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it.each(['narration', 'final'] as const)('retains usage and stops after a failing %s callback', async (phase) => {
+    const cwd = join(tmpdir(), `agon-visible-failure-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(cwd, { recursive: true });
+    const usage = { promptTokens: 100, completionTokens: 20, totalTokens: 120, source: 'sdk' as const };
+    const onToolCall = vi.fn();
+    apiStreamDispatchWithHistoryMock.mockImplementationOnce(async function* () {
+      yield phase === 'narration' ? 'Reading now. <tool name="Read">{"file_path":"missing.txt"}</tool>' : 'done';
+      return { exitCode: 0, stderr: '', usage };
+    });
+    try {
+      const result = await runApiAgentLoop({
+        api: { baseUrl: 'https://example.invalid/v1', apiKeyEnv: 'AGON_TEST_API_KEY', model: 'test-model' },
+        prompt: 'Read missing.txt', cwd, timeout: 10, maxSteps: 3, onToolCall,
+        onVisibleChunk: () => { throw new Error('visible callback failed'); },
+      });
+      expect(result).toMatchObject({ failed: true, usage });
+      expect(result.errorReason).toContain('visible callback failed');
+      expect(onToolCall).not.toHaveBeenCalled();
+      expect(apiStreamDispatchWithHistoryMock).toHaveBeenCalledTimes(1);
+    } finally { rmSync(cwd, { recursive: true, force: true }); }
+  });
+
+  it.each([
+    ['sdk', 'sdk', 'sdk'], ['sdk', 'cli-reported', 'cli-reported'], ['sdk', 'estimated', 'estimated'],
+    ['estimated', 'sdk', 'estimated'], ['cli-reported', 'sdk', 'cli-reported'],
+  ] as const)('counts retried calls and retains provenance: %s → %s', async (firstSource, source, expectedSource) => {
+    const cwd = join(tmpdir(), `agon-usage-retry-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(cwd, { recursive: true });
+    apiStreamDispatchWithHistoryMock
+      .mockImplementationOnce(async function* () {
+        return { exitCode: 1, stderr: '429 rate limit exceeded', usage: {
+          promptTokens: 100, completionTokens: 20, totalTokens: 120, source: firstSource,
+        } };
+      })
+      .mockImplementationOnce(async function* () {
+        yield 'done';
+        return { exitCode: 0, stderr: '', usage: {
+          promptTokens: 200, completionTokens: 30, totalTokens: 230, source,
+        } };
+      });
+    try {
+      const result = await runApiAgentLoop({
+        api: { baseUrl: 'https://example.invalid/v1', apiKeyEnv: 'AGON_TEST_API_KEY', model: 'test-model' },
+        prompt: 'Reply done', cwd, timeout: 10, maxSteps: 3, retryBaseMs: 1,
+      });
+      expect(apiStreamDispatchWithHistoryMock).toHaveBeenCalledTimes(2);
+      expect(result.response).toBe('done');
+      expect(result.usage).toEqual({ promptTokens: 300, completionTokens: 50, totalTokens: 350, source: expectedSource });
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
   });
 
   it('records a tool result when local tool plumbing throws after an assistant tool call', async () => {

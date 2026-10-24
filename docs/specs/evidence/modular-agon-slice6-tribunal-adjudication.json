@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "review": "S6 pre-qualification Agon Tribunal",
+  "engines": ["ollama-direct-gpt-oss", "ollama-direct-qwen"],
+  "artifacts": [
+    "verification-logs/slice6/tribunal-gpt-oss-output.txt",
+    "verification-logs/slice6/tribunal-qwen-output.txt",
+    "verification-logs/slice6/tribunal-status.json"
+  ],
+  "accepted": [
+    {
+      "finding": "Production CLI and MCP used a synthetic full-compatible generation instead of activating selected physical packages.",
+      "resolution": "Both process entrypoints now await bootstrapFirstPartySurfaceGeneration; durable desired state and missing packages fail closed.",
+      "evidence": "tests/unit/modular-production-surface-bootstrap.test.ts"
+    },
+    {
+      "finding": "A long-lived MCP server could retain compile-time availability after the canonical generation changed.",
+      "resolution": "Every MCP list/call validates the process-pinned canonical pointer and returns restart-required mismatch before dispatch.",
+      "evidence": "packages/mcp/src/surface-authority.ts"
+    },
+    {
+      "finding": "Generated MCP descriptions could replace the established detailed tool descriptions with inventory IDs.",
+      "resolution": "Generated metadata controls availability and ownership; the compatibility executor preserves its rich descriptions until its documented removal condition is met.",
+      "evidence": "tests/unit/modular-mcp-production-authority.test.ts"
+    },
+    {
+      "finding": "Physical package activation order was lexical rather than dependency ordered.",
+      "resolution": "Physical packages are now topologically activated with deterministic ASCII tie breaking and cycle/duplicate rejection.",
+      "evidence": "packages/mod-kernel/src/package-activation-order.ts"
+    }
+  ],
+  "refuted": [
+    "CLI availability is checked after dynamic import; source checks before resolve().",
+    "Committed registration rollback leaks partial records; the commit catch disposes every successfully registered record in reverse order.",
+    "Successful registrations have no disposal path; physical mod disposers invoke the committed registrar disposers and tests prove all five projections empty.",
+    "CLI and Cesar names collide across registries; registry kinds and surfaces are separate namespaces.",
+    "A disabled JSON-RPC method must close the MCP connection; typed method refusal is the fail-closed behavior.",
+    "Missing selected documentation should fall back to unrelated docs; the frozen contract requires disabled docs generation to fail closed.",
+    "Hidden intent variants must all appear in slash help; discoverable slash actions and hidden parser variants are distinct generated categories."
+  ],
+  "open": [
+    "The five temporary compatibility executors remain explicitly tracked and must be eliminated before final S9 acceptance.",
+    "Third-party folder-mod discovery and trust are intentionally deferred to S8 and were not accepted as an S6 defect."
+  ]
+}

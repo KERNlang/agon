@@ -1,0 +1,346 @@
+{
+  "manifest": {
+    "schemaVersion": 2,
+    "id": "agon.brainstorm",
+    "name": "Brainstorm",
+    "version": "1.0.0",
+    "apiRange": "^1.0.0",
+    "execution": "executable",
+    "compatibility": {
+      "kernelRange": "^1.0.0",
+      "nodeRange": ">=22 <27"
+    },
+    "packageClass": "user-toggleable-mod-package",
+    "entrypoints": {
+      "runtime": "dist/index.js",
+      "types": "dist/index.d.ts"
+    },
+    "display": {
+      "group": "create",
+      "order": 20
+    },
+    "dependencies": {
+      "required": [],
+      "optional": [
+        {
+          "id": "agon.team-brainstorm",
+          "range": "^1.0.0"
+        }
+      ],
+      "conflicts": []
+    },
+    "permissions": [
+      {
+        "capability": "engine.dispatch",
+        "resources": [
+          "configured-engines"
+        ],
+        "required": true
+      }
+    ],
+    "platforms": [
+      "darwin-arm64",
+      "darwin-x64",
+      "linux-arm64",
+      "linux-x64"
+    ],
+    "assets": [
+      {
+        "path": "dist/index.js",
+        "kind": "static",
+        "mediaType": "text/javascript",
+        "contentHash": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+        "bytes": 128,
+        "executable": false,
+        "platforms": [
+          "darwin-arm64",
+          "darwin-x64",
+          "linux-arm64",
+          "linux-x64"
+        ],
+        "consumerContributionId": "brainstorm"
+      }
+    ],
+    "contributes": {
+      "cliCommands": [
+        {
+          "id": "brainstorm",
+          "aliases": []
+        }
+      ],
+      "tuiActions": [
+        {
+          "id": "brainstorm",
+          "aliases": []
+        }
+      ],
+      "mcpTools": [
+        {
+          "id": "Brainstorm",
+          "aliases": []
+        }
+      ],
+      "cesarTools": [
+        {
+          "id": "Brainstorm",
+          "aliases": []
+        }
+      ],
+      "lifecycleHooks": [],
+      "resultTypes": [
+        {
+          "id": "agon.brainstorm.result.v1",
+          "aliases": []
+        }
+      ],
+      "configKeys": [],
+      "generatedDocs": [
+        {
+          "id": "mode.brainstorm",
+          "aliases": []
+        }
+      ]
+    },
+    "pack": {
+      "include": [
+        "dist/index.js",
+        "dist/index.d.ts",
+        "agon.mod.json"
+      ],
+      "executable": []
+    }
+  },
+  "lock": {
+    "schemaVersion": 1,
+    "kernelVersion": "1.0.0",
+    "apiVersion": "1.0.0",
+    "desiredStateHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "graphHash": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "packages": [
+      {
+        "id": "agon.brainstorm",
+        "version": "1.0.0",
+        "source": "bundled",
+        "sourceLocator": "npm:@kernlang/agon-mod-brainstorm@1.0.0",
+        "contentHash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "manifestHash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "platform": "darwin-arm64",
+        "enabled": true,
+        "resolutionOrder": 0,
+        "dependencies": [],
+        "trustRecordId": "22222222-2222-4222-8222-222222222222",
+        "grantRecordIds": [
+          "33333333-3333-4333-8333-333333333333"
+        ]
+      }
+    ]
+  },
+  "journal": {
+    "schemaVersion": 1,
+    "transactionId": "11111111-1111-4111-8111-111111111111",
+    "operation": "enable",
+    "state": "committed",
+    "startedAt": "2026-08-22T12:00:00.000Z",
+    "updatedAt": "2026-08-22T12:00:00.000Z",
+    "baseGeneration": 41,
+    "candidateGeneration": 42,
+    "fenceToken": "88888888-8888-4888-8888-888888888888",
+    "previousLockHash": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "candidateLockHash": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "steps": [
+      {
+        "id": "resolve",
+        "state": "passed",
+        "receiptId": "44444444-4444-4444-8444-444444444444"
+      }
+    ],
+    "rollback": {
+      "attempted": false,
+      "completed": false
+    }
+  },
+  "trust": {
+    "schemaVersion": 1,
+    "recordId": "22222222-2222-4222-8222-222222222222",
+    "modId": "agon.brainstorm",
+    "version": "1.0.0",
+    "source": "bundled",
+    "sourceLocator": "npm:@kernlang/agon-mod-brainstorm@1.0.0",
+    "contentHash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "manifestHash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "decision": "trusted",
+    "decidedAt": "2026-08-22T12:00:00.000Z",
+    "scope": "exact-artifact",
+    "publisher": {
+      "registryOrigin": "https://registry.npmjs.org",
+      "packageName": "@kernlang/agon-mod-brainstorm",
+      "provenanceIdentity": "kernlang:first-party-release-set",
+      "provenanceStatus": "verified"
+    },
+    "reason": "first-party release artifact verified by lockstep release receipt"
+  },
+  "grant": {
+    "schemaVersion": 1,
+    "recordId": "33333333-3333-4333-8333-333333333333",
+    "modId": "agon.brainstorm",
+    "contentHash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "capability": "engine.dispatch",
+    "resources": [
+      "configured-engines"
+    ],
+    "decision": "allow",
+    "grantedAt": "2026-08-22T12:00:00.000Z",
+    "grantedBy": "local-user",
+    "reason": "approved during explicit activation plan"
+  },
+  "verificationContract": {
+    "schemaVersion": 1,
+    "id": "agon.verify.brainstorm",
+    "version": "1.0.0",
+    "owner": "agon.brainstorm",
+    "platforms": [
+      "darwin-arm64",
+      "darwin-x64",
+      "linux-arm64",
+      "linux-x64"
+    ],
+    "checks": [
+      {
+        "id": "surface-parity",
+        "authority": "host",
+        "kind": "property",
+        "timeoutMs": 10000,
+        "maxOutputBytes": 1048576,
+        "evidence": [
+          "TEST-SURFACE-PARITY"
+        ]
+      }
+    ]
+  },
+  "verificationReceipt": {
+    "schemaVersion": 1,
+    "receiptId": "44444444-4444-4444-8444-444444444444",
+    "contractId": "agon.verify.brainstorm",
+    "contractVersion": "1.0.0",
+    "contractHash": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "subjectHash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "runner": {
+      "id": "agon.verify.runner",
+      "version": "1.0.0",
+      "contentHash": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+    },
+    "platform": "darwin-arm64",
+    "startedAt": "2026-08-22T12:00:00.000Z",
+    "finishedAt": "2026-08-22T12:00:00.000Z",
+    "status": "passed",
+    "checks": [
+      {
+        "id": "surface-parity",
+        "status": "passed",
+        "exitCode": 0,
+        "durationMs": 42,
+        "evidenceHashes": [
+          "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+        ]
+      }
+    ]
+  },
+  "planEnvelope": {
+    "schemaVersion": 1,
+    "kind": "plan",
+    "id": "55555555-5555-4555-8555-555555555555",
+    "createdAt": "2026-08-22T12:00:00.000Z",
+    "updatedAt": "2026-08-22T12:00:00.000Z",
+    "ownerModId": "agon.goal",
+    "ownerModVersion": "1.0.0",
+    "ownerContentHash": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+    "kernelVersion": "1.0.0",
+    "graphHash": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "contributionId": "agon.goal.plan",
+    "sessionId": "66666666-6666-4666-8666-666666666666",
+    "traceId": "77777777-7777-4777-8777-777777777777",
+    "payloadVersion": "1.0.0",
+    "payloadEncoding": "application/json",
+    "receiptIds": [
+      "44444444-4444-4444-8444-444444444444"
+    ],
+    "status": "approved",
+    "payload": {
+      "steps": []
+    }
+  },
+  "resultEnvelope": {
+    "schemaVersion": 1,
+    "kind": "result",
+    "id": "55555555-5555-4555-8555-555555555555",
+    "createdAt": "2026-08-22T12:00:00.000Z",
+    "updatedAt": "2026-08-22T12:00:00.000Z",
+    "ownerModId": "agon.brainstorm",
+    "ownerModVersion": "1.0.0",
+    "ownerContentHash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "kernelVersion": "1.0.0",
+    "graphHash": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "contributionId": "agon.brainstorm.result",
+    "sessionId": "66666666-6666-4666-8666-666666666666",
+    "traceId": "77777777-7777-4777-8777-777777777777",
+    "payloadVersion": "1.0.0",
+    "payloadEncoding": "application/json",
+    "receiptIds": [
+      "44444444-4444-4444-8444-444444444444"
+    ],
+    "status": "succeeded",
+    "payload": {
+      "groups": []
+    }
+  },
+  "sessionEnvelope": {
+    "schemaVersion": 1,
+    "kind": "session",
+    "id": "55555555-5555-4555-8555-555555555555",
+    "createdAt": "2026-08-22T12:00:00.000Z",
+    "updatedAt": "2026-08-22T12:00:00.000Z",
+    "ownerModId": "agon.kernel",
+    "ownerModVersion": "1.0.0",
+    "ownerContentHash": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "kernelVersion": "1.0.0",
+    "graphHash": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "contributionId": "agon.kernel.session",
+    "sessionId": "66666666-6666-4666-8666-666666666666",
+    "traceId": "77777777-7777-4777-8777-777777777777",
+    "payloadVersion": "1.0.0",
+    "payloadEncoding": "application/json",
+    "receiptIds": [
+      "44444444-4444-4444-8444-444444444444"
+    ],
+    "status": "closed",
+    "childEnvelopeIds": [],
+    "payload": {
+      "turns": 1
+    }
+  },
+  "jobEnvelope": {
+    "schemaVersion": 1,
+    "kind": "job",
+    "id": "55555555-5555-4555-8555-555555555555",
+    "createdAt": "2026-08-22T12:00:00.000Z",
+    "updatedAt": "2026-08-22T12:00:00.000Z",
+    "ownerModId": "agon.jobs",
+    "ownerModVersion": "1.0.0",
+    "ownerContentHash": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+    "kernelVersion": "1.0.0",
+    "graphHash": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "contributionId": "agon.jobs.workflow",
+    "sessionId": "66666666-6666-4666-8666-666666666666",
+    "traceId": "77777777-7777-4777-8777-777777777777",
+    "payloadVersion": "1.0.0",
+    "payloadEncoding": "application/json",
+    "receiptIds": [
+      "44444444-4444-4444-8444-444444444444"
+    ],
+    "status": "succeeded",
+    "leaseId": "lease-1",
+    "payload": {
+      "kind": "brainstorm"
+    }
+  }
+}

@@ -1,0 +1,106 @@
+**Comprehensive Analysis & Implementation Plan for Modular Agon Slice S3**  
+*(Integrated Synthesis of Qwen & Ollama Drafts with Edge Case Pressure Testing)*  
+
+---
+
+### **Core System Dimensions & Missing Constraints**  
+1. **State Machine Formalization**  
+   - **Issue**: Ambiguity in "grayed" mod visibility vs. "unreachable" state.  
+   - **Fix**: Define **three typed states** for mods:  
+     - `ENABLED` (active, installable)  
+     - `GRAYED` (disabled but visible, no install/trust permissions)  
+     - `BLOCKED` (unavailable due to constraints, with typed recovery paths).  
+   - **File**: `/state/mod-state-machine.js` → Use `enum ModState` with guards for transitions (e.g., `ENABLED → GRAYED` only via `disable()` with `--no-cascade`).  
+
+2. **Dependency Closure & Cascade Logic**  
+   - **Issue**: Enabling a child must not implicitly enable parents; disabling a parent must **atomically disable reverse dependents** (e.g., if `ModA` depends on `ModB`, disabling `ModB` does not affect `ModA`).  
+   - **Fix**:  
+     - **Directed Acyclic Graph (DAG)**: `/dependency-graph.js` → Track dependencies as `edges: { [modId]: Set<modId> }`.  
+     - **Enable/Disable Propagation**:  
+       - `enable(modId)` → Traverses DAG to compute **required closure** (all dependencies of `modId` must be enabled).  
+       - `disable(modId, { cascade })` → If `cascade`, recursively disable all direct dependents (e.g., `ModA` disables `ModB` if `ModB` depends on `ModA`).  
+   - **Edge Case**: Circular dependencies (e.g., `A → B → A`) → Must be blocked during profile expansion.  
+
+3. **Profile Expansion & Silent Alteration Prevention**  
+   - **Issue**: Profile updates must not silently alter installations.  
+   - **Fix**:  
+     - **Versioned Desired State**: `/state/versioned-store.js` → Store immutable revisions of profile expansions (e.g., `profile_v1 = { modIds: ["A", "B"], constraints: [...] }`).  
+     - **Hash Comparison**: When expanding a profile, compare generated `modIds` against the versioned hash. If mismatch, reject the update.  
+   - **File**: `/profile-validator.js` → `validateProfileExpansion(profileName, currentHash)` → Fails if `profile` generates different `modIds`.  
+
+4. **Rollback & Generation Tracking**  
+   - **Issue**: Rollback must restore a **specific desired-state revision** without affecting current sessions.  
+   - **Fix**:  
+     - **Generation System**: `/state/generation-tracker.js` → Track `generationId` (e.g., `gen-1234`) tied to a `desiredStateRevision`.  
+     - **Rollback Logic**: `rollback(generationId)` → Reverts `currentGenerationPointer` to the revision, but **does not alter active sessions** (long-lived hosts must restart).  
+   - **Edge Case**: Conflicts during rollback (e.g., newer session data). Use `atomicUpdate()` with `generationId` to prevent overwrites.  
+
+5. **UI/UX & Accessibility**  
+   - **Issue**: TUI must be **keyboard-complete**, readable without color, and avoid "grayed" traps.  
+   - **Fix**:  
+     - **TUI Design**: `/tui/keyboard-complete-view.js` →  
+       - Group mods by **dependency-aware semantic categories** (e.g., "Core", "Optional", "Blocked").  
+       - Use **tab order** based on dependency hierarchy (e.g., parents before children).  
+       - Display **typed blocked reasons** (e.g., `REASON.CONFLICT`, `REASON.MISSING_DEPENDENCY`) with recovery suggestions (e.g., "Enable X to resolve").  
+   - **Accessibility Trap**: Ensure "grayed" mods are **visually distinct but not hidden** (e.g., strikethrough + tooltip).  
+
+---
+
+### **Critical Edge Cases & Security Boundaries**  
+| **Edge Case** | **Impact** | **Mitigation** |  
+|---------------|------------|----------------|  
+| **Concurrent Profile Updates** | Silent alteration of installations | Use `versioned-store.js` with **immutable revisions** and `atomicUpdate()` |  
+| **Reverse Dependency Disable Without --no-cascade** | Accidental disabling of critical mods | Implement **pre-disable preview** (e.g., `previewDisable(modId)` shows affected dependents) |  
+| **Repository/Private Project File Exploitation** | Unauthorized activation of disabled mods | Enforce **permission checks** in `/constraint-resolver.js`:  
+  ```js  
+  if (mod.state === GRAYED && !isInEnabledList(mod)) {  
+    throw new Error("Cannot configure grayed mod");  
+  }  
+  ```  
+| **Short-Lived Session Inconsistency** | New generations not visible | Use `generation-tracker.js` to **notify sessions** of new `generationId` via event bus |  
+
+---
+
+### **Service Split & Dependency-Ordered Increments**  
+1. **State Persistence Layer**  
+   - **Files**: `/state/versioned-store.js`, `/state/generation-tracker.js`  
+   - **Dependencies**: None (core, isolated for rollback/preview).  
+
+2. **Constraint Resolution Engine**  
+   - **Files**: `/dependency-graph.js`, `/constraint-resolver.js`  
+   - **Dependencies**: State persistence (to read current `desiredState`).  
+
+3. **UI/UX Layer**  
+   - **Files**: `/tui/keyboard-complete-view.js`, `/ui/reason-enum.js`  
+   - **Dependencies**: Constraint resolver (to display typed reasons).  
+
+4. **Session Management**  
+   - **Files**: `/session-manager.js`  
+   - **Dependencies**: State persistence (to track `generationId` per session).  
+
+**Increment Order**:  
+1. Implement `versioned-store.js` and `generation-tracker.js` (rollback foundation).  
+2. Build `dependency-graph.js` and `constraint-resolver.js` (dependency closure).  
+3. Develop `profile-validator.js` (prevent silent changes).  
+4. Finalize TUI with `keyboard-complete-view.js` and `reason-enum.js`.  
+
+---
+
+### **False-Green Test Scenarios**  
+1. **Test**: Disable a parent mod **without** `--no-cascade` → All reverse dependents must be atomically disabled.  
+   - **File**: `/test/disable-cascade.test.js` → Use mock DAG with `A → B → C`.  
+
+2. **Test**: Enable a mod with **missing required dependency** → Preview must show `REASON.MISSING_DEPENDENCY`.  
+   - **File**: `/test/enable-missing-dependency.test.js` → Assert `preview()` returns `blockedReason: "Missing X"`.  
+
+3. **Test**: Rollback to a **previous generation** → Ensure `currentGenerationPointer` reverts, but active sessions remain untouched.  
+   - **File**: `/test/rollback.test.js` → Use `generation-tracker.js` to assert `generationId` matches the revision.  
+
+---
+
+### **Final Notes**  
+- **Security**: Repository files **cannot activate disabled mods** → Enforce in `/constraint-resolver.js` (see above).  
+- **Accessibility**: TUI must **not rely on color** → Use semantic labels (e.g., `GRAYED: "Disabled (click to enable)"`).  
+- **Performance**: Avoid recomputing DAGs on every `enable/disable` → Cache dependency closures in `/state/cache.js`.  
+
+This plan ensures **frozen requirements** are met, **edge cases** are addressed, and the system remains **testable, secure, and user-friendly**.

@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "package": "@kernlang/agon-mod-flow",
+  "assignments": [
+    {
+      "category": "builtinCommandMetadata",
+      "id": "flow",
+      "source": "packages/core/src/blocks/builtin-commands.ts:57",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-flow",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "builtinCommandMetadata",
+      "id": "flows",
+      "source": "packages/core/src/blocks/builtin-commands.ts:58",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-flow",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "intentVariants",
+      "id": "flow",
+      "source": "packages/cli/src/signals/intent-types.ts:33",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-flow",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "intentVariants",
+      "id": "flows",
+      "source": "packages/cli/src/signals/intent-types.ts:34",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-flow",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "tuiSlashCommands",
+      "id": "/flow",
+      "source": "packages/cli/src/signals/intent.ts:56",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-flow",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "tuiSlashCommands",
+      "id": "/flows",
+      "source": "packages/cli/src/signals/intent.ts:56",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-flow",
+      "rule": "exact-user-surface"
+    }
+  ]
+}

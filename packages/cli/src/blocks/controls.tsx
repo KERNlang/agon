@@ -15,7 +15,23 @@ import { icons } from '../signals/icons.js';
 import { setAuthKey, getAuthKey, loadConfig, configSet } from '@kernlang/agon-core';
 
 import type { CliModelEntry, CliProviderGroup } from '@kernlang/agon-core';
+import { reduceModManagementFocus, type ModManagementView } from '@kernlang/agon-kernel';
 
+
+export function ModManagementPicker({ view, onClose }: { view: ModManagementView; onClose: () => void }) {
+  const entries = view.groups.flatMap((group) => group.entries); const [focused, setFocused] = useState(entries[0]?.id ?? '');
+  useInput((input: string, key: any) => {
+    if (key.escape || input.toLowerCase() === 'q') { onClose(); return; }
+    const action = key.upArrow ? 'ArrowUp' : key.downArrow ? 'ArrowDown' : key.home ? 'Home' : key.end ? 'End' : null;
+    if (action) setFocused((current) => reduceModManagementFocus(view, current, action));
+  });
+  const selected = entries.find(({ id }) => id === focused);
+  return <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1} width="100%">
+    <Box justifyContent="space-between"><Text bold color="cyan">Mod manager</Text><Text dimColor>↑↓ Home End navigate · Esc closes</Text></Box>
+    {view.groups.map((group) => <Box key={group.id} flexDirection="column"><Text bold>{group.label}</Text>{group.entries.map((entry) => <Text key={entry.id} color={entry.status === 'blocked' ? 'red' : entry.status === 'disabled' ? 'gray' : undefined}>{entry.id === focused ? '› ' : '  '}{entry.depth ? '  ' : ''}[{entry.status}] {entry.label}</Text>)}</Box>)}
+    {selected ? <Box flexDirection="column" marginTop={1}><Text>{selected.ariaLabel}</Text>{selected.recovery ? <Text color="yellow">Recovery: {selected.recovery}</Text> : null}</Box> : null}
+  </Box>;
+}
 
 export interface ReviewEvent {
   winnerId: string;

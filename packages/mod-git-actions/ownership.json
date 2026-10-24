@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "package": "@kernlang/agon-mod-git-actions",
+  "assignments": [
+    {
+      "category": "builtinCommandMetadata",
+      "id": "commit",
+      "source": "packages/core/src/blocks/builtin-commands.ts:31",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-git-actions",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "builtinCommandMetadata",
+      "id": "undo",
+      "source": "packages/core/src/blocks/builtin-commands.ts:33",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-git-actions",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "intentVariants",
+      "id": "commit",
+      "source": "packages/cli/src/signals/intent-types.ts:45",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-git-actions",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "intentVariants",
+      "id": "undo",
+      "source": "packages/cli/src/signals/intent-types.ts:46",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-git-actions",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "tuiSlashCommands",
+      "id": "/commit",
+      "source": "packages/cli/src/signals/intent.ts:56",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-git-actions",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "tuiSlashCommands",
+      "id": "/undo",
+      "source": "packages/cli/src/signals/intent.ts:56",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-git-actions",
+      "rule": "exact-user-surface"
+    }
+  ]
+}

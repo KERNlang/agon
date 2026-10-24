@@ -1,5 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import { buildStageContext, renderStageContext } from '@kernlang/agon-core';
+import * as forgeOwner from '@kernlang/agon-mod-forge';
+import { buildForgePrompt, buildCritiquePrompt, buildSynthesisPrompt, buildForgePromptWithContext } from '../../packages/core/src/blocks/prompt-builder.js';
+
+it.each(Object.entries({ buildStageContext, renderStageContext, buildForgePrompt,
+  buildCritiquePrompt, buildSynthesisPrompt, buildForgePromptWithContext }))(
+  'keeps Core %s bound to its Forge owner', (name, implementation) => {
+    expect(forgeOwner).toHaveProperty(name, implementation);
+  },
+);
 
 describe('buildStageContext', () => {
   const baseOpts = {

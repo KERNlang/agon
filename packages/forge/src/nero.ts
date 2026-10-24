@@ -1,4 +1,6 @@
 import type { EngineAdapter, RatingRankOptions, RatingRecord } from '@kernlang/agon-core';
+import { parseNeroVerdict, rankCriticCascade } from '@kernlang/agon-mod-nero';
+export { parseNeroVerdict } from '@kernlang/agon-mod-nero';
 
 import { EngineRegistry, getRatings, loadConfig, pickTopRatedEngine, resolveCurrentIdentities, resolveWorkingDir, seedNewEnginesFromRegistry } from '@kernlang/agon-core';
 
@@ -80,18 +82,6 @@ export function buildNeroPrompt(opts: { decision:string; reasoning?:string; focu
 }
 
 /**
- * Extract the final verdict from Nero's output. Pure — exported for testing. The prompt instructs the critic to END with the verdict, so take the LAST VERDICT: marker — earlier ones may appear inside the critic's reasoning.
- */
-export function parseNeroVerdict(text: string): 'flawed' | 'proceed-with-caution' | 'sound' | 'unknown' {
-  const matches = [...text.matchAll(/VERDICT:\s*(FLAWED|PROCEED WITH CAUTION|SOUND)/gi)];
-  if (matches.length === 0) return 'unknown';
-  const v = matches[matches.length - 1][1].toUpperCase();
-  if (v === 'FLAWED') return 'flawed';
-  if (v === 'SOUND') return 'sound';
-  return 'proceed-with-caution';
-}
-
-/**
  * Extract Nero's confidence that the original is CORRECT (0-100). Pure — exported for testing. Prefers an explicit 'Confidence: X%' marker, else the first percentage.
  */
 export function parseNeroConfidence(text: string): number | null {
@@ -107,15 +97,11 @@ export function parseNeroConfidence(text: string): number | null {
  * Build Nero's critic cascade, best critic first. Repeatedly picks the top-rated critic (critique -> tribunal -> global -> random) and excludes it from the next pick, so a failed top critic can down-pass to the next-best. Pure (ratings injected) — exported for testing. NOTE: pickTopRatedEngine IGNORES `exclude` if it would empty the pool (resetting to the full list); the `seen` guard below stops the cascade when that reset re-surfaces an already-ranked or author engine, so the author is never reintroduced as a critic.
  */
 export function rankNeroCritics(engineIds: string[], ratings: RatingRecord, opts?: { exclude?:string[] } & RatingRankOptions): Array<{ engineId: string; reason: 'top-rated' | 'random' | 'none'; scope: 'forge' | 'brainstorm' | 'tribunal' | 'critique' | 'global' | null }> {
-  const seen = new Set<string>(opts?.exclude ?? []);
-  const ranked: Array<{ engineId: string; reason: 'top-rated' | 'random' | 'none'; scope: 'forge' | 'brainstorm' | 'tribunal' | 'critique' | 'global' | null }> = [];
-  for (let i = 0; i < engineIds.length; i++) {
-    const picked = pickTopRatedEngine(engineIds, ratings, { modes: ['critique', 'tribunal'], exclude: [...seen], now: opts?.now, staleHorizonDays: opts?.staleHorizonDays, identities: opts?.identities });
-    if (!picked.engineId || seen.has(picked.engineId)) break; // pool reset re-surfaced a seen/author engine -> exhausted
-    ranked.push(picked);
-    seen.add(picked.engineId);
-  }
-  return ranked;
+  return rankCriticCascade(engineIds, exclude =>
+    pickTopRatedEngine(engineIds, ratings, {
+      modes: ['critique', 'tribunal'], exclude,
+      now: opts?.now, staleHorizonDays: opts?.staleHorizonDays, identities: opts?.identities,
+    }), opts?.exclude);
 }
 
 /**

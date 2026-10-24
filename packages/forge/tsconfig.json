@@ -7,6 +7,18 @@
   },
   "include": ["src"],
   "references": [
-    { "path": "../core" }
+    { "path": "../mod-forge" },
+    { "path": "../mod-brainstorm" },
+    { "path": "../mod-campfire" },
+    { "path": "../mod-council" },
+    { "path": "../mod-conquer" },
+    { "path": "../mod-nero" },
+    { "path": "../mod-goal" },
+    { "path": "../mod-tribunal" },
+    { "path": "../mod-think" },
+    { "path": "../mod-synthesis" },
+    { "path": "../core" },
+    { "path": "../support-persistence" },
+    { "path": "../support-worktree" }
   ]
 }

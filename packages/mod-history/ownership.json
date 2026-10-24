@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "package": "@kernlang/agon-mod-history",
+  "assignments": [
+    {
+      "category": "builtinCommandMetadata",
+      "id": "history",
+      "source": "packages/core/src/blocks/builtin-commands.ts:55",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-history",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cliCommands",
+      "id": "history",
+      "source": "packages/cli/src/lazy-commands.ts:295",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-history",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cliCommands",
+      "id": "last",
+      "source": "packages/cli/src/lazy-commands.ts:301",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-history",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "intentVariants",
+      "id": "history",
+      "source": "packages/cli/src/signals/intent-types.ts:11",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-history",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "tuiSlashCommands",
+      "id": "/history",
+      "source": "packages/cli/src/signals/intent.ts:56",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-history",
+      "rule": "exact-user-surface"
+    }
+  ]
+}

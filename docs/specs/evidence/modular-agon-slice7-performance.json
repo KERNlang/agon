@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "slice": "S7",
+  "sampleCount": 15,
+  "planMs": {
+    "median": 0.2947909999998046,
+    "p95": 1.6765419999999978,
+    "budgetP95": 25
+  },
+  "applyMs": {
+    "median": 198.68545899999998,
+    "p95": 235.54970799999998,
+    "budgetP95": 1000
+  },
+  "totalMs": {
+    "median": 199.00783399999995,
+    "p95": 237.22625,
+    "budgetP95": 1025
+  },
+  "residentRssBytes": {
+    "median": 79675392,
+    "p95": 80183296,
+    "budgetP95": 201326592
+  },
+  "passed": true
+}

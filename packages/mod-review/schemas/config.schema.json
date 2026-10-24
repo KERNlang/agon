@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kernlang.dev/schemas/review/config.schema.json",
+  "title": "review configuration",
+  "type": "object",
+  "x-agon-config": { "version": 1, "legacyAliases": ["autoReviewAfterImpl", "goalReviewEngines"] },
+  "properties": {
+    "autoReviewAfterImpl": { "type": "boolean", "default": true },
+    "goalReviewEngines": { "type": "array", "items": { "type": "string" }, "default": [] }
+  },
+  "additionalProperties": true
+}

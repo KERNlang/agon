@@ -55,6 +55,7 @@ export interface AgentSynthesisOptions {
   baseSha: string;
   timeout: number;
   signal?: AbortSignal;
+  executionRefusal?: () => string | undefined;
   maxSteps?: number;
   heavyToolSemaphore?: Semaphore;
   systemPrompt?: string;
@@ -293,6 +294,7 @@ export async function runAgentTeamSynthesis(opts: AgentSynthesisOptions): Promis
       cwd: opts.winnerWorktreePath,
       timeout: opts.timeout,
       signal: opts.signal,
+      executionRefusal: opts.executionRefusal,
       maxSteps: opts.maxSteps ?? 6,
       heavyToolSemaphore: opts.heavyToolSemaphore,
       onChunk: opts.onChunk,
@@ -389,6 +391,7 @@ export interface AgentInvestigateSynthesisOptions {
   losers: AgentSynthesisLoser[];
   timeout: number;
   signal?: AbortSignal;
+  executionRefusal?: () => string | undefined;
   maxSteps?: number;
   heavyToolSemaphore?: Semaphore;
   systemPrompt?: string;
@@ -439,6 +442,7 @@ export async function runAgentInvestigateSynthesis(opts: AgentInvestigateSynthes
       cwd: opts.winnerCwd,
       timeout: opts.timeout,
       signal: opts.signal,
+      executionRefusal: opts.executionRefusal,
       maxSteps: opts.maxSteps ?? 4,
       heavyToolSemaphore: opts.heavyToolSemaphore,
       onChunk: opts.onChunk,
@@ -493,9 +497,17 @@ export interface PostSynthesisFitnessResult {
 /**
  * Re-run the project's fitness command (e.g. 'npm run typecheck') against the winner's worktree after synthesis edits. Used by runAgentTeam to decide whether to keep the synthesized diff or revert to the pre-synthesis winner diff. Extracted from the caller into a standalone helper so it can be unit-tested against a mocked spawn. Swallows spawn errors into the result rather than throwing — the caller must NOT crash the team run on a fitness tool hiccup.
  */
-export async function runPostSynthesisFitnessCheck(opts: {worktreePath:string, fitnessCmd:string, timeoutSec?:number, signal?:AbortSignal}): Promise<PostSynthesisFitnessResult> {
+export async function runPostSynthesisFitnessCheck(opts: {worktreePath:string, fitnessCmd:string, timeoutSec?:number, signal?:AbortSignal, executionRefusal?:()=>string|undefined}): Promise<PostSynthesisFitnessResult> {
   const start = Date.now();
+  const assertExecutionAllowed = (): void => {
+    opts.signal?.throwIfAborted();
+    let reason: string | undefined;
+    try { reason = opts.executionRefusal?.(); }
+    catch { reason = 'Fitness execution authority check failed'; }
+    if (reason !== undefined) throw new Error(reason || 'Fitness execution refused');
+  };
   try {
+    assertExecutionAllowed();
     const result = await spawnWithTimeout({
       command: 'sh',
       args: ['-c', opts.fitnessCmd],
@@ -503,6 +515,7 @@ export async function runPostSynthesisFitnessCheck(opts: {worktreePath:string, f
       timeout: (opts.timeoutSec ?? 90) * 1000,
       signal: opts.signal,
     });
+    assertExecutionAllowed();
     return {
       passed: result.exitCode === 0,
       exitCode: result.exitCode,

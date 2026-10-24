@@ -1,4 +1,10 @@
-import type { CommandDef, CommandMeta, SubCommandsDef } from 'citty';
+import type { JobCliInvocationContext } from '@kernlang/agon-mod-jobs';
+import { captureProcessSurfaceAuthority } from './surface-authority-runtime.js';
+import { parseArgs } from 'citty';
+import type { ArgsDef, CommandDef, CommandMeta, SubCommandsDef } from 'citty';
+import type { CommandContribution, CommandResult, Json, ModPlatform } from '@kernlang/agon-mod-api';
+import { assertContributionInput, selectModSettings } from '@kernlang/agon-kernel';
+import { assertProcessSurfaceAvailable, processSurfaceCatalog, processSurfaceClient, processSurfacePublicIds } from './surface-authority-runtime.js';
 
 // ── Lazy citty subcommand loading ──────────────────────────────────────────
 // Every `agon <anything>` — even `--help` — used to statically import all
@@ -47,6 +53,32 @@ function resolveMaybeFn<T>(value: T | (() => T | Promise<T>) | undefined): T | P
   return typeof value === 'function' ? (value as () => T | Promise<T>)() : value;
 }
 
+function normalizeOptionSpellings(rawArgs: string[], names: string[]): string[] {
+  const declared = new Set(names);
+  const spellings = new Map(names.map(name => [name.replace(/[A-Z]/g, letter => `-${letter.toLowerCase()}`), name]));
+  let options = true;
+  return rawArgs.map(arg => {
+    if (arg === '--') { options = false; return arg; }
+    const match = options ? /^--(no-)?([^=]+)(=.*)?$/.exec(arg) : null;
+    if (!match || declared.has(match[2])) return arg;
+    const canonical = spellings.get(match[2]);
+    return canonical ? `--${match[1] ?? ''}${canonical}${match[3] ?? ''}` : arg;
+  });
+}
+
+/** Normalize before Citty can consume a required positional as an unknown flag value. */
+export async function normalizeCliArguments(command: CommandDef, rawArgs: string[]): Promise<string[]> {
+  const children = await resolveMaybeFn(command.subCommands);
+  const index = rawArgs.findIndex(arg => !arg.startsWith('-'));
+  const child = children?.[rawArgs[index]];
+  if (child) {
+    const resolved = await resolveMaybeFn(child);
+    if (resolved) return [...rawArgs.slice(0, index + 1), ...await normalizeCliArguments(resolved, rawArgs.slice(index + 1))];
+  }
+  const args = await resolveMaybeFn(command.args);
+  return normalizeOptionSpellings(rawArgs, Object.keys(args ?? {}));
+}
+
 function lazyCommand(
   loader: () => Promise<CommandModule>,
   exportName: string,
@@ -69,6 +101,9 @@ function lazyCommand(
       return resolved ?? {};
     },
     setup: async (ctx) => {
+      // citty executes parent run() after its child. Authorize at entry so
+      // lifecycle children may deliberately select a new generation.
+      assertProcessSurfaceAvailable('cli', String(meta.name));
       const cmd = await resolve();
       return cmd.setup?.(ctx);
     },
@@ -94,58 +129,123 @@ function lazyCommand(
   return def;
 }
 
+function schemaGeneratedCommand(publicId: string, description: string, displayName = publicId): CommandDef {
+  const record = processSurfaceClient('cli').assertAvailable(publicId);
+  const assertSelected = captureProcessSurfaceAuthority();
+  const assertInvocation = () => { assertSelected(); assertProcessSurfaceAvailable('cli', publicId); };
+  const contribution = record.payload as CommandContribution;
+  const schema = (contribution.inputSchema ?? {}) as Record<string, any>;
+  const projection = contribution.cli;
+  const required = new Set(Array.isArray(schema.required) ? schema.required : []);
+  const properties = (schema.properties ?? {}) as Record<string, { type?: string; default?: unknown; description?: string }>;
+  const projectedArgs = projection ? Object.fromEntries(Object.entries(properties).filter(([name]) => name !== '_').map(([name, spec]) => [name, {
+    type: projection.positionals?.includes(name) ? 'positional' : (spec.type === 'boolean' ? 'boolean' : 'string'),
+    required: required.has(name),
+    ...(spec.default === undefined ? {} : { default: spec.type === 'boolean' ? Boolean(spec.default) : String(spec.default) }),
+    ...(projection.aliases?.[name] ? { alias: projection.aliases[name] } : {}),
+    description: projection.descriptions?.[name] ?? spec.description,
+  }])) : { input: { type: 'positional', required: false, description: 'Optional JSON object passed to the mod command' } };
+  return {
+    meta: { name: displayName, description: contribution.description || description }, args: projectedArgs as any,
+    setup: () => { assertInvocation(); },
+    run: async (ctx) => {
+      // Citty runs the parent after its child. Authorize in setup, but do not
+      // invoke the parent contribution when Citty selected a nested command.
+      const selectedChild = ctx.rawArgs?.find(arg => !arg.startsWith('-'));
+      if (ctx.cmd?.subCommands && selectedChild) return;
+      assertInvocation();
+      let input: Json;
+      if (projection) {
+        // Normalize before parsing: defaults can hide Citty's alternate-spelling lookup.
+        const rawArgs = ctx.rawArgs && normalizeOptionSpellings(ctx.rawArgs, Object.keys(properties));
+        const parsed = rawArgs ? parseArgs(rawArgs, projectedArgs as ArgsDef) : ctx.args;
+        input = Object.fromEntries(Object.entries(parsed as Record<string, Json | undefined>)
+          .filter(([name, value]) => name in properties && value !== undefined)) as Json;
+      }
+      else {
+        input = {};
+        if (typeof ctx.args.input === 'string' && ctx.args.input.trim()) {
+          const parsed = JSON.parse(ctx.args.input) as unknown;
+          if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new TypeError('mod command input must be a JSON object');
+          input = parsed as Json;
+        }
+      }
+      assertContributionInput(contribution.inputSchema ?? { type: 'object', additionalProperties: true }, input);
+      const platform = `${process.platform}-${process.arch === 'x64' ? 'x64' : process.arch}` as ModPlatform;
+      if (!['darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64'].includes(platform)) throw new TypeError(`unsupported mod platform: ${platform}`);
+      const { loadConfig } = await import('@kernlang/agon-core');
+      const context: JobCliInvocationContext = { invocationId: `cli:${process.pid}:${Date.now()}`, cwd: process.cwd(), platform, signal: new AbortController().signal, config: selectModSettings(loadConfig(process.cwd()), record.owner.id) };
+      if (record.owner.id === 'agon.jobs') {
+        if (publicId === 'daemon') {
+          const { createCliDaemonHost } = await import('./commands/daemon.js');
+          context.daemonCli = createCliDaemonHost(assertInvocation);
+        } else {
+          const { createCliJobHost } = await import('./jobs/cli-host.js');
+          context.jobCli = createCliJobHost(assertInvocation);
+        }
+      }
+      assertInvocation();
+      const output = await contribution.run(input, context);
+      assertInvocation();
+      let result: CommandResult = { exitCode: 0 };
+      if (output && typeof output === 'object' && Symbol.asyncIterator in output) {
+        for await (const event of output) { assertInvocation(); if (event.type === 'text') process.stdout.write(event.text); else if (event.type === 'progress') process.stderr.write(`${event.message}\n`); else if (event.type === 'result') result = event.result; }
+      } else result = output as CommandResult;
+      assertInvocation();
+      if (result.stdout) process.stdout.write(result.stdout); if (result.stderr) process.stderr.write(result.stderr);
+      if (result.result !== undefined && result.stdout === undefined) console.log(typeof result.result === 'string' ? result.result : JSON.stringify(result.result, null, 2));
+      if (result.exitCode !== 0) process.exitCode = result.exitCode;
+    },
+  };
+}
+
+/** Parse TUI command text without shell expansion, using the selected CLI schema. */
+export async function parseGeneratedCommandLine(publicId: string, text: string, cwd?: string): Promise<Record<string, Json>> {
+  const assertSelected = captureProcessSurfaceAuthority();
+  const record = processSurfaceClient('cli').assertAvailable(publicId);
+  const contribution = record.payload as CommandContribution;
+  if (!contribution.cli) throw new Error(`${publicId} has no CLI argument projection`);
+  let args = await resolveMaybeFn(schemaGeneratedCommand(publicId, '').args) as ArgsDef;
+  if (cwd !== undefined && args.cwd?.type === 'string') args = { ...args, cwd: { ...args.cwd, default: cwd } };
+  assertSelected();
+  const tokens: string[] = [];
+  let word = '';
+  let started = false;
+  let quote: '"' | "'" | undefined;
+  for (let index = 0; index < text.length; index++) {
+    const char = text[index];
+    if (char === quote) { quote = undefined; continue; }
+    if (quote !== "'" && char === '\\') {
+      const next = text[++index];
+      if (next === undefined) throw new Error('Incomplete escape in command; close the quote or remove the final backslash.');
+      if (quote === '"' && !['"', '\\', '$', '`', '\n'].includes(next)) word += '\\';
+      if (next !== '\n') { word += next; started = true; }
+      continue;
+    }
+    if (quote !== "'" && (char === '$' || char === '`'))
+      throw new Error('Shell expansion is not supported here. Use single quotes for literal shell text.');
+    if (quote) { word += char; continue; }
+    if (char === '"' || char === "'") { quote = char; started = true; continue; }
+    if (/[;&|<>()\n\r]/.test(char))
+      throw new Error('Shell operators are not supported here. Quote the gate command.');
+    if (/\s/.test(char)) {
+      if (started) tokens.push(word);
+      word = ''; started = false;
+    } else { word += char; started = true; }
+  }
+  if (quote) throw new Error('Unclosed quote in command.');
+  if (started) tokens.push(word);
+  const parsed = parseArgs(normalizeOptionSpellings(tokens, Object.keys(args)), args);
+  const properties = (contribution.inputSchema as { properties?: Record<string, unknown> })?.properties ?? {};
+  const input = Object.fromEntries(Object.entries(parsed).filter(([name, value]) => name in properties && value !== undefined)) as Record<string, Json>;
+  assertContributionInput(contribution.inputSchema ?? {}, input);
+  assertSelected();
+  return input;
+}
 // Commands whose real implementation nests further subCommands of its own
 // (`agon models list`, `agon ext install`, `agon browser-host install`, …).
 // Every other command below is a leaf — see the comment above `lazyCommand`
 // for why that distinction has to be made statically, without an import.
-const forge = lazyCommand(() => import('./commands/forge.js'), 'forgeCommand', {
-  name: 'forge',
-  description: 'Run competitive forge — engines race to implement a task',
-});
-const brainstorm = lazyCommand(() => import('./commands/brainstorm.js'), 'brainstormCommand', {
-  name: 'brainstorm',
-  description: 'Confidence-bidding brainstorm — engines bid, highest-quality answer wins (quality = substance + calibrated confidence)',
-});
-const tribunal = lazyCommand(() => import('./commands/tribunal.js'), 'tribunalCommand', {
-  name: 'tribunal',
-  description: 'Adversarial debate — engines argue different sides of a question',
-});
-const campfire = lazyCommand(() => import('./commands/campfire.js'), 'campfireCommand', {
-  name: 'campfire',
-  description: 'Open discussion — all engines think together, no competition',
-});
-const teamForge = lazyCommand(() => import('./commands/team-forge.js'), 'teamForgeCommand', {
-  name: 'team-forge',
-  description: 'Team competitive forge — teams of engines race to implement a task',
-});
-const teamBrainstorm = lazyCommand(() => import('./commands/team-brainstorm.js'), 'teamBrainstormCommand', {
-  name: 'team-brainstorm',
-  description: 'Team brainstorm — teams of engines collaborate on a question',
-});
-const teamTribunal = lazyCommand(() => import('./commands/team-tribunal.js'), 'teamTribunalCommand', {
-  name: 'team-tribunal',
-  description: 'Team tribunal — teams of engines argue different sides of a question',
-});
-const leaderboard = lazyCommand(() => import('./commands/leaderboard.js'), 'leaderboardCommand', {
-  name: 'leaderboard',
-  description: 'Show engine leaderboard (Glicko-2 ratings)',
-});
-const history = lazyCommand(() => import('./commands/history.js'), 'historyCommand', {
-  name: 'history',
-  description: 'Browse past forge runs',
-});
-const ratings = lazyCommand(() => import('./commands/ratings.js'), 'ratingsCommand', {
-  name: 'ratings',
-  description: 'Maintain the Glicko ratings + forge-run history store (purge-unknown)',
-}, { hasSubCommands: true });
-const room = lazyCommand(() => import('./commands/room.js'), 'roomCommand', {
-  name: 'room',
-  description: 'Shared multi-party chat room any CLI can join',
-});
-const provenance = lazyCommand(() => import('./commands/provenance.js'), 'provenanceCommand', {
-  name: 'provenance',
-  description: 'AI-contribution / transparency report for a forge run',
-});
 const engine = lazyCommand(() => import('./commands/engine.js'), 'engineCommand', {
   name: 'engine',
   description: 'Manage AI engines',
@@ -153,10 +253,6 @@ const engine = lazyCommand(() => import('./commands/engine.js'), 'engineCommand'
 const doctor = lazyCommand(() => import('./commands/doctor.js'), 'doctorCommand', {
   name: 'doctor',
   description: 'Diagnose Agon engine and worktree health',
-});
-const last = lazyCommand(() => import('./commands/last.js'), 'lastCommand', {
-  name: 'last',
-  description: 'Print the path of the most recent run directory (orchestrators: composes with cat/jq)',
 });
 const models = lazyCommand(() => import('./commands/models.js'), 'modelsCommand', {
   name: 'models',
@@ -170,165 +266,74 @@ const config = lazyCommand(() => import('./commands/config.js'), 'configCommand'
   name: 'config',
   description: 'View and modify Agon configuration',
 });
-const review = lazyCommand(() => import('./commands/review.js'), 'reviewCommand', {
-  name: 'review',
-  description: 'Run a non-interactive AI review of a diff target',
-});
 const call = lazyCommand(() => import('./commands/call.js'), 'callCommand', {
   name: 'call',
   description: 'Live bridge for external CLIs to run Agon modes',
-});
-const sanitize = lazyCommand(() => import('./commands/sanitize.js'), 'sanitizeCommand', {
-  name: 'sanitize',
-  description: 'Deterministic invisible-watermark forensics — detect and strip zero-width chars, bidi controls, tag stego, homoglyphs, whitespace payloads. No AI, fully verifiable. Keyed statistical watermarks are honestly reported as not assessable.',
-});
-const naturalize = lazyCommand(() => import('./commands/naturalize.js'), 'naturalizeCommand', {
-  name: 'naturalize',
-  description: 'Naturalize AI-written text: deterministic sanitize → non-author engine rewrite (writer ≠ rewriter) → re-scan → word-diff report. Honest about limits: keyed statistical watermarks are always reported as not assessable.',
-});
-const mutate = lazyCommand(() => import('./commands/mutate.js'), 'mutateCommand', {
-  name: 'mutate',
-  description: 'Mutation testing as a test-strength oracle: mutate your changed lines in a disposable worktree, re-run the suite per mutant, and report every SURVIVOR — wrong code your tests called green. Mechanical operators by default (zero engine spend); --semantic adds AI-proposed realistic bugs from the roster. Advisory, never a gate.',
-});
-const job = lazyCommand(() => import('./commands/job.js'), 'jobCommand', {
-  name: 'job',
-  description: 'Submit, observe, and cancel daemon-owned autonomous jobs',
-}, { hasSubCommands: true });
-const agentGuide = lazyCommand(() => import('./commands/agent-guide.js'), 'agentGuideCommand', {
-  name: 'agent-guide',
-  description: 'Print how to call agon — a compact overview for any external engine (Codex, Antigravity, Claude, OpenCode)',
-});
-const installAgentPrompts = lazyCommand(() => import('./commands/install-agent-prompts.js'), 'installAgentPromptsCommand', {
-  name: 'install-agent-prompts',
-  description: 'Install lightweight Agon prompts/skills into other CLIs (Codex, Antigravity, Claude Code) — no MCP, no always-on tokens',
-});
-const goal = lazyCommand(() => import('./commands/goal.js'), 'goalCommand', {
-  name: 'goal',
-  description: 'Autonomously drive a task queue (e.g. .kern-gaps/) to completion. Per task: forge implements, the diff is witnessed + mutation-witnessed, the frozen gate runs, ALL engines review and a judge decides, blockers get one fix pass, then one commit lands on the goal branch (never main) — and is pushed with --push. Bound it with --max-hours and/or --budget, or neither (free).',
-});
-const synthesis = lazyCommand(() => import('./commands/synthesis.js'), 'synthesisCommand', {
-  name: 'synthesis',
-  description: 'Competitive cross-pollination - engines draft, swap, improve, judge picks the best evolved artifact',
-});
-const ask = lazyCommand(() => import('./commands/ask.js'), 'askCommand', {
-  name: 'ask',
-  description: 'Ask one engine a single question — fast raw answer, no competition. `agon ask codex "..."`, or `agon ask "..."` for the default engine.',
-});
-const think = lazyCommand(() => import('./commands/think.js'), 'thinkCommand', {
-  name: 'think',
-  description: 'Sequential thinking — decompose a problem into structured thoughts before acting. `agon think "..." --strategy reflexion`. Opt-in; surfaces open questions and a goal handoff.',
-});
-const rag = lazyCommand(() => import('./commands/rag.js'), 'ragCommand', {
-  name: 'rag',
-  description: 'Project-context retrieval over the docs corpus: index | query "<text>" | stats. Offline embeddings (MiniLM sidecar), cited results.',
-});
-const nero = lazyCommand(() => import('./commands/nero.js'), 'neroCommand', {
-  name: 'nero',
-  description: 'Adversarial self-challenge — the top-rated critic attacks a decision and returns concrete failure scenarios + a verdict. `agon nero "<decision>" --reasoning "..."`. Agon\'s /evil-twin for external CLIs.',
-});
-const council = lazyCommand(() => import('./commands/council.js'), 'councilCommand', {
-  name: 'council',
-  description: 'Roundtable of ALL active engines — each takes a role, the top-rated engine chairs. `agon council "<decision>"`. Agon\'s stronger LLM-Council: real heterogeneous models, decision brief, directed critique, a chairman verdict with confidence + kill-switch.',
-});
-const research = lazyCommand(() => import('./commands/research.js'), 'researchCommand', {
-  name: 'research',
-  description: 'Keyless web-grounded research — Agon discovers sources (npm/GitHub/MDN/IETF/Stack Overflow/Wikipedia, no API key), an engine drafts a cited answer, and Agon verifies every citation. `agon research "<question>"`.',
-});
-const conquer = lazyCommand(() => import('./commands/conquer.js'), 'conquerCommand', {
-  name: 'conquer',
-  description: 'Supervised-autonomous build: Cesar drives an external builder CLI (codex/claude/agy) unattended toward a task, convening nero/tribunal/council on forks, and stops at a human merge gate. `agon conquer "<task>" --gate "<test cmd>"`.',
-});
-const worktree = lazyCommand(() => import('./commands/worktree.js'), 'worktreeCommand', {
-  name: 'worktree',
-  description: 'Isolated per-session git worktrees (new/list/rm/prune/rehydrate)',
 });
 const attach = lazyCommand(() => import('./commands/attach.js'), 'attachCommand', {
   name: 'attach',
   description: 'Attach (read-only) to a session: replay its EventLog and follow live (client/server split M2)',
 });
-const daemon = lazyCommand(() => import('./commands/daemon.js'), 'daemonCommand', {
-  name: 'daemon',
-  description: 'Run a long-lived agon session host (agond) you can attach to (client/server split M3): start | stop | status',
-});
-const serve = lazyCommand(() => import('./commands/serve.js'), 'serveCommand', {
-  name: 'serve',
-  description: 'Launch the loopback HTTP bridge so a browser extension / desktop can attach to one agon session (Agon Everywhere MVP)',
-});
-const drive = lazyCommand(() => import('./commands/drive.js'), 'driveCommand', {
-  name: 'drive',
-  description: 'Drive your browser from the terminal via a running `agon serve` + the open side panel (research, check a page design, navigate/read/screenshot)',
-});
-const chrome = lazyCommand(() => import('./commands/chrome.js'), 'chromeCommand', {
-  name: 'chrome',
-  description: 'Drive your browser from the terminal — reuses a running agon (serve/REPL) the side panel is on, or embeds a transient bridge (research, check a page design, navigate/read/screenshot)',
-});
-const ext = lazyCommand(() => import('./commands/ext.js'), 'extCommand', {
-  name: 'ext',
-  description: 'Browser-extension integration: install the native-messaging host for zero-terminal auto-connect.',
-}, { hasSubCommands: true });
-const browserHost = lazyCommand(() => import('./commands/browser-host.js'), 'browserHostCommand', {
-  name: 'browser-host',
-  description: 'Native-messaging pairing: install the com.kernlang.agon host so the browser extension connects with zero paste (install | uninstall | status | stop).',
-}, { hasSubCommands: true });
 const login = lazyCommand(() => import('./commands/login.js'), 'loginCommand', {
   name: 'login',
   description: "Log an engine's CLI into its clean workspace-pure config dir so dispatches stay authenticated without inheriting your personal Claude Code setup",
 });
 const update = lazyCommand(() => import('./commands/update.js'), 'updateCommand', {
   name: 'update',
-  description: 'Update Agon to the latest (or a specific) version from npm. Streams npm output live and exits 0 on success.',
+  description: 'Stage, verify, and atomically select a Modular Agon release without overwriting the running process.',
+});
+const mod = lazyCommand(() => import('./commands/mod.js'), 'modCommand', {
+  name: 'mod',
+  description: 'Inspect and manage modular Agon packages',
+}, { hasSubCommands: true });
+const setup = lazyCommand(() => import('./commands/setup.js'), 'setupCommand', {
+  name: 'setup',
+  description: 'Plan or apply a durable Modular Agon installation and profile',
 });
 
 // Same shape as the subCommands map index.ts used to build directly from
 // static imports — `worktree`/`wt` and `update`/`upgrade` intentionally
 // share the SAME lazy entry (and therefore the same memoized import) as
 // before, matching the pre-refactor aliasing.
-export const lazySubCommands: SubCommandsDef = {
-  forge,
-  brainstorm,
-  tribunal,
-  campfire,
-  'team-forge': teamForge,
-  'team-brainstorm': teamBrainstorm,
-  'team-tribunal': teamTribunal,
-  leaderboard,
-  history,
-  ratings,
-  room,
-  provenance,
+// These are kernel/lifecycle commands, not user-toggleable modes. Every
+// first-party mode below is projected from the selected registry generation.
+const kernelLazyCommandImplementations: SubCommandsDef = {
   engine,
   doctor,
-  last,
   models,
   provider,
   config,
-  review,
   call,
-  sanitize,
-  naturalize,
-  mutate,
-  job,
-  'agent-guide': agentGuide,
-  'install-agent-prompts': installAgentPrompts,
-  goal,
-  synthesis,
-  ask,
-  think,
-  rag,
-  nero,
-  council,
-  research,
-  conquer,
-  worktree,
-  wt: worktree,
   attach,
-  daemon,
-  serve,
-  drive,
-  chrome,
-  ext,
-  'browser-host': browserHost,
   login,
   update,
   upgrade: update,
+  mod,
+  setup,
 };
+
+export function createGeneratedLazySubCommands(available: ReadonlySet<string> = processSurfacePublicIds('cli')): SubCommandsDef {
+  const commands = Object.fromEntries(Object.entries(kernelLazyCommandImplementations)
+    .filter(([, command]) => available.has(String(((command as CommandDef).meta as CommandMeta).name))));
+  for (const entry of processSurfaceCatalog('cli')) {
+    if (!available.has(entry.publicId)) continue;
+    if (!entry.category.startsWith('external:') && !['daemon', 'job', 'ask', 'think', 'brainstorm', 'team-brainstorm', 'campfire', 'tribunal', 'team-tribunal', 'review', 'nero', 'council', 'synthesis', 'forge', 'team-forge', 'conquer', 'goal', 'sanitize', 'naturalize', 'mutate', 'rag', 'research', 'history', 'last', 'leaderboard', 'ratings', 'ratings purge-unknown', 'provenance', 'room', 'agent-guide', 'install-agent-prompts', 'worktree', 'wt', 'serve', 'drive', 'chrome', 'ext', 'ext install', 'ext native-host', 'browser-host', 'browser-host install', 'browser-host uninstall', 'browser-host status', 'browser-host stop'].includes(entry.publicId)) continue;
+    if (entry.publicId.includes(' ')) continue;
+    if (commands[entry.publicId]) continue;
+    const command = schemaGeneratedCommand(entry.publicId, entry.description);
+    const children = processSurfaceCatalog('cli').filter((candidate) => candidate.publicId.startsWith(`${entry.publicId} `) && available.has(candidate.publicId));
+    if (children.length) command.subCommands = Object.fromEntries(children.map((child) => {
+      const childName = child.publicId.slice(entry.publicId.length + 1);
+      return [childName, schemaGeneratedCommand(child.publicId, child.description, childName)];
+    }));
+    commands[entry.publicId] = command;
+    for (const alias of entry.aliases) {
+      if (commands[alias]) throw new TypeError(`generated CLI alias collides with an existing command: ${alias}`);
+      commands[alias] = command;
+    }
+  }
+  if (commands.worktree && commands.wt) commands.wt = commands.worktree;
+  return commands;
+}
+
+export const lazySubCommands: SubCommandsDef = createGeneratedLazySubCommands();

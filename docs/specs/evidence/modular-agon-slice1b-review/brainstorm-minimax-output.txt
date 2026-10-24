@@ -1,0 +1,16 @@
+```
+draft {
+  approach: "Enforce invariant propagation across all modular interfaces by implementing staged validation gates that reject any commit whose subject/ body desynchronizes the index, hash integrity, source cleanliness, dependency graph, legacy workflow state, transformation provenance, and envelope immutability — each gate producing deterministic diagnostics for independent replay"
+  reasoning: "A staged gate architecture catches corruption at entry points rather than accumulating debt; deterministic diagnostics enable the same validation to run in CI/CD and locally, eliminating false-green risk from environment drift"
+  tradeoffs: "Increased validation latency per commit", "Potential over-blocking of benign multi-step refactors", "Complex diagnostic output may overwhelm users"
+  confidence: 75
+  keyFiles: ".git/hooks/pre-commit", "packages/mod-api/src/index.ts", "packages/mod-kernel/src/kernel.ts", "packages/core/src/ledger.ts"
+  steps {
+    1: "Define a canonical invariant schema covering index HEAD, commit SHA-1/SHA-256 hashes, dependency semver ranges, legacy workflow state, and transformation stage metadata"
+    2: "Implement invariant-gate validators as isolated modules in mod-kernel, each accepting raw commit context and returning deterministic pass/fail with diagnostic payloads"
+    3: "Create a orchestration layer in mod-api that runs gates sequentially, short-circuits on first failure, and emits structured evidence for replay"
+    4: "Add negative control tests: commits that violate each invariant must be rejected; commits with valid invariants must pass regardless of user environment"
+    5: "Bundle gate signatures into a deterministic seed that can be verified independently, enabling clean-checkout replay without full source access"
+  }
+}
+```

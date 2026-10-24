@@ -1,0 +1,126 @@
+{
+  "schemaVersion": 2,
+  "id": "agon.mutate",
+  "name": "Mutate",
+  "version": "1.0.0",
+  "apiRange": ">=1.0.0 <2",
+  "execution": "executable",
+  "compatibility": {
+    "kernelRange": ">=0.0.0-0 <2",
+    "nodeRange": ">=22"
+  },
+  "packageClass": "user-toggleable-mod-package",
+  "entrypoints": {
+    "runtime": "dist/index.js",
+    "types": "dist/index.d.ts"
+  },
+  "display": {
+    "group": "Transform",
+    "order": 400
+  },
+  "dependencies": {
+    "required": [
+      {
+        "id": "agon.api",
+        "range": ">=0.0.0-0"
+      },
+      {
+        "id": "agon.engine-runtime",
+        "range": ">=0.0.0-0"
+      },
+      {
+        "id": "agon.verification",
+        "range": ">=0.0.0-0"
+      },
+      {
+        "id": "agon.worktree",
+        "range": ">=0.0.0-0"
+      }
+    ],
+    "optional": [],
+    "conflicts": []
+  },
+  "permissions": [],
+  "platforms": [
+    "darwin-arm64",
+    "darwin-x64",
+    "linux-arm64",
+    "linux-x64"
+  ],
+  "assets": [
+    {
+      "path": "ownership.json",
+      "kind": "documentation",
+      "mediaType": "application/json",
+      "contentHash": "sha256:a237632e13e1c9fbe5810ee76858d383cfec6b9f946285a82ec17e65d5bb3328",
+      "bytes": 1412,
+      "executable": false,
+      "platforms": [
+        "darwin-arm64",
+        "darwin-x64",
+        "linux-arm64",
+        "linux-x64"
+      ]
+    },
+    {
+      "path": "schemas/config.schema.json",
+      "kind": "schema",
+      "mediaType": "application/schema+json",
+      "contentHash": "sha256:64c6a8c6f7577c39e8f6229eb2992b755fc2d9fc81d82c162825c6cd7413ac73",
+      "bytes": 382,
+      "executable": false,
+      "platforms": [
+        "darwin-arm64",
+        "darwin-x64",
+        "linux-arm64",
+        "linux-x64"
+      ]
+    }
+  ],
+  "contributes": {
+    "cliCommands": [
+      {
+        "id": "cliCommands:0054",
+        "aliases": []
+      }
+    ],
+    "tuiActions": [
+      {
+        "id": "tuiSlashCommands:0045",
+        "aliases": []
+      }
+    ],
+    "mcpTools": [],
+    "cesarTools": [],
+    "lifecycleHooks": [],
+    "resultTypes": [
+      {
+        "id": "resultAndEnvelopeTypes:0083",
+        "aliases": []
+      },
+      {
+        "id": "resultAndEnvelopeTypes:0114",
+        "aliases": []
+      }
+    ],
+    "configKeys": [
+      {
+        "id": "configKeys:0041",
+        "aliases": []
+      }
+    ],
+    "generatedDocs": []
+  },
+  "pack": {
+    "include": [
+      "LICENSE",
+      "agon.mod.json",
+      "dist/index.js",
+      "dist/index.d.ts",
+      "dist/implementation.d.ts",
+      "ownership.json",
+      "schemas/config.schema.json"
+    ],
+    "executable": []
+  }
+}

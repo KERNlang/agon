@@ -74,7 +74,8 @@ import type { CesarTurnRuntimeHost } from '../cesar/turn-runtime.js';
 
 import { SpinnerBlock, BackgroundJobRail, ExecutionRailPanel } from './status.js';
 
-import { EnginePicker, ModelPicker, ReviewBlock, CesarPicker } from '../blocks/controls.js';
+import { EnginePicker, ModelPicker, ReviewBlock, CesarPicker, ModManagementPicker } from '../blocks/controls.js';
+import type { ModManagementView } from '@kernlang/agon-kernel';
 
 import { VERSION } from '../blocks/engine.js';
 
@@ -132,7 +133,7 @@ import { buildDashboardBlock, coalesceToolCallBlocks, effectiveNativeArchiveBloc
 
 import { buildExecutionRailStats, buildTranscriptRows } from './app-rendering.js';
 
-import { loadExtensionsForWorkspace, startPlanSyncWatcher, startUpdateCheck, subscribeOrchestrationResults, startTelemetryPoller } from './app-lifecycle.js';
+import { startPlanSyncWatcher, startUpdateCheck, subscribeOrchestrationResults, startTelemetryPoller } from './app-lifecycle.js';
 
 import { buildOutputActions } from './app-output-bridge.js';
 
@@ -143,6 +144,8 @@ import { onSteeringChange } from '../cesar/steering.js';
 import { runHandleCancelOrExit, runHandleComposerCtrlShortcut, runHandleKeyboardInput } from './app-keyboard.js';
 
 import { runProcessInputQueue, runSendBtwMessage, runHandleSubmit } from './app-submit.js';
+import { queuedInputText } from '../signals/queued-input.js';
+import type { QueuedInput } from '../signals/queued-input.js';
 
 // ── Module: AppHelperExports ──
 
@@ -168,10 +171,10 @@ export function App() {
   const setInputValue = composerInput.set;
   const inputValueRef = composerInput.ref;
   const inputIsEmpty = useComposerInputEmpty(composerInput);
-  const [uiInteractionActive, setUiInteractionActive] = useState<boolean>(false);
   const [inputHistory, _setInputHistoryRaw] = useState<string[]>(loadComposerInputHistory());
   const setInputHistory = useMemo(() => __inkSafe(_setInputHistoryRaw), [_setInputHistoryRaw]);
-  const [inputQueue, _setInputQueueRaw] = useState<string[]>([]);
+  const [inputQueue, _setInputQueueRaw] = useState<QueuedInput[]>([]);
+  const visibleInputQueue = useMemo(() => inputQueue.map(queuedInputText), [inputQueue]);
   const setInputQueue = useMemo(() => __inkSafe(_setInputQueueRaw), [_setInputQueueRaw]);
   const [steeringCount, _setSteeringCountRaw] = useState<number>(0);
   const setSteeringCount = useMemo(() => __inkSafe(_setSteeringCountRaw), [_setSteeringCountRaw]);
@@ -260,6 +263,10 @@ export function App() {
   const setModelPickerTargetEngine = useMemo(() => __inkSafe(_setModelPickerTargetEngineRaw), [_setModelPickerTargetEngineRaw]);
   const [modelPickerCliGroups, _setModelPickerCliGroupsRaw] = useState<any[]>([]);
   const setModelPickerCliGroups = useMemo(() => __inkSafe(_setModelPickerCliGroupsRaw), [_setModelPickerCliGroupsRaw]);
+  const [modPickerOpen, _setModPickerOpenRaw] = useState(false);
+  const setModPickerOpen = useMemo(() => __inkSafe(_setModPickerOpenRaw), [_setModPickerOpenRaw]);
+  const [modPickerView, _setModPickerViewRaw] = useState<ModManagementView|null>(null);
+  const setModPickerView = useMemo(() => __inkSafe(_setModPickerViewRaw), [_setModPickerViewRaw]);
   const [cesarPickerOpen, _setCesarPickerOpenRaw] = useState<boolean>(false);
   const setCesarPickerOpen = useMemo(() => __inkSafe(_setCesarPickerOpenRaw), [_setCesarPickerOpenRaw]);
   const [streamingText, _setStreamingTextRaw] = useState<Record<string,StreamingEntry>>({});
@@ -286,7 +293,14 @@ export function App() {
   const [sessionEngines, _setSessionEnginesRaw] = useState<string[]|null>(() => { const cfg = loadConfig(); return cfg.engineActivationMode === 'explicit' ? cfg.forgeEnabledEngines : null; });
   const setSessionEngines = useMemo(() => __inkSafe(_setSessionEnginesRaw), [_setSessionEnginesRaw]);
   const [, _setCurrentPlanRaw] = useState<Plan|null>(null);
-  const setCurrentPlan = useMemo(() => __inkSafe(_setCurrentPlanRaw), [_setCurrentPlanRaw]);
+  const currentPlanRef = useRef<Plan|null>(null);
+  const setCurrentPlan = useMemo(() => {
+    const renderPlan = __inkSafe(_setCurrentPlanRaw);
+    return (plan: Plan|null) => {
+      currentPlanRef.current = plan;
+      renderPlan(plan);
+    };
+  }, [_setCurrentPlanRaw]);
   const [activePlan, _setActivePlanRaw] = useState<CesarPlan|null>(null);
   const setActivePlan = useMemo(() => __inkSafe(_setActivePlanRaw), [_setActivePlanRaw]);
   const [chatSession, _setChatSessionRaw] = useState<ChatSession>(() => { const cwd = resolveWorkingDir(); let branch = 'unknown'; try { branch = currentBranch(cwd); } catch { /* git not available or not a repo */ } const session = startChatSession({ cwd, branch }); if (process.env.AGON_CONTINUE === '1') { try { seedChatSessionFromThread(session, loadOrCreateActiveThread(cwd)); } catch { /* best-effort: a fresh session is fine if no prior thread exists */ } } return session; });
@@ -397,12 +411,6 @@ export function App() {
   const [dynamicSkills, _setDynamicSkillsRaw] = useState<Skill[]>(() => loadSkills(resolveWorkingDir()));
   const [commandRegistry, _setCommandRegistryRaw] = useState<any>(() => (() => { const reg = new CommandRegistry(); registerBuiltinCommands(reg); return reg; })());
   const [eventBus, _setEventBusRaw] = useState<any>(() => (() => { const bus = new EventBus(); const cfg = loadConfig(); if (cfg.hooks) bridgeShellHooks(bus, cfg.hooks); return bus; })());
-  const [extensionSkills, _setExtensionSkillsRaw] = useState<Skill[]>([]);
-  const setExtensionSkills = useMemo(() => __inkSafe(_setExtensionSkillsRaw), [_setExtensionSkillsRaw]);
-  const [extensionPromptFragments, _setExtensionPromptFragmentsRaw] = useState<string[]>([]);
-  const setExtensionPromptFragments = useMemo(() => __inkSafe(_setExtensionPromptFragmentsRaw), [_setExtensionPromptFragmentsRaw]);
-  const [loadedExtensions, _setLoadedExtensionsRaw] = useState<any[]>([]);
-  const setLoadedExtensions = useMemo(() => __inkSafe(_setLoadedExtensionsRaw), [_setLoadedExtensionsRaw]);
   const [workspacePath, _setWorkspacePathRaw] = useState<string>(resolveWorkingDir());
   const setWorkspacePath = useMemo(() => __inkSafe(_setWorkspacePathRaw), [_setWorkspacePathRaw]);
   const [terminalSize, _setTerminalSizeRaw] = useState<{width:number,height:number}>(normalizeTerminalSize(process.stdout.columns, process.stdout.rows));
@@ -457,7 +465,6 @@ export function App() {
   const telemetryPollerRef = useRef<any>(null);
   const statusDashboardOpenRef = useRef<boolean>(false);
   const chatStartTimeRef = useRef<number>(0);
-  const currentPlanRef = useRef<Plan|null>(null);
   const activePlanRef = useRef<any>(null);
   const activePlanClearTimerRef = useRef<ReturnType<typeof setTimeout>|null>(null);
   const planWatcherTimerRef = useRef<ReturnType<typeof setInterval>|null>(null);
@@ -471,7 +478,6 @@ export function App() {
   const lastReviewResultRef = useRef<{ engineId: string; target: string; label: string; diff: string; reviewOutput: string; timestamp: number } | null>(null);
   const modeRef = useRef<'chat'|'campfire'|'brainstorm'|'tribunal'>('chat');
   const inputEpochRef = useRef<number>(0);
-  const uiInteractionTimerRef = useRef<ReturnType<typeof setTimeout>|null>(null);
   const atPickerPrefixRef = useRef<string>('');
   const keyT0Ref = useRef<number>(0);
   const perfCountsRef = useRef<{blocks:number,archive:number,live:number}>({ blocks: 0, archive: 0, live: 0 });
@@ -494,13 +500,13 @@ export function App() {
   const allSlashCommands = useMemo(() => {
           const builtinCmds = SLASH_COMMANDS;
           const registryCmds = commandRegistry.listForHelp();
-          const skillCmds = [...dynamicSkills, ...extensionSkills].map((s: {trigger:string,description?:string,name:string}) => Object.assign({}, { cmd: s.trigger, desc: s.description || s.name }));
+          const skillCmds = dynamicSkills.map((s: {trigger:string,description?:string,name:string}) => Object.assign({}, { cmd: s.trigger, desc: s.description || s.name }));
           // Dedupe across builtins, registry-provided commands, and dynamic skills.
           const mergedBase = [...builtinCmds, ...registryCmds].filter((cmd: any, index: number, all: any[]) => all.findIndex((other: any) => other.cmd === cmd.cmd) === index);
           const seen = hostSet(mergedBase.map((c: any) => c.cmd));
           const uniqueSkills = skillCmds.filter((s: any) => !seen.has(s.cmd));
           return [...mergedBase, ...uniqueSkills];
-  }, [dynamicSkills, extensionSkills, commandRegistry]);
+  }, [dynamicSkills, commandRegistry]);
 
   const availableEngines = useMemo(() => {
           const hidden = new Set((loadConfig() as any).hiddenEngines ?? []);
@@ -526,10 +532,6 @@ export function App() {
   const uiMotion = useMemo(() => {
           return normalizeUiMotion((config as any).uiMotion);
   }, [config]);
-
-  const cosmeticUiPaused = useMemo(() => {
-          return uiInteractionActive;
-  }, [uiInteractionActive]);
 
   const nativeTranscriptBlocks = useMemo(() => {
           return nativeTranscriptBlocksForStatic(outputBlocks);
@@ -592,10 +594,6 @@ export function App() {
           }
           return { engineId: activeStream.engineId, line: lines[lines.length - 1].trim() };
   }, [activeStream]);
-
-  const chromeStreamSnippet = useMemo(() => {
-          return cosmeticUiPaused ? null : streamSnippet;
-  }, [streamSnippet,cosmeticUiPaused]);
 
   const newestLiveToolStreamId = useMemo(() => {
           let newestId = '';
@@ -777,11 +775,11 @@ export function App() {
     });
   }, [bell,setWindowTitle,pendingBellRef]);
 
-  const trackAbort = useCallback((abort:AbortController|null) => {
-    if (trackJobAbortController(abort)) {
+  const trackAbort = useCallback((abort:AbortController|null, expectedOwner?: AbortController) => {
+    if (trackJobAbortController(abort, expectedOwner)) {
       return;
     }
-    runTrackAbort(abort, activeAbortRef, setActiveAbort);
+    runTrackAbort(abort, activeAbortRef, setActiveAbort, expectedOwner);
   }, []);
 
   const setCesarSessionWrapped = useCallback((session:PersistentSession|null) => {
@@ -907,13 +905,13 @@ export function App() {
         lastReviewResultRef.current = value;
         setLastReviewResult(value);
       },
-      setCurrentPlan, setActiveAbort: trackAbort,
+      setCurrentPlan, setLastUndoToken, setActiveAbort: trackAbort,
       askQuestion, cesarSession, setCesarSession: setCesarSessionWrapped,
       explorationMode, setExplorationMode,
       neroMode, setNeroMode,
       cesarMemory,
       get activePlan() { return activePlanRef.current; }, setActivePlan: setActivePlanWrapped,
-      extensionPromptFragments,
+      extensionPromptFragments: [],
       sessionMcpServers, setSessionMcpServers,
       autoModeQueued,
       telemetryVitals,
@@ -921,7 +919,7 @@ export function App() {
       recentFallbacks,
       cesarRuntimeHost: cesarRuntimeHostRef.current,
     };
-  }, [registry,adapter,activeEngines,chatSession,askQuestion,cesarSession,explorationMode,neroMode,extensionPromptFragments,sessionMcpServers,autoModeQueued,telemetryVitals,recentFallbacks,setActivePlanWrapped]);
+  }, [registry,adapter,activeEngines,chatSession,askQuestion,cesarSession,explorationMode,neroMode,sessionMcpServers,autoModeQueued,telemetryVitals,recentFallbacks,setActivePlanWrapped]);
 
   const handlePasteInput = useCallback((raw:string) => {
     const result = processPasteContent(String(raw ?? ''));
@@ -948,13 +946,6 @@ export function App() {
   const handleInputChange = useCallback((value:string) => {
     // Diagnostic: stamp keystroke arrival; read post-commit by the AGON_PERF effect (0 when off).
     keyT0Ref.current = perfNow();
-    // Freeze cosmetic clocks while the user is actively typing. Semantic
-    // streaming/tool events continue; only timer-driven chrome is paused.
-    setUiInteractionActive(true);
-    if (uiInteractionTimerRef.current) {
-      clearTimeout(uiInteractionTimerRef.current);
-    }
-    uiInteractionTimerRef.current = setTimeout(() => { uiInteractionTimerRef.current = null; setUiInteractionActive(false); }, 350);
     // User is back at the keyboard — clear the pending bell so the NEXT await
     // (after this turn) can ring again, and announce this new plan approval.
     pendingBellRef.current = false;
@@ -1048,16 +1039,16 @@ export function App() {
     }, question);
   }, [buildContext,dispatch,mode,replState,outputBlocks,jobManager,btwPanel]);
 
-  const handleSubmit = useCallback(async (value:string) => {
+  const handleSubmit = useCallback(async (value:QueuedInput) => {
     runHandleSubmit({
       inputEpochRef, pendingBellRef, awaitingPlanAnnouncedRef, pasteHashesRef, pendingPasteTransformRef, inputValueRef, activePlanRef, activeTurnRef, interruptedTurnRef, chatStartTimeRef,
-      replState, mode, planModeQueued, autoModeQueued, permissionMode, btwPanel, pendingImages, outputBlocks, allSlashCommands, dynamicSkills, extensionSkills, lastUndoToken, sessionStartTime, explorationMode, neroMode,
-      jobManager, commandRegistry, eventBus, loadedExtensions,
+      replState, mode, planModeQueued, autoModeQueued, permissionMode, btwPanel, pendingImages, outputBlocks, allSlashCommands, dynamicSkills, extensionSkills: [], lastUndoToken, sessionStartTime, explorationMode, neroMode,
+      jobManager, commandRegistry, eventBus, loadedExtensions: [],
       setInputValue, setInputHistory, setHistoryIndex, setInputQueue, setSteeringCount, setSlashPickerOpen, setStatusDashboardOpen, setPlanModeQueued, setPersistentAutoMode, applyPermissionMode, setMode, setWorkspacePath, setReplState, setJobList, setBtwPanel,
-      setPendingImages, setSessionEngines, setEnginePickerOpen, setModelPickerOpen, setModelPickerEntries, setModelPickerLoading, setCesarPickerOpen, setChatSession, setLastUndoToken, setModelPickerTargetEngine, setModelPickerInitialFilter, setModelPickerTitle, setModelPickerCliGroups, setExplorationMode, setNeroMode,
+      setPendingImages, setSessionEngines, setEnginePickerOpen, setModelPickerOpen, setModelPickerEntries, setModelPickerLoading, setCesarPickerOpen, setModPickerOpen, setModPickerView, setChatSession, setLastUndoToken, setModelPickerTargetEngine, setModelPickerInitialFilter, setModelPickerTitle, setModelPickerCliGroups, setExplorationMode, setNeroMode,
       dispatch, buildContext, sendBtwMessage, handleSubmit, transition, setActivePlanWrapped, askQuestion, bell,
     }, value);
-  }, [replState,dispatch,buildContext,mode,pendingImages,jobManager,loadedExtensions,extensionSkills,commandRegistry,eventBus,planModeQueued,autoModeQueued,permissionMode,applyPermissionMode,setPersistentAutoMode,setActivePlanWrapped,outputBlocks,btwPanel,sendBtwMessage,pendingBellRef,awaitingPlanAnnouncedRef]);
+  }, [replState,dispatch,buildContext,mode,pendingImages,jobManager,commandRegistry,eventBus,planModeQueued,autoModeQueued,permissionMode,applyPermissionMode,setPersistentAutoMode,setActivePlanWrapped,outputBlocks,btwPanel,sendBtwMessage,pendingBellRef,awaitingPlanAnnouncedRef,lastUndoToken]);
 
   const handleReviewActionCb = useCallback((action:'apply'|'edit'|'reject'|'copy') => {
     if (!reviewEvent) {
@@ -1338,7 +1329,7 @@ export function App() {
 
   const handleKeyboardInput = useCallback((input:string,key:any) => {
     runHandleKeyboardInput({
-      modelPickerOpen, cesarPickerOpen, slashPickerOpen, atPickerOpen, enginePickerOpen,
+      modelPickerOpen, cesarPickerOpen, slashPickerOpen, atPickerOpen, enginePickerOpen: enginePickerOpen || modPickerOpen,
       reviewEvent, toolDetailEvent, btwPanel, statusDashboardOpen,
       questionState, selectedChoiceIndex, questionOtherActive,
       replState, jobManager, inputValue: inputValueRef.current, inputHistory, historyIndex,
@@ -1359,7 +1350,7 @@ export function App() {
       openLatestToolDetail, openResultsPager, draftLatestFailedToolRetry,
       triggerUpdatePrompt, dismissUpdateBanner, dispatch,
     }, input, key);
-  }, [modelPickerOpen,cesarPickerOpen,slashPickerOpen,atPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,btwPanel,questionState,replState,inputHistory,historyIndex,steeringCount,planModeQueued,autoModeQueued,permissionMode,applyPermissionMode,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,draftLatestFailedToolRetry,startupOnly,terminalMode,setPersistentAutoMode,statusDashboardOpen,updateInfo,triggerUpdatePrompt,dismissUpdateBanner,selectedChoiceIndex,questionOtherActive,newestLiveToolStreamId]);
+  }, [modelPickerOpen,cesarPickerOpen,slashPickerOpen,atPickerOpen,enginePickerOpen,modPickerOpen,reviewEvent,toolDetailEvent,btwPanel,questionState,replState,inputHistory,historyIndex,steeringCount,planModeQueued,autoModeQueued,permissionMode,applyPermissionMode,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,draftLatestFailedToolRetry,startupOnly,terminalMode,setPersistentAutoMode,statusDashboardOpen,updateInfo,triggerUpdatePrompt,dismissUpdateBanner,selectedChoiceIndex,questionOtherActive,newestLiveToolStreamId]);
 
   useEffect(() => {
     const activeIds = new Set(Object.keys(liveToolStreams ?? {}));
@@ -1373,10 +1364,6 @@ export function App() {
       return changed ? next : prev;
     });
   }, [liveToolStreams]);
-
-  useEffect(() => {
-    loadExtensionsForWorkspace(workspacePath, commandRegistry, registry, eventBus, setExtensionSkills, setExtensionPromptFragments, setLoadedExtensions);
-  }, [workspacePath]);
 
   useEffect(() => {
     modeRef.current = mode;
@@ -1636,13 +1623,6 @@ export function App() {
   }, [replState,inputQueue]);
 
   useEffect(() => {
-    return () => {
-      if (uiInteractionTimerRef.current) clearTimeout(uiInteractionTimerRef.current);
-      uiInteractionTimerRef.current = null;
-    };
-  }, []);
-
-  useEffect(() => {
     perfCountsRef.current = { blocks: outputBlocks.length, archive: effectiveNativeArchiveCount, live: nativeLiveBlocks.length };
   }, [outputBlocks,effectiveNativeArchiveCount,nativeLiveBlocks]);
 
@@ -1661,6 +1641,7 @@ export function App() {
 
   useEffect(() => {
     _cancelCallback.fn = buildCancelCallback({
+      setInputQueue,
       activeAbortRef, activePlanRef, cesarRuntimeHost: cesarRuntimeHostRef.current, setActiveAbort, setActivePlan,
       setLiveSpinner, setLiveProgress, outputActions,
       agentProgressRef, setAgentProgress,
@@ -1889,6 +1870,7 @@ export function App() {
           if (hadTarget) setEnginePickerOpen(true);
         }} />
     )}
+    {modPickerOpen && modPickerView && <ModManagementPicker view={modPickerView} onClose={() => setModPickerOpen(false)} />}
     {cesarPickerOpen && (
       <CesarPicker
         engines={availableEngines}
@@ -1945,14 +1927,14 @@ export function App() {
     {pendingPlanProposal && (
       <PlanApprovalPrompt plan={(pendingPlanProposal as any).plan} selectedIndex={planApprovalIndex} />
     )}
-    {!enginePickerOpen && !modelPickerOpen && !cesarPickerOpen && !railTakeover && (
+    {!enginePickerOpen && !modelPickerOpen && !cesarPickerOpen && !modPickerOpen && !railTakeover && (
       <BottomChromeSection
         updateInfo={updateInfo}
         updateChecking={updateChecking}
         questionState={questionState}
         pendingImages={pendingImages}
         imageVisionNote={imageVisionNote}
-        inputQueue={inputQueue}
+        inputQueue={visibleInputQueue}
         steeringCount={steeringCount}
         liveSpinner={liveSpinner}
         mode={mode}
@@ -1996,15 +1978,14 @@ export function App() {
         liveProgress={liveProgress}
         runningJobs={runningJobs}
         chatStartTime={chatStartTimeRef.current || 0}
-        streamSnippet={chromeStreamSnippet}
+        streamSnippet={streamSnippet}
         statusStats={statusStats}
         statusCwd={statusCwd}
         statusBranch={statusBranch}
         explorationMode={explorationMode}
         toolOutputExpanded={toolOutputExpanded}
         fullscreenEnabled={terminalMode === 'fullscreen'}
-        uiMotion={uiMotion}
-        interactionActive={cosmeticUiPaused} />
+        uiMotion={uiMotion} />
     )}
   </Box>
   );

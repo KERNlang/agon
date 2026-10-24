@@ -1,0 +1,20 @@
+diff --git a/node_modules/@kernlang/agon-engines/py/kern_engines/cli/model_probe.py b/node_modules/@kernlang/agon-engines/py/kern_engines/cli/model_probe.py
+index ddbc2dc..f5ccb73 100644
+--- a/node_modules/@kernlang/agon-engines/py/kern_engines/cli/model_probe.py
++++ b/node_modules/@kernlang/agon-engines/py/kern_engines/cli/model_probe.py
+@@ -275,6 +275,15 @@ def parse_claude_picker(stripped: str) -> dict:
+         name = f"{brand} {ver}" + (" (1M context)" if sonnet_1m else "")
+         mid = brand.lower() + ("[1m]" if sonnet_1m else "")
+         if mid in seen:
++            # Claude can show two rows with the same command-line alias (for
++            # example Opus 5 and a selected legacy Opus 4.8). Preserve the
++            # selected row instead of silently dropping its current marker.
++            if is_current:
++                for existing in models:
++                    if existing["id"] == mid:
++                        existing.update({"name": name, "current": True})
++                        current_name = name
++                        break
+             continue
+         seen.add(mid)
+         if is_current:

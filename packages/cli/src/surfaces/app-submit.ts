@@ -31,6 +31,8 @@ import { setWindowTitle } from '../lib/terminal-notify.js';
 import { extractFileMentions } from '../signals/app-input.js';
 
 import { runInJobAbortScope } from '../signals/job-abort-scope.js';
+import { queuedInputText } from '../signals/queued-input.js';
+import type { QueuedInput } from '../signals/queued-input.js';
 
 import { join, resolve, relative, sep, isAbsolute } from 'node:path';
 
@@ -139,7 +141,7 @@ export function buildMentionedFilesContext(text: string, cwd: string): string {
   return `\n\n[Attached files referenced with @ in the message above]\n${blocks.join('\n\n')}${note}`;
 }
 
-export function runProcessInputQueue(replState: ReplStateState, inputQueue: string[], setInputQueue: (updater:(prev:string[]) => string[]) => void, handleSubmit: (value:string) => void, setSteeringCount: (n:number) => void): void {
+export function runProcessInputQueue(replState: ReplStateState, inputQueue: QueuedInput[], setInputQueue: (updater:(prev:QueuedInput[]) => QueuedInput[]) => void, handleSubmit: (value:QueuedInput) => void, setSteeringCount: (n:number) => void): void {
   if (replState !== 'idle') return;
   // The turn is over — clear the mid-turn steering hint count.
   setSteeringCount(0);
@@ -153,12 +155,15 @@ export function runProcessInputQueue(replState: ReplStateState, inputQueue: stri
   const leftover = drainLeftoverSteering();
   if (leftover.length > 0) {
     const lines = leftover.map((m) => m.input).filter((t) => !!t.trim());
-    if (lines.length > 0) setInputQueue((prev: string[]) => [...prev, ...lines]);
+    if (lines.length > 0) setInputQueue((prev: QueuedInput[]) => [...prev, ...lines]);
   }
   if (inputQueue.length > 0) {
     const next = inputQueue[0];
-    setInputQueue((prev: string[]) => prev.slice(1));
-    setTimeout(() => handleSubmit(next), 50);
+    setInputQueue((prev: QueuedInput[]) => prev.slice(1));
+    // Submit synchronously so its busy transition is batched with the pop.
+    // A detached timer lets later idle renders drain more work and survives
+    // cancellation/unmount without an owner to revoke it.
+    handleSubmit(next);
   }
 }
 
@@ -329,7 +334,7 @@ export interface HandleSubmitDeps {
   setInputValue: (val:string) => void;
   setInputHistory: (updater:(prev:string[]) => string[]) => void;
   setHistoryIndex: (val:number) => void;
-  setInputQueue: (updater:(prev:string[]) => string[]) => void;
+  setInputQueue: (updater:(prev:QueuedInput[]) => QueuedInput[]) => void;
   setSteeringCount: (n:number) => void;
   setSlashPickerOpen: (val:boolean) => void;
   setStatusDashboardOpen: (val:boolean) => void;
@@ -348,6 +353,8 @@ export interface HandleSubmitDeps {
   setModelPickerEntries: (val:any) => void;
   setModelPickerLoading: (val:boolean) => void;
   setCesarPickerOpen: (val:boolean) => void;
+  setModPickerOpen: (val:boolean) => void;
+  setModPickerView: (val:any) => void;
   setChatSession: (val:any) => void;
   setLastUndoToken: (val:any) => void;
   setModelPickerTargetEngine: (val:any) => void;
@@ -359,16 +366,22 @@ export interface HandleSubmitDeps {
   dispatch: (event:any) => void;
   buildContext: () => any;
   sendBtwMessage: (question:string) => void;
-  handleSubmit: (value:string) => void;
+  handleSubmit: (value:QueuedInput) => void;
   transition: (fn:any) => void;
   setActivePlanWrapped: (plan:any) => void;
   askQuestion: (prompt:string) => Promise<string>;
   bell: () => void;
 }
 
-export async function runHandleSubmit(opts: HandleSubmitDeps, value: string): Promise<void> {
+export async function runHandleSubmit(opts: HandleSubmitDeps, value: QueuedInput): Promise<void> {
+  const isTelemetryRetry = typeof value !== 'string';
+  if (isTelemetryRetry && (opts.mode !== 'chat' || opts.btwPanel || opts.planModeQueued
+    || opts.activePlanRef.current?.state === 'awaiting_approval' || opts.interruptedTurnRef.current)) {
+    opts.dispatch({ type: 'warning', message: 'Automatic retry skipped because the conversation context changed. Resubmit the prompt explicitly if still wanted.' });
+    return;
+  }
   opts.inputEpochRef.current += 1;
-  let input = cleanSubmitValue(value);
+  let input = cleanSubmitValue(queuedInputText(value));
   // User is submitting a turn — allow the next await to ring again.
   opts.pendingBellRef.current = false;
   opts.awaitingPlanAnnouncedRef.current = '';
@@ -508,7 +521,7 @@ export async function runHandleSubmit(opts: HandleSubmitDeps, value: string): Pr
   // (they fall through to the inputQueue path below). pushSteering no-ops
   // unless the brain has an active turn marked; if it returns false (the turn
   // just ended) we fall through to the normal queue so nothing is lost.
-  const isChatSteer = opts.replState !== 'idle'
+  const isChatSteer = !isTelemetryRetry && opts.replState !== 'idle'
     && opts.mode === 'chat'
     && !!opts.activeTurnRef.current
     && !!input.trim()
@@ -554,7 +567,7 @@ export async function runHandleSubmit(opts: HandleSubmitDeps, value: string): Pr
   // freshness), so the drained resubmit still gets the engine-side redirect
   // wrap below.
   if (opts.replState !== 'idle' && !opts.jobManager.running().length && !isPlanAwaitingControl) {
-    opts.setInputQueue((prev: string[]) => [...prev, input]);
+    opts.setInputQueue((prev: QueuedInput[]) => [...prev, isTelemetryRetry ? { kind: 'telemetry-retry', input } : input]);
     return;
   }
   // A `! <cmd>` inline-bash line runs the shell directly even in plan mode
@@ -632,7 +645,7 @@ export async function runHandleSubmit(opts: HandleSubmitDeps, value: string): Pr
     } catch { /* unknown engine id — the dispatch-time status note still covers it */ }
   }
   const activeTurn = (!input.startsWith('/') && opts.mode === 'chat')
-    ? { input, engineId: cesarEngineForTurn, retried: false }
+    ? { input, engineId: cesarEngineForTurn, retried: isTelemetryRetry }
     : null;
   opts.activeTurnRef.current = activeTurn;
   const cb: DispatchCallbacks = {
@@ -658,7 +671,7 @@ export async function runHandleSubmit(opts: HandleSubmitDeps, value: string): Pr
           opts.dispatch({ type: 'error', message: `Job ${job.id} tracking failed: ${err instanceof Error ? err.message : String(err)}` } as any);
         });
     },
-    setMode: opts.setMode, setPendingImages: opts.setPendingImages, setSessionEngines: opts.setSessionEngines, setEnginePickerOpen: opts.setEnginePickerOpen, setModelPickerOpen: opts.setModelPickerOpen, setModelPickerEntries: opts.setModelPickerEntries, setModelPickerLoading: opts.setModelPickerLoading, setCesarPickerOpen: opts.setCesarPickerOpen, setChatSession: opts.setChatSession, setLastUndoToken: opts.setLastUndoToken, askQuestion: opts.askQuestion, exit: () => process.exit(0),
+    setMode: opts.setMode, setPendingImages: opts.setPendingImages, setSessionEngines: opts.setSessionEngines, setEnginePickerOpen: opts.setEnginePickerOpen, setModelPickerOpen: opts.setModelPickerOpen, setModelPickerEntries: opts.setModelPickerEntries, setModelPickerLoading: opts.setModelPickerLoading, setCesarPickerOpen: opts.setCesarPickerOpen, setModPickerOpen: opts.setModPickerOpen, setModPickerView: opts.setModPickerView, setChatSession: opts.setChatSession, setLastUndoToken: opts.setLastUndoToken, askQuestion: opts.askQuestion, exit: () => process.exit(0),
     setModelPickerTargetEngine: opts.setModelPickerTargetEngine, setModelPickerInitialFilter: opts.setModelPickerInitialFilter, setModelPickerTitle: opts.setModelPickerTitle, setModelPickerCliGroups: opts.setModelPickerCliGroups,
     allImages, allSlashCommands: opts.allSlashCommands, dynamicSkills: [...opts.dynamicSkills, ...opts.extensionSkills], mode: opts.mode, lastUndoToken: opts.lastUndoToken, sessionStartTime: opts.sessionStartTime, jobManager: opts.jobManager,
     explorationMode: opts.explorationMode, setExplorationMode: opts.setExplorationMode,

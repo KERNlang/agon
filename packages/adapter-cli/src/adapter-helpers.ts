@@ -11,7 +11,30 @@ import { homedir, tmpdir } from 'node:os';
 /**
  * Centralized engine-health recording for any dispatch return point. exitCode 0 + not timed out → mark ok (clears prior quarantine). Otherwise classify and quarantine only on auth-failed/unreachable/binary-missing — timeouts and generic failures stay in rotation since they may be transient. (A missing binary won't reappear mid-session, so it's quarantined like an auth failure.)
  */
-export function recordDispatchHealth(engineId: string, result: {exitCode?:number,stderr?:string,timedOut?:boolean}): void {
+export function rewriteFalseSuccessAuthInPlace(engineId: string, result: {exitCode?:number,stdout?:string,stderr?:string,timedOut?:boolean}): void {
+  if ((result.exitCode ?? 0) !== 0 || result.timedOut) return;
+  // Evidence-based and deliberately narrow: Claude's PTY is the observed CLI
+  // that prints this banner on stdout while returning exit 0. Do not reinterpret
+  // ordinary answers from unrelated engines as transport failures.
+  if (engineId !== 'claude') return;
+  const stdout = String(result.stdout ?? '').trim();
+  if (!stdout) return;
+  const authLine = stdout
+    .replace(/\x1b\[[0-9;]*m/g, '')
+    .split('\n')
+    .slice(0, 8)
+    .map((line) => line.trim())
+    .find((line) => /^failed to authenticate:\s+\S/i.test(line));
+  if (!authLine) return;
+  result.exitCode = 1;
+  result.stderr = [result.stderr?.trim(), stdout].filter(Boolean).join('\n');
+}
+
+export function recordDispatchHealth(engineId: string, result: {exitCode?:number,stdout?:string,stderr?:string,timedOut?:boolean}): void {
+  // Some interactive CLIs print an authentication failure as ordinary stdout
+  // and still exit 0. Normalize that false-green at the shared adapter boundary
+  // before any workflow interprets the result as a usable model response.
+  rewriteFalseSuccessAuthInPlace(engineId, result);
   const exitCode = result.exitCode ?? 0;
   if (exitCode === 0 && !result.timedOut) {
     engineHealth.mark(engineId, 'ok', '');

@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "subject": {
+    "kind": "commit",
+    "hash": "sha256:3082a8868151704f104d5e59aac1e3e764f0dd598341bfaea4e4e8173275a4a5"
+  },
+  "disposition": "passed",
+  "runs": [
+    {
+      "engine": "ollama-direct-gpt-oss",
+      "status": "completed",
+      "artifacts": [
+        {
+          "path": "docs/specs/evidence/verification-logs/slice5/review-gpt-oss20b.txt",
+          "hash": "sha256:9f948cf10c904c776f3d74011d38bf7e389b6a3e2735ba7c8dcdd39d52065c29"
+        },
+        {
+          "path": "docs/specs/evidence/verification-logs/slice5/tribunal-gpt-oss20b.txt",
+          "hash": "sha256:3d2e0bb0131caf4c6e0ff25779304dbc664cfcc543c76f31e465b2a0ef488751"
+        }
+      ]
+    },
+    {
+      "engine": "ollama-local-qwen14",
+      "status": "completed",
+      "artifacts": [
+        {
+          "path": "docs/specs/evidence/verification-logs/slice5/review-qwen14b.txt",
+          "hash": "sha256:da3cda576068dafb97dbbe17140060b759e6ff02d9f4cfd4ba1301d4e25bcd76"
+        },
+        {
+          "path": "docs/specs/evidence/verification-logs/slice5/tribunal-qwen14b.txt",
+          "hash": "sha256:00ac17a9dffa3e93e30fe1f086ce61770042aea201c271c5698602c7a26ba6d8"
+        }
+      ]
+    },
+    {
+      "engine": "codex-local-source-adjudicator",
+      "status": "completed",
+      "artifacts": [
+        {
+          "path": "docs/specs/evidence/verification-logs/slice5/adjudication-3082.md",
+          "hash": "sha256:953f46e1c4a927f209c103c85340ec9556551fe58f414b2113d2ec6811457175"
+        }
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "id": "S5-REVIEW-001",
+      "status": "resolved",
+      "summary": "Compatibility registrations retain stable inventory IDs while executable closures now dispatch the actual legacy public ID; every executable contribution is invoked by the verifier."
+    },
+    {
+      "id": "S5-REVIEW-002",
+      "status": "refuted",
+      "summary": "Claims about absent mod bridges, rollback packages, synthesis optimizer, README flags, coverage reports, and failing S5 integration tests cited nonexistent files or contradicted executed gates."
+    },
+    {
+      "id": "S5-REVIEW-003",
+      "status": "refuted",
+      "summary": "The exact-subject Qwen claims cited nonexistent mod-migrate, rollback, policy, fixture, adapter, and src/auth.ts paths or identifiers; source checks refuted them, while GPT-OSS returned no findings."
+    },
+    {
+      "id": "S5-REVIEW-004",
+      "status": "resolved",
+      "summary": "Generated inventory now scans physical mod implementation files but excludes generated mod entrypoints, preventing embedded ownership locators from recursively inventing surfaces."
+    }
+  ]
+}

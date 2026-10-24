@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "slice": "S6",
+  "sampleCount": 15,
+  "physicalImportMs": {
+    "median": 56.05500000000001,
+    "p95": 60.52850000000001,
+    "budgetP95": 750
+  },
+  "activationMs": {
+    "median": 5.945375000000013,
+    "p95": 6.512875000000008,
+    "budgetP95": 250
+  },
+  "totalReadyMs": {
+    "median": 61.98625,
+    "p95": 67.04137500000002,
+    "budgetP95": 1000
+  },
+  "residentRssBytes": {
+    "median": 96911360,
+    "p95": 97992704,
+    "budgetP95": 201326592
+  },
+  "passed": true
+}

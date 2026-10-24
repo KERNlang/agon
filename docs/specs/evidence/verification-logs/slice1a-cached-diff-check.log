@@ -1,0 +1,9 @@
+command: ["git","diff","--cached","--check","--",".",":(exclude)docs/specs/evidence/verification-logs"]
+exitCode: 0
+signal: none
+error: none
+outputBytes: 0
+outputHash: sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+outputTruncated: false
+
+

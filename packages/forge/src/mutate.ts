@@ -12,7 +12,7 @@ import type { EngineAdapter, EngineRegistry, Mutant, MutationReport } from '@ker
 
 import { generateMutants, runMutants, worktreeCreate, worktreeRemoveBestEffort, headSha, resolveWithinRoot } from '@kernlang/agon-core';
 
-import { parseChangedLines, isTestFile } from './goal/diff.js';
+import { parseChangedLines, isTestFile } from '@kernlang/agon-support-worktree';
 
 import { collectSemanticMutants, normalizeLens } from './mutate-semantic.js';
 
@@ -423,14 +423,10 @@ export async function runMutate(opts: MutateOptions): Promise<MutateResult> {
   }
   const verdict = formatMutateVerdict(report, survivors);
   opts.onEvent?.({ type: 'mutate:done', data: { score: report.score, survivors: survivors.length } });
-  // A CANCELLED run is not a completed one. `ok` used to come from baselineOk
-  // alone, so Ctrl-C after a green baseline returned ok:true with no error —
-  // the CLI exited 0 and the REPL rendered the partial score as a result. An
-  // abort is an OPERATIONAL outcome: ok:false, and the error says so.
-  const ok = report.baselineOk && !report.aborted;
-  let error: string | undefined;
-  if (!report.baselineOk) error = report.baselineError;
-  else if (report.aborted) error = `aborted — the run was cancelled after ${report.killed + report.survived} of ${report.generated} mutants had a verdict; the partial score is not evidence about your tests`;
+  // A green baseline does not prove that later commands could run.
+  const ok = report.baselineOk && !report.aborted && !report.baselineError;
+  let error = report.baselineError;
+  if (!error && report.aborted) error = `aborted — the run was cancelled after ${report.killed + report.survived} of ${report.generated} mutants had a verdict; the partial score is not evidence about your tests`;
   return {
     ok,
     report,

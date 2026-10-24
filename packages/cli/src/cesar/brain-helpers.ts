@@ -462,7 +462,7 @@ export function shouldStopAfterXmlToolCall(toolName: string): boolean {
 }
 
 /**
- * Strip the 'Agon' orchestration alias prefix from a tool name. The default companion/MCP path surfaces write/bash tools as AgonBash/AgonEdit/AgonWrite (the MCP completion's done.tool is the ORIGINAL alias, not the mapped kern tool — see agon-orchestration.kern handleWriteToolCall), while the native/XML loop uses the bare names. Case-insensitive prefix match; returns the un-prefixed remainder so both paths classify identically.
+ * Strip the 'Agon' orchestration alias prefix from a tool name. The default companion/MCP path surfaces write/bash tools as AgonBash/AgonEdit/AgonWrite (the MCP completion's done.tool is the ORIGINAL alias, not the mapped kern tool — see executeApprovedKernelWrite), while the native/XML loop uses the bare names. Case-insensitive prefix match; returns the un-prefixed remainder so both paths classify identically.
  */
 export function stripAgonToolPrefix(name: string): string {
   const n = String(name ?? '');
@@ -522,6 +522,11 @@ export function extractDelegation(toolName: string, args: Record<string,unknown>
   const delegatedTask = (argsRecord.task ?? argsRecord.question ?? argsRecord.topic ?? argsRecord.target ?? argsRecord.intent ?? '') as string;
   return {
     action: toolName.toLowerCase(),
+    ...(toolName.toLowerCase() === 'council' ? {
+      ...(Array.isArray(argsRecord.roles) && argsRecord.roles.every(role => typeof role === 'string')
+        ? { roles: [...argsRecord.roles] as string[] } : {}),
+      ...(typeof argsRecord.chairman === 'string' ? { chairman: argsRecord.chairman } : {}),
+    } : {}),
     task: delegatedTask,
     reasoning: delegatedTask,
     scope: (argsRecord.scope === 'slice' || argsRecord.scope === 'full') ? argsRecord.scope as 'slice' | 'full' : undefined,

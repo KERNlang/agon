@@ -1,183 +1,34 @@
-import { spawn } from 'node:child_process';
-
-import { statSync } from 'node:fs';
+import {
+  createDaemonWorkflowRuntime,
+  emitChunks,
+  runWorkflowCommand,
+} from '@kernlang/agon-mod-jobs';
+export { emitChunks, runWorkflowCommand };
+export { daemonWorkflowKinds, positiveRuntimeInteger, assertWorkingDirectory, SAFE_WORKFLOW_KINDS, PAYLOAD_FIELDS, STRING_PAYLOAD_FIELDS } from '@kernlang/agon-mod-jobs';
+export type { DaemonWorkflowKind, DaemonWorkflowPlan, DaemonWorkflowRuntimeOptions } from '@kernlang/agon-mod-jobs';
 
 import { resolve } from 'node:path';
-
 import { DEFAULT_AGON_CONFIG, loadConfig } from '@kernlang/agon-core';
-
 import type { AgonConfig, JobExecutor, JobTaskContext } from '@kernlang/agon-core';
-
 import { buildCallCommands, validateCallEngineRoster } from '../commands/call.js';
-
-import type { BuiltCallCommands, CallCommandOptions } from '../commands/call.js';
-
-export type DaemonWorkflowKind = 'brainstorm' | 'team-brainstorm' | 'tribunal' | 'team-tribunal' | 'campfire' | 'think' | 'nero' | 'council' | 'research' | 'synthesis' | 'review' | 'doctor' | 'forge' | 'team-forge' | 'pipeline';
-
-export interface DaemonWorkflowPlan {
-  kind: DaemonWorkflowKind;
-  label: string;
-  cwd: string;
-  commands: string[][];
-}
-
-export interface DaemonWorkflowRuntimeOptions {
-  script: string;
-  outputChunkChars?: number;
-  cancelGraceMs?: number;
-}
+import { captureProcessSurfaceAuthority, processSurfaceClient } from '../surface-authority-runtime.js';
 
 export interface ResolvedDaemonWorkflowJob {
   label: string;
   executor: JobExecutor;
 }
 
-export const SAFE_WORKFLOW_KINDS: readonly DaemonWorkflowKind[] = ['brainstorm','team-brainstorm','tribunal','team-tribunal','campfire','think','nero','council','research','synthesis','review','doctor','forge','team-forge','pipeline'] as const;
+const workflowRuntime = createDaemonWorkflowRuntime({
+  defaults: DEFAULT_AGON_CONFIG,
+  buildCommands: buildCallCommands,
+  validateEngineRoster: validateCallEngineRoster,
+});
+export const { buildDaemonWorkflowPlan, validateDaemonWorkflowEngines, createDaemonWorkflowExecutor } = workflowRuntime;
 
-export const PAYLOAD_FIELDS: readonly string[] = ['input','engines','rounds','swaps','tribunalMode','tribunalProtocol','members','cwd','engineTimeout','strategy','lead','finalizeOnScore','steps','branches','critic','reasoning','focus','confidence','roles','chairman','count','engine','autoApprove'] as const;
-
-export const STRING_PAYLOAD_FIELDS: readonly string[] = ['input','engines','rounds','swaps','tribunalMode','tribunalProtocol','members','cwd','engineTimeout','strategy','lead','finalizeOnScore','steps','branches','critic','reasoning','focus','confidence','roles','chairman','count','engine'] as const;
-
-export function daemonWorkflowKinds(): DaemonWorkflowKind[] {
-  return [...SAFE_WORKFLOW_KINDS];
-}
-
-export function positiveRuntimeInteger(value: number|undefined, fallback: number, label: string): number {
-  const candidate = value ?? fallback;
-  if (!Number.isFinite(candidate) || candidate < 1) throw new Error(`${label} must be a positive integer`);
-  return Math.floor(candidate);
-}
-
-export function assertWorkingDirectory(cwd: string): string {
-  const absolute = resolve(cwd);
-  try {
-    if (!statSync(absolute).isDirectory()) throw new Error('not a directory');
-  } catch {
-    throw new Error(`Daemon job working directory does not exist: ${absolute}`);
-  }
-  return absolute;
-}
-
-export function buildDaemonWorkflowPlan(kind: string, payload: Record<string,unknown>, labelMaxChars?: number): DaemonWorkflowPlan {
-  const normalizedKind = String(kind ?? '').trim().toLowerCase().replace(/_/g, '-');
-  if (!SAFE_WORKFLOW_KINDS.includes(normalizedKind as DaemonWorkflowKind)) {
-    throw new Error(`Workflow "${normalizedKind || kind}" is not available as a daemon job`);
-  }
-  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
-    throw new Error('Daemon job payload must be an object');
-  }
-  for (const key of Object.keys(payload)) {
-    if (!PAYLOAD_FIELDS.includes(key)) throw new Error(`Unsupported job payload field: ${key}`);
-  }
-  if (payload.autoApprove !== undefined) {
-    if (typeof payload.autoApprove !== 'boolean') throw new Error('autoApprove must be a boolean');
-    if (payload.autoApprove) throw new Error('autoApprove is not permitted for daemon jobs');
-  }
-  const options: CallCommandOptions = { workflow: normalizedKind };
-  for (const key of STRING_PAYLOAD_FIELDS) {
-    const value = payload[key];
-    if (value === undefined) continue;
-    if (typeof value !== 'string') throw new Error(`${key} must be a string`);
-    (options as unknown as Record<string, unknown>)[key] = value;
-  }
-  const cwd = assertWorkingDirectory(typeof payload.cwd === 'string' && payload.cwd.trim() ? payload.cwd : process.cwd());
-  options.cwd = cwd;
-  const built: BuiltCallCommands = buildCallCommands(options);
-  const maxLabel = positiveRuntimeInteger(labelMaxChars, DEFAULT_AGON_CONFIG.jobLabelMaxChars, 'jobLabelMaxChars');
-  const input = typeof payload.input === 'string' ? payload.input.trim() : '';
-  const label = (input || normalizedKind).slice(0, maxLabel);
-  return { kind: normalizedKind as DaemonWorkflowKind, label, cwd: built.cwd, commands: built.commands };
-}
-
-export function validateDaemonWorkflowEngines(plan: DaemonWorkflowPlan): void {
-  for (const command of plan.commands) {
-    for (const flag of ['--engines', '--engine']) {
-      const index = command.indexOf(flag);
-      if (index >= 0) validateCallEngineRoster(command[index + 1], plan.cwd);
-    }
-  }
-}
-
-export function emitChunks(ctx: JobTaskContext, type: string, text: string, maxChars: number): void {
-  for (let offset = 0; offset < text.length; offset += maxChars) {
-    ctx.emit(type, { text: text.slice(offset, offset + maxChars) });
-  }
-}
-
-export async function runWorkflowCommand(ctx: JobTaskContext, script: string, args: string[], cwd: string, outputChunkChars: number, cancelGraceMs: number): Promise<number> {
-  if (ctx.signal.aborted) throw new Error('Cancelled before workflow command started');
-  return await new Promise<number>((resolvePromise, rejectPromise) => {
-    let settled = false;
-    let forceTimer: ReturnType<typeof setTimeout> | undefined;
-    const child = spawn(process.execPath, [script, ...args], {
-      cwd,
-      detached: process.platform !== 'win32',
-      env: {
-        ...process.env,
-        AGON_CALL_DEPTH: String(Number(process.env.AGON_CALL_DEPTH ?? '0') + 1),
-        AGON_CWD: cwd,
-      },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    const signalTree = (signal: NodeJS.Signals): void => {
-      if (!child.pid) return;
-      try {
-        if (process.platform !== 'win32') process.kill(-child.pid, signal);
-        else child.kill(signal);
-      } catch {
-        try { child.kill(signal); } catch { /* already gone */ }
-      }
-    };
-    const cleanup = (): void => {
-      ctx.signal.removeEventListener('abort', onAbort);
-      if (forceTimer) clearTimeout(forceTimer);
-    };
-    const finish = (error: Error | null, code = 1): void => {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      if (error) rejectPromise(error); else resolvePromise(code);
-    };
-    const onAbort = (): void => {
-      signalTree('SIGTERM');
-      forceTimer = setTimeout(() => signalTree('SIGKILL'), cancelGraceMs);
-      forceTimer.unref?.();
-    };
-    ctx.signal.addEventListener('abort', onAbort, { once: true });
-    child.stdout?.on('data', (chunk) => emitChunks(ctx, 'stdout', String(chunk), outputChunkChars));
-    child.stderr?.on('data', (chunk) => emitChunks(ctx, 'stderr', String(chunk), outputChunkChars));
-    child.once('error', (error) => finish(error));
-    child.once('close', (code, signal) => {
-      ctx.emit('command-finished', { command: args[0], exitCode: typeof code === 'number' ? code : 1, signal });
-      finish(null, typeof code === 'number' ? code : 1);
-    });
-    if (ctx.signal.aborted) onAbort();
-  });
-}
-
-export function createDaemonWorkflowExecutor(plan: DaemonWorkflowPlan, options: DaemonWorkflowRuntimeOptions): JobExecutor {
-  const script = String(options.script ?? '').trim();
-  if (!script) throw new Error('Unable to resolve the Agon CLI entry script');
-  const outputChunkChars = positiveRuntimeInteger(options.outputChunkChars, DEFAULT_AGON_CONFIG.jobOutputChunkChars, 'jobOutputChunkChars');
-  const cancelGraceMs = positiveRuntimeInteger(options.cancelGraceMs, DEFAULT_AGON_CONFIG.jobCancelGraceMs, 'jobCancelGraceMs');
-  return {
-    async run(ctx: JobTaskContext): Promise<unknown> {
-      const phases: Array<{ command: string; exitCode: number }> = [];
-      for (const args of plan.commands) {
-        if (ctx.signal.aborted) throw new Error('Cancelled');
-        ctx.emit('command-started', { command: args[0], args });
-        const exitCode = await runWorkflowCommand(ctx, script, args, plan.cwd, outputChunkChars, cancelGraceMs);
-        phases.push({ command: args[0] ?? '', exitCode });
-        if (exitCode !== 0) throw new Error(`${args[0] ?? 'workflow'} exited with code ${exitCode}`);
-      }
-      return { ok: true, phases };
-    },
-  };
-}
-
-export function daemonJobConfig(cwd: string): Pick<Required<AgonConfig>,'jobEventLimit'|'jobRetentionLimit'|'jobMaxConcurrency'|'jobLabelMaxChars'|'jobOutputChunkChars'|'jobCancelGraceMs'|'jobShutdownTimeoutMs'|'daemonFrameMaxBytes'> {
+export function daemonJobConfig(cwd: string): Pick<Required<AgonConfig>,'timeout'|'jobEventLimit'|'jobRetentionLimit'|'jobMaxConcurrency'|'jobLabelMaxChars'|'jobOutputChunkChars'|'jobCancelGraceMs'|'jobShutdownTimeoutMs'|'daemonFrameMaxBytes'> {
   const config = { ...DEFAULT_AGON_CONFIG, ...loadConfig(cwd) } as Required<AgonConfig>;
   return {
+    timeout: config.timeout,
     jobEventLimit: config.jobEventLimit,
     jobRetentionLimit: config.jobRetentionLimit,
     jobMaxConcurrency: config.jobMaxConcurrency,
@@ -214,6 +65,12 @@ export function resolveDaemonWorkflowJob(kind: string, payload: Record<string,un
     label: plan.label,
     executor: createDaemonWorkflowExecutor(plan, {
       script,
+      authority: {
+        generation: processSurfaceClient('cli').generation,
+        assertCurrent: captureProcessSurfaceAuthority(),
+        // Bootstrap shares the configured seconds budget, not the IPC reply window.
+        timeoutMs: config.timeout * 1_000,
+      },
       outputChunkChars: config.jobOutputChunkChars,
       cancelGraceMs: config.jobCancelGraceMs,
     }),

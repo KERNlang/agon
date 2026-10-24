@@ -1,0 +1,9 @@
+import type { AgonModFactory, CommandResult, Dispose, InvocationContext, Json, ModServices, Registrar } from '@kernlang/agon-mod-api';
+import { analyzeFlows, readFlows } from '@kernlang/agon-support-persistence';
+const schema = Object.freeze({type:'object',additionalProperties:false,properties:{days:{type:'number'},limit:{type:'number'}}}) as Readonly<Record<string,Json>>;
+export async function runFlow(input:Json, _context:InvocationContext, services:ModServices, list=false):Promise<CommandResult> {
+  const args=input as Record<string,Json>, result:Json=list?readFlows(Math.max(1,Math.min(500,Number(args.limit??50)))) as unknown as Json:analyzeFlows(Math.max(1,Math.min(3650,Number(args.days??30)))) as unknown as Json;
+  const receiptId=await services.receipts.record('flow-read',{list,count:Array.isArray(result)?result.length:(result as any).totalFlows});
+  return{exitCode:0,stdout:`${JSON.stringify({flow:result,receiptId},null,2)}\n`,result:{flow:result,receiptId}};
+}
+export const createMod:AgonModFactory=services=>Object.freeze({apiVersion:'1'as const,async activate(registrar:Registrar):Promise<Dispose>{const disposers:Dispose[]=[];for(const [id,list]of[['intentVariants:0029',false],['intentVariants:0030',true],['builtinCommandMetadata:0022',false],['builtinCommandMetadata:0023',true],['tuiSlashCommands:0030',false],['tuiSlashCommands:0031',true]]as const){const contribution={id,description:list?'List workflow telemetry':'Analyze workflow telemetry',inputSchema:schema,run:(i:Json,c:InvocationContext)=>runFlow(i,c,services,list)};if(id.startsWith('intent'))disposers.push(registrar.intent({...contribution,parse: v =>v.startsWith(list?'/flows':'/flow')?{}:undefined}));else disposers.push(registrar.command('tui',contribution));}return async()=>{for(const dispose of[...disposers].reverse())await dispose();};}});export default createMod;

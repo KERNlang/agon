@@ -1,7 +1,11 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
   buildHarnessDoctorReport,
+  buildModularDoctorReport,
   buildDoctorCleanupCommand,
   diagnoseEngineDoctorEntry,
   shellQuoteForDoctor,
@@ -140,5 +144,23 @@ describe('doctor command helpers', () => {
     expect(report.rows.some((row) => row[0] === 'MCP side-channel' && row[2] === 'warn')).toBe(true);
     expect(report.rows.some((row) => row[0] === 'Latency policy' && row[3].includes('first=120s') && row[3].includes('retry=1'))).toBe(true);
     expect(report.summary).toContain('warn');
+  });
+  it('keeps modular Doctor readable while failing closed on corrupt authority state', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'agon-mod-doctor-'));
+    const hostRoot = join(root, 'host');
+    const modsRoot = join(root, 'mods');
+    try {
+      mkdirSync(join(hostRoot, 'trust'), { recursive: true });
+      writeFileSync(join(hostRoot, 'trust', 'corrupt.json'), '{not-json');
+      const report = await buildModularDoctorReport(hostRoot, modsRoot);
+      expect(report.ok).toBe(false);
+      expect(report.rows.find(([check]) => check === 'Folder discovery')?.[2]).toBe('ok');
+      const authority = report.rows.find(([check]) => check === 'Trust and grants');
+      expect(authority?.[2]).toBe('fail');
+      expect(authority?.[3]).toContain('authority state is unreadable');
+      expect(report.rows.find(([check]) => check === 'Activation state')?.[2]).toBe('ok');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

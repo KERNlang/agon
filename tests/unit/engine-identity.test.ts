@@ -67,7 +67,7 @@ async function dispatchWith(engine: EngineDefinition): Promise<DispatchResult & 
 describe('engine identity from the backend the dispatch used', () => {
   it('AC-9 agy has no model block: on the CLI backend its identity is the CLI version, never engineModels.agy', async () => {
     configure({ engineModels: { agy: 'gemini-3.6-flash' } });
-    const agy = { ...agyJson, binary: fakeBinary('agy', '  echo "1.4.2"\n  exit 0'), searchPaths: [] };
+    const agy = { ...agyJson, binary: fakeBinary('fixture-agy', '  echo "1.4.2"\n  exit 0'), searchPaths: [] };
     const result = await dispatchWith(agy);
     expect(result.stdout.trim()).toBe('answer');
     expect(result.identity).toBe('cli:1.4.2');

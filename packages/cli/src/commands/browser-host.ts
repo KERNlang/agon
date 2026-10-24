@@ -305,7 +305,7 @@ export async function runBrowserHostLauncher(): Promise<void> {
     if (closing) return;
     inbuf = Buffer.concat([inbuf, chunk]);
     const parsed = decodeFrames(inbuf);
-    inbuf = parsed.rest;
+    inbuf = Buffer.from(parsed.rest);
     for (const payload of parsed.frames) {
       let msg: unknown;
       try { msg = JSON.parse(payload); } catch {

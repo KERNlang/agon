@@ -3,10 +3,12 @@
 // through it: the mutant runner, `agon mutate`'s target resolution, and goal's
 // worktree writes.
 import { describe, it, expect, afterEach } from 'vitest';
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { canonicalPath, isInsideRealpath, resolveWithinRoot } from '../../packages/core/src/blocks/paths.js';
+import { runMutationAssessment } from '../../packages/support-worktree/src/mutation-runner.js';
 
 const dirs: string[] = [];
 const sandbox = (): string => {
@@ -14,6 +16,50 @@ const sandbox = (): string => {
   dirs.push(dir);
   return dir;
 };
+
+describe('mutation assessment containment', () => {
+  it('rechecks candidate paths after the baseline command changes them', async () => {
+    const root = sandbox(), outside = sandbox();
+    const original = 'export const value = 2 + 3;\n';
+    const external = join(outside, 'value.mjs');
+    writeFileSync(external, original);
+    writeFileSync(join(root, 'value.mjs'), original);
+    const git = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: 'pipe' });
+    git('init', '-b', 'main'); git('config', 'user.name', 'Fixture'); git('config', 'user.email', 'fixture@example.invalid');
+    git('add', '.'); git('commit', '-m', 'fixture');
+    const before = git('worktree', 'list', '--porcelain');
+    const command = `const fs=require('node:fs');fs.unlinkSync('value.mjs');fs.symlinkSync(${JSON.stringify(external)},'value.mjs');`;
+    const result = await runMutationAssessment({ repoRoot: root, files: ['value.mjs'],
+      testCmd: `node -e ${JSON.stringify(command)}`, outputDir: join(root, 'out') },
+    { cwd: root, signal: new AbortController().signal }, { engines: { dispatch() { throw new Error('Unexpected provider'); } } });
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/symlink/);
+    expect(readFileSync(external, 'utf8')).toBe(original);
+    expect(readFileSync(join(root, 'value.mjs'), 'utf8')).toBe(original);
+    expect(git('worktree', 'list', '--porcelain')).toBe(before);
+  });
+
+  it.each(['file', 'parent'] as const)('rejects a tracked %s symlink before mutation', async kind => {
+    const root = sandbox(), outside = sandbox();
+    const original = 'export const value = 2 + 3;\n';
+    writeFileSync(join(outside, 'value.mjs'), original);
+    const target = kind === 'file' ? 'linked.mjs' : 'linked/value.mjs';
+    symlinkSync(kind === 'file' ? join(outside, 'value.mjs') : outside, join(root, kind === 'file' ? target : 'linked'));
+    const git = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: 'pipe' });
+    git('init', '-b', 'main'); git('config', 'user.name', 'Fixture'); git('config', 'user.email', 'fixture@example.invalid');
+    git('add', '.'); git('commit', '-m', 'fixture');
+    const before = git('worktree', 'list', '--porcelain');
+    for (const selection of [{ files: [target] }, { diff: `diff --git a/${target} b/${target}\n--- a/${target}\n+++ b/${target}\n@@ -1 +1 @@\n-old\n+${original}` }]) {
+      const result = await runMutationAssessment({ repoRoot: root, ...selection, testCmd: 'true', outputDir: join(root, 'out') },
+        { cwd: root, signal: new AbortController().signal }, { engines: { dispatch() { throw new Error('Unexpected provider'); } } })
+        .catch(error => ({ ok: false, error: String(error) }));
+      expect(result.ok).toBe(false);
+      expect(result.error).toMatch(/symlink|escapes/);
+      expect(readFileSync(join(outside, 'value.mjs'), 'utf8')).toBe(original);
+      expect(git('worktree', 'list', '--porcelain')).toBe(before);
+    }
+  });
+});
 
 afterEach(() => {
   while (dirs.length) rmSync(dirs.pop()!, { recursive: true, force: true });

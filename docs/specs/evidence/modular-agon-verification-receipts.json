@@ -1,0 +1,142 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-22T21:13:59.122Z",
+  "receipts": [
+    {
+      "schemaVersion": 1,
+      "receiptId": "0e9ab630-f1ba-42f3-a3fe-5eff6e1ee3ba",
+      "contractId": "agon.verify.spec-readiness",
+      "contractVersion": "1.0.0",
+      "contractHash": "sha256:bbce1c9b817e29ec8fa08c66d08615799ee3d5abe62e7dc80653138acc4715d6",
+      "subjectHash": "sha256:603542859c54273a69371200df44b9c3abd4d83902fd86477ff193605263c75d",
+      "runner": {
+        "id": "agon.verify.runner",
+        "version": "1.0.0",
+        "contentHash": "sha256:bf3263ac758b6c157377a0538ff9bb1e35009db6a9e6ac0ad1ca6cbf7ee1c892"
+      },
+      "platform": "darwin-arm64",
+      "startedAt": "2026-08-22T21:13:22.691Z",
+      "finishedAt": "2026-08-22T21:13:59.121Z",
+      "status": "passed",
+      "checks": [
+        {
+          "id": "inventory",
+          "status": "passed",
+          "exitCode": 0,
+          "durationMs": 653.6561250000001,
+          "evidenceHashes": [
+            "sha256:652b798887dbf8a074b317ad714cf59ce86876de15c15fdde1f96c1f1070f1de"
+          ]
+        },
+        {
+          "id": "ownership-and-dag",
+          "status": "passed",
+          "exitCode": 0,
+          "durationMs": 60.36266599999999,
+          "evidenceHashes": [
+            "sha256:d9ce270b425ed7506632aa388c499a2dd63efd6bd4317c13d395a12c0616fb3f"
+          ]
+        },
+        {
+          "id": "fixtures",
+          "status": "passed",
+          "exitCode": 0,
+          "durationMs": 53.92929200000003,
+          "evidenceHashes": [
+            "sha256:60ad6df2c43e165d656d9a22788146427c6c1667df15e9a70606a80c6061ba2b"
+          ]
+        },
+        {
+          "id": "json-schemas",
+          "status": "passed",
+          "exitCode": 0,
+          "durationMs": 84.66558299999997,
+          "evidenceHashes": [
+            "sha256:286d26451f592a35fc4a1a50086191334e074bd94f41a49c5d954a392c4a3897"
+          ]
+        },
+        {
+          "id": "coverage-ledger",
+          "status": "passed",
+          "exitCode": 0,
+          "durationMs": 87.16512499999999,
+          "evidenceHashes": [
+            "sha256:bb9c5d6cd8a579a58e3786cf4d06382849dda9d0890b7c79685381988017cc00"
+          ]
+        },
+        {
+          "id": "contract-properties",
+          "status": "passed",
+          "exitCode": 0,
+          "durationMs": 822.157292,
+          "evidenceHashes": [
+            "sha256:33d800601d905b45e6592f34de3100e43e28bd36a9625dd6041b2bc732aaad1c"
+          ]
+        },
+        {
+          "id": "external-example-compile",
+          "status": "passed",
+          "exitCode": 0,
+          "durationMs": 626.6460830000001,
+          "evidenceHashes": [
+            "sha256:804e5d9cf11ef500c9f976b288b70be29229ea41ebe881c29f92884832f6e565"
+          ]
+        },
+        {
+          "id": "pack-content",
+          "status": "passed",
+          "exitCode": 0,
+          "durationMs": 268.6569579999996,
+          "evidenceHashes": [
+            "sha256:2f2713eacabc293d7b1115bcb90564824aada7143c98c067a679df3477e86c3b"
+          ]
+        },
+        {
+          "id": "consistency-and-links",
+          "status": "passed",
+          "exitCode": 0,
+          "durationMs": 176.94900000000007,
+          "evidenceHashes": [
+            "sha256:61f7fde4294751c28a53fbdac55a79b89eb106f815b9151025b2cb934de1e87d"
+          ]
+        },
+        {
+          "id": "repository-typecheck",
+          "status": "passed",
+          "exitCode": 0,
+          "durationMs": 197.35424999999987,
+          "evidenceHashes": [
+            "sha256:bef5373f57d3d5a2906dd39c83055b095a8c7f2b7663a558e1c7de4f67f32390"
+          ]
+        },
+        {
+          "id": "reexport-guard",
+          "status": "passed",
+          "exitCode": 0,
+          "durationMs": 216.4214579999998,
+          "evidenceHashes": [
+            "sha256:d10bafafcc9f1d636b33333e7d661f8fa1d3210b7019797095b719f298152f08"
+          ]
+        },
+        {
+          "id": "spec-lint",
+          "status": "passed",
+          "exitCode": 0,
+          "durationMs": 572.3005000000003,
+          "evidenceHashes": [
+            "sha256:88e54a8370043d6d9da39903453a670ce753b9016049c0b1ace673e540cc2ee8"
+          ]
+        },
+        {
+          "id": "full-test-suite",
+          "status": "passed",
+          "exitCode": 0,
+          "durationMs": 32607.109249999998,
+          "evidenceHashes": [
+            "sha256:10ae2a82d7137e4e420453a4a064950d1b3e0357820c275084a49f49be517cbb"
+          ]
+        }
+      ]
+    }
+  ]
+}

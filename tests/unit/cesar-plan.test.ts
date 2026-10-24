@@ -2,9 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createCesarPlan, approveCesarPlan, advanceCesarStep, cancelCesarPlan, exitCesarPlan, saveCesarPlan, loadCesarPlan, listCesarPlans, cesarPlanJsonPath, cesarPlanMarkdownPath } from '../../packages/core/src/cesar/plan.js';
-import type { CesarPlan, CesarPlanStep } from '../../packages/core/src/cesar/plan.js';
-import { executePlan } from '../../packages/core/src/cesar/plan-executor.js';
+import { createCesarPlan, approveCesarPlan, advanceCesarStep, cancelCesarPlan, exitCesarPlan, saveCesarPlan, loadCesarPlan, listCesarPlans, cesarPlanJsonPath, cesarPlanMarkdownPath } from '@kernlang/agon-core';
+import type { CesarPlan, CesarPlanStep } from '@kernlang/agon-core';
+import { executePlan } from '@kernlang/agon-core';
 
 const makeStep = (id: string, overrides?: Partial<CesarPlanStep>): CesarPlanStep => ({
   id,
@@ -211,7 +211,8 @@ describe('CesarPlan state machine', () => {
       expect(existsSync(jsonPath)).toBe(true);
 
       const raw = JSON.parse(readFileSync(jsonPath, 'utf-8'));
-      expect(raw.planFilePath).toBe(markdownPath);
+      expect(raw).toMatchObject({ schemaVersion: 1, kind: 'plan', status: 'approved' });
+      expect(raw.payload.planFilePath).toBe(markdownPath);
       expect(loadCesarPlan(plan.id)?.planFilePath).toBe(markdownPath);
       expect(listCesarPlans().map(p => p.id)).toContain(plan.id);
     } finally {

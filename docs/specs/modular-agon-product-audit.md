@@ -1,5 +1,46 @@
 # Installed-product audit and repair ledger
 
+## Think runtime and CLI ownership — 2026-10-24
+
+The physical Think package now owns execution, critic dispatch, grounding,
+validation and human/JSON presentation. Legacy Forge exports are narrow public
+compatibility wrappers; the old CLI command is retired. Exact legacy runtime
+and command fixtures remain available to clean checkouts. The new host captures
+engine selection and generation authority and injects the existing adapter and
+run store. No external dependency changed; legacy Forge uses the approved existing
+Think workspace package. Goal's dependency selection is unchanged.
+
+Frozen-source tests compare raw requests, results and warnings across strategies,
+failures, critique, grounding, malformed output and thought caps. Presentation
+tests compare the actual legacy renderer, including quiet-mode extra sections.
+Independent Codex review confirmed three defects, each reproduced before repair:
+buffered failure output was lost, a TUI problem was overwritten, and receipt
+failure suppressed completed results. Receipt failure now preserves the result
+and stored engine outcome but returns a typed command failure with recovery
+instructions. Cancellation/generation tests also exposed stale failure-status
+writes; revoked invocations now stop before later effects.
+
+108 focused tests passed. After declaration and catalog regeneration, 90
+surface/setup tests and five fresh compiled CLI processes passed. Native runs
+exercise JSON, human, quiet, engine failure and disabled Think with local fixture
+engines. Actual argument parsing is compared with the frozen legacy Citty schema.
+All test receipts report zero external provider launches.
+
+Review packet SHA-256: `f7d98d40573fa5577e1d962f768095d5bf3db7930a05cf60becae6c6048f04bb`.
+Review log SHA-256: `c2b9d7c1e2452adfca970dac1265b66824ed07e0c5ff0d3a16fe8db81e2b6c3c`.
+Focused log SHA-256: `e65795d4d3febca4c022f43e69c85a126fd6cf8861c36aef30b07ecd9cd6060c`.
+Setup/native/package log SHA-256: `e6f8cc194971f81ecc39f706a192fca714d854a7011ffea6f36a1e990ab43c44`.
+
+The fresh full run passed: 11,268 tests passed, six skipped. Types, lint,
+re-export guard, generated catalogs, offline release packs, SBOM self-test and
+migration ledger also passed, followed by five fresh compiled CLI processes.
+The complete chain took 675.417 seconds and launched zero external providers.
+Full log SHA-256: `1fee1acebf5780cf6267791af671325e0b17e56faff8717aae0e19ca53b5c7dd`.
+The earlier three catalog-drift failures remain in the durable evidence archive;
+regeneration changed only the two Think owner hashes before this successful run.
+Think's TUI session effects and legacy handler remain a separate ownership gap.
+This entry does not claim whole-release acceptance or completed Think extraction.
+
 ## Think result ownership and generator preservation — 2026-10-24
 
 ThinkResult now belongs to Think, not the surrounding legacy Forge package.

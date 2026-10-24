@@ -155,12 +155,12 @@ function expectedFiles(packageRecord) {
   if (['conquer', 'goal', 'pipeline-delivery', 'pipeline-orchestration'].includes(short)) inferredPermissions.add('engine.dispatch');
   // These workflows dispatch through host services in separate modules.
   // The entrypoint scan cannot see these effects.
-  if (['brainstorm', 'forge', 'team-brainstorm', 'tribunal', 'campfire'].includes(short)) inferredPermissions.add('engine.dispatch');
+  if (['brainstorm', 'forge', 'team-brainstorm', 'tribunal', 'campfire', 'think'].includes(short)) inferredPermissions.add('engine.dispatch');
   // Jobs persists scheduler observations through its separate storage adapter.
   if (short === 'jobs') inferredPermissions.add('state.write');
   if (short === 'conquer') inferredPermissions.add('git.write');
   const physicalPackFiles = ['dist/implementation.d.ts', ...(short === 'rag' ? ['dist/store.d.ts', 'dist/types.d.ts', 'dist/grounding.d.ts']
-    : short === 'think' ? ['dist/thinking.d.ts']
+    : short === 'think' ? ['dist/thinking.d.ts', 'dist/runtime.d.ts', 'dist/host.d.ts', 'dist/presentation.d.ts']
     : short === 'review' ? ['dist/consensus.d.ts', 'dist/findings.d.ts']
     : short === 'conquer' ? ['dist/completion-policy.d.ts', 'dist/workflow.d.ts', 'dist/falsifier.d.ts', 'dist/host.d.ts', 'dist/isolation.d.ts', 'dist/publication.d.ts']
     : short === 'nero' ? ['dist/verdict.d.ts', 'dist/critic-cascade.d.ts']
@@ -253,6 +253,11 @@ export { createCampfireHostServices } from './host.js';
 export type { CampfireHostEffects, CampfireHostServices, CampfireHostSession, CampfireModServices } from './host.js';
 export { runCampfireSession } from './session-workflow.js';
 export type { CampfireSessionContext, CampfireSessionCommandResult, CampfireSessionHost, CampfireSessionEvent } from './session-workflow.js';
+` : short === 'think' ? `export * from './thinking.js';
+export { runThinkRuntime, runThinkCritique } from './runtime.js';
+export type { ThinkRuntimeOptions, ThinkCritiqueOptions, ThinkEffects } from './runtime.js';
+export { createThinkHostServices } from './host.js';
+export type { ThinkEngineRegistry, ThinkHostSession, ThinkHostServices, ThinkModServices, ThinkHostEffects } from './host.js';
 ` : short === 'browser' ? `export { driveBrowser, runServe, browserHost } from './implementation.js';
 ` : short === 'worktrees' ? `export { runWorktree, runWorkspace } from './implementation.js';
 export * from './workspaces.js';

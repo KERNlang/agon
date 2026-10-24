@@ -9,6 +9,7 @@ import frozenWorktree from '../fixtures/modular-worktree-command-contract.json';
 import frozenTribunal from '../fixtures/modular-tribunal-command-contract.json';
 import frozenConquer from '../fixtures/modular-conquer-command-contract.json';
 import frozenCampfire from '../fixtures/modular-campfire-command-contract.json';
+import frozenThink from '../fixtures/modular-think-command-contract.json';
 
 type CommandDef = {
   meta?: { name?: string };
@@ -34,7 +35,7 @@ const physicalTopLevel = [
 ] as const;
 
 function allLegacyCommands(): CommandDef[] {
-  return [frozenWorktree.command, frozenTribunal.command, frozenConquer.command, frozenCampfire.command, ...Object.values(legacyModules).flatMap((module) => Object.values(module))]
+  return [frozenWorktree.command, frozenTribunal.command, frozenConquer.command, frozenCampfire.command, frozenThink.command, ...Object.values(legacyModules).flatMap((module) => Object.values(module))]
     .filter((value): value is CommandDef => Boolean(value && typeof value === 'object' && (value as CommandDef).meta?.name));
 }
 
@@ -82,6 +83,14 @@ function legacyTop(name: string): CommandDef | undefined {
 }
 
 describe('physical CLI contract parity', () => {
+  it('preserves frozen Think command and option help text', async () => {
+    const current = createGeneratedLazySubCommands().think as CommandDef;
+    expect(current.meta).toEqual(frozenThink.command.meta);
+    const args = await resolveMap(current.args);
+    for (const [name, expected] of Object.entries(frozenThink.command.args)) {
+      expect(args[name], `Think help: ${name}`).toMatchObject({ description: expected.description });
+    }
+  });
   it('preserves frozen Campfire command and option help text', async () => {
     const current = createGeneratedLazySubCommands().campfire as CommandDef;
     expect(current.meta).toEqual(frozenCampfire.command.meta);

@@ -24,12 +24,31 @@ Clean committed-checkout pressure qualification passed all 11 gates on
 GitHub CI found a cold type-check build-order defect that this older harness
 missed because it built first. The defect is reproduced and a project-reference
 fix passes the full local gate; the harness now checks types before building.
-The repaired commit still needs clean-checkout pressure and GitHub CI results.
-Nico should wait for the explicit merge-ready result. Full release work continues
-afterward on a new branch; its acceptance criteria are unchanged.
+The repaired commit also passes clean-checkout pressure and GitHub CI below.
+Development-base qualification now passes on `5e2b92531bba6501606fbc6ad2c7de4ddda7abd1`:
+all 12 clean-checkout gates and Linux GitHub CI are green. This supports using
+the branch as a development base, not a release or a claim of full legacy parity.
+GitHub still reports the PR blocked: the external `kern-guard` check is queued,
+with no diagnostic output. Do not silently bypass that guard. Nico controls the
+merge once repository policy permits it. Full release work continues afterward
+on a new branch; its acceptance criteria are unchanged.
+
+The subsequent handoff/evidence-only commit changes no implementation, build,
+dependency or test inputs. Results below remain bound to `5e2b92531`, not falsely
+relabelled as fresh runs on the documentation commit.
 
 Latest integration evidence:
 
+- Exact clean checkout `5e2b92531`: 12/12 gates pass, including cold typecheck,
+  build, process-death recovery, generated surfaces, disabled-mod matrix,
+  mutation checks, 3,523 shuffled modular tests and 186 fresh workflow tests.
+  Zero provider launches. Receipt SHA-256
+  `d4fed372e36fafd6140747b7bd58d0a1a21ff6f19b298b6eb01e073359c5fc96`.
+  [Pressure evidence](docs/specs/evidence/nico-handoff-pressure-5e2b92531-2026-10-24/index.json)
+  preserves the receipt and all twelve logs with verified retrieval hashes.
+- [Linux CI run 40100030195](https://github.com/KERNlang/agon/actions/runs/40100030195)
+  passed on the same commit, including lint, cold typecheck, build and tests.
+  `kern-guard` check 120890111443 was still queued at this observation.
 - Cold-typecheck repair: full build, types, guards, release-set, supply-chain,
   lint and 11,625 tests pass (six skipped), with zero provider launches.
   Receipt `dev-base-cold-qualified-full.receipt.json`, log SHA-256
@@ -121,6 +140,8 @@ session results are published. Disabled fallback Synthesis cannot start a job.
 Four independent review findings and the fallback defect have negative controls.
 Runtime/session ownership, swap pairing and output parity remain open; these
 repairs do not establish complete extraction. See the product audit for receipts.
+Specifically, physical execution uses ring swaps while the legacy runtime uses
+shuffled pairs. This is an existing behavior difference, not just missing evidence.
 
 **Council independent review, confirmed and repaired:**
 

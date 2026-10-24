@@ -1,0 +1,113 @@
+{
+  "schemaVersion": 1,
+  "scope": "Top-level development logs, receipts, review packets, notes and reproduction helpers matching filenamePrefix; no nested worktrees, caches or installed dependencies.",
+  "filenamePrefix": "dev-base-pressure-5e2b92531",
+  "warning": "Historical failures and review hypotheses are retained. Exported files may be sanitized; original receipt log hashes refer to original bytes, not sanitized bytes. This is not release acceptance.",
+  "archiveSha256": "843fc415ef17b4b5f2da3b53a930096a9c3085c387295bf7556b3d3823c42edd",
+  "files": [
+    {
+      "originalRelativePath": "dev-base-pressure-5e2b92531-build.log",
+      "archivePath": "development-evidence/dev-base-pressure-5e2b92531-build.log",
+      "originalSha256": "919001eba0a04a81b8dc4601c496e90f93678f9663af4c177d17fa5bc8168e0e",
+      "exportSha256": "919001eba0a04a81b8dc4601c496e90f93678f9663af4c177d17fa5bc8168e0e",
+      "bytes": 39222,
+      "redactions": 0
+    },
+    {
+      "originalRelativePath": "dev-base-pressure-5e2b92531-fresh-workflows-seed-1701.log",
+      "archivePath": "development-evidence/dev-base-pressure-5e2b92531-fresh-workflows-seed-1701.log",
+      "originalSha256": "a61f1083e7cc043b0756574986a1f9b861f4713c018d44aac7b10c93df80d481",
+      "exportSha256": "a61f1083e7cc043b0756574986a1f9b861f4713c018d44aac7b10c93df80d481",
+      "bytes": 27714,
+      "redactions": 0
+    },
+    {
+      "originalRelativePath": "dev-base-pressure-5e2b92531-install-offline.log",
+      "archivePath": "development-evidence/dev-base-pressure-5e2b92531-install-offline.log",
+      "originalSha256": "61dea9963f7492eba8b0e621a17e8b05a1c36fec7bba8bb02f3f28a04eb70dce",
+      "exportSha256": "61dea9963f7492eba8b0e621a17e8b05a1c36fec7bba8bb02f3f28a04eb70dce",
+      "bytes": 303,
+      "redactions": 0
+    },
+    {
+      "originalRelativePath": "dev-base-pressure-5e2b92531-modular-seed-1701.log",
+      "archivePath": "development-evidence/dev-base-pressure-5e2b92531-modular-seed-1701.log",
+      "originalSha256": "339522b09a9bc58e2b4cdfe9a3e99fc8ac3973ef307ed8dc0b292a3f6e0c056f",
+      "exportSha256": "339522b09a9bc58e2b4cdfe9a3e99fc8ac3973ef307ed8dc0b292a3f6e0c056f",
+      "bytes": 179909,
+      "redactions": 0
+    },
+    {
+      "originalRelativePath": "dev-base-pressure-5e2b92531-real-process-death.log",
+      "archivePath": "development-evidence/dev-base-pressure-5e2b92531-real-process-death.log",
+      "originalSha256": "c666a324b77c1160fd69cc173e6d3e1a1fba6753b0fdf470fcfe1bb15f0f3200",
+      "exportSha256": "c666a324b77c1160fd69cc173e6d3e1a1fba6753b0fdf470fcfe1bb15f0f3200",
+      "bytes": 1735,
+      "redactions": 0
+    },
+    {
+      "originalRelativePath": "dev-base-pressure-5e2b92531-receipt.json",
+      "archivePath": "development-evidence/dev-base-pressure-5e2b92531-receipt.json",
+      "originalSha256": "d4fed372e36fafd6140747b7bd58d0a1a21ff6f19b298b6eb01e073359c5fc96",
+      "exportSha256": "d4fed372e36fafd6140747b7bd58d0a1a21ff6f19b298b6eb01e073359c5fc96",
+      "bytes": 34197,
+      "redactions": 0
+    },
+    {
+      "originalRelativePath": "dev-base-pressure-5e2b92531-spec-modular-first-party-check.log",
+      "archivePath": "development-evidence/dev-base-pressure-5e2b92531-spec-modular-first-party-check.log",
+      "originalSha256": "de99fdcd3fc74a73780c9fba484a554af419c78643cee1e39a034c67db64a869",
+      "exportSha256": "de99fdcd3fc74a73780c9fba484a554af419c78643cee1e39a034c67db64a869",
+      "bytes": 290,
+      "redactions": 0
+    },
+    {
+      "originalRelativePath": "dev-base-pressure-5e2b92531-spec-modular-generated-check.log",
+      "archivePath": "development-evidence/dev-base-pressure-5e2b92531-spec-modular-generated-check.log",
+      "originalSha256": "d178fe18e59aaa5f1c55a7a37eb1e073e4c37f7c5e1a86a8ed41c2016f490734",
+      "exportSha256": "d178fe18e59aaa5f1c55a7a37eb1e073e4c37f7c5e1a86a8ed41c2016f490734",
+      "bytes": 136,
+      "redactions": 0
+    },
+    {
+      "originalRelativePath": "dev-base-pressure-5e2b92531-spec-modular-generated-self-test.log",
+      "archivePath": "development-evidence/dev-base-pressure-5e2b92531-spec-modular-generated-self-test.log",
+      "originalSha256": "a5faac71de73e2041daaf3844c8ec0045df09eef4ef4e6bd11906a7c968f1472",
+      "exportSha256": "a5faac71de73e2041daaf3844c8ec0045df09eef4ef4e6bd11906a7c968f1472",
+      "bytes": 152,
+      "redactions": 0
+    },
+    {
+      "originalRelativePath": "dev-base-pressure-5e2b92531-test-modular-disable-matrix.log",
+      "archivePath": "development-evidence/dev-base-pressure-5e2b92531-test-modular-disable-matrix.log",
+      "originalSha256": "414ff4ce853e99f75cd01c88c3b6598e789ca5387bd636e1187649025e8db96c",
+      "exportSha256": "414ff4ce853e99f75cd01c88c3b6598e789ca5387bd636e1187649025e8db96c",
+      "bytes": 194,
+      "redactions": 0
+    },
+    {
+      "originalRelativePath": "dev-base-pressure-5e2b92531-test-modular-foundation-mutation.log",
+      "archivePath": "development-evidence/dev-base-pressure-5e2b92531-test-modular-foundation-mutation.log",
+      "originalSha256": "3f5988ec405a1991943a09ad3100e2e47be1fe7d0d515da0556e84bb36a53d9b",
+      "exportSha256": "3f5988ec405a1991943a09ad3100e2e47be1fe7d0d515da0556e84bb36a53d9b",
+      "bytes": 139385,
+      "redactions": 0
+    },
+    {
+      "originalRelativePath": "dev-base-pressure-5e2b92531-test-representative-workflows.log",
+      "archivePath": "development-evidence/dev-base-pressure-5e2b92531-test-representative-workflows.log",
+      "originalSha256": "5da5a7e2674a4a95c87f7350ecea287fc5cd1685c9cb79e4a6d09902422573ad",
+      "exportSha256": "5da5a7e2674a4a95c87f7350ecea287fc5cd1685c9cb79e4a6d09902422573ad",
+      "bytes": 428,
+      "redactions": 0
+    },
+    {
+      "originalRelativePath": "dev-base-pressure-5e2b92531-typecheck-cold.log",
+      "archivePath": "development-evidence/dev-base-pressure-5e2b92531-typecheck-cold.log",
+      "originalSha256": "be1cf12bc2c9d30c2cc1484ecb5ad9f709e037352543b5aeaf93337177ed2a06",
+      "exportSha256": "be1cf12bc2c9d30c2cc1484ecb5ad9f709e037352543b5aeaf93337177ed2a06",
+      "bytes": 23,
+      "redactions": 0
+    }
+  ]
+}

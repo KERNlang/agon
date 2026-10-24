@@ -52,9 +52,15 @@ async function runThink(raw: Json, context: Parameters<ModServices['engines']['d
   if (!services.think || !services.runs) return {exitCode:1,stderr:'Think host capabilities are unavailable. Restart with a compatible modular host.\n'};
   const host = await services.think.open(context);
   host.assertCurrent();
+  const warnings: string[] = [];
+  const warn = (message: string) => {
+    host.assertCurrent();
+    if (cliOutput) host.effects.warn(message);
+    else warnings.push(message);
+  };
   const requested = typeof input.strategy === 'string' ? input.strategy : 'linear';
   const strategy = isThinkStrategy(requested) ? requested : 'linear';
-  if (!isThinkStrategy(requested) && input.quiet !== true) host.effects.warn(`[agon] unknown strategy '${requested}' — using linear (valid: linear|reflexion|tot|graph|hypothesis).`);
+  if (!isThinkStrategy(requested) && input.quiet !== true) warn(`[agon] unknown strategy '${requested}' — using linear (valid: linear|reflexion|tot|graph|hypothesis).`);
   const steps = number(input.steps, 6, 1, 20);
   const branches = number(input.branches, 1, 1, 8);
   const timeoutSec = Number.parseInt(String(input.timeout ?? '120'), 10) || 120;
@@ -64,7 +70,7 @@ async function runThink(raw: Json, context: Parameters<ModServices['engines']['d
   if (typeof input.critic === 'string' && input.critic.trim()) {
     const wanted = host.registry.resolveId(input.critic.trim());
     if (host.activeEngineIds.includes(wanted)) critic = wanted;
-    else host.effects.warn(`[agon] --critic '${input.critic.trim()}' is not an active engine — skipping the adversarial critique.`);
+    else warn(`[agon] --critic '${input.critic.trim()}' is not an active engine — skipping the adversarial critique.`);
   }
   const resolvedEngine = host.registry.get(engineId).id;
   const label = typeof input.label === 'string' ? input.label : undefined;
@@ -87,7 +93,7 @@ async function runThink(raw: Json, context: Parameters<ModServices['engines']['d
     }
     result = await runThinkRuntime({problem, strategy: requested, engineId: resolvedEngine, registry: host.registry,
       adapter: host.adapter, maxThoughts: steps, branches, critic, timeout: timeoutSec,
-      outputDir: handle.path, cwd: context.cwd, ground: input.ground !== false, signal: context.signal}, host.effects);
+      outputDir: handle.path, cwd: context.cwd, ground: input.ground !== false, signal: context.signal}, { ...host.effects, warn });
     host.assertCurrent();
   } catch (error) {
     host.assertCurrent();
@@ -118,6 +124,13 @@ async function runThink(raw: Json, context: Parameters<ModServices['engines']['d
     }
   }
   host.assertCurrent();
+  if (!cliOutput) return {
+    exitCode: result.ok && !receiptFailure ? 0 : 1,
+    ...(warnings.length ? { stdout: warnings.join('\n') } : {}),
+    result: JSON.parse(JSON.stringify(result)) as Json,
+    ...(!result.ok ? { stderr: `${resolvedEngine} produced no usable thinking chain.\n` } : {}),
+    ...receiptFailure,
+  };
   if (input.json === true) return {exitCode:result.ok&&!receiptFailure?0:1,stdout:JSON.stringify(result,null,2)+'\n',...receiptFailure};
   if (!result.ok) return {exitCode:1,stdout:lines.length ? lines.join('\n')+'\n' : '',stderr:`${resolvedEngine} produced no usable thinking chain.\n`};
   presentThinkResult(result, { quiet, goal: input.goal === true, strategy: requested, outputDir: handle.path }, display);

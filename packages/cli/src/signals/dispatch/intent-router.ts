@@ -59,6 +59,12 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
       emitPostDispatch(intent, input, cb);
       return { handled: true, ranAsJob: false };
     }
+    if (record.owner.id === 'agon.think') {
+      // Think uses one job boundary for generated and legacy-shaped intents.
+      const result = await dispatchOrchestrationIntent({ ...(marker.value as object), type: 'think' }, input, cb);
+      emitPostDispatch(intent, input, cb);
+      return result!;
+    }
     const label = marker.publicId.slice(0, 40);
     if (record.owner.id === 'agon.jobs') {
       try {

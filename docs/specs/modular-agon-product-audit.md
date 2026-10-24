@@ -1,5 +1,47 @@
 # Installed-product audit and repair ledger
 
+## Think session ownership — 2026-10-24
+
+Think now owns its session display and persistence policy. The CLI binds that
+policy to the captured chat, generation, timers and existing stores. Generated
+and fallback routes share the existing job/outcome/continuation path. The old
+handler is removed; its byte-exact fixture stays available to clean checkouts.
+
+Independent Codex review identified stale progress cleanup, hidden completed
+results after receipt failure, lost engine diagnostics, and generated jobs that
+swallowed failures. Each finding has a reproduced negative control and local
+repair. Receipt failure keeps the completed chain visible and stored, warns,
+and fails the job without recording successful telemetry. Inactive-critic
+warnings now use the existing command output envelope to reach the transcript.
+
+The first full run was RED: 11,296 passed, one failed, six skipped. Apply's
+negative-owner test caught the Think binding handling another command. The
+binding now requires both the Think owner and command name. No test was weakened.
+After that repair and warning delivery, 34 focused tests, types and lint pass.
+
+Six native compiled-source workflow processes passed: generated and fallback
+success/failure, disabled Think, and pending cancellation. Cancellation kills
+the local fixture engine and stores no late result. The parent verifies the
+interrupted status after host exit. This preserves host-exit finalization; it
+does not claim immediate run-status finalization or terminal rendering coverage.
+All checks use isolated state and launch zero external providers.
+
+Review packet SHA-256: `e68772773d0b0272689b4170ade3d21f551d86ec9df3425337e9caf26ae85c4b`.
+Review log SHA-256: `4d25d27e31730754625b18b712a982ca3de38beb273f72e1accab4b8da859a51`.
+Failed full log SHA-256: `1126c86ebffee3fa30cdcd3429484844eb105cefc4f15c454f87cf6fbe313f7e`.
+Focused log SHA-256: `bf86d730bee354cab5bbd6eb73a2a480908c3b030d29fd38375874f0e4e99324`.
+Native cancellation/finalization log SHA-256: `1305c4758bb409e2a12115739d21ab2373792b8690a0212aa83e6602b2b14c44`.
+
+Fresh full qualification passed in 843.769 seconds: 11,302 tests passed, six
+skipped. Full build, types, lint, export guard, generator checks, offline packs,
+SBOM self-test and migration ledger passed. Five compiled CLI and seven
+compiled-source TUI processes passed, including alias attribution and pending
+cancellation. No external provider launched. Log SHA-256:
+`ffaf72aa528e44a1d6729420934043eb4fce63a824c1d930217af0d3d3f17b5b`.
+This verifies the working-tree slice, not a clean-checkout release candidate.
+Council still has distinct physical and legacy runtime implementations; its
+ownership/parity gap remains open. npm publishing provenance remains external.
+
 ## Think runtime and CLI ownership — 2026-10-24
 
 The physical Think package now owns execution, critic dispatch, grounding,

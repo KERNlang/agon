@@ -3947,7 +3947,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.think",
       "version": "1.0.0",
-      "contentHash": "sha256:784dea85eb40faca156da331a0e230526a2d7135ae557f3e28231bddb73da363"
+      "contentHash": "sha256:2f252136820a213b9e394cac8f48239276f4f398c17c0a34b9b20ba2538ddd2c"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "think",
@@ -10280,7 +10280,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.think",
       "version": "1.0.0",
-      "contentHash": "sha256:784dea85eb40faca156da331a0e230526a2d7135ae557f3e28231bddb73da363"
+      "contentHash": "sha256:2f252136820a213b9e394cac8f48239276f4f398c17c0a34b9b20ba2538ddd2c"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "<problem> [--strategy reflexion] [--steps 8] — sequential thinking, one engine",

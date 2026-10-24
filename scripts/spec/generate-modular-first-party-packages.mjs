@@ -160,7 +160,7 @@ function expectedFiles(packageRecord) {
   if (short === 'jobs') inferredPermissions.add('state.write');
   if (short === 'conquer') inferredPermissions.add('git.write');
   const physicalPackFiles = ['dist/implementation.d.ts', ...(short === 'rag' ? ['dist/store.d.ts', 'dist/types.d.ts', 'dist/grounding.d.ts']
-    : short === 'think' ? ['dist/thinking.d.ts', 'dist/runtime.d.ts', 'dist/host.d.ts', 'dist/presentation.d.ts']
+    : short === 'think' ? ['dist/thinking.d.ts', 'dist/runtime.d.ts', 'dist/host.d.ts', 'dist/presentation.d.ts', 'dist/session-workflow.d.ts']
     : short === 'review' ? ['dist/consensus.d.ts', 'dist/findings.d.ts']
     : short === 'conquer' ? ['dist/completion-policy.d.ts', 'dist/workflow.d.ts', 'dist/falsifier.d.ts', 'dist/host.d.ts', 'dist/isolation.d.ts', 'dist/publication.d.ts']
     : short === 'nero' ? ['dist/verdict.d.ts', 'dist/critic-cascade.d.ts']
@@ -258,6 +258,8 @@ export { runThinkRuntime, runThinkCritique } from './runtime.js';
 export type { ThinkRuntimeOptions, ThinkCritiqueOptions, ThinkEffects } from './runtime.js';
 export { createThinkHostServices } from './host.js';
 export type { ThinkEngineRegistry, ThinkHostSession, ThinkHostServices, ThinkModServices, ThinkHostEffects } from './host.js';
+export { runThinkSession } from './session-workflow.js';
+export type { ThinkSessionContext, ThinkSessionCommandResult, ThinkSessionHost, ThinkSessionEvent } from './session-workflow.js';
 ` : short === 'browser' ? `export { driveBrowser, runServe, browserHost } from './implementation.js';
 ` : short === 'worktrees' ? `export { runWorktree, runWorkspace } from './implementation.js';
 export * from './workspaces.js';

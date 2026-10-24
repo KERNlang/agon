@@ -111,6 +111,7 @@
       "dist/runtime.d.ts",
       "dist/host.d.ts",
       "dist/presentation.d.ts",
+      "dist/session-workflow.d.ts",
       "ownership.json",
       "schemas/config.schema.json"
     ],

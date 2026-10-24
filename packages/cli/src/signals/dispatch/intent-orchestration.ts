@@ -1,10 +1,11 @@
 
 import { resolveWorkingDir } from '@kernlang/agon-core';
-import { captureProcessSurfaceAuthority } from '../../surface-authority-runtime.js';
+import { captureProcessSurfaceAuthority, processSurfaceClient } from '../../surface-authority-runtime.js';
+import { runPhysicalTuiContribution } from './intent-session.js';
 
 import { ENGINE_COLORS } from '../../blocks/output-format.js';
 
-import { handleForge, handleThink, handleCouncil, handleSynthesis, handleNeroChallenge, handleResearch, handleChrome, handleBuild, handleReviewMany, handleSanitize, handleNaturalize, handleMutate, runAgentMode, runAgentTeam } from '../../handlers/index.js';
+import { handleForge, handleCouncil, handleSynthesis, handleNeroChallenge, handleResearch, handleChrome, handleBuild, handleReviewMany, handleSanitize, handleNaturalize, handleMutate, runAgentMode, runAgentTeam } from '../../handlers/index.js';
 
 import { handleTeamTribunal } from '../../handlers/team-tribunal.js';
 
@@ -98,11 +99,16 @@ export async function dispatchOrchestrationIntent(intent: any, input: string, cb
       const _thLabel = intent.input?.slice(0, 40) ?? 'think';
       const continuationEpoch = cb.ctx.inputEpoch ?? 0;
       const continuationUserTurns = countTrackedUserTurns(cb.ctx);
-      cb.runAsJob('think', _thLabel, withThreadOutcome(_thCwd, 'think', _thLabel, async () => {
-        await handleThink(intent.input, cb.dispatch, cb.ctx, { strategy: intent.strategy, steps: intent.steps });
+      const assertSelected = captureProcessSurfaceAuthority();
+      const record = processSurfaceClient('tui').assertAvailable('/think');
+      cb.runAsJob('think', _thLabel, signal => withThreadOutcome(_thCwd, 'think', _thLabel, async () => {
+        assertSelected();
+        await runPhysicalTuiContribution(record, intent, 'think', cb, signal, _thCwd);
+        signal.throwIfAborted();
+        assertSelected();
         const chatContext = collectRecentEngineContext(cb.ctx, 12, 2000);
         if (chatContext) await continueCesarAfterResult(`Think chain on: "${(intent.input ?? '').slice(0, 200)}"\n\n${chatContext}\n\nReview the reasoning, resolve any open questions, and take the next concrete step.`, cb, continuationEpoch, continuationUserTurns);
-      }, cb.ctx));
+      }, cb.ctx)());
       return { handled: true, ranAsJob: true };
     }
     case 'council': {

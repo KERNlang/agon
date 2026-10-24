@@ -20,12 +20,103 @@ async function setup(fail = false, api = false) {
   });
   const runs = { start: vi.fn(async () => ({ id: 'campfire', path: '/fixture/campfire', mode: 'campfire', startedAt: '2026-10-24T00:00:00Z' })), finish: vi.fn(async () => {}) };
   let command: CommandContribution | undefined;
-  const registrar = { resultType: () => () => {}, command: (surface: string, value: CommandContribution) => { if (surface === 'cli') command = value; return () => {}; }, intent: () => () => {}, tool: () => () => {}, planStep: () => () => {} } as unknown as Registrar;
+  let structured: CommandContribution | undefined;
+  const registrar = { resultType: () => () => {}, command: (surface: string, value: CommandContribution) => { if (surface === 'cli') command = value; else structured = value; return () => {}; }, intent: () => () => {}, tool: () => () => {}, planStep: () => () => {} } as unknown as Registrar;
   const mod = await createMod({ ...services, campfire, runs } as ModServices); await mod.activate(registrar, services);
-  return { command: command!, dispatch, record, adapter, runs, loadConfig, revoke: () => { current = false; } };
+  return { command: command!, structured: structured!, campfire, dispatch, record, adapter, runs, loadConfig, revoke: () => { current = false; } };
 }
 
 describe('physical campfire mod', () => {
+  it.each([false, true])('renders once through injected output (quiet=%s)', async quiet => {
+    const h = await setup();
+    const lines: string[] = [];
+    const log = (line: string) => { lines.push(line); };
+    Object.assign(h.campfire, { cliOutput: { log, header: log, info: log, bold: String, dim: String } });
+    const result = await h.command.run({ topic: 'Modularity', quiet }, context);
+    expect(result).toMatchObject({ exitCode: 0, stdout: '', result: { topic: 'Modularity', rounds: expect.any(Array) } });
+    expect(lines.filter(line => line.includes('/fixture/campfire') && !line.includes('Full output'))).toHaveLength(1);
+    expect(lines.filter(line => line.startsWith('AGON_SUMMARY:'))).toEqual(['AGON_SUMMARY: 2/2 succeeded']);
+    if (quiet) expect(lines).toEqual(['/fixture/campfire', 'AGON_SUMMARY: 2/2 succeeded']);
+    else {
+      expect(lines).toContain('Campfire: Modularity');
+      expect(lines).toContain('alpha');
+      expect(lines).toContain('beta');
+    }
+  });
+
+  it('keeps non-CLI output structured even when terminal output is injected', async () => {
+    const h = await setup();
+    const log = vi.fn();
+    Object.assign(h.campfire, { cliOutput: { log, header: log, info: log, bold: String, dim: String } });
+    const result = await h.structured.run({ topic: 'Modularity' }, context) as { stdout: string; result: unknown };
+    expect(JSON.parse(result.stdout)).toEqual(result.result);
+    expect(log).not.toHaveBeenCalled();
+  });
+
+  it('honors inherited quiet output without changing process configuration', async () => {
+    vi.stubEnv('AGON_QUIET', '1');
+    try {
+      const h = await setup();
+      const result = await h.command.run({ topic: 'Modularity' }, context) as { stdout: string };
+      expect(result.stdout).toBe('/fixture/campfire\nAGON_SUMMARY: 2/2 succeeded\n');
+      expect(process.env.AGON_QUIET).toBe('1');
+    } finally { vi.unstubAllEnvs(); }
+  });
+
+  it('does not make quiet mode sticky for the next command', async () => {
+    vi.stubEnv('AGON_QUIET', '');
+    try {
+      const h = await setup();
+      await h.command.run({ topic: 'First', quiet: true }, context);
+      const next = await h.command.run({ topic: 'Second' }, context) as { stdout: string };
+      expect(next.stdout).toContain('Campfire: Second');
+      expect(process.env.AGON_QUIET).toBe('');
+    } finally { vi.unstubAllEnvs(); }
+  });
+
+  it('does not execute after display code revokes the invocation', async () => {
+    const h = await setup();
+    const log = vi.fn(() => h.revoke());
+    Object.assign(h.campfire, { cliOutput: { log, header: log, info: log, bold: String, dim: String } });
+    await expect(h.command.run({ topic: 'Modularity' }, context)).rejects.toThrow('generation replaced');
+    expect(h.dispatch).not.toHaveBeenCalled();
+    expect(h.record).not.toHaveBeenCalled();
+  });
+
+  it('prints degraded outcomes from the same statuses saved to disk', async () => {
+    const h = await setup();
+    h.dispatch.mockResolvedValueOnce({ engineId: 'alpha', exitCode: 0, stdout: 'A substantial opening response.', stderr: '', timedOut: false });
+    h.dispatch.mockResolvedValueOnce({ engineId: 'beta', exitCode: 1, stdout: '', stderr: 'failed', timedOut: false });
+    const result = await h.command.run({ topic: 'Modularity', label: 'fixture-label' }, context) as { stdout: string };
+    expect(result.stdout).toContain('AGON_SUMMARY: 1/2 succeeded; beta: error');
+    expect(h.runs.finish).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      label: 'fixture-label', ok: false, engines: [
+        { id: 'alpha', status: 'ok', detail: '1 round(s)' },
+        { id: 'beta', status: 'error', detail: 'no output' },
+      ],
+    }), context);
+  });
+
+  it.each([false, true])('preserves human CLI output and quiet summary (quiet=%s)', async quiet => {
+    const h = await setup();
+    const result = await h.command.run({ topic: 'Modularity', strategy: 'all-respond', quiet }, context);
+    expect(result).toMatchObject({ exitCode: 0, result: { topic: 'Modularity' } });
+    const stdout = (result as { stdout: string }).stdout;
+    expect(stdout).toContain(quiet ? '/fixture/campfire\n' : 'AGON_RUN: /fixture/campfire\n');
+    expect(stdout).toContain('AGON_SUMMARY: 2/2 succeeded\n');
+    if (quiet) {
+      expect(stdout).not.toContain('Campfire:');
+      expect(stdout).not.toContain('view of');
+    } else {
+      expect(stdout).toContain('Campfire: Modularity');
+      expect(stdout).toContain('Engines: alpha, beta');
+      expect(stdout).toContain('Strategy: all-respond');
+      expect(stdout).toContain('Full output saved: /fixture/campfire');
+      expect(stdout).toContain('alpha view of');
+      expect(stdout).toContain('beta view of');
+    }
+  });
+
   it('treats persisted response observations as history, not successful completion after revocation', async () => {
     const h = await setup();
     h.record.mockImplementationOnce(async () => { h.revoke(); return 'historical-response-receipt'; });
@@ -165,8 +256,7 @@ describe('physical campfire mod', () => {
   it('runs lead-first and exposes the lead response to the remaining seats', async () => {
     const h = await setup();
     const result = await h.command.run({ topic: 'Modularity', strategy: 'lead-first', lead: 'beta' }, context);
-    const parsed = JSON.parse((result as { stdout: string }).stdout);
-    expect(parsed).toMatchObject({ strategy: 'lead-first', lead: 'beta', panelHealth: { requested: 2, responded: 2, degraded: false } });
+    expect(result).toMatchObject({ result: { strategy: 'lead-first', lead: 'beta', panelHealth: { requested: 2, responded: 2, degraded: false } } });
     expect(h.dispatch.mock.calls[0][0]).toBe('beta');
     expect(h.dispatch.mock.calls[1][1]).toContain('## Lead engine (beta) response');
     expect(h.record).toHaveBeenCalledWith('campfire', { strategy: 'lead-first', lead: 'beta', requested: 2, responded: 2 });

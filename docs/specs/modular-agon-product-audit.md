@@ -1,5 +1,48 @@
 # Installed-product audit and repair ledger
 
+## Campfire CLI ownership — 2026-10-24
+
+The physical CLI now renders the existing Campfire heading, engine list, strategy,
+individual responses, output location and `AGON_SUMMARY`. Quiet output contains
+the run path and summary only. The flag no longer changes process-wide quiet
+configuration. Other surfaces keep structured results and their existing stdout
+behavior. Persisted status retains the requested label and per-engine round count.
+
+The unused standalone command is removed. Its complete metadata and argument
+definitions were extracted from commit `98402af66579fb9fe05845e215f2b6ac8a082f1d`
+into `tests/fixtures/modular-campfire-command-contract.json`. Git source hash and
+AST equality were independently checked. Clean-checkout parity uses that fixture;
+it does not require historical Git objects. Consumer tracing found no remaining
+runtime import. A file-absence guard rejects reintroduction.
+
+One isolated Agon Codex review identified missing help-text coverage. A failing
+test reproduced missing flag descriptions, then exact legacy descriptions were
+restored. Metadata and every argument description are now checked, in addition
+to types, aliases, defaults and requiredness. Successful injected-output tests
+check one path, one summary and no duplicate stdout. Native generated CLI tests
+use the real decorator and noisy local Node engines; quiet output remains exactly
+two lines. Runtime diagnostics remain on stderr, not silently suppressed.
+
+Verification: 96 focused tests pass. Full suite: 11,205 passed, six skipped
+(607.131 seconds). Build, types, lint, re-export, migration-ledger, offline package
+and SBOM gates pass. Eight compiled native cases passed twice (6.083 and 5.815
+seconds); the last run followed the full suite and help correction. All test runs
+record zero provider launches. Native evidence is macOS arm64, Node 26.12.1 only.
+Full-suite log SHA-256:
+`e8ba195a93a961f7556f420a3e0e78aab7a356ce5e2cc77a9fdad9eb90f51eaf`.
+Post-review build/package log SHA-256:
+`e545b057facc6e4412307bb5f987bd1ba47ecad2f67664b9ebfc2c8847aec36a`.
+Native log SHA-256:
+`a4bab71e31fde77274c65e2812d32fd82b3996609e4e6eaf88a3579ae64bea4f`.
+Frozen native helper SHA-256:
+`64f2fe662b14b5a39079d15069861d54b04be458b3f71468746e23555e35a1e2`.
+Review packet SHA-256:
+`ff7f64c349440016af333a2bddd9d1cb857a8b6676a5129b662d80f3ba7ac342`.
+Review log SHA-256:
+`2d933cf7f623930810510f6085e76bd569aee6f48eec7cb33f493b5f89ed4999`.
+Evidence remains in the durable `campfire-cli-*` archive. No dependencies,
+global installation or personal state changed. This is not release acceptance.
+
 ## Campfire session ownership — 2026-10-24
 
 Campfire now owns session preparation, progress, response presentation and ordered

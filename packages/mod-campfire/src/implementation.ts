@@ -14,11 +14,16 @@ const schema = Object.freeze({
   },
 }) as Readonly<Record<string, Json>>;
 const cesarSchema = Object.freeze({ type: 'object', additionalProperties: false, required: ['topic'], properties: { topic: { type: 'string', minLength: 1 } } }) as Readonly<Record<string, Json>>;
-const cli = Object.freeze({ positionals: ['topic'], aliases: { engines: 'e', strategy: 's', lead: 'l' }, descriptions: { topic: 'Topic to discuss' } });
+const cli = Object.freeze({ positionals: ['topic'], aliases: { engines: 'e', strategy: 's', lead: 'l' }, descriptions: {
+  topic: 'Topic to discuss', engines: 'Comma-separated engine list',
+  strategy: 'Strategy: lead-first or all-respond', lead: 'Lead engine ID (for lead-first strategy)',
+  timeout: 'Timeout in seconds', label: 'Human-readable suffix baked into the run dir name.',
+  quiet: 'Suppress streaming output; stdout becomes only the run dir path + final summary.',
+} });
 const text = (value: unknown) => typeof value === 'string' ? value.trim() : '';
 const engineIds = (value: Json | undefined) => typeof value === 'string' ? value.split(',').map((id) => id.trim()).filter(Boolean) : [];
 
-async function run(raw: Json, context: InvocationContext, services: CampfireModServices): Promise<CommandResult> {
+async function run(raw: Json, context: InvocationContext, services: CampfireModServices, cliOutput = false): Promise<CommandResult> {
   context.signal.throwIfAborted();
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { exitCode: 1, stderr: 'Provide a Campfire request object.\n' };
   const input = raw as Record<string, Json>;
@@ -36,8 +41,23 @@ async function run(raw: Json, context: InvocationContext, services: CampfireModS
   const host = await services.campfire.open(context);
   host.assertCurrent();
   const handle = await services.runs.start('campfire', text(input.label) || undefined, context);
+  const lines: string[] = [];
+  const log = (value: string) => { lines.push(value); };
+  const plain = (value: string) => value;
+  const display = cliOutput ? services.campfire.cliOutput ?? { log, header: log, info: log, bold: plain, dim: plain } : undefined;
+  const quiet = input.quiet === true || (cliOutput && process.env.AGON_QUIET === '1');
+  const write = (effect: () => void) => { host.assertCurrent(); effect(); host.assertCurrent(); };
   let result: Awaited<ReturnType<typeof runCampfireRuntime>>;
   try {
+    if (display) {
+      write(() => display.log(quiet ? handle.path : `AGON_RUN: ${handle.path}`));
+      if (!quiet) {
+        write(() => display.header(`Campfire: ${topic}`));
+        write(() => display.info(`Engines: ${engines.join(', ')}`));
+        write(() => display.info(`Strategy: ${strategy}`));
+        write(() => display.log(''));
+      }
+    }
     result = await runCampfireRuntime({
       topic, context: text(input.context) || undefined, seedPlan: text(input.seedPlan) || undefined,
       engines, strategy, leadEngine: lead, timeout, outputDir: handle.path,
@@ -59,11 +79,15 @@ async function run(raw: Json, context: InvocationContext, services: CampfireModS
     throw error;
   }
   const responded = new Set(result.rounds.filter(round => round.content.trim()).map(round => round.engineId));
+  const statuses = engines.map(id => {
+    const count = result.rounds.filter(round => round.engineId === id && round.content.trim()).length;
+    return { id, status: count ? 'ok' : 'error', detail: count ? `${count} round(s)` : 'no output' };
+  });
   try {
     await services.runs.finish(handle, {
-      mode: 'campfire', startedAt: handle.startedAt, endedAt: new Date().toISOString(),
+      mode: 'campfire', ...(text(input.label) ? { label: text(input.label) } : {}), startedAt: handle.startedAt, endedAt: new Date().toISOString(),
       ok: responded.size === engines.length, summary: `${responded.size}/${engines.length} engines contributed`,
-      engines: engines.map(id => ({ id, status: responded.has(id) ? 'ok' : 'error', detail: responded.has(id) ? 'response received' : 'no output' })),
+      engines: statuses,
     }, context);
   } catch (error) {
     host.assertCurrent();
@@ -71,10 +95,32 @@ async function run(raw: Json, context: InvocationContext, services: CampfireModS
   }
   host.assertCurrent();
   const output = { ...result, strategy, panelHealth: { requested: engines.length, responded: responded.size, degraded: responded.size !== engines.length } };
-  if (!responded.size) return { exitCode: 1, stderr: 'Campfire produced no usable responses.\n', result: output as Json };
+  const printSummary = () => {
+    if (!display) return;
+    const failed = statuses.filter(seat => seat.status !== 'ok');
+    write(() => display.log(`AGON_SUMMARY: ${responded.size}/${engines.length} succeeded${failed.length ? '; ' + failed.map(seat => `${seat.id}: ${seat.status}`).join(', ') : ''}`));
+  };
+  if (!responded.size) {
+    printSummary();
+    return { exitCode: 1, stderr: 'Campfire produced no usable responses.\n', result: output as Json,
+      ...(display ? { stdout: lines.length ? lines.join('\n') + '\n' : '' } : {}) };
+  }
   // Record completed responses, not permission or the command's final outcome.
   await services.receipts.record('campfire', { strategy, lead: result.lead, requested: engines.length, responded: responded.size });
   host.assertCurrent();
+  if (display) {
+    if (!quiet) {
+      for (const round of result.rounds) {
+        write(() => display.log(''));
+        write(() => display.header(display.bold(round.engineId)));
+        write(() => display.log(round.content));
+      }
+      write(() => display.log(''));
+      write(() => display.info(display.dim(`Full output saved: ${handle.path}`)));
+    }
+    printSummary();
+    return { exitCode: 0, stdout: lines.length ? lines.join('\n') + '\n' : '', result: output as Json };
+  }
   const stdout = input.quiet === true ? `${result.rounds.filter(round => round.content.trim()).map(({ engineId, content }) => `${engineId}: ${content}`).join('\n\n')}\n` : `${JSON.stringify(output, null, 2)}\n`;
   return { exitCode: 0, stdout, result: output as Json };
 }
@@ -84,7 +130,7 @@ export const createMod: AgonModFactory = (services) => Object.freeze({
   async activate(registrar: Registrar): Promise<Dispose> {
     const disposers: Dispose[] = [];
     const command = { description: 'Open discussion — all engines think together, no competition', inputSchema: schema, cli, run: (input: Json, context: any) => run(input, context, services) };
-    disposers.push(registrar.command('cli', { id: 'cliCommands:0010', ...command }));
+    disposers.push(registrar.command('cli', { id: 'cliCommands:0010', ...command, run: (input, context) => run(input, context, services, true) }));
     disposers.push(registrar.intent({ id: 'intentVariants:0007', description: 'Parse campfire intent', inputSchema: schema, parse: (input) => input.startsWith('/campfire ') ? { topic: input.slice(10) } : undefined, run: (input, context) => run(input, context, services) }));
     for (const id of ['builtinCommandMetadata:0008', 'tuiSlashCommands:0008']) disposers.push(registrar.command('tui', { id, ...command }));
     disposers.push(registrar.tool('mcp', { id: 'mcpTools:0005', description: 'Run an open multi-model discussion', inputSchema: schema, effect: 'process', run: async (input, context) => commandResultToToolResult(await run(input, context, services)) }));

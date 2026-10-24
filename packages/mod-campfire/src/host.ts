@@ -13,6 +13,13 @@ export interface CampfireHostSession {
 
 export interface CampfireHostServices {
   open(context: InvocationContext): Awaitable<CampfireHostSession>;
+  readonly cliOutput?: {
+    log(text: string): void;
+    header(text: string): void;
+    info(text: string): void;
+    bold(text: string): string;
+    dim(text: string): string;
+  };
 }
 
 export interface CampfireModServices extends ModServices {

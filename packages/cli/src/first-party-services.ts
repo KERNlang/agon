@@ -132,7 +132,7 @@ export async function decorateCliFirstPartyServices(manifest: ModManifest, base:
   } : undefined;
   return Object.freeze({ ...base, runs, ...(browser ? { browser } : {}), ...(workspace ? { workspace } : {}),
     ...(brainstorm ? { brainstorm } : {}),
-    ...(manifest.id === 'agon.campfire' ? { campfire: createCampfireHostServices({
+    ...(manifest.id === 'agon.campfire' ? { campfire: { ...createCampfireHostServices({
       openRegistry: () => {
         const registry = new CatalogEngineRegistry();
         registry.load(resolveBuiltinEnginesDir()); return registry;
@@ -142,7 +142,7 @@ export async function decorateCliFirstPartyServices(manifest: ModManifest, base:
         const assertCurrent = captureProcessSurfaceAuthority();
         return () => { assertCurrent(); assertProcessSurfaceAvailable('cli', 'campfire'); };
       },
-    }) } : {}),
+    }), cliOutput: { log: (text: string) => console.log(text), header, info, bold, dim } } } : {}),
     ...(['agon.tribunal', 'agon.conquer', 'agon.pipeline-orchestration'].includes(manifest.id) ? {
       tribunal: { ...createTribunalHostServices<CatalogEngineRegistry>({
         openRegistry: () => {

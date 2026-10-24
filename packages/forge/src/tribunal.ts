@@ -1,3 +1,5 @@
+import { currentInvocationOwnerAvailable } from '@kernlang/agon-kernel';
+import { judgeTribunalForRating } from '@kernlang/agon-mod-ratings';
 import type { EngineRegistry } from '@kernlang/agon-core';
 import { loadConfig, classifyTask, updateGlickoRanked, seedNewEnginesFromRegistry } from '@kernlang/agon-core';
 import { createTribunalRuntime } from '@kernlang/agon-mod-tribunal';
@@ -11,4 +13,6 @@ export const runTribunal: (options: TribunalRuntimeOptions<EngineRegistry>) => P
   createTribunalRuntime<EngineRegistry>({
     loadConfig, classifyTask, updateRanked: updateGlickoRanked,
     seedRegistry: seedNewEnginesFromRegistry,
+    judgeForRating: options => currentInvocationOwnerAvailable('agon.ratings') === false
+      ? Promise.resolve([]) : judgeTribunalForRating({ ...options, config: loadConfig(options.cwd) }),
   });

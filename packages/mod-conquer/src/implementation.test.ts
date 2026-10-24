@@ -419,6 +419,35 @@ it.each(['builder', 'critic', 'critic-command'] as const)('rejects completion af
   expect(existsSync(join(cwd, 'retired-effect.txt'))).toBe(false);
 });
 
+it.each(['current', 'retired', 'cancelled'] as const)('uses current model identity and rechecks authority after lookup: %s', async state => {
+  const controller = new AbortController();
+  let current = true;
+  const identify = vi.fn(async () => {
+    if (state === 'retired') current = false;
+    if (state === 'cancelled') controller.abort(new Error('fixture cancelled'));
+    return 'new-model';
+  });
+  const rankCritics = vi.fn((_registry: unknown, ids: string[], _identities: Record<string, string | null | undefined>) => ids.map(engineId => ({ engineId })));
+  const host = createConquerHostServices({
+    worktrees: fixtureWorktrees,
+    openRegistry: () => ({ get: (id: string) => ({ id, binary: id, agent: {} }) as any }),
+    createAdapter: () => ({ identify, dispatch: vi.fn(), isAvailable: async () => true, getVersion: async () => null }),
+    rankCritics, contextSpine: async () => '',
+    captureAuthority: () => () => { if (!current) throw new Error('fixture retired'); },
+  });
+  const opened = await host.open({ invocationId: 'identity', cwd: '/fixture', platform: 'darwin-arm64',
+    signal: controller.signal, config: {} });
+  const result = opened.rankCritics(['critic']);
+  if (state === 'current') {
+    await expect(result).resolves.toEqual([{ engineId: 'critic' }]);
+    expect(rankCritics).toHaveBeenCalledWith(expect.anything(), ['critic'], { critic: 'new-model' });
+  } else {
+    await expect(result).rejects.toThrow(`fixture ${state}`);
+    expect(rankCritics).not.toHaveBeenCalled();
+  }
+  expect(identify).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ id: 'critic' }), '/fixture');
+});
+
 it.each(['retired', 'cancelled'] as const)('snapshots publication policy and guards its formatter when %s', async state => {
   const controller = new AbortController();
   let current = true;

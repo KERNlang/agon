@@ -49,7 +49,7 @@ export function createBrainstormRuntime<Options extends BrainstormWorkflowOption
     qualityScore: scoring.qualityScore,
     calibrateConfidence: scoring.calibrateConfidence,
     deduplicate: (drafts, options) => services.deduplicate(drafts, options),
-    updateRatings: (bids, question) => { if (ratingsAvailable()) services.updateRatings(bids, question); },
+    updateRatings: (bids, question, identities) => { if (ratingsAvailable()) services.updateRatings(bids, question, identities); },
     selectWinner: (options, engineId) => services.selectWinner(options, engineId),
   });
 

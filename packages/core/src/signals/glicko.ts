@@ -20,6 +20,7 @@ export const {
   computeNewSigma,
   updateGlickoRanked,
   advisorScore,
+  effectivePhi,
   rankEnginesByRating,
   pickTopRatedEngine,
   PHI_INHERIT_MULT,
@@ -29,3 +30,5 @@ export const {
   lineageFromRegistry,
   seedNewEnginesFromRegistry
 } = glicko;
+
+export type { RatingRankOptions } from '@kernlang/agon-mod-ratings';

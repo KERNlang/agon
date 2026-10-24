@@ -5,7 +5,7 @@ import { join, dirname } from 'node:path';
 import { planCostEstimator, resolveWorkingDir, RUNS_DIR, tracker, cesarPlanMarkdownPath, saveCesarPlan, spawnWithTimeout, getCoreWorkflowRegistry, compileWorkflowSpec, verifyWorkflowExecutionPlanFlow, verifyWorkflowRunFlow, throwWorkflowConformance, createWorkflowRun, appendWorkflowPhaseEvent } from '@kernlang/agon-core';
 import { publishPlanProposal, exitPlanSession, createPlanStepExecutors } from '@kernlang/agon-mod-plan';
 import { readPatchContent, applyPatchToTree } from '@kernlang/agon-support-worktree';
-import { SurfaceGenerationError } from '@kernlang/agon-kernel';
+import { SurfaceGenerationError, currentInvocationOwnerAvailable } from '@kernlang/agon-kernel';
 
 import type { CesarPlan, StepExecutor } from '@kernlang/agon-core';
 
@@ -13,7 +13,7 @@ import { runForge, runDelegate } from '@kernlang/agon-forge';
 import { runCampfireRuntime } from '@kernlang/agon-mod-campfire';
 import { createTribunalRuntime } from '@kernlang/agon-mod-tribunal';
 import { createBrainstormRuntime, createBrainstormEngineServices } from '@kernlang/agon-mod-brainstorm';
-import { glicko } from '@kernlang/agon-mod-ratings';
+import { glicko, judgeTribunalForRating } from '@kernlang/agon-mod-ratings';
 import { classifyTask } from '@kernlang/agon-support-dedup';
 import { buildKernDraftPrompt, parseKernDraft } from '@kernlang/protocol';
 import { loadConfig } from '@kernlang/agon-core';
@@ -96,6 +96,10 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
     loadConfig, classifyTask,
     seedRegistry: glicko.seedNewEnginesFromRegistry,
     updateRanked: glicko.updateGlickoRanked,
+    judgeForRating: options => currentInvocationOwnerAvailable('agon.ratings') === false
+      ? Promise.resolve([]) : judgeTribunalForRating({ ...options, config: loadConfig(options.cwd),
+        assertAuthority: () => assertStepAvailable('tribunal'),
+      }),
   });
   const executionRefusal = (type: string, signal?: AbortSignal) => () => {
     try { assertStepAvailable(type, signal); return undefined; }
@@ -142,7 +146,7 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
       snapshot: snapshotTokens,
       activeEngines: () => ctx.activeEngines?.() ?? [],
       brainstorm: options => runBrainstorm({ ...options, registry: ctx.registry, adapter: guardedAdapter('brainstorm', options.signal) }),
-      tribunal: options => runTribunal({ ...options, mode: options.mode as Parameters<typeof runTribunal>[0]['mode'], registry: ctx.registry, adapter: guardedAdapter('tribunal', options.signal) }),
+      tribunal: options => runTribunal({ ...options, cwd, mode: options.mode as Parameters<typeof runTribunal>[0]['mode'], registry: ctx.registry, adapter: guardedAdapter('tribunal', options.signal) }),
       campfire: async options => {
         const { topic, rounds } = await runCampfireRuntime({
           ...options, cwd, registry: ctx.registry, adapter: guardedAdapter('campfire', options.signal),
@@ -180,7 +184,7 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
       },
       activeEngines: () => ctx.activeEngines?.() ?? [],
       brainstorm: options => runBrainstorm({ ...options, registry: ctx.registry, adapter: guardedAdapter('brainstorm', options.signal) }),
-      tribunal: options => runTribunal({ ...options, mode: options.mode as Parameters<typeof runTribunal>[0]['mode'], registry: ctx.registry, adapter: guardedAdapter('tribunal', options.signal) }),
+      tribunal: options => runTribunal({ ...options, cwd, mode: options.mode as Parameters<typeof runTribunal>[0]['mode'], registry: ctx.registry, adapter: guardedAdapter('tribunal', options.signal) }),
       forge: (options, onEvent, owner) => runForge(options, ctx.registry, guardedAdapter(owner, options.signal), onEvent),
       workflow: {
         resolve: () => {

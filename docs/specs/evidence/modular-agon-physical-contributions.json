@@ -3,6 +3,18 @@
   "purpose": "New physical registry contributions required by the modular host that have no legacy ownership occurrence. These do not change the frozen 872-item migration baseline.",
   "contributions": [
     {
+      "surface": "cli",
+      "kind": "cli-command",
+      "manifestKind": "cliCommands",
+      "registryId": "physicalCliCommands:ratings-reset",
+      "publicId": "ratings reset",
+      "category": "physicalCliCommands",
+      "package": "@kernlang/agon-mod-ratings",
+      "ownerClass": "user-toggleable-mod-package",
+      "description": "Preview or reset per-discipline ratings with a backup",
+      "source": "packages/mod-ratings/src/implementation.ts"
+    },
+    {
       "surface": "cesar",
       "kind": "plan-step",
       "manifestKind": "cesarTools",

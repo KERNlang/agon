@@ -10,14 +10,17 @@ import { buildCommand, checkEnvVars, resolveModel, stripStreamJson, usesStreamJs
 
 import { AgentStreamQueue, buildApiAgentContext, cancelledApiAgentResult, createLinkedAbortController, encodeAgentStreamText, normalizeApiAgentOutcome, normalizeDispatchOptions, planEngineExecution } from './execution-plan.js';
 
+import { identifyEngine, withDispatchIdentity } from './engine-identity.js';
+
 export class CliAdapter implements EngineAdapter {
   private registry: EngineRegistry;
 
   constructor(registry: EngineRegistry) {
     this.registry = registry;
-    this.dispatch = this.dispatch.bind(this);
+    this.identify = this.identify.bind(this);
+    this.dispatch = withDispatchIdentity(this.dispatch.bind(this), this.identify);
     this.dispatchStream = this.dispatchStream.bind(this);
-    this.dispatchAgent = this.dispatchAgent.bind(this);
+    this.dispatchAgent = withDispatchIdentity(this.dispatchAgent.bind(this), this.identify);
     this.dispatchAgentStream = this.dispatchAgentStream.bind(this);
     this.isAvailable = this.isAvailable.bind(this);
     this.getVersion = this.getVersion.bind(this);
@@ -56,7 +59,7 @@ export class CliAdapter implements EngineAdapter {
         // Inject project context for API engines so they know the codebase
         // Uses sessionContext cache — avoids redundant git spawns when handleChat already gathered context
         let sysPrompt = options.systemPrompt;
-        if (!sysPrompt || !sysPrompt.includes('PROJECT CONTEXT')) {
+        if (options.includeProjectContext !== false && (!sysPrompt || !sysPrompt.includes('PROJECT CONTEXT'))) {
           const projectCtx = sessionContext.get(options.cwd || resolveWorkingDir());
           if (projectCtx) {
             sysPrompt = [sysPrompt ?? '', `## PROJECT CONTEXT\n${projectCtx}`].filter(Boolean).join('\n\n');
@@ -69,6 +72,8 @@ export class CliAdapter implements EngineAdapter {
         // VISION: splice a browser screenshot into the thread's last user turn so a vision-capable API engine (kimi/minimax) actually SEES the page. Vision = engineSupportsVision (declared capability OR models.dev catalog attachment); attachVisionToMessages is a no-op when the engine has neither (e.g. zai-coding silently ignores images) or there are no images, so non-vision turns are byte-identical.
         const apiMessages = (baseMessages && options.images && options.images.length) ? attachVisionToMessages(baseMessages, options.images.map((i) => i.path), engineSupportsVision(options.engine)) : baseMessages;
         const result = apiMessages ? (await apiDispatchToolsHistory(apiConfig, apiMessages, options.timeout, options.signal, options.tools, sysPrompt)) : ((options.tools && options.tools.length) ? (await apiDispatchTools(apiConfig, options.prompt, options.timeout, options.signal, options.tools, sysPrompt)) : (await apiDispatch(apiConfig, options.prompt, options.timeout, options.signal, sysPrompt)));
+        // An aborted invocation cannot publish a late provider result.
+        options.signal?.throwIfAborted();
         const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
         mkdirSync(dirname(outputPath), { recursive: true });
         writeFileSync(outputPath, result.stdout);
@@ -539,6 +544,10 @@ export class CliAdapter implements EngineAdapter {
     const change = captureNewAgentDiff(baselineDiff, options.cwd);
     recordDispatchHealth(options.engine.id, result);
     return { ...result, ...change };
+  }
+
+  identify(engine: EngineDefinition, cwd?: string): Promise<string|null> {
+    return identifyEngine(this.registry, engine, cwd);
   }
 
   async isAvailable(engine: EngineDefinition): Promise<boolean> {

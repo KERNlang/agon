@@ -16,6 +16,38 @@ async function setup(failing = new Set<string>()) {
 }
 
 describe('physical tribunal mod', () => {
+  it('settles started judging before returning a summary authority failure', async () => {
+    const h = await setup();
+    const session = await h.services.tribunal!.open(context);
+    const judged = Promise.withResolvers<Array<{ engineId: string; score: number }>>();
+    const summaryStarted = Promise.withResolvers<void>();
+    let retired = false;
+    const assertCurrent = () => { if (retired) throw new Error('generation retired'); };
+    session.assertCurrent = assertCurrent;
+    session.effects.assertCurrent = assertCurrent;
+    session.effects.judgeForRating = () => judged.promise;
+    h.services.tribunal!.open = () => session;
+    h.dispatch.mockImplementation(async (engineId, prompt) => {
+      if (prompt.includes('## TASK\n')) {
+        retired = true;
+        summaryStarted.resolve();
+      }
+      return { engineId, exitCode: 0, stdout: 'argument', stderr: '', timedOut: false };
+    });
+    let settled = false;
+    const pending = h.command.run({ question: 'Q', rounds: '1' }, context)
+      .finally(() => { settled = true; });
+    try {
+      await summaryStarted.promise;
+      await new Promise<void>(resolve => setImmediate(resolve));
+      expect(settled).toBe(false);
+    } finally {
+      judged.resolve([]);
+      expect(await pending).toMatchObject({ exitCode: 1, stderr: expect.stringContaining('generation retired') });
+    }
+    expect(h.record).not.toHaveBeenCalled();
+  });
+
   it('publishes completion only after finalization and does not undo it on observer cancellation', async () => {
     const h = await setup();
     const controller = new AbortController();

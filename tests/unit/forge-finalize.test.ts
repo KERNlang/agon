@@ -231,6 +231,35 @@ describe('forge validate dispatch routing', () => {
   });
 });
 
+describe('forge rating write', () => {
+  it('passes the identities its dispatches reported to the rating write', async () => {
+    const home = setupTestAgonHome('forge-identity');
+    try {
+      process.env.AGON_FINALIZE_TEST_KEY = 'test';
+      const repoDir = makeRepo();
+      const forgeDir = join(tmpdir(), `agon-forge-identity-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+      tempDirs.push(forgeDir);
+      mkdirSync(forgeDir, { recursive: true });
+      const dispatch = vi.fn(async ({ engine }: any) => ({
+        exitCode: 0, stdout: 'VALIDATE_ROUTE_OK '.repeat(8), stderr: '', timedOut: false, identity: `model-${engine.id}`,
+      }));
+      await runForge(
+        {
+          task: 'validate without editing', fitnessCmd: 'true', cwd: repoDir, forgeDir, engines: ['fast', 'slow'],
+          mode: 'validate', requireDiff: false, acceptReviewOutput: true, baselineMayPass: true, healthCheckEnabled: false,
+        } as any,
+        makeRegistry(),
+        { isAvailable: async () => true, getVersion: async () => 'test', dispatch } as any,
+      );
+      const stored = JSON.parse(readFileSync(join(home, 'ratings.json'), 'utf-8'));
+      expect(stored.engineMeta.fast.identity).toBe('model-fast');
+      expect(stored.engineMeta.slow.identity).toBe('model-slow');
+    } finally {
+      cleanupTestAgonHome(home);
+    }
+  });
+});
+
 describe('caller-driven forge finalize', () => {
   it.each([
     { engines: ['fast'], exitCode: 1 }, { engines: ['fast', 'slow'], exitCode: 1 },

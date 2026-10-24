@@ -80,6 +80,7 @@ beforeEach(async () => {
   composition.realCampfire = false;
   composition.seed.mockReset();
   composition.update.mockReset();
+  composition.config.mockReset().mockReturnValue({});
   effects.verify.mockImplementation((await vi.importActual<typeof import('@kernlang/agon-core')>('@kernlang/agon-core')).spawnWithTimeout);
   effects.brainstorm.mockResolvedValue({ winner: 'fixture', response: 'answer' });
   effects.brain.mockReset().mockResolvedValue({ terminalState: 'completed', responded: true });
@@ -257,7 +258,7 @@ it.each(['brainstorm', 'pipeline'].flatMap(type =>
   expect(composition.config).toHaveBeenCalled();
   expect(composition.classify).toHaveBeenCalledExactlyOnceWith('fixture');
   expect(composition.update).toHaveBeenCalledWith(
-    [{ engineId: 'fixture', score: expect.any(Number) }, { engineId: 'second', score: expect.any(Number) }], 'code', 'brainstorm',
+    [{ engineId: 'fixture', score: expect.any(Number) }, { engineId: 'second', score: expect.any(Number) }], 'code', 'brainstorm', {},
   );
   expect(dispatch).toHaveBeenCalledTimes(5);
   expect(dispatch.mock.calls[0][0].prompt).toBe('Reply with just: ok');
@@ -269,6 +270,7 @@ it.each(['tribunal', 'pipeline'].flatMap(type =>
   ['healthy', 'ratings-disabled', 'after-round', 'after-summary', 'cancel-summary'].map(transition => ({ type, transition })),
 ))('runs the physical Tribunal composition through Plan $type / $transition', async ({ type, transition }) => {
   composition.realTribunal = true;
+  composition.config.mockReturnValue({ ratingJudging: 'off' });
   // Prove boundary checks without relying on the periodic generation monitor.
   vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
   vi.stubEnv('AGON_FORCE_HEALTH_PROBE', '');
@@ -314,14 +316,78 @@ it.each(['tribunal', 'pipeline'].flatMap(type =>
   expect(result.result.output).toContain('physical Tribunal verdict');
   expect(dispatch).toHaveBeenCalledTimes(5);
   expect(dispatch.mock.calls[4][0].engine.id).toBe('claude');
-  expect(composition.classify).toHaveBeenCalled();
-  expect(composition.update).toHaveBeenCalledTimes(2);
-  expect(scopes).toEqual(Array(3).fill(transition !== 'ratings-disabled'));
+  expect(composition.classify).not.toHaveBeenCalled();
+  expect(composition.update).not.toHaveBeenCalled();
+  expect(scopes).toEqual([transition !== 'ratings-disabled']);
   expect(events.at(-1)).toBe('tribunal:done');
   for (const [options] of dispatch.mock.calls) {
     expect(options.outputDir).toBe(directory);
     expect(options.signal).toBeInstanceOf(AbortSignal);
     expect(options.signal?.aborted).toBe(false);
+  }
+});
+
+it.each(['tribunal', 'pipeline'].flatMap(type =>
+  [
+    ...['on', 'shadow', 'off', 'disabled'].map(mode => ({ type, mode, fault: 'none' })),
+    ...['cancel', 'generation'].map(fault => ({ type, mode: 'on', fault })),
+  ],
+))('uses owned Tribunal judging through Plan $type: $mode / $fault', async ({ type, mode, fault }) => {
+  composition.realTribunal = true;
+  vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+  composition.config.mockReturnValue({ ratingJudging: mode === 'disabled' ? 'on' : mode,
+    ratingJudgeTimeoutSec: 1, ratingMinBallots: 2 });
+  vi.stubEnv('AGON_DISABLE_FORGE_HEALTH_CHECK', '1');
+  await install(mode === 'disabled' ? 'agon.ratings' : undefined);
+  await initializeProcessSurfaceAuthority(root);
+  setSessionRoot(root);
+  const ids = ['alpha', 'beta', 'gamma'];
+  const get = (id: string) => ({ id, displayName: id, api: { type: 'openai', model: 'fixture' } });
+  const registry = { get, activeEngines: () => ids.map(get), list: () => ids.map(get) } as unknown as HandlerContext['registry'];
+  const controller = new AbortController();
+  let firstBallot = true;
+  let retiredEvidence: string | undefined;
+  const dispatch = vi.fn(async (options: DispatchOptions) => {
+    const ballot = options.outputDir?.endsWith('/ballots');
+    if (ballot && firstBallot) {
+      firstBallot = false;
+      if (fault === 'cancel') controller.abort(new Error('cancel active ballots'));
+      if (fault === 'generation') {
+        await install('agon.tribunal');
+        retiredEvidence = await readFile(join(options.outputDir!, '..', 'ballots.json'), 'utf8');
+      }
+    }
+    return { exitCode: 0, stderr: '', timedOut: false, durationMs: 1,
+      stdout: ballot ? 'RANK: P1 > P2' : 'Substantive fixture response.' };
+  });
+  const ctx = { ...context(), registry, adapter: { dispatch }, activeEngines: () => ids } as HandlerContext;
+  const executors = buildStepExecutors(ctx);
+  setSessionRoot(join(root, 'later-session'));
+  const result = await executors[type].execute(step(type), {}, controller.signal);
+  const directory = dispatch.mock.calls[0][0].outputDir!;
+  if (fault !== 'none') {
+    expect(firstBallot).toBe(false);
+    expect(result.result.status).toBe('failure');
+    expect(result.result.error).toMatch(fault === 'cancel' ? /cancel active ballots/ : /generation.*changed|restart/i);
+    expect(result).not.toHaveProperty('contextExport');
+    expect(composition.update).not.toHaveBeenCalled();
+    if (fault === 'generation') {
+      expect(retiredEvidence).toBeDefined();
+      expect(await readFile(join(directory, 'ballots.json'), 'utf8')).toBe(retiredEvidence);
+    }
+    return;
+  }
+  expect(result.result.status).toBe('success');
+  for (const [options] of dispatch.mock.calls) expect(options.cwd).toBe(root);
+  expect(composition.config).toHaveBeenCalledWith(root);
+  const ballots = dispatch.mock.calls.filter(([options]) => options.outputDir?.endsWith('/ballots'));
+  const judges = mode === 'on' || mode === 'shadow';
+  expect(ballots).toHaveLength(judges ? 3 : 0);
+  if (judges) expect(ballots.map(([options]) => options.engine.id).sort()).toEqual(ids);
+  expect(existsSync(join(directory, 'ballots.json'))).toBe(judges);
+  expect(composition.update).toHaveBeenCalledTimes(mode === 'on' ? 2 : 0);
+  if (mode === 'on') {
+    expect(composition.update).toHaveBeenCalledWith(expect.arrayContaining(ids.map(engineId => ({ engineId, score: expect.any(Number), ballots: 2 }))), 'code', 'tribunal', {});
   }
 });
 

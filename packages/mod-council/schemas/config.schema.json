@@ -3,5 +3,7 @@
   "$id": "https://kernlang.dev/schemas/council/config.schema.json",
   "title": "council configuration",
   "type": "object",
+  "x-agon-config": { "version": 1, "legacyAliases": ["chairExplorationRate"] },
+  "properties": { "chairExplorationRate": { "type": "number", "default": 0.2 } },
   "additionalProperties": true
 }

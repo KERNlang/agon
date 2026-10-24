@@ -1,6 +1,6 @@
 import type { Awaitable, InvocationContext } from '@kernlang/agon-mod-api';
-import { guardEngineAdapter } from '@kernlang/agon-support-engine-runtime';
-import type { EngineAdapter, EngineDefinition } from '@kernlang/agon-support-engine-runtime';
+import { guardEngineAdapter, resolveCurrentIdentities } from '@kernlang/agon-support-engine-runtime';
+import type { EngineAdapter, EngineDefinition, EngineIdentities } from '@kernlang/agon-support-engine-runtime';
 import type { FalsifierEffects } from './falsifier.js';
 import { createConquerIsolation } from './isolation.js';
 import type { ConquerIsolation, ConquerIsolationEffects } from './isolation.js';
@@ -36,7 +36,7 @@ export function createConquerHostServices<Registry extends { get(id: string): En
   cliOutput?: ConquerDisplay;
   openRegistry(cwd: string): Registry;
   createAdapter(registry: Registry): EngineAdapter;
-  rankCritics(registry: Registry, engineIds: string[]): ReturnType<FalsifierEffects['rankCritics']>;
+  rankCritics(registry: Registry, engineIds: string[], identities: EngineIdentities): ReturnType<FalsifierEffects['rankCritics']>;
   contextSpine(context: InvocationContext): Promise<string>;
   captureAuthority(): () => void;
   worktrees: ConquerIsolationEffects;
@@ -56,6 +56,7 @@ export function createConquerHostServices<Registry extends { get(id: string): En
       };
       check();
       const registry = options.openRegistry(context.cwd);
+      const adapter = guardEngineAdapter(options.createAdapter(registry), check);
       const publication = options.publicationPolicy?.(context);
       return {
         assertCurrent,
@@ -79,9 +80,14 @@ export function createConquerHostServices<Registry extends { get(id: string): En
           check();
           return createConquerIsolation(task, context.cwd, options.worktrees, runId, base);
         },
-        adapter: guardEngineAdapter(options.createAdapter(registry), check),
+        adapter,
         getEngine: id => { check(); return registry.get(id); },
-        rankCritics: ids => { check(); return options.rankCritics(registry, ids); },
+        rankCritics: async ids => {
+          check();
+          const identities = await resolveCurrentIdentities(adapter, registry, ids, context.cwd);
+          check();
+          return options.rankCritics(registry, ids, identities);
+        },
       };
     },
   };

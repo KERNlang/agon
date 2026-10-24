@@ -129,7 +129,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.council",
       "version": "1.0.0",
-      "contentHash": "sha256:7d16fe3eb06cfbe439fd3a803c101de224c8e113889197877d65204a7ed30419"
+      "contentHash": "sha256:3db76282f96780b2e5b04a1edc8a9c74bdf2367b040665470f44c3836d86eb81"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "Council",
@@ -2291,7 +2291,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.council",
       "version": "1.0.0",
-      "contentHash": "sha256:7d16fe3eb06cfbe439fd3a803c101de224c8e113889197877d65204a7ed30419"
+      "contentHash": "sha256:3db76282f96780b2e5b04a1edc8a9c74bdf2367b040665470f44c3836d86eb81"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "Execute Council through its physical owner",
@@ -2636,7 +2636,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.council",
       "version": "1.0.0",
-      "contentHash": "sha256:7d16fe3eb06cfbe439fd3a803c101de224c8e113889197877d65204a7ed30419"
+      "contentHash": "sha256:3db76282f96780b2e5b04a1edc8a9c74bdf2367b040665470f44c3836d86eb81"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "council",
@@ -3096,7 +3096,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.ratings",
       "version": "1.0.0",
-      "contentHash": "sha256:bde2c06969b35422bb8d69f1e791880b6ccbb8148ea5fe1fca0ac7f9df0c3c69"
+      "contentHash": "sha256:75ea0fb79c652908ea9fd79bfea196b78ee1bc515287ae2e9e3b091ce618221a"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "leaderboard",
@@ -3694,7 +3694,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.ratings",
       "version": "1.0.0",
-      "contentHash": "sha256:bde2c06969b35422bb8d69f1e791880b6ccbb8148ea5fe1fca0ac7f9df0c3c69"
+      "contentHash": "sha256:75ea0fb79c652908ea9fd79bfea196b78ee1bc515287ae2e9e3b091ce618221a"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "ratings",
@@ -3717,7 +3717,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.ratings",
       "version": "1.0.0",
-      "contentHash": "sha256:bde2c06969b35422bb8d69f1e791880b6ccbb8148ea5fe1fca0ac7f9df0c3c69"
+      "contentHash": "sha256:75ea0fb79c652908ea9fd79bfea196b78ee1bc515287ae2e9e3b091ce618221a"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "ratings purge-unknown",
@@ -4071,6 +4071,29 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "accessibility": {
       "label": "wt",
       "fallbackText": "wt",
+      "keyboardAccessible": true,
+      "colorIndependent": true
+    }
+  },
+  {
+    "surface": "cli",
+    "kind": "cli-command",
+    "registryId": "physicalCliCommands:ratings-reset",
+    "publicId": "ratings reset",
+    "category": "physicalCliCommands",
+    "group": "user-toggleable-mod-package",
+    "source": "packages/mod-ratings/src/implementation.ts",
+    "aliases": [],
+    "owner": {
+      "id": "agon.ratings",
+      "version": "1.0.0",
+      "contentHash": "sha256:75ea0fb79c652908ea9fd79bfea196b78ee1bc515287ae2e9e3b091ce618221a"
+    },
+    "ownerClass": "user-toggleable-mod-package",
+    "description": "Preview or reset per-discipline ratings with a backup",
+    "accessibility": {
+      "label": "Preview or reset per-discipline ratings with a backup",
+      "fallbackText": "Preview or reset per-discipline ratings with a backup",
       "keyboardAccessible": true,
       "colorIndependent": true
     }
@@ -5812,7 +5835,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.ratings",
       "version": "1.0.0",
-      "contentHash": "sha256:bde2c06969b35422bb8d69f1e791880b6ccbb8148ea5fe1fca0ac7f9df0c3c69"
+      "contentHash": "sha256:75ea0fb79c652908ea9fd79bfea196b78ee1bc515287ae2e9e3b091ce618221a"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "leaderboard",
@@ -7175,7 +7198,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.ratings",
       "version": "1.0.0",
-      "contentHash": "sha256:bde2c06969b35422bb8d69f1e791880b6ccbb8148ea5fe1fca0ac7f9df0c3c69"
+      "contentHash": "sha256:75ea0fb79c652908ea9fd79bfea196b78ee1bc515287ae2e9e3b091ce618221a"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "                        — Glicko rankings",
@@ -9213,7 +9236,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.council",
       "version": "1.0.0",
-      "contentHash": "sha256:7d16fe3eb06cfbe439fd3a803c101de224c8e113889197877d65204a7ed30419"
+      "contentHash": "sha256:3db76282f96780b2e5b04a1edc8a9c74bdf2367b040665470f44c3836d86eb81"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "<decision>               — roundtable: every engine a role, top-rated chairs",
@@ -9664,7 +9687,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.ratings",
       "version": "1.0.0",
-      "contentHash": "sha256:bde2c06969b35422bb8d69f1e791880b6ccbb8148ea5fe1fca0ac7f9df0c3c69"
+      "contentHash": "sha256:75ea0fb79c652908ea9fd79bfea196b78ee1bc515287ae2e9e3b091ce618221a"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "                        — Glicko rankings",

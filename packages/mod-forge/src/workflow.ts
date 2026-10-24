@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
-import type { DispatchResult, EngineAdapter, EngineDefinition, TaskClass } from '@kernlang/agon-support-engine-runtime';
-import { engineHealth, recordForgeOutcome, extractPatchFilePatterns } from '@kernlang/agon-support-engine-runtime';
+import type { DispatchResult, EngineAdapter, EngineDefinition, EngineIdentities, TaskClass } from '@kernlang/agon-support-engine-runtime';
+import { engineHealth, recordForgeOutcome, extractPatchFilePatterns, tapDispatchIdentities } from '@kernlang/agon-support-engine-runtime';
 import { determineWinner } from '@kernlang/agon-support-judge';
 import { healthCheckEngines, HEALTH_CHECK_DEFAULT_PROMPT } from '@kernlang/agon-support-panel';
 import type { PanelEngineRegistry } from '@kernlang/agon-support-panel';
@@ -56,7 +56,7 @@ export interface ForgeWorkflowEffects<Registry extends ForgeWorkflowRegistry> {
   worktreePruneOrphaned(repoDir: string): void;
   assignForgeRoles(ids: string[], taskClass: TaskClass): Map<string, { role: string; specialization: string }>;
   buildSpecializedPrompt(engineId: string, taskClass: TaskClass, prompt: string): string;
-  updateGlickoRanked(ranked: Array<{ engineId: string; score: number }>, taskClass: TaskClass, mode: 'forge'): void;
+  updateGlickoRanked(ranked: Array<{ engineId: string; score: number }>, taskClass: TaskClass, mode: 'forge', identities?: EngineIdentities): void;
   buildKernContextSpine(cwd: string): Promise<string>;
   tracker: {
     record(engineId: string, input: { usage: NonNullable<DispatchResult['usage']> }): unknown;
@@ -276,7 +276,9 @@ export function createForgeWorkflow<Registry extends ForgeWorkflowRegistry>(runt
     return bundlePath;
   }
 
-  async function runForge(options: ForgeOptions & { onResult?: (engineId:string,result:EngineResult,metric:DispatchMetric)=>'continue'|'finalize'|void }, registry: Registry, adapter: EngineAdapter, onEvent?: (event:ForgeEvent)=>void): Promise<ForgeManifest> {
+  async function runForge(options: ForgeOptions & { onResult?: (engineId:string,result:EngineResult,metric:DispatchMetric)=>'continue'|'finalize'|void }, registry: Registry, untappedAdapter: EngineAdapter, onEvent?: (event:ForgeEvent)=>void): Promise<ForgeManifest> {
+    const identityTap = tapDispatchIdentities(untappedAdapter);
+    const adapter = identityTap.adapter;
     const loadedConfig = loadConfig(options.cwd);
     // Cold-start: seed newly-dropped model versions from their predecessor before
     // starter selection / competition, so a new engine is rated at its family's
@@ -972,7 +974,7 @@ export function createForgeWorkflow<Registry extends ForgeWorkflowRegistry>(runt
             .sort((a, b) => b.score - a.score);
 
           if (ranked.length >= 2 && currentInvocationOwnerAvailable('agon.ratings') !== false) {
-            updateGlickoRanked(ranked, taskClass, 'forge');
+            updateGlickoRanked(ranked, taskClass, 'forge', identityTap.identities());
             for (const entry of ranked) {
               onEvent?.({ type: 'elo:update', data: { engineId: entry.engineId, score: entry.score, rank: ranked.indexOf(entry) + 1, taskClass } });
             }

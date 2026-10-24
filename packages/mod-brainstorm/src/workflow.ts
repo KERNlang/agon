@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { buildPanelHealth } from '@kernlang/agon-support-panel';
 import type { SeatOutcome } from '@kernlang/agon-support-panel';
 import type { BrainstormResult } from './result.js';
+import { tapDispatchIdentities } from '@kernlang/agon-support-engine-runtime';
+import type { EngineAdapter, EngineIdentities } from '@kernlang/agon-support-engine-runtime';
 
 export interface BrainstormDraft {
   approach: string;
@@ -19,6 +21,7 @@ export interface BrainstormBid {
   score?: number;
 }
 export interface BrainstormWorkflowOptions {
+  adapter?: EngineAdapter;
   question: string;
   context?: string;
   engines: string[];
@@ -47,7 +50,7 @@ export interface BrainstormWorkflowServices<Options extends BrainstormWorkflowOp
     groups: { members: string[]; representative: string; similarity: number }[] | null;
     status: { status: 'not-needed' | 'applied' | 'unavailable' | 'failed' | 'timed-out'; detail?: string };
   }>;
-  updateRatings(bids: BrainstormBid[], question: string): void;
+  updateRatings(bids: BrainstormBid[], question: string, identities?: EngineIdentities): void;
   /** Resolve the winner before dispatch, preserving lookup failures outside synthesis fallback. */
   selectWinner(options: Options, engineId: string): (prompt: string) => Promise<{
     exitCode: number; stdout: string; stderr?: string;
@@ -57,6 +60,8 @@ export interface BrainstormWorkflowServices<Options extends BrainstormWorkflowOp
 /** Owns workflow decisions; injected capabilities own engine, storage and native effects. */
 export function createBrainstormWorkflow<Options extends BrainstormWorkflowOptions>(services: BrainstormWorkflowServices<Options>) {
   return async function runBrainstormWorkflow(opts: Options) {
+    const identityTap = opts.adapter ? tapDispatchIdentities(opts.adapter) : undefined;
+    if (identityTap) opts = { ...opts, adapter: identityTap.adapter };
     const brainstormId = randomUUID().slice(0, 8);
     // 'divergent' is the default: brainstorm exists to spread the panel out.
     // 'grounded' restores the pre-stance behavior (convergent, file-path-anchored).
@@ -136,7 +141,7 @@ export function createBrainstormWorkflow<Options extends BrainstormWorkflowOptio
 
     // Update Glicko-2 ratings for all ranked engines
     if (bids.length >= 2) {
-      services.updateRatings(bids, opts.question);
+      services.updateRatings(bids, opts.question, identityTap?.identities());
     }
 
     const synthesize = services.selectWinner(opts, winner.engineId);

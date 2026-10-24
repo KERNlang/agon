@@ -6,6 +6,7 @@ import type { TribunalEvent, TribunalRuntimeEffects } from './runtime.js';
 import type { TribunalOutput } from './presentation.js';
 
 export interface TribunalInvocationContext extends InvocationContext {
+  readonly judgePool?: readonly string[];
   readonly onWorkflowEvent?: (event: TribunalEvent) => void;
   readonly onRunStarted?: (path: string) => void;
 }
@@ -57,9 +58,15 @@ export function createTribunalHostServices<Registry extends PanelEngineRegistry>
           seedRegistry: () => { assertCurrent(); effects.seedRegistry(registry); },
           loadConfig: () => { assertCurrent(); return effects.loadConfig(context.cwd); },
           classifyTask: question => effects.classifyTask(question),
-          updateRanked: (ranked, taskClass, mode) => {
+          judgeForRating: async options => {
             assertCurrent();
-            effects.updateRanked(ranked, taskClass, mode);
+            const scores = await effects.judgeForRating?.({ ...options, registry, assertAuthority: checkGeneration });
+            assertCurrent();
+            return scores ?? [];
+          },
+          updateRanked: (ranked, taskClass, mode, identities) => {
+            assertCurrent();
+            effects.updateRanked(ranked, taskClass, mode, identities);
           },
         },
       };

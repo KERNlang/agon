@@ -1,6 +1,8 @@
 export { SUPPORT_PACKAGE } from './package-metadata.js';
 export * from './types.js';
 export { guardEngineAdapter } from './adapter-guard.js';
+export { tapDispatchIdentities, resolveCurrentIdentities } from './dispatch-identity.js';
+export type { EngineIdentities } from './dispatch-identity.js';
 export * from './errors.js';
 export * from './engine-schema.js';
 export * from './engine-discover.js';
@@ -21,3 +23,4 @@ import { fileURLToPath } from 'node:url';
 export function resolveEngineDefinitionsDir(): string {
   return join(dirname(fileURLToPath(import.meta.url)), '..', 'engines');
 }
+export { WRITE_GRANTING_ARGS, seatGrantsWriteAccess } from './write-permissions.js';

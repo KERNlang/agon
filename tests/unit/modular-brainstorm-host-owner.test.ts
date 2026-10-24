@@ -266,10 +266,31 @@ it('maps scores, classifies once and passes registry identity to seeding', async
     { engineId: 'b', confidence: 1, reasoning: '', approach: '', score: -2 },
   ], 'question');
   expect(f.effects.classifyTask.mock.calls).toEqual([['question']]);
-  expect(f.effects.updateRanked.mock.calls).toEqual([[[{ engineId: 'a', score: 0 }, { engineId: 'b', score: -2 }], 'other', 'brainstorm']]);
+  expect(f.effects.updateRanked.mock.calls).toEqual([[[{ engineId: 'a', score: 0 }, { engineId: 'b', score: -2 }], 'other', 'brainstorm', {}]]);
   expect(services.readRatings).toBe(f.effects.readRatings);
   expect(services.buildPrompt).toBe(f.effects.buildPrompt);
   expect(services.parseDraft).toBe(f.effects.parseDraft);
+});
+
+it('records dispatched model identity without leaking it into another invocation', async () => {
+  const f = fixture();
+  f.adapter.dispatch = vi.fn(async () => ({
+    stdout: 'fixture result', stderr: '', exitCode: 0, durationMs: 0, timedOut: false,
+    identity: 'model-version-2',
+  }));
+  const host = createBrainstormHostServices(f.effects);
+  const first = await host.open(f.context);
+  const bid = { engineId: 'fixture', confidence: 80, reasoning: '', approach: '', score: 2 };
+  await first.selectWinner(f.options, 'fixture')('prompt');
+  first.updateRatings([bid], 'question');
+  expect(f.effects.updateRanked).toHaveBeenLastCalledWith(
+    [{ engineId: 'fixture', score: 2 }], 'other', 'brainstorm', { fixture: 'model-version-2' },
+  );
+  const second = await host.open({ ...f.context, invocationId: 'second' });
+  second.updateRatings([bid], 'question');
+  expect(f.effects.updateRanked).toHaveBeenLastCalledWith(
+    [{ engineId: 'fixture', score: 2 }], 'other', 'brainstorm', {},
+  );
 });
 
 it('propagates registry lookup failure before returning a dispatcher', async () => {
@@ -385,7 +406,7 @@ it('preserves classification-before-score order for the engine-options API', () 
   f.effects.updateRanked.mockImplementation(() => { trace.push('update'); });
   services.updateRatings([bid], 'question');
   expect(trace).toEqual(['classify', 'score', 'update']);
-  expect(f.effects.updateRanked).toHaveBeenCalledWith([{ engineId: 'fixture', score: 2 }], 'other', 'brainstorm');
+  expect(f.effects.updateRanked).toHaveBeenCalledWith([{ engineId: 'fixture', score: 2 }], 'other', 'brainstorm', undefined);
   trace.length = 0;
   f.effects.classifyTask.mockImplementation(() => { throw new Error('classification failed'); });
   expect(() => services.updateRatings([bid], 'question')).toThrow('classification failed');

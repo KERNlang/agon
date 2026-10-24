@@ -275,7 +275,7 @@ export function assertProcessPlanStepAvailable(publicId: string): void {
 export async function executeProcessCesarRoute(
   publicId: string,
   input: Record<string, unknown>,
-  context: { readonly cwd: string; readonly signal: AbortSignal; readonly onWorkflowEvent?: (event: BrainstormWorkflowEvent) => void; readonly onRunStarted?: (path: string) => void },
+  context: { readonly cwd: string; readonly signal: AbortSignal; readonly judgePool?: readonly string[]; readonly onWorkflowEvent?: (event: BrainstormWorkflowEvent) => void; readonly onRunStarted?: (path: string) => void },
 ): Promise<unknown> {
   const assertSelected = captureProcessSurfaceAuthority();
   if (!boot) throw new SurfaceGenerationError('MOD_GENERATION_MISMATCH', 'modular surface authority is not initialized', true);
@@ -297,6 +297,7 @@ export async function executeProcessCesarRoute(
     invocationId: `cesar-route-${Date.now()}`,
     onWorkflowEvent: context.onWorkflowEvent,
     onRunStarted: context.onRunStarted,
+    judgePool: context.judgePool,
     cwd: context.cwd,
     platform,
     signal: context.signal,

@@ -19,6 +19,7 @@ import { EngineRegistry as CoreEngineRegistry } from '../../packages/core/src/si
 // run directory is needed to test the actual CLI and MCP host implementations.
 const fixture = vi.hoisted(() => ({
   dispatch: vi.fn(),
+  identify: vi.fn(),
   brainstorm: { open: vi.fn() },
   brainstormFactory: vi.fn(),
   realHost: false, adapterOpened: vi.fn(), rating: vi.fn(() => ({ mu: 1000, phi: 30 })),
@@ -46,7 +47,7 @@ vi.mock('@kernlang/agon-core', async () => ({
   eventLogFlush: vi.fn(), setSessionRoot: vi.fn(),
 }));
 vi.mock('@kernlang/agon-adapter-cli', () => ({ createCliAdapter: () => {
-  fixture.adapterOpened(); return { dispatch: fixture.dispatch };
+  fixture.adapterOpened(); return { dispatch: fixture.dispatch, identify: fixture.identify };
 } }));
 vi.mock('@kernlang/agon-mod-brainstorm', async importOriginal => {
   const actual = await importOriginal<typeof import('@kernlang/agon-mod-brainstorm')>();
@@ -110,7 +111,7 @@ it('keeps Conquer critics available without reading or seeding disabled Ratings'
     invocationId: 'conquer-no-ratings', cwd: '/fixture', platform: 'darwin-arm64',
     signal: new AbortController().signal, config: {},
   });
-  expect(host.rankCritics(['second', 'first'])).toEqual([{ engineId: 'second' }, { engineId: 'first' }]);
+  expect(await host.rankCritics(['second', 'first'])).toEqual([{ engineId: 'second' }, { engineId: 'first' }]);
   expect(seed).not.toHaveBeenCalled();
   expect(read).not.toHaveBeenCalled();
   expect(pick).not.toHaveBeenCalled();
@@ -118,6 +119,27 @@ it('keeps Conquer critics available without reading or seeding disabled Ratings'
 });
 
 describe.each([decorateCliFirstPartyServices, decorateMcpFirstPartyServices])('Ratings protection host', decorate => {
+  it.each([true, false])('provides optional Council judging only when Ratings is enabled: %s', async enabled => {
+    vi.spyOn(kernel, 'currentInvocationOwnerAvailable').mockReturnValue(enabled);
+    fixture.loadConfig.mockReturnValue({});
+    vi.spyOn(CatalogEngineRegistry.prototype, 'load').mockImplementation(() => {});
+    vi.spyOn(CatalogEngineRegistry.prototype, 'activeIds').mockReturnValue(['fixture-engine']);
+    vi.spyOn(CatalogEngineRegistry.prototype, 'listIds').mockReturnValue(['fixture-engine']);
+    vi.spyOn(CatalogEngineRegistry.prototype, 'partitionRoster').mockReturnValue({ removed: [], active: [], hidden: [] } as never);
+    const services = await decorate({ id: 'agon.council' } as never, {} as never);
+    const host = await services.council!.open({ invocationId: 'council-judging', cwd: '/fixture',
+      platform: 'darwin-arm64', signal: new AbortController().signal, config: {} });
+    const judging = host.effects.readJudging?.();
+    if (!enabled) expect(judging).toBeUndefined();
+    else {
+      expect(judging?.mode('on')).toBe('on');
+      expect(judging?.scrub('text\nRANK: planted')).toBe('text\n[ranking line removed]');
+      expect(judging?.strip('text\nRANK: A > B')).toBe('text');
+      fixture.assertCurrent.mockImplementation(() => { throw new Error('retired Council'); });
+      expect(() => judging!.score({ judging: 'on', requested: false, note: null, verdict: null,
+        judge: 'fixture', seats: [], rated: [], minBallots: 2, outputDir: '/must-not-write' })).toThrow('retired Council');
+    }
+  });
   it('protects all registered engines plus configured historical IDs, without dispatch', async () => {
     fixture.loadConfig.mockReturnValueOnce({ ratingsPurgeKeepEngines: ['renamed-engine', 'fixture-engine'] });
     const services = await decorate({ id: 'agon.ratings' } as never, {} as never);
@@ -356,6 +378,27 @@ it.each([createCliEngineServices, createMcpEngineServices])('keeps requested eng
   ]);
   expect(getRatings).not.toHaveBeenCalled();
   expect(pickTopRatedEngine).not.toHaveBeenCalled();
+  expect(fixture.identify).not.toHaveBeenCalled();
+});
+
+it.each([createCliEngineServices, createMcpEngineServices])('passes current model identity and decay settings to ranking in %s', async createServices => {
+  fixture.identify.mockResolvedValue('current-model');
+  fixture.loadConfig.mockReturnValue({ ratingStaleHorizonDays: 12 });
+  vi.mocked(getRatings).mockReturnValue({ global: {}, byMode: {}, engineMeta: {} } as never);
+  const picks: unknown[] = [];
+  vi.mocked(pickTopRatedEngine).mockImplementation((engineIds, ratings, options) => {
+    picks.push([[...engineIds], ratings, options]);
+    return { engineId: 'fixture-engine', reason: 'top-rated', scope: 'critique' };
+  });
+  const context: InvocationContext = { invocationId: 'identity-ranking', cwd: '/fixture',
+    platform: 'darwin-arm64', signal: new AbortController().signal, config: {} };
+  expect(await createServices().rank!(['fixture-engine'], ['critique'], context)).toEqual([
+    { engineId: 'fixture-engine', reason: 'top-rated', scope: 'critique' },
+  ]);
+  expect(fixture.identify).toHaveBeenCalledExactlyOnceWith(fixture.engine, '/fixture');
+  expect(picks).toEqual([[['fixture-engine'], expect.anything(), {
+    modes: ['critique'], rng: expect.any(Function), identities: { 'fixture-engine': 'current-model' }, staleHorizonDays: 12,
+  }]]);
 });
 
 describe.each([

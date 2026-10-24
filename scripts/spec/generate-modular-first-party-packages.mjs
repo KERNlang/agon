@@ -110,7 +110,23 @@ function expectedFiles(packageRecord) {
   // The owner authors this schema. Generated compatibility data cannot own it.
   const configSchema = readFileSync(resolve(directory, 'schemas/config.schema.json'), 'utf8');
   const configDefinition = JSON.parse(configSchema);
-  for (const assignment of packageAssignments.filter(entry => entry.category === 'configKeys')) {
+  const descriptor = configDefinition['x-agon-config'];
+  const assignedSettings = packageAssignments.filter(entry => entry.category === 'configKeys');
+  const declaredAliases = descriptor?.legacyAliases ?? [];
+  if (!Array.isArray(declaredAliases) || declaredAliases.some(key => typeof key !== 'string'
+    || !/^[A-Za-z][A-Za-z0-9_]{0,127}$/.test(key) || ['__proto__', 'prototype', 'constructor', 'mods'].includes(key))) {
+    throw new Error(`invalid legacy migration aliases: ${packageName}`);
+  }
+  if (new Set(declaredAliases).size !== declaredAliases.length) throw new Error(`duplicate migration aliases: ${packageName}`);
+  // New upstream settings use owner schemas without rewriting the frozen inventory.
+  const settingAssignments = [...assignedSettings];
+  for (const id of declaredAliases) {
+    const previousOwner = ownership.assignments.find(entry => entry.category === 'configKeys' && entry.id === id);
+    if (previousOwner && previousOwner.package !== packageName) throw new Error(`legacy setting belongs to another owner: ${id}`);
+    if (!settingAssignments.some(entry => entry.id === id)) settingAssignments.push({ id });
+    if (!Object.hasOwn(configDefinition.properties ?? {}, id)) throw new Error(`migration alias has no schema: ${id}`);
+  }
+  for (const assignment of settingAssignments) {
     if (!Object.hasOwn(configDefinition.properties ?? {}, assignment.id)) continue;
     const property = configDefinition.properties?.[assignment.id];
     if (!property || typeof property !== 'object' || Array.isArray(property)) throw new Error(`legacy setting requires a schema object: ${assignment.id}`);
@@ -121,11 +137,17 @@ function expectedFiles(packageRecord) {
     const validDefault = type === 'string[]' ? Array.isArray(property.default) && property.default.every(value => typeof value === 'string')
       : typeof property.default === type && (type !== 'number' || Number.isFinite(property.default));
     if (!validDefault) throw new Error(`legacy setting default has the wrong type: ${assignment.id}`);
-    legacySettings.set(assignment.id, { type, value: property.default, owner: ownerId(packageName) });
+    let publicType = type;
+    if (property.enum !== undefined) {
+      if (type !== 'string' || !Array.isArray(property.enum) || !property.enum.length
+        || property.enum.some(value => typeof value !== 'string') || !property.enum.includes(property.default)
+        || new Set(property.enum).size !== property.enum.length) throw new Error(`invalid legacy setting enum: ${assignment.id}`);
+      publicType = property.enum.map(value => JSON.stringify(value)).join(' | ');
+    }
+    legacySettings.set(assignment.id, { type: publicType, value: property.default, owner: ownerId(packageName) });
   }
-  const expectedAliases = packageAssignments.filter(entry => entry.category === 'configKeys'
-    && Object.hasOwn(configDefinition.properties ?? {}, entry.id)).map(entry => entry.id).sort(compareAscii);
-  const descriptor = configDefinition['x-agon-config'];
+  const expectedAliases = settingAssignments.filter(entry =>
+    Object.hasOwn(configDefinition.properties ?? {}, entry.id)).map(entry => entry.id).sort(compareAscii);
   if (expectedAliases.length || descriptor !== undefined) {
     if (!descriptor || descriptor.version !== 1 || !Array.isArray(descriptor.legacyAliases)
       || Object.keys(descriptor).some(key => !['version', 'legacyAliases'].includes(key))
@@ -171,7 +193,7 @@ function expectedFiles(packageRecord) {
     : short === 'plan' ? ['dist/agent-review-step-execution.d.ts', 'dist/forge-step-execution.d.ts', 'dist/pipeline-step-execution.d.ts', 'dist/self-step-execution.d.ts', 'dist/step-executors.d.ts', 'dist/approval-policy.d.ts', 'dist/cost-estimator.d.ts', 'dist/execution-callbacks.d.ts', 'dist/execution-coordinator.d.ts', 'dist/execution-model.d.ts', 'dist/execution-state.d.ts', 'dist/execution-store.d.ts', 'dist/executor.d.ts', 'dist/formatter.d.ts', 'dist/panel-step-execution.d.ts', 'dist/proposal-workflow.d.ts', 'dist/resume-policy.d.ts', 'dist/resume-workflow.d.ts', 'dist/runtime.d.ts', 'dist/session-scope.d.ts', 'dist/session-selection.d.ts', 'dist/session-workflow.d.ts', 'dist/session.d.ts', 'dist/step-validation.d.ts', 'dist/worktree-workflow.d.ts']
     : short === 'brainstorm' ? ['dist/collector.d.ts', 'dist/host.d.ts', 'dist/policy.d.ts', 'dist/presentation.d.ts', 'dist/result.d.ts', 'dist/runtime.d.ts', 'dist/scout.d.ts', 'dist/session-record.d.ts', 'dist/session-workflow.d.ts', 'dist/workflow.d.ts']
     : short === 'jobs' ? ['dist/daemon-controller.d.ts', 'dist/cli-projection.d.ts', 'dist/cli-invocation.d.ts', 'dist/cli-client.d.ts', 'dist/cli-contract.d.ts', 'dist/daemon-contract.d.ts', 'dist/daemon-job-router.d.ts', 'dist/daemon-workflow.d.ts', 'dist/job-service.d.ts', 'dist/mcp-contract.d.ts', 'dist/persisted-job-service.d.ts', 'dist/session-jobs.d.ts', 'dist/workflow-process.d.ts', 'dist/workflow-handshake.d.ts']
-    : short === 'ratings' ? ['dist/maintenance.d.ts', 'dist/glicko.d.ts', 'dist/types.d.ts', 'dist/storage.d.ts', 'dist/role-specialization.d.ts']
+    : short === 'ratings' ? ['dist/maintenance.d.ts', 'dist/reset.d.ts', 'dist/identity.d.ts', 'dist/ballot-prompt.d.ts', 'dist/judge-pool.d.ts', 'dist/rating-judge.d.ts', 'dist/glicko.d.ts', 'dist/types.d.ts', 'dist/storage.d.ts', 'dist/role-specialization.d.ts']
     : short === 'routing-docs' ? ['dist/guide-content.d.ts']
     : short === 'worktrees' ? ['dist/runtime.d.ts', 'dist/workspaces.d.ts']
     : short === 'rooms' ? ['dist/paths.d.ts', 'dist/runtime/index.d.ts', 'dist/runtime/store.d.ts', 'dist/runtime/presence.d.ts', 'dist/runtime/unread.d.ts', 'dist/runtime/locks.d.ts', 'dist/runtime/leases.d.ts', 'dist/runtime/auto-policy.d.ts', 'dist/runtime/tail.d.ts', 'dist/runtime/tasks.d.ts', 'dist/runtime/types.d.ts']
@@ -274,9 +296,19 @@ export * from './runtime/index.js';
 ` : short === 'memory' ? `export { saveMemory } from './implementation.js';
 ` : short === 'ratings' ? `export { runRatings, loadRatings } from './implementation.js';
 export * as glicko from './glicko.js';
+export type { RatingRankOptions } from './glicko.js';
 export type { GlickoRating, EngineMeta, RatingRecord } from './types.js';
 export { computeUnknownEngineIds, computeRunManifestPurge, purgeRatingsStore } from './maintenance.js';
 export type { PurgeReport, RatingsMaintenanceStore } from './maintenance.js';
+export { resetRatings, applyRatingsReset } from './reset.js';
+export type { RatingsResetPlan, RatingsResetReport } from './reset.js';
+export { identityChanged, noteEngineIdentities } from './identity.js';
+export type { EngineIdentityMeta, IdentityNoteOptions } from './identity.js';
+export { JUDGE_SYSTEM_PROMPT, ballotNonce, scrubRankLines, scrubUntrusted, fairShares, truncateTo, nameVariants, scrubNames, buildBallotPrompt } from './ballot-prompt.js';
+export { judgeIneligibility, activeAllowedEngines, judgeEligibilityTracker } from './judge-pool.js';
+export type { JudgeIneligibility, JudgeRegistry } from './judge-pool.js';
+export { ratingJudgingMode, planTribunalBallots, parseBallot, bordaScores, judgeTribunal, judgeTribunalForRating, chairRankInstruction, stripRankLines, judgeCouncil } from './rating-judge.js';
+export type { RatingJudging, BallotSpec, ParsedBallot, BallotRecord } from './rating-judge.js';
 export { rankByTaskClass, assignForgeRoles, buildSpecializedPrompt } from './role-specialization.js';
 export type { EngineRole } from './role-specialization.js';
 export { loadTeamConfidenceFloor } from './team-elo.js';
@@ -485,8 +517,8 @@ export type { SynthesisScore } from './judge-parser.js';
 export { parseNeroVerdict } from './verdict.js';
 export { rankCriticCascade } from './critic-cascade.js';
 ` : short === 'council' ? `export { runCouncil } from './implementation.js';
-export { runCouncilRuntime, DEFAULT_COUNCIL_ROLES, roleGuidance, assignCouncilRoles, buildCouncilBriefPrompt, buildRolePrompt, buildCritiquePrompt, buildChairmanPrompt, parseCouncilConfidence } from './runtime.js';
-export type { CouncilOptions, CouncilResult, CouncilSeat, CouncilEvent, CouncilSeating, CouncilRuntimeEffects } from './runtime.js';
+export { runCouncilRuntime, DEFAULT_COUNCIL_ROLES, roleGuidance, assignCouncilRoles, applyChairExploration, buildCouncilBriefPrompt, buildRolePrompt, buildCritiquePrompt, buildChairmanPrompt, parseCouncilConfidence } from './runtime.js';
+export type { CouncilOptions, CouncilResult, CouncilSeat, CouncilEvent, CouncilSeating, CouncilRuntimeEffects, CouncilJudging } from './runtime.js';
 export { createCouncilHostServices } from './host.js';
 export type { CouncilHostEffects, CouncilHostServices, CouncilHostSession, CouncilModServices, CouncilEngineRegistry } from './host.js';
 export { chairmanPickLabel, councilRunStatus, presentCouncilResult } from './presentation.js';

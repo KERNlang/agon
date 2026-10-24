@@ -64,14 +64,18 @@ describe('generated surface generation', () => {
 
   it('builds one immutable owner-tagged generation for all five surfaces', () => {
     const subject = generation('generated:test');
-    expect(subject.catalog()).toHaveLength(450);
+    expect(subject.catalog()).toHaveLength(451);
     expect(Object.fromEntries(['cli', 'tui', 'mcp', 'cesar', 'docs'].map((surface) => [surface, subject.project(surface as Surface).entries.length]))).toEqual({
-      cli: 77,
+      cli: 78,
       tui: 237,
       mcp: 33,
       cesar: 100,
       docs: 3,
     });
+    expect(subject.resolvePublic('cli', 'ratings reset')).toEqual([
+      expect.objectContaining({ owner: expect.objectContaining({ id: 'agon.ratings' }) }),
+    ]);
+    expect(generation('generated:ratings-disabled', ['agon.ratings']).resolvePublic('cli', 'ratings reset')).toEqual([]);
     assertGeneratedSurfaceAccessibility(subject);
     expect(Object.isFrozen(subject)).toBe(true);
     expect(Object.isFrozen(subject.catalog())).toBe(true);

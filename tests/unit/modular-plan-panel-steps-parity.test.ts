@@ -24,7 +24,15 @@ vi.mock('@kernlang/agon-mod-campfire', async original => ({
   },
 }));
 vi.mock('@kernlang/agon-mod-tribunal', async original => ({
-  ...await original<object>(), createTribunalRuntime: () => backends.tribunal,
+  ...await original<object>(),
+  createTribunalRuntime: (effects: Record<string, unknown>) => (options: Record<string, unknown>) => {
+    const { cwd, ...policy } = options;
+    expect(cwd).toBe(resolveWorkingDir());
+    expect(effects.assertCurrent).toEqual(expect.any(Function));
+    expect(effects.loadConfig).toEqual(expect.any(Function));
+    expect(effects.judgeForRating).toEqual(expect.any(Function));
+    return backends.tribunal(policy);
+  },
 }));
 vi.mock('@kernlang/agon-mod-brainstorm', async original => {
   const actual = await original<typeof import('@kernlang/agon-mod-brainstorm')>();

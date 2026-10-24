@@ -75,9 +75,9 @@ export function createCouncilHostServices<Registry extends CouncilEngineRegistry
             assertCurrent();
             return config;
           },
-          readSeating: () => {
+          readSeating: (_registry, rank) => {
             assertCurrent();
-            const seating = effects.readSeating(registry);
+            const seating = effects.readSeating(registry, rank);
             assertCurrent();
             return {
               pick: (ids, modes) => {
@@ -94,7 +94,17 @@ export function createCouncilHostServices<Registry extends CouncilEngineRegistry
               },
             };
           },
-          recordRatings: (question, ranked) => { assertCurrent(); effects.recordRatings(question, ranked); assertCurrent(); },
+          readJudging: () => {
+            assertCurrent();
+            const judging = effects.readJudging?.();
+            assertCurrent();
+            if (!judging) return undefined;
+            return {
+              ...judging,
+              score: options => { assertCurrent(); const scores = judging.score(options); assertCurrent(); return scores; },
+            };
+          },
+          recordRatings: (question, ranked, identities) => { assertCurrent(); effects.recordRatings(question, ranked, identities); assertCurrent(); },
           warn: message => { assertCurrent(); effects.warn(message); assertCurrent(); },
         },
       };

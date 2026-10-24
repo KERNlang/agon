@@ -1,6 +1,6 @@
 import type { EngineAdapter, EngineRegistry, RatingRecord, SearchResult, CitationReport, ResearchIntent } from '@kernlang/agon-core';
 
-import { resolveWorkingDir, getRatings, pickTopRatedEngine, seedNewEnginesFromRegistry, classifyQuery, buildAuthoritativeRequest, parseAuthoritativeResults, createWebFetchTool, extractCitations, verifyCitations } from '@kernlang/agon-core';
+import { resolveWorkingDir, getRatings, loadConfig, pickTopRatedEngine, resolveCurrentIdentities, seedNewEnginesFromRegistry, classifyQuery, buildAuthoritativeRequest, parseAuthoritativeResults, createWebFetchTool, extractCitations, verifyCitations } from '@kernlang/agon-core';
 
 export interface ResearchOptions {
   question: string;
@@ -155,7 +155,8 @@ export async function runResearch(opts: ResearchOptions): Promise<ResearchResult
   const forced = opts.engine?.trim();
   let engineId = forced && opts.engines.includes(forced) ? forced : '';
   if (!engineId) {
-    const picked = pickTopRatedEngine(opts.engines, ratings, {});
+    const identities = await resolveCurrentIdentities(opts.adapter, opts.registry, opts.engines, cwd);
+    const picked = pickTopRatedEngine(opts.engines, ratings, { staleHorizonDays: loadConfig(cwd).ratingStaleHorizonDays, identities });
     engineId = picked.engineId || opts.engines[0] || '';
   }
   if (!engineId) return fail('no engine available to draft the answer');

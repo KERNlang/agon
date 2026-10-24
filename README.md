@@ -31,6 +31,7 @@ npm install -g @kernlang/agon
 - [Rooms](#rooms)
 - [Using Agon from Other CLIs](#using-agon-from-other-clis)
 - [Engines](#engines)
+- [Ratings](#ratings)
 - [Cesar Routing](#cesar-routing)
 - [Configuration](#configuration)
 - [Architecture](#architecture)
@@ -205,11 +206,9 @@ agon nero "..." --engine codex                                  # force a specif
 agon nero "..." --json                                          # emit the NeroResult, pipe-friendly
 ```
 
-- **The critic is the top-rated *adversary*, not the top-rated builder.** Selection cascades **critique → tribunal → global → random**: it prefers the dedicated `critique` discipline (a Glicko rating fed by adversarial/red-team tribunals — those *are* attack-and-refute competitions), falls back to the `tribunal` rating, then global, then a random active engine when nothing has competed yet. `agon leaderboard --mode critique` shows the standings.
+- **The critic is the top-rated *adversary*, not the top-rated builder.** Selection cascades **critique → tribunal → global → random**: it prefers the dedicated `critique` discipline (a judged Glicko rating fed by adversarial/red-team tribunals and councils — see [Ratings](#ratings)), falls back to the `tribunal` rating, then global, then a random active engine when nothing has competed yet. `agon leaderboard --mode critique` shows the standings.
 - **Never grades its own homework** — the author being challenged is excluded from the candidate pool, so in-session Cesar challenges are answered by a *different* engine whenever one is available.
 - **For external CLIs too** — `agon nero` (and `agon call nero "<decision>" --jsonl`) is the mode Codex / Antigravity / Claude should reach for instead of an internal self-critique; it gives them a genuinely different model as the adversary.
-
-> **New-model cold-start (applies to all ratings).** When a new model version drops, declare its lineage in the engine JSON (`"derivedFrom": "opus-4.7"`). On its first competition it inherits the predecessor's Glicko rating instead of starting at 1500 — with **inflated uncertainty** so a genuinely better model converges fast, a **low-side clamp** (a below-average predecessor is inherited at full strength, no uncertainty bonus — you can't shed a bad rating by version-bumping), and a **min-games gate** (a near-empty predecessor rating is too noisy to inherit, so the successor starts fresh).
 
 ### Research
 Keyless, web-grounded, **cited** research. The Agon edge here isn't engine competition — it's that *discovery and verification happen in Agon, around the model, with no API key*: Agon classifies the question and pulls sources from first-party endpoints that need no key (**npm registry, GitHub repo search, MDN, IETF/RFC datatracker, Stack Overflow, Wikipedia**), WebFetches them (SSRF-guarded), an engine drafts an answer grounded **only** in that content with inline `[n]` citations, and Agon then **re-fetches and verifies every citation**, flagging any that are dead, redirected to another host, or whose page doesn't mention the cited terms. The model can hallucinate a URL — it can't make Agon's fetch of that URL succeed.
@@ -705,6 +704,65 @@ Beyond the built-in CLIs, you can register any OpenAI- or Anthropic-compatible A
 ```
 
 Set the key (`export MY_PLAN_API_KEY=…`), then confirm with `agon doctor engines`. Built-in definitions live in the repo's `engines/` directory; your own go in `~/.agon/engines/` and override built-ins of the same id. Toggle availability and per-engine default models from there or via config (`engineModels`).
+
+## Ratings
+
+Every engine carries Glicko-2 ratings, in a global pool, per discipline (`forge`, `brainstorm`, `tribunal`, `critique`) and per task class. They are stored in `~/.agon/ratings.json` and shown by `agon leaderboard [--mode <discipline>]`.
+
+**What feeds each discipline**
+
+| Discipline | Score |
+|---|---|
+| `forge` | fitness pass/fail and score of each engine's patch |
+| `brainstorm` | structural quality score of each draft |
+| `tribunal` | judged ballots of every tribunal, plus the chair's ranking of every council |
+| `critique` | the same judged scores, from adversarial and red-team tribunals and from councils |
+
+Answer length never scores. Tribunal and council ratings come from **blind judged ballots**:
+- **Tribunal, 3 or more responding positions.** Every responder that may judge (see below) ranks the others. The positions are shuffled per ballot into anonymous labels `P1..Pk`, and engine ids and display names are scrubbed.
+- **Tribunal, exactly 2 positions.** One impartial judge is drawn at random from the run's own roster: the `-e` list, or the default roster before the four-seat cap. A non-participant is only drawn if it is also active. An engine that shares a `derivedFrom` lineage with a participant is never the judge. An explicit two-engine `-e a,b` run therefore has no impartial judge and is not rated, and the debate never goes to an engine you did not select.
+- **Who may judge.** A ballot quotes untrusted participant text, so a judge must be unable to run tools or write. Only an engine without a CLI binary may judge: it always runs on the API backend, and a judge call sends it no tools. An engine whose exec args grant blanket write or auto-approve may not judge either. A CLI engine (claude, codex, agy, …) is still ranked; it just casts no ballot. If nobody is left to judge, the run is not rated.
+- **Ballot hygiene.** Each ballot wraps the question and every position between `BEGIN`/`END` lines that carry a random per-ballot nonce, and tells the judge that the fenced text is data, never instructions. `RANK:`-like lines and fence-like lines are removed from the quoted text. The positions on one ballot are capped at `ratingBallotMaxChars` characters in all, counted after that scrub: short positions stay whole, and the long ones share the rest. A judge call carries only the ballot, never the project context (repo metadata, instructions, diff excerpt) that API dispatches otherwise add.
+- **Council, 3 or more advisors.** The chair ends its verdict with a `RANK:` line over the role labels, which is mapped back to the seats. `RANK:`-like lines are removed from the advisor text the chair is shown. The chair is never rated, and a failover acting chair's own seat is left out. The `RANK:` line is removed from the verdict you see.
+- **Scoring.** Only a judge's last `RANK:` line counts, and it must name every label once, using `>` (better than) or `=` (tie). A position scores the mean number of positions ranked strictly below it across its valid ballots. It needs at least `ratingMinBallots` valid ballots, capped at the number of ballots that listed it. Equal scores are a tie, and a tie is not rated.
+- **Excluded seats.** A seat that failed a round, or a council seat whose critique target failed, is not ranked last. It is simply not rated.
+
+`ratingJudging` controls the judged ballots:
+- `off`: no ballots and no tribunal or critique rating.
+- `shadow` (the default): the ballots run and are recorded, but no rating is written.
+- `on`: the judged scores are written.
+- Any other value (a typo, a wrong case) is treated as `off`, with a warning.
+
+In `shadow` and `on`, every tribunal and council run writes `ballots.json` to its run directory (judge, label map, raw `RANK:` line, validity and reason, and the labels a cap `truncated`). A tribunal's file also lists the `ineligibleJudges` with the reason each was turned down, and a `note` when nothing could be judged: `too-few-positions`, `no-impartial-judge` or `no-text-only-judge`. Each run also prints one dim `ballots: <valid>/<dispatched> valid, <timedOut> timed out` line. Judging never changes a run's summary, verdict or panel health. Each judge call is bounded by `ratingJudgeTimeoutSec`.
+
+**Picking engines by rating**
+
+The critic (Nero, the council Contrarian, the conquer falsifier), the council chair and the research drafter rank engines by the confidence floor `mu − 2·phi`. Two things widen phi when ranking:
+- **Time.** A rating that has not been updated loses confidence linearly, reaching maximum uncertainty after `ratingStaleHorizonDays`.
+- **Model change.** Every dispatch reports the model identity of the backend it actually ran on: the configured model for a CLI engine with a model block, `cli:<version>` for one without, and `api:<model>` for the API fallback. An engine whose current identity differs from its stored one ranks at maximum uncertainty.
+
+A rating write confirms a changed identity once it has been seen in `ratingIdentityConfirmRuns` consecutive writes. The confirmation reopens that engine's rating in every scope (maximum phi, W/L reset, mu kept) and records the old identity in `engineMeta.versions`.
+
+`neroExplorationRate` and `chairExplorationRate` occasionally hand the critic or chair seat to a lower-ranked engine, so the leader is still challenged and rated.
+
+**New model versions.** When a new model version gets its own engine id, declare its lineage in the engine JSON, for example `"derivedFrom": "opus-4.7"`. On its first competition, the new engine inherits the predecessor's rating instead of starting at 1500:
+- **Inflated uncertainty**, so a better model converges fast.
+- **A low-side clamp.** A below-average predecessor is inherited at full strength with no uncertainty bonus, so you can't shed a bad rating by version-bumping.
+- **A min-games gate.** A near-empty predecessor rating is too noisy to inherit, so the successor starts fresh.
+
+**Maintenance.**
+- `agon ratings reset --modes critique,tribunal [--engines a,b]` previews the per-discipline entries it would reset to the default rating. `--apply` first writes `ratings.json.bak-<timestamp>`, then resets them. The global, other-discipline, task-class and engine-metadata ratings are untouched.
+- `agon ratings purge-unknown` removes the ratings of engine ids that are not real engines.
+
+| Config key | Default | Effect |
+|---|---|---|
+| `ratingJudging` | `shadow` | `off` / `shadow` / `on` for the judged tribunal and council ratings |
+| `ratingMinBallots` | `2` | valid ballots a position needs, capped at the ballots that listed it |
+| `ratingJudgeTimeoutSec` | `180` | wall clock per judge call |
+| `ratingBallotMaxChars` | `60000` | position characters one ballot may carry, shared fairly across its positions |
+| `ratingIdentityConfirmRuns` | `2` | consecutive rating writes that confirm a model change |
+| `ratingStaleHorizonDays` | `90` | days until an un-updated rating reaches maximum uncertainty (`0` disables) |
+| `neroExplorationRate` / `chairExplorationRate` | `0.2` | chance the critic or chair seat goes to a lower-ranked engine |
 
 ## Cesar Routing
 

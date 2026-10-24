@@ -4,6 +4,7 @@ export interface FirstPartyLegacySettings {
   autoReviewAfterImpl?: boolean;
   cesarAgenticContinuationLimit?: number;
   cesarMutateReflex?: boolean;
+  chairExplorationRate?: number;
   corpusReplayLimit?: number;
   forgeEnableSynthesis?: boolean;
   forgeFitnessTimeout?: number;
@@ -12,6 +13,12 @@ export interface FirstPartyLegacySettings {
   gauntletMaxBreakers?: number;
   gauntletRepairTimeout?: number;
   goalReviewEngines?: string[];
+  ratingBallotMaxChars?: number;
+  ratingIdentityConfirmRuns?: number;
+  ratingJudgeTimeoutSec?: number;
+  ratingJudging?: "off" | "shadow" | "on";
+  ratingMinBallots?: number;
+  ratingStaleHorizonDays?: number;
   skillSynthesisThreshold?: number;
 }
 
@@ -20,6 +27,7 @@ export const DEFAULT_FIRST_PARTY_SETTINGS: Required<FirstPartyLegacySettings> = 
   "autoReviewAfterImpl": true,
   "cesarAgenticContinuationLimit": 12,
   "cesarMutateReflex": true,
+  "chairExplorationRate": 0.2,
   "corpusReplayLimit": 5,
   "forgeEnableSynthesis": false,
   "forgeFitnessTimeout": 120,
@@ -28,6 +36,12 @@ export const DEFAULT_FIRST_PARTY_SETTINGS: Required<FirstPartyLegacySettings> = 
   "gauntletMaxBreakers": 3,
   "gauntletRepairTimeout": 300,
   "goalReviewEngines": [],
+  "ratingBallotMaxChars": 60000,
+  "ratingIdentityConfirmRuns": 2,
+  "ratingJudgeTimeoutSec": 180,
+  "ratingJudging": "shadow",
+  "ratingMinBallots": 2,
+  "ratingStaleHorizonDays": 90,
   "skillSynthesisThreshold": 3
 };
 

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
-import type { EngineAdapter, DispatchResult } from '@kernlang/agon-support-engine-runtime';
-import { engineHealth } from '@kernlang/agon-support-engine-runtime';
+import type { EngineAdapter, DispatchResult, EngineIdentities } from '@kernlang/agon-support-engine-runtime';
+import { engineHealth, tapDispatchIdentities, resolveCurrentIdentities } from '@kernlang/agon-support-engine-runtime';
 import { createSidechainLogger } from '@kernlang/agon-kernel';
 import type { PanelEngineRegistry, PanelHealthRuntime } from '@kernlang/agon-support-panel';
 
@@ -16,10 +16,20 @@ export interface CouncilSeating {
 }
 export interface CouncilRuntimeEffects<Registry extends PanelEngineRegistry = PanelEngineRegistry> {
   assertCurrent?(): void;
-  loadConfig(cwd: string): ReturnType<PanelHealthRuntime['loadConfig']> & { cesarEngine?: string };
-  readSeating(registry: Registry): CouncilSeating;
-  recordRatings(question: string, ranked: Array<{ engineId: string; score: number }>): void;
+  loadConfig(cwd: string): ReturnType<PanelHealthRuntime['loadConfig']> & { cesarEngine?: string; ratingJudging?: string; ratingMinBallots?: number; ratingStaleHorizonDays?: number; chairExplorationRate?: number };
+  readSeating(registry: Registry, rank?: { identities?: EngineIdentities; staleHorizonDays?: number }): CouncilSeating;
+  readJudging?(): CouncilJudging | undefined;
+  recordRatings(question: string, ranked: Array<{ engineId: string; score: number }>, identities?: EngineIdentities): void;
   warn(message: string): void;
+}
+
+/** Optional Ratings capability. Council still runs when this is absent. */
+export interface CouncilJudging {
+  mode(value: unknown): 'off' | 'shadow' | 'on';
+  instruction(roles: string[]): string[];
+  scrub(text: string): string;
+  strip(text: string): string;
+  score(options: { judging: 'off' | 'shadow' | 'on'; requested: boolean; note: string | null; verdict: string | null; judge: string; seats: Array<{ engineId: string; role: string; response?: string }>; rated: string[]; minBallots: number; outputDir: string }): Array<{ engineId: string; score: number }>;
 }
 
 import { preflightHealthFilter } from '@kernlang/agon-support-panel';
@@ -49,6 +59,8 @@ export interface CouncilOptions<Registry extends PanelEngineRegistry = PanelEngi
   cwd: string;
   onEvent?: ((event: CouncilEvent) => void) | undefined;
   signal?: AbortSignal | undefined;
+  chairExplorationRate?: number | undefined;
+  rng?: (() => number) | undefined;
 }
 
 export interface CouncilResult {
@@ -56,7 +68,7 @@ export interface CouncilResult {
   question: string;
   brief: string;
   chairmanId: string;
-  chairmanReason: 'top-rated' | 'random' | 'forced' | 'cesar' | 'none';
+  chairmanReason: 'top-rated' | 'random' | 'forced' | 'cesar' | 'exploration' | 'none';
   actingChairmanId: string;
   seats: CouncilSeat[];
   verdict: string;
@@ -97,9 +109,15 @@ export function assignCouncilRoles(advisors: string[], seating: CouncilSeating, 
   return ordered.map((engineId, i) => ({ engineId, role: roles[i] }));
 }
 
-/**
- * Chairman prompt that frames the decision object BEFORE the council debates, so every advisor argues the same decision. Pure — exported for testing.
- */
+/** Occasionally select another chair so the leading engine can earn advisor ratings. */
+export function applyChairExploration(topChairId: string, candidates: string[], epsilon: number, rng: () => number): string {
+  const eps = Math.min(1, Math.max(0, epsilon));
+  const others = candidates.filter(id => id !== topChairId);
+  if (!(eps > 0) || others.length === 0 || rng() >= eps) return topChairId;
+  return others[Math.min(others.length - 1, Math.max(0, Math.floor(rng() * others.length)))];
+}
+
+/** Frame one decision before the advisors debate it. */
 export function buildCouncilBriefPrompt(question: string): string {
   return [
     'You are the chairman of an expert council. Before the council debates, frame the decision precisely so every member argues the SAME decision object.',
@@ -158,13 +176,14 @@ export function buildCritiquePrompt(opts: { critiqueRole:string; brief:string; t
 /**
  * Round-3 synthesis prompt. Anti-laundering: the verdict MUST cite which critiques it accepted/rejected, carry a confidence, and a kill-switch (what evidence would reverse it). Pure — exported for testing.
  */
-export function buildChairmanPrompt(opts: { brief:string; seats:{ role:string; response:string; critique:string; critiquedRole:string }[] }): string {
+export function buildChairmanPrompt(opts: { brief:string; seats:{ role:string; response:string; critique:string; critiquedRole:string }[]; ranking?: { labels: string[]; capability: Pick<CouncilJudging, 'instruction' | 'scrub'> } }): string {
+  const quoted = (text: string) => opts.ranking ? opts.ranking.capability.scrub(text) : text;
   const responses = opts.seats
-    .map((s) => `### ${s.role}\n${(s.response || '(no response)').trim()}`)
+    .map((s) => `### ${s.role}\n${quoted((s.response || '(no response)').trim())}`)
     .join('\n\n');
   const critiques = opts.seats
     .filter((s) => s.critique && s.critique.trim())
-    .map((s) => `- ${s.role} → critiquing ${s.critiquedRole}: ${s.critique.trim()}`)
+    .map((s) => `- ${s.role} → critiquing ${s.critiquedRole}: ${quoted(s.critique.trim())}`)
     .join('\n');
   return [
     'You are the chairman of an expert council. Synthesize the advisors below into ONE decision. You are accountable for the verdict — do not just average opinions, and do not hide disagreement.',
@@ -185,6 +204,7 @@ export function buildChairmanPrompt(opts: { brief:string; seats:{ role:string; r
     '4. HOW THE CRITIQUES CHANGED THIS — name which peer critiques you ACCEPTED (and how they changed the verdict) and which you REJECTED (and why). Do not skip this; an unexamined critique is a failure.',
     '5. NEXT STEP — the one concrete action to take now.',
     '6. KILL-SWITCH — the specific evidence or outcome that would REVERSE this decision. If you cannot name one, say so explicitly and lower your confidence.',
+    ...(opts.ranking ? opts.ranking.capability.instruction(opts.ranking.labels) : []),
   ].join('\n');
 }
 
@@ -220,7 +240,9 @@ export async function runCouncilRuntime<Registry extends PanelEngineRegistry>(
     if (rejected?.status === 'rejected') throw rejected.reason;
   };
   assertCurrent();
-  const { question, registry, adapter, timeout, outputDir } = opts;
+  const { question, registry, timeout, outputDir } = opts;
+  const identityTap = tapDispatchIdentities(opts.adapter);
+  const adapter = identityTap.adapter;
   const cwd = opts.cwd;
   const warnings: string[] = [];
 
@@ -255,12 +277,17 @@ export async function runCouncilRuntime<Registry extends PanelEngineRegistry>(
     };
   }
 
-  const seating = effects.readSeating(registry);
+  const config = effects.loadConfig(cwd);
+  const identities = await resolveCurrentIdentities(adapter, registry, engines, cwd);
+  assertCurrent();
+  const seating = effects.readSeating(registry, { identities, staleHorizonDays: config.ratingStaleHorizonDays });
+  const judging = effects.readJudging?.();
+  const judgingMode = judging?.mode(config.ratingJudging) ?? 'off';
   assertCurrent();
 
   // ── Seating ───────────────────────────────────────────────────────────
   let chairmanId = '';
-  let chairmanReason: 'top-rated' | 'random' | 'forced' | 'cesar' | 'none' = 'none';
+  let chairmanReason: CouncilResult['chairmanReason'] = 'none';
   let advisors: string[] = [];
   let degraded = false;
 
@@ -300,6 +327,11 @@ export async function runCouncilRuntime<Registry extends PanelEngineRegistry>(
     const pick = seating.pick(engines, ['tribunal']);
     chairmanId = pick.engineId || engines[0];
     chairmanReason = pick.reason === 'random' ? 'random' : (pick.reason === 'none' ? 'none' : 'top-rated');
+    if (chairmanReason === 'top-rated') {
+      const epsilon = typeof opts.chairExplorationRate === 'number' ? opts.chairExplorationRate : Number(config.chairExplorationRate);
+      const explored = applyChairExploration(chairmanId, engines, epsilon, opts.rng ?? Math.random);
+      if (explored !== chairmanId) { chairmanId = explored; chairmanReason = 'exploration'; }
+    }
     advisors = engines.filter((e) => e !== chairmanId);
   }
 
@@ -313,6 +345,8 @@ export async function runCouncilRuntime<Registry extends PanelEngineRegistry>(
   const roleNames = (opts.roles && opts.roles.length > 0) ? opts.roles : [...DEFAULT_COUNCIL_ROLES];
   const assigned = assignCouncilRoles(advisors, seating, roleNames);
   const seats: CouncilSeat[] = assigned.map((a) => ({ engineId: a.engineId, role: a.role, response: '', critique: '', critiquedRole: '' }));
+  const rankable = new Set(seats.map(s => s.role.trim().toLowerCase())).size === seats.length && seats.every(s => !/[>=]/.test(s.role));
+  const rankLabels = judgingMode !== 'off' && seats.length >= 3 && rankable ? seats.map(s => s.role) : undefined;
 
   const councilId = randomUUID().slice(0, 8);
   assertCurrent();
@@ -419,6 +453,8 @@ export async function runCouncilRuntime<Registry extends PanelEngineRegistry>(
   for (const s of seats) log('council:response', s.engineId, { role: s.role, length: s.response.length });
 
   // ── Round 2: directed pairwise critique — O(N) round-robin ────────────
+  const responded = (seat: CouncilSeat) => !!seat.response && seat.response !== '(no response)';
+  const ratableSeats = new Set<CouncilSeat>();
   const k = seats.length;
   if (k >= 2 && !signal?.aborted) {
     await settleSeats(seats.map(async (seat, i) => {
@@ -429,20 +465,23 @@ export async function runCouncilRuntime<Registry extends PanelEngineRegistry>(
       const res = await dispatchText(seat.engineId, buildCritiquePrompt({ critiqueRole: seat.role, brief, targetRole: target.role, targetResponse: target.response }), ADVISOR_SYS, `council-critique-${seat.role}`);
       if (!res.ok) degraded = true;
       seat.critique = res.ok ? res.text : '';
+      if (res.ok) ratableSeats.add(seat);
     }));
   }
   for (const s of seats) log('council:critique', s.engineId, { role: s.role, critiquedRole: s.critiquedRole, length: s.critique.length });
 
   // ── Round 3: chairman verdict ─────────────────────────────────────────
   let verdict = '';
+  let verdictText = '';
   let ok = false;
   let actingChairmanId = chairmanId;
   if (!signal?.aborted) {
     const chairRes = await dispatchChair(
-      buildChairmanPrompt({ brief, seats: seats.map((s) => ({ role: s.role, response: s.response, critique: s.critique, critiquedRole: s.critiquedRole })) }),
+      buildChairmanPrompt({ brief, seats: seats.map((s) => ({ role: s.role, response: s.response, critique: s.critique, critiquedRole: s.critiquedRole })), ...(rankLabels && judging ? { ranking: { labels: rankLabels, capability: judging } } : {}) }),
       'council-verdict',
     );
-    verdict = chairRes.text;
+    verdictText = chairRes.text;
+    verdict = rankLabels && judging ? judging.strip(chairRes.text) : chairRes.text;
     ok = chairRes.ok && chairRes.text.length > 0;
     if (ok) actingChairmanId = chairRes.engineId;
   }
@@ -451,24 +490,21 @@ export async function runCouncilRuntime<Registry extends PanelEngineRegistry>(
   log('council:done', actingChairmanId, { ok, seats: seats.length, verdictLength: verdict.length, warnings: warnings.length });
   notify({ type: 'forge:done' });
 
-  // ── Glicko: council is debate + critique. Only rate a REAL competition — a
-  // usable verdict AND at least two advisors that actually responded. Failed /
-  // timed-out seats are EXCLUDED (not ranked last), so a transient engine outage
-  // never corrupts the critique/tribunal ratings that Nero and council seating
-  // read. Feed both disciplines so future seating keeps improving. ─────────────
-  const scored = seats.filter((s) => s.response && s.response !== '(no response)');
-  if (ok && scored.length >= 2) {
-    const ranked = scored
-      .map((s) => {
-        const respCredit = Math.min(s.response.length, 2000);
-        const critCredit = s.critique ? Math.min(s.critique.length, 2000) : 0;
-        const rounds = 1 + (critCredit > 0 ? 1 : 0);
-        return { engineId: s.engineId, score: rounds * 1000 + respCredit + critCredit };
-      })
-      .sort((a, b) => b.score - a.score);
+  // Only judge successful critique seats. Neither chair can rate its own seat.
+  const scored = seats.filter(s => responded(s) && ratableSeats.has(s) && s.engineId !== actingChairmanId && s.engineId !== chairmanId);
+  if (judging && judgingMode !== 'off') {
     assertCurrent();
-    effects.recordRatings(question, ranked);
+    const scores = judging.score({
+      judging: judgingMode, requested: !!rankLabels,
+      note: rankLabels ? null : (seats.length < 3 ? 'too-few-advisors' : 'unrankable-roles'),
+      verdict: ok ? verdictText : null, judge: actingChairmanId, seats,
+      rated: scored.map(s => s.engineId), minBallots: Number(config.ratingMinBallots), outputDir,
+    });
     assertCurrent();
+    if (judgingMode === 'on' && ok && scores.length >= 2) {
+      effects.recordRatings(question, scores, identityTap.identities());
+      assertCurrent();
+    }
   }
 
   return {

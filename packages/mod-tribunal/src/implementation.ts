@@ -15,7 +15,10 @@ const cesarSchema = Object.freeze({ type: 'object', additionalProperties: false,
 const cli = Object.freeze({ positionals: ['question'], aliases: { rounds: 'r', engines: 'e', mode: 'm', protocol: 'p' }, descriptions: { question: 'Question to debate' } });
 const text = (value: unknown) => typeof value === 'string' ? value.trim() : '';
 const extras = (value: unknown) => Array.isArray(value) ? value.map(String) : [];
-const ids = (value: Json | undefined) => typeof value === 'string' ? value.split(',').map((id) => id.trim()).filter(Boolean) : [];
+const ids = (value: Json | undefined): string[] => {
+  const values = typeof value === 'string' ? value.split(',') : Array.isArray(value) ? value : [];
+  return values.filter((id): id is string => typeof id === 'string').map(id => id.trim()).filter(Boolean);
+};
 
 export function parseTribunalIntent(input: string): Record<string, Json> | undefined {
   const match = input.match(/^\/tribunal(?:\s+([\s\S]*))?$/i);
@@ -47,9 +50,14 @@ export async function runTribunal(raw: Json, context: TribunalInvocationContext,
   if (!question) return failure('Provide a question. Usage: agon tribunal "question"');
   context.signal.throwIfAborted();
   let engines = ids(input.engines);
+  const explicitlySelected = engines.length > 0;
+  let judgePool: string[] = [];
   try {
+    judgePool = services.engines.listActive ? [...await services.engines.listActive(context)] : [...engines];
     if (engines.length && services.engines.resolveRequested) engines = [...await services.engines.resolveRequested(engines, context)];
-    else if (!engines.length && services.engines.listActive) engines = [...await services.engines.listActive(context)];
+    else if (!engines.length) engines = [...judgePool];
+    judgePool = context.judgePool ? judgePool.filter(id => context.judgePool!.includes(id))
+      : explicitlySelected ? [...engines] : judgePool;
   } catch (error) {
     context.signal.throwIfAborted();
     return failure(error instanceof Error ? error.message : String(error));
@@ -100,7 +108,7 @@ export async function runTribunal(raw: Json, context: TribunalInvocationContext,
       output.log('');
     }
     result = await createTribunalRuntime(session.effects)({
-      question, engines, rounds, mode, protocol, timeout, cwd: context.cwd,
+      question, engines, judgePool, rounds, mode, protocol, timeout, cwd: context.cwd,
       registry: session.registry, adapter: session.adapter, outputDir: run.path, signal: context.signal,
       onEvent: event => {
         // The command publishes completion only after its own durable effects.

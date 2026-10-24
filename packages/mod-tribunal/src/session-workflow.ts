@@ -12,6 +12,7 @@ export type TribunalSessionEvent =
   | { type: 'progress-update'; engines: Array<{ id: string; status: string; elapsed: number; done: boolean; failed: boolean }> };
 
 export interface TribunalSessionContext {
+  readonly judgePool?: readonly string[];
   cwd: string;
   signal: AbortSignal;
   onWorkflowEvent(event: { type: string; engineId?: string; data?: Record<string, unknown> }): void;
@@ -93,7 +94,7 @@ export async function runTribunalSession(
     signal.throwIfAborted();
     const output = await execute({ ...input, question: context ? `${question}\n\n## PROJECT CONTEXT\n${context}` : question,
       engines: selected, mode, protocol }, {
-      cwd, signal, onRunStarted: path => { outputDir = path; },
+      cwd, signal, judgePool: defaults?.active ?? engines, onRunStarted: path => { outputDir = path; },
       onWorkflowEvent: event => {
         if (signal.aborted) return;
         if (event.engineId && seats.has(event.engineId) && event.data?.round && event.data.position) {

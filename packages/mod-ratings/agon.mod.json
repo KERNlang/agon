@@ -68,8 +68,8 @@
       "path": "schemas/config.schema.json",
       "kind": "schema",
       "mediaType": "application/schema+json",
-      "contentHash": "sha256:c1f19f9df147f4779c44c594f5965536708635b538f856b6731fb5163928371c",
-      "bytes": 220,
+      "contentHash": "sha256:74db9a6f2f4fcb977b7c2d9b6f888741e72b4eff84876b4b5ad291a2d711c46a",
+      "bytes": 867,
       "executable": false,
       "platforms": [
         "darwin-arm64",
@@ -91,6 +91,10 @@
       },
       {
         "id": "cliCommands:0061",
+        "aliases": []
+      },
+      {
+        "id": "physicalCliCommands:ratings-reset",
         "aliases": []
       }
     ],
@@ -128,6 +132,11 @@
       "dist/index.d.ts",
       "dist/implementation.d.ts",
       "dist/maintenance.d.ts",
+      "dist/reset.d.ts",
+      "dist/identity.d.ts",
+      "dist/ballot-prompt.d.ts",
+      "dist/judge-pool.d.ts",
+      "dist/rating-judge.d.ts",
       "dist/glicko.d.ts",
       "dist/types.d.ts",
       "dist/storage.d.ts",

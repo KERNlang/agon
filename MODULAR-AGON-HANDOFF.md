@@ -14,12 +14,33 @@ This publication is a WIP handoff, not release approval or installation approval
 The active/global Agon installation has not been replaced by this work.
 
 Current checkpoint: **development-base merge readiness**, not release approval.
-Not merge-ready yet: upstream `main` at `dc6853e61404d7db710c1f6fd6499c46ba85dc15`
-adds judged ratings, model identity and decay. Read-only merge analysis reports
-13 conflicting paths. Integration must preserve those behaviors in the current
-module owners, followed by clean committed-checkout qualification. Nico should
-wait for the explicit merge-ready result. Full release work continues afterward
-on a new branch; its acceptance criteria are unchanged.
+Upstream `main` at `dc6853e61404d7db710c1f6fd6499c46ba85dc15` is integrated:
+judged ratings, model identity, decay and ratings reset now use the physical
+module owners. All merge conflicts are resolved. The full integration gate passes:
+build, types, lint, re-export guard, release-set, supply-chain and repository tests.
+Clean committed-checkout qualification is still pending. Nico should wait for
+the explicit merge-ready result. Full release work continues afterward on a new
+branch; its acceptance criteria are unchanged.
+
+Latest integration evidence:
+
+- Full run: 11,625 tests passed, 6 skipped; 691 files passed, 1 skipped.
+  Receipt `upstream-dev-base-full-reconciled.receipt.json`, log SHA-256
+  `22048bd8ecdaff8e333256cf2cd036e7c1f730d0ac5887833fac65578385e796`.
+- Council: 21 compiled CLI/MCP-host/session process checks passed. Ratings reset:
+  five real CLI processes passed, including preview/refusal, apply and byte-exact
+  backup restoration. All used isolated fixtures; zero real provider launches.
+- Independent Codex reviews found missing Plan workspace capture, judging-effect
+  lifetime and ballot authority defects. Reproduced defects have regression
+  coverage and local fixes. Abort-ignoring third-party code cannot be forcibly
+  stopped in-process; timeout cleanup is bounded and late API writes are blocked.
+- [Integration evidence index](docs/specs/evidence/nico-handoff-upstream-2026-10-24/index.json)
+  links original and sanitized hashes. Its archive includes earlier failed runs
+  and historical notes, not only passing receipts. Read the latest receipts and
+  this handoff before interpreting older status statements.
+- [Ratings CLI reproduction helper](docs/specs/evidence/nico-handoff-ratings-reset-2026-10-24/index.json)
+  is retained separately. Original evidence remains outside Git in
+  `/Users/ra/dev/modular-agon-remediation`; no original archive was deleted.
 
 ## What the numbers mean
 
@@ -28,7 +49,7 @@ on a new branch; its acceptance criteria are unchanged.
 | Physical target packages | 49 exist and are represented in the release-set check |
 | Package-map dependency edges | 158 unique edges in the checked structural map |
 | Frozen legacy ownership assignments | 872 assignments to reconcile; NOT 872 proven retired owners |
-| Latest full local test run | 11,436 passed, 6 skipped; 682 files passed, 1 skipped |
+| Latest full local test run | 11,625 passed, 6 skipped; 691 files passed, 1 skipped |
 | Latest Synthesis native probes | 9 passed: CLI, MCP-host and session/fallback boundaries |
 | Latest Council native probes | 21 passed: 8 session, 7 CLI, 6 nested MCP-host processes |
 | Fresh release acceptance on this exact snapshot | Not established; do not mark any of the nine final slice receipts accepted from these working-tree results |

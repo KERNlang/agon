@@ -53,7 +53,7 @@ import { createBrainstormHostServices } from '../../packages/core/src/blocks/bra
 import type { BrainstormModServices } from '../../packages/mod-brainstorm/src/host.js';
 afterEach(() => { vi.restoreAllMocks(); effects.quarantine = false; effects.partial = false; effects.dedupThrows = false; });
 
-it.each(['divergent', 'grounded', 'empty-synthesis', 'failed-synthesis', 'throw-synthesis', 'no-drafts', 'quarantined', 'partial-panel', 'dedup-abort', 'retry-once'])('preserves raw results and effect order: %s', async scenario => {
+it.each(['divergent', 'identity', 'grounded', 'empty-synthesis', 'failed-synthesis', 'throw-synthesis', 'no-drafts', 'quarantined', 'partial-panel', 'dedup-abort', 'retry-once'])('preserves raw results and effect order: %s', async scenario => {
   vi.spyOn(Math, 'random').mockReturnValue(0.25);
   vi.spyOn(console, 'warn').mockImplementation(() => {});
   effects.quarantine = scenario === 'quarantined';
@@ -72,7 +72,8 @@ it.each(['divergent', 'grounded', 'empty-synthesis', 'failed-synthesis', 'throw-
         stdout: scenario === 'no-drafts' || scenario === 'retry-once' && !synthesis && attempts.get(options.engine.id) === 1 || synthesis && scenario === 'empty-synthesis' ? '' : synthesis
           ? '<think>private</think>fixture synthesis'
           : '{"approach":"A sufficiently detailed fixture approach","confidence":75}',
-        stderr: '', timedOut: false };
+        stderr: '', timedOut: false,
+        identity: scenario === 'identity' ? `model-${options.engine.id}` : undefined };
     } };
     try {
       if (useGenerated) {
@@ -98,6 +99,10 @@ it.each(['divergent', 'grounded', 'empty-synthesis', 'failed-synthesis', 'throw-
     }
   }
   const expected = await execute(legacy);
+  // Upstream adds observed identities to rating writes. All other effects stay exact.
+  expected.records = expected.records.map(record => Array.isArray(record) && record[0] === 'ratings'
+    ? [...record, scenario === 'identity' ? { a: 'model-a', b: 'model-b' } : {}]
+    : record);
   expect(await execute(runBrainstorm)).toEqual(expected);
   expect(await execute(legacy, true)).toEqual(expected);
   if (scenario === 'retry-once') expect(expected.calls).toHaveLength(5);

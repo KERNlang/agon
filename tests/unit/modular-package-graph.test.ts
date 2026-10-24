@@ -7,6 +7,40 @@ import { fileURLToPath } from 'node:url';
 import { FIRST_PARTY_PACKAGE_GRAPH } from '../../packages/mod-kernel/src/generated/first-party-package-graph.js';
 
 describe('frozen first-party package graph', () => {
+  it.each(['valid', 'duplicate', 'missing-schema', 'other-owner', 'invalid-enum', 'reserved'] as const)(
+    'generates new owner settings without changing frozen ownership: %s', variant => {
+      const generator = new URL('../../scripts/spec/generate-modular-first-party-packages.mjs', import.meta.url);
+      const schemaPath = fileURLToPath(new URL('../../packages/mod-ratings/schemas/config.schema.json', import.meta.url));
+      const schema = JSON.parse(readFileSync(schemaPath, 'utf8'));
+      const aliases = schema['x-agon-config'].legacyAliases as string[];
+      if (variant === 'duplicate') aliases.push(aliases[0]);
+      if (variant === 'missing-schema') aliases.push('missingSetting');
+      if (variant === 'other-owner') {
+        aliases.push('autoReviewAfterForge');
+        schema.properties.autoReviewAfterForge = { type: 'boolean', default: true };
+      }
+      if (variant === 'invalid-enum') schema.properties.ratingJudging.enum = ['off', 'on'];
+      if (variant === 'reserved') aliases.push('constructor');
+      const outputs = new Map<string, string>();
+      const source = readFileSync(generator, 'utf8').replace(/^import .*;\n/gm, '')
+        .replaceAll('import.meta.dirname', JSON.stringify(dirname(fileURLToPath(generator))));
+      const run = () => runInNewContext(source, {
+        readFileSync: (path: string, encoding: BufferEncoding) => path === schemaPath ? JSON.stringify(schema) : readFileSync(path, encoding),
+        existsSync, resolve, createHash, Buffer, process: { argv: [] },
+        mkdirSync: () => {}, console: { log: () => {} },
+        writeFileSync: (path: string, contents: string) => outputs.set(path, contents),
+      });
+      if (variant !== 'valid') expect(run).toThrow();
+      else {
+        expect(run).not.toThrow();
+        const settings = outputs.get(fileURLToPath(new URL('../../packages/support-persistence/src/first-party-settings.generated.ts', import.meta.url)))!;
+        expect(settings).toContain('ratingJudging?: "off" | "shadow" | "on";');
+        expect(settings).toContain('"ratingIdentityConfirmRuns": 2');
+        expect(settings).toContain('"chairExplorationRate": 0.2');
+        expect([...outputs.keys()].some(path => path.endsWith('/modular-agon-ownership.json'))).toBe(false);
+      }
+    },
+  );
   it('regenerates first-party metadata without erasing current public exports or capabilities', () => {
     const generator = new URL('../../scripts/spec/generate-modular-first-party-packages.mjs', import.meta.url);
     const outputs = new Map<string, string>();

@@ -48,7 +48,7 @@ it.each(['cancel', 'generation'])('rejects late Council effects after %s', async
 
 it.each(['normal', 'two', 'external-chair', 'forced', 'thin', 'floor', 'chair-failure', 'all-failed',
   'advisor-failure', 'brief-failure', 'retry', 'short-timeout', 'custom-roles', 'quarantine', 'chair-quarantine',
-  'confidence-fallback'])('preserves frozen Council requests, results and effects: %s', async scenario => {
+  'confidence-fallback'])('preserves frozen Council behavior except retired length scoring: %s', async scenario => {
   const registry = { get: (id: string) => ({ id }) as EngineDefinition, findBinary: () => '/fixture/node' };
   if (scenario === 'quarantine') engineHealth.mark('beta', 'unreachable', 'fixture quarantine');
   if (scenario === 'chair-quarantine') engineHealth.mark('gamma', 'auth-failed', 'fixture quarantine');
@@ -125,7 +125,14 @@ it.each(['normal', 'two', 'external-chair', 'forced', 'thin', 'floor', 'chair-fa
     }
     expect(after.requests).toEqual(before.requests);
     expect(after.events).toEqual(before.events);
-    expect(after.effects).toEqual(before.effects);
+    // Upstream replaced length scores with optional judged ballots. No judging
+    // capability is supplied here, so the old scoring effects must not run.
+    expect(after.effects).toEqual(before.effects.filter(effect => {
+      const [kind] = effect as [string];
+      return kind !== 'classify' && kind !== 'ratings-update';
+    }));
+    expect(after.effects).not.toContainEqual(expect.arrayContaining(['classify']));
+    expect(after.effects).not.toContainEqual(expect.arrayContaining(['ratings-update']));
     expect(after.warnings).toEqual(before.warnings);
     expect(captured.logs).toEqual(expectedLogs);
   } finally { engineHealth.clear('beta'); engineHealth.clear('gamma'); }

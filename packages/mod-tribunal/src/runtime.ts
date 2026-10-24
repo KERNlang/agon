@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { createSidechainLogger } from '@kernlang/agon-kernel';
-import type { EngineAdapter, DispatchResult, TaskClass } from '@kernlang/agon-support-engine-runtime';
+import type { EngineAdapter, DispatchResult, TaskClass, EngineIdentities } from '@kernlang/agon-support-engine-runtime';
+import { tapDispatchIdentities } from '@kernlang/agon-support-engine-runtime';
 import { preflightHealthFilter, dispatchSeatWithRetry, buildPanelHealth } from '@kernlang/agon-support-panel';
 import type { PanelEngineRegistry, PanelHealthRuntime, SeatOutcome } from '@kernlang/agon-support-panel';
 import { getModeConfig, buildModePrompt, buildModeSummaryPrompt } from './modes.js';
@@ -15,6 +16,8 @@ export interface TribunalEvent {
 export interface TribunalRuntimeOptions<Registry extends PanelEngineRegistry = PanelEngineRegistry> {
   question: string;
   engines: string[];
+  judgePool?: string[];
+  rng?: () => number;
   rounds: number;
   mode?: TribunalMode;
   protocol?: TribunalProtocol;
@@ -33,7 +36,8 @@ export interface TribunalRuntimeEffects<Registry extends PanelEngineRegistry> {
   seedRegistry(registry: Registry): void;
   loadConfig(cwd: string): ReturnType<PanelHealthRuntime['loadConfig']> & { cesarEngine?: string };
   classifyTask(question: string): TaskClass;
-  updateRanked(ranked: Array<{ engineId: string; score: number }>, taskClass: TaskClass, mode: 'tribunal' | 'critique'): void;
+  updateRanked(ranked: Array<{ engineId: string; score: number }>, taskClass: TaskClass, mode: 'tribunal' | 'critique', identities?: EngineIdentities): void;
+  judgeForRating?(options: { question: string; positions: TribunalPosition[]; failed: string[]; judgePool?: string[]; registry: Registry; adapter: EngineAdapter; outputDir: string; cwd: string; signal?: AbortSignal; assertAuthority?: () => void; rng: () => number }): Promise<Array<{ engineId: string; score: number }>>;
 }
 
 export interface TribunalPosition {
@@ -97,7 +101,9 @@ export function requireNonEmptyDispatchText(result: DispatchResult, phase: strin
 
 export function createTribunalRuntime<Registry extends PanelEngineRegistry>(effects: TribunalRuntimeEffects<Registry>) {
   return async function runTribunal(opts: TribunalRuntimeOptions<Registry>): Promise<TribunalResult> {
-    const { question, rounds, registry, adapter, timeout, outputDir } = opts;
+    const { question, rounds, registry, timeout, outputDir } = opts;
+    const identityTap = tapDispatchIdentities(opts.adapter);
+    const adapter = identityTap.adapter;
     const cwd = opts.cwd ?? process.cwd();
     const signal = opts.signal;
     const assertCurrent = () => {
@@ -155,6 +161,7 @@ export function createTribunalRuntime<Registry extends PanelEngineRegistry>(effe
     // One SeatOutcome per engine-round; folded into panelHealth at the end so a
     // seat that flaked (or was rescued by the auto-retry) is reported loudly.
     const seatOutcomes: SeatOutcome[] = [];
+    const failedEngines = new Set<string>();
 
     for (let round = 1; round <= effectiveRounds; round++) {
       // Doppelganger fix: respect cancellation between rounds. Without
@@ -211,6 +218,7 @@ export function createTribunalRuntime<Registry extends PanelEngineRegistry>(effe
         assertCurrent();
         seatOutcomes.push(seat);
         if (!seat.ok) {
+          failedEngines.add(pos.engineId);
           // Keep the underlying stderr/message in the event + warn line — the
           // CLI's "Engines that hit errors" section must stay diagnosable, not
           // collapse to a bare 'timeout'/'error' category.
@@ -275,6 +283,12 @@ export function createTribunalRuntime<Registry extends PanelEngineRegistry>(effe
     }
     const summaryPrompt = buildModeSummaryPrompt({ mode, question, positions });
 
+    // Judge concurrently with the summary. Shadow mode produces no rating scores.
+    const judged = (effects.judgeForRating?.({
+      question, positions, failed: [...failedEngines],
+      judgePool: opts.judgePool, registry, adapter, outputDir, cwd, signal, rng: opts.rng ?? Math.random,
+    }) ?? Promise.resolve([])).then(scores => ({ scores }), error => ({ error }));
+
     let summary: string;
     try {
       const summaryResult = await adapter.dispatch({
@@ -302,32 +316,24 @@ export function createTribunalRuntime<Registry extends PanelEngineRegistry>(effe
       console.warn(`[agon] tribunal summary failed: ${detail}`);
       opts.onEvent?.({ type: 'engine:failed', engineId: summaryEngine?.id ?? engines[0], data: { engineId: summaryEngine?.id ?? engines[0], phase: 'tribunal-summary', error: detail } });
       summary = buildFallbackSummary(positions);
+    } finally {
+      // Settle started judging before the caller disposes of workflow resources.
+      await judged;
     }
 
     const panelHealth = buildPanelHealth(seatOutcomes);
     if (panelHealth.banner) console.warn(`[agon] tribunal ${panelHealth.banner}`);
 
-    // Update Glicko-2 ratings — score by per-round substantive credit (not raw length)
-    if (positions.length >= 2) {
-      assertCurrent();
+    const judgment = await judged;
+    assertCurrent();
+    if ('error' in judgment) throw judgment.error;
+    if (judgment.scores.length >= 2) {
       const taskClass = effects.classifyTask(question);
-      const tribunalRanked = positions
-        .map((p: any) => {
-          const substantive = p.arguments.filter((a: string) => a.length > 20 && a !== '(failed to respond)');
-          const roundCredit = substantive.length;
-          const cappedAvg = roundCredit > 0
-            ? substantive.reduce((sum: number, a: string) => sum + Math.min(a.length, 2000), 0) / roundCredit
-            : 0;
-          return { engineId: p.engineId, score: roundCredit * 1000 + Math.min(cappedAvg, 2000) };
-        })
-        .sort((a: any, b: any) => b.score - a.score);
       assertCurrent();
-      effects.updateRanked(tribunalRanked, taskClass, 'tribunal');
-      // Adversarial / red-team tribunals ARE critique competitions (attack + refute),
-      // so feed the same ranking into the 'critique' discipline that Nero selects on.
+      effects.updateRanked(judgment.scores, taskClass, 'tribunal', identityTap.identities());
       if (mode === 'adversarial' || mode === 'red-team') {
         assertCurrent();
-        effects.updateRanked(tribunalRanked, taskClass, 'critique');
+        effects.updateRanked(judgment.scores, taskClass, 'critique');
       }
     }
 

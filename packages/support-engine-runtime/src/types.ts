@@ -80,6 +80,8 @@ export interface DispatchOptions {
   images?: ImageAttachment[];
   systemPrompt?: string;
   textOnly?: boolean;
+  /** False excludes project context from API dispatch prompts. */
+  includeProjectContext?: boolean;
   tools?: Array<{ type: string; function: { name: string; description: string; parameters: Record<string, unknown> } }>;
   messages?: Array<{ role: string; content: any; tool_calls?: any[]; tool_call_id?: string }>;
   onApproval?: (tool: string, command: string, reason?: string) => Promise<boolean | string>;
@@ -104,6 +106,7 @@ export interface DispatchResult {
 }
 export interface AgentDispatchResult extends DispatchResult { diff: string; diffLines: number; filesChanged: number }
 export interface EngineAdapter {
+  identify?: (engine: EngineDefinition, cwd?: string) => Promise<string | null>;
   dispatch: (options: DispatchOptions) => Promise<DispatchResult>;
   dispatchStream?: (options: DispatchOptions) => AsyncGenerator<string, DispatchResult, void>;
   dispatchAgent?: (options: DispatchOptions) => Promise<AgentDispatchResult>;

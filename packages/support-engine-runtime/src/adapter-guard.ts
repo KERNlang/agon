@@ -3,6 +3,14 @@ import type { EngineAdapter } from './types.js';
 /** Check invocation authority before every provider entry point. */
 export function guardEngineAdapter(adapter: EngineAdapter, check: (signal?: AbortSignal) => void): EngineAdapter {
   return {
+    ...(adapter.identify ? {
+      identify: async (engine: Parameters<NonNullable<EngineAdapter['identify']>>[0], cwd?: string) => {
+        check();
+        const identity = await adapter.identify!(engine, cwd);
+        check();
+        return identity;
+      },
+    } : {}),
     dispatch: async options => { check(options.signal); return adapter.dispatch(options); },
     isAvailable: async engine => { check(); return adapter.isAvailable(engine); },
     getVersion: async engine => { check(); return adapter.getVersion(engine); },

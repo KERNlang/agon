@@ -764,7 +764,7 @@ describe('Forge configuration ownership', () => {
     expect(() => command.run({}, { ...context, config: {} })).toThrow(/unavailable/);
   });
 
-  it('generates exactly the defaults assigned to the five mod owners', () => {
+  it('generates frozen owner defaults plus the upstream Council and Ratings settings', () => {
     const ledger = JSON.parse(readFileSync(new URL('../../docs/specs/evidence/modular-agon-ownership.json', import.meta.url), 'utf8'));
     const expected: Record<string, unknown> = {};
     for (const name of ['forge', 'review', 'agent', 'mutate', 'synthesis']) {
@@ -773,6 +773,20 @@ describe('Forge configuration ownership', () => {
         .map((item: { id: string }) => item.id).sort();
       expect(Object.keys(schema.properties ?? {}).sort()).toEqual(keys);
       for (const key of keys) expected[key] = schema.properties[key].default;
+    }
+    const upstream = {
+      council: { chairExplorationRate: 0.2 },
+      ratings: { ratingStaleHorizonDays: 90, ratingJudging: 'shadow', ratingMinBallots: 2,
+        ratingJudgeTimeoutSec: 180, ratingBallotMaxChars: 60000, ratingIdentityConfirmRuns: 2 },
+    };
+    for (const [name, defaults] of Object.entries(upstream)) {
+      const schema = JSON.parse(readFileSync(new URL(`../../packages/mod-${name}/schemas/config.schema.json`, import.meta.url), 'utf8'));
+      expect(Object.keys(schema.properties).sort()).toEqual(Object.keys(defaults).sort());
+      expect(schema['x-agon-config'].legacyAliases.toSorted()).toEqual(Object.keys(defaults).sort());
+      for (const [key, value] of Object.entries(defaults)) {
+        expect(schema.properties[key].default).toEqual(value);
+        expected[key] = value;
+      }
     }
     expect(DEFAULT_FIRST_PARTY_SETTINGS).toEqual(expected);
   });
@@ -888,11 +902,16 @@ describe('Forge configuration ownership', () => {
       }
       expect(run().status).toBe(0);
       expect(run(true).status).toBe(0);
-      for (const aliases of [[], ['forgeFitnessTimeout'], ['forgeFitnessTimeout', 'forgeFitnessTimeout'], ['foreignSetting']]) {
+      for (const [aliases, reason] of [
+        [[], 'legacy migration aliases differ'],
+        [['forgeFitnessTimeout'], 'legacy migration aliases differ'],
+        [['forgeFitnessTimeout', 'forgeFitnessTimeout'], 'duplicate migration aliases'],
+        [['foreignSetting'], 'legacy migration aliases differ'],
+      ] as const) {
         writeFileSync(schemaPath, JSON.stringify({ ...schema, 'x-agon-config': { version: 1, legacyAliases: aliases } }));
         const invalid = run();
         expect(invalid.status).toBe(1);
-        expect(invalid.stderr).toContain('legacy migration aliases differ');
+        expect(invalid.stderr).toContain(reason);
       }
       writeFileSync(schemaPath, JSON.stringify(schema));
       const generatedPath = join(fixture, 'packages/support-persistence/src/first-party-settings.generated.ts');

@@ -3,5 +3,14 @@
   "$id": "https://kernlang.dev/schemas/ratings/config.schema.json",
   "title": "ratings configuration",
   "type": "object",
+  "x-agon-config": { "version": 1, "legacyAliases": ["ratingStaleHorizonDays", "ratingJudging", "ratingMinBallots", "ratingJudgeTimeoutSec", "ratingBallotMaxChars", "ratingIdentityConfirmRuns"] },
+  "properties": {
+    "ratingStaleHorizonDays": { "type": "number", "default": 90 },
+    "ratingJudging": { "type": "string", "enum": ["off", "shadow", "on"], "default": "shadow" },
+    "ratingMinBallots": { "type": "number", "default": 2 },
+    "ratingJudgeTimeoutSec": { "type": "number", "default": 180 },
+    "ratingBallotMaxChars": { "type": "number", "default": 60000 },
+    "ratingIdentityConfirmRuns": { "type": "number", "default": 2 }
+  },
   "additionalProperties": true
 }

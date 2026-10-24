@@ -31,9 +31,10 @@ describe('Council invocation host', () => {
     expect(session.activeEngineIds).toEqual(['alpha']);
     expect(Object.isFrozen(session.activeEngineIds)).toBe(true);
     session.effects.loadConfig('/different');
-    session.effects.readSeating(h.registry);
+    const ranking = { identities: {}, staleHorizonDays: 90 };
+    session.effects.readSeating({ ...h.registry, listIds: () => ['foreign'] }, ranking);
     expect(h.effects.loadConfig).toHaveBeenCalledWith('/isolated/council');
-    expect(h.effects.readSeating).toHaveBeenCalledWith(h.registry);
+    expect(h.effects.readSeating).toHaveBeenCalledWith(h.registry, ranking);
   });
 
   it('rejects cancelled opens before registry access', async () => {

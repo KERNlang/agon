@@ -8,7 +8,7 @@ export { parseBuilderSignals, buildConquerSystemPrompt } from '@kernlang/agon-mo
 export { doneOracleDecision } from '@kernlang/agon-mod-conquer';
 export type { DoneOracleInput } from '@kernlang/agon-mod-conquer';
 
-import { resolveWorkingDir, getRatings, seedNewEnginesFromRegistry, buildKernContextSpine, repoRoot, createSessionWorktree } from '@kernlang/agon-core';
+import { resolveWorkingDir, getRatings, resolveCurrentIdentities, seedNewEnginesFromRegistry, buildKernContextSpine, repoRoot, createSessionWorktree } from '@kernlang/agon-core';
 
 import { runNero, rankNeroCritics } from './nero.js';
 
@@ -75,13 +75,15 @@ export async function dispatchConsult(opts: { mode: 'nero' | 'tribunal' | 'brain
 export { isAgentCapableEngine, buildFalsifierPrompt, parseFalsifierOutput, isSafeCounterexample } from '@kernlang/agon-mod-conquer';
 export type { SandboxOps, FalsifierResult } from '@kernlang/agon-mod-conquer';
 
-function legacyFalsifierEffects(opts: { registry: EngineRegistry; adapter: EngineAdapter; ratings?: RatingRecord }): FalsifierEffects {
+function legacyFalsifierEffects(opts: { registry: EngineRegistry; adapter: EngineAdapter; ratings?: RatingRecord; cwd?: string }): FalsifierEffects {
   return {
     adapter: opts.adapter,
     getEngine: id => opts.registry.get(id),
-    rankCritics: ids => {
+    rankCritics: async ids => {
       if (!opts.ratings) seedNewEnginesFromRegistry(opts.registry);
-      return rankNeroCritics(ids, opts.ratings ?? getRatings());
+      return rankNeroCritics(ids, opts.ratings ?? getRatings(), {
+        identities: await resolveCurrentIdentities(opts.adapter, opts.registry, ids, opts.cwd),
+      });
     },
   };
 }

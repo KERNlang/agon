@@ -5,12 +5,14 @@ export type { NeroOptions, NeroResult } from './nero.js';
 export { runResearch, buildResearchPrompt, formatResearchResult } from './research.js';
 export type { ResearchOptions, ResearchResult, ResearchSource } from './research.js';
 export {
-  runCouncil, assignCouncilRoles, roleGuidance, buildCouncilBriefPrompt,
+  runCouncil, assignCouncilRoles, applyChairExploration, roleGuidance, buildCouncilBriefPrompt,
   buildRolePrompt, buildCritiquePrompt, buildChairmanPrompt, parseCouncilConfidence,
   DEFAULT_COUNCIL_ROLES,
 } from './council.js';
 export type { CouncilOptions, CouncilResult, CouncilSeat } from './council.js';
 export { runTribunal } from './tribunal.js';
+export { parseBallot } from './rating-judge.js';
+export { buildBallotPrompt, JUDGE_SYSTEM_PROMPT } from './ballot-prompt.js';
 export { runSynthesis } from './synthesis.js';
 export { runSynthesisModus, synthesisRoutingAdvice } from './synthesis-modus.js';
 export type { SynthesisDraft, SynthesisSwap, SynthesisScore, SynthesisResult as SynthesisModusResult } from './synthesis-modus.js';

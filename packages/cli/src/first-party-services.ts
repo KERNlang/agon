@@ -1,4 +1,5 @@
 import { resolveExplicitReviewEngines } from '@kernlang/agon-support-verification';
+import { resolveCurrentIdentities } from '@kernlang/agon-support-engine-runtime';
 import { cliRunRecordHost } from './run-record-host.js';
 import { patchApplicationHost } from './patch-application-host.js';
 import { EngineRegistry, buildKernContextSpine, createRunDir, eventLogFlush, getRatings, loadConfig, pickTopRatedEngine, setSessionRoot } from '@kernlang/agon-core';
@@ -21,7 +22,7 @@ import { createTeamBrainstormHostServices } from '@kernlang/agon-mod-team-brains
 import { createConquerHostServices } from '@kernlang/agon-mod-conquer';
 import type { PrTextInput } from '@kernlang/agon-mod-forge';
 import { rankCriticCascade } from '@kernlang/agon-mod-nero';
-import { glicko, loadTeamConfidenceFloor, updateTeamElo } from '@kernlang/agon-mod-ratings';
+import { glicko, loadTeamConfidenceFloor, updateTeamElo, ratingJudgingMode, chairRankInstruction, scrubRankLines, stripRankLines, judgeCouncil, judgeTribunalForRating } from '@kernlang/agon-mod-ratings';
 import { EngineRegistry as CatalogEngineRegistry, tracker } from '@kernlang/agon-support-engine-catalog';
 import { classifyTask } from '@kernlang/agon-support-dedup';
 import { buildKernDraftPrompt, parseKernDraft } from '@kernlang/protocol';
@@ -163,7 +164,10 @@ export async function decorateCliFirstPartyServices(manifest: ModManifest, base:
           return { activeEngineIds, defaultEngineIds: filterDefaultOrchestrationEngines(activeEngineIds),
             removedEngineIds: registry.partitionRoster(registry.listIds(), config).removed };
         },
-        readSeating: registry => {
+        readJudging: () => currentInvocationOwnerAvailable('agon.ratings') === false ? undefined : {
+          mode: ratingJudgingMode, instruction: chairRankInstruction, scrub: scrubRankLines, strip: stripRankLines, score: judgeCouncil,
+        },
+        readSeating: (registry, rank) => {
           const enabled = currentInvocationOwnerAvailable('agon.ratings') !== false;
           if (enabled) glicko.seedNewEnginesFromRegistry(registry);
           const ratings = enabled ? glicko.getRatings() : {
@@ -172,15 +176,15 @@ export async function decorateCliFirstPartyServices(manifest: ModManifest, base:
           };
           return {
             pick: (ids, modes) => glicko.pickTopRatedEngine(ids, ratings, {
-              modes: modes.filter((mode): mode is 'tribunal' | 'critique' => mode === 'tribunal' || mode === 'critique'),
+              modes: modes.filter((mode): mode is 'tribunal' | 'critique' => mode === 'tribunal' || mode === 'critique'), ...rank,
             }),
-            rank: ids => glicko.rankEnginesByRating(ids, ratings),
+            rank: ids => glicko.rankEnginesByRating(ids, ratings, undefined, rank),
           };
         },
-        recordRatings: (question, ranked) => {
+        recordRatings: (question, ranked, identities) => {
           if (currentInvocationOwnerAvailable('agon.ratings') === false) return;
           const taskClass = classifyTask(question);
-          glicko.updateGlickoRanked(ranked, taskClass, 'tribunal');
+          glicko.updateGlickoRanked(ranked, taskClass, 'tribunal', identities);
           glicko.updateGlickoRanked(ranked, taskClass, 'critique');
         },
         captureAuthority: () => {
@@ -212,6 +216,8 @@ export async function decorateCliFirstPartyServices(manifest: ModManifest, base:
         createAdapter: createCliAdapter,
         loadConfig, classifyTask,
         seedRegistry: glicko.seedNewEnginesFromRegistry, updateRanked: glicko.updateGlickoRanked,
+        judgeForRating: options => currentInvocationOwnerAvailable('agon.ratings') === false
+          ? Promise.resolve([]) : judgeTribunalForRating({ ...options, config: loadConfig(options.cwd) }),
         captureAuthority: () => {
           const assertCurrent = captureProcessSurfaceAuthority();
           return () => { assertCurrent(); assertProcessSurfaceAvailable('cli', 'tribunal'); };
@@ -287,12 +293,12 @@ export async function decorateCliFirstPartyServices(manifest: ModManifest, base:
       },
       createAdapter: createCliAdapter,
       contextSpine: context => buildKernContextSpine(context.cwd),
-      rankCritics: (registry, ids) => {
+      rankCritics: (registry, ids, identities) => {
         if (currentInvocationOwnerAvailable('agon.ratings') === false) return ids.map(engineId => ({ engineId }));
         glicko.seedNewEnginesFromRegistry(registry);
         const ratings = glicko.getRatings();
         return rankCriticCascade(ids, exclude =>
-          glicko.pickTopRatedEngine(ids, ratings, { modes: ['critique', 'tribunal'], exclude }));
+          glicko.pickTopRatedEngine(ids, ratings, { modes: ['critique', 'tribunal'], exclude, identities }));
       },
       captureAuthority: () => {
         const assertCurrent = captureProcessSurfaceAuthority();
@@ -327,11 +333,16 @@ export function createCliEngineServices(): ModServices['engines'] {
       return resolveExplicitReviewEngines(engineIds, registry, loadConfig(context.cwd) as never);
     },
     async listActive(context: Parameters<ModServices['engines']['dispatch']>[2]): Promise<readonly string[]> { const registry = new EngineRegistry(); registry.load(resolveBuiltinEnginesDir()); return filterDefaultOrchestrationEngines(registry.activeIds(loadConfig(context.cwd) as never)); },
-    async rank(engineIds: readonly string[], scopes: readonly ('forge'|'brainstorm'|'tribunal'|'critique')[]): Promise<readonly {engineId:string;reason:'top-rated'|'random'|'none';scope:'forge'|'brainstorm'|'tribunal'|'critique'|'global'|null}[]> {
+    async rank(engineIds: readonly string[], scopes: readonly ('forge'|'brainstorm'|'tribunal'|'critique')[], context: Parameters<ModServices['engines']['dispatch']>[2]): Promise<readonly {engineId:string;reason:'top-rated'|'random'|'none';scope:'forge'|'brainstorm'|'tribunal'|'critique'|'global'|null}[]> {
       if (currentInvocationOwnerAvailable('agon.ratings') === false) {
         return engineIds.map(engineId => ({ engineId, reason: 'random' as const, scope: null }));
       }
-      const remaining=[...engineIds]; const ranked=[]; const ratings=getRatings(); while(remaining.length){ const picked=pickTopRatedEngine(remaining,ratings,{modes:[...scopes],rng:()=>0}); if(!picked.engineId) break; ranked.push(picked); remaining.splice(remaining.indexOf(picked.engineId),1); } return ranked;
+      context.signal.throwIfAborted();
+      const registry = new EngineRegistry(); registry.load(resolveBuiltinEnginesDir());
+      const identities = await resolveCurrentIdentities(createCliAdapter(registry), registry, [...engineIds], context.cwd);
+      context.signal.throwIfAborted();
+      const config = loadConfig(context.cwd);
+      const remaining=[...engineIds]; const ranked=[]; const ratings=getRatings(); while(remaining.length){ const picked=pickTopRatedEngine(remaining,ratings,{modes:[...scopes],rng:()=>0,identities,staleHorizonDays:config.ratingStaleHorizonDays}); if(!picked.engineId) break; ranked.push(picked); remaining.splice(remaining.indexOf(picked.engineId),1); } return ranked;
     },
     async dispatch(engineId: string, prompt: string, context: Parameters<ModServices['engines']['dispatch']>[2], options?: Parameters<ModServices['engines']['dispatch']>[3]): Promise<Json> {
       const registry = new EngineRegistry(); registry.load(resolveBuiltinEnginesDir());

@@ -20,7 +20,7 @@ export interface FalsifierOptions {
 /** The host supplies catalog and ranking access, not verification policy. */
 export interface FalsifierEffects {
   assertCurrent?(): void;
-  rankCritics(engineIds: string[]): readonly { engineId: string }[];
+  rankCritics(engineIds: string[]): readonly { engineId: string }[] | Promise<readonly { engineId: string }[]>;
   getEngine(engineId: string): EngineDefinition;
   adapter: Pick<EngineAdapter, 'dispatchAgent'>;
 }
@@ -144,11 +144,13 @@ export async function runDoneFalsifier(opts: FalsifierOptions, effects: Falsifie
   const dispatchAgent = effects.adapter.dispatchAgent;
   if (!dispatchAgent) return advisory({ note: 'adapter has no agent-dispatch path — falsification skipped' });
 
-  let ranked: ReturnType<FalsifierEffects['rankCritics']>;
-  try { ranked = effects.rankCritics(opts.engines); }
+  let ranked: Awaited<ReturnType<FalsifierEffects['rankCritics']>>;
+  try { ranked = await effects.rankCritics(opts.engines); }
   catch (error) {
     return advisory({ note: `critic ranking failed: ${error instanceof Error ? error.message : String(error)}` });
   }
+  if (opts.signal?.aborted) return advisory({ note: 'aborted during critic ranking' });
+  effects.assertCurrent?.();
   let critic = '';
   let criticEngine: EngineDefinition | null = null;
   for (const r of ranked) {

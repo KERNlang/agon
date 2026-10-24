@@ -4,6 +4,7 @@ export const LEGACY_MOD_SETTING_OWNERS = Object.freeze({
   "autoReviewAfterImpl": "agon.review",
   "cesarAgenticContinuationLimit": "agon.agent",
   "cesarMutateReflex": "agon.mutate",
+  "chairExplorationRate": "agon.council",
   "corpusReplayLimit": "agon.forge",
   "forgeEnableSynthesis": "agon.synthesis",
   "forgeFitnessTimeout": "agon.forge",
@@ -12,5 +13,11 @@ export const LEGACY_MOD_SETTING_OWNERS = Object.freeze({
   "gauntletMaxBreakers": "agon.forge",
   "gauntletRepairTimeout": "agon.forge",
   "goalReviewEngines": "agon.review",
+  "ratingBallotMaxChars": "agon.ratings",
+  "ratingIdentityConfirmRuns": "agon.ratings",
+  "ratingJudgeTimeoutSec": "agon.ratings",
+  "ratingJudging": "agon.ratings",
+  "ratingMinBallots": "agon.ratings",
+  "ratingStaleHorizonDays": "agon.ratings",
   "skillSynthesisThreshold": "agon.synthesis"
 } as const);

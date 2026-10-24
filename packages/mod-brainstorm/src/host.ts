@@ -1,8 +1,8 @@
 import type { Awaitable, InvocationContext, ModServices } from '@kernlang/agon-mod-api';
 import type { BrainstormRuntimeServices } from './runtime.js';
 import type { BrainstormWorkflowOptions } from './workflow.js';
-import type { EngineAdapter, TaskClass } from '@kernlang/agon-support-engine-runtime';
-import { guardEngineAdapter } from '@kernlang/agon-support-engine-runtime';
+import type { EngineAdapter, EngineIdentities, TaskClass } from '@kernlang/agon-support-engine-runtime';
+import { guardEngineAdapter, tapDispatchIdentities } from '@kernlang/agon-support-engine-runtime';
 import { dispatchSeatWithRetry, preflightHealthFilter } from '@kernlang/agon-support-panel';
 import type { PanelEngineRegistry, PanelHealthRuntime } from '@kernlang/agon-support-panel';
 import { dedupBrainstormDrafts } from '@kernlang/agon-support-dedup';
@@ -33,7 +33,7 @@ export interface BrainstormHostEffects<Registry extends PanelEngineRegistry>
   seedRegistry(registry: Registry): void;
   loadConfig: PanelHealthRuntime['loadConfig'];
   classifyTask(question: string): TaskClass;
-  updateRanked(ranked: Array<{ engineId: string; score: number }>, taskClass: TaskClass, mode: 'brainstorm'): void;
+  updateRanked(ranked: Array<{ engineId: string; score: number }>, taskClass: TaskClass, mode: 'brainstorm', identities?: EngineIdentities): void;
 }
 
 export interface BrainstormEngineOptions<Registry extends PanelEngineRegistry> extends BrainstormWorkflowOptions {
@@ -67,10 +67,10 @@ export function createBrainstormEngineServices<Registry extends PanelEngineRegis
     }),
     createLogger: createSidechainLogger,
     deduplicate: dedupBrainstormDrafts,
-    updateRatings: (bids, question) => {
+    updateRatings: (bids, question, identities) => {
       const taskClass = effects.classifyTask(question);
       const ranked = bids.map(bid => ({ engineId: bid.engineId, score: bid.score ?? 0 }));
-      effects.updateRanked(ranked, taskClass, 'brainstorm');
+      effects.updateRanked(ranked, taskClass, 'brainstorm', identities);
     },
     selectWinner: (options, engineId) => {
       const engine = options.registry.get(engineId);
@@ -95,11 +95,12 @@ export function createBrainstormHostServices<Registry extends PanelEngineRegistr
       const assertCurrent = captureAuthority();
       assertCurrent();
       const registry = effects.openRegistry(context.cwd);
-      const adapter = guardEngineAdapter(effects.createAdapter(registry), signal => {
+      const identityTap = tapDispatchIdentities(guardEngineAdapter(effects.createAdapter(registry), signal => {
         context.signal.throwIfAborted();
         signal?.throwIfAborted();
         assertCurrent();
-      });
+      }));
+      const adapter = identityTap.adapter;
       return {
         readRatings: effects.readRatings,
         buildPrompt: effects.buildPrompt,
@@ -113,7 +114,7 @@ export function createBrainstormHostServices<Registry extends PanelEngineRegistr
         deduplicate: dedupBrainstormDrafts,
         updateRatings: (bids, question) => effects.updateRanked(
           bids.map(bid => ({ engineId: bid.engineId, score: bid.score ?? 0 })),
-          effects.classifyTask(question), 'brainstorm',
+          effects.classifyTask(question), 'brainstorm', identityTap.identities(),
         ),
         selectSeat: (options, engineId) => {
           const engine = registry.get(engineId);

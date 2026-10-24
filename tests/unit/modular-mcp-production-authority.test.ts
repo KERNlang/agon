@@ -1,19 +1,26 @@
 import { mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DurableModHost, createFirstPartyModCatalog, createFullCompatDesiredState, planDesiredStateChange } from '../../packages/mod-kernel/src/index.js';
 import { surfaceLockFor } from '../helpers/modular-surface-lock.js';
 
 import { dynamicMcpToolOwnsExecution, listMcpTools } from '../../packages/mcp/src/agon-orchestration.js';
-import {
+let {
   disposeMcpSurfaceAuthority,
   activeMcpSurfaceTools,
   initializeMcpSurfaceAuthority,
   invokeActiveMcpSurfaceTool,
   mcpSurfacePublicIds,
   captureMcpSurfaceAuthority,
-} from '../../packages/mcp/src/surface-authority.js';
+} = await import('../../packages/mcp/src/surface-authority.js');
+
+// Module-reset tests must not leave later cases on an obsolete authority instance.
+beforeEach(async () => {
+  ({ disposeMcpSurfaceAuthority, activeMcpSurfaceTools, initializeMcpSurfaceAuthority,
+    invokeActiveMcpSurfaceTool, mcpSurfacePublicIds, captureMcpSurfaceAuthority }
+    = await import('../../packages/mcp/src/surface-authority.js'));
+});
 
 afterEach(async () => {
   await disposeMcpSurfaceAuthority();

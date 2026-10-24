@@ -5,6 +5,8 @@ import { purgeRatingsStore } from './maintenance.js';
 import type { PurgeReport, RatingsMaintenanceStore } from './maintenance.js';
 import { readRatingsFile, writeRatingsFile } from './storage.js';
 import type { GlickoRating } from './types.js';
+import { applyRatingsReset } from './reset.js';
+import { loadRatings as loadStoredRatings, saveRatings } from './glicko.js';
 
 export type { GlickoRating } from './types.js';
 export interface RatingRecord {
@@ -50,6 +52,40 @@ function leaderboard(record:RatingRecord, input:Record<string,Json>) {
 export async function runRatings(raw:Json, context:InvocationContext, services:ModServices, forceLeaderboard=false):Promise<CommandResult> {
   const input = raw as Record<string,Json>;
   const action = forceLeaderboard ? 'leaderboard' : String(input.action ?? (Array.isArray(input._) ? input._[0] : 'leaderboard'));
+  if (action === 'reset') {
+    context.signal.throwIfAborted();
+    context.assertCurrent?.();
+    const csv = (value: Json | undefined) => typeof value === 'string' ? value.split(',').map(part => part.trim()).filter(Boolean) : [];
+    const modes = csv(input.modes), engines = csv(input.engines);
+    if (!modes.length) return { exitCode: 1, stderr: '--modes is required (forge, brainstorm, tribunal, critique).\n' };
+    const targetHome = home();
+    const apply = input.apply === true;
+    if (apply && await services.permissions.check('fs.write', targetHome) !== 'allow') {
+      return { exitCode: 1, stderr: 'Permission denied: fs.write is required to reset ratings. No data was changed.\n' };
+    }
+    context.signal.throwIfAborted();
+    context.assertCurrent?.();
+    if (home() !== targetHome) return { exitCode: 1, stderr: 'Ratings storage root changed during permission checking. No data was changed. Retry the reset.\n' };
+    const report = applyRatingsReset({ modes, engines: engines.length ? engines : undefined, apply }, {
+      path: (...parts) => join(targetHome, ...parts), load: loadStoredRatings, save: saveRatings,
+    });
+    const result = { ...report, entries: report.entries.map(entry => ({ ...entry, before: { ...entry.before } })) };
+    if (report.unknownModes.length || report.unknownEngines.length) {
+      const errors = [
+        report.unknownModes.length ? `Unknown mode(s): ${report.unknownModes.join(', ')} — use forge, brainstorm, tribunal or critique.` : '',
+        report.unknownEngines.length ? `Unknown engine(s), not rated in ${modes.join(', ')}: ${report.unknownEngines.join(', ')}.` : '',
+      ].filter(Boolean);
+      return { exitCode: 1, stderr: `${errors.join('\n')}\nNothing written.\n`, result };
+    }
+    const lines = [report.dryRun ? 'Ratings reset — DRY RUN (nothing written)' : 'Ratings reset — APPLIED'];
+    if (!report.entries.length) lines.push(`No ratings in ${modes.join(', ')} to reset.`);
+    else {
+      lines.push('Mode\tEngine\tmu\tphi\tW-L', ...report.entries.map(({ mode, engineId, before }) => `${mode}\t${engineId}\t${before.mu}\t${before.phi}\t${before.wins}-${before.losses}`));
+      lines.push(report.dryRun ? `Re-run with --apply to reset these ${report.entries.length} entries. A timestamped backup is written before any change.` : `Reset ${report.entries.length} entries to the default rating.`);
+      if (report.backupPath) lines.push(`Backup: ${report.backupPath}`);
+    }
+    return { exitCode: 0, stdout: `${lines.join('\n')}\n`, result };
+  }
   if (action === 'leaderboard') {
     const rows = leaderboard(loadRatings(), input), receiptId = await services.receipts.record('ratings-read', {count:rows.length});
     return { exitCode:0, stdout:`${JSON.stringify({ratings:rows,receiptId},null,2)}\n`, result:{ratings:rows,receiptId} };
@@ -80,12 +116,14 @@ export async function runRatings(raw:Json, context:InvocationContext, services:M
   return {exitCode:0,stdout:`${JSON.stringify({...result,receiptId},null,2)}\n`,result:{...result,receiptId}};
 }
 const parentSchema = Object.freeze({type:'object',additionalProperties:false,properties:{}}) as Readonly<Record<string,Json>>;
+const resetSchema = Object.freeze({type:'object',additionalProperties:false,properties:{modes:{type:'string'},engines:{type:'string'},apply:{type:'boolean',default:false}}}) as Readonly<Record<string,Json>>;
 const leaderboardSchema = Object.freeze({type:'object',additionalProperties:false,properties:{taskClass:{type:'string'},mode:{type:'string'}}}) as Readonly<Record<string,Json>>;
 const purgeSchema = Object.freeze({type:'object',additionalProperties:false,properties:{apply:{type:'boolean',default:false},'dry-run':{type:'boolean',default:false},keep:{type:'string'}}}) as Readonly<Record<string,Json>>;
 const leaderboardCli = Object.freeze({aliases:{taskClass:'c',mode:'m'}});
 const cli = Object.freeze({});
 export const createMod:AgonModFactory = (services) => Object.freeze({apiVersion:'1' as const, async activate(registrar:Registrar):Promise<Dispose> {
   const disposers:Dispose[] = [];
+  disposers.push(registrar.command('cli',{id:'physicalCliCommands:ratings-reset',description:'Preview or reset per-discipline ratings with a backup',inputSchema:resetSchema,cli,run:(i,c)=>runRatings({...i as object,action:'reset'},c,services)}));
   disposers.push(registrar.command('cli',{id:'cliCommands:0034',description:'Show engine leaderboard (Glicko-2 ratings)',inputSchema:leaderboardSchema,cli:leaderboardCli,run:(i,c)=>runRatings(i,c,services,true)}));
   disposers.push(registrar.command('cli',{id:'cliCommands:0060',description:'Maintain ratings',inputSchema:parentSchema,cli,run:(i,c)=>runRatings(i,c,services)}));
   disposers.push(registrar.command('cli',{id:'cliCommands:0061',description:'Preview or apply purge of unknown engines',inputSchema:purgeSchema,cli,run:(i,c)=>runRatings({...i as object,action:'purge-unknown'},c,services)}));

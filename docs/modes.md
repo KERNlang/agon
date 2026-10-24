@@ -66,6 +66,7 @@
 - `rag` — agon.rag
 - `ratings` — agon.ratings
 - `ratings purge-unknown` — agon.ratings
+- `ratings reset` — agon.ratings: Preview or reset per-discipline ratings with a backup
 - `research` — agon.research
 - `review` — agon.review
 - `room` — agon.rooms

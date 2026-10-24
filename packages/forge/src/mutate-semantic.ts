@@ -5,6 +5,8 @@ import { preflightHealthFilter } from './health-check.js';
 import { dispatchSeatWithRetry, buildPanelHealth } from './seat-dispatch.js';
 
 import { isTestFile } from '@kernlang/agon-support-worktree';
+import { seatGrantsWriteAccess } from '@kernlang/agon-support-engine-runtime';
+export { WRITE_GRANTING_ARGS, seatGrantsWriteAccess } from '@kernlang/agon-support-engine-runtime';
 
 export interface SemanticTargetLine {
   line: number;
@@ -66,25 +68,10 @@ export function normalizeLens(raw: string|undefined|null): {key:string, focus:st
 }
 
 /**
- * CLI flags that hand an engine blanket permission to edit files and run commands without asking. An engine definition carrying one of these in the mode it would be dispatched in cannot be made read-only from our side, so it is not eligible for the semantic panel.
- */
-export const WRITE_GRANTING_ARGS: string[] = ['--dangerously-skip-permissions', '--dangerously-bypass-approvals-and-sandbox', '--auto-approve', '--auto-commits', '--full-auto', '--yolo', '--yes', '-y'];
-
-/**
  * Remove ANSI escapes and other control characters from engine-authored text before it is printed or embedded in a report. An engine response is untrusted; without this it can forge terminal output and log lines. Pure.
  */
 export function stripControlChars(text: string): string {
   return String(text ?? '').replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '');
-}
-
-/**
- * True when the engine definition's args for `mode` contain a blanket write/auto-approve flag. Such a seat cannot be forced read-only on the plain-CLI path, so the semantic panel skips it rather than pointing a write-capable agent at prompt-injectable source. Pure.
- */
-export function seatGrantsWriteAccess(engine: unknown, mode: string): boolean {
-  if (!engine || typeof engine !== 'object') return false;
-  const modeCfg = (engine as Record<string, unknown>)[mode] as { args?: unknown } | undefined;
-  const args = modeCfg && Array.isArray(modeCfg.args) ? (modeCfg.args as unknown[]) : [];
-  return args.some((a) => typeof a === 'string' && WRITE_GRANTING_ARGS.includes(a));
 }
 
 /**

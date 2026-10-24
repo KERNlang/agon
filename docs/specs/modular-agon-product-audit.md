@@ -1,5 +1,40 @@
 # Installed-product audit and repair ledger
 
+## Plan uses the physical Campfire runtime — 2026-10-24
+
+Plan now invokes the Campfire owner directly, with its captured working directory,
+guarded engine adapter and explicit generation/cancellation checks. The returned
+`topic`/`rounds` envelope stays unchanged. Forge's public compatibility export stays
+available; this change removes Plan's dependency on that adapter, not the API.
+
+Tests cover workspace changes after executor creation, imported context, result
+formatting, generation replacement and cancellation. Direct runtime tests use an
+unguarded adapter and prove pending siblings receive abort and settle. An isolated
+in-memory negative control removed only the runtime authority callback: the mutant
+returned stale output while the original rejected it. The ten frozen runtime cases
+also retain public Forge compatibility and raw dispatch/result parity.
+
+One isolated Agon Codex review found no concrete regression and requested stronger
+coverage. Those checks were added or matched to existing evidence. The first full
+suite exposed six stale test bindings in the Plan panel oracle. Its binding now
+targets the physical API and separately checks the added host inputs; the original
+policy inputs and outcomes remain compared against the frozen legacy fixture.
+
+Final verification: 11,210 tests passed, six skipped; full suite plus lint and
+re-export checks completed in 663.968 seconds. Full build, offline packs and SBOM
+checks passed. The migration ledger needed regeneration because the Plan source
+hash changed; comparison proved only binding/assignment hashes changed, not claims.
+Eight compiled native cases passed twice (5.960 and 5.859 seconds), the second run
+after the final suite. All runs recorded zero provider launches. Platform evidence
+is macOS arm64, Node 26.12.1 only; this is not aggregate release acceptance.
+
+Durable evidence: `/Users/ra/dev/modular-agon-remediation/plan-campfire-*`.
+Final suite log SHA-256: `cc4bf6b8fbd28f8f1392fff561f5b4f27aeb41a3a0b6f71b6072203d4abe0070`.
+Final native log SHA-256: `a4bab71e31fde77274c65e2812d32fd82b3996609e4e6eaf88a3579ae64bea4f`.
+Review packet SHA-256: `03ce20f7ea1c124108687c4479079593f3e8166dce17532e9a8e92d5d7624c82`.
+Review log SHA-256: `b9457027439e1497caf9b18ea75494215e3eeaa5d4a8b6468f1dcfb858e0cb36`.
+No dependencies, global installation or personal state changed.
+
 ## Campfire CLI ownership — 2026-10-24
 
 The physical CLI now renders the existing Campfire heading, engine list, strategy,

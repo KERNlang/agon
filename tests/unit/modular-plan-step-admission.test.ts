@@ -16,7 +16,7 @@ import { tracker, setSessionRoot, _resetSessionRootForTests } from '@kernlang/ag
 
 const effects = vi.hoisted(() => ({ brainstorm: vi.fn(), brain: vi.fn(), delegate: vi.fn(), other: vi.fn(), verify: vi.fn() }));
 const composition = vi.hoisted(() => ({
-  real: false, realTribunal: false, seed: vi.fn(), ratings: vi.fn(() => ({ global: {}, byMode: { brainstorm: {} } })),
+  real: false, realTribunal: false, realCampfire: false, seed: vi.fn(), ratings: vi.fn(() => ({ global: {}, byMode: { brainstorm: {} } })),
   update: vi.fn(), classify: vi.fn(() => 'code'), config: vi.fn(() => ({})),
 }));
 vi.mock('@kernlang/agon-mod-ratings', async original => {
@@ -64,6 +64,11 @@ vi.mock('@kernlang/agon-mod-tribunal', async original => {
       composition.realTribunal ? runtime(...input) : effects.other(...input);
   } };
 });
+vi.mock('@kernlang/agon-mod-campfire', async original => {
+  const actual = await original<typeof import('@kernlang/agon-mod-campfire')>();
+  return { ...actual, runCampfireRuntime: (...args: Parameters<typeof actual.runCampfireRuntime>) =>
+    composition.realCampfire ? actual.runCampfireRuntime(...args) : effects.other(...args) };
+});
 
 const NOW = '2026-10-10T00:00:00.000Z';
 let root: string;
@@ -72,6 +77,7 @@ beforeEach(async () => {
   vi.clearAllMocks();
   composition.real = false;
   composition.realTribunal = false;
+  composition.realCampfire = false;
   composition.seed.mockReset();
   composition.update.mockReset();
   effects.verify.mockImplementation((await vi.importActual<typeof import('@kernlang/agon-core')>('@kernlang/agon-core')).spawnWithTimeout);
@@ -107,6 +113,38 @@ function context(): HandlerContext { return { config: {}, adapter: {} } as Handl
 function step(type: string): CesarPlanStep {
   return { id: 'step', type, description: 'fixture', state: 'pending', estimatedTokens: 0, estimatedCostUsd: 0 };
 }
+
+it.each(['healthy', 'generation', 'cancellation'])('runs physical Campfire through Plan / %s', async transition => {
+  composition.realCampfire = true;
+  vi.stubEnv('AGON_DISABLE_FORGE_HEALTH_CHECK', '1');
+  await install();
+  await initializeProcessSurfaceAuthority(root);
+  setSessionRoot(root);
+  const controller = new AbortController();
+  const dispatch = vi.fn(async () => {
+    if (transition === 'generation') await install('agon.campfire');
+    if (transition === 'cancellation') controller.abort(new Error('cancelled physical Campfire'));
+    return { exitCode: 0, stderr: '', timedOut: false, stdout: 'Physical Campfire answer' };
+  });
+  const ctx = { ...context(), registry: { get: (id: string) => ({ id }) },
+    adapter: { dispatch }, activeEngines: () => ['fixture'] } as unknown as HandlerContext;
+  const executors = buildStepExecutors(ctx);
+  setSessionRoot(join(root, 'later-session'));
+  const output = await executors.campfire.execute({ ...step('campfire'), imports: ['prior'] }, { prior: 'Imported evidence' }, controller.signal);
+  expect(effects.other).not.toHaveBeenCalled();
+  expect(dispatch).toHaveBeenCalledOnce();
+  expect(dispatch.mock.calls[0]).toEqual([expect.objectContaining({
+    cwd: root, textOnly: true, prompt: expect.stringContaining('Topic: fixture\n\n## prior\nImported evidence'),
+  })]);
+  if (transition === 'healthy') {
+    expect(output.result).toMatchObject({ status: 'success', output: 'fixture: Physical Campfire answer' });
+    expect(output.contextExport).toBe('fixture: Physical Campfire answer');
+  } else {
+    expect(output.result.status).toBe('failure');
+    expect(output.result.error).toMatch(transition === 'generation' ? /restart/ : /cancelled physical Campfire/);
+    expect(output).not.toHaveProperty('contextExport');
+  }
+});
 
 it.each([false, true])('carries selected Ratings availability through host callbacks (disabled=%s)', async disabled => {
   await install(disabled ? 'agon.ratings' : undefined);

@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { tracker } from '@kernlang/agon-core';
+import { tracker, resolveWorkingDir } from '@kernlang/agon-core';
 import type { HandlerContext } from '../../packages/cli/src/handlers/types.js';
 import type { CesarPlanStep } from '../../packages/mod-plan/src/execution-model.js';
 
@@ -11,6 +11,18 @@ vi.mock('@kernlang/agon-forge', async original => ({ ...await original<Record<st
   runBrainstorm: backends.brainstorm, runTribunal: backends.tribunal, runCampfire: backends.campfire, runDelegate: backends.delegate,
 }));
 import { buildLegacyPanelStepExecutors } from '../fixtures/modular-plan-panel-steps-legacy.js';
+vi.mock('@kernlang/agon-mod-campfire', async original => ({
+  ...await original<object>(),
+  runCampfireRuntime: (options: Record<string, unknown>, effects: Record<string, unknown>) => {
+    // The physical boundary adds host inputs; compare the unchanged policy inputs.
+    const { cwd, ...policy } = options;
+    expect(cwd).toBe(resolveWorkingDir());
+    expect(effects.assertCurrent).toEqual(expect.any(Function));
+    expect(effects.loadConfig).toEqual(expect.any(Function));
+    expect(effects.warn).toEqual(expect.any(Function));
+    return backends.campfire(policy);
+  },
+}));
 vi.mock('@kernlang/agon-mod-tribunal', async original => ({
   ...await original<object>(), createTribunalRuntime: () => backends.tribunal,
 }));
@@ -37,6 +49,7 @@ it('keeps panel step algorithms out of the CLI host', () => {
   expect(source).toContain('createPlanStepExecutors({');
   expect(source).not.toMatch(/import\s*\{[^}]*\brunBrainstorm\b[^}]*\}\s*from\s*['"]@kernlang\/agon-forge['"]/);
   expect(source).not.toMatch(/import\s*\{[^}]*\brunTribunal\b[^}]*\}\s*from\s*['"]@kernlang\/agon-forge['"]/);
+  expect(source).not.toMatch(/import\s*\{[^}]*\brunCampfire\b[^}]*\}\s*from\s*['"]@kernlang\/agon-forge['"]/);
   expect(source).not.toContain('createPanelStepExecutors(');
   for (const kind of ['brainstorm', 'tribunal', 'campfire', 'delegate']) {
     expect(source).not.toMatch(new RegExp(`${kind}:\\s*wrap\\(`));

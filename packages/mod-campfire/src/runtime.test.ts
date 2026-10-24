@@ -6,6 +6,42 @@ import { runCampfireRuntime } from './runtime.js';
 import { runCampfire as compatibility } from '../../forge/src/campfire.js';
 
 describe('Campfire frozen legacy oracle', () => {
+  it.each(['generation', 'cancellation'])('aborts and drains an unguarded sibling on %s', async fault => {
+    const controller = new AbortController();
+    let current = true;
+    let betaStarted!: () => void;
+    const started = new Promise<void>(resolve => { betaStarted = resolve; });
+    let betaSettled = false;
+    const dispatch = vi.fn(async (options: Parameters<EngineAdapter['dispatch']>[0]) => {
+      if (options.engine.id === 'alpha') {
+        await started;
+        if (fault === 'generation') current = false;
+        else controller.abort(new Error('operator cancellation'));
+        return { stdout: 'Must not publish', stderr: '', exitCode: 0, timedOut: false, durationMs: 1 };
+      }
+      try {
+        await new Promise<void>((_resolve, reject) => {
+          options.signal!.addEventListener('abort', () => reject(options.signal!.reason), { once: true });
+          betaStarted();
+        });
+        throw new Error('unreachable');
+      } finally { betaSettled = true; }
+    });
+    const running = runCampfireRuntime({
+      topic: 'Cancel siblings', engines: ['alpha', 'beta'], strategy: 'all-respond',
+      timeout: 17, outputDir: '/fixture/campfire', cwd: process.cwd(), signal: controller.signal,
+      registry: { get: id => ({ id }) as EngineDefinition, findBinary: () => '/fixture/engine' },
+      adapter: { dispatch } as unknown as EngineAdapter,
+    }, {
+      loadConfig: () => ({}), warn: () => {},
+      assertCurrent: () => { if (!current) throw new Error('generation replaced'); },
+    });
+    await expect(running).rejects.toThrow(fault === 'generation' ? 'generation replaced' : 'operator cancellation');
+    expect(dispatch).toHaveBeenCalledTimes(2);
+    expect(betaSettled).toBe(true);
+    expect(dispatch.mock.calls[1][0].signal?.aborted).toBe(true);
+  });
+
   it.each([
     ['lead-first', 'normal'], ['all-respond', 'normal'],
     ['lead-first', 'empty-lead'], ['lead-first', 'throw-lead'],

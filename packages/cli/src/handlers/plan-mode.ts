@@ -9,7 +9,8 @@ import { SurfaceGenerationError } from '@kernlang/agon-kernel';
 
 import type { CesarPlan, StepExecutor } from '@kernlang/agon-core';
 
-import { runForge, runCampfire, runDelegate } from '@kernlang/agon-forge';
+import { runForge, runDelegate } from '@kernlang/agon-forge';
+import { runCampfireRuntime } from '@kernlang/agon-mod-campfire';
 import { createTribunalRuntime } from '@kernlang/agon-mod-tribunal';
 import { createBrainstormRuntime, createBrainstormEngineServices } from '@kernlang/agon-mod-brainstorm';
 import { glicko } from '@kernlang/agon-mod-ratings';
@@ -142,7 +143,15 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
       activeEngines: () => ctx.activeEngines?.() ?? [],
       brainstorm: options => runBrainstorm({ ...options, registry: ctx.registry, adapter: guardedAdapter('brainstorm', options.signal) }),
       tribunal: options => runTribunal({ ...options, mode: options.mode as Parameters<typeof runTribunal>[0]['mode'], registry: ctx.registry, adapter: guardedAdapter('tribunal', options.signal) }),
-      campfire: options => runCampfire({ ...options, registry: ctx.registry, adapter: guardedAdapter('campfire', options.signal) }),
+      campfire: async options => {
+        const { topic, rounds } = await runCampfireRuntime({
+          ...options, cwd, registry: ctx.registry, adapter: guardedAdapter('campfire', options.signal),
+        }, {
+          loadConfig, warn: message => console.warn(message),
+          assertCurrent: () => assertStepAvailable('campfire', options.signal),
+        });
+        return { topic, rounds };
+      },
       delegate: options => runDelegate({ ...options, registry: ctx.registry, adapter: guardedAdapter('delegate', options.signal) }),
     },
     forge: {

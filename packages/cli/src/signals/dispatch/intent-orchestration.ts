@@ -172,15 +172,21 @@ export async function dispatchOrchestrationIntent(intent: any, input: string, cb
     }
     case 'synthesis': {
       if (!intent.input?.trim()) { cb.dispatch({ type: 'warning', message: 'Usage: /synthesis <task> [--swaps 2]' }); return { handled: true, ranAsJob: false }; }
+      const assertSelected = captureProcessSurfaceAuthority();
+      processSurfaceClient('tui').assertAvailable('/synthesis');
       const _syCwd = resolveWorkingDir();
       const _syLabel = intent.input?.slice(0, 40) ?? 'synthesis';
       const continuationEpoch = cb.ctx.inputEpoch ?? 0;
       const continuationUserTurns = countTrackedUserTurns(cb.ctx);
-      cb.runAsJob('synthesis', _syLabel, withThreadOutcome(_syCwd, 'synthesis', _syLabel, async () => {
-        await handleSynthesis(intent.input, cb.dispatch, cb.ctx, { swaps: intent.swaps });
+      cb.runAsJob('synthesis', _syLabel, signal => withThreadOutcome(_syCwd, 'synthesis', _syLabel, async () => {
+        signal.throwIfAborted();
+        assertSelected();
+        await handleSynthesis(intent.input, cb.dispatch, cb.ctx, { swaps: intent.swaps, signal });
+        signal.throwIfAborted();
+        assertSelected();
         const chatContext = collectRecentEngineContext(cb.ctx, 12, 2000);
         if (chatContext) await continueCesarAfterResult(`Synthesis completed on: "${(intent.input ?? '').slice(0, 200)}"\n\n${chatContext}\n\nSummarize the winning artifact and take the next concrete step.`, cb, continuationEpoch, continuationUserTurns);
-      }, cb.ctx));
+      }, cb.ctx)());
       return { handled: true, ranAsJob: true };
     }
     case 'nero-challenge': {

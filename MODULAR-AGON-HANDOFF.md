@@ -13,6 +13,14 @@ Raphael requested publication of all current work and development evidence.
 This publication is a WIP handoff, not release approval or installation approval.
 The active/global Agon installation has not been replaced by this work.
 
+Current checkpoint: **development-base merge readiness**, not release approval.
+Not merge-ready yet: upstream `main` at `dc6853e61404d7db710c1f6fd6499c46ba85dc15`
+adds judged ratings, model identity and decay. Read-only merge analysis reports
+13 conflicting paths. Integration must preserve those behaviors in the current
+module owners, followed by clean committed-checkout qualification. Nico should
+wait for the explicit merge-ready result. Full release work continues afterward
+on a new branch; its acceptance criteria are unchanged.
+
 ## What the numbers mean
 
 | Measure | Verified status at this handoff |
@@ -20,14 +28,16 @@ The active/global Agon installation has not been replaced by this work.
 | Physical target packages | 49 exist and are represented in the release-set check |
 | Package-map dependency edges | 158 unique edges in the checked structural map |
 | Frozen legacy ownership assignments | 872 assignments to reconcile; NOT 872 proven retired owners |
-| Latest full local test run | 11,414 passed, 6 skipped; 680 files passed, 1 skipped |
+| Latest full local test run | 11,436 passed, 6 skipped; 682 files passed, 1 skipped |
+| Latest Synthesis native probes | 9 passed: CLI, MCP-host and session/fallback boundaries |
 | Latest Council native probes | 21 passed: 8 session, 7 CLI, 6 nested MCP-host processes |
 | Fresh release acceptance on this exact snapshot | Not established; do not mark any of the nine final slice receipts accepted from these working-tree results |
 | Remaining closure groups below | 6; these are work groups, NOT six bugs or a completion percentage |
 
-There is no reliable total count of unfinished individual defects. One Synthesis
-winner defect is reproduced below; three Council review findings are now confirmed
-and repaired, with full-suite and native development checks passing. Do not translate
+There is no reliable total count of unfinished individual defects. The reproduced
+Synthesis winner defect and four independent review findings are repaired;
+three Council review findings are also repaired. Full-suite and native development
+checks pass for these increments. Do not translate
 package counts or test counts into percent done.
 
 ## What has been built
@@ -57,7 +67,7 @@ Older entries describe their recorded subjects, not necessarily today's state.
 | Group | Concrete remaining work | Completion evidence |
 |---|---|---|
 | 1. Council review | Closed for this increment: three confirmed findings repaired, full suite and native probes pass | Review adjudication and hashes in the product audit; final release qualification remains group 4 |
-| 2. Synthesis ownership/parity | Replace divergent legacy/physical algorithms with one owner; preserve original behavior except demonstrated defects; fix parser and job cancellation | Frozen oracle, discriminating parser tests, native command/session tests |
+| 2. Synthesis ownership/parity | Parser and cancellation repaired; runtime/session ownership and swap/output parity remain | Frozen oracle, discriminating parser tests, native command/session tests |
 | 3. Ownership and adapter retirement | Reconcile all 872 assignments and kill-list entries; distinguish public compatibility from duplicate execution; trace Plan/Brainstorm/Apply and remaining workflows | Source-level consumer evidence, boundary and disabled-mod checks, truthful ledger |
 | 4. Installed-product acceptance | Qualify one clean committed subject through fresh install, upgrade/downgrade, rollback/re-entry, offline, safe mode, uninstall and folder mods | Fresh subject-bound receipts, not ambient working-tree test logs |
 | 5. Complete quality/security gates | Full original workflow corpus, mutation, load/performance, accessibility, dependency findings and supply chain on that same subject | Current gate results and known-finding disposition; no weakened tests |
@@ -71,14 +81,13 @@ dated product audit; do not use stale OPEN text as proof that a feature is absen
 
 ## Known defects and new review findings
 
-**Reproduced Synthesis defect:** the compiled physical command receives
-`SCORE_1: 10`, `SCORE_2: 90`, `WINNER: Entry 2` for engines alpha/beta, but returns
-alpha. The legacy parser returns beta. The physical implementation also differs
-in swap pairing, prompts and score shape. Existing physical tests do not prove
-legacy parity. See `packages/mod-synthesis/src/implementation.ts` and
-`packages/forge/src/synthesis-modus.ts`. Do not confuse this with Forge's separate
-`synthesis.ts` helper. The fallback session handler also owns a separate abort
-controller; trace the actual job signal during the migration.
+**Synthesis repairs:** physical and legacy execution now share the mod-owned
+winner/score parser. Entry labels and markdown select the correct engine.
+Cancellation reaches discovery, draft/swap/judge calls and session jobs; no late
+session results are published. Disabled fallback Synthesis cannot start a job.
+Four independent review findings and the fallback defect have negative controls.
+Runtime/session ownership, swap pairing and output parity remain open; these
+repairs do not establish complete extraction. See the product audit for receipts.
 
 **Council independent review, confirmed and repaired:**
 
@@ -131,6 +140,19 @@ not clean installed-release acceptance.
 
 ## Logs and evidence for an AI reader
 
+Latest Synthesis gate: `synthesis-reviewed-full-gate-v3`, exit 0, 981.961 seconds.
+Build, catalog/release/SBOM checks, full tests, types, lint, re-export guard,
+diff check and nine native processes passed. Zero external provider launches.
+Log SHA-256: `f4264aecc93425801ee194a19d2fdf90ac56a4f6195462884388bf23352695f1`.
+These are working-tree development checks, not clean installed-release receipts.
+
+[Synthesis evidence index](docs/specs/evidence/nico-handoff-synthesis-2026-10-24/index.json)
+and [52-file evidence supplement](docs/specs/evidence/nico-handoff-synthesis-2026-10-24/development-evidence.tar.gz)
+retain failures, review, fixes and final gate. Archive SHA-256:
+`5f8065150b34e68477ebfc5502f3375268fb40d156ff14fadf6c7fda959dce6f`.
+Every archived member passed retrieval/hash verification. Original logs and the
+older archive below remain unchanged.
+
 [Evidence index](docs/specs/evidence/nico-handoff-2026-10-24/index.json)
 lists original paths, original hashes, exported hashes and redaction counts.
 [Compressed evidence](docs/specs/evidence/nico-handoff-2026-10-24/development-evidence.tar.gz)
@@ -153,7 +175,7 @@ Nico can branch from this PR branch and work on it. Do not install it over a
 working global Agon just to review it. Use isolated homes/caches/prefixes and
 provider blockers. Do not run a paid panel or live credentials by accident.
 
-Codex currently owns Council review fixes and the next Synthesis migration.
+Codex currently owns upstream-main integration and development-base qualification.
 Useful independent work: review the ownership/kill-list evidence, qualify a clean
 candidate on Nico's native platform, or audit installed-product behavior. Pick
 non-overlapping files before implementing. Do not force-push the shared branch.

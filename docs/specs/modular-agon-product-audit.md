@@ -1,5 +1,67 @@
 # Installed-product audit and repair ledger
 
+## Synthesis development-base repairs — 2026-10-24
+
+Immediate operator checkpoint: merge-ready development base, not release
+acceptance. The full roadmap remains required after Nico merges and work moves
+to a new branch. This entry does not authorize a merge or installation.
+
+The physical Synthesis command now shares its winner/score parser with the
+legacy runtime through mod-synthesis. Entry labels, engine IDs, markdown and
+terminal punctuation select the intended winner. Forge retains compatibility
+exports; the parser has one implementation owner.
+
+Cancellation propagates through physical discovery/dispatch/receipts and legacy
+draft/swap/judge dispatch. Session cancellation clears progress but does not
+publish late results, history or telemetry. The fallback session route rejects
+disabled Synthesis before creating a job and checks its captured generation
+before execution and after completion.
+
+The isolated Agon/Codex review found four confirmed defects: missing cancellation
+after discovery, skipped progress cleanup, punctuation around markdown winner
+labels, and swallowed legacy dispatch cancellation. All have reproduced failing
+tests and passing regressions. Review log SHA-256:
+`9df8ac63382106cdb1a93b42dc69366b3ea8d2914b1269f99856981aa1c96f5c`.
+
+Full gate `synthesis-reviewed-full-gate` failed: 11,433 tests passed, one failed,
+six skipped. Its metadata regeneration test correctly detected missing Synthesis
+exports in the package generator. The generator now retains both exports and the
+parser declaration asset. `synthesis-generator-repair` passed the unchanged
+23-test package-graph suite. Full gate log SHA-256:
+`ec6598fc8a7f1d97c3b34c85c98b4867d1a6ececb7213dd4137d96e8ac32725f`.
+
+Native probes exposed a separate disabled fallback defect: even with Synthesis
+disabled, a legacy-shaped intent started a job and attempted engine dispatch.
+`synthesis-native-dev-base-v2` records that failure. The first session probe
+timed out because its fixture had not selected its local-only engine roster;
+explicit isolated configuration corrected the probe. No external provider was
+launched. The first stale-generation unit fixture was incomplete; corrected
+`synthesis-fallback-guard-red-v2` proves both invalid cases resolved normally
+before the production guard was added.
+
+`synthesis-fallback-guard-green` passed 48 focused tests, typecheck, diff check,
+and nine native subprocess cases: CLI entry/markdown winners, disabled CLI,
+failed drafts, MCP winner/cancellation, generated session winner, disabled
+generated session, and disabled fallback session. Local fixture engines only;
+zero external providers. Log SHA-256:
+`a62dcd17f87044380b99a816cc2d44eaf341114af365fb591e61a519d19364e3`.
+These session checks exercise dispatch and job completion, not terminal rendering.
+
+Final gate `synthesis-reviewed-full-gate-v3` passed in 981.961 seconds:
+11,436 tests passed, six skipped (682 files passed, one skipped), build,
+catalog/release/SBOM checks, types, lint, re-export guard and diff check, then
+nine native subprocess probes. Zero external providers. Log SHA-256:
+`f4264aecc93425801ee194a19d2fdf90ac56a4f6195462884388bf23352695f1`.
+The earlier v2 build passed but catalog drift failed before tests; regeneration
+corrected the manifest hash without weakening its check. Both failed gates are
+retained in the 52-file Synthesis evidence supplement linked from the handoff.
+
+Still open: upstream-main integration, clean committed development-base qualification,
+Synthesis runtime/session ownership and swap/output parity. Physical ring swaps
+and legacy paired swaps remain different. These parser/cancellation repairs do
+not prove full Synthesis extraction or release acceptance. Known dependency
+advisories remain recorded; no dependency upgrade is included.
+
 ## Council review adjudication — 2026-10-24
 
 All three findings from the isolated Agon/Codex review are source-confirmed and

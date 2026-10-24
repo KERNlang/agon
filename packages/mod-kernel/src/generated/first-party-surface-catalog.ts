@@ -3855,7 +3855,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.synthesis",
       "version": "1.0.0",
-      "contentHash": "sha256:f88418035970040a611db53410eedad4a575079050d52980fd9db3704e9e98ec"
+      "contentHash": "sha256:f742da561313eb9fb5baa5ddb099b080052773aa050abd38ded7eae2dca43ed7"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "synthesis",
@@ -4869,7 +4869,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.synthesis",
       "version": "1.0.0",
-      "contentHash": "sha256:f88418035970040a611db53410eedad4a575079050d52980fd9db3704e9e98ec"
+      "contentHash": "sha256:f742da561313eb9fb5baa5ddb099b080052773aa050abd38ded7eae2dca43ed7"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "Synthesis",
@@ -10188,7 +10188,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.synthesis",
       "version": "1.0.0",
-      "contentHash": "sha256:f88418035970040a611db53410eedad4a575079050d52980fd9db3704e9e98ec"
+      "contentHash": "sha256:f742da561313eb9fb5baa5ddb099b080052773aa050abd38ded7eae2dca43ed7"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "<task> [--swaps 2]       — engines draft, swap, improve; judge picks winner",

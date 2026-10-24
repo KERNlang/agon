@@ -122,6 +122,7 @@ def write_receipt(output, receipt):
 
 def plan(checkout, repeats, seed, full):
     commands = [("install-offline", ["npm", "ci", "--ignore-scripts", "--offline"]),
+                ("typecheck-cold", ["npm", "run", "typecheck"]),
                 ("build", ["npm", "run", "build:cli:workspaces"])]
     commands.append(("real-process-death", ["node", str(Path(__file__).with_name("pressure-process-death.mjs")), str(checkout)]))
     scripts = ["spec:modular-generated:self-test", "spec:modular-generated:check",

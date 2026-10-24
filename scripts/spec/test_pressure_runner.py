@@ -12,6 +12,17 @@ spec.loader.exec_module(runner)
 
 
 class RunnerTests(unittest.TestCase):
+    def test_every_profile_checks_types_before_build_outputs_exist(self):
+        checkout = Path(__file__).resolve().parents[2]
+        for full in (False, True):
+            with self.subTest(full=full):
+                commands = runner.plan(checkout, 1, 1701, full)
+                self.assertEqual(commands[:3], [
+                    ("install-offline", ["npm", "ci", "--ignore-scripts", "--offline"]),
+                    ("typecheck-cold", ["npm", "run", "typecheck"]),
+                    ("build", ["npm", "run", "build:cli:workspaces"]),
+                ])
+
     def test_short_run_root_leaves_room_for_unix_socket_fixtures(self):
         root = runner.new_run_directory()
         try:

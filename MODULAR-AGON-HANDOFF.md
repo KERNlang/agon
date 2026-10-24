@@ -18,12 +18,24 @@ Upstream `main` at `dc6853e61404d7db710c1f6fd6499c46ba85dc15` is integrated:
 judged ratings, model identity, decay and ratings reset now use the physical
 module owners. All merge conflicts are resolved. The full integration gate passes:
 build, types, lint, re-export guard, release-set, supply-chain and repository tests.
-Clean committed-checkout qualification is still pending. Nico should wait for
-the explicit merge-ready result. Full release work continues afterward on a new
-branch; its acceptance criteria are unchanged.
+Clean committed-checkout pressure qualification passed all 11 gates on
+`02601ad645cb3fb08d7c5720b7800517e379f8d0`: 3,523 shuffled modular tests and
+186 freshly executed workflow tests, with zero provider launches. However,
+GitHub CI found a cold type-check build-order defect that this older harness
+missed because it built first. The defect is reproduced and a project-reference
+fix passes the full local gate; the harness now checks types before building.
+The repaired commit still needs clean-checkout pressure and GitHub CI results.
+Nico should wait for the explicit merge-ready result. Full release work continues
+afterward on a new branch; its acceptance criteria are unchanged.
 
 Latest integration evidence:
 
+- Cold-typecheck repair: full build, types, guards, release-set, supply-chain,
+  lint and 11,625 tests pass (six skipped), with zero provider launches.
+  Receipt `dev-base-cold-qualified-full.receipt.json`, log SHA-256
+  `285d81fd5b03d82ff14fc763b70bafa6ceb8463fc207ab3877885aeba2fbe7b4`.
+  [Cold-build evidence](docs/specs/evidence/nico-handoff-cold-build-2026-10-24/index.json)
+  retains the failing controls, passing checks and independent Codex review.
 - Full run: 11,625 tests passed, 6 skipped; 691 files passed, 1 skipped.
   Receipt `upstream-dev-base-full-reconciled.receipt.json`, log SHA-256
   `22048bd8ecdaff8e333256cf2cd036e7c1f730d0ac5887833fac65578385e796`.

@@ -175,13 +175,13 @@ describe('physical Cesar orchestration tool parity', () => {
   it('executes the post-handoff workflow through its physical owner-tagged route', async () => {
     await disposeProcessSurfaceAuthority();
     const dispatches: string[] = [];
-    await initializeProcessSurfaceAuthority(join(root, 'physical-route-host'), (_manifest, base): ModServices => withBrainstormFixtureHost({
+    await initializeProcessSurfaceAuthority(join(root, 'physical-route-host'), (manifest, base): ModServices => (manifest.id === 'agon.council' ? withCouncilFixtureHost : withBrainstormFixtureHost)({
       ...base,
       engines: Object.freeze({
         listActive: async () => ['fixture-engine', 'fixture-peer'],
         dispatch: async (engineId: string, prompt: string) => {
           dispatches.push(engineId);
-          const stdout = prompt.includes('Multiple AI engines analyzed') ? 'physical route' : prompt.includes('Synthesize one accountable')
+          const stdout = prompt.includes('Multiple AI engines analyzed') ? 'physical route' : prompt.includes('Synthesize the advisors below into ONE decision')
             ? 'RECOMMENDATION\nConfidence: 91%\nUse the physical route.'
             : prompt.includes('Return one JSON object') || prompt.includes('confidence')
               ? '{"approach":"physical route","confidence":91,"steps":[],"tradeoffs":[]}'
@@ -222,6 +222,13 @@ describe('physical Cesar orchestration tool parity', () => {
       signal: new AbortController().signal,
     }) as any;
     expect(council).toMatchObject({ exitCode: 0, result: { chairmanId: 'fixture-engine', verdict: expect.stringContaining('RECOMMENDATION') } });
+    const selectedCouncil = await executeProcessCesarRoute('council', {
+      question: 'preserve seating', roles: 'security', chairman: 'fixture-peer',
+    }, { cwd: root, signal: new AbortController().signal }) as any;
+    expect(selectedCouncil).toMatchObject({ exitCode: 0, result: {
+      chairmanId: 'fixture-peer', chairmanReason: 'forced',
+      seats: [{ engineId: 'fixture-engine', role: 'security' }],
+    } });
   });
 
   it('registers every physical Cesar execution entry with the exact plan-step kind', () => {
@@ -239,3 +246,4 @@ describe('physical Cesar orchestration tool parity', () => {
   });
 });
 import { withBrainstormFixtureHost } from '../fixtures/modular-brainstorm-host.js';
+import { withCouncilFixtureHost } from '../fixtures/modular-council-host.js';

@@ -2,6 +2,8 @@ import { mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { DurableModHost, createFirstPartyModCatalog, createFullCompatDesiredState, planDesiredStateChange } from '../../packages/mod-kernel/src/index.js';
+import { surfaceLockFor } from '../helpers/modular-surface-lock.js';
 
 import { dynamicMcpToolOwnsExecution, listMcpTools } from '../../packages/mcp/src/agon-orchestration.js';
 import {
@@ -10,6 +12,7 @@ import {
   initializeMcpSurfaceAuthority,
   invokeActiveMcpSurfaceTool,
   mcpSurfacePublicIds,
+  captureMcpSurfaceAuthority,
 } from '../../packages/mcp/src/surface-authority.js';
 
 afterEach(async () => {
@@ -19,6 +22,75 @@ afterEach(async () => {
 });
 
 describe('production MCP surface authority', () => {
+  it('rejects the nested Council host when Council alone is disabled', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-mcp-council-selection-'));
+    const hostRoot = join(root, 'host');
+    vi.stubEnv('AGON_HOME', join(root, 'home'));
+    vi.stubEnv('AGON_MODULAR_HOST_ROOT', hostRoot);
+    try {
+      const catalog = createFirstPartyModCatalog();
+      const now = '2026-10-24T00:00:00.000Z';
+      const desired = planDesiredStateChange(catalog, createFullCompatDesiredState(catalog, now),
+        { kind: 'disable', id: 'agon.council' }, now).nextState;
+      const host = new DurableModHost(hostRoot, { kernelVersion: '1.0.0', processIdentity: 'council-test' });
+      await host.commitGeneration({ operation: 'disable', lock: await surfaceLockFor(desired), desiredState: desired, installedIndex: {} });
+      await initializeMcpSurfaceAuthority();
+      expect(mcpSurfacePublicIds().has('RoomList')).toBe(true);
+      const { decorateMcpFirstPartyServices } = await import('../../packages/mcp/src/first-party-services.js');
+      const services = decorateMcpFirstPartyServices({ id: 'agon.conquer' } as never, {} as never) as
+        import('@kernlang/agon-mod-council').CouncilModServices;
+      await expect(async () => services.council!.open({ invocationId: 'disabled-council', cwd: root,
+        platform: 'darwin-arm64', signal: new AbortController().signal, config: {} })).rejects.toThrow(/unavailable/);
+    } finally {
+      await disposeMcpSurfaceAuthority(); vi.unstubAllEnvs();
+    }
+  });
+  it.each(['pointer', 'dispose', 'replace', 'complete'] as const)('pins nested Council authority without inventing an MCP tool: %s', async action => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-mcp-council-authority-'));
+    vi.stubEnv('AGON_HOME', join(root, 'home'));
+    vi.stubEnv('AGON_MODULAR_HOST_ROOT', join(root, 'host'));
+    try {
+      await initializeMcpSurfaceAuthority();
+      expect(mcpSurfacePublicIds().has('Council')).toBe(false);
+      const check = captureMcpSurfaceAuthority('council', 'cli');
+      expect(check).not.toThrow();
+      const { decorateMcpFirstPartyServices } = await import('../../packages/mcp/src/first-party-services.js');
+      const services = decorateMcpFirstPartyServices({ id: 'agon.conquer' } as never, {} as never) as
+        import('@kernlang/agon-mod-council').CouncilModServices;
+      const session = await services.council!.open({ invocationId: 'nested-council', cwd: root,
+        platform: 'darwin-arm64', signal: new AbortController().signal, config: {} });
+      expect(() => session.assertCurrent()).not.toThrow();
+      if (action === 'dispose' || action === 'replace') await disposeMcpSurfaceAuthority();
+      if (action === 'replace') await initializeMcpSurfaceAuthority();
+      if (action === 'pointer') {
+        await mkdir(join(root, 'host'), { recursive: true });
+        await writeFile(join(root, 'host', 'current-generation.json'), '{}');
+      }
+      if (action === 'complete') {
+        expect(check).not.toThrow(); expect(() => session.assertCurrent()).not.toThrow();
+      } else {
+        const reason = action === 'pointer' ? /canonical modular generation changed/ : /disposed or replaced/;
+        expect(check).toThrow(reason);
+        expect(() => session.assertCurrent()).toThrow(reason);
+        expect(() => session.effects.loadConfig(root)).toThrow(reason);
+      }
+    } finally {
+      await disposeMcpSurfaceAuthority(); vi.unstubAllEnvs();
+    }
+  });
+
+  it('rejects nested Council when only the kernel is enabled', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-mcp-council-disabled-'));
+    vi.stubEnv('AGON_HOME', join(root, 'home'));
+    vi.stubEnv('AGON_MODULAR_HOST_ROOT', join(root, 'host'));
+    vi.stubEnv('AGON_MOD_SAFE_MODE', '1');
+    try {
+      await initializeMcpSurfaceAuthority();
+      expect(() => captureMcpSurfaceAuthority('council', 'cli')()).toThrow();
+    } finally {
+      await disposeMcpSurfaceAuthority(); vi.unstubAllEnvs();
+    }
+  });
   it.each(['pointer', 'dispose', 'replace', 'complete'] as const)('pins the Tribunal host to real MCP authority: %s', async action => {
     const root = await mkdtemp(join(tmpdir(), 'agon-mcp-tribunal-authority-'));
     vi.stubEnv('AGON_HOME', join(root, 'home'));

@@ -5,7 +5,7 @@ import { runPhysicalTuiContribution } from './intent-session.js';
 
 import { ENGINE_COLORS } from '../../blocks/output-format.js';
 
-import { handleForge, handleCouncil, handleSynthesis, handleNeroChallenge, handleResearch, handleChrome, handleBuild, handleReviewMany, handleSanitize, handleNaturalize, handleMutate, runAgentMode, runAgentTeam } from '../../handlers/index.js';
+import { handleForge, handleSynthesis, handleNeroChallenge, handleResearch, handleChrome, handleBuild, handleReviewMany, handleSanitize, handleNaturalize, handleMutate, runAgentMode, runAgentTeam } from '../../handlers/index.js';
 
 import { handleTeamTribunal } from '../../handlers/team-tribunal.js';
 
@@ -117,11 +117,16 @@ export async function dispatchOrchestrationIntent(intent: any, input: string, cb
       const _coLabel = intent.question?.slice(0, 40) ?? 'council';
       const continuationEpoch = cb.ctx.inputEpoch ?? 0;
       const continuationUserTurns = countTrackedUserTurns(cb.ctx);
-      cb.runAsJob('council', _coLabel, withThreadOutcome(_coCwd, 'council', _coLabel, async () => {
-        await handleCouncil(intent.question, cb.dispatch, cb.ctx);
+      const assertSelected = captureProcessSurfaceAuthority();
+      const record = processSurfaceClient('tui').assertAvailable('/council');
+      cb.runAsJob('council', _coLabel, signal => withThreadOutcome(_coCwd, 'council', _coLabel, async () => {
+        assertSelected();
+        await runPhysicalTuiContribution(record, intent, 'council', cb, signal, _coCwd);
+        signal.throwIfAborted();
+        assertSelected();
         const chatContext = collectRecentEngineContext(cb.ctx, 14, 1500);
         if (chatContext) await continueCesarAfterResult(`Council deliberated on: "${(intent.question ?? '').slice(0, 200)}"\n\n${chatContext}\n\nSummarize the chairman verdict and the strongest dissent, then recommend the next step.`, cb, continuationEpoch, continuationUserTurns);
-      }, cb.ctx));
+      }, cb.ctx)());
       return { handled: true, ranAsJob: true };
     }
     case 'chrome': {

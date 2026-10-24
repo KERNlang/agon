@@ -522,6 +522,11 @@ export function extractDelegation(toolName: string, args: Record<string,unknown>
   const delegatedTask = (argsRecord.task ?? argsRecord.question ?? argsRecord.topic ?? argsRecord.target ?? argsRecord.intent ?? '') as string;
   return {
     action: toolName.toLowerCase(),
+    ...(toolName.toLowerCase() === 'council' ? {
+      ...(Array.isArray(argsRecord.roles) && argsRecord.roles.every(role => typeof role === 'string')
+        ? { roles: [...argsRecord.roles] as string[] } : {}),
+      ...(typeof argsRecord.chairman === 'string' ? { chairman: argsRecord.chairman } : {}),
+    } : {}),
     task: delegatedTask,
     reasoning: delegatedTask,
     scope: (argsRecord.scope === 'slice' || argsRecord.scope === 'full') ? argsRecord.scope as 'slice' | 'full' : undefined,

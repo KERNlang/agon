@@ -1,3 +1,4 @@
+import { withCouncilFixtureHost } from '../../../tests/fixtures/modular-council-host.js';
 import { withTribunalFixtureHost } from '../../../tests/fixtures/modular-tribunal-host.js';
 import{execFileSync}from'node:child_process';import{existsSync,mkdtempSync,writeFileSync}from'node:fs';import{tmpdir}from'node:os';import{join}from'node:path';import{describe,expect,it,vi}from'vitest';import type{ModServices,CommandContribution,Registrar}from'@kernlang/agon-mod-api';import{createMod,runConquerTask as runConquerTaskImpl}from'./implementation.js';
 import { assertContributionInput } from '@kernlang/agon-kernel';
@@ -62,7 +63,7 @@ function withConquerHost(services: ModServices): ConquerModServices {
 }
 
 async function runConquerTask(...[input, context, services]: Parameters<typeof runConquerTaskImpl>) {
-  return runConquerTaskImpl(input, context, withTribunalFixtureHost(withConquerHost(services)));
+  return runConquerTaskImpl(input, context, withCouncilFixtureHost(withTribunalFixtureHost(withConquerHost(services))));
 }
 
 it('preserves human-readable Conquer CLI output and structured results', async () => {
@@ -829,7 +830,7 @@ describe('explicit engine resolution across Conquer workflows', () => {
     const dispatch = vi.fn(async (engineId: string) => ({ engineId, exitCode: 0, stdout: 'Confidence: 80%\nVERDICT: SOUND', stderr: '', timedOut: false }));
     const services = { receipts: { record: vi.fn(async () => 'fixture') },
       engines: { listActive: async () => ['default-a', 'default-b'], resolveRequested, dispatch } } as unknown as ModServices;
-    const result = await run(input, { invocationId: 'explicit-pool', cwd: process.cwd(), platform: 'darwin-arm64', signal: new AbortController().signal, config: {} }, withTribunalFixtureHost(services));
+    const result = await run(input, { invocationId: 'explicit-pool', cwd: process.cwd(), platform: 'darwin-arm64', signal: new AbortController().signal, config: {} }, withCouncilFixtureHost(withTribunalFixtureHost(services)));
     expect(result.exitCode).toBe(0);
     expect(resolveRequested).toHaveBeenCalledWith(['alias-a', 'alias-b'], expect.anything());
     expect(dispatch).toHaveBeenCalled();
@@ -851,7 +852,7 @@ describe('explicit engine resolution across Conquer workflows', () => {
     const services = { receipts: { record: vi.fn(async () => 'fixture') },
       engines: { listActive: async () => ['default-a', 'default-b'], resolveRequested, dispatch } } as unknown as ModServices;
     const defaultInput = Object.fromEntries(Object.entries(input).filter(([key]) => key !== 'engines' && key !== 'chairman'));
-    const result = await run(defaultInput, { invocationId: 'default-pool', cwd: process.cwd(), platform: 'darwin-arm64', signal: new AbortController().signal, config: {} }, withTribunalFixtureHost(services));
+    const result = await run(defaultInput, { invocationId: 'default-pool', cwd: process.cwd(), platform: 'darwin-arm64', signal: new AbortController().signal, config: {} }, withCouncilFixtureHost(withTribunalFixtureHost(services)));
     expect(result.exitCode).toBe(0);
     expect(resolveRequested).not.toHaveBeenCalled();
     expect(dispatch).toHaveBeenCalled();
@@ -891,8 +892,8 @@ describe('explicit engine resolution across Conquer workflows', () => {
       ['selected-a', expect.stringContaining('You are: **Argue FOR**')],
       ['selected-b', expect.stringContaining('You are: **Argue AGAINST**')],
     ].map(([id, prompt]) => expect.arrayContaining([id, prompt]))));
-    expect(dispatch.mock.calls.some(([, prompt]) => prompt.startsWith('Frame this question'))).toBe(true);
-    expect(dispatch.mock.calls.some(([, prompt]) => prompt.startsWith('Synthesize one accountable'))).toBe(true);
+    expect(dispatch.mock.calls.some(([, prompt]) => prompt.startsWith('You are the chairman of an expert council. Before the council debates'))).toBe(true);
+    expect(dispatch.mock.calls.some(([, prompt]) => prompt.startsWith('You are the chairman of an expert council. Synthesize the advisors'))).toBe(true);
   });
   it.each([false, true])('resolves a non-default forced chair before effects (rejected=%s)', async rejected => {
     const resolveRequested = vi.fn(async (ids: readonly string[]) => {
@@ -904,7 +905,7 @@ describe('explicit engine resolution across Conquer workflows', () => {
     const record = vi.fn(async () => 'fixture');
     const services = { receipts: { record }, engines: { listActive: async () => ['default-a'], resolveRequested, rank, dispatch } } as unknown as ModServices;
     const result = await council.runCouncil({ question: 'ship', engines: 'alias-a,alias-b', chairman: 'alias-b' },
-      { invocationId: 'forced-chair', cwd: process.cwd(), platform: 'darwin-arm64', signal: new AbortController().signal, config: {} }, services);
+      { invocationId: 'forced-chair', cwd: process.cwd(), platform: 'darwin-arm64', signal: new AbortController().signal, config: {} }, withCouncilFixtureHost(services));
     expect(resolveRequested.mock.calls.map(([ids]) => ids)).toEqual([['alias-a', 'alias-b'], ['alias-b']]);
     if (rejected) {
       expect(result).toMatchObject({ exitCode: 1, stderr: expect.stringContaining('Chair unavailable') });
@@ -913,7 +914,7 @@ describe('explicit engine resolution across Conquer workflows', () => {
       expect(record).not.toHaveBeenCalled();
     } else {
       expect(result).toMatchObject({ exitCode: 0, result: { chairmanId: 'selected-b', chairmanReason: 'forced' } });
-      expect(dispatch.mock.calls.filter(([, prompt]) => prompt.startsWith('Frame this question') || prompt.startsWith('Synthesize one accountable')).map(([id]) => id)).toEqual(['selected-b', 'selected-b']);
+      expect(dispatch.mock.calls.filter(([, prompt]) => prompt.startsWith('You are the chairman of an expert council. Before the council debates') || prompt.startsWith('You are the chairman of an expert council. Synthesize the advisors')).map(([id]) => id)).toEqual(['selected-b', 'selected-b']);
     }
   });
   it.each([council.runCouncil, tribunal.runTribunal])('rejects a resolved one-engine panel before dispatch', async run => {

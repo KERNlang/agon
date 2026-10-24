@@ -1,5 +1,64 @@
 # Installed-product audit and repair ledger
 
+## Council ownership cutover in progress — 2026-10-24
+
+Council now owns the runtime, CLI presentation and session policy. The CLI binds
+session effects to the original chat, selected generation and job signal. Slash
+and Cesar routes use the same session owner. Legacy CLI command and TUI handler
+are removed. Forge keeps a public compatibility facade, not another algorithm.
+Frozen runtime, command and session source fixtures retain the historical oracle.
+
+Cesar now preserves explicit advisor roles and chairman through handoff. Tests
+cover delegated, recovered and fallback cancellation before and during execution.
+No cancelled result reaches history, result storage or successful telemetry.
+Generated help was missing descriptions; the frozen command contract exposed
+that regression and the mod-owned metadata now preserves the original help.
+
+Latest retirement check: 92 tests, typecheck and export guard passed. Log hash:
+`d667af96dc013012ac26a23ba2481dc5dad2a1aeecb01335c11d878d307314d0`.
+Shared TUI/Cesar session check: 64 tests and typecheck passed. Log hash:
+`ba825f00da3ff46d74ca7f16c279ba1d2addfa74258335e7956b359f2c359d35`.
+All test runs used isolated state and launched zero external providers.
+
+Native session tests exposed a generated-job error handler reporting failed
+Council runs as done. Generated and fallback Council now share the same job
+boundary. Receipt failure preserves a completed verdict and saved run, returns
+typed failure and recovery instructions, and does not record success telemetry.
+
+Fresh local gate: full build, types, lint, export guard and 191 focused tests
+passed. Eighteen native processes passed: seven session, six CLI and five nested
+MCP-host cases. Cancellation terminated the local engine and saved no late result.
+Log hash: `a580f1d100ad18fe608776bd49d7f1e25c43a7bf9c88c28bab150ad7fbfb2182`.
+These are compiled workspace probes, not installed-candidate or terminal-rendering
+qualification. MCP coverage exercises the nested host, not JSON-RPC transport.
+
+Full repository qualification now passes: 11,406 tests passed, six skipped;
+build, typecheck, lint, export guard, catalog and release/SBOM generation passed.
+The preceding run failed four tests: three stale generated Council manifest
+hashes and one Brainstorm isolation fixture with an invalid Council result.
+The catalog was regenerated; the fixture now also proves Council result and
+telemetry ownership. No production oracle was weakened.
+Qualification log hash:
+`28e518f3042fcbb6b86929eda5b4dfe3f2231bc6079ec725bb7dfdac814de8f5`.
+
+After the rebuild, all eighteen native processes passed again. Catalog,
+release-set and SBOM drift checks also passed. Native log hash:
+`eed6b14469c6b1cf4505559d0d3a48b6c73b003f438aefb258f34f8aca4b613c`.
+Both runs launched zero external providers. These are working-tree receipts,
+not clean committed release qualification. npm provenance remains external;
+SBOM checks do not mean known dependency vulnerabilities are resolved.
+
+This is not Council acceptance. Raphael approved the expanded packet and the
+isolated Codex review completed. It raised three hypotheses: effective session
+roster with an external chair, missing degraded status after advisor failures,
+and quiet/JSON precedence outside CLI. Adjudication and confirmed fixes remain
+open. Review log SHA-256:
+`14b9141d087cde5b224f357750430c59cab90318144862ce71e5c242088e2f95`.
+Legacy Forge public compatibility and its Conquer
+binding remain; the current CLI routes do not call that legacy Council facade.
+Final ownership reconciliation must distinguish these bindings from the single
+physical algorithm owner. No release acceptance is claimed.
+
 ## Think session ownership — 2026-10-24
 
 Think now owns its session display and persistence policy. The CLI binds that

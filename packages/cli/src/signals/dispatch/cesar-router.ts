@@ -4,6 +4,7 @@ import { runBrainstormSession } from '../../blocks/brainstorm-session.js';
 import { runTribunalSession } from '../../blocks/tribunal-session.js';
 import { runConquerSession } from '../../blocks/conquer-session.js';
 import { runCampfireSession } from '../../blocks/campfire-session.js';
+import { runCouncilSession } from '../../blocks/council-session.js';
 
 import { mkdirSync, appendFileSync } from 'node:fs';
 
@@ -65,6 +66,10 @@ export async function runPhysicalCesarWorkflow(
   signal = new AbortController().signal,
   cwd = resolveWorkingDir(),
 ): Promise<unknown> {
+  if (route === 'council') {
+    return runCouncilSession(input, cb, { cwd, signal }, async (prepared, context) =>
+      await executeProcessCesarRoute(route, prepared, context) as PhysicalCesarCommandResult);
+  }
   if (route === 'campfire') {
     return runCampfireSession(input, cb, signal, async (prepared, context) =>
       await executeProcessCesarRoute(route, prepared, context) as PhysicalCesarCommandResult, cwd);
@@ -83,6 +88,7 @@ export async function runPhysicalCesarWorkflow(
   }
   signal.throwIfAborted();
   const output = await executeProcessCesarRoute(route, input, { cwd, signal }) as PhysicalCesarCommandResult;
+  signal.throwIfAborted();
   if ((output.exitCode ?? 0) !== 0) {
     throw new Error(output.stderr?.trim() || output.failure?.message || `${route} failed`);
   }
@@ -523,12 +529,14 @@ export async function handleDelegatedAction(result: any, input: string, cb: Disp
             case 'council': {
               cb.dispatch({ type: 'info', message: 'Cesar → council' });
               const _cwdCouncil = resolveWorkingDir();
-              cb.runAsJob('council', label, withThreadOutcome(_cwdCouncil, 'council', label, () =>
-                runDelegatedJobThenContinue(cb, () => runPhysicalCesarWorkflow('council', { question: taskInput }, cb), ({ chatContext, result, success, errorMsg }) =>
-                  !success
+              cb.runAsJob('council', label, signal => withThreadOutcome(_cwdCouncil, 'council', label, () =>
+                runDelegatedJobThenContinue(cb, () => runPhysicalCesarWorkflow('council', {
+                  question: taskInput, roles: result.roles?.join(','), chairman: result.chairman,
+                }, cb, signal, _cwdCouncil), ({ chatContext, result, success, errorMsg }) =>
+                  signal.aborted ? null : !success
                     ? `Council on: "${taskInput.slice(0, 200)}" failed: ${errorMsg}. ${chatContext ? `Partial deliberation:\n\n${chatContext}\n\n` : ''}Continue with the strongest available evidence.`
                     : `Council concluded on: "${taskInput.slice(0, 200)}"\n\n${chatContext || JSON.stringify(result, null, 2)}\n\nSynthesize the chairman verdict, strongest dissent, and next concrete step.`,
-                  continuationEpoch, continuationUserTurns, 2500), cb.ctx));
+                  continuationEpoch, continuationUserTurns, 2500), cb.ctx)());
               return true;
             }
             case 'pipeline': {
@@ -725,10 +733,12 @@ export async function handleRecoveredDelegation(crashDel: any, input: string, cb
         case 'council': {
           cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'council', 'recovered delegation') });
           const _cwdRecoverCouncil = resolveWorkingDir();
-          cb.runAsJob('council', label, withThreadOutcome(_cwdRecoverCouncil, 'council', label, async () => {
-            const council = await runPhysicalCesarWorkflow('council', { question: recoveredTask }, cb);
+          cb.runAsJob('council', label, signal => withThreadOutcome(_cwdRecoverCouncil, 'council', label, async () => {
+            const council = await runPhysicalCesarWorkflow('council', {
+              question: recoveredTask, roles: crashDel.roles?.join(','), chairman: crashDel.chairman,
+            }, cb, signal, _cwdRecoverCouncil);
             await continueCesarAfterResult(`Recovered council concluded on: "${recoveredTask.slice(0, 200)}"\n\n${JSON.stringify(council, null, 2)}\n\nSynthesize the verdict and continue the original task.`, cb, continuationEpoch, continuationUserTurns);
-          }, cb.ctx));
+          }, cb.ctx)());
           return true;
         }
         case 'pipeline': cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'pipeline', 'recovered delegation') }); cb.runAsJob('pipeline', label, async (signal) => { await runPhysicalCesarWorkflow('pipeline', { task: recoveredTask, fitnessCmd: recoveredFitness ?? '', reviewEngines: Array.isArray(crashDel.engines) ? crashDel.engines.join(',') : '' }, cb, signal); }); return true;
@@ -950,10 +960,10 @@ export async function runCesarBrainFallback(input: string, cb: DispatchCallbacks
             case 'council': {
               cb.dispatch({ type: 'info', message: 'Cesar → council' });
               const _cwdFallbackCouncil = resolveWorkingDir();
-              cb.runAsJob('council', label, withThreadOutcome(_cwdFallbackCouncil, 'council', label, async () => {
-                const council = await runPhysicalCesarWorkflow('council', { question: fallbackTask }, cb);
+              cb.runAsJob('council', label, signal => withThreadOutcome(_cwdFallbackCouncil, 'council', label, async () => {
+                const council = await runPhysicalCesarWorkflow('council', { question: fallbackTask }, cb, signal, _cwdFallbackCouncil);
                 await continueCesarAfterResult(`Fallback council concluded on: "${fallbackTask.slice(0, 200)}"\n\n${JSON.stringify(council, null, 2)}\n\nSynthesize the verdict and continue the original task.`, cb, continuationEpoch, continuationUserTurns);
-              }, cb.ctx));
+              }, cb.ctx)());
               return true;
             }
             case 'pipeline': cb.dispatch({ type: 'info', message: 'Cesar → pipeline' }); cb.runAsJob('pipeline', label, async (signal) => { await runPhysicalCesarWorkflow('pipeline', { task: fallbackTask, fitnessCmd: fallbackFitness ?? '', reviewEngines: Array.isArray(crashDel?.engines) ? crashDel.engines.join(',') : '' }, cb, signal); }); return true;

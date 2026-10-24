@@ -161,6 +161,7 @@ function expectedFiles(packageRecord) {
   if (short === 'conquer') inferredPermissions.add('git.write');
   const physicalPackFiles = ['dist/implementation.d.ts', ...(short === 'rag' ? ['dist/store.d.ts', 'dist/types.d.ts', 'dist/grounding.d.ts']
     : short === 'think' ? ['dist/thinking.d.ts', 'dist/runtime.d.ts', 'dist/host.d.ts', 'dist/presentation.d.ts', 'dist/session-workflow.d.ts']
+    : short === 'council' ? ['dist/runtime.d.ts', 'dist/host.d.ts', 'dist/presentation.d.ts', 'dist/command.d.ts', 'dist/session-workflow.d.ts']
     : short === 'review' ? ['dist/consensus.d.ts', 'dist/findings.d.ts']
     : short === 'conquer' ? ['dist/completion-policy.d.ts', 'dist/workflow.d.ts', 'dist/falsifier.d.ts', 'dist/host.d.ts', 'dist/isolation.d.ts', 'dist/publication.d.ts']
     : short === 'nero' ? ['dist/verdict.d.ts', 'dist/critic-cascade.d.ts']
@@ -481,6 +482,14 @@ export { extractReviewFindings } from './findings.js';
 export { parseNeroVerdict } from './verdict.js';
 export { rankCriticCascade } from './critic-cascade.js';
 ` : short === 'council' ? `export { runCouncil } from './implementation.js';
+export { runCouncilRuntime, DEFAULT_COUNCIL_ROLES, roleGuidance, assignCouncilRoles, buildCouncilBriefPrompt, buildRolePrompt, buildCritiquePrompt, buildChairmanPrompt, parseCouncilConfidence } from './runtime.js';
+export type { CouncilOptions, CouncilResult, CouncilSeat, CouncilEvent, CouncilSeating, CouncilRuntimeEffects } from './runtime.js';
+export { createCouncilHostServices } from './host.js';
+export type { CouncilHostEffects, CouncilHostServices, CouncilHostSession, CouncilModServices, CouncilEngineRegistry } from './host.js';
+export { chairmanPickLabel, councilRunStatus, presentCouncilResult } from './presentation.js';
+export type { CouncilDisplay } from './presentation.js';
+export { runCouncilSession } from './session-workflow.js';
+export type { CouncilSessionHost, CouncilSessionContext, CouncilSessionCommandResult } from './session-workflow.js';
 ` : '';
   const indexSource = `import { validateManifest } from '@kernlang/agon-mod-api';\nimport manifest from '../agon.mod.json' with { type: 'json' };\nimport ownership from '../ownership.json' with { type: 'json' };\n\nexport const MANIFEST = validateManifest(manifest);\nexport const SOURCE_OCCURRENCES = Object.freeze(ownership.assignments);\n\nexport const IMPLEMENTATION_KIND = 'physical' as const;\nexport { createMod } from './implementation.js';\nexport { createMod as default } from './implementation.js';\n${physicalExports}`;
   return new Map([

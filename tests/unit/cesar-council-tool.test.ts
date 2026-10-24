@@ -24,6 +24,16 @@ describe('Cesar native Council tool', () => {
     }));
     expect(shouldStopAfterXmlToolCall('Council')).toBe(true);
   });
+
+  it('preserves Council seating options through a persisted handoff', () => {
+    const roles = ['security', 'delivery'];
+    const handoff = extractDelegation('Council', { question: 'Ship?', roles, chairman: 'alpha' });
+    roles.push('later mutation');
+    expect(JSON.parse(JSON.stringify(handoff))).toMatchObject({
+      action: 'council', task: 'Ship?', roles: ['security', 'delivery'], chairman: 'alpha',
+    });
+    expect(extractDelegation('Brainstorm', { question: 'Options?', roles, chairman: 'alpha' })).not.toHaveProperty('chairman');
+  });
 });
 
 // isReadOnly is not decoration: the registry's investigation-phase gate skips

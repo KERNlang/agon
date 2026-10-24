@@ -10,6 +10,7 @@ import { runTribunalSession } from '../../blocks/tribunal-session.js';
 import { runConquerSession } from '../../blocks/conquer-session.js';
 import { runCampfireSession } from '../../blocks/campfire-session.js';
 import { runThinkSession } from '../../blocks/think-session.js';
+import { runCouncilSession } from '../../blocks/council-session.js';
 import { worktreePlanHost } from '../../blocks/worktree-plan-effects.js';
 
 import { resolveWorkingDir, buildImageAttachment, sessionContext, visionSupportNote } from '@kernlang/agon-core';
@@ -418,6 +419,16 @@ export async function runPhysicalTuiContribution(
       const output = await contribution.run(prepared as Json, { ...invocation, ...context });
       if (output && typeof output === 'object' && Symbol.asyncIterator in output) {
         throw new TypeError('Think returned an unexpected streaming command result.');
+      }
+      return output as CommandResult;
+    });
+    return;
+  }
+  if (record.owner?.id === 'agon.council' && commandName === 'council') {
+    await runCouncilSession(normalized as Record<string, unknown>, cb, invocation, async (prepared, context) => {
+      const output = await contribution.run(prepared as Json, { ...invocation, ...context });
+      if (output && typeof output === 'object' && Symbol.asyncIterator in output) {
+        throw new TypeError('Council returned an unexpected streaming command result.');
       }
       return output as CommandResult;
     });

@@ -76,6 +76,8 @@ export type OutputEvent =
 
 export interface PendingDelegation {
   action: string;
+  roles?: string[];
+  chairman?: string;
   task?: string;
   reasoning: string;
   scope?: 'slice'|'full';

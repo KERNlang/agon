@@ -129,7 +129,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.council",
       "version": "1.0.0",
-      "contentHash": "sha256:eef51f8d5eeb2a60cfda87650b4b330189839ab392a11b73985507f756f733b6"
+      "contentHash": "sha256:7d16fe3eb06cfbe439fd3a803c101de224c8e113889197877d65204a7ed30419"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "Council",
@@ -2291,7 +2291,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.council",
       "version": "1.0.0",
-      "contentHash": "sha256:eef51f8d5eeb2a60cfda87650b4b330189839ab392a11b73985507f756f733b6"
+      "contentHash": "sha256:7d16fe3eb06cfbe439fd3a803c101de224c8e113889197877d65204a7ed30419"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "Execute Council through its physical owner",
@@ -2636,7 +2636,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.council",
       "version": "1.0.0",
-      "contentHash": "sha256:eef51f8d5eeb2a60cfda87650b4b330189839ab392a11b73985507f756f733b6"
+      "contentHash": "sha256:7d16fe3eb06cfbe439fd3a803c101de224c8e113889197877d65204a7ed30419"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "council",
@@ -9213,7 +9213,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.council",
       "version": "1.0.0",
-      "contentHash": "sha256:eef51f8d5eeb2a60cfda87650b4b330189839ab392a11b73985507f756f733b6"
+      "contentHash": "sha256:7d16fe3eb06cfbe439fd3a803c101de224c8e113889197877d65204a7ed30419"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "<decision>               — roundtable: every engine a role, top-rated chairs",

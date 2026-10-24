@@ -1,11 +1,13 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import * as physical from '@kernlang/agon-mod-brainstorm';
-const mocks = vi.hoisted(() => ({ execute: vi.fn(), complete: vi.fn(), fail: vi.fn(), create: vi.fn(), present: vi.fn(), dispose: vi.fn(), scan: vi.fn(), append: vi.fn(), setEngines: vi.fn(), presentationFail: vi.fn() }));
+const mocks = vi.hoisted(() => ({ execute: vi.fn(), complete: vi.fn(), fail: vi.fn(), create: vi.fn(), present: vi.fn(), dispose: vi.fn(), scan: vi.fn(), append: vi.fn(), setEngines: vi.fn(), presentationFail: vi.fn(), addResult: vi.fn(), recordRun: vi.fn() }));
 vi.mock('@kernlang/agon-core', async importOriginal => ({ ...await importOriginal<object>(), scanProjectContext: mocks.scan, appendMessage: mocks.append }));
 vi.mock('../../packages/cli/src/surface-authority-runtime.js', async importOriginal => ({ ...await importOriginal<object>(), executeProcessCesarRoute: mocks.execute }));
 vi.mock('@kernlang/agon-mod-brainstorm', async original => ({ ...await original<object>(), createBrainstormSessionRecord: mocks.create }));
 vi.mock('../../packages/cli/src/blocks/brainstorm-presentation.js', () => ({ createBrainstormPresentation: () => ({ complete: mocks.present, dispose: mocks.dispose, setEngines: mocks.setEngines, fail: mocks.presentationFail }) }));
+vi.mock('../../packages/cli/src/models/session-results.js', () => ({ sessionResultStore: { add: mocks.addResult } }));
+vi.mock('../../packages/cli/src/telemetry/index.js', async original => ({ ...await original<object>(), recordRun: mocks.recordRun, formatRunSummary: () => 'saved summary' }));
 import { runPhysicalCesarWorkflow } from '../../packages/cli/src/signals/dispatch/cesar-router.js';
 
 beforeEach(() => {
@@ -54,9 +56,12 @@ it('preserves the execution error even if failure recording also fails', async (
 });
 
 it('does not record another workflow as brainstorm', async () => {
-  mocks.execute.mockResolvedValue({ result: { response: 'answer' } });
+  mocks.execute.mockResolvedValue({ exitCode: 0, result: { ok: true, chairmanId: 'codex', actingChairmanId: 'codex',
+    brief: 'question', verdict: 'answer', confidence: 90, warnings: [], seats: [] } });
   await runPhysicalCesarWorkflow('council', { question: 'question' }, callbacks() as never);
   expect(mocks.create).not.toHaveBeenCalled();
+  expect(mocks.addResult).toHaveBeenCalledWith(expect.objectContaining({ type: 'council', winner: 'codex' }));
+  expect(mocks.recordRun).toHaveBeenCalledWith(expect.objectContaining({ mode: 'council', success: true }));
 });
 
 it('rejects cancellation before displaying or recording a late success', async () => {

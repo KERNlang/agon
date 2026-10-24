@@ -15,6 +15,7 @@ import { createBrainstormHostServices } from '@kernlang/agon-mod-brainstorm';
 import { createTribunalHostServices } from '@kernlang/agon-mod-tribunal';
 import { createCampfireHostServices } from '@kernlang/agon-mod-campfire';
 import { createThinkHostServices } from '@kernlang/agon-mod-think';
+import { createCouncilHostServices } from '@kernlang/agon-mod-council';
 import { header, warn, info, bold, dim, red } from './blocks/output-format.js';
 import { createTeamBrainstormHostServices } from '@kernlang/agon-mod-team-brainstorm';
 import { createConquerHostServices } from '@kernlang/agon-mod-conquer';
@@ -149,6 +150,46 @@ export async function decorateCliFirstPartyServices(manifest: ModManifest, base:
       },
       warn: message => console.warn(message),
     }), cliOutput: { log: (text: string) => console.log(text), header, info, bold, dim } } } : {}),
+    ...(['agon.council', 'agon.conquer'].includes(manifest.id) ? { council: {
+      ...createCouncilHostServices<CatalogEngineRegistry>({
+        openRegistry: () => {
+          const registry = new CatalogEngineRegistry();
+          registry.load(resolveBuiltinEnginesDir()); return registry;
+        },
+        createAdapter: createCliAdapter, loadConfig, warn: message => console.warn(message),
+        selectEngines: (registry, cwd) => {
+          const config = loadConfig(cwd);
+          const activeEngineIds = registry.activeIds(config);
+          return { activeEngineIds, defaultEngineIds: filterDefaultOrchestrationEngines(activeEngineIds),
+            removedEngineIds: registry.partitionRoster(registry.listIds(), config).removed };
+        },
+        readSeating: registry => {
+          const enabled = currentInvocationOwnerAvailable('agon.ratings') !== false;
+          if (enabled) glicko.seedNewEnginesFromRegistry(registry);
+          const ratings = enabled ? glicko.getRatings() : {
+            global: {}, byMode: { forge: {}, brainstorm: {}, tribunal: {}, critique: {} },
+            byTaskClass: {}, engineMeta: {}, lastUpdated: '',
+          };
+          return {
+            pick: (ids, modes) => glicko.pickTopRatedEngine(ids, ratings, {
+              modes: modes.filter((mode): mode is 'tribunal' | 'critique' => mode === 'tribunal' || mode === 'critique'),
+            }),
+            rank: ids => glicko.rankEnginesByRating(ids, ratings),
+          };
+        },
+        recordRatings: (question, ranked) => {
+          if (currentInvocationOwnerAvailable('agon.ratings') === false) return;
+          const taskClass = classifyTask(question);
+          glicko.updateGlickoRanked(ranked, taskClass, 'tribunal');
+          glicko.updateGlickoRanked(ranked, taskClass, 'critique');
+        },
+        captureAuthority: () => {
+          const assertCurrent = captureProcessSurfaceAuthority();
+          return () => { assertCurrent(); assertProcessSurfaceAvailable('cli', 'council'); };
+        },
+      }),
+      ...(manifest.id === 'agon.council' ? { cliOutput: { log: (text: string) => console.log(text), header, info, bold, dim } } : {}),
+    } } : {}),
     ...(manifest.id === 'agon.campfire' ? { campfire: { ...createCampfireHostServices({
       openRegistry: () => {
         const registry = new CatalogEngineRegistry();

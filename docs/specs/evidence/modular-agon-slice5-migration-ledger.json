@@ -37,8 +37,8 @@
         "@kernlang/agon-mod-api",
         "@kernlang/agon-support-engine-runtime"
       ],
-      "assignments": 2,
-      "assignmentHash": "sha256:49684df3a10fb82696210b74db42f39a238dcfb661de294d92932f8ec6c588df",
+      "assignments": 3,
+      "assignmentHash": "sha256:d699ca20d4c1576f16c9b2579bd2a0cd150ac30607f12874873df89f5817d6dc",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -122,8 +122,8 @@
         "@kernlang/agon-support-worktree",
         "@kernlang/agon-support-verification"
       ],
-      "assignments": 35,
-      "assignmentHash": "sha256:6d7a03d05b5994bc9c0c53a41e90cdefbf45e315b4dfa8629f6d764dee5af3cc",
+      "assignments": 34,
+      "assignmentHash": "sha256:7b4daadd449bd60afc2e4602104f4c30c0c636a6628c23f8bf136b09551940ec",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -3107,26 +3107,6 @@
       ],
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/forge/src/synth-plan.ts",
-      "authority": "legacy-runtime-until-s6",
-      "legacyPresent": true,
-      "registrationBoundary": "public-mod-api",
-      "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
-    },
-    {
-      "category": "resultAndEnvelopeTypes",
-      "id": "ThinkResult",
-      "source": "packages/forge/src/thinking.ts:88",
-      "class": "user-toggleable-mod-package",
-      "package": "@kernlang/agon-mod-forge",
-      "rule": "semantic-source-rule",
-      "legacyPath": "packages/forge/src/thinking.ts",
-      "physicalPackage": "packages/mod-forge",
-      "physicalEntrypoint": "packages/mod-forge/src/index.ts",
-      "implementationPaths": [
-        "packages/mod-forge/src/index.ts"
-      ],
-      "ownershipAsset": "packages/mod-forge/ownership.json",
-      "compatibilityAdapter": "packages/forge/src/thinking.ts",
       "authority": "legacy-runtime-until-s6",
       "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
@@ -7202,6 +7182,26 @@
       ],
       "ownershipAsset": "packages/mod-think/ownership.json",
       "compatibilityAdapter": "packages/cli/src/lazy-commands.ts",
+      "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
+      "registrationBoundary": "public-mod-api",
+      "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
+    },
+    {
+      "category": "resultAndEnvelopeTypes",
+      "id": "ThinkResult",
+      "source": "packages/forge/src/thinking.ts:88",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-think",
+      "rule": "semantic-source-rule",
+      "legacyPath": "packages/forge/src/thinking.ts",
+      "physicalPackage": "packages/mod-think",
+      "physicalEntrypoint": "packages/mod-think/src/index.ts",
+      "implementationPaths": [
+        "packages/mod-think/src/index.ts"
+      ],
+      "ownershipAsset": "packages/mod-think/ownership.json",
+      "compatibilityAdapter": "packages/forge/src/thinking.ts",
       "authority": "legacy-runtime-until-s6",
       "legacyPresent": true,
       "registrationBoundary": "public-mod-api",

@@ -1,5 +1,3 @@
-export { loadTeamConfidenceFloor } from './team-elo.js';
-export { defaultCompositionRating, defaultRoleRating, loadTeamElo, saveTeamElo, expectedScore, getTeamElo, predictTeamRating, updateTeamElo, computeContributionWeights } from './team-elo.js';
 import { validateManifest } from '@kernlang/agon-mod-api';
 import manifest from '../agon.mod.json' with { type: 'json' };
 import ownership from '../ownership.json' with { type: 'json' };
@@ -17,3 +15,5 @@ export { computeUnknownEngineIds, computeRunManifestPurge, purgeRatingsStore } f
 export type { PurgeReport, RatingsMaintenanceStore } from './maintenance.js';
 export { rankByTaskClass, assignForgeRoles, buildSpecializedPrompt } from './role-specialization.js';
 export type { EngineRole } from './role-specialization.js';
+export { loadTeamConfidenceFloor } from './team-elo.js';
+export { defaultCompositionRating, defaultRoleRating, loadTeamElo, saveTeamElo, expectedScore, getTeamElo, predictTeamRating, updateTeamElo, computeContributionWeights } from './team-elo.js';

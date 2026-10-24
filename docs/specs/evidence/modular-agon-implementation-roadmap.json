@@ -766,7 +766,8 @@
       "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
       "extractionSources": [
         "packages/cli/src/lazy-commands.ts:316",
-        "packages/cli/src/signals/intent.ts:56"
+        "packages/cli/src/signals/intent.ts:56",
+        "packages/forge/src/thinking.ts:88"
       ],
       "migrationOrder": 10,
       "migrationSlice": "S5",
@@ -1934,7 +1935,6 @@
         "packages/forge/src/pr-text.ts:21",
         "packages/forge/src/quality.ts:49",
         "packages/forge/src/synth-plan.ts:16",
-        "packages/forge/src/thinking.ts:88",
         "packages/forge/src/types-impl.ts:10",
         "packages/forge/src/types-impl.ts:3",
         "packages/mcp/src/agon-orchestration.ts:24"

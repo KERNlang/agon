@@ -259,14 +259,6 @@
       "rule": "semantic-source-rule"
     },
     {
-      "category": "resultAndEnvelopeTypes",
-      "id": "ThinkResult",
-      "source": "packages/forge/src/thinking.ts:88",
-      "class": "user-toggleable-mod-package",
-      "package": "@kernlang/agon-mod-forge",
-      "rule": "semantic-source-rule"
-    },
-    {
       "category": "tuiSlashCommands",
       "id": "/apply",
       "source": "packages/cli/src/signals/intent.ts:56",

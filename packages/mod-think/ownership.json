@@ -11,6 +11,14 @@
       "rule": "exact-user-surface"
     },
     {
+      "category": "resultAndEnvelopeTypes",
+      "id": "ThinkResult",
+      "source": "packages/forge/src/thinking.ts:88",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-think",
+      "rule": "semantic-source-rule"
+    },
+    {
       "category": "tuiSlashCommands",
       "id": "/think",
       "source": "packages/cli/src/signals/intent.ts:56",

@@ -1,5 +1,45 @@
 # Installed-product audit and repair ledger
 
+## Think result ownership and generator preservation — 2026-10-24
+
+ThinkResult now belongs to Think, not the surrounding legacy Forge package.
+Exactly one of the 872 frozen assignments changed owner. Its occurrence ID and
+source locator stay intact; the 49 packages and 158 dependency edges are unchanged.
+The result reader moved with it, retaining its schema, readable version range,
+JSON rendering and disposal. This does not complete Think runtime extraction.
+
+The first-party package generator had stale templates for existing public exports
+and engine permissions. Regeneration would remove nine files' current content.
+Templates now preserve those exports and permissions. A non-writing generator
+test compares all 257 generated outputs with the current files. Its failing run
+preceded the repair. AST comparison against the prior commit separately confirmed
+unchanged export declarations for six affected packages; Ratings only reordered
+two exports. No new dependency or external package was introduced.
+
+An isolated Codex review reported missing removal from Forge's ownership file.
+That file was omitted from the review packet, but already contained the removal.
+Local checks refuted the finding: both ownership files, manifest byte counts and
+SHA-256 asset hashes agree. The review correctly distinguished generation
+stability from historical API compatibility. Both were checked separately.
+
+Verification: full build, typecheck, lint, re-export guard, offline release packs,
+SBOM and migration ledger pass. All 29 focused tests pass. The first runtime test
+used stale compiled packages and failed; rebuilding resolved it. Final full suite:
+11,211 passed, six skipped, 590.011 seconds. Two compiled native bootstrap cases
+then passed: normal mode owns and renders the historical Think result; safe mode
+does not activate it. Disposal removes the registration. All test runs recorded
+zero provider launches. Native evidence is macOS arm64, Node 26.12.1 only.
+
+Durable evidence: `/Users/ra/dev/modular-agon-remediation/think-owner-*`.
+Full-suite log SHA-256: `0a9521680b637a92de4f2ae3f995bad85a3a7dbe5ba77b254cdd84c9fd08687a`.
+Native log SHA-256: `feaf46a428ae4404b48994d5fc4acc56533b66233c2f15b58eb14df08f7bb46f`.
+Review packet SHA-256: `bb5d4c5af768be9dbd9addba496b3c3c583a99c2cd756796a7f082de6157d563`.
+Review log SHA-256: `47e58945a7a8a98b25832ca07812ddd6e108b6e1444edc9d9e2fb79a9f3d371b`.
+Legacy runtime, CLI and session sources were archived byte-exactly from
+`f222e17b832de533fefffb6dcfbfc78e40028630`; fourteen raw fake-engine runtime
+cases were captured for the next extraction. Neither is full workflow acceptance.
+Global installation and personal state remain unchanged. No push.
+
 ## Plan uses the physical Campfire runtime — 2026-10-24
 
 Plan now invokes the Campfire owner directly, with its captured working directory,

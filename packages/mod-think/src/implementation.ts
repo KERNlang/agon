@@ -74,7 +74,8 @@ function parseThink(value: string): Record<string, Json> | undefined {
 }
 export const createMod:AgonModFactory=(services)=>Object.freeze({apiVersion:'1' as const,async activate(registrar:Registrar):Promise<Dispose>{
   const disposers=[registrar.command('cli',{id:'cliCommands:0071',description:'Sequential thinking with structured validation',inputSchema,cli,run:(input,context)=>runThink(input,context,services)}),
-    registrar.command('tui',{id:'tuiSlashCommands:0067',description:'Sequential thinking',inputSchema:tuiInputSchema,parse:parseThink,run:(input,context)=>runThink(tuiRequest(input),context,services)})];
+    registrar.command('tui',{id:'tuiSlashCommands:0067',description:'Sequential thinking',inputSchema:tuiInputSchema,parse:parseThink,run:(input,context)=>runThink(tuiRequest(input),context,services)}),
+    registrar.resultType({id:'resultAndEnvelopeTypes:0133',schema:{type:'object',additionalProperties:true},readableVersions:'>=0.2.0',render:async(payload)=>({text:JSON.stringify(payload,null,2)})})];
   return async()=>{for(const dispose of [...disposers].reverse())await dispose();};
 }});
 export default createMod;

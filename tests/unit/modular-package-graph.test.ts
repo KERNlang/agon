@@ -1,11 +1,26 @@
 import { describe, expect, it } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { runInNewContext } from 'node:vm';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { FIRST_PARTY_PACKAGE_GRAPH } from '../../packages/mod-kernel/src/generated/first-party-package-graph.js';
 
 describe('frozen first-party package graph', () => {
+  it('regenerates first-party metadata without erasing current public exports or capabilities', () => {
+    const generator = new URL('../../scripts/spec/generate-modular-first-party-packages.mjs', import.meta.url);
+    const outputs = new Map<string, string>();
+    const source = readFileSync(generator, 'utf8').replace(/^import .*;\n/gm, '')
+      .replaceAll('import.meta.dirname', JSON.stringify(dirname(fileURLToPath(generator))));
+    runInNewContext(source, {
+      readFileSync, existsSync, resolve, createHash, Buffer, process: { argv: [] },
+      mkdirSync: () => {}, console: { log: () => {} },
+      writeFileSync: (path: string, contents: string) => outputs.set(path, contents),
+    });
+    expect(outputs.size).toBeGreaterThan(0);
+    for (const [path, contents] of outputs) expect(contents, path).toBe(readFileSync(path, 'utf8'));
+  });
+
   it('regenerates the complete authoritative package map without losing approved dependencies', () => {
     const generator = new URL('../../scripts/spec/generate-modular-agon-ownership.mjs', import.meta.url);
     const outputs = new Map<string, string>();
@@ -35,6 +50,7 @@ describe('frozen first-party package graph', () => {
       ['campfire', 'campfire'], ['council', 'council'], ['conquer', 'conquer'],
       ['goal', 'goal'], ['mutate', 'mutate'], ['naturalize', 'naturalize'],
       ['nero', 'nero'], ['research', 'research'], ['synthesis-modus', 'synthesis'],
+      ['thinking', 'think'],
     ]) {
       const entries = assignments.filter(row => new RegExp(`^packages/forge/src/${sourceName}(?:[./-])`).test(row.source));
       expect(entries.length, sourceName).toBeGreaterThan(0);

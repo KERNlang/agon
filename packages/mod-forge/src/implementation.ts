@@ -73,7 +73,6 @@ const resultIds = [
   "resultAndEnvelopeTypes:0124",
   "resultAndEnvelopeTypes:0127",
   "resultAndEnvelopeTypes:0128",
-  "resultAndEnvelopeTypes:0133",
 ];
 const tuiIds = [
   "builtinCommandMetadata:0002",

@@ -4966,7 +4966,7 @@
       "id": "ThinkResult",
       "source": "packages/forge/src/thinking.ts:88",
       "class": "user-toggleable-mod-package",
-      "package": "@kernlang/agon-mod-forge",
+      "package": "@kernlang/agon-mod-think",
       "rule": "semantic-source-rule"
     },
     {

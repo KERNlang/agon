@@ -14,7 +14,7 @@ describe('first-party semantic receipts', () => {
     const owners = {
       goal: ['0016', '0064', '0144'], campfire: ['0022'], conquer: ['0037', '0055'],
       council: ['0039'], mutate: ['0083', '0114'], naturalize: ['0085'],
-      nero: ['0086'], research: ['0106'], synthesis: ['0126'],
+      nero: ['0086'], research: ['0106'], synthesis: ['0126'], think: ['0133'],
     };
     const payload = { historical: true, nested: { value: 42 }, entries: ['one', 'two'] };
     const registry = boot.activated.generation.registry;

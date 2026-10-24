@@ -10,7 +10,7 @@ describe('Think TUI domain contract', () => {
       stdout: JSON.stringify({ thoughts: [], summary: 'fixture answer', openQuestions: [] }) }));
     const services = { engines: { dispatch }, receipts: { record: async () => 'fixture' } } as unknown as ModServices;
     const mod = await createMod(services);
-    await mod.activate({ command: (surface, value) => { if (surface === 'tui') command = value; return () => {}; } } as Registrar);
+    await mod.activate({ command: (surface, value) => { if (surface === 'tui') command = value; return () => {}; }, resultType: () => () => {} } as Registrar);
     const input = JSON.parse(JSON.stringify(command.parse!('/think inspect the architecture --steps 4 --strategy linear')));
     expect(() => assertContributionInput(command.inputSchema!, input)).not.toThrow();
     const result = await command.run(input, { cwd: process.cwd(), invocationId: 'fixture', platform: 'darwin-arm64', signal: new AbortController().signal, config: {} });

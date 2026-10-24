@@ -153,9 +153,9 @@ function expectedFiles(packageRecord) {
   // Composite workflows invoke child mods with the caller's service boundary,
   // so their transitive effects must remain visible in the parent manifest.
   if (['conquer', 'goal', 'pipeline-delivery', 'pipeline-orchestration'].includes(short)) inferredPermissions.add('engine.dispatch');
-  // Brainstorm and Forge dispatch through host services in separate modules.
+  // These workflows dispatch through host services in separate modules.
   // The entrypoint scan cannot see these effects.
-  if (['brainstorm', 'forge'].includes(short)) inferredPermissions.add('engine.dispatch');
+  if (['brainstorm', 'forge', 'team-brainstorm', 'tribunal', 'campfire'].includes(short)) inferredPermissions.add('engine.dispatch');
   // Jobs persists scheduler observations through its separate storage adapter.
   if (short === 'jobs') inferredPermissions.add('state.write');
   if (short === 'conquer') inferredPermissions.add('git.write');
@@ -237,7 +237,23 @@ function expectedFiles(packageRecord) {
     include: ['src'],
     exclude: ['src/**/*.test.ts'],
   };
-  const physicalExports = short === 'browser' ? `export { driveBrowser, runServe, browserHost } from './implementation.js';
+  const physicalExports = short === 'team-brainstorm' ? `export { createTeamBrainstormRuntime } from './runtime.js';
+export { createTeamBrainstormHostServices } from './host.js';
+export type { TeamBrainstormHostServices, TeamBrainstormHostEffects, TeamBrainstormModServices, TeamBrainstormInvocationOptions } from './host.js';
+export type { TeamBrainstormEffects, TeamBrainstormOptions, TeamBrainstormRegistry, TeamBrainstormConfig, TeamBrainstormEvent } from './runtime.js';
+export { presentTeamBrainstormEvent, presentTeamBrainstormResult } from './presentation.js';
+export type { TeamBrainstormDisplayEvent } from './presentation.js';
+export { runTeamBrainstormSession } from './session-workflow.js';
+export type { TeamBrainstormSessionHost, TeamBrainstormSessionExecutionContext } from './session-workflow.js';
+` : short === 'team-tribunal' ? `export { runTeamCoopTribunal } from './cooperative.js';
+export type { TeamTribunalRegistry } from './cooperative.js';
+` : short === 'campfire' ? `export { runCampfireRuntime } from './runtime.js';
+export type { CampfireOptions, CampfireEffects, CampfireResult } from './runtime.js';
+export { createCampfireHostServices } from './host.js';
+export type { CampfireHostEffects, CampfireHostServices, CampfireHostSession, CampfireModServices } from './host.js';
+export { runCampfireSession } from './session-workflow.js';
+export type { CampfireSessionContext, CampfireSessionCommandResult, CampfireSessionHost, CampfireSessionEvent } from './session-workflow.js';
+` : short === 'browser' ? `export { driveBrowser, runServe, browserHost } from './implementation.js';
 ` : short === 'worktrees' ? `export { runWorktree, runWorkspace } from './implementation.js';
 export * from './workspaces.js';
 ` : short === 'skill-authoring' ? `export { createSkill } from './implementation.js';
@@ -254,6 +270,8 @@ export { computeUnknownEngineIds, computeRunManifestPurge, purgeRatingsStore } f
 export type { PurgeReport, RatingsMaintenanceStore } from './maintenance.js';
 export { rankByTaskClass, assignForgeRoles, buildSpecializedPrompt } from './role-specialization.js';
 export type { EngineRole } from './role-specialization.js';
+export { loadTeamConfidenceFloor } from './team-elo.js';
+export { defaultCompositionRating, defaultRoleRating, loadTeamElo, saveTeamElo, expectedScore, getTeamElo, predictTeamRating, updateTeamElo, computeContributionWeights } from './team-elo.js';
 ` : short === 'provenance' ? `export { runProvenance, buildProvenance, renderMarkdown } from './implementation.js';
 ` : short === 'rag' ? `export * from './store.js';
 export * from './grounding.js';
@@ -398,13 +416,15 @@ export type { ConquerWorkflowOptions, ConquerWorkflowEffects, StuckSignals, Conq
 export { isAgentCapableEngine, buildFalsifierPrompt, parseFalsifierOutput, isSafeCounterexample, runDoneFalsifier, runDoneOracle } from './falsifier.js';
 export type { SandboxOps, FalsifierResult, FalsifierOptions, FalsifierEffects, DoneOracleOptions, DoneOracleResult } from './falsifier.js';
 export { createConquerHostServices } from './host.js';
-export type { ConquerHostServices, ConquerPublicationPolicy } from './host.js';
+export type { ConquerHostServices, ConquerPublicationPolicy, ConquerInvocationContext } from './host.js';
 export { createConquerIsolation } from './isolation.js';
 export type { ConquerIsolation, ConquerIsolationEffects } from './isolation.js';
 export { publishConquerBranch } from './publication.js';
 export type { ConquerPublicationOptions, ConquerPublicationGit, ConquerPublicationResult } from './publication.js';
 export { prepareConquerPullRequest } from './pull-request.js';
 export type { ConquerPrDraft, ConquerPrEffects, ConquerPullRequest } from './pull-request.js';
+export { runConquerSession } from './session-workflow.js';
+export type { ConquerSessionHost, ConquerSessionContext, ConquerSessionCommandResult } from './session-workflow.js';
 ` : short === 'brainstorm' ? `export { runBrainstorm } from './implementation.js';
 export { createBrainstormWorkflow } from './workflow.js';
 export { createBrainstormRuntime } from './runtime.js';
@@ -431,6 +451,21 @@ export { parseBrainstormResult } from './result.js';
 export type { BrainstormResult } from './result.js';
 export type { BrainstormSessionHost, BrainstormSessionCommandResult, BrainstormSessionExecutionContext } from './session-workflow.js';
 ` : short === 'tribunal' ? `export { runTribunal } from './implementation.js';
+export {
+  getModeConfig, buildModePrompt, buildModeSummaryPrompt,
+  isTribunalMode, isTribunalProtocol, TRIBUNAL_MODES, TRIBUNAL_PROTOCOLS,
+} from './modes.js';
+export type { TribunalMode, TribunalModeConfig, TribunalProtocol } from './modes.js';
+export { createTribunalRuntime, buildFallbackSummary, requireNonEmptyDispatchText } from './runtime.js';
+export type { TribunalRuntimeOptions, TribunalRuntimeEffects, TribunalEvent, TribunalPosition, TribunalRound, TribunalResult } from './runtime.js';
+export { createTribunalHostServices } from './host.js';
+export type { TribunalHostEffects, TribunalHostServices, TribunalHostSession, TribunalModServices, TribunalInvocationContext } from './host.js';
+export { renderTribunalResult } from './presentation.js';
+export type { TribunalFailure, TribunalOutput } from './presentation.js';
+export { createTribunalSessionRecord } from './session-record.js';
+export type { TribunalSessionEffects } from './session-record.js';
+export { runTribunalSession } from './session-workflow.js';
+export type { TribunalSessionHost, TribunalSessionContext, TribunalSessionCommandResult } from './session-workflow.js';
 ` : short === 'review' ? `export { runReview } from './implementation.js';
 export * from './consensus.js';
 export { extractReviewFindings } from './findings.js';

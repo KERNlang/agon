@@ -130,6 +130,7 @@ function assignmentFor(category, item) {
   if (modName) return { class: MOD, package: `@kernlang/agon-mod-${modName}`, rule: 'exact-user-surface' };
 
   const sourceRules = [
+    [/\/(?:think|thinking)\b|ThinkResult/, 'think'],
     [/\/(?:brainstorm|team-brainstorm)\b|Brainstorm/, 'brainstorm'], [/\/(?:tribunal|team-tribunal)\b|Tribunal/, 'tribunal'],
     [/\/(?:forge|gauntlet|fitness|corpus)\b|Forge|Gauntlet|Fitness|Corpus/, 'forge'], [/\/campfire\b|Campfire/, 'campfire'],
     [/\/council\b|Council/, 'council'], [/\/nero\b|Nero/, 'nero'], [/\/synthesis\b|Synthesis/, 'synthesis'],

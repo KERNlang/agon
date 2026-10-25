@@ -76,6 +76,50 @@ try {
     assert.deepEqual(worktree.parseChangedLines(diff), { 'tests/example.test.ts': [1, 2] });
     assert.deepEqual(worktree.newFilesInDiff(diff), ['tests/example.test.ts']);
   `], { cwd: ephemeral }));
+  requireOk('packed-agent-refinement', run(process.execPath, ['--input-type=module', '-e', `
+    import assert from 'node:assert/strict';
+    import { pathToFileURL } from 'node:url';
+    import { runAgentTeamSynthesis, runAgentInvestigateSynthesis } from '@kernlang/agon-mod-agent';
+    const installedRoot = pathToFileURL(process.cwd() + '/node_modules/').href;
+    assert.ok(import.meta.resolve('@kernlang/agon-mod-agent').startsWith(installedRoot));
+    const calls = [];
+    const runtime = {
+      runApiAgentLoop: async options => {
+        calls.push('api');
+        assert.equal(options.cwd, process.cwd());
+        return { response: 'refined report', toolCalls: 0, steps: 1 };
+      },
+      recordApiLoopDispatch: () => { calls.push('ledger'); },
+      worktreeChangedDiff: () => { calls.push('diff'); return 'refined patch'; },
+    };
+    const options = { task: 'fixture', winnerEngineId: 'winner',
+      winnerApi: { baseUrl: 'https://example.invalid', apiKeyEnv: 'FIXTURE_KEY', model: 'fixture' },
+      winnerWorktreePath: process.cwd(), winnerCwd: process.cwd(), winnerDiff: 'original patch',
+      winnerResponse: 'original report', baseSha: 'fixture', timeout: 1,
+      losers: [{ engineId: 'other', diff: 'other patch', response: 'other report', passedFitness: true }] };
+    assert.deepEqual(await runAgentTeamSynthesis(options, runtime), {
+      ok: true, synthesizedDiff: 'refined patch', changed: true, error: null, responseExcerpt: 'refined report', skipped: false,
+    });
+    assert.deepEqual(await runAgentInvestigateSynthesis(options, runtime), {
+      ok: true, report: 'refined report', error: null, skipped: false,
+    });
+    assert.deepEqual(calls, ['api', 'ledger', 'diff', 'api', 'ledger']);
+  `], { cwd: ephemeral }));
+  const agentExample = join(ephemeral, 'agent-refinement-public-contract.mts');
+  writeFileSync(agentExample, `
+    import { runAgentTeamSynthesis, runAgentInvestigateSynthesis, type AgentSynthesisOptions,
+      type AgentSynthesisResult, type AgentInvestigateSynthesisOptions,
+      type AgentInvestigateSynthesisResult, type AgentSynthesisRuntime } from '@kernlang/agon-mod-agent';
+    declare const options: AgentSynthesisOptions;
+    declare const investigation: AgentInvestigateSynthesisOptions;
+    declare const runtime: AgentSynthesisRuntime;
+    const edit: Promise<AgentSynthesisResult> = runAgentTeamSynthesis(options, runtime);
+    const report: Promise<AgentInvestigateSynthesisResult> = runAgentInvestigateSynthesis(investigation, runtime);
+    void edit; void report;
+  `);
+  requireOk('packed-agent-refinement-public-types', run(process.execPath, [join(root, 'node_modules/typescript/bin/tsc'),
+    '--noEmit', '--strict', '--target', 'ES2022', '--module', 'NodeNext', '--moduleResolution', 'NodeNext',
+    '--types', 'node', '--typeRoots', join(root, 'node_modules/@types'), agentExample], { cwd: ephemeral }));
   // Independent probes must not hide later installer failures. Retain every
   // failed check and reject the whole qualification before emitting success.
   for (const [id, verify] of [

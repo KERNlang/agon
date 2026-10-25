@@ -360,7 +360,7 @@ export async function dispatchOrchestrationIntent(intent: any, input: string, cb
     case 'speculate': {
       const specInput = intent.input;
       const specLabel = specInput?.slice(0, 40) ?? 'speculate';
-      cb.runAsJob('speculate', specLabel, async () => {
+      cb.runAsJob('speculate', specLabel, async (signal) => {
         const cwd = resolveWorkingDir();
         const available = cb.ctx.activeEngines();
         // Resolve API engines — speculator needs API access for runApiAgentLoop.
@@ -396,6 +396,7 @@ export async function dispatchOrchestrationIntent(intent: any, input: string, cb
             members,
             prompt: specInput,
             cwd,
+            signal,
             timeoutSec: 120,
             thread,
             taskKeywords: specInput.split(/\s+/).slice(0, 8),

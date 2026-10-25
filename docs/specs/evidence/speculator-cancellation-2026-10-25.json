@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-25",
+  "scope": "Forward CLI job cancellation and prevent an aborted Speculator from publishing a winner; not full modular acceptance",
+  "subject": {
+    "base": "700c867987567e3d427f4da906a3fed129c777b1",
+    "trackedDiffBeforeIndexSha256": "5fbd8b714713ee6445c5b9e6c3cbb31fa281e4294cb2f15e96bc6ff3b00cc1f2",
+    "newTest": {
+      "path": "tests/unit/speculator-job-cancellation.test.ts",
+      "sha256": "763352e01aaa294f8e4bc4da2636767b6133e52f9c51632f6d3b3f12cc605b8a"
+    }
+  },
+  "verification": {
+    "negativeControls": "Two actual post-abort publication failures and one dropped CLI signal failed before the fix.",
+    "focusedTests": 10,
+    "realGit": "Success and cancellation preserve the expected workspace contents and restore the exact worktree list.",
+    "fullSuite": { "passed": 11682, "skipped": 6, "failed": 0 },
+    "installedChecks": 85,
+    "buildTypecheckLintReexports": "Passed; terminal receipts retained outside shipping packages.",
+    "performanceGroups": 8,
+    "docsUnchanged": true,
+    "releaseSetAndSbomChecks": true,
+    "providerLaunches": 0,
+    "cleanCommittedQualification": "Required separately before PR readiness."
+  },
+  "performance": {
+    "initialResult": "Failed S8 trusted bootstrap while a full suite ran concurrently; not waived or deleted.",
+    "initialTrustedBootstrapP95Ms": 884.615334,
+    "idleTrustedBootstrapP95Ms": 525.531583,
+    "budgetMs": 750,
+    "interpretation": "Idle rerun passed without source or budget changes. Contention is a plausible explanation, not a proven causal finding."
+  },
+  "review": {
+    "route": "Isolated Agon bounded source packet",
+    "packetSha256": "9c569a8515f1361436597d8bea07eaa4ad2b12d6c637e43cdf478f3d7a4ce27a",
+    "codex": "Completed; no confirmed introduced defect remains.",
+    "kimi": "No usable answer; not a passing review."
+  },
+  "limits": [
+    "Already-aborted setup does not short-circuit; inherited behavior.",
+    "Provider abort responsiveness and cancellation during asynchronous thread saving are not verified here.",
+    "No active/global installation, personal-state change or release-acceptance claim."
+  ],
+  "reproduce": [
+    "npm run build && npm run typecheck && npm run lint && npm run guard:reexports",
+    "npm test -- tests/unit/speculator-failure.test.ts tests/unit/speculator-job-cancellation.test.ts",
+    "node scripts/spec/verify-modular-npx.mjs",
+    "npm test",
+    "npm run perf:modular-release && npm run docs:modes",
+    "node scripts/spec/verify-modular-release-set.mjs --check && node scripts/spec/verify-modular-supply-chain.mjs --check"
+  ],
+  "archive": {
+    "location": "durable operator archive modular-agon-remediation, outside Git worktrees",
+    "retention": "Never delete without Raphael approval",
+    "artifacts": [
+      { "path": "speculator-cancellation-full-r3-20261025.receipt.json", "sha256": "1a99949ad334f05f9db283293247bf500769c025d9fa6606581d79ec72f61418" },
+      { "path": "speculator-cancellation-perf-idle-20261025.receipt.json", "sha256": "875862935c02f50839c0043a29abb7f527b4296137cff6670cef5be239be77e0" },
+      { "path": "speculator-cancellation-perf-docs-20261025.receipt.json", "sha256": "0fc84c171e247bcccc75fe088a1a49c085f642e3961f4eae33717f453528dd26" },
+      { "path": "speculator-cancellation-review-adjudication-20261025.md", "sha256": "901080d78e1733920d3cbcf93c2304dfac4b7aca1a36acf0c980e8ae0396be2c" },
+      { "path": "speculator-cancellation-negative-r3-20261025.receipt.json", "sha256": "d93eddf20934d4e1cc02906c8b21ae508efb7beb4ce3e3c5e49a85cab0168db7" },
+      { "path": "speculator-job-signal-negative-20261025.receipt.json", "sha256": "94e79c27ce190e770e31e5a78efaf2952ba48a1d2852a1458274de699d6df73a" },
+      { "path": "speculator-cancellation-hygiene-20261025.receipt.json", "sha256": "d7ee4c5c2e0f44cc942e4d0cfe1b86efc02b1e1431037e9dd1f3ede3f564a66d" },
+      { "path": "speculator-cancellation-focused-20261025.receipt.json", "sha256": "2ddbe97e570bf7cbb5c32e257f0f27a75984b753252381bab7c521e9d5ef937b" }
+    ]
+  }
+}

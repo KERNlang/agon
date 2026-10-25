@@ -123,3 +123,17 @@ it('waits for the accepted execution to settle', async () => {
   await result;
   expect(settled).toBe(true);
 });
+
+it.each([[1200, '1,200'], [0, '0'], [1234567, '1,234,567']])('AC-5 formats %i tokens with en-US grouping in resume and markdown output', async (tokens, text) => {
+  const plan = fixture();
+  plan.steps[0] = { ...plan.steps[0], state: 'failed', estimatedTokens: tokens,
+    result: { ...plan.steps[0].result!, status: 'failure', error: 'failed locally' } };
+  plan.totalEstimatedTokens = tokens;
+  plan.totalActualTokens = tokens;
+  const notify = vi.fn();
+  await owner.runPlanResumeApproval(plan, { available: () => true, notify, choose: async () => '3', execute: async () => {} });
+  expect(notify.mock.calls[0][1]).toContain(`~${text} tokens ·`);
+  const markdown = owner.formatCesarPlanMarkdown(plan);
+  expect(markdown).toContain(tokens > 0 ? `Planned: ~${text} tokens` : `Total estimated: ~${text} tokens`);
+  if (tokens > 0) expect(markdown).toContain(`Actual: ${text} tokens`);
+});

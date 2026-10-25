@@ -1,4 +1,5 @@
 import { readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 import { resolveWithinRoot } from './paths.js';
 
@@ -97,11 +98,14 @@ export async function runMutants(opts: RunMutantsOptions): Promise<MutationRepor
   // Set when a subprocess could not be SPAWNED at all (never a test verdict).
   let spawnFailure: string | undefined;
 
+  // CPython trusts cached bytecode whose recorded source mtime (whole seconds) and size match, so a same-length mutant written within a second of an earlier run would execute the unmutated .pyc. Runs neither read nor write a bytecode cache; compile checks write theirs to a sink no run reads.
+  const runEnv = { PYTHONDONTWRITEBYTECODE: '1', PYTHONPYCACHEPREFIX: join(worktree, '.agon-no-pycache') };
+  const checkEnv = { PYTHONPYCACHEPREFIX: join(worktree, '.agon-check-pycache') };
   // Every subprocess is capped at what is LEFT of the total budget, so the
   // wall clock the caller asked for is a real bound instead of a poll between
   // mutants. `budgetCut` says the BUDGET stopped this command (=> notRun),
   // not that the mutated code hung (=> timeout, which is a kill).
-  const sh = async (cmd: string, timeoutMs: number): Promise<{ res: { exitCode: number; stdout: string; stderr: string; timedOut: boolean } | null; budgetCut: boolean }> => {
+  const sh = async (cmd: string, timeoutMs: number, env: Record<string, string> = runEnv): Promise<{ res: { exitCode: number; stdout: string; stderr: string; timedOut: boolean } | null; budgetCut: boolean }> => {
     const left = deadline - Date.now();
     if (left <= 0) return { res: null, budgetCut: true };
     const capped = Math.max(1, Math.min(timeoutMs, left));
@@ -111,6 +115,7 @@ export async function runMutants(opts: RunMutantsOptions): Promise<MutationRepor
         command: '/bin/sh',
         args: ['-c', cmd],
         cwd: worktree,
+        env,
         timeout: capped,
         signal: opts.signal,
         maxCapturedBytesPerStream: 1024 * 1024,
@@ -262,7 +267,7 @@ export async function runMutants(opts: RunMutantsOptions): Promise<MutationRepor
     compileCheckNames = plannedChecks.templates;
     for (const cmd of plannedChecks.commands) {
       const t0 = Date.now();
-      const r = await sh(cmd, setupTimeoutMs);
+      const r = await sh(cmd, setupTimeoutMs, checkEnv);
       baselineCheckMs = Math.max(baselineCheckMs, Date.now() - t0);
       if (!r.res || r.budgetCut) { baselineOk = false; return budgetStop('compile check'); }
       if (opts.signal?.aborted) { baselineOk = false; return abortStop('compile check'); }
@@ -365,7 +370,7 @@ export async function runMutants(opts: RunMutantsOptions): Promise<MutationRepor
         }
         const checkTemplate = status === 'killed' && !cutByBudget ? compileCheckTemplate(compileChecks, rel) : undefined;
         if (checkTemplate) {
-          const check = await sh(expandCompileCheck(checkTemplate, abs), checkTimeoutMs);
+          const check = await sh(expandCompileCheck(checkTemplate, abs), checkTimeoutMs, checkEnv);
           if (!check.res || check.budgetCut) cutByBudget = true;
           else if (check.res.exitCode !== 0 || check.res.timedOut) { status = 'invalid'; exitCode = check.res.exitCode; reason = 'the mutated source does not compile'; }
         }

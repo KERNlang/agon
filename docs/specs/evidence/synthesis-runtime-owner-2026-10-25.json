@@ -1,0 +1,60 @@
+{
+  "scope": "Move the existing Synthesis runtime, prompts and result types to mod-synthesis. Preserve the Forge entrypoint. Not full Synthesis cutover or modular release acceptance.",
+  "baseCommit": "965c7fed871f1d8d4f6a5759498fbef5408879ed",
+  "testedDiffSha256": "ceda5aa086fb63919868eb2e0e9a1e33895a74f40d484bd7600bd181e1c87711",
+  "indexAddedAfterTests": true,
+  "archiveRoot": "/Users/ra/dev/modular-agon-remediation",
+  "fullGate": {
+    "receipt": "synthesis-runtime-final-main-20261025.receipt.json",
+    "logSha256": "b69062bcc17133f427dd3efeb2d56fb556efbbd622f7dee3ce8bde2b9af763ae",
+    "exitCode": 0,
+    "seconds": 1021.842,
+    "testsPassed": 11702,
+    "testsSkipped": 6,
+    "installedChecksPassed": 87,
+    "providerLaunches": 0
+  },
+  "focused": {
+    "receipt": "synthesis-runtime-review-regressions-20261025.receipt.json",
+    "logSha256": "6ade9e2daeff786166cf7443bdbd679a73bbd4a8b5338fd9765aeb419cc1b6e2",
+    "testsPassed": 81
+  },
+  "negativeControls": [
+    {
+      "receipt": "synthesis-runtime-oracle-negative-20261025.receipt.json",
+      "logSha256": "8b11a8483e0bf336d49f527994d8e51ed586edce38507e3d7093b61db1d41b13",
+      "mutation": "Changed the current runtime draft prompt while retaining the frozen oracle",
+      "expectedFailures": 12
+    },
+    {
+      "receipt": "synthesis-health-wiring-negative-20261025.receipt.json",
+      "logSha256": "fba78ce669324c3ce203da2bcee68d9da8873f199276facb85e9e5fbad792c4c",
+      "mutation": "Removed config injection from the Forge compatibility binding",
+      "expectedFailures": 4
+    }
+  ],
+  "review": {
+    "receipt": "synthesis-runtime-owner-codex-review.receipt.json",
+    "packetSha256": "83bc47938295b5e6339e8016a80b0b8994491287be1ba9f0748f2d970465c53e",
+    "logSha256": "99067d00ea98b58d501052a9c0e894ce13be176a656f10e40ef4bafc1df6d718",
+    "resolutions": [
+      "No concrete introduced runtime defect found",
+      "Added real health-helper config, concurrency, quarantine and failure checks",
+      "Added controlled four-engine out-of-order completion and phase barriers",
+      "Added cancellation during preflight and late resolve/reject in every dispatch phase",
+      "Executed packed runtime and external public-type compilation in the existing offline install harness",
+      "Frozen runtime shares the unchanged judge parser; eight existing fixed-outcome calibration tests also pass"
+    ]
+  },
+  "retainedFailure": {
+    "receipt": "synthesis-runtime-owner-full-20261025.receipt.json",
+    "logSha256": "85ad70690b8e6cf2622bc1d0031074226927ffd57951ae33d2f1c6435c974773",
+    "resolution": "Four generator/catalog drift failures reproduced, fixed at the generator, and covered by the final full gate"
+  },
+  "remaining": [
+    "Replace the separate physical ring implementation with the preserved runtime through typed host capabilities",
+    "Move CLI presentation and session effects to the Synthesis owner and retire their legacy bindings",
+    "Reconcile Agent synthesis ownership separately",
+    "Final clean committed release qualification, platform and publishing evidence remain outside this slice"
+  ]
+}

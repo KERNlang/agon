@@ -76,6 +76,45 @@ try {
     assert.deepEqual(worktree.parseChangedLines(diff), { 'tests/example.test.ts': [1, 2] });
     assert.deepEqual(worktree.newFilesInDiff(diff), ['tests/example.test.ts']);
   `], { cwd: ephemeral }));
+  requireOk('packed-synthesis-runtime', run(process.execPath, ['--input-type=module', '-e', `
+    import assert from 'node:assert/strict';
+    import { pathToFileURL } from 'node:url';
+    import { runSynthesisRuntime, buildSynthesisDraftPrompt } from '@kernlang/agon-mod-synthesis';
+    const installedRoot = pathToFileURL(process.cwd() + '/node_modules/').href;
+    assert.ok(import.meta.resolve('@kernlang/agon-mod-synthesis').startsWith(installedRoot));
+    assert.match(buildSynthesisDraftPrompt('Design'), /^## SYNTHESIS DRAFT/);
+    const calls = [], events = [];
+    const result = await runSynthesisRuntime({
+      prompt: 'Design', engines: ['alpha', 'beta'], swaps: 1, timeout: 10,
+      outputDir: process.cwd(), registry: { get: id => ({ id }), findBinary: () => null },
+      adapter: { dispatch: async request => {
+        calls.push(request);
+        return { stdout: request.prompt.startsWith('## SYNTHESIS JUDGE')
+          ? 'SCORE_1: 80\\nSCORE_2: 60\\nWINNER: alpha\\nREASONING: fixture'
+          : 'fixture draft', stderr: '', exitCode: 0, timedOut: false };
+      } }, onEvent: event => events.push(event),
+    }, { resolveWorkingDir: () => process.cwd(), health: { loadConfig: () => ({}) },
+      warn: message => { throw new Error(message); } });
+    assert.equal(calls.length, 4);
+    assert.ok(calls.every(request => request.textOnly === true));
+    assert.equal(result.drafts.length, 2);
+    assert.equal(result.swaps.length, 1);
+    assert.equal(result.winner, 'alpha');
+    assert.deepEqual(events.map(event => event.type), ['synthesis:draft', 'synthesis:draft', 'synthesis:swap', 'synthesis:score']);
+  `], { cwd: ephemeral, env: { AGON_FORCE_HEALTH_PROBE: '', AGON_DISABLE_FORGE_HEALTH_CHECK: '1' } }));
+  const synthesisExample = join(ephemeral, 'synthesis-public-contract.mts');
+  writeFileSync(synthesisExample, `
+    import { runSynthesisRuntime, type SynthesisRuntimeOptions, type SynthesisRuntimeEffects,
+      type SynthesisResult, type SynthesisRuntimeEvent } from '@kernlang/agon-mod-synthesis';
+    declare const options: SynthesisRuntimeOptions;
+    declare const effects: SynthesisRuntimeEffects;
+    const result: Promise<SynthesisResult> = runSynthesisRuntime(options, effects);
+    const event: SynthesisRuntimeEvent = { type: 'synthesis:draft', engineId: 'fixture', data: { round: 0 } };
+    void result; void event;
+  `);
+  requireOk('packed-synthesis-public-types', run(process.execPath, [join(root, 'node_modules/typescript/bin/tsc'),
+    '--noEmit', '--strict', '--target', 'ES2022', '--module', 'NodeNext', '--moduleResolution', 'NodeNext',
+    '--types', 'node', '--typeRoots', join(root, 'node_modules/@types'), synthesisExample], { cwd: ephemeral }));
   // Independent probes must not hide later installer failures. Retain every
   // failed check and reject the whole qualification before emitting success.
   for (const [id, verify] of [

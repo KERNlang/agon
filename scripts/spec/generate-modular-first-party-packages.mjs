@@ -185,6 +185,7 @@ function expectedFiles(packageRecord) {
     : short === 'think' ? ['dist/thinking.d.ts', 'dist/runtime.d.ts', 'dist/host.d.ts', 'dist/presentation.d.ts', 'dist/session-workflow.d.ts']
     : short === 'council' ? ['dist/runtime.d.ts', 'dist/host.d.ts', 'dist/presentation.d.ts', 'dist/command.d.ts', 'dist/session-workflow.d.ts']
     : short === 'review' ? ['dist/consensus.d.ts', 'dist/findings.d.ts']
+    : short === 'provenance' ? ['dist/models.d.ts', 'dist/reports.d.ts']
     : short === 'synthesis' ? ['dist/judge-parser.d.ts']
     : short === 'conquer' ? ['dist/completion-policy.d.ts', 'dist/workflow.d.ts', 'dist/falsifier.d.ts', 'dist/host.d.ts', 'dist/isolation.d.ts', 'dist/publication.d.ts']
     : short === 'nero' ? ['dist/verdict.d.ts', 'dist/critic-cascade.d.ts']
@@ -314,6 +315,8 @@ export type { EngineRole } from './role-specialization.js';
 export { loadTeamConfidenceFloor } from './team-elo.js';
 export { defaultCompositionRating, defaultRoleRating, loadTeamElo, saveTeamElo, expectedScore, getTeamElo, predictTeamRating, updateTeamElo, computeContributionWeights } from './team-elo.js';
 ` : short === 'provenance' ? `export { runProvenance, buildProvenance, renderMarkdown } from './implementation.js';
+export { buildForgeProvenance, renderProvenanceMarkdown, renderProvenanceJson, sha256OfFile, writeProvenanceReport } from './reports.js';
+export type { ProvenanceContribution, ProvenanceLedger, ProvenanceManifest } from './models.js';
 ` : short === 'rag' ? `export * from './store.js';
 export * from './grounding.js';
 export type * from './types.js';

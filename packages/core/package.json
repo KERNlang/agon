@@ -27,6 +27,7 @@
     "@kernlang/agon-mod-ratings": "1.0.0",
     "@kernlang/agon-mod-jobs": "1.0.0",
     "@kernlang/agon-mod-plan": "1.0.0",
+    "@kernlang/agon-mod-provenance": "1.0.0",
     "@kernlang/agon-mod-brainstorm": "1.0.0",
     "@kernlang/agon-mod-forge": "1.0.0",
     "@kernlang/agon-support-panel": "1.0.0",

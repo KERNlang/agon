@@ -3625,7 +3625,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.provenance",
       "version": "1.0.0",
-      "contentHash": "sha256:e65e4ce9ddb904d34a7cbaaa671ebc5f9afde4e47949d843bf266c0985f2416c"
+      "contentHash": "sha256:55a397353c6bc5eb73f699d86d5006535d96c7eabdb7946c26eac3f36c06599d"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "provenance",
@@ -7359,7 +7359,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.provenance",
       "version": "1.0.0",
-      "contentHash": "sha256:e65e4ce9ddb904d34a7cbaaa671ebc5f9afde4e47949d843bf266c0985f2416c"
+      "contentHash": "sha256:55a397353c6bc5eb73f699d86d5006535d96c7eabdb7946c26eac3f36c06599d"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "[id] [-f md|json|both] [-o file] — AI-contribution / transparency report",

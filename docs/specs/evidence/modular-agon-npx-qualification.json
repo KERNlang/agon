@@ -3,7 +3,7 @@
   "slice": "S9",
   "passed": true,
   "platform": "darwin-arm64",
-  "node": "v26.3.0",
+  "node": "v26.12.1",
   "profile": "minimal+think+review",
   "installedPackageCount": 15,
   "cacheDeletionSurvived": true,
@@ -275,6 +275,16 @@
       "detail": "exit=0"
     },
     {
+      "id": "packed-provenance-report-owner",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "packed-provenance-public-types",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
       "id": "packed-mcp-failure-contract",
       "passed": true,
       "detail": "installed server and Jobs daemon: success, blocked-provider failure, missing job via installed CLI, cyclic plan, unknown tool"
@@ -433,6 +443,31 @@
       "id": "small-profile-reuse-result",
       "passed": true,
       "detail": "already-qualified; 15 packages; 3 selected mods"
+    },
+    {
+      "id": "provenance-profile-install",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "provenance-without-forge-package",
+      "passed": true,
+      "detail": "selected installation includes Provenance; Forge absent from its package record and node_modules"
+    },
+    {
+      "id": "provenance-without-forge-markdown",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "provenance-without-forge-json",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "return-after-provenance-profile",
+      "passed": true,
+      "detail": "exit=0"
     }
   ]
 }

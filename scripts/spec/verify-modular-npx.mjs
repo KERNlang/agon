@@ -76,6 +76,57 @@ try {
     assert.deepEqual(worktree.parseChangedLines(diff), { 'tests/example.test.ts': [1, 2] });
     assert.deepEqual(worktree.newFilesInDiff(diff), ['tests/example.test.ts']);
   `], { cwd: ephemeral }));
+  requireOk('packed-provenance-report-owner', run(process.execPath, ['--input-type=module', '-e', `
+    import assert from 'node:assert/strict';
+    import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+    import { join } from 'node:path';
+    import { pathToFileURL } from 'node:url';
+    import { spawnSync } from 'node:child_process';
+    import * as reports from '@kernlang/agon-mod-provenance';
+    assert.ok(import.meta.resolve('@kernlang/agon-mod-provenance').startsWith(pathToFileURL(process.cwd() + '/node_modules/').href));
+    const manifest = { forgeId: 'report', task: 'fixture task', timestamp: '2026',
+      engines: ['a', 'b'], winner: 'a', fitnessCmd: 'npm test\\nnpm run typecheck',
+      results: { a: { score: 9, pass: true }, b: { score: 4, pass: false } },
+      dispatchLog: [{ engineId: 'a', tokens: { costUsd: 0 } }],
+      synthesis: { wins: true, score: 10, pass: true, originalWinnerScore: 9 } };
+    const reportHome = join(process.cwd(), 'report-home');
+    mkdirSync(join(reportHome, 'runs'), { recursive: true });
+    const source = join(reportHome, 'runs', 'report.json');
+    writeFileSync(source, JSON.stringify(manifest));
+    const ledger = reports.buildForgeProvenance(manifest, source);
+    assert.equal(ledger.contributions[0].costUsd, 0);
+    assert.equal(ledger.sourceHashes['manifest.json'], reports.sha256OfFile(source));
+    assert.equal(JSON.parse(reports.renderProvenanceJson(ledger)).winner, 'a');
+    assert.equal(reports.renderMarkdown, reports.renderProvenanceMarkdown);
+    const markdown = reports.writeProvenanceReport(manifest, source, join(reportHome, 'output'), 'both');
+    assert.ok(readFileSync(markdown, 'utf8').includes('**Winner:**'));
+    assert.ok(readFileSync(markdown, 'utf8').includes('*synthesis blend*'));
+    const cli = join(process.cwd(), 'node_modules/@kernlang/agon/dist/index.js');
+    const output = spawnSync(process.execPath, [cli, 'provenance', '--id', 'report', '--format', 'md'],
+      { cwd: process.cwd(), encoding: 'utf8', timeout: 30000, env: { ...process.env, AGON_HOME: reportHome } });
+    assert.equal(output.status, 0, output.stderr);
+    assert.ok(output.stdout.includes('**Winner:**'));
+    assert.ok(output.stdout.includes('*synthesis blend*'));
+    assert.ok(output.stdout.includes('npm test npm run typecheck'));
+  `], { cwd: ephemeral }));
+  const provenanceExample = join(ephemeral, 'provenance-public-contract.mts');
+  writeFileSync(provenanceExample, `
+    import { buildForgeProvenance, buildProvenance, renderProvenanceMarkdown, renderMarkdown,
+      renderProvenanceJson, writeProvenanceReport, type ProvenanceLedger, type ProvenanceManifest,
+      type ProvenanceContribution } from '@kernlang/agon-mod-provenance';
+    const input: ProvenanceManifest = { forgeId: 'id', task: 'task', timestamp: '2026' };
+    const ledger: ProvenanceLedger = buildForgeProvenance(input, 'manifest.json');
+    const physical: ProvenanceLedger = buildProvenance(input, 'manifest.json');
+    const contribution: ProvenanceContribution | undefined = ledger.contributions[0];
+    const outputs: string[] = [renderProvenanceMarkdown(ledger), renderMarkdown(physical),
+      renderProvenanceJson(ledger), writeProvenanceReport(input, 'manifest.json', 'output', 'both')];
+    // @ts-expect-error Unknown autonomy labels must not cross the public contract.
+    const invalid: ProvenanceLedger['autonomyLevel'] = 'invented';
+    void outputs; void contribution; void invalid;
+  `);
+  requireOk('packed-provenance-public-types', run(process.execPath, [join(root, 'node_modules/typescript/bin/tsc'),
+    '--noEmit', '--strict', '--target', 'ES2022', '--module', 'NodeNext', '--moduleResolution', 'NodeNext',
+    '--types', 'node', '--typeRoots', join(root, 'node_modules/@types'), provenanceExample], { cwd: ephemeral }));
   // Independent probes must not hide later installer failures. Retain every
   // failed check and reject the whole qualification before emitting success.
   for (const [id, verify] of [
@@ -167,6 +218,44 @@ try {
     const desired = pointer && await host.readGenerationDesiredState(pointer);
     if (!desired || desired.selected.length !== (profile === 'full-compat' ? 36 : 3)) throw new Error(`${id}: incorrect selected mod set`);
     checks.push({ id: `${id}-result`, passed: true, detail: `${expectedStatus}; ${packageCount} packages; ${desired.selected.length} selected mods` });
+  }
+  const provenanceSetup = JSON.parse(requireOk('provenance-profile-install', run(stable,
+    ['setup', '--profile', 'minimal', '--with', 'provenance', '--offline', '--cache', npmCache, '--json'],
+    { cwd: scratch, env: setupEnv })).stdout);
+  if (provenanceSetup.status !== 'installed') throw new Error('Provenance profile was not selected');
+  const provenanceInstallation = await lifecycle.readSelectedInstallation();
+  if (!provenanceInstallation) throw new Error('Provenance installation is missing');
+  const provenancePrefix = join(host.root, provenanceInstallation.prefix);
+  const hasProvenance = provenanceInstallation.packages.some(pkg => pkg.id === '@kernlang/agon-mod-provenance');
+  const hasForge = provenanceInstallation.packages.some(pkg => pkg.id === '@kernlang/agon-mod-forge');
+  if (!hasProvenance || hasForge || existsSync(join(provenancePrefix, 'node_modules/@kernlang/agon-mod-forge'))) {
+    throw new Error('Provenance profile must contain Provenance without an installed Forge package');
+  }
+  checks.push({ id: 'provenance-without-forge-package', passed: true,
+    detail: 'selected installation includes Provenance; Forge absent from its package record and node_modules' });
+  mkdirSync(join(home, 'runs'), { recursive: true });
+  writeFileSync(join(home, 'runs', 'historical-forge.json'), JSON.stringify({
+    forgeId: 'historical-forge', task: 'read historical Forge output', timestamp: '2026',
+    engines: ['a', 'b'], winner: 'a', fitnessCmd: 'npm test',
+    results: { a: { score: 9, pass: true }, b: { score: 4, pass: false } },
+    dispatchLog: [{ engineId: 'a', tokens: { costUsd: 0 } }],
+    synthesis: { wins: true, score: 10, pass: true, originalWinnerScore: 9 },
+  }));
+  const provenanceMarkdown = requireOk('provenance-without-forge-markdown', run(stable,
+    ['provenance', '--id', 'historical-forge', '--format', 'md'], { cwd: scratch, env: setupEnv })).stdout;
+  if (!provenanceMarkdown.includes('**Winner:**') || !provenanceMarkdown.includes('*synthesis blend*')) {
+    throw new Error('historical Forge report lost its disclosure without Forge installed');
+  }
+  const provenanceJson = JSON.parse(requireOk('provenance-without-forge-json', run(stable,
+    ['provenance', '--id', 'historical-forge', '--format', 'json'], { cwd: scratch, env: setupEnv })).stdout);
+  if (provenanceJson.winner !== 'a' || provenanceJson.contributions[0]?.costUsd !== 0) {
+    throw new Error('historical Forge ledger changed without Forge installed');
+  }
+  const afterProvenance = JSON.parse(requireOk('return-after-provenance-profile', run(stable,
+    ['setup', '--profile', 'minimal', '--with', 'think,review', '--offline', '--cache', npmCache, '--json'],
+    { cwd: scratch, env: setupEnv })).stdout);
+  if (afterProvenance.status !== 'installed' || afterProvenance.packageCount !== 15) {
+    throw new Error('small profile could not be restored after Provenance qualification');
   }
   if (checks.some(check => !check.passed)) throw new Error(`packed workflow qualification failed: ${checks.filter(check => !check.passed).map(check => check.id).join(', ')}`);
   const result = { schemaVersion: 1, slice: 'S9', passed: checks.every(({ passed }) => passed), platform: `${process.platform}-${process.arch}`, node: process.version,

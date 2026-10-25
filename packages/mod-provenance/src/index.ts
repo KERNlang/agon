@@ -9,3 +9,5 @@ export const IMPLEMENTATION_KIND = 'physical' as const;
 export { createMod } from './implementation.js';
 export { createMod as default } from './implementation.js';
 export { runProvenance, buildProvenance, renderMarkdown } from './implementation.js';
+export { buildForgeProvenance, renderProvenanceMarkdown, renderProvenanceJson, sha256OfFile, writeProvenanceReport } from './reports.js';
+export type { ProvenanceContribution, ProvenanceLedger, ProvenanceManifest } from './models.js';

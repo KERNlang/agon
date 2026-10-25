@@ -1,0 +1,158 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-25",
+  "scope": "Provenance report ownership and disclosed report regressions, not full modular acceptance",
+  "subject": {
+    "base": "700c867987567e3d427f4da906a3fed129c777b1",
+    "trackedDiffBeforeThisIndexSha256": "baeb6d9b98c23b05fd312c6eeedf95521078ae71a9d3351bae0db0d871cc70cb",
+    "newSource": [
+      {
+        "path": "packages/mod-provenance/src/models.ts",
+        "sha256": "34f4e6497fd9c61e44a704e39bc6142338bbbe58a32dc73c4a1223d2b20985cb"
+      },
+      {
+        "path": "packages/mod-provenance/src/reports.ts",
+        "sha256": "acb683e3daa3c9dff23749cdbb1ab60db9ac0ca33403471d89bf2f901f304228"
+      }
+    ],
+    "qualificationMatchesOwner": true
+  },
+  "change": {
+    "owner": "@kernlang/agon-mod-provenance",
+    "compatibility": "Core keeps five public functions and two report types as explicit re-exports. Physical public builder retains strict hashing and omission of undefined contribution fields.",
+    "input": "Narrow persisted ProvenanceManifest; no Core/Forge import or runtime activation required to read a report.",
+    "dependency": "Core to existing Provenance workspace package, no external dependency version change.",
+    "corrections": [
+      "Physical Markdown names the recorded winner and discloses accepted synthesis blends.",
+      "Recorded zero dispatch cost is retained.",
+      "Multiline gate text stays on one Markdown scope line."
+    ]
+  },
+  "verification": {
+    "fullSuite": {
+      "passed": 11686,
+      "skipped": 6,
+      "failed": 0
+    },
+    "fullGateSeconds": 973.439,
+    "fullGateScope": "Same production bytes; before later public-barrel/profile and autonomy/escaping test additions.",
+    "negativeControl": {
+      "newRegressionFailuresBefore": 5,
+      "existingPassesBefore": 5
+    },
+    "focusedTestsAfterAllAdditions": 18,
+    "installedChecks": 92,
+    "installedHistoricalReportsWithoutForge": true,
+    "publicTypesCompile": true,
+    "publicCoreOwnerIdentity": true,
+    "build": true,
+    "typecheck": true,
+    "lint": true,
+    "reexportGuard": true,
+    "generatorChecks": true,
+    "supplyChainSelfTest": true,
+    "docsUnchanged": true,
+    "releaseSetAndSbomDriftChecks": true,
+    "providerLaunches": 0,
+    "committedSubjectQualification": "Required separately before PR readiness; not implied by this pre-commit index."
+  },
+  "performance": {
+    "platform": "darwin-arm64",
+    "node": "v26.12.1",
+    "passedGroups": [
+      "1a",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+      "8"
+    ],
+    "versionStartupP95Ms": 116.847625,
+    "helpStartupP95Ms": 109.69875000000002,
+    "helpPeakRssP95Mb": 79.890625
+  },
+  "review": {
+    "route": "isolated Agon bounded source packet",
+    "codex": "completed; evidence gaps resolved with local tests",
+    "kimi": "unavailable; no usable answer, not counted as passing",
+    "adjudications": [
+      "Installed minimal+Provenance record and node_modules omit Forge; historical Markdown and JSON report commands pass; prior profile restored.",
+      "Five public Core exports have identity with their Provenance owner exports.",
+      "Successful-write test renamed; no crash-atomicity claim.",
+      "Narrow historical JSON validation is inherited; no strict schema-validation claim.",
+      "Legacy hash warnings/unavailable result and strict physical hash errors remain separately tested."
+    ]
+  },
+  "limits": [
+    "Standalone CLI retirement and physical Forge report-summary parity remain separate work.",
+    "Full modular acceptance remains open; no platform/provider completeness claim.",
+    "No Forge package installed does not mean no legacy Forge bytes in the launcher bundle.",
+    "Fresh OSV scan blocked on pending deps.dev metadata permission; no passing scan claimed.",
+    "No global installation, promotion, publishing or personal-state changes."
+  ],
+  "reproduce": [
+    "npm run build",
+    "npm run typecheck",
+    "npm run lint",
+    "npm run guard:reexports",
+    "npm run test:modular-supply-chain",
+    "node scripts/spec/verify-modular-npx.mjs",
+    "npm test",
+    "npm run perf:modular-release",
+    "npm run docs:modes",
+    "node scripts/spec/verify-modular-release-set.mjs --check",
+    "node scripts/spec/verify-modular-supply-chain.mjs --check"
+  ],
+  "archive": {
+    "location": "durable operator archive: modular-agon-remediation, outside Git worktrees",
+    "retention": "Never delete without Raphael approval",
+    "artifacts": [
+      {
+        "path": "provenance-legacy-physical-probe-20261025.json",
+        "sha256": "4439ffae9cccffc9c39feacb1e92e3408caea9d0cc9b98904fa03e3b60184fb8"
+      },
+      {
+        "path": "provenance-report-owner-negative-20261025.receipt.json",
+        "sha256": "6671f708d1450c49d71d845444525d53cab1c30afbcdd3dd87d05ad70856f42a"
+      },
+      {
+        "path": "provenance-report-contracts-negative-20261025.receipt.json",
+        "sha256": "31f8e24bbb01e8c12ed7c54d97ef4059a3b1858ee9945e29ea824e2348e4ab44"
+      },
+      {
+        "path": "provenance-report-owner-full-20261025.receipt.json",
+        "sha256": "735a332eede5844ae05196ea24f61177ca918bff0cc8998b2bb257e59d50bab0"
+      },
+      {
+        "path": "provenance-review-followup-r2-20261025.receipt.json",
+        "sha256": "447d69a105f74212c70660022a9e95220e7ee61a2f217ae7b17c7ad9a07c50d5"
+      },
+      {
+        "path": "provenance-contract-matrix-20261025.receipt.json",
+        "sha256": "9f86cbb2e9bc213528a0e777be498272b0b76d6966d37e72d3693c643cf46058"
+      },
+      {
+        "path": "provenance-perf-docs-20261025.receipt.json",
+        "sha256": "c442485bade2baccab21a6ce6a135d07870c20aef14d19a724be215d47db5252"
+      },
+      {
+        "path": "provenance-report-owner-review-input.txt",
+        "sha256": "925a02452ce5ece0722dad57bb891e65636cc0a87ed6f3b2fccc2bd6811cbd76"
+      },
+      {
+        "path": "provenance-report-owner-codex-review.log",
+        "sha256": "77e331a7960d5b08e9309530769d407987043c44bdf94fd47e0254e168ca1f11"
+      },
+      {
+        "path": "provenance-report-owner-kimi-review.receipt.json",
+        "sha256": "1a2e37c0f12d80948c67e16f516f8bf8e112c27919082aa83d18e81818882bca"
+      },
+      {
+        "path": "provenance-report-owner-review-adjudication-20261025.md",
+        "sha256": "9f6624b834fd1cf34945bc317897fd51f2267edef5fdb338c6b44cc6e86648f5"
+      }
+    ]
+  }
+}

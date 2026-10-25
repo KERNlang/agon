@@ -25,7 +25,7 @@ export function formatCesarPlanMarkdown(plan: CesarPlan): string {
   lines.push('');
   if (plan.planningCost && typeof plan.planningCost.tokens === 'number') {
     const costStr = typeof plan.planningCost.costUsd === 'number' ? ` ($${plan.planningCost.costUsd.toFixed(4)})` : '';
-    lines.push(`> Planning cost: ~${plan.planningCost.tokens.toLocaleString()} tokens${costStr}`);
+    lines.push(`> Planning cost: ~${plan.planningCost.tokens.toLocaleString('en-US')} tokens${costStr}`);
     lines.push('');
   }
   // OpenCode add#2: surface every fitnessCmd verbatim BEFORE the per-step
@@ -65,19 +65,19 @@ export function formatCesarPlanMarkdown(plan: CesarPlan): string {
     if (s.imports && s.imports.length > 0) lines.push(`- Imports: ${s.imports.join(', ')}`);
 
     if (s.result) {
-      lines.push(`- Actual: ${s.result.actualTokens.toLocaleString()} tokens ($${s.result.actualCostUsd.toFixed(4)}) — ${(s.result.durationMs / 1000).toFixed(1)}s`);
+      lines.push(`- Actual: ${s.result.actualTokens.toLocaleString('en-US')} tokens ($${s.result.actualCostUsd.toFixed(4)}) — ${(s.result.durationMs / 1000).toFixed(1)}s`);
     } else {
-      lines.push(`- Est: ~${s.estimatedTokens.toLocaleString()} tokens ($${s.estimatedCostUsd.toFixed(2)})`);
+      lines.push(`- Est: ~${s.estimatedTokens.toLocaleString('en-US')} tokens ($${s.estimatedCostUsd.toFixed(2)})`);
     }
     lines.push('');
   }
 
   lines.push('---');
   if (plan.totalActualTokens > 0) {
-    lines.push(`**Planned: ~${plan.totalEstimatedTokens.toLocaleString()} tokens ($${plan.totalEstimatedCostUsd.toFixed(2)})**`);
-    lines.push(`**Actual: ${plan.totalActualTokens.toLocaleString()} tokens ($${plan.totalActualCostUsd.toFixed(2)})**`);
+    lines.push(`**Planned: ~${plan.totalEstimatedTokens.toLocaleString('en-US')} tokens ($${plan.totalEstimatedCostUsd.toFixed(2)})**`);
+    lines.push(`**Actual: ${plan.totalActualTokens.toLocaleString('en-US')} tokens ($${plan.totalActualCostUsd.toFixed(2)})**`);
   } else {
-    lines.push(`**Total estimated: ~${plan.totalEstimatedTokens.toLocaleString()} tokens ($${plan.totalEstimatedCostUsd.toFixed(2)})**`);
+    lines.push(`**Total estimated: ~${plan.totalEstimatedTokens.toLocaleString('en-US')} tokens ($${plan.totalEstimatedCostUsd.toFixed(2)})**`);
   }
   const allEngines = [...new Set(plan.steps.flatMap((s: CesarPlanStep) => s.engines ?? (s.engine ? [s.engine] : [])))];
   if (allEngines.length > 0) {

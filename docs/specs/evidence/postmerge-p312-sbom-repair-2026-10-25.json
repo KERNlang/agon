@@ -1,0 +1,22 @@
+{
+  "scope": "PR312 generated SBOM consistency repair, not full modular release acceptance",
+  "baseCommit": "20acad1bdd25f4f7260e9e90e4367eb48c06408a",
+  "testedDiffSha256": "705f444eacda8fa0bdf99cfc69f57f76484b422700a2f2d0e4eca073fc4169d8",
+  "testedPaths": ["docs/specs/evidence/modular-agon-sbom.cdx.json"],
+  "indexAddedAfterTest": true,
+  "archiveRoot": "/Users/ra/dev/modular-agon-remediation",
+  "fullGate": {
+    "receipt": "nico-p312-repaired-full-20261025.receipt.json",
+    "logSha256": "1db5f095a1280ffa281a9040e8a6d96a94cd16100ebd8afd1b53e943ab46e511",
+    "exitCode": 0,
+    "providerLaunches": 0
+  },
+  "negativeControl": "nico-p1-supply-chain-20261025.receipt.json: original PR312 fails SBOM drift; current main control passes",
+  "review": {
+    "receipt": "nico-p312-sbom-repair-codex-review.receipt.json",
+    "packetSha256": "5569d94055dc3724c010cbb7d4b94da7a240790fb9dab05e53fd92b32f2dc1d5",
+    "logSha256": "07c3c4231704e48ac9f06bbde4637c52847872403acd9a4088a7b027865434c0",
+    "unresolvedFindings": 0
+  },
+  "limits": ["No fresh tarball reproducibility claim", "Publishing provenance remains external", "No active installation changed"]
+}

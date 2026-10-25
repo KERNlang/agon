@@ -26,7 +26,7 @@ export async function runPlanResumeApproval(plan: CesarPlan, host: PlanResumeApp
     lines.push(`Failed step: ${ctx.failedStep.description}${ctx.failedStep.result?.error ? ` — ${ctx.failedStep.result.error}` : ''}`);
   }
   if (ctx.remainingCostUsd > 0) {
-    lines.push(`Estimated cost to finish: ~${ctx.remainingTokens.toLocaleString()} tokens · $${ctx.remainingCostUsd.toFixed(2)}`);
+    lines.push(`Estimated cost to finish: ~${ctx.remainingTokens.toLocaleString('en-US')} tokens · $${ctx.remainingCostUsd.toFixed(2)}`);
   }
   host.notify('info', lines.join('\n'));
 

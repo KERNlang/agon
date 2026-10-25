@@ -1,10 +1,11 @@
 import { existsSync, readdirSync } from 'node:fs';
-import { extname, join } from 'node:path';
+import { dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 import { isTestFile } from './git-diff.js';
 import type { LexerSyntax, QuoteSpec } from './mutation-lexer.js';
 import { cLikeOperators, PYTHON_OPERATORS, RUST_OPERATORS } from './mutation-operators.js';
 import type { OperatorSpec } from './mutation-operators.js';
+import { shellQuote } from './shell-quote.js';
 
 /**
  * Everything mutation testing needs to know about one language. `syntax`/`operators` are undefined only for the JS/TS profile, which keeps the original whole-line generator. `skipDirs` never hold sources; `buildDirs` are skipped only when one of `markers` (a root file name, or `*.ext`) exists, so a JS repo's own `bin/` or `target/` is still mutated.
@@ -193,16 +194,39 @@ export function compileCheckFor(profileId: string, repoRoot: string): string | u
   }
 }
 
+function moduleDirFor(root: string, file: string, markers: readonly string[]): string | undefined {
+  if (markers.length === 0) return undefined;
+  let dir = dirname(resolve(root, file));
+  for (;;) {
+    const rel = relative(root, dir);
+    if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return undefined;
+    let entries: string[] | undefined;
+    const dirEntries = (): readonly string[] => {
+      if (!entries) { try { entries = readdirSync(dir); } catch { entries = []; } }
+      return entries;
+    };
+    if (markers.some(marker => hasMarker(dir, marker, dirEntries))) return dir;
+    if (rel === '') return undefined;
+    dir = dirname(dir);
+  }
+}
+
 /**
- * Compile checks keyed by profile id for every language present in `files`.
+ * Compile checks for every language present in `files`, keyed by profile id. A file whose nearest manifest (within repoRoot) sits in a nested module gets its own entry keyed by its repo-relative path that runs the module's check from the module directory; `{file}` checks never need one.
  */
 export function compileChecksFor(files: readonly string[], repoRoot: string): Record<string, string> {
+  const root = resolve(repoRoot);
   const checks: Record<string, string> = {};
   for (const file of files) {
-    const id = profileFor(file)?.id;
-    if (!id || id in checks) continue;
-    const check = compileCheckFor(id, repoRoot);
-    if (check) checks[id] = check;
+    const profile = profileFor(file);
+    if (!profile) continue;
+    const moduleDir = moduleDirFor(root, file, profile.markers);
+    const moduleRel = moduleDir === undefined ? '' : relative(root, moduleDir);
+    if (!moduleRel && profile.id in checks) continue;
+    const check = compileCheckFor(profile.id, moduleDir ?? root);
+    if (!check) continue;
+    if (moduleRel && !check.includes('{file}')) checks[file] = `cd ${shellQuote(moduleRel)} && ${check}`;
+    else if (!(profile.id in checks)) checks[profile.id] = check;
   }
   return checks;
 }

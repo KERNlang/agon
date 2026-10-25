@@ -1,17 +1,14 @@
 import { profileFor } from './mutation-languages.js';
 import { resolveWithinRoot } from './paths.js';
+import { shellQuote } from './shell-quote.js';
 import type { Mutant } from './mutant-generator.js';
 
 const FILE_PLACEHOLDER = '{file}';
 
-export function shellQuote(value: string): string {
-  return `'${value.replace(/'/g, `'\\''`)}'`;
-}
-
 export function compileCheckTemplate(checks: Readonly<Record<string, string>> | undefined, file: string | undefined): string | undefined {
   if (!checks || !file) return undefined;
   const id = profileFor(file)?.id;
-  const cmd = id ? checks[id] : undefined;
+  const cmd = checks[file] ?? (id ? checks[id] : undefined);
   return cmd?.trim() ? cmd : undefined;
 }
 

@@ -120,3 +120,28 @@ describe('AC-11 python per-file check', () => {
     expect(report.compileCheck).toBe("basename {file} >> checks.log; ! grep -q 'or:' {file}");
   });
 });
+
+describe('review: timed-out kills', () => {
+  it('review: a timed-out mutant is never compile-checked and stays killed', async () => {
+    const dir = sandbox({ 'src/a.go': GO });
+    const report = await runMutants({ ...base, perMutantTimeoutSec: 1, worktree: dir, mutants: mutantsOf(dir, 'src/a.go', 'go', [4]),
+      testCmd: "if grep -q 'a - b' src/a.go; then sleep 10; fi",
+      compileChecks: { go: "echo go >> checks.log; ! grep -q 'a - b' src/a.go" } });
+    expect(report.outcomes.map(o => o.status)).toEqual(['timeout']);
+    expect(report.killed).toBe(1);
+    expect(report.killedByTimeout).toBeLessThanOrEqual(report.killed);
+    expect(checkLog(dir)).toEqual(['go']);
+  });
+});
+
+describe('review: nested module compile checks', () => {
+  it('review: a mutant in a nested module runs its own file-keyed check before the profile one', async () => {
+    const dir = sandbox({ 'services/api/go.mod': 'module api\n', 'services/api/a.go': GO });
+    const file = 'services/api/a.go';
+    const report = await runMutants({ ...base, worktree: dir, mutants: mutantsOf(dir, file, 'go', [4]),
+      testCmd: `! grep -q 'a - b' ${file}`,
+      compileChecks: { [file]: "cd 'services/api' && basename \"$PWD\" >> ../../checks.log", go: 'echo root >> checks.log' } });
+    expect(report.outcomes.map(o => o.status)).toEqual(['killed']);
+    expect(checkLog(dir)).toEqual(['api', 'api']);
+  });
+});

@@ -148,7 +148,7 @@ export async function prepareTrustedFolderMod(
     const runtime = fresh.inspection.containedPaths.get(fresh.manifest.entrypoints.runtime);
     if (!runtime) throw new ThirdPartyActivationError('verified runtime entrypoint is missing');
     const runtimeUrl = `${pathToFileURL(runtime).href}?agon=${fresh.contentHash.slice(7)}`;
-    const services = wrapServices(options);
+    const services = wrapServices({ ...options, candidate: Object.freeze({ ...fresh, sourceLocator: options.candidate.sourceLocator }) });
     let mod: AgonModV1; let isolatedDispose: (() => Promise<void>) | undefined;
     if (options.importModule) {
       const namespace = await withTimeout(options.importModule(runtimeUrl), timeoutMs);
@@ -194,14 +194,16 @@ export async function activatePreparedThirdPartyMod(
 export async function activateTrustedFolderMod(options: ThirdPartyActivationOptions): Promise<ThirdPartyActivationResult> {
   const prepared = await prepareTrustedFolderMod(options);
   const timeoutMs = options.timeoutMs ?? 10_000;
-  const registration = options.registry.beginRegistration(prepared.manifest);
+  let registration: ReturnType<ModRegistry['beginRegistration']> | undefined;
   let modDispose: Dispose | void = undefined;
   try {
+    registration = options.registry.beginRegistration(prepared.manifest);
     modDispose = await activatePreparedThirdPartyMod(prepared, registration.registrar, timeoutMs);
     registration.commit();
   } catch (error) {
-    await registration.rollback().catch(() => undefined);
-    if (typeof modDispose === 'function') await Promise.resolve(modDispose()).catch(() => undefined);
+    await registration?.rollback().catch(() => undefined);
+    const dispose = modDispose;
+    if (typeof dispose === 'function') await Promise.resolve().then(() => dispose()).catch(() => undefined);
     await prepared.dispose().catch(() => undefined);
     throw error;
   }

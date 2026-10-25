@@ -3,7 +3,7 @@ import { isAbsolute, join, relative } from 'node:path';
 
 import { StaticDiscoveryError } from './discovery.js';
 import { FOLDER_MOD_LIMITS } from './folder-mod-bounds.js';
-import { inspectFolderMod, type FolderModCandidate } from './folder-mods.js';
+import { inspectFolderMod, isPackageEntryCandidate, type FolderModCandidate } from './folder-mods.js';
 import { mapSettledBounded } from './bounded-work.js';
 
 export interface FolderModDiagnostic {
@@ -32,10 +32,11 @@ export async function discoverUserFolderModsDetailed(modsRoot: string): Promise<
     throw error;
   }
   const entries = await readdir(canonicalRoot, { withFileTypes: true });
-  if (entries.length > FOLDER_MOD_LIMITS.maxPackages) {
+  const packageEntries = entries.filter(isPackageEntryCandidate);
+  if (packageEntries.length > FOLDER_MOD_LIMITS.maxPackages) {
     throw new StaticDiscoveryError('user mods folder exceeds the package-count limit', { maxPackages: FOLDER_MOD_LIMITS.maxPackages });
   }
-  const sorted = entries.sort((left, right) => left.name.localeCompare(right.name));
+  const sorted = packageEntries.sort((left, right) => left.name.localeCompare(right.name));
   const inspected = await mapSettledBounded(sorted, FOLDER_MOD_LIMITS.maxConcurrentInspections, async (entry) => {
     if (!entry.isDirectory() || entry.isSymbolicLink()) throw new StaticDiscoveryError('user mods folder entry must be a real package directory', { entry: entry.name });
     const candidate = await inspectFolderMod(join(canonicalRoot, entry.name), 'user-folder');

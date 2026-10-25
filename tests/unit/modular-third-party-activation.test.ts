@@ -1,6 +1,7 @@
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import type { ModServices } from '../../packages/mod-api/src/index.js';
 import { inspectFolderMod } from '../../packages/mod-kernel/src/folder-mods.js';
@@ -88,5 +89,26 @@ describe('S8 trusted third-party activation', () => {
     const registry = new ModRegistry({ generation: 's8', activeOwners: [{ id: candidate.manifest.id, version: candidate.manifest.version, contentHash: candidate.contentHash }] });
     await expect(activateTrustedFolderMod({ candidate, publisher, trustRecords: [trust], grantRecords: [grant], registry, services: services(candidate), importModule: async () => ({ default: async () => ({ apiVersion: '1', activate(registrar: any) { registrar.command('cli', { id: 'hello', description: 'x', run: async () => ({ exitCode: 0 }) }); throw new Error('boom'); } }) }) })).rejects.toThrow('boom');
     expect(registry.resolve('cli-command', 'hello')).toBeUndefined();
+  });
+  it('judges runtime capabilities against the hash-bound snapshot manifest, not the caller candidate object', async () => {
+    const candidate = await fixture(); const { trust, grant } = authority(candidate);
+    const stale = { ...candidate, manifest: { ...candidate.manifest, permissions: [...candidate.manifest.permissions, { capability: 'state.read', resources: ['secret'], required: false }] } };
+    const stateGrant: GrantRecord = { ...grant, recordId: '44444444-4444-4444-8444-444444444444', capability: 'state.read', resources: ['secret'] };
+    const registry = new ModRegistry({ generation: 's8-fresh', activeOwners: [{ id: candidate.manifest.id, version: candidate.manifest.version, contentHash: candidate.contentHash }] });
+    let injected: ModServices | undefined;
+    const result = await activateTrustedFolderMod({ candidate: stale, publisher, trustRecords: [trust], grantRecords: [grant, stateGrant], registry, services: services(candidate),
+      importModule: async () => ({ default: async (value: ModServices) => { injected = value; return { apiVersion: '1', activate(registrar: any) { registrar.command('cli', { id: 'hello', description: 'x', run: async () => ({ exitCode: 0 }) }); } }; } }) });
+    await expect(injected!.permissions.check('state.read', 'secret')).resolves.toBe('deny');
+    await result.dispose();
+  });
+
+  it('disposes the prepared snapshot when registration cannot begin', async () => {
+    const candidate = await fixture(); const { trust, grant } = authority(candidate);
+    const registry = new ModRegistry({ generation: 's8-inactive', activeOwners: [] });
+    let runtimeUrl = '';
+    await expect(activateTrustedFolderMod({ candidate, publisher, trustRecords: [trust], grantRecords: [grant], registry, services: services(candidate),
+      importModule: async (url: string) => { runtimeUrl = url; return { default: async () => ({ apiVersion: '1', activate() {} }) }; } })).rejects.toThrow(/not active/);
+    const snapshotRoot = dirname(dirname(fileURLToPath(runtimeUrl)));
+    await expect(access(snapshotRoot)).rejects.toThrow(/ENOENT/);
   });
 });

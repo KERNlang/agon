@@ -1,0 +1,31 @@
+{
+  "scope": "CI gate for tracked release/SBOM consistency, not release acceptance",
+  "baseCommit": "fa3abe287f6b27eff5ce88179782f23773b5a8ed",
+  "testedWorkflowDiffSha256": "6a70dca2821b86cb33fb2e3b20ae39b8ff6829a47adb5428a256ce85c6df04dd",
+  "subjectKind": "base commit plus workflow diff; this index was added after verification",
+  "durableEvidenceDirectory": "/Users/ra/dev/modular-agon-remediation",
+  "fullGate": {
+    "receipt": "ci-sbom-drift-full-20261025.receipt.json",
+    "log": "ci-sbom-drift-full-20261025.log",
+    "logSha256": "654d8c8c419b319e9df5c3ebd0c0a9cc4215bbbbee22d578d4b3223a0b284095",
+    "exitCode": 0,
+    "testsPassed": 11625,
+    "testsSkipped": 6,
+    "providerLaunches": 0,
+    "command": "npm run build && npm run typecheck && npm run test:modular-supply-chain && npm test && npm run lint && npm run guard:reexports && git diff --check"
+  },
+  "negativeControl": {
+    "commit": "20acad1bdd25f4f7260e9e90e4367eb48c06408a",
+    "command": "npm run test:modular-supply-chain",
+    "result": "exit 1: SBOM drift; main passes the same command",
+    "receipt": "nico-p1-supply-chain-20261025.receipt.json",
+    "logSha256": "8ac4b36e035e9ef0a3bba5056be11f46890414c53c4a4fcba6497078e81a5f69"
+  },
+  "independentReview": {
+    "engine": "isolated Agon/Codex",
+    "result": "no concrete defects found; source-checked locally",
+    "receipt": "ci-sbom-drift-codex-review.receipt.json",
+    "packetSha256": "3a640dcf5de30c1e9491ffc560a4eefaa9c07298cb9c8ce60c117c84e2513bfd",
+    "logSha256": "79e12b444c4c730f0720fb4ad67b25f594422d2f90ae4557b1377471fe32dab2"
+  }
+}

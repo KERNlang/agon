@@ -3,7 +3,7 @@
   "slice": "S9",
   "passed": true,
   "platform": "darwin-arm64",
-  "node": "v26.3.0",
+  "node": "v26.12.1",
   "profile": "minimal+think+review",
   "installedPackageCount": 15,
   "cacheDeletionSurvived": true,
@@ -266,6 +266,21 @@
     },
     {
       "id": "ephemeral-npx-hydration",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "packed-agent-team-scoring-owner",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "packed-agent-team-public-types",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "compiled-core-agent-team-public-types",
       "passed": true,
       "detail": "exit=0"
     },

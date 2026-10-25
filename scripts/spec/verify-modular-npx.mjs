@@ -61,6 +61,50 @@ try {
   writeFileSync(join(ephemeral, 'package-lock.json'), lockBytes);
   requireOk('ephemeral-npx-hydration', run('npm', ['ci', '--ignore-scripts', '--no-audit', '--no-fund', '--omit=optional', '--offline'], { cwd: ephemeral }));
   if (readFileSync(join(ephemeral, 'package-lock.json'), 'utf8') !== lockBytes) throw new Error('packed hydration changed the frozen dependency lock');
+  requireOk('packed-agent-team-scoring-owner', run(process.execPath, ['--input-type=module', '-e', `
+    import assert from 'node:assert/strict';
+    import { pathToFileURL } from 'node:url';
+    import { scoreAgentTeamResult } from '@kernlang/agon-mod-agent';
+    assert.ok(import.meta.resolve('@kernlang/agon-mod-agent').startsWith(pathToFileURL(process.cwd() + '/node_modules/').href));
+    const team = { members: [{ engineId: 'worker', worktreePath: '/fixture', error: null,
+      stepResult: { response: 'x'.repeat(51), toolCalls: 1, innerSteps: 1, tokensUsed: 2, costUsd: 0, stopReason: 'completed' }
+    }], runId: 'fixture', baseSha: 'base', durationMs: 1500, succeeded: 1, failed: 0 };
+    const read = (cwd, base) => { assert.equal(cwd, '/fixture'); assert.equal(base, 'base'); return { filesChanged: 1, linesChanged: 2 }; };
+    assert.equal(scoreAgentTeamResult(team, 'edit', undefined, read).get('worker').pass, false);
+    const result = scoreAgentTeamResult(team, 'edit', new Map([['worker', true]]), read).get('worker');
+    assert.equal(result.pass, true); assert.equal(result.score, 100); assert.equal(result.durationSec, 2);
+    assert.equal(scoreAgentTeamResult(team, 'investigate', undefined, () => { throw new Error('unexpected Git read'); }).get('worker').pass, true);
+  `], { cwd: ephemeral }));
+  const agentTypes = join(ephemeral, 'agent-team-types.mts');
+  writeFileSync(agentTypes, `import { scoreAgentTeamResult, type AgentTeamResult, type AgentTeamMemberResult, type AgentTeamScore, type AgentTeamShortstatReader } from '@kernlang/agon-mod-agent';
+    const member: AgentTeamMemberResult = { engineId: 'worker', worktreePath: null, error: null,
+      stepResult: { response: 'answer', toolCalls: 1, innerSteps: 1, tokensUsed: 1, costUsd: 0, stopReason: 'completed' } };
+    const team: AgentTeamResult = { members: [member], runId: 'run', baseSha: 'base', durationMs: 0, succeeded: 0, failed: 1 };
+    const read: AgentTeamShortstatReader = () => ({ filesChanged: 0, linesChanged: 0 });
+    const result: Map<string, AgentTeamScore> = scoreAgentTeamResult(team, 'edit', undefined, read);
+    void result;
+    // @ts-expect-error Unsupported task kinds must not cross this boundary.
+    scoreAgentTeamResult(team, 'unknown', undefined, read);
+    // @ts-expect-error Nested result fields must retain their types.
+    const invalid: AgentTeamMemberResult = { ...member, stepResult: { ...member.stepResult!, toolCalls: 'one' } };
+    void invalid;
+  `);
+  requireOk('packed-agent-team-public-types', run(process.execPath, [join(root, 'node_modules/typescript/bin/tsc'),
+    '--noEmit', '--strict', '--skipLibCheck', '--module', 'NodeNext', '--moduleResolution', 'NodeNext',
+    '--target', 'ES2022', agentTypes], { cwd: ephemeral }));
+  const coreTypes = join(scratch, 'core-agent-team-types.mts');
+  writeFileSync(coreTypes, `import { scoreAgentTeamResult, type AgentTeamResult, type AgentTeamMemberResult, type EngineResult } from ${JSON.stringify(join(root, 'packages/core/dist/index.js'))};
+    const member: AgentTeamMemberResult = { engineId: 'worker', worktreePath: null, error: null,
+      stepResult: { response: 'answer', toolCalls: 1, innerSteps: 1, tokensUsed: 1, costUsd: 0, stopReason: 'completed' } };
+    const team: AgentTeamResult = { members: [member], runId: 'run', baseSha: 'base', durationMs: 0, succeeded: 1, failed: 0 };
+    const result: Map<string, EngineResult> = scoreAgentTeamResult(team, '/fixture', 'edit', new Map());
+    void result;
+    // @ts-expect-error The legacy public signature still requires a repository path.
+    scoreAgentTeamResult(team, 'edit', new Map());
+  `);
+  requireOk('compiled-core-agent-team-public-types', run(process.execPath, [join(root, 'node_modules/typescript/bin/tsc'),
+    '--noEmit', '--strict', '--skipLibCheck', '--module', 'NodeNext', '--moduleResolution', 'NodeNext',
+    '--target', 'ES2022', coreTypes], { cwd: scratch }));
   requireOk('packed-shared-git-diff-owner', run(process.execPath, ['--input-type=module', '-e', `
     import assert from 'node:assert/strict';
     import { pathToFileURL } from 'node:url';

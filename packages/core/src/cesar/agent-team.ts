@@ -2,13 +2,16 @@ import { join } from 'node:path';
 
 import { randomBytes } from 'node:crypto';
 
+import type { AgentTeamMemberResult, AgentTeamResult } from '@kernlang/agon-mod-agent';
+export type { AgentTeamMemberResult, AgentTeamResult } from '@kernlang/agon-mod-agent';
+
 import { repoRoot, worktreeCreate, worktreeRemoveBestEffort, worktreePruneAll, stashSnapshot } from '../blocks/git.js';
 
 import { Semaphore } from '../blocks/semaphore.js';
 
 import { AgentSession } from './agent-session.js';
 
-import type { AgentBudget, AgentStepResult, AgentSessionConfig } from './agent-session.js';
+import type { AgentBudget, AgentSessionConfig } from './agent-session.js';
 
 import type { ApiConfig } from '../api/dispatch.js';
 
@@ -73,28 +76,6 @@ export interface AgentTeamConfig {
   toolPermissions?: Record<string,'allow'|'ask'|'deny'>;
   onPermissionAsk?: (engineId:string, tool:string, command:string, reason:string)=>Promise<boolean|string>;
   executionRefusal?: () => string | undefined;
-}
-
-/**
- * Per-member outcome from a single AgentTeam.step() invocation.
- */
-export interface AgentTeamMemberResult {
-  engineId: string;
-  worktreePath: string|null;
-  stepResult: AgentStepResult|null;
-  error: Error|null;
-}
-
-/**
- * Aggregate outcome of an AgentTeam.step() call. members preserves the input order.
- */
-export interface AgentTeamResult {
-  members: AgentTeamMemberResult[];
-  runId: string;
-  baseSha: string;
-  durationMs: number;
-  succeeded: number;
-  failed: number;
 }
 
 /**

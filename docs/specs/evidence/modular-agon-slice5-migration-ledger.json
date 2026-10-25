@@ -208,7 +208,7 @@
         "@kernlang/agon-support-agent-runtime"
       ],
       "assignments": 37,
-      "assignmentHash": "sha256:500ef60053555f71bc56022725f43aaa5a89916ab4776934ec081555ae9abfeb",
+      "assignmentHash": "sha256:b025fa649ecf6624b1399f04833d54036c7b6c0b07ae6ae600cf4f0e171601f3",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -1158,7 +1158,7 @@
       "physicalPackage": "packages/mod-agent",
       "physicalEntrypoint": "packages/mod-agent/src/index.ts",
       "implementationPaths": [
-        "packages/mod-agent/src/index.ts"
+        "packages/mod-agent/src/team-results.ts"
       ],
       "ownershipAsset": "packages/mod-agent/ownership.json",
       "compatibilityAdapter": "packages/core/src/cesar/agent-team.ts",
@@ -1178,7 +1178,7 @@
       "physicalPackage": "packages/mod-agent",
       "physicalEntrypoint": "packages/mod-agent/src/index.ts",
       "implementationPaths": [
-        "packages/mod-agent/src/index.ts"
+        "packages/mod-agent/src/team-results.ts"
       ],
       "ownershipAsset": "packages/mod-agent/ownership.json",
       "compatibilityAdapter": "packages/core/src/cesar/agent-team.ts",

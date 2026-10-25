@@ -191,6 +191,10 @@ export async function activatePreparedThirdPartyMod(
   return dispose;
 }
 
+function warnCleanup(step: string) {
+  return (err: unknown) => { console.warn(`[agon] third-party activation cleanup failed (${step}): ${err instanceof Error ? err.message : String(err)}`); };
+}
+
 export async function activateTrustedFolderMod(options: ThirdPartyActivationOptions): Promise<ThirdPartyActivationResult> {
   const prepared = await prepareTrustedFolderMod(options);
   const timeoutMs = options.timeoutMs ?? 10_000;
@@ -201,10 +205,10 @@ export async function activateTrustedFolderMod(options: ThirdPartyActivationOpti
     modDispose = await activatePreparedThirdPartyMod(prepared, registration.registrar, timeoutMs);
     registration.commit();
   } catch (error) {
-    await registration?.rollback().catch(() => undefined);
+    await registration?.rollback().catch(warnCleanup('registration rollback'));
     const dispose = modDispose;
-    if (typeof dispose === 'function') await Promise.resolve().then(() => dispose()).catch(() => undefined);
-    await prepared.dispose().catch(() => undefined);
+    if (typeof dispose === 'function') await Promise.resolve().then(() => dispose()).catch(warnCleanup('mod dispose'));
+    await prepared.dispose().catch(warnCleanup('worker dispose'));
     throw error;
   }
   let disposed = false;

@@ -1,0 +1,20 @@
+{
+  "scope": "PR316 text-only Synthesis integrated with SBOM CI main; not full modular release acceptance",
+  "parents": ["6f93043fa32172a40951e657ea7f4227843e7aa1", "700c867987567e3d427f4da906a3fed129c777b1"],
+  "testedDiffFromFirstParentSha256": "9d7dcd5be9b0e9745d663cb1411f95a29132fae7c8b53455d5460c1047dc0dce",
+  "indexAddedAfterTests": true,
+  "archiveRoot": "/Users/ra/dev/modular-agon-remediation",
+  "fullGate": {
+    "receipt": "synthesis-text-only-ci-main-integration-20261025.receipt.json",
+    "logSha256": "5fa38784fdc748326486fa129ad5bbac969dfef8e5a618ca8dec9820ccbb9692",
+    "exitCode": 0,
+    "seconds": 936.376,
+    "testsPassed": 11678,
+    "testsSkipped": 6,
+    "installedChecks": 85,
+    "providerLaunches": 0
+  },
+  "reviewIndex": "docs/specs/evidence/synthesis-text-only-2026-10-25.json",
+  "integration": "Conflict-free merge of the CI workflow and two existing evidence indices. No source or generated-output drift. Owner and qualification diffs match byte-for-byte. Build, typecheck, tests, lint, re-export guard, release-set, supply-chain self-test and offline installed-package checks pass.",
+  "limits": ["Fresh independent approval and current-head CI remain required", "Text-only control is not sandboxing", "Physical runtime cutover remains separate", "npm provenance remains externally blocked", "No active installation or personal state changed"]
+}

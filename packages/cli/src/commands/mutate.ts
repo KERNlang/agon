@@ -1,6 +1,6 @@
 import { defineCommand } from 'citty';
 
-import { EngineRegistry, ensureAgonHome, loadConfig, createRunDir, writeRunStatus, discoverGate } from '@kernlang/agon-core';
+import { EngineRegistry, ensureAgonHome, loadConfig, createRunDir, writeRunStatus } from '@kernlang/agon-core';
 
 import type { RunStatus, RunStatusEngine } from '@kernlang/agon-core';
 
@@ -8,7 +8,7 @@ import { resolveBuiltinEnginesDir } from '../lib/engines-dir.js';
 
 import { createCliAdapter } from '@kernlang/agon-adapter-cli';
 
-import { runMutate, mutateVerdictLine } from '@kernlang/agon-forge';
+import { runMutate, mutateVerdictLine, discoverMutateGate, NO_GATE_DISCOVERED_MESSAGE } from '@kernlang/agon-forge';
 
 import { header, success, fail, info, warn, bold, dim } from '../blocks/output-format.js';
 
@@ -37,11 +37,11 @@ export const mutateCommand: any = defineCommand({
     },
     test: {
       type: 'string',
-      description: 'Test command to run per mutant. Required when no test script can be discovered — mutate never guesses a gate.',
+      description: 'Test command to run per mutant. Discovered from a `fitness:` brief line, a package.json script, or pyproject.toml/pytest.ini/setup.cfg, go.mod, Cargo.toml, pom.xml, build.gradle; required when none is found — mutate never guesses a gate.',
     },
     typecheck: {
       type: 'string',
-      description: 'Typecheck/compile command; a mutant that fails it is classified invalid and excluded from the score.',
+      description: 'Typecheck/compile command; a mutant that fails it is classified invalid and excluded from the score. Overrides the default per-language compile check (go, cargo, mvn/gradle, dotnet, py_compile) that otherwise re-checks each killed mutant.',
     },
     build: {
       type: 'string',
@@ -134,14 +134,12 @@ export const mutateCommand: any = defineCommand({
     if (flagError) die(flagError);
 
     // AC9: no discoverable gate => loud failure, BEFORE any worktree exists.
-    // discoverGate reads package.json / the brief and can throw; a raw stack
-    // trace is not the "pass --test" sentence this path promises.
     let testCmd = typeof args.test === 'string' ? args.test.trim() : '';
     if (!testCmd) {
-      try { testCmd = discoverGate(cwd).command.trim(); } catch { testCmd = ''; }
+      testCmd = discoverMutateGate(cwd);
     }
     if (!testCmd) {
-      die('No test command discovered — pass `--test "<cmd>"`. Mutation testing needs a real suite to run per mutant; agon never guesses one.');
+      die(NO_GATE_DISCOVERED_MESSAGE);
     }
 
     let diff = '';

@@ -1,4 +1,23 @@
 {
+  "postMutationMainIntegration": {
+    "parentCommit": "6a108a0eed355ad1027c4b94e8c618836e81f591",
+    "mergedMainCommit": "01a10699fe2199bc50c16da516b455d1fb8b6941",
+    "testedDiffFromParentSha256": "a16053a523eb8881415b574498f87c3f510905bb98ef2aecf46aea5d574a7d83",
+    "sourcePatchSha256": "f426cf0bc7b303fed8bbcb009c6dd23bd6df7a7db902fad508ca1a8159a127c0",
+    "sourcePatchUnchanged": true,
+    "receipt": "pr317-main-integration-gates-20261025.receipt.json",
+    "receiptSha256": "f4e3a262c5ed4528b735ec668bfb1b93852d801b9445e20793995532bcb2c3f4",
+    "logSha256": "896ca7097dd48fbabf8b47b24c49abfe113e902a2a061d4c9275f72568131994",
+    "exitCode": 0,
+    "seconds": 995.752,
+    "testsPassed": 11857,
+    "testsSkipped": 7,
+    "installedChecksPassed": 87,
+    "providerLaunches": 0,
+    "indexAddedAfterTests": true,
+    "cleanCommittedQualification": "pending",
+    "limits": "Local Node 26/npm 11 qualification, not canonical Node 22/npm 10 archive reproduction. Fresh CI and independent approval required. Not full Synthesis cutover or release acceptance."
+  },
   "scope": "Move the existing Synthesis runtime, prompts and result types to mod-synthesis. Preserve the Forge entrypoint. Not full Synthesis cutover or modular release acceptance.",
   "baseCommit": "965c7fed871f1d8d4f6a5759498fbef5408879ed",
   "testedDiffSha256": "ceda5aa086fb63919868eb2e0e9a1e33895a74f40d484bd7600bd181e1c87711",

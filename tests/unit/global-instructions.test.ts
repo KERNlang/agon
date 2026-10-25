@@ -154,6 +154,31 @@ describe('buildGlobalInstructionsBlock', () => {
     expect(kept.endsWith(`\n${close}`)).toBe(true);
   });
 
+  it('does not treat a backtick in the info string as a valid fence opener', () => {
+    const body = '```example `literal`\nProse\n```\n' + ('x'.repeat(99) + '\n').repeat(400);
+    writeFileSync(join(home, 'AGENTS.md'), body);
+    const content = contentOf(buildGlobalInstructionsBlock(home));
+    expect(content.length).toBeLessThanOrEqual(MAX);
+    const kept = content.slice(0, content.lastIndexOf('\n... (truncated'));
+    expect(kept.endsWith('\n```')).toBe(true);
+    expect(kept).toContain('```example `literal`\nProse');
+  });
+
+  it.each(['`', '~'])('keeps long %s fences within the content limit', (marker) => {
+    for (const length of [65, 1000, 16_000, 20_000, 40_000]) {
+      const prefix = '# Rules\nKeep this instruction.\n';
+      const body = prefix + marker.repeat(length) + '\n' + ('x'.repeat(99) + '\n').repeat(500);
+      writeFileSync(join(home, 'AGENTS.md'), body);
+      const content = contentOf(buildGlobalInstructionsBlock(home));
+      expect(content.length).toBeLessThanOrEqual(MAX);
+      expect(content).toContain(prefix.trimEnd());
+      expect(content).toMatch(/\n\.\.\. \(truncated: showing \d+ of \d+ chars\)$/);
+      const kept = content.slice(0, content.lastIndexOf('\n... (truncated'));
+      const fences = kept.split('\n').filter((line) => line.startsWith(marker.repeat(3)));
+      expect(fences.length % 2).toBe(0);
+    }
+  });
+
   it('never leaves a lone surrogate when an emoji straddles the cut on a single line', () => {
     for (let offset = 0; offset < 80; offset++) {
       const body = 'a'.repeat(MAX - 120 + offset) + '😀'.repeat(200);

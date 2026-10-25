@@ -17,7 +17,7 @@ function nextFence(open: string | null, line: string): string | null {
   const m = FENCE_LINE.exec(line);
   if (!m) return open;
   const marker = m[1];
-  if (open === null) return marker;
+  if (open === null) return marker[0] === '`' && m[2].includes('`') ? null : marker;
   const closes = marker[0] === open[0] && marker.length >= open.length && m[2].trim() === '';
   return closes ? null : open;
 }
@@ -46,7 +46,20 @@ function truncateAtBoundary(content: string): string {
   }
   let kept = content.slice(0, cut).trimEnd();
   fence = null;
-  for (const line of kept.split('\n')) fence = nextFence(fence, line);
+  let fenceStart = 0;
+  let offset = 0;
+  for (const line of kept.split('\n')) {
+    const wasOpen = fence !== null;
+    fence = nextFence(fence, line);
+    if (!wasOpen && fence !== null) fenceStart = offset;
+    offset += line.length + 1;
+  }
+  // Omit the open block if its closing fence would exceed the content limit.
+  if (fence !== null && kept.length + 1 + fence.length + markerFor(cut).length > MAX_GLOBAL_INSTRUCTIONS_CHARS) {
+    cut = fenceStart;
+    kept = content.slice(0, cut).trimEnd();
+    fence = null;
+  }
   if (fence !== null) kept += `\n${fence}`;
   return `${kept}${markerFor(cut)}`;
 }

@@ -1,5 +1,5 @@
 import { existsSync, readdirSync } from 'node:fs';
-import { dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 import { isTestFile } from './git-diff.js';
 import type { LexerSyntax, QuoteSpec } from './mutation-lexer.js';
@@ -8,7 +8,7 @@ import type { OperatorSpec } from './mutation-operators.js';
 import { shellQuote } from './shell-quote.js';
 
 /**
- * Everything mutation testing needs to know about one language. `syntax`/`operators` are undefined only for the JS/TS profile, which keeps the original whole-line generator. `skipDirs` never hold sources; `buildDirs` are skipped only when one of `markers` (a root file name, or `*.ext`) exists, so a JS repo's own `bin/` or `target/` is still mutated.
+ * Everything mutation testing needs to know about one language. `syntax`/`operators` are undefined only for the JS/TS profile, which keeps the original whole-line generator. `skipDirs` never hold sources; `buildDirs` are skipped only when one of `markers` (a root file name, or `*.ext`) exists, so a JS repo's own `bin/` or `target/` is still mutated. `compileCheck` returns the compile-only command for a module root (see `compileCheckFor`); a `compiled` profile without one cannot tell a compile failure from a kill.
  */
 export interface LanguageProfile {
   readonly id: string;
@@ -19,6 +19,8 @@ export interface LanguageProfile {
   readonly skipDirs: readonly string[];
   readonly buildDirs: readonly string[];
   readonly markers: readonly string[];
+  readonly compiled?: boolean;
+  readonly compileCheck?: (has: (file: string) => boolean) => string | undefined;
 }
 
 const q = (open: string, escape: boolean, multiline: boolean, close: string = open): QuoteSpec => ({ open, close, escape, multiline });
@@ -26,6 +28,11 @@ const C_BLOCK = { open: '/*', close: '*/', nested: false } as const;
 const NESTED_BLOCK = { open: '/*', close: '*/', nested: true } as const;
 const C_STRINGS = [q('"', true, false), q("'", true, false)];
 const JVM_MARKERS = ['pom.xml', 'build.gradle', 'build.gradle.kts'];
+const jvmCheck = (has: (file: string) => boolean): string | undefined => {
+  if (has('pom.xml')) return 'mvn -q test-compile';
+  if (has('build.gradle') || has('build.gradle.kts')) return has('gradlew') ? './gradlew testClasses' : 'gradle testClasses';
+  return undefined;
+};
 
 export const JS_PROFILE: LanguageProfile = {
   id: 'js',
@@ -47,6 +54,7 @@ export const LANGUAGE_PROFILES: readonly LanguageProfile[] = [
     skipDirs: ['__pycache__', '.venv', 'venv', 'site-packages', '.tox', '.mypy_cache', '.pytest_cache'],
     buildDirs: [],
     markers: ['pyproject.toml', 'setup.py', 'setup.cfg', 'pytest.ini'],
+    compileCheck: () => 'python3 -m py_compile {file}',
   },
   {
     id: 'go',
@@ -57,6 +65,8 @@ export const LANGUAGE_PROFILES: readonly LanguageProfile[] = [
     skipDirs: [],
     buildDirs: [],
     markers: ['go.mod'],
+    compiled: true,
+    compileCheck: () => "go test -count=1 -run '^$' ./...",
   },
   {
     id: 'rs',
@@ -67,6 +77,8 @@ export const LANGUAGE_PROFILES: readonly LanguageProfile[] = [
     skipDirs: [],
     buildDirs: ['target'],
     markers: ['Cargo.toml'],
+    compiled: true,
+    compileCheck: () => 'cargo test --no-run',
   },
   {
     id: 'java',
@@ -77,6 +89,8 @@ export const LANGUAGE_PROFILES: readonly LanguageProfile[] = [
     skipDirs: [],
     buildDirs: ['target', '.gradle', 'build'],
     markers: JVM_MARKERS,
+    compiled: true,
+    compileCheck: jvmCheck,
   },
   {
     id: 'kt',
@@ -87,6 +101,8 @@ export const LANGUAGE_PROFILES: readonly LanguageProfile[] = [
     skipDirs: [],
     buildDirs: ['target', '.gradle', 'build'],
     markers: JVM_MARKERS,
+    compiled: true,
+    compileCheck: jvmCheck,
   },
   {
     id: 'cs',
@@ -97,6 +113,8 @@ export const LANGUAGE_PROFILES: readonly LanguageProfile[] = [
     skipDirs: [],
     buildDirs: ['bin', 'obj'],
     markers: ['*.csproj', '*.sln'],
+    compiled: true,
+    compileCheck: () => 'dotnet build',
   },
   {
     id: 'rb',
@@ -117,6 +135,7 @@ export const LANGUAGE_PROFILES: readonly LanguageProfile[] = [
     skipDirs: [],
     buildDirs: [],
     markers: [],
+    compiled: true,
   },
 ];
 
@@ -134,8 +153,14 @@ export function isMutationTestFile(path: string): boolean {
   return LANGUAGE_PROFILES.some(profile => profile.testFile.some(rule => rule.test(path)));
 }
 
+const BUILD_SCRIPT_NAMES: readonly string[] = ['build.gradle.kts', 'settings.gradle.kts'];
+
+export function isBuildScript(path: string): boolean {
+  return BUILD_SCRIPT_NAMES.includes(basename(path));
+}
+
 export function isMutableSource(path: string): boolean {
-  return profileFor(path) !== undefined && !isMutationTestFile(path);
+  return profileFor(path) !== undefined && !isMutationTestFile(path) && !isBuildScript(path);
 }
 
 function hasMarker(repoRoot: string, marker: string, rootEntries: () => readonly string[]): boolean {
@@ -180,18 +205,30 @@ export function discoverLanguageGate(repoRoot: string): string {
  */
 export function compileCheckFor(profileId: string, repoRoot: string): string | undefined {
   const has = (file: string): boolean => existsSync(join(repoRoot, file));
-  switch (profileId) {
-    case 'go': return "go test -count=1 -run '^$' ./...";
-    case 'rs': return 'cargo test --no-run';
-    case 'java':
-    case 'kt':
-      if (has('pom.xml')) return 'mvn -q test-compile';
-      if (has('build.gradle') || has('build.gradle.kts')) return has('gradlew') ? './gradlew testClasses' : 'gradle testClasses';
-      return undefined;
-    case 'cs': return 'dotnet build';
-    case 'py': return 'python3 -m py_compile {file}';
-    default: return undefined;
-  }
+  return LANGUAGE_PROFILES.find(profile => profile.id === profileId)?.compileCheck?.(has);
+}
+
+/**
+ * True for a compiled language with no default compile check: its mutants may only run under an explicit `--build`/`--typecheck`, or a mutant that fails to compile would be graded killed.
+ */
+export function needsExplicitCheck(profile: LanguageProfile): boolean {
+  return profile.compiled === true && profile.compileCheck === undefined;
+}
+
+/**
+ * Target files that cannot be mutated without an explicit check, in input order. Empty when `explicitCheck` is set.
+ */
+export function filesNeedingExplicitCheck(files: readonly string[], explicitCheck: boolean, repoRoot: string): string[] {
+  if (explicitCheck) return [];
+  const checks = compileChecksFor(files, repoRoot);
+  return files.filter(file => {
+    const profile = profileFor(file);
+    return profile?.compiled === true && checks[file] === undefined && checks[profile.id] === undefined;
+  });
+}
+
+export function explicitCheckNotice(files: readonly string[]): string {
+  return `skipping ${files.length} file(s) in a compiled language with no default compile check (${files.join(', ')}) — pass --build or --typecheck so a mutant that does not compile is graded invalid, not killed`;
 }
 
 function moduleDirFor(root: string, file: string, markers: readonly string[]): string | undefined {

@@ -7,7 +7,9 @@ import type { MutationReport } from './mutant-runner.js';
 import { clearShadowingDist, prepareSandboxNodeModules, workspacePackageDirs } from './mutation-sandbox.js';
 import { createForgeArena } from './forge-arena.js';
 import { generateMutants } from './mutant-generator.js';
-import { compileChecksFor, discoverLanguageGate, isMutableSource, JS_PROFILE, profileFor } from './mutation-languages.js';
+import {
+  compileChecksFor, discoverLanguageGate, explicitCheckNotice, filesNeedingExplicitCheck, isMutableSource, JS_PROFILE, profileFor,
+} from './mutation-languages.js';
 import { resolveWithinRoot } from './paths.js';
 import { copyUntrackedWork } from './untracked-copy.js';
 
@@ -214,7 +216,13 @@ export async function runMutationAssessment(
     if (!existsSync(absolute) || !statSync(absolute).isFile() || !profileFor(file)) return [];
     return [[relative(repoRoot, absolute), Array.from({ length: readFileSync(absolute, 'utf8').split('\n').length }, (_, index) => index + 1)]];
   }));
-  if (Object.keys(targets).length === 0) return { ok: false, skipped: true, error: 'no mutable source lines in target' };
+  const explicitCheck = Boolean(options.buildCmd?.trim() || options.typecheckCmd?.trim());
+  const needsCheck = filesNeedingExplicitCheck(Object.keys(targets), explicitCheck, repoRoot);
+  for (const file of needsCheck) delete targets[file];
+  const notice = needsCheck.length > 0 ? explicitCheckNotice(needsCheck) : undefined;
+  if (Object.keys(targets).length === 0) {
+    return { ok: false, skipped: true, error: notice ? `no mutable source lines in target: ${notice}` : 'no mutable source lines in target' };
+  }
   const arena = createForgeArena(repoRoot);
   const candidate = arena.create('mutation-assessment');
   let engineCalls = 0;
@@ -229,7 +237,7 @@ export async function runMutationAssessment(
       worktree: candidate.path, testCmd,
       buildCmd: options.buildCmd?.trim() || undefined,
       typecheckCmd: options.typecheckCmd?.trim() || undefined,
-      compileChecks: options.buildCmd?.trim() || options.typecheckCmd?.trim() ? undefined : compileChecksFor(Object.keys(targets), repoRoot),
+      compileChecks: explicitCheck ? undefined : compileChecksFor(Object.keys(targets), repoRoot),
       perMutantTimeoutSec: options.perMutantTimeoutSec ?? 120,
       totalBudgetSec: options.totalBudgetSec ?? 600,
       signal: context.signal,
@@ -271,7 +279,7 @@ export async function runMutationAssessment(
     const survivors = outcomes.filter((outcome) => outcome.status === 'survived').map((outcome) => outcome.mutant);
     const byFile: Record<string, MutationCandidate[]> = {};
     for (const mutant of survivors as MutationCandidate[]) (byFile[mutant.file] ??= []).push(mutant);
-    return { ok, ...(error ? { error } : {}), report, survivors, byFile,
+    return { ok, ...(error ? { error } : {}), ...(notice ? { notice } : {}), report, survivors, byFile,
       verdict: !ok ? error : survived ? `${survived} mutation(s) survived`
         : report.killed ? 'all executed mutations were killed' : 'no valid mutations were executed', engineCalls, costUsd: 0,
       outputDir: options.outputDir, ...(options.lens ? { lens: options.lens } : {}), ...(receiptId ? { receiptId } : {}) };

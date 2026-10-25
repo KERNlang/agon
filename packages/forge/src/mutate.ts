@@ -12,7 +12,7 @@ import type { EngineAdapter, EngineRegistry, Mutant, MutationReport } from '@ker
 
 import { generateMutants, runMutants, worktreeCreate, worktreeRemoveBestEffort, headSha, resolveWithinRoot } from '@kernlang/agon-core';
 
-import { compileChecksFor, profileFor } from '@kernlang/agon-support-worktree';
+import { compileChecksFor, explicitCheckNotice, filesNeedingExplicitCheck, profileFor } from '@kernlang/agon-support-worktree';
 
 import { resolveMutateTargets } from './mutate-targets.js';
 
@@ -209,6 +209,11 @@ export async function runMutate(opts: MutateOptions): Promise<MutateResult> {
     const message = `semantic: skipping ${resolved.skippedGeneric.length} file(s) with no language profile (${resolved.skippedGeneric.join(', ')}) — pass --build or --typecheck so a mutant that does not compile is graded invalid, not killed`;
     opts.onEvent?.({ type: 'mutate:notice', data: { message, files: resolved.skippedGeneric } });
   }
+  const needsCheck = filesNeedingExplicitCheck(Object.keys(targets), explicitCheck, repoRoot);
+  for (const file of needsCheck) delete targets[file];
+  if (needsCheck.length > 0) {
+    opts.onEvent?.({ type: 'mutate:notice', data: { message: explicitCheckNotice(needsCheck), files: needsCheck } });
+  }
 
   const sources: Record<string, string> = {};
   const sourceLines: Record<string, string[]> = {};
@@ -221,7 +226,8 @@ export async function runMutate(opts: MutateOptions): Promise<MutateResult> {
   }
   const targetFiles = Object.keys(targets);
   if (targetFiles.length === 0) {
-    const why = resolved.skippedGeneric.length > 0 ? ` (skipped without --build/--typecheck: ${resolved.skippedGeneric.join(', ')})` : '';
+    const skipped = [...resolved.skippedGeneric, ...needsCheck];
+    const why = skipped.length > 0 ? ` (skipped without --build/--typecheck: ${skipped.join(', ')})` : '';
     return fail(`no mutable (non-test) source files in the target${why}`);
   }
   label = `mutate-${targetFiles.length}-file${targetFiles.length === 1 ? '' : 's'}`;

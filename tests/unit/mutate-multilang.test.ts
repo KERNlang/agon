@@ -204,3 +204,40 @@ describe('AC-6 shared gate fallback', () => {
     expect(discoverMutateGate(root)).toBe('make check');
   });
 });
+
+describe('review: compiled profile without a default compile check', () => {
+  const CPP = 'struct Money { int c; Money operator+(Money o) const { Money r{c + o.c}; return r; } };\nMoney total(Money a, Money b) { return a + b; }\n';
+  const NO_MINUS = "! grep -q 'a - b' calc.cpp";
+
+  it('review: a C++-only target without --build/--typecheck fails with a notice naming the file', async () => {
+    const repo = gitRepo(undefined, { 'calc.cpp': CPP });
+    const events: Array<{ type: string; data?: Record<string, unknown> }> = [];
+    const result = await runMutate({ ...base, repoRoot: repo, outputDir: tmp('agon-ml-out-'), files: ['calc.cpp'],
+      testCmd: NO_MINUS, onEvent: e => events.push(e) });
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('calc.cpp');
+    expect(result.report.outcomes).toEqual([]);
+    const notice = events.find(e => e.type === 'mutate:notice');
+    expect(notice?.data?.files).toEqual(['calc.cpp']);
+    expect(String(notice?.data?.message)).toMatch(/--build or --typecheck/);
+  }, 60_000);
+
+  it('review: a mixed target skips the C++ file and still mutates the rest', async () => {
+    const repo = gitRepo(undefined, { 'calc.cpp': CPP, 'calc.py': 'def f(a, b):\n    return a + b\n' });
+    const events: Array<{ type: string; data?: Record<string, unknown> }> = [];
+    const result = await runMutate({ ...base, repoRoot: repo, outputDir: tmp('agon-ml-out-'), files: ['calc.cpp', 'calc.py'],
+      testCmd: "grep -q 'a + b' calc.py", onEvent: e => events.push(e) });
+    expect(events.find(e => e.type === 'mutate:notice')?.data?.files).toEqual(['calc.cpp']);
+    expect(new Set(result.report.outcomes.map(o => o.mutant.file))).toEqual(new Set(['calc.py']));
+  }, 60_000);
+
+  it('review: an explicit --typecheck grades the non-compiling C++ mutant invalid, never killed', async () => {
+    const repo = gitRepo(undefined, { 'calc.cpp': CPP });
+    const result = await runMutate({ ...base, repoRoot: repo, outputDir: tmp('agon-ml-out-'), files: ['calc.cpp'],
+      testCmd: NO_MINUS, typecheckCmd: NO_MINUS });
+    expect(result.error).toBeUndefined();
+    const byAfter = Object.fromEntries(result.report.outcomes.map(o => [o.mutant.after.trim(), o.status]));
+    expect(byAfter['Money total(Money a, Money b) { return a - b; }']).toBe('invalid');
+    expect(result.report.killed).toBe(0);
+  }, 60_000);
+});

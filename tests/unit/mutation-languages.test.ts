@@ -6,7 +6,7 @@ import { discoverGate } from '@kernlang/agon-core';
 import {
   JS_PROFILE, LANGUAGE_PROFILES, compileCheckFor, compileChecksFor, discoverLanguageGate, discoverMutationGate,
   generateMechanicalMutants, generateMutants, isMutableSource, isMutationTestFile, isTestFile, lexSource,
-  mutationSkipDirs, profileFor,
+  filesNeedingExplicitCheck, isBuildScript, mutationSkipDirs, needsExplicitCheck, profileFor,
 } from '../../packages/support-worktree/src/index.js';
 import type { LanguageProfile, Mutant } from '../../packages/support-worktree/src/index.js';
 
@@ -346,6 +346,25 @@ describe('AC-5/AC-11 compile-only check per profile', () => {
 
   it('AC-5 JS/TS, Ruby and C/C++ have no default check', () => {
     for (const id of ['js', 'rb', 'c']) expect(compileCheckFor(id, repo({}))).toBeUndefined();
+  });
+
+  it('review: only a compiled profile with no default check needs an explicit --build/--typecheck', () => {
+    expect(needsExplicitCheck(profile('c'))).toBe(true);
+    for (const id of ['go', 'rs', 'java', 'kt', 'cs', 'py', 'js', 'rb']) expect(needsExplicitCheck(profile(id))).toBe(false);
+  });
+
+  it('review: a compiled file with no resolvable compile check needs an explicit --build/--typecheck', () => {
+    expect(filesNeedingExplicitCheck(['A.java', 'b.kt', 'c.go', 'd.py', 'e.cpp'], false, repo({}))).toEqual(['A.java', 'b.kt', 'e.cpp']);
+    expect(filesNeedingExplicitCheck(['A.java', 'b.kt', 'e.cpp'], false, repo({ 'pom.xml': '<project/>' }))).toEqual(['e.cpp']);
+    expect(filesNeedingExplicitCheck(['A.java', 'e.cpp'], true, repo({}))).toEqual([]);
+  });
+
+  it('review: Gradle Kotlin build scripts are never mutation sources', () => {
+    for (const path of ['build.gradle.kts', 'app/settings.gradle.kts']) {
+      expect(isBuildScript(path)).toBe(true);
+      expect(isMutableSource(path)).toBe(false);
+    }
+    expect(isMutableSource('src/Build.kts')).toBe(true);
   });
 
   it('AC-5 checks are keyed by the profile of each target file', () => {

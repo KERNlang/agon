@@ -63,6 +63,7 @@ afterEach(() => { while (dirs.length) rmSync(dirs.pop() as string, { recursive: 
 
 const MIXED = {
   'src/Calc.kt': 'fun same(a: Int, b: Int): Boolean = a == b\n',
+  'build.gradle.kts': 'plugins { kotlin("jvm") }\n',
   'lib/calc.ex': 'def add(a, b), do: a + b\n',
   'assets/logo.png': PNG,
   'deps/mix.lock': '%{"jason": {:hex, :jason, "1.4.0"}}\n',

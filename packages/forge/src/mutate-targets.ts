@@ -4,7 +4,7 @@ import { basename, extname, join, relative } from 'node:path';
 
 import { discoverGate, resolveWithinRoot } from '@kernlang/agon-core';
 
-import { discoverLanguageGate, isMutableSource, isMutationTestFile, mutationSkipDirs, parseChangedLines, profileFor } from '@kernlang/agon-support-worktree';
+import { discoverLanguageGate, isBuildScript, isMutableSource, isMutationTestFile, mutationSkipDirs, parseChangedLines, profileFor } from '@kernlang/agon-support-worktree';
 
 export const GENERIC_SOURCE_MAX_BYTES: number = 1048576;
 
@@ -47,7 +47,7 @@ function inSkippedDir(rel: string, skipDirs: readonly string[]): boolean {
  * 'generic' = a text file with no language profile that only the semantic panel can mutate: not a test, not a lockfile or prose, under GENERIC_SOURCE_MAX_BYTES, outside skipped directories and free of NUL bytes.
  */
 export function classifyMutateTarget(repoRoot: string, rel: string, skipDirs: readonly string[] = mutationSkipDirs(repoRoot)): MutateTargetKind {
-  if (isMutationTestFile(rel)) return 'none';
+  if (isMutationTestFile(rel) || isBuildScript(rel)) return 'none';
   if (profileFor(rel)) return 'profiled';
   const name = basename(rel);
   if (!extname(name) || LOCKFILE_NAMES.includes(name) || NON_SOURCE_EXTENSIONS.includes(extname(name).toLowerCase())) return 'none';

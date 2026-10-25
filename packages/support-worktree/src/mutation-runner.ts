@@ -9,6 +9,7 @@ import { createForgeArena } from './forge-arena.js';
 import { generateMutants } from './mutant-generator.js';
 import { compileChecksFor, discoverLanguageGate, isMutableSource, JS_PROFILE, profileFor } from './mutation-languages.js';
 import { resolveWithinRoot } from './paths.js';
+import { copyUntrackedWork } from './untracked-copy.js';
 
 export interface MutationCandidate {
   readonly id: string;
@@ -115,6 +116,7 @@ function hydrateAmbientChanges(repoRoot: string, candidateRoot: string, targets:
   if (patch.trim()) execFileSync('git', ['apply', '--binary', '--whitespace=nowarn', '-'], {
     cwd: candidateRoot, input: patch, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], maxBuffer: 64 * 1024 * 1024,
   });
+  copyUntrackedWork(repoRoot, candidateRoot);
   for (const file of targets) {
     const source = within(repoRoot, file);
     const destination = within(candidateRoot, file);

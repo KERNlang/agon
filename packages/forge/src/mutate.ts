@@ -1,6 +1,6 @@
-import { readFileSync, writeFileSync, existsSync, statSync, lstatSync, readdirSync, mkdirSync, cpSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, lstatSync, mkdirSync, cpSync } from 'node:fs';
 
-import { join, dirname, resolve, relative, extname } from 'node:path';
+import { join, dirname, resolve } from 'node:path';
 
 import { tmpdir } from 'node:os';
 
@@ -12,13 +12,17 @@ import type { EngineAdapter, EngineRegistry, Mutant, MutationReport } from '@ker
 
 import { generateMutants, runMutants, worktreeCreate, worktreeRemoveBestEffort, headSha, resolveWithinRoot } from '@kernlang/agon-core';
 
-import { parseChangedLines, isTestFile } from '@kernlang/agon-support-worktree';
+import { compileChecksFor, profileFor } from '@kernlang/agon-support-worktree';
+
+import { resolveMutateTargets } from './mutate-targets.js';
+
+export { isMutableFile, mutationTargetsFromDiff } from './mutate-targets.js';
 
 import { collectSemanticMutants, normalizeLens } from './mutate-semantic.js';
 
 import type { SemanticTarget } from './mutate-semantic.js';
 
-import { prepareSandboxNodeModules, clearShadowingDist, workspacePackageDirs } from './mutate-sandbox.js';
+import { prepareNodeSandbox } from './mutate-sandbox.js';
 
 import { formatMutateVerdict, staleDistHint } from './mutate-report.js';
 
@@ -61,10 +65,6 @@ export interface MutateResult {
   error?: string;
 }
 
-export const MUTABLE_EXTENSIONS: string[] = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.mts', '.cts'];
-
-export const SKIP_DIRS: string[] = ['node_modules', 'dist', 'build', 'out', 'coverage', 'vendor', '.git'];
-
 /**
  * Per-file ceiling on the untracked work copied into the sandbox (5 MiB). A stray recording or database dump must not turn hydration into a minutes-long copy; the skip is logged so the cause of a red baseline is never a mystery.
  */
@@ -74,51 +74,6 @@ export const MAX_UNTRACKED_FILE_BYTES: number = 5242880;
  * Ceiling on how many untracked files are copied. Beyond this the working tree is not 'uncommitted work' any more, and hydration would dominate the run.
  */
 export const MAX_UNTRACKED_FILES: number = 2000;
-
-/**
- * A path worth mutating: a JS/TS source file that is not a test.
- */
-export function isMutableFile(rel: string): boolean {
-  if (isTestFile(rel)) return false;
-  return MUTABLE_EXTENSIONS.includes(extname(rel));
-}
-
-/**
- * Recursively list repo-relative mutable source files under absDir, skipping dependency/build/hidden directories and never following a symlinked entry.
- */
-function collectMutableFiles(repoRoot: string, absDir: string): string[] {
-  const found: string[] = [];
-  const walk = (dir: string): void => {
-    let entries: ReturnType<typeof readdirSync>;
-    try { entries = readdirSync(dir, { withFileTypes: true }) as never; } catch { return; }
-    for (const entry of entries as unknown as Array<{ name: string; isDirectory: () => boolean; isFile: () => boolean }>) {
-      if (entry.name.startsWith('.')) continue;
-      const abs = join(dir, entry.name);
-      if (entry.isDirectory()) {
-        if (SKIP_DIRS.includes(entry.name)) continue;
-        walk(abs);
-      } else if (entry.isFile()) {
-        const rel = relative(repoRoot, abs);
-        if (isMutableFile(rel)) found.push(rel);
-      }
-    }
-  };
-  walk(absDir);
-  return found.sort();
-}
-
-/**
- * Changed-line targets from a unified diff: parseChangedLines minus test files and non-source extensions. Pure — containment against the repo root is the caller's job (runMutate does it), because a hand-authored diff can carry any path.
- */
-export function mutationTargetsFromDiff(diff: string): Record<string, number[]> {
-  const parsed = parseChangedLines(diff);
-  const targets: Record<string, number[]> = {};
-  for (const [file, lines] of Object.entries(parsed)) {
-    if (!isMutableFile(file) || lines.length === 0) continue;
-    targets[file] = lines;
-  }
-  return targets;
-}
 
 /**
  * Collapse mutants that produce the SAME mutated line in the same place — (file, line, after). First wins, so a semantic mutant placed ahead of the mechanical pool keeps its rationale. Pure.
@@ -246,45 +201,13 @@ export async function runMutate(opts: MutateOptions): Promise<MutateResult> {
   if (!testCmd) return fail('no test command discovered — pass `--test <cmd>`');
 
   // ── 1. Targets ──
-  let targets: Record<string, number[]> = {};
-  if (opts.diff && opts.diff.trim()) {
-    const fromDiff = mutationTargetsFromDiff(opts.diff);
-    // A diff is text: its paths get the SAME containment as a positional
-    // target, or `+++ b/../../outside.ts` reads (and, with --semantic, ships)
-    // a file from outside the repository.
-    for (const [file, lines] of Object.entries(fromDiff)) {
-      try {
-        resolveWithinRoot(repoRoot, file);
-        targets[file] = lines;
-      } catch (err) {
-        console.warn(`[agon] mutate: ignoring diff target ${file} — ${err instanceof Error ? err.message : String(err)}`);
-      }
-    }
-  } else if (opts.files && opts.files.length > 0) {
-    for (const p of opts.files) {
-      let abs = '';
-      try {
-        abs = resolveWithinRoot(repoRoot, p);
-      } catch (err) {
-        return fail(`target ${p} is outside the repository root (${err instanceof Error ? err.message : String(err)})`);
-      }
-      if (!existsSync(abs)) return fail(`target not found: ${p}`);
-      // `.` and the repo root itself resolve to an EMPTY relative path — that
-      // is the root, not an escape.
-      const rel0 = relative(repoRoot, abs);
-      const isDir = statSync(abs).isDirectory();
-      if (!isDir && isTestFile(rel0)) {
-        return fail(`${rel0} is a test file — mutate measures the SOURCE your tests cover; point it at the implementation instead`);
-      }
-      const rels = isDir ? collectMutableFiles(repoRoot, abs) : [rel0];
-      for (const rel of rels) {
-        if (!isMutableFile(rel)) continue;
-        const count = readFileSync(join(repoRoot, rel), 'utf-8').split('\n').length;
-        targets[rel] = Array.from({ length: count }, (_, i) => i + 1);
-      }
-    }
-  } else {
-    return fail('no target — pass a path or a diff');
+  const explicitCheck = Boolean(opts.buildCmd?.trim() || opts.typecheckCmd?.trim());
+  const resolved = resolveMutateTargets({ repoRoot, diff: opts.diff, files: opts.files, allowGeneric: opts.semantic && explicitCheck, wantGeneric: opts.semantic });
+  if (resolved.error) return fail(resolved.error);
+  const targets = resolved.targets;
+  if (resolved.skippedGeneric.length > 0) {
+    const message = `semantic: skipping ${resolved.skippedGeneric.length} file(s) with no language profile (${resolved.skippedGeneric.join(', ')}) — pass --build or --typecheck so a mutant that does not compile is graded invalid, not killed`;
+    opts.onEvent?.({ type: 'mutate:notice', data: { message, files: resolved.skippedGeneric } });
   }
 
   const sources: Record<string, string> = {};
@@ -297,13 +220,19 @@ export async function runMutate(opts: MutateOptions): Promise<MutateResult> {
     sourceLines[file] = text.split('\n');
   }
   const targetFiles = Object.keys(targets);
-  if (targetFiles.length === 0) return fail('no mutable (non-test) source files in the target');
+  if (targetFiles.length === 0) {
+    const why = resolved.skippedGeneric.length > 0 ? ` (skipped without --build/--typecheck: ${resolved.skippedGeneric.join(', ')})` : '';
+    return fail(`no mutable (non-test) source files in the target${why}`);
+  }
   label = `mutate-${targetFiles.length}-file${targetFiles.length === 1 ? '' : 's'}`;
   opts.onEvent?.({ type: 'mutate:targets', data: { files: targetFiles.length, lines: Object.values(targets).reduce((n, l) => n + l.length, 0) } });
 
   // ── 2. Mechanical mutants ──
   const mechanical: Mutant[] = [];
-  for (const file of targetFiles) mechanical.push(...generateMutants(sources[file], targets[file], file));
+  for (const file of targetFiles) {
+    const profile = profileFor(file);
+    if (profile) mechanical.push(...generateMutants(sources[file], targets[file], file, profile));
+  }
 
   // ── 3. Isolated, hydrated sandbox — built BEFORE any engine sees the code ──
   const worktree = join(tmpdir(), `agon-mutate-${randomUUID().slice(0, 8)}`);
@@ -318,23 +247,16 @@ export async function runMutate(opts: MutateOptions): Promise<MutateResult> {
   }
   try {
     untrackedCopied = hydrateWorktree(repoRoot, worktree);
-    // Workspace packages must resolve to the SANDBOX's sources, and no
-    // prebuilt bundle of a mutated package may shadow them. Both defects
-    // report as "every mutant survived" at score 0% rather than as an error.
-    const workspaces = workspacePackageDirs(repoRoot);
-    const nodeModules = prepareSandboxNodeModules(repoRoot, worktree, workspaces);
-    clearedDist = clearShadowingDist(repoRoot, worktree, targetFiles, workspaces);
-    const nodeModulesNote = nodeModules.failed > 0 ? `, ${nodeModules.failed} failed` : '';
+    const sandbox = prepareNodeSandbox(repoRoot, worktree, targetFiles);
+    clearedDist = sandbox.clearedDist;
     opts.onEvent?.({
       type: 'mutate:sandbox',
       data: {
         worktree,
         mutants: mechanical.length,
-        nodeModules: `${nodeModules.mode} (${nodeModules.links} links, ${nodeModules.workspaceLinks} workspace links${nodeModulesNote})`,
-        nodeModulesFailed: nodeModules.failed,
+        ...sandbox.eventData,
         untrackedCopied,
-        distCleared: clearedDist,
-        needsBuild: clearedDist.length > 0 && !opts.buildCmd,
+        ...(sandbox.node ? { needsBuild: clearedDist.length > 0 && !opts.buildCmd } : {}),
       },
     });
 
@@ -384,6 +306,7 @@ export async function runMutate(opts: MutateOptions): Promise<MutateResult> {
       totalBudgetSec: opts.totalBudgetSec,
       typecheckCmd: opts.typecheckCmd,
       buildCmd: opts.buildCmd,
+      compileChecks: explicitCheck ? undefined : compileChecksFor(targetFiles, repoRoot),
       signal: opts.signal,
       onProgress: (p) => opts.onEvent?.({ type: 'mutate:progress', data: { ...p } }),
     });

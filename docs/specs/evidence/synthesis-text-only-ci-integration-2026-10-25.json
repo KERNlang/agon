@@ -16,5 +16,22 @@
   },
   "reviewIndex": "docs/specs/evidence/synthesis-text-only-2026-10-25.json",
   "integration": "Conflict-free merge of the CI workflow and two existing evidence indices. No source or generated-output drift. Owner and qualification diffs match byte-for-byte. Build, typecheck, tests, lint, re-export guard, release-set, supply-chain self-test and offline installed-package checks pass.",
-  "limits": ["Fresh independent approval and current-head CI remain required", "Text-only control is not sandboxing", "Physical runtime cutover remains separate", "npm provenance remains externally blocked", "No active installation or personal state changed"]
+  "limits": ["Fresh independent approval and current-head CI remain required", "Text-only control is not sandboxing", "Physical runtime cutover remains separate", "npm provenance remains externally blocked", "No active installation or personal state changed"],
+  "postMutationMainIntegration": {
+    "parents": ["1bad5154f8c8c57c7e3198cb6776d116fa3fc268", "01a10699fe2199bc50c16da516b455d1fb8b6941"],
+    "testedDiffFromFirstParentSha256": "daf4ba64f154c54faf389dbe0f9d00f8564e41248d86777033b98fe93f65ec49",
+    "indexUpdatedAfterTests": true,
+    "receipt": "pr316-main-integration-gates-20261025.receipt.json",
+    "receiptSha256": "abe3ab8bd33655fee3aec81d8315fb4633ddd68c58f3878fa1c8b536ac342552",
+    "logSha256": "d5436b054ba70096d1db9b79ef1599cbe000ca43f241d8da9eace3c329fa73db",
+    "exitCode": 0,
+    "seconds": 1002.994,
+    "testsPassed": 11833,
+    "testsSkipped": 7,
+    "installedChecks": 85,
+    "providerLaunches": 0,
+    "integration": "Source merged without conflicts. Three release metadata files regenerated and verified. The Synthesis implementation/test patch is unchanged. Only Synthesis has a changed modular package payload against the second parent.",
+    "toolchainLimit": "Local Node26/npm11 archive identities differ from main artifacts for unchanged payloads. This is not canonical Node22/npm10 release reproduction.",
+    "cleanCommittedQualification": "pending; this receipt covers the integrated working tree before this index update"
+  }
 }

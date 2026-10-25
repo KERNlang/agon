@@ -67,6 +67,7 @@ export type { Logger } from './signals/logger.js';
 export { EngineRegistry } from './signals/engine-registry.js';
 export { scanProjectContext, isKernProject, hasProjectBrief, buildKernContextSpine, discoverGate, bashRanGate, isGateSkipSignal } from './blocks/context-scanner.js';
 export type { DiscoveredGate } from './blocks/context-scanner.js';
+export { buildGlobalInstructionsBlock, GLOBAL_INSTRUCTIONS_FILE, MAX_GLOBAL_INSTRUCTIONS_CHARS } from './blocks/global-instructions.js';
 export { buildCodebaseMap, collectSourceFiles, extractSymbols, clearCodebaseMapCache } from './blocks/codebase-map.js';
 export {
   addWorkspace, removeWorkspace, listWorkspaces,

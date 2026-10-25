@@ -30,6 +30,24 @@ export const CLASSIFIER_TIMEOUT_MS: number = 2000;
 export const CLASSIFIER_DISABLE_ENV: string = "AGON_DISABLE_CLASSIFIER_SIDECAR";
 
 /**
+ * Upper bound on text sent to the sidecar. The embedding model truncates far below this, and an unbounded paste must not be able to time out the call and latch the sidecar off for the whole process.
+ */
+export const CLASSIFIER_MAX_INPUT_CHARS: number = 4000;
+
+const UNCLASSIFIABLE: Set<string> = new Set();
+
+function boundSidecarInput(text: string): string {
+  if (text.length <= CLASSIFIER_MAX_INPUT_CHARS) return text;
+  const end = /[\uD800-\uDBFF]/.test(text[CLASSIFIER_MAX_INPUT_CHARS - 1]) ? CLASSIFIER_MAX_INPUT_CHARS - 1 : CLASSIFIER_MAX_INPUT_CHARS;
+  return text.slice(0, end);
+}
+
+/**
+ * Process-wide: set on the first spawn failure, timeout, non-zero exit or empty output so a broken sidecar costs at most one blocking call.
+ */
+let sidecarUnavailable = false;
+
+/**
  * Synchronous Python sidecar escalation. Returns null on any failure — caller falls back to 'other'.
  */
 export function classifyTaskSemantic(description: string): ReturnType<typeof classifyTaskRegex> | null {
@@ -37,6 +55,7 @@ export function classifyTaskSemantic(description: string): ReturnType<typeof cla
 
   const cached = CLASSIFIER_CACHE.get(description);
   if (cached !== undefined) return cached;
+  if (sidecarUnavailable || UNCLASSIFIABLE.has(description) || !description.trim()) return null;
 
   const sidecar = resolveDedupSidecar('classifier.py');
   if (!sidecar) return null;
@@ -46,19 +65,17 @@ export function classifyTaskSemantic(description: string): ReturnType<typeof cla
   let result;
   try {
     result = spawnSync(python, [sidecar], {
-      input: JSON.stringify({ text: description }),
+      input: JSON.stringify({ text: boundSidecarInput(description) }),
       timeout: CLASSIFIER_TIMEOUT_MS,
       encoding: 'utf-8',
     });
   } catch {
+    sidecarUnavailable = true;
     return null;
   }
 
-  if (result.status !== 0 || !result.stdout) {
-    // Silent degrade. Regex fast-path handles the call. `agon doctor` surfaces
-    // the install hint for users who want the semantic classifier. The
-    // postinstall script attempts the install automatically when Python is
-    // available, so the previous startup warning was redundant noise.
+  if (result.error || result.signal || result.status !== 0 || !result.stdout) {
+    sidecarUnavailable = true;
     return null;
   }
 
@@ -66,13 +83,23 @@ export function classifyTaskSemantic(description: string): ReturnType<typeof cla
     const parsed = JSON.parse(result.stdout);
     const cls = parsed?.class;
     const valid = ['algorithm', 'refactor', 'bugfix', 'test', 'docs', 'feature', 'other'];
-    if (typeof cls !== 'string' || !valid.includes(cls)) return null;
+    if (typeof cls !== 'string' || !valid.includes(cls)) {
+      UNCLASSIFIABLE.add(description);
+      return null;
+    }
     const taskClass = cls as ReturnType<typeof classifyTaskRegex>;
     CLASSIFIER_CACHE.set(description, taskClass);
     return taskClass;
   } catch {
+    UNCLASSIFIABLE.add(description);
     return null;
   }
+}
+
+export function resetClassifierSidecarState(): void {
+  CLASSIFIER_CACHE.clear();
+  UNCLASSIFIABLE.clear();
+  sidecarUnavailable = false;
 }
 
 /**

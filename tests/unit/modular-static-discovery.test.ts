@@ -96,4 +96,10 @@ describe('static mod discovery', () => {
     })));
     await expect(inspectStaticManifest(root)).rejects.toThrow(/asset (?:hash|bytes)/i);
   });
+
+  it('reports pathological nesting as a depth-limit failure instead of overflowing the duplicate-key scan', async () => {
+    const root = fixture();
+    writeFileSync(join(root, 'agon.mod.json'), '['.repeat(100_000) + ']'.repeat(100_000));
+    await expect(inspectStaticManifest(root)).rejects.toThrow(/depth limit/);
+  });
 });

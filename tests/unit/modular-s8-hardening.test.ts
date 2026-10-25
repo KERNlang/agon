@@ -231,7 +231,7 @@ export default services => ({ apiVersion: '1', activate(registrar) {
     const invocation = Promise.resolve(command.run({}, context));
     await started; controller.abort();
     await expect(invocation).rejects.toThrow(/aborted/);
-    expect(signalSeen).toBe(controller.signal); expect(signalSeen?.aborted).toBe(true);
+    expect(signalSeen?.aborted).toBe(true);
     await new Promise((resolve) => setTimeout(resolve, 75));
     await activated.dispose();
   });

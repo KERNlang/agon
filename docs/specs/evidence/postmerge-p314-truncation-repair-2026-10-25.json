@@ -1,0 +1,44 @@
+{
+  "scope": "PR314 global instruction truncation repairs; not full modular acceptance",
+  "baseCommit": "e927c9e113ddc4f82ebdcc2e80032500952eeb58",
+  "testedDiffSha256": "84c5c8051a6cfdcee902d764c52e1710f1b358c6fab10a499751751a05a35a97",
+  "sourceTestDiffSha256": "58c5a0085dbfdd59c30438317e3cf25858b3b826c6d6eb8a60237ae3a5d7639c",
+  "indexAddedAfterTests": true,
+  "archiveRoot": "/Users/ra/dev/modular-agon-remediation",
+  "build": {
+    "receipt": "nico-p314-repaired-full-20261025.receipt.json",
+    "buildPassed": true,
+    "wholeCommandPassed": false,
+    "failure": "Subsequent offline release packing lacked locked cache archives; no test failure",
+    "logSha256": "586799997c23a1fae10d0502d9435202d012749a96f2a95ea57decabe9e531fa"
+  },
+  "resumedGates": {
+    "receipt": "nico-p314-repaired-gates-resume-20261025.receipt.json",
+    "logSha256": "8f99a9f3bf2e837a2bbdfc6c3a1b7311ae177383eb2df540fb103a6d21dec63a",
+    "exitCode": 0,
+    "testsPassed": 11646,
+    "testsSkipped": 6,
+    "providerLaunches": 0
+  },
+  "focused": {
+    "receipt": "nico-p314-fixes-focused-20261025.receipt.json",
+    "testsPassed": 89,
+    "logSha256": "73e4a6ca855300d57f1348735781138cc44b3cb80424add15af12a4c274c87b5"
+  },
+  "negativeControl": {
+    "receipt": "nico-p314-regressions-negative-20261025.receipt.json",
+    "expectedFailures": 3,
+    "existingTestsPassed": 17,
+    "logSha256": "f8ed4f285eb63fd6cd001117bec615d08b560cc73a068b876d29b482b770acfe"
+  },
+  "review": {
+    "receipt": "nico-p314-global-instructions-codex-review.receipt.json",
+    "packetSha256": "974f2cbfed2d4679f68bc9630158a682e9131756604606973ddc531c88f90bfd",
+    "logSha256": "1f7c9bee9be9053ea92caf403c34c3b691b1daa17eb5d30750d584b6b1af9033",
+    "resolutions": [
+      "Missing prompt wiring refuted against packages/cli/src/cesar/session.ts, which the packet omitted; actual wiring tests pass",
+      "Invalid backtick info string reproduced, fixed and covered by a failing-before regression"
+    ]
+  },
+  "remaining": ["Integrate main after PR312 merge and requalify combined metadata", "GitHub checks and approval", "Original full modular acceptance remains open"]
+}

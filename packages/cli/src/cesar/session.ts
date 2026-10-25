@@ -12,7 +12,7 @@ import { createRequire } from 'node:module';
 
 import type { PersistentSession, PersistentSessionConfig } from '@kernlang/agon-core';
 
-import { ensureAgonHome, getAgonHome, resolveWorkingDir, scanProjectContext, buildCodebaseMap, buildKernContextSpine, buildProjectMemoryBlock, createPersistentSession, ToolRegistry, getProjectFileStateCache, buildToolSystemPrompt, toolsToOpenAIFormat, executeToolCall, RUNS_DIR, tracker, discoverMcpServers, mcpDiscoveryFingerprint, mcpServersToWireFormat, listCesarPlans, saveConversation, formatChatContextForPrompt, isReadOnlyCommand, AGON_MODE_NAMES, parsePermissionRuleSet, parseToolHooks, PERMISSION_DENIED_MESSAGE, claudeBrainUsesPty } from '@kernlang/agon-core';
+import { ensureAgonHome, getAgonHome, resolveWorkingDir, scanProjectContext, buildGlobalInstructionsBlock, buildCodebaseMap, buildKernContextSpine, buildProjectMemoryBlock, createPersistentSession, ToolRegistry, getProjectFileStateCache, buildToolSystemPrompt, toolsToOpenAIFormat, executeToolCall, RUNS_DIR, tracker, discoverMcpServers, mcpDiscoveryFingerprint, mcpServersToWireFormat, listCesarPlans, saveConversation, formatChatContextForPrompt, isReadOnlyCommand, AGON_MODE_NAMES, parsePermissionRuleSet, parseToolHooks, PERMISSION_DENIED_MESSAGE, claudeBrainUsesPty } from '@kernlang/agon-core';
 
 import type { ToolContext } from '@kernlang/agon-core';
 
@@ -369,6 +369,12 @@ export function buildCesarSystemPrompt(ctx: HandlerContext): string {
         ? CESAR_AGENTIC_SYSTEM_PROMPT
         : guardMode === 'invariants' ? applyInvariantsRule1(CESAR_SYSTEM_PROMPT) : CESAR_SYSTEM_PROMPT;
       const systemParts: string[] = [basePrompt];
+      try {
+        const globalInstructions = buildGlobalInstructionsBlock();
+        if (globalInstructions) systemParts.push(globalInstructions);
+      } catch (err) {
+        console.warn(`[agon] global instructions skipped: ${err instanceof Error ? err.message : String(err)}`);
+      }
       if (projectCtx) systemParts.push(`## PROJECT CONTEXT\n${projectCtx}`);
       // Codebase atlas: a compact "where things live" index so Cesar locates code
       // from context instead of re-grepping every turn. Cheap + memoized per cwd.

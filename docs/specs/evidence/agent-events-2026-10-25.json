@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-25",
+  "scope": "Agent event ownership, not full Agent or modular release acceptance",
+  "subject": {
+    "base": "700c867987567e3d427f4da906a3fed129c777b1",
+    "trackedDiffBeforeThisIndexSha256": "0bd424bab4f91dc8f2fa055a51a7f03d99649eb3487ca00e0fae76e7a9ec0ef9",
+    "newSource": {
+      "path": "packages/mod-agent/src/events.ts",
+      "sha256": "9680123d0b97112382519e863eaeadea17e84e0b3c27a231b78eb192df089393"
+    },
+    "qualificationMatchesOwner": true
+  },
+  "change": {
+    "owner": "@kernlang/agon-mod-agent",
+    "movedLines": 161,
+    "helperFunctions": 8,
+    "publicTypes": 3,
+    "logicChanged": false,
+    "compatibility": "Core retains explicit value/type re-exports; no second implementation",
+    "dependency": "Existing internal Core to Agent workspace edge; no external version change",
+    "remaining": "AgentTeam orchestration, CLI host effects, fitness and scoring ownership"
+  },
+  "verification": {
+    "fullSuite": { "passed": 11678, "skipped": 6, "failed": 0 },
+    "fullGateSeconds": 1019.218,
+    "focusedTests": 48,
+    "negativeControl": { "newOwnerTestsFailedBefore": 1, "existingTestsPassedBefore": 31 },
+    "legacyParityCases": 2758,
+    "installedChecks": 87,
+    "installedAgentRuntime": true,
+    "externalPublicTypesCompile": true,
+    "generatorChecks": true,
+    "build": true,
+    "typecheck": true,
+    "lint": true,
+    "reexportGuard": true,
+    "supplyChainSelfTest": true,
+    "docsUnchanged": true,
+    "finalPackedContentsUnchanged": true,
+    "providerLaunches": 0
+  },
+  "performance": {
+    "platform": "darwin-arm64",
+    "node": "v26.12.1",
+    "passedGroups": ["1a", "2", "3", "4", "5", "6", "7", "8"],
+    "versionStartupP95Ms": 122.120917,
+    "helpStartupP95Ms": 135.75725,
+    "helpPeakRssP95Mb": 81.4375
+  },
+  "review": {
+    "route": "isolated Agon bounded source packet",
+    "codex": "completed; two integration concerns checked against source and installed evidence",
+    "kimi": "unavailable; no usable answer, not counted as passing",
+    "adjudications": [
+      "Agent root eagerly validates its manifest and loads schema data. No activation or dispatch occurs on import. Installed minimal/full profiles and performance budgets pass.",
+      "Core is bundled compatibility code, not a separately qualified modular release package. Core source identity, packed Agent runtime/types and installed CLI checks pass; standalone Core installation is not claimed.",
+      "Declared Agent dependency/peer closure contains eight packages with no cycle or path to Core. Events source has no imports."
+    ]
+  },
+  "limits": [
+    "Full Agent host/session cutover and full modular release acceptance remain open.",
+    "No native Linux, macOS x64 or additional Node-version evidence from this run.",
+    "npm provenance remains externally blocked.",
+    "Fresh OSV scan was blocked on deps.dev metadata permission. No external dependency version changed; this is not a passing security scan.",
+    "No global installation, personal state mutation, promotion or publishing."
+  ],
+  "reproduce": [
+    "node scripts/spec/generate-modular-first-party-migration-ledger.mjs --check",
+    "node scripts/spec/generate-modular-first-party-packages.mjs --check",
+    "node scripts/spec/generate-modular-surface-catalog.mjs --check",
+    "npm run build",
+    "npm run typecheck",
+    "npm run lint",
+    "npm run guard:reexports",
+    "npm run test:modular-supply-chain",
+    "node scripts/spec/verify-modular-npx.mjs",
+    "npm test",
+    "npm run perf:modular-release",
+    "npm run docs:modes",
+    "node scripts/spec/verify-modular-release-set.mjs --check"
+  ],
+  "archive": {
+    "location": "durable operator archive: modular-agon-remediation, outside Git worktrees",
+    "retention": "Never delete without Raphael approval",
+    "artifacts": [
+      { "path": "agent-events-parity-20261025.json", "sha256": "5247164df1573ad62401b5130a1b327d173c85cf912c320c1c7a07d2ce6326fc" },
+      { "path": "agent-events-owner-negative-20261025.receipt.json", "sha256": "b23715f3470e46638ecbf1a65a73e84bd0b0cf90889da57338210fed03fc04a1" },
+      { "path": "agent-events-owner-focused-20261025.receipt.json", "sha256": "07284d1a274cc0dd8779a1b60297f2b0daf70bbf20aa1094c2a2485de30f29e3" },
+      { "path": "agent-events-owner-full-20261025.receipt.json", "sha256": "7b23b76b8bb806474810a65cdf9b41ac1a1f29b24f8ece3d92d168675cfbae7c" },
+      { "path": "agent-events-performance-docs-20261025.log", "sha256": "6d4cab491905fe3c2ed1b7e95cdf4a4095acec36f16fde879f50d12b5eaa4799" },
+      { "path": "agent-event-owner-review-input.txt", "sha256": "59c26c8cdb77b288c86ec781c42b762664bacb771162204987294a15fa569ad9" },
+      { "path": "agent-event-owner-codex-review.log", "sha256": "4ba3014050cc6f915b1d4ce6534e6d90ddfef96867e5579d5139ad6378ec65bf" },
+      { "path": "agent-event-owner-kimi-review.receipt.json", "sha256": "dd460d522eb2637bbdd5e0b86228152de5fed73ee94d0a02bc1f423b447850c7" },
+      { "path": "agent-event-owner-review-adjudication-20261025.md", "sha256": "42dbbcbb4917af6ca28fd4203765924a1598c1d6dcbd50791ff3717225ce6989" }
+    ]
+  }
+}

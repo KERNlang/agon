@@ -3,7 +3,7 @@
   "slice": "S9",
   "passed": true,
   "platform": "darwin-arm64",
-  "node": "v26.3.0",
+  "node": "v26.12.1",
   "profile": "minimal+think+review",
   "installedPackageCount": 15,
   "cacheDeletionSurvived": true,
@@ -271,6 +271,16 @@
     },
     {
       "id": "packed-shared-git-diff-owner",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "packed-agent-events",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "packed-agent-events-public-types",
       "passed": true,
       "detail": "exit=0"
     },

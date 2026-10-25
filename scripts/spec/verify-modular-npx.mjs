@@ -76,6 +76,49 @@ try {
     assert.deepEqual(worktree.parseChangedLines(diff), { 'tests/example.test.ts': [1, 2] });
     assert.deepEqual(worktree.newFilesInDiff(diff), ['tests/example.test.ts']);
   `], { cwd: ephemeral }));
+  requireOk('packed-agent-events', run(process.execPath, ['--input-type=module', '-e', `
+    import assert from 'node:assert/strict';
+    import { pathToFileURL } from 'node:url';
+    import * as agent from '@kernlang/agon-mod-agent';
+    const installedRoot = pathToFileURL(process.cwd() + '/node_modules/').href;
+    assert.ok(import.meta.resolve('@kernlang/agon-mod-agent').startsWith(installedRoot));
+    assert.deepEqual(agent.makeAssistantChunk('engine', 'hello'), { kind: 'assistant_chunk', engineId: 'engine', text: 'hello' });
+    assert.deepEqual(agent.makeError('engine', 'failed'), { kind: 'error', engineId: 'engine', message: 'failed', recoverable: false });
+    assert.deepEqual(agent.makeTurnComplete('engine', 'end_turn'), { kind: 'turn_complete', engineId: 'engine', stopReason: 'end_turn', usage: null });
+    const rejected = agent.normalizeSessionChunk({ type: 'tool_call', content: 'shell', metadata: { status: 'denied', toolCallId: 'id' } }, 'engine');
+    assert.deepEqual(rejected, agent.makeToolCall('engine', 'shell', 'rejected', { toolCallId: 'id', terminalReason: 'denied' }));
+    assert.equal(agent.normalizeSessionChunk({ type: 'status', content: 'busy' }, 'engine'), null);
+    assert.deepEqual(agent.unavailableUsage(), { promptTokens: 0, completionTokens: 0, totalTokens: 0, source: 'unavailable' });
+    assert.deepEqual(agent.estimatedUsage('12345', '1234'), { promptTokens: 2, completionTokens: 1, totalTokens: 3, source: 'estimated' });
+    assert.deepEqual(agent.buildApiTurnEvents('engine', '', 0, 'end_turn'), [agent.makeTurnComplete('engine', 'end_turn')]);
+  `], { cwd: ephemeral }));
+  const agentEventExample = join(ephemeral, 'agent-events-public-contract.mts');
+  writeFileSync(agentEventExample, `
+    import { makeAssistantChunk, makeToolCall, makeTurnComplete, makeError, normalizeSessionChunk,
+      buildApiTurnEvents, unavailableUsage, estimatedUsage, type AgentEvent, type AgentUsage,
+      type RawSessionChunk } from '@kernlang/agon-mod-agent';
+    const usage: AgentUsage = estimatedUsage('prompt', 'reply');
+    const chunk: RawSessionChunk = { type: 'tool_call', content: 'shell', metadata: { status: 'done' } };
+    const events: AgentEvent[] = [makeAssistantChunk('engine', 'hello'), makeToolCall('engine', 'shell', 'ok'),
+      makeTurnComplete('engine', 'end_turn', usage), makeError('engine', 'failed'),
+      ...buildApiTurnEvents('engine', '', 0, 'end_turn', unavailableUsage())];
+    const normalized: AgentEvent | null = normalizeSessionChunk(chunk, 'engine');
+    for (const event of events) {
+      switch (event.kind) {
+        case 'assistant_chunk': event.text satisfies string; break;
+        case 'tool_call': event.status satisfies 'running' | 'ok' | 'error' | 'rejected'; break;
+        case 'turn_complete': event.usage satisfies AgentUsage | null; break;
+        case 'error': event.recoverable satisfies boolean; break;
+        default: event satisfies never;
+      }
+    }
+    // @ts-expect-error Unknown event kinds must not cross the public boundary.
+    const invalid: AgentEvent = { kind: 'unknown', engineId: 'engine' };
+    void normalized; void invalid;
+  `);
+  requireOk('packed-agent-events-public-types', run(process.execPath, [join(root, 'node_modules/typescript/bin/tsc'),
+    '--noEmit', '--strict', '--target', 'ES2022', '--module', 'NodeNext', '--moduleResolution', 'NodeNext',
+    '--types', 'node', '--typeRoots', join(root, 'node_modules/@types'), agentEventExample], { cwd: ephemeral }));
   // Independent probes must not hide later installer failures. Retain every
   // failed check and reject the whole qualification before emitting success.
   for (const [id, verify] of [

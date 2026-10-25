@@ -16,5 +16,21 @@
   },
   "reviewIndex": "docs/specs/evidence/synthesis-winner-content-2026-10-25.json",
   "integration": "Conflict-free merge of the CI workflow and two existing evidence indices. No source or generated-output drift. Owner and qualification diffs match byte-for-byte. Build, typecheck, tests, lint, re-export guard, release-set, supply-chain self-test and offline installed-package checks pass.",
-  "limits": ["Fresh independent approval and current-head CI remain required", "Physical Synthesis runtime cutover remains separate", "npm provenance remains externally blocked", "No active installation or personal state changed"]
+  "limits": ["Fresh independent approval and current-head CI remain required", "Physical Synthesis runtime cutover remains separate", "npm provenance remains externally blocked", "No active installation or personal state changed"],
+  "postMutationMainIntegration": {
+    "parents": ["7744b708a0b0019b71e64a861358e6283fb0bc14", "01a10699fe2199bc50c16da516b455d1fb8b6941"],
+    "testedDiffFromFirstParentSha256": "f44634bcce765eff67bbd8b56fc578cc49ca0fc30375194e11b5f5a1449a3908",
+    "sourceAndTestDiffSha256": "08a577f1ae5d518a92d71b02eb0bfc7712820502f0d1b57ffc79bc5e24492420",
+    "indexAddedAfterTests": true,
+    "receipt": "pr318-main-integration-gates-20261026.receipt.json",
+    "receiptSha256": "0d6de3878c80a28af0ce90609fdc5e573160716e02a88d5f346db59118c39aca",
+    "logSha256": "db0922a388f4f525a52a57695ced72b069c956c574671ca9bde2c864f4f54257",
+    "exitCode": 0,
+    "seconds": 1051.353,
+    "testsPassed": 11835,
+    "testsSkipped": 7,
+    "providerLaunches": 0,
+    "verification": "Build, typecheck, lint, re-export guard, release-set and SBOM generation/checks/self-tests, installed-package checks, full suite and diff check passed. Original reviewed source/test patch unchanged. Three generated conflicts were regenerated after integrating main.",
+    "limits": ["Exact clean committed checkout qualification remains pending", "Fresh independent approval and current-head CI remain required", "Skipped provider, Go and opt-in checks are not passing evidence", "Local Node 26 evidence is not canonical Node 22 reproduction", "No full modular release acceptance claimed"]
+  }
 }

@@ -243,7 +243,7 @@
         "range": "^19.2.0"
       }
     ],
-    "packedBytes": 1436648,
+    "packedBytes": 1436649,
     "unpackedBytes": 6477680,
     "fileCount": 137,
     "files": [
@@ -796,10 +796,10 @@
         "size": 128059
       }
     ],
-    "payloadHash": "sha256:3c8ed76725af8069103bc34a9b0441261794a9ae018a80f35f64185744583982",
-    "integrity": "sha512-KRW6OjtUzS3bsP3KLSKp+phtPZ3OkjghOOfUEEUz5i1k6FabYjE3EGMUehy8DpOtv3I15JMyCPwD/PCqmwIAsA==",
-    "shasum": "21527bb12e8e9ad7d1eb971015e4deb59ddc925e",
-    "tarballHash": "sha256:3fb92a0dc596ab762448458c84fbc10fcf68b7fc3add08c8634c2bf7f4007ce5",
+    "payloadHash": "sha256:b0d0f88c6da19b9516e154d1655ef3a4fa47743c773cb1754c96f69b2fc9073b",
+    "integrity": "sha512-tk9ouiU3A1hO5lA2+h/3BN9WSPoVoOu98btLXqAEuyKnB1bJq+HIWdaW6awUdmRc52EJtfOpvGQ8+ICNtU7Rlg==",
+    "shasum": "75484c8aafa15a2e72b86405420b3e7f5e5f049a",
+    "tarballHash": "sha256:26dd672866232579c71212a2c965edec19459ce5f99e2ee4808fbb5935037a7e",
     "packageJsonHash": "sha256:28e901652911437b0e49a15bf3be184c09f24652c51bdf68ef3055b27494ced1"
   },
   "packages": [
@@ -814,8 +814,8 @@
         "@kernlang/agon-mod-api"
       ],
       "peerDependencies": {},
-      "packedBytes": 192611,
-      "unpackedBytes": 1585228,
+      "packedBytes": 193299,
+      "unpackedBytes": 1587331,
       "fileCount": 78,
       "files": [
         {
@@ -843,8 +843,8 @@
           "size": 2504
         },
         {
-          "path": "dist/chunk-6ZMYVNTX.js",
-          "size": 54390
+          "path": "dist/chunk-I4SKWZKK.js",
+          "size": 55048
         },
         {
           "path": "dist/compatibility.d.ts",
@@ -920,7 +920,7 @@
         },
         {
           "path": "dist/folder-mods.d.ts",
-          "size": 703
+          "size": 815
         },
         {
           "path": "dist/generated/first-party-package-graph.d.ts",
@@ -976,7 +976,7 @@
         },
         {
           "path": "dist/index.js",
-          "size": 1034417
+          "size": 1034558
         },
         {
           "path": "dist/json-schema-input.d.ts",
@@ -1099,8 +1099,8 @@
           "size": 2674
         },
         {
-          "path": "dist/third-party-worker-7FMGLYAT.js",
-          "size": 11006
+          "path": "dist/third-party-worker-F5OWMLMD.js",
+          "size": 12198
         },
         {
           "path": "dist/third-party-worker-runner.js",
@@ -1131,10 +1131,10 @@
           "size": 548
         }
       ],
-      "payloadHash": "sha256:2687e0ccc50b2a3dc6b79503c2e915bd482eec784f3763766a1b15b02f8276a3",
-      "integrity": "sha512-uhjQanKETLreAqvhG0XqVYZAJbBSgeaX04bT2lPmyfZ0xGskjCYVmAADtYFANWvK5qLFu9buern3hZXEquKVcA==",
-      "shasum": "4c43cc9b398cf749b3e123a239adb0fb928ded69",
-      "tarballHash": "sha256:aa8a1768029a6c2f01b6ce7ab1ed4985f1160f93dfe56adc2338f702c49a519b",
+      "payloadHash": "sha256:f3d9b9b4c7c84e1e250b30976c6384c51e326eb4036372e29668210c097b93bc",
+      "integrity": "sha512-topKsT4XU5yTbW7J/nAthXLmi7HNn2AuIS3cSxQEwyg6ZKHN1G/DujrNfeKd02RJ9W1CGgK/StDY7mj/Ubxikg==",
+      "shasum": "43576b231b4b67d347081586371e9db6065e50cb",
+      "tarballHash": "sha256:355ce349d5e36a2d4908d9123751092310d9b69723c92d5a758c8a20fdf60099",
       "packageJsonHash": "sha256:583381b00786c2729a1e32eb2d42f6324cb58df263378f0d0ad57a1401970f17",
       "manifestHash": "sha256:583381b00786c2729a1e32eb2d42f6324cb58df263378f0d0ad57a1401970f17"
     },

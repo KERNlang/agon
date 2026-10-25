@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import type { Dirent } from 'node:fs';
 import { lstat, readdir, realpath } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import type { ModManifest } from '@kernlang/agon-mod-api';
@@ -29,7 +30,8 @@ async function hashDeclaredTree(root: string, files: readonly BoundedPackageFile
   for (const path of [...declaredPaths].sort()) {
     const file = byPath.get(path);
     if (!file) throw new StaticDiscoveryError('declared package path is not a regular file', { path });
-    digest.update(path).update('\0').update(await readBoundedPackageFile(root, file)).update('\0');
+    const bytes = await readBoundedPackageFile(root, file);
+    digest.update(path).update('\0').update(String(bytes.byteLength)).update('\0').update(bytes);
   }
   return `sha256:${digest.digest('hex')}`;
 }
@@ -57,6 +59,10 @@ export async function inspectFolderMod(packageRoot: string, source: FolderModCan
   });
 }
 
+export function isPackageEntryCandidate(entry: Dirent): boolean {
+  return !(entry.isFile() && entry.name.startsWith('.'));
+}
+
 export async function discoverUserFolderMods(modsRoot: string): Promise<readonly FolderModCandidate[]> {
   let canonicalRoot: string;
   try { canonicalRoot = await realpath(modsRoot); }
@@ -65,8 +71,9 @@ export async function discoverUserFolderMods(modsRoot: string): Promise<readonly
     throw error;
   }
   const entries = await readdir(canonicalRoot, { withFileTypes: true });
-  if (entries.length > FOLDER_MOD_LIMITS.maxPackages) throw new StaticDiscoveryError('user mods folder exceeds the package-count limit', { maxPackages: FOLDER_MOD_LIMITS.maxPackages });
-  const sorted = entries.sort((a, b) => a.name.localeCompare(b.name));
+  const packageEntries = entries.filter(isPackageEntryCandidate);
+  if (packageEntries.length > FOLDER_MOD_LIMITS.maxPackages) throw new StaticDiscoveryError('user mods folder exceeds the package-count limit', { maxPackages: FOLDER_MOD_LIMITS.maxPackages });
+  const sorted = packageEntries.sort((a, b) => a.name.localeCompare(b.name));
   const inspected = await mapSettledBounded(sorted, FOLDER_MOD_LIMITS.maxConcurrentInspections, async (entry) => {
     if (!entry.isDirectory() || entry.isSymbolicLink()) throw new StaticDiscoveryError('user mods folder may contain only real package directories', { entry: entry.name });
     const candidate = await inspectFolderMod(join(canonicalRoot, entry.name), 'user-folder');

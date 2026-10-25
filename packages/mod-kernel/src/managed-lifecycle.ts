@@ -762,7 +762,7 @@ export async function installVerifiedDirectory(
     const from = resolve(source, file);
     if (relative(source, from).startsWith('..')) throw new DurableHostError('MOD_TRANSACTION_FAILED', `package path escapes source: ${file}`);
     const bytes = await io.readFile(from);
-    hash.update(file).update('\0').update(bytes).update('\0');
+    hash.update(file).update('\0').update(String(bytes.byteLength)).update('\0').update(bytes);
     const to = resolve(packageRoot, file);
     if (relative(packageRoot, to).startsWith('..')) throw new DurableHostError('MOD_TRANSACTION_FAILED', `package path escapes destination: ${file}`);
     await io.mkdir(dirname(to), { recursive: true, mode: 0o700 });

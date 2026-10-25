@@ -94,9 +94,14 @@ export async function handleSynthesis(prompt: string, dispatch: Dispatch, ctx: H
     dispatch({ type: 'separator' });
     if (result.winner) {
       const winnerDraft = drafts.find((d: any) => d.engineId === result.winner);
-      dispatch({ type: 'engine-block', engineId: result.winner, color: (ENGINE_COLORS as Record<string, number>)[result.winner] ?? 124, content: `★ Winner: ${result.winner}\n\n${winnerDraft?.content ?? ''}\n\n— Judge —\n${result.judgeReasoning}` });
+      let winnerContent = winnerDraft?.content;
+      // Completed swaps retain round order, as used by the judge.
+      for (const swap of result.swaps ?? []) {
+        if (swap.toEngineId === result.winner) winnerContent = swap.improvedContent;
+      }
+      dispatch({ type: 'engine-block', engineId: result.winner, color: (ENGINE_COLORS as Record<string, number>)[result.winner] ?? 124, content: `★ Winner: ${result.winner}\n\n${winnerContent ?? ''}\n\n— Judge —\n${result.judgeReasoning}` });
       appendMessage(ctx.chatSession, { role: 'user', content: `[synthesis] ${prompt}`, timestamp: new Date().toISOString() });
-      appendMessage(ctx.chatSession, { role: 'engine', engineId: result.winner, content: winnerDraft?.content ?? result.judgeReasoning, timestamp: new Date().toISOString() });
+      appendMessage(ctx.chatSession, { role: 'engine', engineId: result.winner, content: winnerContent ?? result.judgeReasoning, timestamp: new Date().toISOString() });
     } else {
       dispatch({ type: 'warning', message: 'Synthesis produced no winner.' });
     }

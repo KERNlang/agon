@@ -1,7 +1,7 @@
 {
   "bomFormat": "CycloneDX",
   "specVersion": "1.6",
-  "serialNumber": "urn:uuid:5613e65b-9982-51b2-954b-4da4d81fce22",
+  "serialNumber": "urn:uuid:9d649b2d-4422-5016-8077-0aaf98d19c25",
   "version": 1,
   "metadata": {
     "component": {
@@ -38,7 +38,7 @@
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "f801d4d80cfff6292167122621f657a0ad593b533dca7e98874cbd25e7f09469"
+          "content": "37f3d5a19f75035f79c923abde1eebc4b38b8543edd1ab7500c0b0b1d13f8216"
         }
       ],
       "licenses": [
@@ -51,7 +51,7 @@
       "properties": [
         {
           "name": "npm:integrity",
-          "value": "sha512-NvEvXeHh/fhv6SiYS28CyVPVptQhTmHthjI7Zuz7yNidhniP0MF/J3prmSNeDo6xCeumps5+XlJUQI3jpZVydA=="
+          "value": "sha512-x4lUIghRrpsHHv5iTjxV/6bbgYjgpgA3JRX1e3Y5G3U8IpBnAznkOsPZGykt47OXzYvPlQyuAUrRCCq5dkYaVg=="
         },
         {
           "name": "agon:class",

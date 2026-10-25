@@ -3942,8 +3942,8 @@
       "id": "AgentInvestigateSynthesisResult",
       "source": "packages/core/src/cesar/agent-synthesis.ts:401",
       "class": "user-toggleable-mod-package",
-      "package": "@kernlang/agon-mod-synthesis",
-      "rule": "semantic-source-rule"
+      "package": "@kernlang/agon-mod-agent",
+      "rule": "agent-team-refinement-owner"
     },
     {
       "category": "resultAndEnvelopeTypes",
@@ -3982,8 +3982,8 @@
       "id": "AgentSynthesisResult",
       "source": "packages/core/src/cesar/agent-synthesis.ts:68",
       "class": "user-toggleable-mod-package",
-      "package": "@kernlang/agon-mod-synthesis",
-      "rule": "semantic-source-rule"
+      "package": "@kernlang/agon-mod-agent",
+      "rule": "agent-team-refinement-owner"
     },
     {
       "category": "resultAndEnvelopeTypes",

@@ -1772,6 +1772,8 @@
         "packages/core/src/cesar/agent-session.ts:11",
         "packages/core/src/cesar/agent-session.ts:27",
         "packages/core/src/cesar/agent-session.ts:80",
+        "packages/core/src/cesar/agent-synthesis.ts:401",
+        "packages/core/src/cesar/agent-synthesis.ts:68",
         "packages/core/src/cesar/agent-team.ts:80",
         "packages/core/src/cesar/agent-team.ts:90",
         "packages/core/src/cesar/plan.ts:52",
@@ -2161,8 +2163,6 @@
       "extractionSources": [
         "packages/cli/src/lazy-commands.ts:314",
         "packages/cli/src/signals/intent.ts:56",
-        "packages/core/src/cesar/agent-synthesis.ts:401",
-        "packages/core/src/cesar/agent-synthesis.ts:68",
         "packages/core/src/models/types.ts:112",
         "packages/core/src/models/types.ts:236",
         "packages/core/src/models/types.ts:246",

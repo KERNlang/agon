@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "scope": "AgentTeam result-reader ownership; not Agent runtime extraction",
+  "base": "700c867987567e3d427f4da906a3fed129c777b1",
+  "testedDiffSha256": "dc828b1cb9adb915cda6f7ba9adabcfb55a8ba33ee40b1f7e4c5cc2655c2faf7",
+  "evidenceRoot": "modular-agon-remediation",
+  "full": {
+    "receipt": "agent-result-owner-full-20261025.receipt.json",
+    "logSha256": "d3f24632c7be63d1b6ee882adc860c5a34fbdea3af2b83009ea71fb7d3ff5d30",
+    "passed": true,
+    "testsPassed": 11677,
+    "testsSkipped": 6,
+    "installedChecks": 85,
+    "providerLaunches": 0,
+    "seconds": 936.28
+  },
+  "negativeControl": {
+    "receipt": "agent-result-owner-negative-20261025.receipt.json",
+    "logSha256": "361789282df32dc6089b6077a60ba9ba8736d9d10c2dabbd873d59df434cab43",
+    "expectedFailures": 4,
+    "otherTestsPassed": 73
+  },
+  "focused": {
+    "receipt": "agent-result-owner-focused-built-20261025.receipt.json",
+    "logSha256": "914c77f26dc05f4d9caba3ac902b41685e11b7738da6ae60aede6b1eb1cc6eb2",
+    "testsPassed": 77
+  },
+  "retainedFailedAttempt": "agent-result-owner-focused-20261025.receipt.json",
+  "failedAttemptCause": "Bootstrap dynamically imported stale built packages; rebuilding the two changed packages made the unchanged tests pass",
+  "review": {
+    "packetSha256": "85dea59d7544d6266d723c36d18c3c0dd350188b54c9b1b478600a37f006eddf",
+    "codexReceipt": "agent-result-owner-codex-review.receipt.json",
+    "codexLogSha256": "ef12bf64da773a2aebeed76957b33e94f849ceb87954eeec0bcea46bfddc1f98",
+    "adjudication": "No introduced defect. Added actual payload rendering after durable Synthesis deactivation. Source tracing found no producer of owner-bound envelopes for these two transient return types; no fabricated historical-envelope path claimed.",
+    "kimiReceipt": "agent-result-owner-kimi-review.receipt.json",
+    "kimiStatus": "unavailable: no answer, not a passing review"
+  },
+  "indexAddedAfterQualification": true,
+  "limits": ["No live providers", "npm provenance externally blocked", "Agent Core/CLI runtime extraction remains open", "No installation or promotion"]
+}

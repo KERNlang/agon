@@ -50,19 +50,24 @@ export {
   runMutate, dedupeMutants, selectMutants,
   mutationTargetsFromDiff, isMutableFile,
 } from './mutate.js';
+export {
+  classifyMutateTarget, resolveMutateTargets, discoverMutateGate, NO_GATE_DISCOVERED_MESSAGE, GENERIC_SOURCE_MAX_BYTES,
+} from './mutate-targets.js';
+export type { MutateTargetKind, ResolvedMutateTargets } from './mutate-targets.js';
 export type { MutateOptions, MutateResult } from './mutate.js';
 // The ONE mutation-report renderer — every surface (mutate, /mutate, review
 // --mutate) must render through formatMutationReportLines, never its own copy.
 export {
   formatMutationReportLines, formatMutateVerdict, mutateVerdictLine,
   allMutantsSurvived, noMutantsRanLine, staleDistHint, mutateLensSuffix, MUTATE_ALL_SURVIVED_WARNING,
+  MUTATE_ALL_SURVIVED_WARNING_GENERIC, isNodeMutationRun,
 } from './mutate-report.js';
 export {
   prepareSandboxNodeModules, clearShadowingDist, workspacePackageDirs,
   packageEntryDirs, repointWorkspaceLinks, isInside, isSafePackageName,
-  pnpmWorkspaceGlobs, gitIgnoredPaths, expandWorkspaceGlob, workspaceGlobToRegExp,
+  pnpmWorkspaceGlobs, gitIgnoredPaths, expandWorkspaceGlob, workspaceGlobToRegExp, prepareNodeSandbox,
 } from './mutate-sandbox.js';
-export type { SandboxNodeModules, SandboxLinkRepair } from './mutate-sandbox.js';
+export type { SandboxNodeModules, SandboxLinkRepair, NodeSandboxPrep } from './mutate-sandbox.js';
 export {
   buildSemanticMutantPrompt, extractJsonArray, validateSemanticMutants, collectSemanticMutants,
   seatGrantsWriteAccess, stripControlChars, normalizeLens, MUTATE_LENS_PRESETS,

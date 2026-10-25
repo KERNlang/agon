@@ -1,3 +1,9 @@
+import { JS_PROFILE } from './mutation-languages.js';
+import type { LanguageProfile } from './mutation-languages.js';
+import { lexSource, maskToCode } from './mutation-lexer.js';
+import type { LexerSyntax } from './mutation-lexer.js';
+import type { OperatorSpec } from './mutation-operators.js';
+
 /**
  * A single canonical mutation applied to one line. id/operator/line/before/after/class are the goal-era shape; file/origin/engine/rationale are OPTIONAL additions used by `agon mutate` (multi-file + AI-semantic mutants) and left undefined by the goal loop.
  */
@@ -76,9 +82,10 @@ export function commentOnlyLines(source: string): boolean[] {
 }
 
 /**
- * Canonical mutants on the changed lines only (one per applicable operator/line). COMMENT-ONLY lines are skipped: an operator swap inside a comment is an equivalent mutant BY CONSTRUCTION (nothing executes it), so it can only ever survive and depress the score with noise no assertion could kill. Lines that mix code with a trailing comment are still mutated as a whole line. The operator set and its class labels are UNCHANGED — this only removes lines that were never mutable. When `file` is given each mutant carries it (and the id is namespaced by it) so mutants from several files can be pooled.
+ * Canonical mutants on the changed lines only (one per applicable operator/line). COMMENT-ONLY lines are skipped: an operator swap inside a comment is an equivalent mutant BY CONSTRUCTION (nothing executes it), so it can only ever survive and depress the score with noise no assertion could kill. For the default JS/TS profile, lines that mix code with a trailing comment are still mutated as a whole line and the operator set is unchanged; any other profile matches its own operator table only inside code spans (never inside a string, char literal or trailing comment). When `file` is given each mutant carries it (and the id is namespaced by it) so mutants from several files can be pooled.
  */
-export function generateMutants(source: string, changedLines: number[], file?: string): Mutant[] {
+export function generateMutants(source: string, changedLines: number[], file?: string, profile: LanguageProfile = JS_PROFILE): Mutant[] {
+  if (profile.syntax && profile.operators) return generateProfiledMutants(source, changedLines, file, profile.syntax, profile.operators);
   const ops: Array<{ name: string; class: 'high-signal' | 'equiv-prone'; apply: (s: string) => string | null }> = [
     { name: 'arith:+→-', class: 'high-signal', apply: (s) => { const m = s.replace(/(?<!\+)\+(?![+=])/, '-'); return m !== s ? m : null; } },
     { name: 'arith:-→+', class: 'high-signal', apply: (s) => { const m = s.replace(/(?<![-\w])-(?![-=>])/, '+'); return m !== s ? m : null; } },
@@ -116,6 +123,29 @@ export function generateMutants(source: string, changedLines: number[], file?: s
     for (const op of ops) {
       const mutated = op.apply(original);
       if (mutated == null || mutated === original) continue;
+      const base: Mutant = { id: `${op.name}@L${ln}`, operator: op.name, line: ln, before: original, after: mutated, class: op.class };
+      mutants.push(file ? { ...base, id: `${file}:${op.name}@L${ln}`, file, origin: 'mechanical' } : base);
+    }
+  }
+  return mutants;
+}
+
+function generateProfiledMutants(source: string, changedLines: number[], file: string | undefined, syntax: LexerSyntax, operators: readonly OperatorSpec[]): Mutant[] {
+  const lines = source.split('\n');
+  const lexed = lexSource(source, syntax);
+  const mutants: Mutant[] = [];
+  for (const ln of [...new Set(changedLines)]) {
+    const idx = ln - 1;
+    if (idx < 0 || idx >= lines.length) continue;
+    const { code, skip } = lexed[idx];
+    if (skip || code.length === 0) continue;
+    const original = lines[idx];
+    const masked = maskToCode(original, code);
+    for (const op of operators) {
+      const match = op.find.exec(masked);
+      if (!match) continue;
+      const mutated = original.slice(0, match.index) + op.replace + original.slice(match.index + match[0].length);
+      if (mutated === original) continue;
       const base: Mutant = { id: `${op.name}@L${ln}`, operator: op.name, line: ln, before: original, after: mutated, class: op.class };
       mutants.push(file ? { ...base, id: `${file}:${op.name}@L${ln}`, file, origin: 'mechanical' } : base);
     }

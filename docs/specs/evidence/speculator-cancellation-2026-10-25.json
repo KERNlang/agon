@@ -49,6 +49,22 @@
     "npm run perf:modular-release && npm run docs:modes",
     "node scripts/spec/verify-modular-release-set.mjs --check && node scripts/spec/verify-modular-supply-chain.mjs --check"
   ],
+  "mainIntegration": {
+    "parents": ["7e9786ade6f5f9b534e0bae14e44bd240dfa896f", "01a10699fe2199bc50c16da516b455d1fb8b6941"],
+    "testedDiffFromFirstParentSha256": "77d5bc44a4113226c7d4e803da11efe269caf0cae1a55ae44242a989e1a0800f",
+    "sourceAndTestDiffSha256": "30ebd9fccea26947d2dbc75d199f886985217b095f3bde050dc9e31551684d61",
+    "indexAddedAfterTests": true,
+    "receipt": "speculator-cancellation-main-integration-20261026.receipt.json",
+    "receiptSha256": "216e91c95211f02c9fe9a4ff5d57f855ce544486832c9a8fde5f841b0f36cec4",
+    "logSha256": "d3b097ce68ccc5911a49b8d2f85a32c6cab6670bf0cf0b88c31b6328cfb063e2",
+    "exitCode": 0,
+    "seconds": 956.699,
+    "testsPassed": 11837,
+    "testsSkipped": 7,
+    "providerLaunches": 0,
+    "verification": "Build, typecheck, lint, re-export guard, regenerated release and SBOM checks/self-tests, installed-package checks, full suite and diff check passed. Reviewed source/test patch unchanged after main integration.",
+    "limits": ["Exact clean committed qualification remains pending", "Fresh GitHub CI and independent approval remain required", "Skipped live-provider, Go and opt-in tests are not passing evidence", "Local Node 26 evidence is not canonical Node 22 reproduction", "No full modular acceptance or provider abort responsiveness claim"]
+  },
   "archive": {
     "location": "durable operator archive modular-agon-remediation, outside Git worktrees",
     "retention": "Never delete without Raphael approval",

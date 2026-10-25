@@ -15,7 +15,7 @@
 // tests/helpers/agon-home.ts#cleanupTestAgonHome restores THIS baseline
 // (via AGON_TEST_HOME_BASELINE) instead of deleting AGON_HOME, so later
 // tests in the same file never fall back to the real home either.
-import { mkdtempSync } from 'node:fs';
+import { chmodSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach } from 'vitest';
@@ -51,3 +51,20 @@ process.env.AGON_DISABLE_FORGE_HEALTH_CHECK = '1';
 // gets it automatically; a test that specifically exercises the spine can
 // set `process.env.AGON_NO_KERN_CONTEXT = ''` (and stub the CLI) itself.
 process.env.AGON_NO_KERN_CONTEXT = '1';
+
+// Hermetic child-process environment: workers inherit these, so git/python
+// children behave identically on any host locale, global gitignore or gitconfig.
+// The disabled classifier sidecar keeps cold-cache temp AGON_HOMEs from paying
+// a blocking Python spawn; classifier tests unset it locally.
+process.env.AGON_DISABLE_CLASSIFIER_SIDECAR = '1';
+process.env.LC_ALL = 'C';
+process.env.PYTHONUTF8 = '1';
+process.env.GIT_CONFIG_NOSYSTEM = '1';
+const emptyGitConfig = join(agonHomeBaseline, 'empty-gitconfig');
+writeFileSync(emptyGitConfig, '');
+chmodSync(emptyGitConfig, 0o444);
+process.env.GIT_CONFIG_GLOBAL = emptyGitConfig;
+process.env.GIT_AUTHOR_NAME ??= 'Agon Test';
+process.env.GIT_AUTHOR_EMAIL ??= 'agon-test@example.invalid';
+process.env.GIT_COMMITTER_NAME ??= 'Agon Test';
+process.env.GIT_COMMITTER_EMAIL ??= 'agon-test@example.invalid';

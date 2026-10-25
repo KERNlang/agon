@@ -31,11 +31,11 @@ else process.stdout.write(JSON.stringify({ class: input.text === 'opaque prose' 
   vi.stubEnv('AGON_HOME', root);
   vi.stubEnv('AGON_PYTHON', executable);
   vi.stubEnv(core.CLASSIFIER_DISABLE_ENV, '');
-  core.CLASSIFIER_CACHE.clear();
+  owner.resetClassifierSidecarState();
 });
 
 afterEach(() => {
-  core.CLASSIFIER_CACHE.clear();
+  owner.resetClassifierSidecarState();
   vi.unstubAllEnvs();
   rmSync(root, { recursive: true, force: true });
 });
@@ -137,10 +137,20 @@ describe('task classifier physical ownership', () => {
     expect(records[0].input).toEqual({ text: taskClass });
   });
 
-  it.each(['empty', 'malformed', 'exit', 'unknown'])('does not cache sidecar failure %s', input => {
+  it.each(['empty', 'exit'])('latches the sidecar off after failure %s', input => {
+    expect(core.classifyTaskSemantic(input)).toBeNull();
+    expect(core.classifyTaskSemantic(input)).toBeNull();
+    expect(core.classifyTaskSemantic('feature')).toBeNull();
+    expect(core.CLASSIFIER_CACHE.has(input)).toBe(false);
+    expect(readFileSync(calls, 'utf8').trim().split('\n')).toHaveLength(1);
+  });
+
+  it.each(['malformed', 'unknown'])('rejects %s output per description without latching the sidecar', input => {
     expect(core.classifyTaskSemantic(input)).toBeNull();
     expect(core.classifyTaskSemantic(input)).toBeNull();
     expect(core.CLASSIFIER_CACHE.has(input)).toBe(false);
+    expect(readFileSync(calls, 'utf8').trim().split('\n')).toHaveLength(1);
+    expect(core.classifyTaskSemantic('feature')).toBe('feature');
     expect(readFileSync(calls, 'utf8').trim().split('\n')).toHaveLength(2);
   });
 
@@ -170,6 +180,7 @@ describe('task classifier physical ownership', () => {
     expect(performance.now() - started).toBeLessThan(5000);
     expect(JSON.parse(readFileSync(calls, 'utf8').trim()).input).toEqual({ text: 'stall' });
     expect(core.CLASSIFIER_CACHE.has('stall')).toBe(false);
+    owner.resetClassifierSidecarState();
     vi.stubEnv('AGON_PYTHON', join(root, 'missing'));
     expect(core.classifyTask('unrecognized wording')).toBe('other');
   });

@@ -1,0 +1,20 @@
+{
+  "scope": "PR315 SBOM CI check integrated with current main; not full modular release acceptance",
+  "parents": ["144acf65045aed7e2bcdfbc683e26bcea49b4e18", "965c7fed871f1d8d4f6a5759498fbef5408879ed"],
+  "testedIndexTree": "459e7b3edb7983a148d5a88c306253501fc7bb65",
+  "testedDiffFromFirstParentSha256": "f75cab34305fca687d45703b5af941f90bafdcd1f564836434733f628c244db6",
+  "indexAddedAfterTests": true,
+  "archiveRoot": "/Users/ra/dev/modular-agon-remediation",
+  "fullGate": {
+    "receipt": "ci-sbom-main-integration-20261025.receipt.json",
+    "logSha256": "1e1ba2cad64cda5b08a920c5ab56f4a93607a60d0a4bd4ed29adb22a225e16db",
+    "exitCode": 0,
+    "seconds": 896.389,
+    "testsPassed": 11677,
+    "testsSkipped": 6,
+    "providerLaunches": 0
+  },
+  "reviewAndNegativeControlIndex": "docs/specs/evidence/ci-sbom-drift-2026-10-25.json",
+  "integration": "Conflict-free merge. No generated or source drift after the full gate. Owner and qualification index trees and complete diffs match. Compared with main, the workflow change remains exactly three lines invoking the existing SBOM check after build.",
+  "limits": ["Current-head GitHub CI and independent approval remain required", "No active installation changed", "Publishing provenance and full release qualification remain separate"]
+}

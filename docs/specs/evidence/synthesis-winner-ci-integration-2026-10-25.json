@@ -1,0 +1,20 @@
+{
+  "scope": "PR318 final winner publication integrated with SBOM CI main; not full modular release acceptance",
+  "parents": ["2a3803cb851eb397b01334a8bd8b97b8f8a57c11", "700c867987567e3d427f4da906a3fed129c777b1"],
+  "testedDiffFromFirstParentSha256": "9d7dcd5be9b0e9745d663cb1411f95a29132fae7c8b53455d5460c1047dc0dce",
+  "indexAddedAfterTests": true,
+  "archiveRoot": "/Users/ra/dev/modular-agon-remediation",
+  "fullGate": {
+    "receipt": "synthesis-winner-ci-main-integration-20261025.receipt.json",
+    "logSha256": "1bb9c7dae835609a08f0aa8922e901f15ec1c961d64fe6008e284264b99e9445",
+    "exitCode": 0,
+    "seconds": 933.663,
+    "testsPassed": 11680,
+    "testsSkipped": 6,
+    "installedChecks": 85,
+    "providerLaunches": 0
+  },
+  "reviewIndex": "docs/specs/evidence/synthesis-winner-content-2026-10-25.json",
+  "integration": "Conflict-free merge of the CI workflow and two existing evidence indices. No source or generated-output drift. Owner and qualification diffs match byte-for-byte. Build, typecheck, tests, lint, re-export guard, release-set, supply-chain self-test and offline installed-package checks pass.",
+  "limits": ["Fresh independent approval and current-head CI remain required", "Physical Synthesis runtime cutover remains separate", "npm provenance remains externally blocked", "No active installation or personal state changed"]
+}

@@ -44,5 +44,8 @@ jobs:
       - name: Build CLI
         run: npm run build:cli
 
+      - name: Verify release SBOM
+        run: npm run test:modular-supply-chain
+
       - name: Run tests
         run: npm run test

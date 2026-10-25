@@ -84,7 +84,7 @@ export function parseGenerationConfiguration(files: Readonly<Record<string, Uint
       if (!object(owner) || typeof owner.ownerId !== 'string' || ids.has(owner.ownerId) || owner.version !== 1
         || typeof owner.assetHash !== 'string' || !/^sha256:[a-f0-9]{64}$/.test(owner.assetHash)
         || !object(owner.schema) || owner.schema.type !== 'object') throw new TypeError('invalid configuration owner');
-      ownedLegacyAliases(owner.ownerId, owner.schema);
+      ownedLegacyAliases(owner.ownerId, owner.schema, owner.assetHash);
       ids.add(owner.ownerId);
     }
     return { source: source as unknown as GenerationConfiguration['source'], owners: owners as ConfigurationOwner[],
@@ -111,11 +111,16 @@ function parseConfig(bytes: Uint8Array): Record<string, unknown> {
   return value;
 }
 
-function ownedLegacyAliases(ownerId: string, schema: Record<string, unknown>): readonly string[] {
+function ownedLegacyAliases(ownerId: string, schema: Record<string, unknown>, retainedAssetHash?: string): readonly string[] {
   const aliases = readLegacyConfigAliases(schema);
+  // Read the exact pre-migration schema. New staging must use current ownership.
+  const retainedSynthesis = ownerId === 'agon.synthesis'
+    && retainedAssetHash === 'sha256:77155dd3bc5fca8748e83fcf21dd72e7dbd4414e2dddf280b35280a2f845c7ec'
+    && hash(Buffer.from(canonicalJson(schema))) === 'sha256:1eb202291b1c51e4182ab3b523896059927ca40c387ddbb90b21d6a3369257c9';
   for (const key of aliases) {
     if (!Object.hasOwn(LEGACY_MOD_SETTING_OWNERS, key)
       || LEGACY_MOD_SETTING_OWNERS[key as keyof typeof LEGACY_MOD_SETTING_OWNERS] !== ownerId) {
+      if (retainedSynthesis && (key === 'forgeEnableSynthesis' || key === 'forgeSynthesisTimeout')) continue;
       throw new DurableHostError('MOD_MIGRATION_FAILED', 'legacy configuration alias is not assigned to this owner');
     }
   }

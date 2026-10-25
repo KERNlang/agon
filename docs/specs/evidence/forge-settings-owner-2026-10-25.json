@@ -1,0 +1,108 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-25",
+  "scope": "Forge settings ownership and retained configuration compatibility; not full modular release acceptance",
+  "subject": {
+    "base": "700c867987567e3d427f4da906a3fed129c777b1",
+    "trackedDiffBeforeThisIndexSha256": "6d20d1531a20362f55d2ba15732eddc752fc4ac0fc034b5fcb10533fcc74c40c",
+    "fixtureSha256": "77155dd3bc5fca8748e83fcf21dd72e7dbd4414e2dddf280b35280a2f845c7ec",
+    "qualificationMatchesOwner": true,
+    "matchedPaths": 26
+  },
+  "verification": {
+    "fullSuite": {
+      "passed": 11721,
+      "skipped": 6,
+      "failed": 0
+    },
+    "fullGateSeconds": 998.887,
+    "focusedSettingsTests": 209,
+    "ledgerRepairTests": 44,
+    "installedChecks": 85,
+    "providerLaunches": 0,
+    "performanceGroups": 8,
+    "platform": "darwin-arm64",
+    "node": "v26.12.1",
+    "docsUnchanged": true,
+    "build": true,
+    "typecheck": true,
+    "lint": true,
+    "reexportGuard": true,
+    "supplyChainSelfTest": true
+  },
+  "negativeControls": [
+    "29 initial config failures on unchanged main",
+    "Exact historical schema read failed before compatibility; modified schemas remain rejected",
+    "5 downgrade-write failures before mirroring existing historical namespaces",
+    "Full suite detected stale migration ledger; existing generator repaired two ownership assignments without test changes"
+  ],
+  "behavior": [
+    "Forge owns forgeEnableSynthesis and forgeSynthesisTimeout; skillSynthesisThreshold stays with Synthesis",
+    "Private/local/global scope and current/historical/flat precedence retained",
+    "Explicit writes mirror existing historical namespaces for old-runtime readers; reads do not rewrite source",
+    "Exact frozen historical Synthesis schema remains readable but is rejected for new staging",
+    "Install/update/rollback/re-entry tests retain source bytes and selected configuration"
+  ],
+  "review": {
+    "route": "isolated Agon source packet",
+    "codex": "completed; gaps verified and addressed with focused tests",
+    "kimi": "unavailable, no answer; not counted as passing",
+    "limits": "Review preceded final downgrade-write repair; local negative controls and full gate verify that repair"
+  },
+  "limits": [
+    "Only local macOS arm64 Node26 evidence; other platform/version cells remain external",
+    "No independent old-version CLI installation claim; downgrade writer checked against actual legacy projection plus public config write tests",
+    "No global installation, personal-state mutation, publishing or promotion",
+    "Existing security advisories and npm provenance blockers are not resolved by this slice"
+  ],
+  "archive": {
+    "location": "durable operator archive: modular-agon-remediation, outside Git worktrees",
+    "retention": "Never delete without Raphael approval",
+    "artifacts": [
+      {
+        "path": "forge-settings-owner-negative-20261025.receipt.json",
+        "sha256": "87419e1083015c6573f67e20c7ad95a8198a97345a4c15bcb68d963a74e20f12"
+      },
+      {
+        "path": "forge-settings-retained-negative-20261025.receipt.json",
+        "sha256": "5c0a4273f22c0da0d929b7fbb690823bd2e3040b8aea885138489117202df0c9"
+      },
+      {
+        "path": "forge-settings-downgrade-write-negative-20261025.receipt.json",
+        "sha256": "29ea6c41e6dec767e8c20aa1fa7892d367114c1c0b13ce679110fe1989e9bd32"
+      },
+      {
+        "path": "forge-settings-downgrade-write-focused-20261025.receipt.json",
+        "sha256": "8778a451ec35c430835a8a83c33c161fd4e7d2080f81683973fc3a68cf4cec44"
+      },
+      {
+        "path": "forge-settings-final-full-20261025.receipt.json",
+        "sha256": "51fe4065315d4c97ea4734df037dd7aa3e465bb16e71f0928a1c81b36cc8b07c"
+      },
+      {
+        "path": "forge-settings-ledger-focused-20261025.receipt.json",
+        "sha256": "92d59a4e6bea6cc8404bc7674475487f50c5e554ec8ed3293e838d4b6b9505e6"
+      },
+      {
+        "path": "forge-settings-performance-docs-20261025.receipt.json",
+        "sha256": "a8869df2c1a132973982b55fbbc0fbe6f70129139164119406f587daee675ada"
+      },
+      {
+        "path": "forge-settings-ledger-qualified-full-20261025.receipt.json",
+        "sha256": "90d5b7a4486769a64ce228897fc818e4abcaf31d6c31f2bf4feff4ad8f50cff1"
+      },
+      {
+        "path": "forge-settings-owner-migration-review-input.txt",
+        "sha256": "ef5c17620cda7d39a40d3efc1a0b6661e9893268611ff3efff29667d1536ee65"
+      },
+      {
+        "path": "forge-settings-owner-migration-codex-review.receipt.json",
+        "sha256": "ac3324efc325ae2bd6f1dcef5146952f51ebe2534fe3a4503332a8e28e350060"
+      },
+      {
+        "path": "forge-settings-owner-migration-kimi-review.receipt.json",
+        "sha256": "75978fdfe76692382be6f46e9e756c7fd8a9b440bf78c01923ea0d820b2debb7"
+      }
+    ]
+  }
+}

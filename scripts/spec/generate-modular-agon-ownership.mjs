@@ -114,7 +114,7 @@ function assignmentFor(category, item) {
   const raw = item.id;
   const normalized = normalizeSurfaceId(raw);
   const source = item.source ?? '';
-  if (category === 'configKeys' && ['gauntletEnabled', 'gauntletMaxBreakers', 'gauntletRepairTimeout', 'corpusReplayLimit'].includes(raw)) {
+  if (category === 'configKeys' && ['gauntletEnabled', 'gauntletMaxBreakers', 'gauntletRepairTimeout', 'corpusReplayLimit', 'forgeEnableSynthesis', 'forgeSynthesisTimeout'].includes(raw)) {
     return { class: MOD, package: '@kernlang/agon-mod-forge', rule: 'exact-forge-settings-owner' };
   }
   if (category === 'generatedDocumentation') return { class: MOD, package: '@kernlang/agon-mod-routing-docs', rule: 'generated-docs-owner' };

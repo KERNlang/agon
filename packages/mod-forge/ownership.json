@@ -100,11 +100,27 @@
     },
     {
       "category": "configKeys",
+      "id": "forgeEnableSynthesis",
+      "source": "packages/core/src/models/types.ts:70",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-forge",
+      "rule": "exact-forge-settings-owner"
+    },
+    {
+      "category": "configKeys",
       "id": "forgeFitnessTimeout",
       "source": "packages/core/src/models/types.ts:79",
       "class": "user-toggleable-mod-package",
       "package": "@kernlang/agon-mod-forge",
       "rule": "semantic-source-rule"
+    },
+    {
+      "category": "configKeys",
+      "id": "forgeSynthesisTimeout",
+      "source": "packages/core/src/models/types.ts:80",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-forge",
+      "rule": "exact-forge-settings-owner"
     },
     {
       "category": "configKeys",

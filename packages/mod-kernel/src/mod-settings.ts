@@ -64,6 +64,23 @@ export function mergeModSettingsLayers(...layers: readonly unknown[]): Record<st
   return present ? Object.fromEntries(owners) : undefined;
 }
 
+// These Forge settings were first stored under the standalone Synthesis owner.
+const PREVIOUS_SETTING_OWNERS: Readonly<Record<string, string>> = Object.freeze({
+  forgeEnableSynthesis: 'agon.synthesis',
+  forgeSynthesisTimeout: 'agon.synthesis',
+});
+
+/** Keep existing historical namespaces readable after an explicit setting write. */
+export function updateLegacyModSetting<T extends object>(layer: T, key: string, value: unknown, owner: string): T {
+  const namespace = selectModSettings(layer, owner);
+  const mods: Record<string, unknown> = { ...mergeModSettingsLayers(layer), [owner]: { ...namespace, [key]: value } };
+  const previousOwner = owner === 'agon.forge' ? PREVIOUS_SETTING_OWNERS[key] : undefined;
+  if (previousOwner && Object.hasOwn(mods, previousOwner)) {
+    mods[previousOwner] = { ...selectModSettings(layer, previousOwner), [key]: value };
+  }
+  return Object.assign({ ...layer }, { [key]: value, mods });
+}
+
 /** Copy explicit legacy values to their owners. Do not materialize defaults. */
 export function projectLegacyModSettings<T extends object>(layer: T, aliases: Readonly<Record<string, string>>): T {
   const projected = { ...layer };
@@ -72,12 +89,41 @@ export function projectLegacyModSettings<T extends object>(layer: T, aliases: Re
   for (const [key, owner] of Object.entries(aliases)) {
     const namespace = mods[owner];
     const settings = record(namespace) ? namespace : null;
+    const previousOwner = owner === 'agon.forge' ? PREVIOUS_SETTING_OWNERS[key] : undefined;
+    if (previousOwner && originalMods && Object.hasOwn(originalMods, previousOwner)) {
+      const previous = originalMods[previousOwner];
+      if (!record(previous) || Object.hasOwn(previous, key)) {
+        if (!Object.hasOwn(mods, owner) || (settings && !Object.hasOwn(settings, key))) {
+          mods[owner] = record(previous) ? { ...settings, [key]: previous[key] } : { ...settings };
+        }
+        continue;
+      }
+    }
     if (Object.hasOwn(layer, key) && (!Object.hasOwn(mods, owner) || (settings && !Object.hasOwn(settings, key)))) {
       mods[owner] = { ...settings, [key]: Reflect.get(layer, key) };
     }
   }
   // Retain malformed inactive namespaces until their owner is invoked.
   return originalMods !== undefined || Object.keys(mods).length ? Object.assign(projected, { mods }) : projected;
+}
+
+/** Preserve namespace replacement when old and current spellings span scopes. */
+export function mergeLegacyModSettingsLayers(aliases: Readonly<Record<string, string>>, ...layers: readonly object[]): Record<string, unknown> | undefined {
+  let merged: Record<string, unknown> | undefined;
+  for (const layer of layers) {
+    const originalMods = mergeModSettingsLayers(layer);
+    for (const [key, previousOwner] of Object.entries(PREVIOUS_SETTING_OWNERS)) {
+      const owner = aliases[key];
+      if (owner !== 'agon.forge' || !originalMods || !Object.hasOwn(originalMods, previousOwner)
+        || record(originalMods[previousOwner]) || !merged || !record(merged[owner])) continue;
+      const retained = { ...merged[owner] };
+      delete retained[key];
+      merged = { ...merged, [owner]: retained };
+    }
+    const projected = projectLegacyModSettings(layer, aliases);
+    merged = mergeModSettingsLayers(...(merged === undefined ? [] : [{ mods: merged }]), projected);
+  }
+  return merged;
 }
 
 /** Select data only. The caller must authorize the owner before invoking it. */

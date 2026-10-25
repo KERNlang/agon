@@ -250,6 +250,26 @@ describe('Cesar KERN context spine', () => {
   });
 });
 
+describe('Cesar global instructions wiring', () => {
+  it('includes the global instructions block only when AGENTS.md exists in AGON_HOME', () => {
+    const home = join(tmpdir(), `agon-cesar-global-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(home, { recursive: true });
+    const previousHome = process.env.AGON_HOME;
+    process.env.AGON_HOME = home;
+    try {
+      expect(buildCesarSystemPrompt(makePromptContext())).not.toContain('GLOBAL INSTRUCTIONS');
+      writeFileSync(join(home, 'AGENTS.md'), 'global doctrine marker');
+      const prompt = buildCesarSystemPrompt(makePromptContext());
+      expect(prompt).toContain('GLOBAL INSTRUCTIONS');
+      expect(prompt).toContain('global doctrine marker');
+    } finally {
+      if (previousHome === undefined) delete process.env.AGON_HOME;
+      else process.env.AGON_HOME = previousHome;
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('agentic AUTO session profile', () => {
   it('uses a compact ownership prompt and shadow-only advisory guards', () => {
     const ctx = makePromptContext();

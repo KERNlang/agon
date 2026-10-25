@@ -49,6 +49,17 @@ function createRemoteStream(onCancel: () => void, onOverflow: () => void): Remot
 
 const INVOCATION_TIMEOUT_MS = 300_000;
 const MAX_IN_FLIGHT_SERVICE_CALLS = 64;
+const HOST_SERVICE_METHODS: Readonly<Record<string, readonly string[]>> = Object.freeze({
+  logger: ['debug', 'info', 'warn'], receipts: ['record'], permissions: ['check'], state: ['read', 'write'], engines: ['dispatch'],
+});
+
+function hostServiceMethod(services: ModServices, service: unknown, method: unknown): { target: object; method: (...args: unknown[]) => unknown } {
+  const allowed = typeof service === 'string' && Object.hasOwn(HOST_SERVICE_METHODS, service) ? HOST_SERVICE_METHODS[service]! : [];
+  const target = typeof method === 'string' && allowed.includes(method) ? (services as unknown as Record<string, Record<string, unknown>>)[service as string] : undefined;
+  const fn = target?.[method as string];
+  if (typeof fn !== 'function') throw new Error(`host service unavailable: ${String(service)}.${String(method)}`);
+  return { target: target!, method: fn as (...args: unknown[]) => unknown };
+}
 
 function errorText(error: unknown): string { return error instanceof Error ? error.message : String(error); }
 
@@ -60,13 +71,16 @@ export async function createIsolatedThirdPartyMod(options: {
   });
   let sequence = 0; let terminated = false; let workerFailure: ThirdPartyActivationError | undefined;
   let serviceCallsInFlight = 0;
-  const invocationSignals = new Map<string, AbortSignal>();
+  const invocations = new Map<string, { readonly context: InvocationContext; readonly controller: AbortController }>();
   const pending = new Map<string, PendingRequest>();
+  let rejectReady: ((error: Error) => void) | undefined;
   const failPending = (failure: ThirdPartyActivationError) => {
     workerFailure = failure;
+    rejectReady?.(failure);
     for (const item of pending.values()) { clearTimeout(item.timer); item.cleanup(); item.stream?.fail(failure); item.reject(failure); }
     pending.clear();
-    invocationSignals.clear();
+    for (const invocation of invocations.values()) invocation.controller.abort(failure);
+    invocations.clear();
   };
   const terminate = async () => {
     if (terminated) return;
@@ -74,18 +88,22 @@ export async function createIsolatedThirdPartyMod(options: {
     failPending(workerFailure ?? new ThirdPartyActivationError('isolated third-party worker terminated'));
     await worker.terminate();
   };
-  const request = (op: string, payload: Record<string, unknown> = {}, timeoutMs = options.timeoutMs, signal?: AbortSignal): Promise<any> => {
+  const request = (op: string, payload: Record<string, unknown> = {}, timeoutMs = options.timeoutMs, signal?: AbortSignal, invocationContext?: InvocationContext): Promise<any> => {
     if (workerFailure) return Promise.reject(workerFailure);
     if (terminated) return Promise.reject(new ThirdPartyActivationError('isolated third-party worker is unavailable'));
     if (signal?.aborted) return Promise.reject(new ThirdPartyActivationError('third-party worker operation aborted', { boundary: `worker-${op}` }));
     const id = `host:${++sequence}`;
     return new Promise((resolve, reject) => {
-      const cleanup = () => { signal?.removeEventListener('abort', onAbort); invocationSignals.delete(id); };
+      const cleanup = () => {
+        signal?.removeEventListener('abort', onAbort);
+        invocations.get(id)?.controller.abort(); invocations.delete(id);
+      };
       const onAbort = () => {
         const item = pending.get(id); if (!item) return;
         pending.delete(id); clearTimeout(item.timer); item.cleanup();
         if (!terminated) worker.postMessage({ type: 'cancel', id });
-        item.reject(new ThirdPartyActivationError('third-party worker operation aborted', { boundary: `worker-${op}` }));
+        const failure = new ThirdPartyActivationError('third-party worker operation aborted', { boundary: `worker-${op}` });
+        item.stream?.fail(failure); item.reject(failure);
         // Give cooperative code one turn to observe its signal, then fail-stop the per-mod worker.
         setTimeout(() => { void terminate(); }, 50);
       };
@@ -94,20 +112,22 @@ export async function createIsolatedThirdPartyMod(options: {
         failPending(failure); void terminate();
       }, timeoutMs);
       pending.set(id, { resolve, reject, timer, cleanup });
-      if (op === 'invoke' && signal) invocationSignals.set(id, signal);
+      if (invocationContext) invocations.set(id, { context: invocationContext, controller: new AbortController() });
       signal?.addEventListener('abort', onAbort, { once: true });
       try { worker.postMessage({ type: 'request', id, op, ...payload }); }
       catch (error) { clearTimeout(timer); cleanup(); pending.delete(id); reject(new ThirdPartyActivationError(errorText(error))); }
     });
   };
   const ready = new Promise<void>((resolve, reject) => {
+    const settle = () => { clearTimeout(timer); worker.off('message', listener); rejectReady = undefined; };
+    rejectReady = (error) => { settle(); reject(error); };
     const timer = setTimeout(() => {
       const failure = new ThirdPartyActivationError('third-party activation timed out', { timeoutMs: options.timeoutMs, boundary: 'worker-factory' });
-      failPending(failure); void terminate(); reject(failure);
+      failPending(failure); void terminate();
     }, options.timeoutMs);
     const listener = (message: any) => {
       if (message.type !== 'ready') return;
-      clearTimeout(timer); worker.off('message', listener);
+      settle();
       message.ok ? resolve() : reject(new ThirdPartyActivationError(message.error));
     };
     worker.on('message', listener);
@@ -151,15 +171,14 @@ export async function createIsolatedThirdPartyMod(options: {
     serviceCallsInFlight += 1;
     void (async () => {
       try {
-        const target = (options.services as any)[message.service]; const method = target?.[message.method];
-        if (typeof method !== 'function') throw new Error(`host service unavailable: ${message.service}.${message.method}`);
-        let args = message.args;
-        if (message.service === 'engines' && message.method === 'dispatch') {
-          const signal = invocationSignals.get(message.invocationRequestId);
-          if (!signal) throw new Error('engine dispatch is not bound to an active invocation');
-          args = [args[0], args[1], { ...args[2], signal }, args[3]];
+        const { target, method } = hostServiceMethod(options.services, message.service, message.method);
+        let args: unknown[] = Array.isArray(message.args) ? message.args : [];
+        if (message.service === 'engines') {
+          const invocation = typeof message.invocationRequestId === 'string' ? invocations.get(message.invocationRequestId) : undefined;
+          if (!invocation) throw new Error('engine dispatch is not bound to an active invocation');
+          args = [args[0], args[1], { ...invocation.context, signal: invocation.context.signal ? AbortSignal.any([invocation.context.signal, invocation.controller.signal]) : invocation.controller.signal }, args[3]];
         }
-        worker.postMessage({ type: 'service-response', id: message.id, ok: true, value: await method(...args) });
+        worker.postMessage({ type: 'service-response', id: message.id, ok: true, value: await method.apply(target, args) });
       } catch (error) {
         if (!terminated) worker.postMessage({ type: 'service-response', id: message.id, ok: false, error: errorText(error) });
       } finally { serviceCallsInFlight -= 1; }
@@ -167,7 +186,7 @@ export async function createIsolatedThirdPartyMod(options: {
   });
   worker.on('error', (error) => failPending(new ThirdPartyActivationError(errorText(error))));
   worker.on('exit', (code) => {
-    if (!terminated && code !== 0) failPending(new ThirdPartyActivationError(`isolated third-party worker exited with code ${code}`));
+    if (!terminated) failPending(workerFailure ?? new ThirdPartyActivationError(`isolated third-party worker exited with code ${code}`));
   });
   try { await ready; } catch (error) { await terminate(); throw error; }
   // Message listeners ref a worker. Drop that idle ref after startup; active requests keep
@@ -179,7 +198,7 @@ export async function createIsolatedThirdPartyMod(options: {
     const serializedArgs = context
       ? [args[0], { ...context, signal: undefined }]
       : args;
-    return request('invoke', { key: entry.key, method, args: serializedArgs }, INVOCATION_TIMEOUT_MS, context?.signal);
+    return request('invoke', { key: entry.key, method, args: serializedArgs }, INVOCATION_TIMEOUT_MS, context?.signal, context);
   };
   const mod: AgonModV1 = Object.freeze({ apiVersion: '1', activate: async (registrar: Registrar) => {
     const entries = await request('activate') as Descriptor[]; const disposers: Dispose[] = [];

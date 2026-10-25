@@ -1,0 +1,23 @@
+{
+  "scope": "PR313 integration with merged PR312, not full modular release acceptance",
+  "parents": ["eed4f56cd9000632d8a76be2f02b35acf34ea4c6", "78b8142a72bfd85da03468f4c6c9c8faf57c24d4"],
+  "testedDiffFromFirstParentSha256": "1647bc109d9ad296b0bbb55f7459d182b63b2364486c3b0eccc1a02a3d395982",
+  "indexAddedAfterTest": true,
+  "archiveRoot": "/Users/ra/dev/modular-agon-remediation",
+  "fullGate": {
+    "receipt": "nico-p313-main-integration-20261025.receipt.json",
+    "logSha256": "bccea3402f3866c8ee2a061409853dfd0d07e2341633313be0aa7201d7f3312a",
+    "exitCode": 0,
+    "testsPassed": 11656,
+    "testsSkipped": 6,
+    "providerLaunches": 0
+  },
+  "review": {
+    "receipt": "nico-p313-worker-codex-review.receipt.json",
+    "packetSha256": "6b4a45f5c7cbd18c76437ad963021ce4f3c611b2709bd6da5cce0f9571d01cbe",
+    "logSha256": "8dc64925a218c87ae16872a4f403ba7936f2e1fbee9ea7be1b1092cefc300ca1",
+    "scope": "PR313 production changes; PR312 has its own tracked review index"
+  },
+  "integration": "Source and tests merged without conflicts and match their reviewed parent. Only three generated release metadata files conflicted; all were regenerated from the combined build.",
+  "limits": ["Publishing provenance remains external", "No active installation changed", "No full modular acceptance claim"]
+}

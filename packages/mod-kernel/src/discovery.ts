@@ -157,8 +157,8 @@ export async function inspectStaticManifest(
   try {
     const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
     input = JSON.parse(text);
-    assertNoDuplicateJsonKeys(text);
     assertBoundedJsonShape(input);
+    assertNoDuplicateJsonKeys(text);
   } catch (error) {
     if (error instanceof StaticDiscoveryError) throw error;
     throw new StaticDiscoveryError('manifest is not valid JSON', { cause: String(error) });

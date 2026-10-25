@@ -115,6 +115,7 @@ function markCfgTestItems(lines: readonly string[], lexed: Array<{ code: Array<[
   let active = false;
   let depth = 0;
   let opened = false;
+  let nesting = 0;
   for (let n = 0; n < lines.length; n += 1) {
     const masked = maskToCode(lines[n], lexed[n].code);
     let from = 0;
@@ -124,6 +125,7 @@ function markCfgTestItems(lines: readonly string[], lexed: Array<{ code: Array<[
       if (!attr) continue;
       active = true;
       depth = 0;
+      nesting = 0;
       opened = false;
       from = lead + attr[0].length;
     }
@@ -132,7 +134,9 @@ function markCfgTestItems(lines: readonly string[], lexed: Array<{ code: Array<[
       const ch = masked[i];
       if (ch === '{') { depth += 1; opened = true; }
       else if (ch === '}') depth -= 1;
-      else if (ch === ';' && !opened && depth === 0) { active = false; break; }
+      else if (ch === '(' || ch === '[') nesting += 1;
+      else if (ch === ')' || ch === ']') nesting -= 1;
+      else if (ch === ';' && !opened && depth === 0 && nesting === 0) { active = false; break; }
       if (opened && depth === 0) { active = false; break; }
     }
   }

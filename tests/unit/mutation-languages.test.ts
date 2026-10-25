@@ -381,6 +381,11 @@ describe('AC-9 rust cfg(test)', () => {
     const src = '#[cfg(test)]\nuse crate::helpers::*;\nfn real() -> bool { a && b }';
     expect(gen('rs', src).map(m => m.line)).toEqual([3]);
   });
+
+  it('review: `;` inside parens or brackets before the body does not end the skip', () => {
+    const src = '#[cfg(test)]\nfn helper(buf: [u8; 4]) -> bool {\n  a && b\n}\nfn real() -> bool { a && b }';
+    expect(gen('rs', src).map(m => m.line)).toEqual([5]);
+  });
 });
 
 describe('profile-driven modular pipeline', () => {

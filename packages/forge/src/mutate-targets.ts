@@ -102,6 +102,7 @@ export function resolveMutateTargets(opts: { repoRoot: string; diff?: string; fi
   const targets: Record<string, number[]> = {};
   const skippedGeneric: string[] = [];
   const accept = (rel: string, lines: () => number[]): void => {
+    if (!opts.wantGeneric && (isMutationTestFile(rel) || !profileFor(rel))) return;
     const kind = classifyMutateTarget(repoRoot, rel, skipDirs);
     if (kind === 'none') return;
     if (kind === 'generic') {

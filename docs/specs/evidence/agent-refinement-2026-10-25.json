@@ -1,6 +1,24 @@
 {
   "schemaVersion": 1,
   "date": "2026-10-25",
+  "mainIntegration": {
+    "headBeforeMerge": "636f239d020e6d89ce59c15d8422f73508384caf",
+    "main": "01a10699fe2199bc50c16da516b455d1fb8b6941",
+    "reviewedSourcePatchSha256": "170a6b0dc1247a68e6da5602e2a78f9149cc7fd0a47593685e73b206bc37e572",
+    "testedDiffBeforeIndexSha256": "f4dda6ffda93a1ab8607bb325f8f7d8dec2553601d0e7301dca30ec5e5b917f9",
+    "receipt": "pr320-main-integration-gates-20261026.receipt.json",
+    "receiptSha256": "5ef740136f927216a093c2632614e7f27e29e873cfb099c8dd1e2f96885146b4",
+    "logSha256": "680daeebc24f4cecd8a55eef36bda68f7f580700c82bd4802c433c159f625dc5",
+    "passed": true,
+    "seconds": 947.764,
+    "testsPassed": 11837,
+    "testsSkipped": 7,
+    "testFilesPassed": 702,
+    "testFilesSkipped": 1,
+    "providerLaunches": 0,
+    "reviewedSourceUnchanged": true,
+    "exactCommittedQualification": "pending after merge commit; not claimed by this working-tree receipt"
+  },
   "scope": "Agent-team refinement policy ownership; not full Agent or modular release acceptance",
   "subject": {
     "base": "700c867987567e3d427f4da906a3fed129c777b1",

@@ -1,9 +1,34 @@
 import type { Mutant, MutationReport } from '@kernlang/agon-core';
 
+import { profileFor } from '@kernlang/agon-support-worktree';
+
 /**
  * The one verdict every surface must print instead of a score when NOTHING was killed. A 0% score reads as 'weak tests'; the real cause is almost always that the suite never loaded the mutated file at all.
  */
 export const MUTATE_ALL_SURVIVED_WARNING: string = 'every mutant survived — your tests may not be exercising the mutated source (prebuilt dist? workspace package imported from node_modules? wrong --test?) — try `--build "<your build cmd>"`';
+
+/**
+ * The all-survived warning for a run with no JS/TS mutant: the Node causes (prebuilt dist, node_modules) cannot apply there.
+ */
+export const MUTATE_ALL_SURVIVED_WARNING_GENERIC: string = 'every mutant survived — your tests may not be exercising the mutated source (stale build output? wrong --test?) — try `--build "<your build cmd>"`';
+
+/**
+ * True unless the report holds mutants and none of them is a JS/TS file. An empty report keeps the Node wording. Pure.
+ */
+export function isNodeMutationRun(report: MutationReport): boolean {
+  if (report.outcomes.length === 0) return true;
+  return report.outcomes.some((o) => profileFor(o.mutant.file ?? '')?.id === 'js');
+}
+
+function allSurvivedWarning(report: MutationReport): string {
+  return isNodeMutationRun(report) ? MUTATE_ALL_SURVIVED_WARNING : MUTATE_ALL_SURVIVED_WARNING_GENERIC;
+}
+
+function baselineWhy(report: MutationReport): string {
+  const why = report.baselineError ?? 'the sandbox baseline did not pass';
+  if (report.baselinePhase !== 'compile-check' || why.includes('--typecheck')) return why;
+  return `${why}\n  → pass --typecheck "<cmd>" to replace the default compile check`;
+}
 
 /**
  * Spec Addendum A #4: the run produced a statistically meaningful pool (>= 5 mutants ran) and EVERY one survived. Not a weak-suite verdict — a run-validity verdict. Pure.
@@ -28,20 +53,21 @@ export function formatMutationReportLines(report: MutationReport, survivors: Mut
   const grouped = opts?.grouped === true;
   const out: string[] = [];
   if (!report.baselineOk) {
-    const why = report.baselineError ?? 'the sandbox baseline did not pass';
+    const why = baselineWhy(report);
     out.push(grouped ? `  skipped — ${why}` : `mutation run aborted — ${why}`);
     return out;
   }
   if (report.baselineError) out.push(`${grouped ? '  ' : ''}mutation run failed — ${report.baselineError}`);
   const ran = report.killed + report.survived;
   // The warning LEADS: when nothing was killed the score is not a measurement.
-  const warning = `⚠ ${MUTATE_ALL_SURVIVED_WARNING}`;
+  const warning = `⚠ ${allSurvivedWarning(report)}`;
   if (allMutantsSurvived(report)) out.push(grouped ? `  ${warning}` : warning);
   let pct = 'n/a';
   if (report.score !== null) pct = `${Math.round(report.score * 100)}%`;
   const scoreLine = `${pct} — ${report.killed}/${ran} mutants killed, ${report.survived} survived`;
   out.push(grouped ? `  Mutation score ${scoreLine}` : `mutation score ${scoreLine}`);
   if (report.killedByTimeout > 0) out.push(`  ${report.killedByTimeout} killed by timeout (the mutated code hung — a hang counts as detected)`);
+  if (report.compileCheck) out.push(`  compile check: ${report.compileCheck} (a killed mutant that fails it is graded invalid)`);
   if (report.invalid > 0) out.push(`  ${report.invalid} invalid (did not typecheck/build) — excluded from the score`);
   if (report.notRun > 0) {
     let why = 'aborted';
@@ -110,7 +136,7 @@ export function mutateLensSuffix(survivors: Mutant[]): string {
 export function mutateVerdictLine(report: MutationReport, survivors: Mutant[]): {level:'success'|'warning', text:string} {
   if (report.baselineError) return { level: 'warning', text: `mutation run failed — ${report.baselineError}` };
   if (allMutantsSurvived(report)) {
-    return { level: 'warning', text: `${MUTATE_ALL_SURVIVED_WARNING} (${survivors.length} survivor(s) listed above)` };
+    return { level: 'warning', text: `${allSurvivedWarning(report)} (${survivors.length} survivor(s) listed above)` };
   }
   // No survivors AND nothing ran is not a clean sweep — it is an empty run.
   if (report.killed + report.survived === 0) {

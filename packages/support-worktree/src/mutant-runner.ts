@@ -1,10 +1,12 @@
 import { readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 import { resolveWithinRoot } from './paths.js';
 
 import { spawnWithTimeout } from '@kernlang/agon-support-engine-runtime';
 
 import { applyMutantToSource } from './mutant-generator.js';
+import { baselineCompileChecks, compileCheckTemplate, expandCompileCheck } from './mutant-compile-check.js';
 
 import type { Mutant } from './mutant-generator.js';
 
@@ -40,7 +42,8 @@ export interface MutationReport {
   baselineMs: number;
   baselineOk: boolean;
   baselineError?: string;
-  baselinePhase?: 'build' | 'typecheck' | 'test';
+  baselinePhase?: 'build' | 'typecheck' | 'compile-check' | 'test';
+  compileCheck?: string;
 }
 
 export interface MutantProgress {
@@ -61,6 +64,8 @@ export interface RunMutantsOptions {
   totalBudgetSec: number;
   typecheckCmd?: string;
   buildCmd?: string;
+  /** Profile id → compile-only command (`{file}` = the mutated file), run only after a failed test and only when no typecheckCmd is given; a failing check grades the mutant invalid instead of killed. */
+  compileChecks?: Record<string, string>;
   signal?: AbortSignal;
   onProgress?: (p:MutantProgress)=>void;
 }
@@ -88,14 +93,19 @@ export async function runMutants(opts: RunMutantsOptions): Promise<MutationRepor
   let baselineOk = false;
   let baselineError: string | undefined;
   let baselinePhase: MutationReport['baselinePhase'];
+  const compileChecks = opts.typecheckCmd ? undefined : opts.compileChecks;
+  let compileCheckNames: string[] = [];
   // Set when a subprocess could not be SPAWNED at all (never a test verdict).
   let spawnFailure: string | undefined;
 
+  // CPython trusts cached bytecode whose recorded source mtime (whole seconds) and size match, so a same-length mutant written within a second of an earlier run would execute the unmutated .pyc. Runs neither read nor write a bytecode cache; compile checks write theirs to a sink no run reads.
+  const runEnv = { PYTHONDONTWRITEBYTECODE: '1', PYTHONPYCACHEPREFIX: join(worktree, '.agon-no-pycache') };
+  const checkEnv = { PYTHONPYCACHEPREFIX: join(worktree, '.agon-check-pycache') };
   // Every subprocess is capped at what is LEFT of the total budget, so the
   // wall clock the caller asked for is a real bound instead of a poll between
   // mutants. `budgetCut` says the BUDGET stopped this command (=> notRun),
   // not that the mutated code hung (=> timeout, which is a kill).
-  const sh = async (cmd: string, timeoutMs: number): Promise<{ res: { exitCode: number; stdout: string; stderr: string; timedOut: boolean } | null; budgetCut: boolean }> => {
+  const sh = async (cmd: string, timeoutMs: number, env: Record<string, string> = runEnv): Promise<{ res: { exitCode: number; stdout: string; stderr: string; timedOut: boolean } | null; budgetCut: boolean }> => {
     const left = deadline - Date.now();
     if (left <= 0) return { res: null, budgetCut: true };
     const capped = Math.max(1, Math.min(timeoutMs, left));
@@ -105,6 +115,7 @@ export async function runMutants(opts: RunMutantsOptions): Promise<MutationRepor
         command: '/bin/sh',
         args: ['-c', cmd],
         cwd: worktree,
+        env,
         timeout: capped,
         signal: opts.signal,
         maxCapturedBytesPerStream: 1024 * 1024,
@@ -151,6 +162,7 @@ export async function runMutants(opts: RunMutantsOptions): Promise<MutationRepor
       baselineMs,
       baselineOk,
       ...(!baselineOk && baselinePhase ? { baselinePhase } : {}),
+      ...(compileCheckNames.length ? { compileCheck: compileCheckNames.join('; ') } : {}),
       baselineError: baselineError ?? (spawnFailure
         ? `a sandbox command could not be spawned (${spawnFailure}) — the mutants after it reached no verdict`
         : undefined),
@@ -250,7 +262,29 @@ export async function runMutants(opts: RunMutantsOptions): Promise<MutationRepor
     // mutation makes it slower; a suite that takes 20ms should not wait 120s
     // for a hang either — but the user's floor always wins. Build and
     // typecheck get the SAME rule against their OWN measured baselines.
+    let baselineCheckMs = 0;
+    const plannedChecks = baselineCompileChecks(worktree, mutants, compileChecks);
+    compileCheckNames = plannedChecks.templates;
+    for (const cmd of plannedChecks.commands) {
+      const t0 = Date.now();
+      const r = await sh(cmd, setupTimeoutMs, checkEnv);
+      baselineCheckMs = Math.max(baselineCheckMs, Date.now() - t0);
+      if (!r.res || r.budgetCut) { baselineOk = false; return budgetStop('compile check'); }
+      if (opts.signal?.aborted) { baselineOk = false; return abortStop('compile check'); }
+      if (r.res.exitCode !== 0 || r.res.timedOut) {
+        baselineOk = false;
+        baselinePhase = 'compile-check';
+        const why = r.res.timedOut ? 'timed out' : `exit ${r.res.exitCode}`;
+        const tool = cmd.trim().split(/\s+/)[0];
+        const missing = r.res.exitCode === 127 ? ` — \`${tool}\` is not installed or not on PATH; pass --typecheck to override the check` : '';
+        baselineError = `compile check \`${cmd}\` fails before any mutation in the sandbox (${why})${missing}; stderr tail:\n${tail(r.res.stderr || r.res.stdout)}`;
+        notRun = mutants.length;
+        return build();
+      }
+    }
+
     const effTimeoutMs = Math.max(perMutantMs, 3 * baselineMs);
+    const checkTimeoutMs = Math.max(perMutantMs, 3 * baselineCheckMs);
     const buildTimeoutMs = Math.max(perMutantMs, 3 * baselineBuildMs);
     const typecheckTimeoutMs = Math.max(perMutantMs, 3 * baselineTypecheckMs);
 
@@ -333,6 +367,12 @@ export async function runMutants(opts: RunMutantsOptions): Promise<MutationRepor
             else if (res.res.exitCode === 0) status = 'survived';
             else status = 'killed';
           }
+        }
+        const checkTemplate = status === 'killed' && !cutByBudget ? compileCheckTemplate(compileChecks, rel) : undefined;
+        if (checkTemplate) {
+          const check = await sh(expandCompileCheck(checkTemplate, abs), checkTimeoutMs, checkEnv);
+          if (!check.res || check.budgetCut) cutByBudget = true;
+          else if (check.res.exitCode !== 0 || check.res.timedOut) { status = 'invalid'; exitCode = check.res.exitCode; reason = 'the mutated source does not compile'; }
         }
       } finally {
         // Restore immediately so mutants in different files never stack.

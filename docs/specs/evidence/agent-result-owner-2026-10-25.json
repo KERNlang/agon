@@ -35,6 +35,24 @@
     "kimiReceipt": "agent-result-owner-kimi-review.receipt.json",
     "kimiStatus": "unavailable: no answer, not a passing review"
   },
+  "mainIntegration": {
+    "headBeforeMerge": "a8c840f8470671ab2ac5d023d6f8ea81b09effb9",
+    "main": "01a10699fe2199bc50c16da516b455d1fb8b6941",
+    "reviewedSourcePatchSha256": "9fb2bffd1d04891bbd0a8aada3c62d4f5cb1cf18d38365ddfa8216a184512b15",
+    "testedDiffBeforeIndexSha256": "4a2c863568b555df816221a0d5fe426a77a21d2fb9ca0a1bac065e6cceca0c5b",
+    "receipt": "pr319-main-integration-gates-20261026.receipt.json",
+    "receiptSha256": "76f9a2d9a8aa829f62d05e9ad07358e8815c457b590876492f5ee95a70003004",
+    "logSha256": "65f5f889c004004abbdf0c66e528248d14e847a3563cf4ce289ceb2c3b9c07f1",
+    "passed": true,
+    "seconds": 945.348,
+    "testsPassed": 11832,
+    "testsSkipped": 7,
+    "testFilesPassed": 702,
+    "testFilesSkipped": 1,
+    "providerLaunches": 0,
+    "reviewedSourceUnchanged": true,
+    "exactCommittedQualification": "pending after merge commit; not claimed by this working-tree receipt"
+  },
   "indexAddedAfterQualification": true,
   "limits": ["No live providers", "npm provenance externally blocked", "Agent Core/CLI runtime extraction remains open", "No installation or promotion"]
 }

@@ -117,7 +117,7 @@ describe('Kernel configuration storage', () => {
       ['autoReviewAfterForge', 'agon.forge', false], ['forgeFitnessTimeout', 'agon.forge', 17],
       ['autoReviewAfterImpl', 'agon.review', false], ['goalReviewEngines', 'agon.review', ['fixture-engine']],
       ['cesarAgenticContinuationLimit', 'agon.agent', 7], ['cesarMutateReflex', 'agon.mutate', false],
-      ['forgeEnableSynthesis', 'agon.synthesis', true], ['forgeSynthesisTimeout', 'agon.synthesis', 19],
+      ['forgeEnableSynthesis', 'agon.forge', true], ['forgeSynthesisTimeout', 'agon.forge', 19],
       ['skillSynthesisThreshold', 'agon.synthesis', 5],
     ] as const;
     const input = { ...Object.fromEntries(fields.map(([key, _owner, value]) => [key, value])),
@@ -130,6 +130,94 @@ describe('Kernel configuration storage', () => {
       expect(kernel.selectModSettings(config, owner)[key]).toEqual(value);
     }
     expect(config.goalReviewEngines).toEqual(['fixture-engine']);
+  });
+
+  it.each(['flat', 'historical', 'current'].flatMap(global =>
+    ['flat', 'historical', 'current'].flatMap(local =>
+      ['flat', 'historical', 'current'].map(privateLocal => [global, local, privateLocal] as const))))
+    ('preserves Forge synthesis scope precedence: %s/%s/%s', async (...spellings) => {
+      home = setupTestAgonHome('forge-settings-owner-precedence');
+      const project = join(home, 'project'); mkdirSync(project);
+      const paths = [join(home, 'config.json'), join(project, '.agon.json'), join(project, '.agon.local.json')];
+      const layers = spellings.map((spelling, index) => {
+        const values = { forgeEnableSynthesis: index === 1, forgeSynthesisTimeout: index + 1 };
+        return spelling === 'flat' ? values : { mods: { [spelling === 'historical' ? 'agon.synthesis' : 'agon.forge']: values } };
+      });
+      const bytes = layers.map(layer => JSON.stringify(layer));
+      paths.forEach((path, index) => writeFileSync(path, bytes[index]));
+      const core = await import('../../packages/core/src/signals/config.js');
+      const result = core.loadConfig(project);
+      expect(result.forgeEnableSynthesis).toBe(false);
+      expect(result.forgeSynthesisTimeout).toBe(3);
+      expect(kernel.selectModSettings(result, 'agon.forge')).toMatchObject({ forgeEnableSynthesis: false, forgeSynthesisTimeout: 3 });
+      expect(kernel.selectModSettings(core.loadConfig(), 'agon.forge')).toMatchObject({ forgeEnableSynthesis: false, forgeSynthesisTimeout: 1 });
+      paths.forEach((path, index) => expect(readFileSync(path, 'utf8')).toBe(bytes[index]));
+    });
+
+  it('prefers current Forge values over historical and flat spellings without rewriting source', async () => {
+    home = setupTestAgonHome('forge-settings-owner-explicit');
+    const input = { forgeEnableSynthesis: true, forgeSynthesisTimeout: 100,
+      mods: { 'agon.synthesis': { forgeEnableSynthesis: true, forgeSynthesisTimeout: 19, skillSynthesisThreshold: 5 },
+        'agon.forge': { forgeEnableSynthesis: false, forgeSynthesisTimeout: 0, future: 'keep' } } };
+    const path = join(home, 'config.json');
+    const bytes = JSON.stringify(input); writeFileSync(path, bytes);
+    const core = await import('../../packages/core/src/signals/config.js');
+    const result = core.loadConfig();
+    expect(result.forgeEnableSynthesis).toBe(false);
+    expect(result.forgeSynthesisTimeout).toBe(0);
+    expect(kernel.selectModSettings(result, 'agon.forge')).toEqual(input.mods['agon.forge']);
+    expect(kernel.selectModSettings(result, 'agon.synthesis').skillSynthesisThreshold).toBe(5);
+    expect(readFileSync(path, 'utf8')).toBe(bytes);
+  });
+
+  it.each([['forgeEnableSynthesis', false], ['forgeSynthesisTimeout', 0]] as const)
+    ('keeps an explicit %s write readable by the previous owner', async (key, value) => {
+    home = setupTestAgonHome('forge-settings-old-writer-compatibility');
+    const path = join(home, 'config.json');
+    const previous = { forgeEnableSynthesis: true, forgeSynthesisTimeout: 19, skillSynthesisThreshold: 5, future: 'keep' };
+    writeFileSync(path, JSON.stringify({ mods: { 'agon.synthesis': previous }, unknown: 'keep' }));
+    const core = await import('../../packages/core/src/signals/config.js');
+    core.configSet(key, value);
+    const stored = JSON.parse(readFileSync(path, 'utf8'));
+    expect(stored[key]).toBe(value);
+    expect(stored.mods['agon.forge'][key]).toBe(value);
+    expect(stored.mods['agon.synthesis']).toEqual({ ...previous, [key]: value });
+    expect(stored.unknown).toBe('keep');
+    expect(core.loadConfig()[key]).toBe(value);
+  });
+
+  it.each([null, [], false])('refuses a moved-setting write through a malformed historical namespace: %j', async replacement => {
+    home = setupTestAgonHome('forge-settings-malformed-old-writer');
+    const path = join(home, 'config.json');
+    const original = JSON.stringify({ mods: { 'agon.synthesis': replacement }, unknown: 'keep' });
+    writeFileSync(path, original);
+    const core = await import('../../packages/core/src/signals/config.js');
+    expect(() => core.configSet('forgeEnableSynthesis', true)).toThrow(/namespace must be an object/);
+    expect(readFileSync(path, 'utf8')).toBe(original);
+  });
+
+  it.each([null, [], false].flatMap(replacement => ['agon.synthesis', 'agon.forge'].map(origin => [replacement, origin] as const)))
+    ('does not revive Forge values discarded by a historical namespace replacement: %j from %s', async (replacement, origin) => {
+    home = setupTestAgonHome('forge-settings-owner-replacement');
+    const project = join(home, 'project'); mkdirSync(project);
+    const paths = [join(home, 'config.json'), join(project, '.agon.json'), join(project, '.agon.local.json')];
+    const layers = [
+      { mods: { 'agon.forge': { forgeFitnessTimeout: 17 },
+        [origin]: { ...(origin === 'agon.forge' ? { forgeFitnessTimeout: 17 } : {}), forgeEnableSynthesis: true, forgeSynthesisTimeout: 19 } } },
+      { forgeEnableSynthesis: true, forgeSynthesisTimeout: 7, mods: { 'agon.synthesis': replacement } },
+      { mods: { 'agon.synthesis': { skillSynthesisThreshold: 5 } } },
+    ];
+    const bytes = layers.map(layer => JSON.stringify(layer));
+    paths.forEach((path, index) => writeFileSync(path, bytes[index]));
+    const core = await import('../../packages/core/src/signals/config.js');
+    const result = core.loadConfig(project);
+    expect(result.forgeEnableSynthesis).toBe(false);
+    expect(result.forgeSynthesisTimeout).toBe(300);
+    const selected = kernel.selectModSettings(result, 'agon.forge');
+    expect(selected.forgeFitnessTimeout).toBe(17);
+    expect(selected).not.toHaveProperty('forgeEnableSynthesis');
+    expect(selected).not.toHaveProperty('forgeSynthesisTimeout');
+    paths.forEach((path, index) => expect(readFileSync(path, 'utf8')).toBe(bytes[index]));
   });
 
   it('preserves a malformed inactive namespace during an unrelated write', async () => {

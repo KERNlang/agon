@@ -114,7 +114,7 @@ function assignmentFor(category, item) {
   const raw = item.id;
   const normalized = normalizeSurfaceId(raw);
   const source = item.source ?? '';
-  if (category === 'configKeys' && ['gauntletEnabled', 'gauntletMaxBreakers', 'gauntletRepairTimeout', 'corpusReplayLimit'].includes(raw)) {
+  if (category === 'configKeys' && ['gauntletEnabled', 'gauntletMaxBreakers', 'gauntletRepairTimeout', 'corpusReplayLimit', 'forgeEnableSynthesis', 'forgeSynthesisTimeout'].includes(raw)) {
     return { class: MOD, package: '@kernlang/agon-mod-forge', rule: 'exact-forge-settings-owner' };
   }
   if (category === 'generatedDocumentation') return { class: MOD, package: '@kernlang/agon-mod-routing-docs', rule: 'generated-docs-owner' };
@@ -128,6 +128,12 @@ function assignmentFor(category, item) {
   if (kernelSurface.has(raw) || kernelSurface.has(normalized)) return { class: KERNEL, package: '@kernlang/agon-kernel', rule: 'exact-kernel-surface' };
   const modName = directMod.get(raw) ?? directMod.get(normalized);
   if (modName) return { class: MOD, package: `@kernlang/agon-mod-${modName}`, rule: 'exact-user-surface' };
+
+  // Agent team refinement is not the standalone Synthesis workflow.
+  if (category === 'resultAndEnvelopeTypes' && ['AgentInvestigateSynthesisResult', 'AgentSynthesisResult'].includes(raw)
+    && /^packages\/core\/src\/cesar\/agent-synthesis\.ts:/.test(source)) {
+    return { class: MOD, package: '@kernlang/agon-mod-agent', rule: 'agent-team-refinement-owner' };
+  }
 
   const sourceRules = [
     [/\/(?:think|thinking)\b|ThinkResult/, 'think'],

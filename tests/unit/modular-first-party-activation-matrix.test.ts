@@ -2,6 +2,7 @@ import { mkdtemp, readFile, chmod, writeFile, unlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import type { Json, ResultContribution } from '@kernlang/agon-mod-api';
 import {
   DurableModHost, createFirstPartyActivationService, createFirstPartyModCatalog,
   createFullCompatDesiredState, parseDesiredState, bootstrapFirstPartySurfaceGeneration,
@@ -141,6 +142,22 @@ describe('every first-party mod through durable activation and fresh surface boo
     const disabled = await bootstrapFirstPartySurfaceGeneration({ hostRoot: root, runtime });
     try {
       expect(disabled.disabledOwnerIds).toContain(id);
+      if (id === 'agon.synthesis' || id === 'agon.agent') {
+        const registry = disabled.activated.generation.registry;
+        for (const resultId of ['0005', '0010']) {
+          const reader = registry.resolve('result-type', `resultAndEnvelopeTypes:${resultId}`);
+          expect(reader?.owner.id)
+            .toBe(id === 'agon.agent' ? undefined : 'agon.agent');
+          if (id === 'agon.synthesis') {
+            const payload: Json = resultId === '0005'
+              ? { ok: true, report: 'retained report', error: null, skipped: false }
+              : { ok: true, synthesizedDiff: '+ retained patch', changed: true, error: null, responseExcerpt: 'retained reasoning', skipped: false };
+            expect(await (reader!.payload as ResultContribution).render(payload)).toEqual({ text: JSON.stringify(payload, null, 2) });
+          }
+        }
+        expect(registry.resolve('result-type', 'resultAndEnvelopeTypes:0126')?.owner.id)
+          .toBe(id === 'agon.synthesis' ? undefined : 'agon.synthesis');
+      }
       expect(FIRST_PARTY_SURFACE_CATALOG.some((entry) => entry.owner.id === id)).toBe(true);
       for (const surface of ['cli', 'tui', 'mcp', 'cesar', 'docs'] as const) {
         expect(disabled.activated.generation.catalog(surface).some((entry) => entry.owner.id === id)).toBe(false);

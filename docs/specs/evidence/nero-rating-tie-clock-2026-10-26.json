@@ -1,0 +1,32 @@
+{
+  "scope": "Test-only deterministic Nero rating tie fixture",
+  "baseCommit": "01a10699fe2199bc50c16da516b455d1fb8b6941",
+  "testFile": "tests/unit/nero.test.ts",
+  "testSha256": "067bbe82d9fd16c8f93f96f2ffbe64b96ca59506a6b9830e35d949b118183488",
+  "archive": "/Users/ra/dev/modular-agon-remediation",
+  "causeEvidence": "nero-rating-tie-clock-control-20261026.receipt.json",
+  "causeLogSha256": "41a0e9bdb70c1c1e3f71acc55af564587309466df584bc955a762ab1904c8aa4",
+  "focusedReceipt": "nero-rating-tie-fixture-20261026.receipt.json",
+  "fullReceipt": "nero-rating-tie-full-20261026.receipt.json",
+  "fullReceiptSha256": "389d20504b3d0c2791cc3c3ea19d5c722b4d81d6a25e902383801d146033a53a",
+  "fullLogSha256": "8b181d7d099c926b16fce3be97cbc4aa3ce4612a3dc36a5ffd22b7dbaa264ec4",
+  "verification": {
+    "command": "npm run build && npm run typecheck && npm run lint && npm run guard:reexports && npm test && git diff --check",
+    "exitCode": 0,
+    "passedTests": 11832,
+    "skippedTests": 7,
+    "providerLaunches": 0,
+    "seconds": 843.98
+  },
+  "review": {
+    "packetSha256": "e74c4e89fde16d18e5f94d5f89eed62f75a12296877791258fc83216348ee8aa",
+    "codex": "No findings; source-verified",
+    "kimi": "Unavailable, exit 1; not a pass",
+    "adjudication": "nero-rating-tie-review-adjudication-20261026.md"
+  },
+  "limits": [
+    "This receipt describes the working-tree test patch, not clean committed release qualification.",
+    "No production code or release metadata changed.",
+    "Does not qualify PR331 or full modular acceptance."
+  ]
+}

@@ -9,6 +9,25 @@ afterEach(() => { if (old === undefined) delete process.env.AGON_HOME; else proc
 const context = {} as any;
 function services(allow='allow') { return {receipts:{record:vi.fn(async()=> 'p')},permissions:{check:vi.fn(async()=>allow)}} as unknown as ModServices; }
 describe('physical provenance mod', () => {
+  it.each([
+    { fitnessCmd: 42, reason: 'rejected', expectedGate: '42', expectedReason: 'rejected' },
+    { fitnessCmd: 'npm test', reason: 42, expectedGate: 'npm test', expectedReason: '42' },
+    { fitnessCmd: 'npm test', reason: true, expectedGate: 'npm test', expectedReason: 'true' },
+  ])('renders historical manifest primitives: $fitnessCmd / $reason', async ({ fitnessCmd, reason, expectedGate, expectedReason }) => {
+    const home = mkdtempSync(join(tmpdir(), 'provenance-primitives-'));
+    process.env.AGON_HOME = home;
+    mkdirSync(join(home, 'runs'));
+    writeFileSync(join(home, 'runs', 'run.json'), JSON.stringify({
+      forgeId: 'primitive-report', task: 'historical report', timestamp: '2026',
+      fitnessCmd, engines: ['a', 'b'], winner: 'a',
+      results: { a: { score: 9, pass: true }, b: { score: 4, pass: false, reason } },
+    }));
+    const result = await runProvenance({ format: 'md' }, context, services());
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain(`**Success criterion (defined by the human):** \`${expectedGate}\``);
+    expect(result.stdout).toContain(`| b | rejected | no | not-accepted | 4 | ${expectedReason} |`);
+  });
+
   it('still refuses a report when its strict source hash cannot be read', () => {
     const home = mkdtempSync(join(tmpdir(), 'provenance-missing-'));
     expect(() => buildProvenance({ forgeId: 'missing', task: 'x', timestamp: '2026' }, join(home, 'absent.json')))

@@ -1,0 +1,194 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-25",
+  "mainIntegration": {
+    "headBeforeMerge": "636f239d020e6d89ce59c15d8422f73508384caf",
+    "main": "01a10699fe2199bc50c16da516b455d1fb8b6941",
+    "reviewedSourcePatchSha256": "170a6b0dc1247a68e6da5602e2a78f9149cc7fd0a47593685e73b206bc37e572",
+    "testedDiffBeforeIndexSha256": "f4dda6ffda93a1ab8607bb325f8f7d8dec2553601d0e7301dca30ec5e5b917f9",
+    "receipt": "pr320-main-integration-gates-20261026.receipt.json",
+    "receiptSha256": "5ef740136f927216a093c2632614e7f27e29e873cfb099c8dd1e2f96885146b4",
+    "logSha256": "680daeebc24f4cecd8a55eef36bda68f7f580700c82bd4802c433c159f625dc5",
+    "passed": true,
+    "seconds": 947.764,
+    "testsPassed": 11837,
+    "testsSkipped": 7,
+    "testFilesPassed": 702,
+    "testFilesSkipped": 1,
+    "providerLaunches": 0,
+    "reviewedSourceUnchanged": true,
+    "exactCommittedQualification": "pending after merge commit; not claimed by this working-tree receipt"
+  },
+  "scope": "Agent-team refinement policy ownership; not full Agent or modular release acceptance",
+  "subject": {
+    "base": "700c867987567e3d427f4da906a3fed129c777b1",
+    "trackedDiffBeforeThisIndexSha256": "23daff0872d2850ba8d2d4eda8a894f286a6d9880f2e3d60bc3356a95b72325a",
+    "newSource": {
+      "path": "packages/mod-agent/src/team-refinement.ts",
+      "sha256": "e95d1d7e33f4318887bb2a1d598f2dbcf69cbdb74fdd44689d62c4a260d86aaa"
+    },
+    "qualificationMatchesOwner": true
+  },
+  "change": {
+    "owner": "@kernlang/agon-mod-agent",
+    "effects": [
+      "API agent loop",
+      "dispatch ledger",
+      "worktree diff"
+    ],
+    "compatibility": "Core public one-argument wrappers and prompt/type exports remain",
+    "remaining": "Core host effects, CLI/team sessions and fitness ownership are not retired by this slice"
+  },
+  "verification": {
+    "fullSuite": {
+      "passed": 11682,
+      "skipped": 6,
+      "failed": 0,
+      "seconds": 936.55
+    },
+    "focusedTests": 116,
+    "negativeControl": {
+      "newOwnerTestsFailedBefore": 5,
+      "existingTestsPassedBefore": 72
+    },
+    "legacyParityCases": 22,
+    "throwingLedgerParityCases": 2,
+    "installedChecks": 87,
+    "installedAgentRuntime": true,
+    "externalPublicTypesCompile": true,
+    "generatorChecks": true,
+    "build": true,
+    "typecheck": true,
+    "lint": true,
+    "reexportGuard": true,
+    "supplyChainSelfTest": true,
+    "docsUnchanged": true,
+    "finalPackedContentsUnchanged": true,
+    "providerLaunches": 0
+  },
+  "performance": {
+    "platform": "darwin-arm64",
+    "node": "v26.12.1",
+    "passedGroups": [
+      "1a",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+      "8"
+    ],
+    "versionStartupP95Ms": 119.447958,
+    "helpStartupP95Ms": 116.71191700000008,
+    "helpPeakRssP95Mb": 81.125,
+    "tuiInputP95Ms": 9.82
+  },
+  "review": {
+    "route": "isolated Agon bounded source packet",
+    "codex": "completed; no introduced defect found in supplied source",
+    "kimi": "unavailable; returned no answer, not counted as passing",
+    "adjudications": [
+      "Installed Agent runtime and declaration probes now pass. Core is bundled compatibility code, not a separately qualified release artifact.",
+      "Thrown ledger preserves legacy failure/fallback behavior in both policies. Production ledger is best-effort.",
+      "Injected production effects are standalone functions, not receiver-bound methods.",
+      "CLI bundle has no external Agent package import. Existing minimal think/review installation smoke tests pass."
+    ]
+  },
+  "failedAttemptsRetained": [
+    "Initial generator/export omission detected; run stopped after failure, exit -15, not a complete suite.",
+    "Manifest correction required regenerated catalog hashes; second full run reported 3 drift failures.",
+    "Existing generators fixed both omissions. Metadata preflight and complete third run pass. No test weakened."
+  ],
+  "limits": [
+    "Full Agent host/session cutover remains open.",
+    "No Linux, macOS x64, or additional Node-version performance claim from this local run.",
+    "npm provenance remains externally blocked.",
+    "OSV reported 20 existing advisories across 10 package versions; only an internal workspace edge changed, no package versions upgraded.",
+    "No global installation, personal state mutation, release promotion or publishing."
+  ],
+  "reproduce": [
+    "node scripts/spec/generate-modular-first-party-packages.mjs --check",
+    "node scripts/spec/generate-modular-surface-catalog.mjs --check",
+    "npm run build",
+    "npm run typecheck",
+    "npm run lint",
+    "npm run guard:reexports",
+    "npm run test:modular-supply-chain",
+    "node scripts/spec/verify-modular-npx.mjs",
+    "npm test",
+    "npm run perf:modular-release",
+    "npm run docs:modes",
+    "node scripts/spec/verify-modular-release-set.mjs --check"
+  ],
+  "archive": {
+    "location": "durable operator archive: modular-agon-remediation, outside Git worktrees",
+    "retention": "Never delete without Raphael approval",
+    "artifacts": [
+      {
+        "path": "agent-refinement-legacy-oracle-20261025.json",
+        "sha256": "bdc30ff47513e41e207815b686ca14d73cc98faeddacddceaf1eec47e000f992"
+      },
+      {
+        "path": "agent-refinement-moved-oracle-20261025.json",
+        "sha256": "0e13da34bf4f125d7aea9beeecf16398bad0640ff6315f4b724c308502558f5f"
+      },
+      {
+        "path": "agent-refinement-ledger-parity-20261025.json",
+        "sha256": "0a6b97bca5977809c02c96e50d771bb7f77fe7670b7a92f9efaa60d8f07017ae"
+      },
+      {
+        "path": "agent-refinement-owner-negative-20261025.receipt.json",
+        "sha256": "1b49d9b49703ae185ef4cbcdd50f18cac0d459cb0c20466cca622c5bd2e7cdde"
+      },
+      {
+        "path": "agent-refinement-owner-full-20261025.receipt.json",
+        "sha256": "fe5d23243213232cee9c24d7065c4d1d3c96e69d0252a02765f7099b5e61ddc0"
+      },
+      {
+        "path": "agent-refinement-owner-corrected-full-20261025.receipt.json",
+        "sha256": "2913fbfa7f92c6ba281b91e6ed9e3d7a61d80f4856f002992c5b73f95e8db42e"
+      },
+      {
+        "path": "agent-refinement-metadata-preflight-20261025.receipt.json",
+        "sha256": "6ebbad659db1dd916e68bb659ea9c8272753b1cac6d4441694077e48e063756a"
+      },
+      {
+        "path": "agent-refinement-catalog-qualified-full-20261025.receipt.json",
+        "sha256": "112bf52d3eff1060af68c92441e530bc673332519476051e4bf914695c40a59c"
+      },
+      {
+        "path": "agent-refinement-installed-20261025.json",
+        "sha256": "761ab6ee1d426e0b76b1b509804a395b2104365ac196e30e6aac9f53aff48659"
+      },
+      {
+        "path": "agent-refinement-performance-20261025.receipt.json",
+        "sha256": "bd1c1d78850c903ef91059527111687ae7b47a26e09fc5b36f7736469084385f"
+      },
+      {
+        "path": "agent-refinement-final-artifacts-20261025.receipt.json",
+        "sha256": "e46c42903d7096e2666cc32621eea8f5db573c5e1d3bbcf5dc9275079adbc30f"
+      },
+      {
+        "path": "agent-refinement-owner-review-input.txt",
+        "sha256": "ced8b54d6c1cfacae9b04d4f83b03290000de88cf132150489e14b8b10499c18"
+      },
+      {
+        "path": "agent-refinement-owner-codex-review.receipt.json",
+        "sha256": "b9242204daa4e12b7404a036c2a6a6963b767ccc8e394b10d0cd291ef5e58597"
+      },
+      {
+        "path": "agent-refinement-owner-codex-review.log",
+        "sha256": "d2afc70e8337c2d24065657548ed2c4616c15665a987ecabfdf389f5943663c1"
+      },
+      {
+        "path": "agent-refinement-owner-kimi-review.receipt.json",
+        "sha256": "be934bdb50c1aba365c428fa87e0a3af579da89cff42267df1b5791f49679528"
+      },
+      {
+        "path": "agent-refinement-workspace-osv-20261025.json",
+        "sha256": "4d27767d1cac7f922e48331f6f5106a4e1ed3a7215e86e7735de0af423e956b0"
+      }
+    ]
+  }
+}

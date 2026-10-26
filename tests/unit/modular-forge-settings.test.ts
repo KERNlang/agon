@@ -719,6 +719,8 @@ describe('Forge configuration ownership', () => {
       gauntletMaxBreakers: { type: 'number', default: 3 },
       gauntletRepairTimeout: { type: 'number', default: 300 },
       corpusReplayLimit: { type: 'number', default: 5 },
+      forgeEnableSynthesis: { type: 'boolean', default: false },
+      forgeSynthesisTimeout: { type: 'number', default: 300 },
     });
     expect(DEFAULT_FIRST_PARTY_SETTINGS).toMatchObject(Object.fromEntries(
       Object.entries(schema.properties as Record<string, { default: unknown }>).map(([key, property]) => [key, property.default]),
@@ -729,7 +731,7 @@ describe('Forge configuration ownership', () => {
     ['review', () => import('../../packages/mod-review/src/index.js'), { autoReviewAfterImpl: true, goalReviewEngines: [] }],
     ['agent', () => import('../../packages/mod-agent/src/index.js'), { cesarAgenticContinuationLimit: 12 }],
     ['mutate', () => import('../../packages/mod-mutate/src/index.js'), { cesarMutateReflex: true }],
-    ['synthesis', () => import('../../packages/mod-synthesis/src/index.js'), { forgeEnableSynthesis: false, forgeSynthesisTimeout: 300, skillSynthesisThreshold: 3 }],
+    ['synthesis', () => import('../../packages/mod-synthesis/src/index.js'), { skillSynthesisThreshold: 3 }],
   ] as const)('%s owns and registers its configuration', async (name, load, expected) => {
     const { MANIFEST: declaration, createMod: factory } = await load();
     const owner = { id: declaration.id, version: declaration.version, contentHash: `sha256:${'a'.repeat(64)}` as const };
@@ -801,7 +803,8 @@ describe('Forge configuration ownership', () => {
     session.commit();
     const schemas = MANIFEST.contributes.configKeys.map(({ id }) => registry.resolve('config', id)!.payload);
     const defaults = { autoReviewAfterForge: true, forgeFitnessTimeout: 120,
-      gauntletEnabled: false, gauntletMaxBreakers: 3, gauntletRepairTimeout: 300, corpusReplayLimit: 5 };
+      gauntletEnabled: false, gauntletMaxBreakers: 3, gauntletRepairTimeout: 300, corpusReplayLimit: 5,
+      forgeEnableSynthesis: false, forgeSynthesisTimeout: 300 };
     expect(resolveRegisteredModSettings(owner.id, {}, schemas)).toEqual(defaults);
     expect(resolveRegisteredModSettings(owner.id, { autoReviewAfterForge: false, forgeFitnessTimeout: 0, future: 'keep' }, schemas))
       .toEqual({ ...defaults, autoReviewAfterForge: false, forgeFitnessTimeout: 0, future: 'keep' });

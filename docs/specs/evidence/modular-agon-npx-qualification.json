@@ -270,6 +270,21 @@
       "detail": "exit=0"
     },
     {
+      "id": "packed-agent-team-scoring-owner",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "packed-agent-team-public-types",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "compiled-core-agent-team-public-types",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
       "id": "packed-shared-git-diff-owner",
       "passed": true,
       "detail": "exit=0"
@@ -281,6 +296,36 @@
     },
     {
       "id": "packed-provenance-public-types",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "packed-synthesis-runtime",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "packed-synthesis-public-types",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "packed-agent-refinement",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "packed-agent-refinement-public-types",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "packed-agent-events",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "packed-agent-events-public-types",
       "passed": true,
       "detail": "exit=0"
     },

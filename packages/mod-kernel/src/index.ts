@@ -11,7 +11,7 @@ export { currentInvocationConfiguration, currentInvocationOwnerAvailable } from 
 export type { InvocationConfigurationScope } from './configuration-scope.js';
 export { DEFAULT_KERNEL_SETTINGS, normalizeKernelSettings } from './settings.js';
 export type { KernelSettings } from './settings.js';
-export { selectModSettings, mergeModSettingsLayers, projectLegacyModSettings, applyModSettingsDefaults, readLegacyConfigAliases, resolveRegisteredModSettings } from './mod-settings.js';
+export { selectModSettings, mergeModSettingsLayers, mergeLegacyModSettingsLayers, projectLegacyModSettings, updateLegacyModSetting, applyModSettingsDefaults, readLegacyConfigAliases, resolveRegisteredModSettings } from './mod-settings.js';
 
 export {
   ModResolutionError,

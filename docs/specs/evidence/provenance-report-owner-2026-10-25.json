@@ -1,4 +1,40 @@
 {
+  "postmergeRepair20261026": {
+    "osv": {
+      "command": "osv-scanner scan source -L package-lock.json",
+      "exitCode": 1,
+      "advisories": 24,
+      "affectedPackages": 10,
+      "critical": 2,
+      "high": 9,
+      "medium": 11,
+      "low": 2,
+      "note": "External lock entries unchanged from main. Findings include critical tinypool dev advisories, plus undici and zod advisories. No security-clean claim; upgrades require a separate verified dependency slice."
+    },
+    "baseMain": "a4e06dfb8869acd14fe4c90cc16a88abebeb3243",
+    "previousHead": "188d81434e560f3e831ab154a900d86695c432eb",
+    "fix": "Shared Markdown formatter restores historical String(value ?? '') conversion; no parallel renderer.",
+    "negativeControl": "provenance-primitives-red-20261026: three persisted-manifest cases fail with s.replace is not a function before the fix.",
+    "focused": "provenance-postmerge-build-20261026: build, typecheck and 21 tests pass after rebuilding stale exports.",
+    "full": {
+      "receipt": "provenance-postmerge-full-20261026.receipt.json",
+      "sha256": "f450684b096dcc63fe61b056a38ebbf898aa822cba41d3e2f08590bee41130a0",
+      "logSha256": "6b701f2c3e7c0c3270c51999290ec47eff493453b53f445e5e06ae685a9b84e0",
+      "passed": true,
+      "seconds": 967.989,
+      "testsPassed": 11970,
+      "testsSkipped": 7,
+      "installedChecks": 101,
+      "providerLaunches": 0
+    },
+    "review": {
+      "packetSha256": "5510e5b84465c1f256678be811ec70363df6b92c2c705382e182b636103345f4",
+      "codex": "No concrete findings; receipt provenance-primitives-postmerge-codex-review.receipt.json",
+      "codexReceiptSha256": "b8762a128856a35e61908e379c71a9fdd8ac3f057bc37df95d686725f2515774",
+      "kimi": "Unavailable: exited without an answer; not counted as approval."
+    },
+    "limits": ["Working-tree qualification; exact committed clean-checkout qualification still required.", "Local Node 26 package hashes are not native cross-platform qualification.", "npm provenance remains externally blocked.", "This is not full modular acceptance."]
+  },
   "schemaVersion": 1,
   "mainIntegration": {
     "date": "2026-10-26",

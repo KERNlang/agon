@@ -149,8 +149,8 @@ export function renderProvenanceMarkdown(led: ProvenanceLedger): string {
   // Manifest-sourced strings (humanPrompt, reason) are untrusted for Markdown:
   // collapse newlines so they don't break list/table structure, and escape
   // pipes inside table cells.
-  const oneLine = (s: string): string => s.replace(/\r?\n+/g, ' ').trim();
-  const cell = (s: string): string => oneLine(s).replace(/\|/g, '\\|');
+  const oneLine = (s: unknown): string => String(s ?? '').replace(/\r?\n+/g, ' ').trim();
+  const cell = (s: unknown): string => oneLine(s).replace(/\|/g, '\\|');
   const autonomyLabel =
     led.autonomyLevel === 'autonomous-loop'
       ? 'AI-CONTROLLED (autonomous loop, no human approval gate — by design)'

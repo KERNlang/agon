@@ -1,0 +1,43 @@
+{
+  "scope": "Publish and persist the Synthesis winner's final content; not full ownership or release acceptance",
+  "baseCommit": "965c7fed871f1d8d4f6a5759498fbef5408879ed",
+  "testedDiffSha256": "91d8a238e6b2bef997213032a5162f8314485aa09ad9807542ad7bf6a220de08",
+  "sourceAndTestDiffSha256": "08a577f1ae5d518a92d71b02eb0bfc7712820502f0d1b57ffc79bc5e24492420",
+  "indexAddedAfterTests": true,
+  "archiveRoot": "/Users/ra/dev/modular-agon-remediation",
+  "fullGate": {
+    "receipt": "synthesis-winner-full-20261025.receipt.json",
+    "logSha256": "55793910286543c0b23b461c0f428b01b9597aa1d5f7711fe73a8c0739f3694a",
+    "exitCode": 0,
+    "seconds": 997.748,
+    "testsPassed": 11680,
+    "testsSkipped": 6,
+    "installedChecks": 85,
+    "providerLaunches": 0
+  },
+  "negativeControl": {
+    "receipt": "synthesis-winner-vitest-negative-20261025.receipt.json",
+    "logSha256": "14427df282397715dd40d7fdc8c8bbc296363da0818d75f811e2cf390460337a",
+    "result": "Two revision cases fail before the fix; eight existing/fallback cases pass"
+  },
+  "focused": {
+    "receipt": "synthesis-winner-focused-20261025.receipt.json",
+    "logSha256": "004cb08e6d821572cbf8d9519dfdf4defc3d8f22bdb1281c54fa16c50c02ad53",
+    "testsPassed": 20
+  },
+  "actualHandlerProbe": {
+    "artifact": "synthesis-winner-in-memory-probe-20261025.json",
+    "sha256": "2a648dbc624cf91db1e7d381035955924aea762fc6d02e57dd8463930d0459c8",
+    "scope": "Compiled actual handler and engine filter, with mocked effect boundaries; not a live provider session"
+  },
+  "review": {
+    "packetSha256": "440f5e8a41dee56f8ffaceff707cc212e7a3038cbcf20ba31154c2f936c74f91",
+    "codexReceipt": "synthesis-winner-content-codex-review.receipt.json",
+    "codexLogSha256": "be06e71fb85f399b7ba9f28bd19fceb130979202f8b86991566aa1e79fcbfe24",
+    "codexResult": "No concrete introduced defect; chronological swap reasoning verified against source",
+    "kimiReceipt": "synthesis-winner-content-kimi-review.receipt.json",
+    "kimiLogSha256": "a4eebf5d7d44f5490f265ba973efba6a7b0a1712213a895f830b6440c27cdbff",
+    "kimiResult": "Unavailable: engine returned no answer; not a passing review"
+  },
+  "limits": ["Initial failed Vitest launch lacked node_modules and is not the negative control", "No interactive live-provider session was run", "Physical Synthesis cutover remains separate", "GitHub approval and CI remain required", "No active installation changed"]
+}

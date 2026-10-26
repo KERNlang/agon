@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "scope": "AgentTeam wall-clock cancellation independent of pricing and provider output",
+  "base": "01a10699fe2199bc50c16da516b455d1fb8b6941",
+  "archive": "modular-agon-remediation (durable operator archive outside Git worktrees)",
+  "sourceSha256": "c294d532c6e42f54d5ee78b2dad7012cead19977a854947ba5095e5d05a75482",
+  "testSha256": "eec51d2bd4b51fb885b69d0401ce16a88ee48c25a1354885e04f3788ce1055cd",
+  "negativeControl": {
+    "receipt": "agent-team-deadline-before-20261026.receipt.json",
+    "sha256": "2280e0d4e696f79545bbc927a84a666fc09277578263f26b5eeafc00c3a96c93",
+    "result": "Three expected failures on unchanged production; sixteen passes"
+  },
+  "focused": {
+    "receipt": "agent-team-deadline-real-timer-20261026.receipt.json",
+    "sha256": "e1d16bfb48b163c6a71dc31492e1d140939166f8e1822eb204444e7b12f2e7eb",
+    "passed": 69,
+    "includes": "Real-timer cancellation of two silent members; exact deadline; long timer rescheduling; Infinity; callback errors"
+  },
+  "fullWorkingTreeGate": {
+    "receipt": "agent-team-deadline-full-20261026.receipt.json",
+    "sha256": "cb50c1b825d53dda59c7c68e7bfe2db068e035729e5c4d77ce001ef41247a5ec",
+    "logSha256": "a9cbf3c15cfcfe112240249c72d0909629a6a5923ad57f7007787e0cce1d2545",
+    "exitCode": 0,
+    "testsPassed": 11851,
+    "testsSkipped": 7,
+    "packedCandidateChecks": 85,
+    "providerLaunches": 0
+  },
+  "review": {
+    "packetSha256": "cae75bbd71eaf36ba6bf1211de4c1b604229fdb7ec253eede89f5f968526a046",
+    "codexLogSha256": "01820e776ee109417f790b09c028b37bb69a4ec1b687361293acd744573d1cf1",
+    "adjudication": "agent-team-wall-clock-review-adjudication-20261026.md",
+    "resolution": "Callback-error compatibility drift confirmed and fixed; regression tests pass. Final source includes this post-review fix and added tests.",
+    "kimi": "Unavailable: exit 1, no answer; not a passing review"
+  },
+  "limits": [
+    "Clean committed checkout qualification and CI pending at index creation",
+    "Cancellation is cooperative, not a process hard-kill guarantee",
+    "Generated archive identities use local Node26/npm11; all49 mod payload and manifest hashes unchanged",
+    "Full Agent ownership, original modular release acceptance and external platform/provenance evidence remain open"
+  ]
+}

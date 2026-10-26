@@ -1,0 +1,21 @@
+{
+  "scope": "PR316 text-only Synthesis control integrated with current main; not full modular release acceptance",
+  "parents": ["7ed05cac0f4ab7f63f4fb10bae6dad031707e401", "965c7fed871f1d8d4f6a5759498fbef5408879ed"],
+  "testedDiffFromFirstParentSha256": "404a635736f188c909a72b4e10267036f946d36f7aa1f0d50321b4f7a887b468",
+  "indexAddedAfterTests": true,
+  "archiveRoot": "/Users/ra/dev/modular-agon-remediation",
+  "fullGate": {
+    "receipt": "synthesis-text-only-main-integration-20261025.receipt.json",
+    "logSha256": "cdf7463727f34d13ae1fae7970203083e16cfe460267a90d9bcee354249378e3",
+    "exitCode": 0,
+    "seconds": 1018.211,
+    "testsPassed": 11678,
+    "testsSkipped": 6,
+    "installedChecks": 85,
+    "providerLaunches": 0
+  },
+  "reviewIndex": "docs/specs/evidence/synthesis-text-only-2026-10-25.json",
+  "integration": "Source and tests merged without conflict. Three generated metadata conflicts were resolved by regenerating from the combined build. All four generated outputs and the complete tested diff match the qualification checkout byte-for-byte.",
+  "supersedes": "The prior text-only index's pending main integration is satisfied for the named parents. Its focused review, compiled probes and negative control remain valid.",
+  "limits": ["Independent GitHub approval and current-head CI remain required", "Text-only control depends on adapter support; it is not sandboxing", "Synthesis runtime ownership and ring-versus-pair cutover remain separate", "Publishing provenance remains external", "No active installation changed"]
+}

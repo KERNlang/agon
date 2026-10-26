@@ -220,6 +220,14 @@
     },
     {
       "category": "resultAndEnvelopeTypes",
+      "id": "AgentInvestigateSynthesisResult",
+      "source": "packages/core/src/cesar/agent-synthesis.ts:401",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-agent",
+      "rule": "agent-team-refinement-owner"
+    },
+    {
+      "category": "resultAndEnvelopeTypes",
       "id": "AgentProgressSnapshot",
       "source": "packages/cli/src/signals/output.ts:20",
       "class": "user-toggleable-mod-package",
@@ -233,6 +241,14 @@
       "class": "user-toggleable-mod-package",
       "package": "@kernlang/agon-mod-agent",
       "rule": "semantic-source-rule"
+    },
+    {
+      "category": "resultAndEnvelopeTypes",
+      "id": "AgentSynthesisResult",
+      "source": "packages/core/src/cesar/agent-synthesis.ts:68",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-agent",
+      "rule": "agent-team-refinement-owner"
     },
     {
       "category": "resultAndEnvelopeTypes",

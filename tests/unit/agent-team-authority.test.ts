@@ -73,6 +73,152 @@ it.each(['healthy', 'initialize', 'step', 'provider', 'approval', 'provider-erro
   },
 );
 
+it.each([false, true])('removes worktrees only after member settlement: pending=%s', async pending => {
+  let release = () => {};
+  let entered = () => {};
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  let providerSignal: AbortSignal | undefined;
+  stream.mockImplementation(async function* (_api: unknown, _messages: unknown, _timeout: number, signal?: AbortSignal) {
+    providerSignal = signal;
+    await new Promise<void>(resolve => { release = resolve; entered(); });
+    yield 'done';
+    return { exitCode: 0 };
+  });
+  team = new AgentTeam({
+    members: [{ engineId: 'fixture', api: {
+      baseUrl: 'https://example.invalid', apiKeyEnv: 'UNUSED_FIXTURE_KEY', model: 'fixture',
+    } }],
+    cwd: root, isolate: true, budget: { maxTurns: 1, maxDurationMs: 120_000 },
+  });
+  await team.initialize();
+  const worktree = team.getWorktreePath('fixture')!;
+  expect(existsSync(worktree)).toBe(true);
+  const running = team.step('fixture');
+  let cleanup: Promise<void> | undefined;
+  let secondCleanup: Promise<void> | undefined;
+  let returned = false;
+  let secondReturned = false;
+  try {
+    await started;
+    if (!pending) { release(); await running; }
+    cleanup = team.cleanup().then(() => { returned = true; });
+    const immediatelyAborted = providerSignal?.aborted;
+    secondCleanup = team.cleanup().then(() => { secondReturned = true; });
+    await expect(team.step('must not start')).rejects.toThrow('disposed');
+    await expect(team.initialize()).rejects.toThrow('disposed');
+    await Promise.resolve();
+    const beforeSettlement = { exists: existsSync(worktree), returned, secondReturned };
+    const aborted = providerSignal?.aborted;
+    release();
+    const result = await running;
+    await Promise.all([cleanup, secondCleanup]);
+    if (pending) {
+      expect(immediatelyAborted).toBe(true);
+      expect(aborted).toBe(true);
+      expect(beforeSettlement).toEqual({ exists: true, returned: false, secondReturned: false });
+      expect(result.members[0].stepResult?.stopReason).toBe('cancelled');
+    }
+    expect(existsSync(worktree)).toBe(false);
+    expect(returned && secondReturned).toBe(true);
+  } finally {
+    release();
+    await running;
+    await Promise.all([cleanup, secondCleanup]);
+  }
+});
+
+it.each([false, true])('drains both members and reentrant cleanup: providerRejects=%s', async providerRejects => {
+  const releases: Array<() => void> = [];
+  const reentrant: Array<Promise<void>> = [];
+  let entered = () => {};
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  stream.mockImplementation(async function* (_api: unknown, _messages: unknown, _timeout: number, signal?: AbortSignal) {
+    signal?.addEventListener('abort', () => { reentrant.push(team!.cleanup()); }, { once: true });
+    await new Promise<void>(resolve => {
+      releases.push(resolve);
+      if (releases.length === 2) entered();
+    });
+    if (providerRejects) throw new Error('provider fixture failed after abort');
+    yield 'done';
+    return { exitCode: 0 };
+  });
+  team = new AgentTeam({
+    members: ['one', 'two'].map(engineId => ({ engineId, api: {
+      baseUrl: 'https://example.invalid', apiKeyEnv: 'UNUSED_FIXTURE_KEY', model: 'fixture',
+    } })),
+    cwd: root, isolate: true, budget: { maxTurns: 1, maxDurationMs: 120_000 },
+  });
+  await team.initialize();
+  const worktrees = ['one', 'two'].map(id => team!.getWorktreePath(id)!);
+  const running = team.step('fixture');
+  let cleanup: Promise<void> | undefined;
+  let returned = false;
+  try {
+    await started;
+    cleanup = team.cleanup().then(() => { returned = true; });
+    releases[0]();
+    await new Promise<void>(resolve => setImmediate(resolve));
+    expect(worktrees.every(path => existsSync(path))).toBe(true);
+    expect(returned).toBe(false);
+    expect(reentrant).toHaveLength(2);
+    releases[1]();
+    const result = await running;
+    await Promise.all([cleanup, ...reentrant]);
+    expect(result).toMatchObject({ succeeded: 0, failed: 2 });
+    expect(worktrees.every(path => !existsSync(path))).toBe(true);
+    expect(returned).toBe(true);
+  } finally {
+    for (const release of releases) release();
+    await running;
+    await Promise.all([cleanup, ...reentrant]);
+  }
+});
+
+it('settles cleanup requested by an awaited permission callback', async () => {
+  let releaseApproval = () => {};
+  const escape = new Promise<void>(resolve => { releaseApproval = resolve; });
+  let callbackCleanup: Promise<void> | undefined;
+  stream.mockImplementation(async function* () {
+    yield '<tool name="Write">{"file_path":"../result.txt","content":"fixture"}</tool>';
+    return { exitCode: 0 };
+  });
+  const approval = vi.fn(async () => {
+    callbackCleanup = team!.cleanup();
+    await Promise.race([callbackCleanup, escape]);
+    return true;
+  });
+  team = new AgentTeam({
+    members: [{ engineId: 'fixture', api: {
+      baseUrl: 'https://example.invalid', apiKeyEnv: 'UNUSED_FIXTURE_KEY', model: 'fixture',
+    } }],
+    cwd: root, isolate: true, budget: { maxTurns: 1, maxDurationMs: 120_000 },
+    permissionMode: 'ask', toolPermissions: { Write: 'ask' }, onPermissionAsk: approval,
+  });
+  await team.initialize();
+  const worktree = team.getWorktreePath('fixture')!;
+  const running = team.step('fixture');
+  let watchdog: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const outcome = await Promise.race([
+      running.then(() => 'settled'),
+      new Promise<string>(resolve => { watchdog = setTimeout(() => resolve('deadlock'), 1_000); }),
+    ]);
+    releaseApproval();
+    await running;
+    await callbackCleanup;
+    expect(approval).toHaveBeenCalledOnce();
+    expect(outcome).toBe('settled');
+    expect(existsSync(worktree)).toBe(false);
+    expect(existsSync(join(root, 'result.txt'))).toBe(false);
+    expect(existsSync(join(worktree, '..', 'result.txt'))).toBe(false);
+  } finally {
+    if (watchdog !== undefined) clearTimeout(watchdog);
+    releaseApproval();
+    await running;
+    await callbackCleanup;
+  }
+});
+
 it.each([1, 2])('rolls back real isolated worktrees when authority is lost after %i creations', async threshold => {
   const registrations = () => execFileSync('git', ['worktree', 'list', '--porcelain'], { cwd: root, encoding: 'utf8' });
   const baseline = registrations();

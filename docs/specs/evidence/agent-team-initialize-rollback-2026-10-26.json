@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "scope": "Reject invalid AgentTeam semaphore permits before Git effects",
+  "baseCommit": "01a10699fe2199bc50c16da516b455d1fb8b6941",
+  "sourcePatchSha256": "36045ff528dc8d4d82b5abd25ad84639b0dc2b1dad0ed8064c63150e3ee25e31",
+  "archiveRoot": "modular-agon-remediation (durable local sibling of the checkout)",
+  "evidence": [
+    {
+      "receipt": "agent-team-permit-regression-before-20261026.receipt.json",
+      "sha256": "ffbe1630750aee3a51b6a852fe601bd8d94b376045b8c20670a79a5d90c76c46",
+      "result": "Expected failure: invalid permits 0 and -1 retain real Git worktrees; 13 other cases pass"
+    },
+    {
+      "receipt": "agent-team-permit-regression-after-20261026.receipt.json",
+      "sha256": "7ca054555195d52cf298c51bbd20011581bc2322cf4073488dfa104679fa2a2e",
+      "result": "54 focused team authority, handler, error and semaphore tests pass"
+    },
+    {
+      "receipt": "agent-team-initialize-rollback-full-20261026.receipt.json",
+      "sha256": "e8da14730920d0acdf86c6eab928d5bbe0c02235aa309b6c823c0014865b9193",
+      "result": "Build/types/lint/reexports pass; 38 setup tests fail because generated launcher inventory names old chunks"
+    },
+    {
+      "receipt": "agent-team-rollback-release-refresh-20261026.receipt.json",
+      "sha256": "b80415a0942ad47c6fb4ec6487b4e5773f7629be0c84cd20dd30e2fa1cf99c2a",
+      "result": "Release/SBOM regeneration and check-mode self-tests pass; 95 setup and team tests pass"
+    },
+    {
+      "receipt": "agent-team-rollback-qualified-full-20261026.receipt.json",
+      "sha256": "e1f5eddca7d628bd69c04ad1babfc08d812a7c60bd0212db893f1a93f85d90fd",
+      "result": "85 packed-candidate checks pass; full suite 11836 passed, 7 skipped; zero provider launches"
+    }
+  ],
+  "review": {
+    "packetSha256": "b926ba53cb86aada141325fc7392326da157613a72f97ee853adff8b9087b668",
+    "codexLogSha256": "b4f6d66ba8e48ebf7c016a9dfa22a77000ccc26752818fe359c3a8cb61ff2ce8",
+    "codex": "No blocking findings; reviewed source still matches packet byte-for-byte",
+    "kimi": "Unavailable: engine exited without an answer; not a pass",
+    "adjudication": "agent-team-initialize-rollback-review-adjudication-20261026.md"
+  },
+  "limits": [
+    "Clean committed checkout qualification remains pending at index creation",
+    "Generated archive identities reflect local Node26/npm11; all49 first-party mod payload and manifest hashes remain unchanged",
+    "This fixes initialization rollback, not complete Agent ownership or full modular release acceptance"
+  ]
+}

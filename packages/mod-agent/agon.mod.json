@@ -254,6 +254,7 @@
       "dist/index.d.ts",
       "dist/implementation.d.ts",
       "dist/team-refinement.d.ts",
+      "dist/events.d.ts",
       "ownership.json",
       "schemas/config.schema.json"
     ],

@@ -146,15 +146,54 @@ try {
     assert.equal(result.winner, 'alpha');
     assert.deepEqual(events.map(event => event.type), ['synthesis:draft', 'synthesis:draft', 'synthesis:swap', 'synthesis:score']);
   `], { cwd: ephemeral, env: { AGON_FORCE_HEALTH_PROBE: '', AGON_DISABLE_FORGE_HEALTH_CHECK: '1' } }));
+  requireOk('packed-synthesis-session', run(process.execPath, ['--input-type=module', '-e', `
+    import assert from 'node:assert/strict';
+    import { runSynthesisSession } from '@kernlang/agon-mod-synthesis';
+    const messages = [], results = [], runs = [];
+    let disposed = 0;
+    const host = {
+      assertCurrent() {}, now: () => 0, defaultEngines: () => ['alpha', 'beta'],
+      dispatch() {}, scheduleEvery: () => () => { disposed++; },
+      appendMessage: message => messages.push(message), track() {},
+      addResult: result => results.push(result), recordRun: run => runs.push(run),
+    };
+    const context = { cwd: process.cwd(), signal: new AbortController().signal };
+    const result = { winner: 'alpha', judgeReasoning: 'selected',
+      drafts: [{ engineId: 'alpha', content: 'initial' }],
+      swaps: [{ toEngineId: 'alpha', improvedContent: 'final revision' }],
+      scores: [{ engineId: 'alpha', score: 90 }] };
+    await runSynthesisSession({ input: 'Design' }, context, host, async input => {
+      assert.equal(input.engines, 'alpha,beta');
+      return { exitCode: 0, result };
+    });
+    assert.equal(messages[1].content, 'final revision');
+    assert.equal(results[0].winner, 'alpha');
+    assert.equal(runs[0].success, true);
+    assert.equal(disposed, 1);
+    await assert.rejects(runSynthesisSession({ input: 'Design' }, context, host,
+      async () => ({ exitCode: 1, stderr: 'judge failed' })), /judge failed/);
+    assert.equal(messages.length, 2);
+    assert.equal(runs.length, 1);
+    assert.equal(disposed, 2);
+  `], { cwd: ephemeral }));
   const synthesisExample = join(ephemeral, 'synthesis-public-contract.mts');
   writeFileSync(synthesisExample, `
     import { runSynthesisRuntime, type SynthesisRuntimeOptions, type SynthesisRuntimeEffects,
-      type SynthesisResult, type SynthesisRuntimeEvent } from '@kernlang/agon-mod-synthesis';
+      type SynthesisResult, type SynthesisRuntimeEvent, runSynthesisSession,
+      type SynthesisSessionHost, type SynthesisSessionContext,
+      type SynthesisSessionCommandResult } from '@kernlang/agon-mod-synthesis';
     declare const options: SynthesisRuntimeOptions;
     declare const effects: SynthesisRuntimeEffects;
     const result: Promise<SynthesisResult> = runSynthesisRuntime(options, effects);
     const event: SynthesisRuntimeEvent = { type: 'synthesis:draft', engineId: 'fixture', data: { round: 0 } };
     void result; void event;
+    declare const host: SynthesisSessionHost;
+    declare const context: SynthesisSessionContext;
+    declare const execute: (input: Record<string, unknown>, context: SynthesisSessionContext) => Promise<SynthesisSessionCommandResult>;
+    const session: Promise<SynthesisResult> = runSynthesisSession({ input: 'Design' }, context, host, execute);
+    void session;
+    // @ts-expect-error Session execution requires a complete effect host.
+    runSynthesisSession({}, context, {}, execute);
   `);
   requireOk('packed-synthesis-public-types', run(process.execPath, [join(root, 'node_modules/typescript/bin/tsc'),
     '--noEmit', '--strict', '--target', 'ES2022', '--module', 'NodeNext', '--moduleResolution', 'NodeNext',

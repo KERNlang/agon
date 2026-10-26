@@ -3,13 +3,17 @@ import { beforeEach, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({ run: vi.fn(), append: vi.fn(), track: vi.fn(), add: vi.fn(), record: vi.fn(), available: vi.fn(), current: vi.fn() }));
 vi.mock('../../packages/cli/src/surface-authority-runtime.js', async original => ({
   ...await original<object>(),
-  processSurfaceClient: () => ({ assertAvailable: mocks.available }),
+  processSurfaceClient: () => ({ assertAvailable: mocks.available, project: () => ({ entries: [{
+    id: 'tuiSlashCommands:0063', kind: 'intent', owner: { id: 'agon.synthesis' },
+    payload: { inputSchema: { type: 'object' }, run: async (input: object, context: { signal: AbortSignal }) => ({
+      exitCode: 0, result: await mocks.run({ ...input, signal: context.signal }),
+    }) },
+  }] }) }),
   captureProcessSurfaceAuthority: () => mocks.current,
 }));
 vi.mock('@kernlang/agon-core', async original => ({
   ...await original<object>(), appendMessage: mocks.append, tracker: { record: mocks.track },
 }));
-vi.mock('@kernlang/agon-forge', async original => ({ ...await original<object>(), runSynthesisModus: mocks.run }));
 vi.mock('../../packages/cli/src/models/session-results.js', () => ({ sessionResultStore: { add: mocks.add } }));
 vi.mock('../../packages/cli/src/telemetry/index.js', () => ({ recordRun: mocks.record, formatRunSummary: () => 'summary' }));
 vi.mock('../../packages/cli/src/signals/dispatch/delegation.js', async original => ({
@@ -36,7 +40,7 @@ it.each([0, 1, 2])('publishes and saves the winning content after %i completed s
       { engineId: 'beta', content: 'beta draft', round: 0 }],
     swaps, scores: [], winner: 'alpha', judgeReasoning: 'chosen final content',
   });
-  await handleSynthesis('Design', dispatch, { activeEngines: () => ['alpha', 'beta'],
+  await handleSynthesis('Design', dispatch, { config: {}, activeEngines: () => ['alpha', 'beta'],
     setActiveAbort, chatSession, registry: {}, adapter: {} } as never);
   const expected = rounds ? `alpha revision ${rounds}` : 'alpha draft';
   expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'engine-block',
@@ -59,7 +63,7 @@ it('rejects a disabled Synthesis fallback before starting a session job', async 
 
 it('rejects a queued Synthesis fallback when its selected generation changes', async () => {
   mocks.run.mockResolvedValue({ drafts: [], scores: [], winner: '', judgeReasoning: '' });
-  const cb = { ctx: { chatSession: { messages: [] }, activeEngines: () => ['alpha', 'beta'],
+  const cb = { ctx: { config: {}, chatSession: { messages: [] }, activeEngines: () => ['alpha', 'beta'],
     setActiveAbort: vi.fn(), registry: {}, adapter: {} }, dispatch: vi.fn(), runAsJob: vi.fn() };
   await dispatchOrchestrationIntent({ type: 'synthesis', input: 'Design' }, '/synthesis Design', cb as never);
   mocks.current.mockImplementation(() => { throw new Error('generation changed'); });
@@ -79,7 +83,7 @@ it('clears published progress when the UI controller cancels an active job', asy
     mocks.run.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
     const job = new AbortController();
     const setActiveAbort = vi.fn();
-    const pending = handleSynthesis('Design', dispatch, { activeEngines: () => ['alpha', 'beta'],
+    const pending = handleSynthesis('Design', dispatch, { config: {}, activeEngines: () => ['alpha', 'beta'],
       setActiveAbort, chatSession: { messages: [] }, registry: {}, adapter: {} } as never, { signal: job.signal });
     await vi.advanceTimersByTimeAsync(250);
     expect(progress).not.toBeNull();
@@ -98,7 +102,7 @@ it.each(['direct', 'fallback'].flatMap(route => ['before', 'during'].map(phase =
   const controller = new AbortController();
   const dispatch = vi.fn();
   const setActiveAbort = vi.fn();
-  const ctx = { activeEngines: () => ['alpha', 'beta'], setActiveAbort,
+  const ctx = { config: {}, activeEngines: () => ['alpha', 'beta'], setActiveAbort,
     chatSession: { id: 'original', messages: [] }, registry: {}, adapter: {} };
   mocks.run.mockImplementation(async () => {
     controller.abort(new Error('job cancelled'));

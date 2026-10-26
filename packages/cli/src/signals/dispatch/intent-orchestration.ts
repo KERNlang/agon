@@ -181,7 +181,7 @@ export async function dispatchOrchestrationIntent(intent: any, input: string, cb
       cb.runAsJob('synthesis', _syLabel, signal => withThreadOutcome(_syCwd, 'synthesis', _syLabel, async () => {
         signal.throwIfAborted();
         assertSelected();
-        await handleSynthesis(intent.input, cb.dispatch, cb.ctx, { swaps: intent.swaps, signal });
+        await handleSynthesis(intent.input, cb.dispatch, cb.ctx, { swaps: intent.swaps, judge: intent.judge, signal });
         signal.throwIfAborted();
         assertSelected();
         const chatContext = collectRecentEngineContext(cb.ctx, 12, 2000);

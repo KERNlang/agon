@@ -311,34 +311,42 @@ export class AgentTeam {
     this.startedAt = Date.now();
     const onEvent = opts?.onEvent;
 
-    // RT-12: team budget polling. Wrap the user's onEvent callback so that
-    // after every dispatched AgentEvent, we sum the current cumulative cost
-    // and wall-clock across all members and call team.cancel() if either
-    // ceiling is breached. Per-member budgets stay enforced inside each
-    // AgentSession; this polling catches the across-team aggregate which
-    // no per-session check can see.
+    // Team limits apply across members, independently of per-session limits.
     const teamBudget = this.config.teamBudget;
+    const maxWallClockMs = teamBudget?.maxTeamWallClockMs ?? Infinity;
     const costFn = this.config.costFn;
     const startedAt = this.startedAt;
     const self = this;
-    const wrappedOnEvent = (teamBudget && costFn)
+    let deadlineReached = false;
+    const cancelForDeadline = () => {
+      if (deadlineReached) return;
+      deadlineReached = true;
+      console.warn(`[agon] AgentTeam: wall-clock ceiling breached (${Date.now() - startedAt}ms >= ${maxWallClockMs}ms) — cancelling all members`);
+      self.cancel();
+    };
+    const wrappedOnEvent = teamBudget
       ? (event: AgentEvent) => {
-          try { onEvent?.(event); } catch { /* swallow */ }
+          if (costFn) {
+            try { onEvent?.(event); } catch { /* swallow */ }
+          } else {
+            onEvent?.(event);
+          }
           // Poll: sum cost across members. AgentSession.getStats() is cheap.
           let totalCost = 0;
-          for (const eid of Object.keys(self.members)) {
-            try {
-              const stats = self.members[eid].getStats();
-              totalCost += costFn(eid, stats.tokensUsed);
-            } catch { /* skip */ }
+          if (costFn) {
+            for (const eid of Object.keys(self.members)) {
+              try {
+                const stats = self.members[eid].getStats();
+                totalCost += costFn(eid, stats.tokensUsed);
+              } catch { /* skip */ }
+            }
           }
           const elapsed = Date.now() - startedAt;
-          if (totalCost > teamBudget.maxTeamCostUsd) {
+          if (costFn && totalCost > teamBudget.maxTeamCostUsd) {
             console.warn(`[agon] AgentTeam: cost ceiling breached ($${totalCost.toFixed(2)} > $${teamBudget.maxTeamCostUsd}) — cancelling all members`);
             self.cancel();
-          } else if (elapsed > teamBudget.maxTeamWallClockMs) {
-            console.warn(`[agon] AgentTeam: wall-clock ceiling breached (${elapsed}ms > ${teamBudget.maxTeamWallClockMs}ms) — cancelling all members`);
-            self.cancel();
+          } else if (elapsed >= maxWallClockMs) {
+            cancelForDeadline();
           }
         }
       : onEvent;
@@ -376,7 +384,24 @@ export class AgentTeam {
       }
     });
 
-    const settled = await Promise.allSettled(stepPromises);
+    // Silent providers emit no events. A timer must still cancel their signals.
+    let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+    const scheduleDeadline = () => {
+      const remaining = maxWallClockMs - (Date.now() - startedAt);
+      if (remaining <= 0) {
+        cancelForDeadline();
+      } else {
+        // Node clamps larger delays to 1 ms. Split long waits instead.
+        deadlineTimer = setTimeout(scheduleDeadline, Math.min(remaining, 2_147_483_647));
+      }
+    };
+    let settled: PromiseSettledResult<AgentTeamMemberResult>[];
+    try {
+      if (Number.isFinite(maxWallClockMs)) scheduleDeadline();
+      settled = await Promise.allSettled(stepPromises);
+    } finally {
+      if (deadlineTimer !== undefined) clearTimeout(deadlineTimer);
+    }
 
     // Each stepPromise above already catches its own errors and returns an
     // AgentTeamMemberResult; Promise.allSettled wrapping is belt-and-braces

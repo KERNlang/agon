@@ -73,6 +73,152 @@ it.each(['healthy', 'initialize', 'step', 'provider', 'approval', 'provider-erro
   },
 );
 
+it.each([
+  { elapsed: 50, pricing: false },
+  { elapsed: 50, pricing: true },
+  { elapsed: 100, pricing: false },
+  { elapsed: 100, pricing: true },
+  { elapsed: 150, pricing: false },
+  { elapsed: 150, pricing: true },
+])('enforces team wall-clock independently of pricing: $elapsed ms, pricing=$pricing', async ({ elapsed, pricing }) => {
+  let now = Date.now();
+  const clock = vi.spyOn(Date, 'now').mockImplementation(() => now);
+  try {
+    stream.mockImplementation(async function* () {
+      now += elapsed;
+      yield 'done';
+      return { exitCode: 0 };
+    });
+    team = new AgentTeam({
+      members: [{ engineId: 'fixture', api: {
+        baseUrl: 'https://example.invalid', apiKeyEnv: 'UNUSED_FIXTURE_KEY', model: 'fixture',
+      } }],
+      cwd: root, isolate: false, budget: { maxTurns: 1, maxDurationMs: 120_000 },
+      teamBudget: { maxTeamCostUsd: 10, maxTeamWallClockMs: 100 },
+      ...(pricing ? { costFn: () => 0 } : {}),
+    });
+    await team.initialize();
+    const result = await team.step('fixture');
+    expect(stream).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject(elapsed >= 100
+      ? { succeeded: 0, failed: 1, members: [{ stepResult: { stopReason: 'cancelled' } }] }
+      : { succeeded: 1, failed: 0, members: [{ stepResult: { stopReason: 'completed' } }] });
+  } finally {
+    clock.mockRestore();
+  }
+});
+
+it.each([
+  { expires: false, pricing: false },
+  { expires: false, pricing: true },
+  { expires: true, pricing: false },
+  { expires: true, pricing: true },
+  { expires: false, pricing: false, limit: 3_000_000_000 },
+  { expires: false, pricing: true, limit: 3_000_000_000 },
+  { expires: true, pricing: false, limit: 3_000_000_000 },
+  { expires: true, pricing: true, limit: 3_000_000_000 },
+  { expires: false, pricing: false, limit: Infinity },
+  { expires: false, pricing: true, limit: Infinity },
+])('bounds silent providers and clears deadline timers: expires=$expires, pricing=$pricing, limit=$limit', async ({ expires, pricing, limit = 100 }) => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+  let release = () => {};
+  let entered = () => {};
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  let providerSignal: AbortSignal | undefined;
+  let running: ReturnType<AgentTeam['step']> | undefined;
+  try {
+    stream.mockImplementation(async function* (_api: unknown, _messages: unknown, _timeout: number, signal?: AbortSignal) {
+      providerSignal = signal;
+      await new Promise<void>(resolve => {
+        const finish = () => {
+          signal?.removeEventListener('abort', finish);
+          resolve();
+        };
+        release = finish;
+        signal?.addEventListener('abort', finish, { once: true });
+        entered();
+      });
+      yield 'done';
+      return { exitCode: 0 };
+    });
+    team = new AgentTeam({
+      members: [{ engineId: 'fixture', api: {
+        baseUrl: 'https://example.invalid', apiKeyEnv: 'UNUSED_FIXTURE_KEY', model: 'fixture',
+      } }],
+      cwd: root, isolate: false, budget: { maxTurns: 1, maxDurationMs: 120_000 },
+      teamBudget: { maxTeamCostUsd: 10, maxTeamWallClockMs: limit },
+      ...(pricing ? { costFn: () => 0 } : {}),
+    });
+    await team.initialize();
+    running = team.step('fixture');
+    await started;
+    await vi.advanceTimersByTimeAsync(expires ? limit : 50);
+    const abortedWhileSilent = providerSignal?.aborted;
+    release();
+    const result = await running;
+    expect(abortedWhileSilent).toBe(expires);
+    expect(result).toMatchObject(expires
+      ? { succeeded: 0, failed: 1, members: [{ stepResult: { stopReason: 'cancelled' } }] }
+      : { succeeded: 1, failed: 0, members: [{ stepResult: { stopReason: 'completed' } }] });
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    release();
+    try { await running; } finally { vi.useRealTimers(); }
+  }
+});
+
+it('cancels every silent member with a real deadline timer', async () => {
+  const signals: AbortSignal[] = [];
+  stream.mockImplementation(async function* (_api: unknown, _messages: unknown, _timeout: number, signal?: AbortSignal) {
+    if (!signal) throw new Error('Missing provider cancellation signal');
+    signals.push(signal);
+    await new Promise<void>(resolve => {
+      if (signal.aborted) resolve();
+      else signal.addEventListener('abort', () => resolve(), { once: true });
+    });
+    return { exitCode: 0 };
+  });
+  team = new AgentTeam({
+    members: ['one', 'two'].map(engineId => ({ engineId, api: {
+      baseUrl: 'https://example.invalid', apiKeyEnv: 'UNUSED_FIXTURE_KEY', model: 'fixture',
+    } })),
+    cwd: root, isolate: false, budget: { maxTurns: 1, maxDurationMs: 120_000 },
+    teamBudget: { maxTeamCostUsd: 10, maxTeamWallClockMs: 100 },
+  });
+  await team.initialize();
+  const running = team.step('fixture');
+  let watchdog: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const result = await Promise.race([running, new Promise<never>((_resolve, reject) => {
+      watchdog = setTimeout(() => reject(new Error('Team deadline did not cancel silent providers')), 3_000);
+    })]);
+    expect(signals).toHaveLength(2);
+    expect(signals.every(signal => signal.aborted)).toBe(true);
+    expect(result).toMatchObject({ succeeded: 0, failed: 2 });
+    expect(result.members.every(member => member.stepResult?.stopReason === 'cancelled')).toBe(true);
+  } finally {
+    if (watchdog !== undefined) clearTimeout(watchdog);
+    team.cancel();
+    await running;
+  }
+});
+
+it.each([false, true])('preserves callback error handling with pricing=%s', async pricing => {
+  stream.mockImplementation(async function* () { yield 'done'; return { exitCode: 0 }; });
+  team = new AgentTeam({
+    members: [{ engineId: 'fixture', api: {
+      baseUrl: 'https://example.invalid', apiKeyEnv: 'UNUSED_FIXTURE_KEY', model: 'fixture',
+    } }],
+    cwd: root, isolate: false, budget: { maxTurns: 1, maxDurationMs: 120_000 },
+    teamBudget: { maxTeamCostUsd: 10, maxTeamWallClockMs: 10_000 },
+    ...(pricing ? { costFn: () => 0 } : {}),
+  });
+  await team.initialize();
+  const result = await team.step('fixture', { onEvent: () => { throw new Error('callback fixture'); } });
+  expect(result).toMatchObject(pricing ? { succeeded: 1, failed: 0 } : { succeeded: 0, failed: 1 });
+  if (!pricing) expect(result.members[0].stepResult?.error).toContain('callback fixture');
+});
+
 it.each([1, 2])('rolls back real isolated worktrees when authority is lost after %i creations', async threshold => {
   const registrations = () => execFileSync('git', ['worktree', 'list', '--porcelain'], { cwd: root, encoding: 'utf8' });
   const baseline = registrations();

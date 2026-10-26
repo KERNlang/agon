@@ -21,6 +21,32 @@ import { dispatchOrchestrationIntent } from '../../packages/cli/src/signals/disp
 
 beforeEach(() => vi.resetAllMocks());
 
+it.each([0, 1, 2])('publishes and saves the winning content after %i completed swaps', async rounds => {
+  const dispatch = vi.fn();
+  const chatSession = { id: 'winner-session', messages: [] };
+  const setActiveAbort = vi.fn();
+  const swaps = Array.from({ length: rounds }, (_, index) => ({
+    round: index + 1, fromEngineId: 'beta', toEngineId: 'alpha',
+    originalContent: 'beta draft', improvedContent: `alpha revision ${index + 1}`, reasoning: 'improved',
+  }));
+  swaps.push({ round: rounds + 1, fromEngineId: 'alpha', toEngineId: 'beta',
+    originalContent: 'alpha draft', improvedContent: 'beta revision', reasoning: 'not the winner' });
+  mocks.run.mockResolvedValue({
+    drafts: [{ engineId: 'alpha', content: 'alpha draft', round: 0 },
+      { engineId: 'beta', content: 'beta draft', round: 0 }],
+    swaps, scores: [], winner: 'alpha', judgeReasoning: 'chosen final content',
+  });
+  await handleSynthesis('Design', dispatch, { activeEngines: () => ['alpha', 'beta'],
+    setActiveAbort, chatSession, registry: {}, adapter: {} } as never);
+  const expected = rounds ? `alpha revision ${rounds}` : 'alpha draft';
+  expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'engine-block',
+    engineId: 'alpha', content: `★ Winner: alpha\n\n${expected}\n\n— Judge —\nchosen final content` }));
+  expect(mocks.append).toHaveBeenCalledWith(chatSession, expect.objectContaining({
+    role: 'engine', engineId: 'alpha', content: expected,
+  }));
+  expect(setActiveAbort).toHaveBeenLastCalledWith(null);
+});
+
 it('rejects a disabled Synthesis fallback before starting a session job', async () => {
   mocks.available.mockImplementation(() => { throw new Error('Synthesis disabled'); });
   const cb = { ctx: { chatSession: { messages: [] } }, dispatch: vi.fn(), runAsJob: vi.fn() };

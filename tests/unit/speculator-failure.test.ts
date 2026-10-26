@@ -2,10 +2,15 @@ import { describe, expect, it, vi } from 'vitest';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { execFileSync } from 'node:child_process';
 
 vi.mock('../../packages/core/src/api/agent-loop.js', () => ({
   runApiAgentLoop: vi.fn(async (opts: any) => {
     if (opts.prompt === 'throw while aborted') throw new Error('AbortError');
+    if (opts.api.model === 'worktree-success') {
+      writeFileSync(join(opts.cwd, 'fixture.txt'), 'shell candidate edit');
+      return { response: 'shell success', toolCalls: 1, steps: 1 };
+    }
     if (opts.api.model === 'slow-success') {
       await new Promise((resolve) => setTimeout(resolve, 15));
       opts.virtualFs.write(join(opts.cwd, 'slow.txt'), 'slow');
@@ -40,6 +45,52 @@ vi.mock('../../packages/core/src/api/agent-loop.js', () => ({
 import { Speculator } from '../../packages/core/src/cesar/speculator.js';
 
 describe('Speculator structured agent failures', () => {
+  it.each([false, true])('cleans isolated worktrees and respects cancellation=%s before publishing shell edits', async cancelled => {
+    const cwd = mkdtempSync(join(tmpdir(), 'agon-speculator-shell-'));
+    const git = (...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8' });
+    const file = join(cwd, 'fixture.txt');
+    const controller = new AbortController();
+    try {
+      git('init', '-b', 'main');
+      writeFileSync(file, 'original');
+      git('add', 'fixture.txt');
+      git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'base');
+      const before = git('worktree', 'list', '--porcelain');
+      const result = await new Speculator().run({
+        cwd, prompt: 'edit isolated worktree', signal: controller.signal,
+        members: [{ engineId: 'worker', api: { baseUrl: 'https://example.invalid/v1', model: 'worktree-success' } }],
+        onMemberComplete: () => { if (cancelled) controller.abort(); },
+      });
+      expect(readFileSync(file, 'utf8')).toBe(cancelled ? 'original' : 'shell candidate edit');
+      expect(result.appliedFiles).toEqual(cancelled ? [] : ['fixture.txt']);
+      expect(result.winnerId).toBe(cancelled ? null : 'worker');
+      expect(git('worktree', 'list', '--porcelain')).toBe(before);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it.each(['fast-success', 'harvestable'])('does not publish a %s candidate after caller cancellation', async model => {
+    const cwd = mkdtempSync(join(tmpdir(), 'agon-speculator-late-abort-'));
+    const file = join(cwd, model === 'fast-success' ? 'fast.txt' : 'fixture.txt');
+    writeFileSync(file, 'original');
+    const controller = new AbortController();
+    try {
+      const result = await new Speculator().run({
+        cwd, prompt: 'candidate ready before cancellation', isolate: false,
+        signal: controller.signal,
+        members: [{ engineId: 'worker', api: { baseUrl: 'https://example.invalid/v1', model } }],
+        onMemberComplete: () => controller.abort(),
+      });
+      expect(controller.signal.aborted).toBe(true);
+      expect(readFileSync(file, 'utf8')).toBe('original');
+      expect(result.appliedFiles).toEqual([]);
+      expect(result.winnerId).toBeNull();
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   it('keeps a failed candidate for diagnostics but never selects or applies it', async () => {
     const cwd = mkdtempSync(join(tmpdir(), 'agon-speculator-failure-'));
     const file = join(cwd, 'fixture.txt');

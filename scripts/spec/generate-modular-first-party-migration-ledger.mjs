@@ -41,7 +41,11 @@ const assignments = ownership.assignments
     for (const path of [physicalEntrypoint, ownershipAsset, `${packageRoot}/agon.mod.json`]) {
       if (!existsSync(resolve(root, path))) throw new Error(`${assignment.package}: missing physical destination ${path}`);
     }
-    const implementationPaths = short === 'jobs' && legacyPath === 'packages/cli/src/jobs/daemon-job-router.ts'
+    const implementationPaths = short === 'agent' && legacyPath === 'packages/core/src/cesar/agent-team.ts'
+      && assignment.category === 'resultAndEnvelopeTypes'
+      && ['AgentTeamMemberResult', 'AgentTeamResult'].includes(assignment.id)
+      ? [`${packageRoot}/src/team-results.ts`]
+      : short === 'jobs' && legacyPath === 'packages/cli/src/jobs/daemon-job-router.ts'
       ? [`${packageRoot}/src/daemon-job-router.ts`]
       : short === 'jobs' && legacyPath === 'packages/core/src/jobs/job-service.ts'
       ? [`${packageRoot}/src/job-service.ts`]

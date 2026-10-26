@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -34,6 +34,7 @@ function gitRepo(fixture: string | undefined, files: Record<string, string | Buf
   for (const [name, content] of Object.entries(files)) {
     mkdirSync(join(repo, name, '..'), { recursive: true });
     writeFileSync(join(repo, name), content);
+    if (name === 'gradlew') chmodSync(join(repo, name), 0o755);
   }
   const git = (args: string[]) => execFileSync('git', args, { cwd: repo, encoding: 'utf-8' });
   git(['init', '-q']);
@@ -64,6 +65,8 @@ afterEach(() => { while (dirs.length) rmSync(dirs.pop() as string, { recursive: 
 const MIXED = {
   'src/Calc.kt': 'fun same(a: Int, b: Int): Boolean = a == b\n',
   'build.gradle.kts': 'plugins { kotlin("jvm") }\n',
+  // Target selection must not start the host Gradle or download JVM dependencies.
+  'gradlew': '#!/bin/sh\n[ "$#" -eq 1 ] && [ "$1" = testClasses ]\n',
   'lib/calc.ex': 'def add(a, b), do: a + b\n',
   'assets/logo.png': PNG,
   'deps/mix.lock': '%{"jason": {:hex, :jason, "1.4.0"}}\n',
@@ -74,7 +77,10 @@ describe('AC-7 semantic targets', () => {
   it('AC-7 without --build/--typecheck an unprofiled file is skipped with one notice naming it', async () => {
     const repo = gitRepo(undefined, MIXED);
     const events: Array<{ type: string; data?: Record<string, unknown> }> = [];
-    await runMutate({ ...base, repoRoot: repo, outputDir: tmp('agon-sem-out-'), files: ['.'], testCmd: 'true', onEvent: e => events.push(e) });
+    const result = await runMutate({ ...base, repoRoot: repo, outputDir: tmp('agon-sem-out-'), files: ['.'], testCmd: 'true', onEvent: e => events.push(e) });
+    expect(result.ok).toBe(true);
+    expect(result.report.baselineOk).toBe(true);
+    expect(result.report.compileCheck).toBe('./gradlew testClasses');
     expect(offered()).toEqual(['src/Calc.kt']);
     const notices = events.filter(e => e.type === 'mutate:notice');
     expect(notices).toHaveLength(1);

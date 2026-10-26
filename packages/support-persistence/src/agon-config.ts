@@ -1,7 +1,7 @@
 import { mkdirSync, readdirSync, lstatSync, rmSync } from 'node:fs';
 
 import { join } from 'node:path';
-import { createScopedConfigStore, normalizeKernelSettings, mergeModSettingsLayers, selectModSettings, projectLegacyModSettings, withSynchronousWriterFence, readSelectedGenerationConfigurationSync, applyModSettingsDefaults, readLegacyConfigAliases, resolveRegisteredModSettings, currentInvocationConfiguration } from '@kernlang/agon-kernel';
+import { createScopedConfigStore, normalizeKernelSettings, mergeModSettingsLayers, mergeLegacyModSettingsLayers, selectModSettings, projectLegacyModSettings, updateLegacyModSetting, withSynchronousWriterFence, readSelectedGenerationConfigurationSync, applyModSettingsDefaults, readLegacyConfigAliases, resolveRegisteredModSettings, currentInvocationConfiguration } from '@kernlang/agon-kernel';
 import { normalizeBrowserSettings } from '@kernlang/agon-support-browser-bridge';
 import { normalizeEngineSettings } from '@kernlang/agon-support-engine-runtime';
 
@@ -41,9 +41,7 @@ const configStore = createScopedConfigStore<Required<AgonConfig>>({
     const updated = { ...existing, [key]: value };
     if (!Object.hasOwn(LEGACY_MOD_SETTING_OWNERS, key)) return updated;
     const owner = LEGACY_MOD_SETTING_OWNERS[key as keyof typeof LEGACY_MOD_SETTING_OWNERS];
-    const namespace = selectModSettings(existing, owner);
-    const mods = { ...mergeModSettingsLayers(existing), [owner]: { ...namespace, [key]: value } };
-    const proposed = Object.assign(updated, { mods });
+    const proposed = updateLegacyModSetting(existing, key, value, owner);
     const descriptor = selectedConfiguration(false)?.owners.find(candidate => candidate.ownerId === owner);
     if (descriptor) {
       const effective = projectLegacyModSettings(proposed, LEGACY_MOD_SETTING_OWNERS);
@@ -90,7 +88,8 @@ export function loadConfig(cwd?: string): Required<AgonConfig> {
     }
     mods[owner.ownerId] = settings;
     for (const key of readLegacyConfigAliases(owner.schema)) {
-      if (Object.hasOwn(settings, key)) Object.assign(config, { [key]: settings[key] });
+      if (LEGACY_MOD_SETTING_OWNERS[key as keyof typeof LEGACY_MOD_SETTING_OWNERS] === owner.ownerId
+        && Object.hasOwn(settings, key)) Object.assign(config, { [key]: settings[key] });
     }
   }
   Object.assign(config, { mods });
@@ -98,9 +97,8 @@ export function loadConfig(cwd?: string): Required<AgonConfig> {
 }
 
 function mergeConfig(global: Partial<AgonConfig>, local: Partial<AgonConfig>, localPrivate: Partial<AgonConfig>): Required<AgonConfig> {
-  const layers = [global, local, localPrivate].map(layer => projectLegacyModSettings(layer, LEGACY_MOD_SETTING_OWNERS));
-  const merged = { ...DEFAULT_AGON_CONFIG, ...layers[0], ...layers[1], ...layers[2] } as Required<AgonConfig>;
-  const mods = mergeModSettingsLayers(...layers);
+  const merged = { ...DEFAULT_AGON_CONFIG, ...global, ...local, ...localPrivate } as Required<AgonConfig>;
+  const mods = mergeLegacyModSettingsLayers(LEGACY_MOD_SETTING_OWNERS, global, local, localPrivate);
   if (mods !== undefined) {
     Object.assign(merged, { mods });
     for (const [key, owner] of Object.entries(LEGACY_MOD_SETTING_OWNERS)) {

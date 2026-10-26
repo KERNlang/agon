@@ -13,6 +13,91 @@ import { manifest } from '../helpers/modular-agon.js';
 import { artifact, installer, request, verifier } from '../helpers/modular-lifecycle.js';
 
 describe('staged migration engine', () => {
+  it('rejects the exact historical Synthesis schema for new staging', async () => {
+    const schema = await readFile(new URL('../fixtures/modular-synthesis-config-before-forge-owner.json', import.meta.url));
+    const schemaHash: `sha256:${string}` = `sha256:${createHash('sha256').update(schema).digest('hex')}`;
+    expect(schemaHash).toBe('sha256:77155dd3bc5fca8748e83fcf21dd72e7dbd4414e2dddf280b35280a2f845c7ec');
+    const root = await mkdtemp(join(tmpdir(), 'agon-config-historical-staging-'));
+    const source = join(root, 'config.json');
+    const original = '{"mods":{"agon.synthesis":{"forgeEnableSynthesis":true}}}\n';
+    await writeFile(source, original);
+    const definition = manifest('agon.synthesis', '1.0.0', {
+      assets: [{ path: 'schemas/config.schema.json', kind: 'schema', mediaType: 'application/schema+json', executable: false,
+        bytes: schema.byteLength, contentHash: schemaHash, platforms: ['darwin-arm64'] }],
+      pack: { include: ['agon.mod.json', 'package.json', 'dist/index.js', 'dist/index.d.ts', 'schemas/config.schema.json'], executable: [] },
+    });
+    const entry = artifact('@test/historical', [], { manifestHash: sha256Canonical(definition) });
+    const host = new DurableModHost(join(root, 'host'), { kernelVersion: '1.0.0' });
+    const service = new ManagedLifecycleService(host);
+    const plan = await createManagedLifecyclePlan(host, request([entry], { configSource: await readMigrationSourceRevision(source) }));
+    const verify = vi.fn(verifier.verify);
+    await expect(service.apply(plan, { async install(entry, prefix, context) {
+      await installer.install(entry, prefix, context);
+      const packageRoot = join(prefix, 'node_modules', entry.id);
+      await mkdir(join(packageRoot, 'schemas')); await mkdir(join(packageRoot, 'dist'));
+      await writeFile(join(packageRoot, 'agon.mod.json'), JSON.stringify(definition));
+      await writeFile(join(packageRoot, 'schemas/config.schema.json'), schema);
+      await writeFile(join(packageRoot, 'dist/index.js'), 'throw new Error("must not execute");');
+      await writeFile(join(packageRoot, 'dist/index.d.ts'), 'export {};');
+    } }, { verify })).rejects.toMatchObject({ code: 'MOD_MIGRATION_FAILED' });
+    expect(verify).not.toHaveBeenCalled();
+    expect(await host.readCurrentPointer()).toBeNull();
+    expect(await readdir(service.installationsRoot)).toEqual([]);
+    expect(await readdir(service.stagingRoot)).toEqual([]);
+    expect(await readFile(source, 'utf8')).toBe(original);
+  });
+
+  it.each(['none', 'foreign-alias', 'changed-default', 'wrong-asset'] as const)
+    ('reads the exact retained Synthesis schema without admitting modified ownership: %s', async fault => {
+    // Frozen from main700c8679, before the Forge settings ownership correction.
+    const schema = {
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      $id: 'https://kernlang.dev/schemas/synthesis/config.schema.json',
+      title: 'synthesis configuration', type: 'object',
+      'x-agon-config': { version: 1, legacyAliases: ['forgeEnableSynthesis', 'forgeSynthesisTimeout', 'skillSynthesisThreshold'] },
+      properties: { forgeEnableSynthesis: { type: 'boolean', default: false },
+        forgeSynthesisTimeout: { type: 'number', default: 300 }, skillSynthesisThreshold: { type: 'number', default: 3 } },
+      additionalProperties: true,
+    };
+    if (fault === 'foreign-alias') {
+      schema['x-agon-config'].legacyAliases.push('permissions');
+      Object.assign(schema.properties, { permissions: { type: 'object' } });
+    }
+    if (fault === 'changed-default') schema.properties.forgeSynthesisTimeout.default = 99;
+    const root = await mkdtemp(join(tmpdir(), 'agon-config-historical-owner-'));
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
+    const input = request([artifact('@test/historical')]);
+    const selected = '{"mods":{"agon.synthesis":{"forgeEnableSynthesis":true,"forgeSynthesisTimeout":19}}}\n';
+    const hash = (bytes: string) => `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+    const { pointer } = await host.commitGeneration({ operation: 'install', lock: input.lock, desiredState: input.desiredState, installedIndex: {},
+      files: {
+        'config/index.json': JSON.stringify({ schemaVersion: 1, source: { path: join(root, 'config.json'), contentHash: hash(selected) }, selectedHash: hash(selected), ownerCount: 1 }),
+        'config/source-global.json': selected, 'config/selected-global.json': selected, 'config/migration-receipts.json': '[]',
+        'config/owners.json': JSON.stringify([{ ownerId: 'agon.synthesis', version: 1, schema,
+          assetHash: fault === 'wrong-asset' ? hash('wrong') : 'sha256:77155dd3bc5fca8748e83fcf21dd72e7dbd4414e2dddf280b35280a2f845c7ec' }]),
+      } });
+    if (fault === 'none') {
+      await expect(readGenerationConfiguration(host, pointer)).resolves.toMatchObject({ selected: JSON.parse(selected) });
+      vi.stubEnv('AGON_HOME', root);
+      vi.stubEnv('AGON_MODULAR_HOST_ROOT', root);
+      try {
+        await writeFile(join(root, 'config.json'), selected);
+        const { loadConfig } = await import('../../packages/core/src/signals/config.js');
+        expect(loadConfig()).toMatchObject({ forgeEnableSynthesis: true, forgeSynthesisTimeout: 19,
+          mods: { 'agon.forge': { forgeEnableSynthesis: true, forgeSynthesisTimeout: 19 } } });
+        const current = JSON.stringify({ mods: { ...JSON.parse(selected).mods,
+          'agon.forge': { forgeEnableSynthesis: false, forgeSynthesisTimeout: 0 } } });
+        await writeFile(join(root, 'config.json'), current);
+        expect(loadConfig()).toMatchObject({ forgeEnableSynthesis: false, forgeSynthesisTimeout: 0 });
+        expect(await readFile(join(root, 'config.json'), 'utf8')).toBe(current);
+        await writeFile(join(root, 'config.json'), '{}\n');
+        expect(loadConfig()).toMatchObject({ forgeEnableSynthesis: false, forgeSynthesisTimeout: 300 });
+        expect(await readFile(join(root, 'config.json'), 'utf8')).toBe('{}\n');
+      } finally { vi.unstubAllEnvs(); }
+    } else await expect(readGenerationConfiguration(host, pointer)).rejects.toMatchObject({ code: 'MOD_GENERATION_CORRUPT' });
+    expect(await readFile(join(host.generationPath(pointer.generation), 'config/source-global.json'), 'utf8')).toBe(selected);
+  });
+
   it.each([false, true])('validates alias ownership in saved generation artifacts (foreign=%s)', async foreign => {
     const root = await mkdtemp(join(tmpdir(), 'agon-config-owner-read-'));
     const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
@@ -139,12 +224,13 @@ describe('staged migration engine', () => {
     const absent = scenario === 'absent';
     const root = await mkdtemp(join(tmpdir(), 'agon-config-migration-live-'));
     const source = join(root, 'config.json');
-    const original = '{\n "forgeFitnessTimeout": 0, "autoReviewAfterForge": false, "unknown": "retain", "mods": {"agon.forge": {"autoReviewAfterForge": true}, "absent.owner": "retain"}\n}\n';
+    const original = '{\n "forgeFitnessTimeout": 0, "autoReviewAfterForge": false, "unknown": "retain", "mods": {"agon.forge": {"autoReviewAfterForge": true}, "agon.synthesis": {"forgeEnableSynthesis": true, "forgeSynthesisTimeout": 19}, "absent.owner": "retain"}\n}\n';
     const sourceBytes = scenario === 'invalid-source' ? '{broken' : original;
     if (!absent) await writeFile(source, sourceBytes);
-    const schema = JSON.stringify({ type: 'object', properties: { forgeFitnessTimeout: { type: 'number', default: 10 }, autoReviewAfterForge: { type: 'boolean', default: true } },
+    const schema = JSON.stringify({ type: 'object', properties: { forgeFitnessTimeout: { type: 'number', default: 10 }, autoReviewAfterForge: { type: 'boolean', default: true },
+      forgeEnableSynthesis: { type: 'boolean', default: false }, forgeSynthesisTimeout: { type: 'number', default: 300 } },
       'x-agon-config': { version: scenario === 'unsupported-version' ? 2 : 1,
-        legacyAliases: scenario === 'duplicate-alias' ? ['forgeFitnessTimeout', 'forgeFitnessTimeout'] : ['forgeFitnessTimeout', 'autoReviewAfterForge'] } });
+        legacyAliases: scenario === 'duplicate-alias' ? ['forgeFitnessTimeout', 'forgeFitnessTimeout'] : ['forgeFitnessTimeout', 'autoReviewAfterForge', 'forgeEnableSynthesis', 'forgeSynthesisTimeout'] } });
     const definition = manifest('agon.forge', '1.0.0', {
       assets: [{ path: 'schemas/config.schema.json', kind: 'schema', mediaType: 'application/schema+json', executable: false,
         bytes: Buffer.byteLength(schema), contentHash: `sha256:${createHash('sha256').update(schema).digest('hex')}`, platforms: ['darwin-arm64'] }],
@@ -153,10 +239,11 @@ describe('staged migration engine', () => {
     const entry = artifact('@test/config', [], { manifestHash: sha256Canonical(definition) });
     const host = new DurableModHost(join(root, 'host'), { kernelVersion: '1.0.0' });
     const plan = await createManagedLifecyclePlan(host, request([entry], { configSource: await readMigrationSourceRevision(source) }));
-    const expected = absent ? {} : { ...JSON.parse(original), mods: { 'agon.forge': { forgeFitnessTimeout: 0, autoReviewAfterForge: true }, 'absent.owner': 'retain' } };
+    const expected = absent ? {} : { ...JSON.parse(original), mods: { 'agon.forge': { forgeFitnessTimeout: 0, autoReviewAfterForge: true, forgeEnableSynthesis: true, forgeSynthesisTimeout: 19 },
+      'agon.synthesis': { forgeEnableSynthesis: true, forgeSynthesisTimeout: 19 }, 'absent.owner': 'retain' } };
     let verified = false;
     const service = new ManagedLifecycleService(host);
-    const applying = service.apply(plan, { async install(_entry, prefix) {
+    const candidateInstaller = { async install(_entry: unknown, prefix: string) {
       const packageRoot = join(prefix, 'node_modules', '@test', 'config');
       await mkdir(join(packageRoot, 'schemas'), { recursive: true });
       await mkdir(join(packageRoot, 'dist'));
@@ -165,12 +252,14 @@ describe('staged migration engine', () => {
       await writeFile(join(packageRoot, 'schemas/config.schema.json'), scenario === 'schema-tamper' ? schema + ' ' : schema);
       await writeFile(join(packageRoot, 'dist/index.js'), 'throw new Error("must not import mod code");');
       await writeFile(join(packageRoot, 'dist/index.d.ts'), 'export {};');
-    } }, { async verify(prefix) {
+    } };
+    const candidateVerifier = { async verify(prefix: string) {
       verified = true;
       expect(JSON.parse(await readFile(join(prefix, '.agon-config/selected-global.json'), 'utf8'))).toEqual(expected);
       expect(await readFile(join(prefix, '.agon-config/source-global.json'), 'utf8')).toBe(absent ? '{}\n' : original);
       return { passed: scenario !== 'verifier-reject', checks: [{ id: 'staged-config', passed: scenario !== 'verifier-reject' }] };
-    } });
+    } };
+    const applying = service.apply(plan, candidateInstaller, candidateVerifier);
     if (scenario !== 'present' && scenario !== 'absent') {
       await expect(applying).rejects.toThrow();
       expect(verified).toBe(scenario === 'verifier-reject');
@@ -199,6 +288,19 @@ describe('staged migration engine', () => {
     expect(JSON.parse(await readFile(join(generation, receipts[0].stagedArtifact), 'utf8'))).toEqual(expected);
     if (absent) await expect(readFile(source)).rejects.toMatchObject({ code: 'ENOENT' });
     else expect(await readFile(source, 'utf8')).toBe(original);
+    if (scenario === 'present') {
+      const updated = await service.apply(await createManagedLifecyclePlan(host, request([entry], {
+        operation: 'update', configSource: await readMigrationSourceRevision(source),
+      })), candidateInstaller, candidateVerifier);
+      for (const target of [1, updated.pointer.generation]) {
+        await service.rollback(target);
+        expect((await host.boot()).mode).toBe('normal');
+        const selected = await readGenerationConfiguration(host, (await host.readCurrentPointer())!);
+        expect(selected?.selected).toEqual(expected);
+        expect((await service.readSelectedInstallation())?.packages[0]?.id).toBe(entry.id);
+        expect(await readFile(source, 'utf8')).toBe(original);
+      }
+    }
   });
 
   it('binds absent and empty sources separately and accepts unchanged bytes', async () => {

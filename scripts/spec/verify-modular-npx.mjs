@@ -61,6 +61,50 @@ try {
   writeFileSync(join(ephemeral, 'package-lock.json'), lockBytes);
   requireOk('ephemeral-npx-hydration', run('npm', ['ci', '--ignore-scripts', '--no-audit', '--no-fund', '--omit=optional', '--offline'], { cwd: ephemeral }));
   if (readFileSync(join(ephemeral, 'package-lock.json'), 'utf8') !== lockBytes) throw new Error('packed hydration changed the frozen dependency lock');
+  requireOk('packed-agent-team-scoring-owner', run(process.execPath, ['--input-type=module', '-e', `
+    import assert from 'node:assert/strict';
+    import { pathToFileURL } from 'node:url';
+    import { scoreAgentTeamResult } from '@kernlang/agon-mod-agent';
+    assert.ok(import.meta.resolve('@kernlang/agon-mod-agent').startsWith(pathToFileURL(process.cwd() + '/node_modules/').href));
+    const team = { members: [{ engineId: 'worker', worktreePath: '/fixture', error: null,
+      stepResult: { response: 'x'.repeat(51), toolCalls: 1, innerSteps: 1, tokensUsed: 2, costUsd: 0, stopReason: 'completed' }
+    }], runId: 'fixture', baseSha: 'base', durationMs: 1500, succeeded: 1, failed: 0 };
+    const read = (cwd, base) => { assert.equal(cwd, '/fixture'); assert.equal(base, 'base'); return { filesChanged: 1, linesChanged: 2 }; };
+    assert.equal(scoreAgentTeamResult(team, 'edit', undefined, read).get('worker').pass, false);
+    const result = scoreAgentTeamResult(team, 'edit', new Map([['worker', true]]), read).get('worker');
+    assert.equal(result.pass, true); assert.equal(result.score, 100); assert.equal(result.durationSec, 2);
+    assert.equal(scoreAgentTeamResult(team, 'investigate', undefined, () => { throw new Error('unexpected Git read'); }).get('worker').pass, true);
+  `], { cwd: ephemeral }));
+  const agentTypes = join(ephemeral, 'agent-team-types.mts');
+  writeFileSync(agentTypes, `import { scoreAgentTeamResult, type AgentTeamResult, type AgentTeamMemberResult, type AgentTeamScore, type AgentTeamShortstatReader } from '@kernlang/agon-mod-agent';
+    const member: AgentTeamMemberResult = { engineId: 'worker', worktreePath: null, error: null,
+      stepResult: { response: 'answer', toolCalls: 1, innerSteps: 1, tokensUsed: 1, costUsd: 0, stopReason: 'completed' } };
+    const team: AgentTeamResult = { members: [member], runId: 'run', baseSha: 'base', durationMs: 0, succeeded: 0, failed: 1 };
+    const read: AgentTeamShortstatReader = () => ({ filesChanged: 0, linesChanged: 0 });
+    const result: Map<string, AgentTeamScore> = scoreAgentTeamResult(team, 'edit', undefined, read);
+    void result;
+    // @ts-expect-error Unsupported task kinds must not cross this boundary.
+    scoreAgentTeamResult(team, 'unknown', undefined, read);
+    // @ts-expect-error Nested result fields must retain their types.
+    const invalid: AgentTeamMemberResult = { ...member, stepResult: { ...member.stepResult!, toolCalls: 'one' } };
+    void invalid;
+  `);
+  requireOk('packed-agent-team-public-types', run(process.execPath, [join(root, 'node_modules/typescript/bin/tsc'),
+    '--noEmit', '--strict', '--skipLibCheck', '--module', 'NodeNext', '--moduleResolution', 'NodeNext',
+    '--target', 'ES2022', agentTypes], { cwd: ephemeral }));
+  const coreTypes = join(scratch, 'core-agent-team-types.mts');
+  writeFileSync(coreTypes, `import { scoreAgentTeamResult, type AgentTeamResult, type AgentTeamMemberResult, type EngineResult } from ${JSON.stringify(join(root, 'packages/core/dist/index.js'))};
+    const member: AgentTeamMemberResult = { engineId: 'worker', worktreePath: null, error: null,
+      stepResult: { response: 'answer', toolCalls: 1, innerSteps: 1, tokensUsed: 1, costUsd: 0, stopReason: 'completed' } };
+    const team: AgentTeamResult = { members: [member], runId: 'run', baseSha: 'base', durationMs: 0, succeeded: 1, failed: 0 };
+    const result: Map<string, EngineResult> = scoreAgentTeamResult(team, '/fixture', 'edit', new Map());
+    void result;
+    // @ts-expect-error The legacy public signature still requires a repository path.
+    scoreAgentTeamResult(team, 'edit', new Map());
+  `);
+  requireOk('compiled-core-agent-team-public-types', run(process.execPath, [join(root, 'node_modules/typescript/bin/tsc'),
+    '--noEmit', '--strict', '--skipLibCheck', '--module', 'NodeNext', '--moduleResolution', 'NodeNext',
+    '--target', 'ES2022', coreTypes], { cwd: scratch }));
   requireOk('packed-shared-git-diff-owner', run(process.execPath, ['--input-type=module', '-e', `
     import assert from 'node:assert/strict';
     import { pathToFileURL } from 'node:url';
@@ -76,6 +120,132 @@ try {
     assert.deepEqual(worktree.parseChangedLines(diff), { 'tests/example.test.ts': [1, 2] });
     assert.deepEqual(worktree.newFilesInDiff(diff), ['tests/example.test.ts']);
   `], { cwd: ephemeral }));
+  requireOk('packed-synthesis-runtime', run(process.execPath, ['--input-type=module', '-e', `
+    import assert from 'node:assert/strict';
+    import { pathToFileURL } from 'node:url';
+    import { runSynthesisRuntime, buildSynthesisDraftPrompt } from '@kernlang/agon-mod-synthesis';
+    const installedRoot = pathToFileURL(process.cwd() + '/node_modules/').href;
+    assert.ok(import.meta.resolve('@kernlang/agon-mod-synthesis').startsWith(installedRoot));
+    assert.match(buildSynthesisDraftPrompt('Design'), /^## SYNTHESIS DRAFT/);
+    const calls = [], events = [];
+    const result = await runSynthesisRuntime({
+      prompt: 'Design', engines: ['alpha', 'beta'], swaps: 1, timeout: 10,
+      outputDir: process.cwd(), registry: { get: id => ({ id }), findBinary: () => null },
+      adapter: { dispatch: async request => {
+        calls.push(request);
+        return { stdout: request.prompt.startsWith('## SYNTHESIS JUDGE')
+          ? 'SCORE_1: 80\\nSCORE_2: 60\\nWINNER: alpha\\nREASONING: fixture'
+          : 'fixture draft', stderr: '', exitCode: 0, timedOut: false };
+      } }, onEvent: event => events.push(event),
+    }, { resolveWorkingDir: () => process.cwd(), health: { loadConfig: () => ({}) },
+      warn: message => { throw new Error(message); } });
+    assert.equal(calls.length, 4);
+    assert.ok(calls.every(request => request.textOnly === true));
+    assert.equal(result.drafts.length, 2);
+    assert.equal(result.swaps.length, 1);
+    assert.equal(result.winner, 'alpha');
+    assert.deepEqual(events.map(event => event.type), ['synthesis:draft', 'synthesis:draft', 'synthesis:swap', 'synthesis:score']);
+  `], { cwd: ephemeral, env: { AGON_FORCE_HEALTH_PROBE: '', AGON_DISABLE_FORGE_HEALTH_CHECK: '1' } }));
+  const synthesisExample = join(ephemeral, 'synthesis-public-contract.mts');
+  writeFileSync(synthesisExample, `
+    import { runSynthesisRuntime, type SynthesisRuntimeOptions, type SynthesisRuntimeEffects,
+      type SynthesisResult, type SynthesisRuntimeEvent } from '@kernlang/agon-mod-synthesis';
+    declare const options: SynthesisRuntimeOptions;
+    declare const effects: SynthesisRuntimeEffects;
+    const result: Promise<SynthesisResult> = runSynthesisRuntime(options, effects);
+    const event: SynthesisRuntimeEvent = { type: 'synthesis:draft', engineId: 'fixture', data: { round: 0 } };
+    void result; void event;
+  `);
+  requireOk('packed-synthesis-public-types', run(process.execPath, [join(root, 'node_modules/typescript/bin/tsc'),
+    '--noEmit', '--strict', '--target', 'ES2022', '--module', 'NodeNext', '--moduleResolution', 'NodeNext',
+    '--types', 'node', '--typeRoots', join(root, 'node_modules/@types'), synthesisExample], { cwd: ephemeral }));
+  requireOk('packed-agent-refinement', run(process.execPath, ['--input-type=module', '-e', `
+    import assert from 'node:assert/strict';
+    import { pathToFileURL } from 'node:url';
+    import { runAgentTeamSynthesis, runAgentInvestigateSynthesis } from '@kernlang/agon-mod-agent';
+    const installedRoot = pathToFileURL(process.cwd() + '/node_modules/').href;
+    assert.ok(import.meta.resolve('@kernlang/agon-mod-agent').startsWith(installedRoot));
+    const calls = [];
+    const runtime = {
+      runApiAgentLoop: async options => {
+        calls.push('api');
+        assert.equal(options.cwd, process.cwd());
+        return { response: 'refined report', toolCalls: 0, steps: 1 };
+      },
+      recordApiLoopDispatch: () => { calls.push('ledger'); },
+      worktreeChangedDiff: () => { calls.push('diff'); return 'refined patch'; },
+    };
+    const options = { task: 'fixture', winnerEngineId: 'winner',
+      winnerApi: { baseUrl: 'https://example.invalid', apiKeyEnv: 'FIXTURE_KEY', model: 'fixture' },
+      winnerWorktreePath: process.cwd(), winnerCwd: process.cwd(), winnerDiff: 'original patch',
+      winnerResponse: 'original report', baseSha: 'fixture', timeout: 1,
+      losers: [{ engineId: 'other', diff: 'other patch', response: 'other report', passedFitness: true }] };
+    assert.deepEqual(await runAgentTeamSynthesis(options, runtime), {
+      ok: true, synthesizedDiff: 'refined patch', changed: true, error: null, responseExcerpt: 'refined report', skipped: false,
+    });
+    assert.deepEqual(await runAgentInvestigateSynthesis(options, runtime), {
+      ok: true, report: 'refined report', error: null, skipped: false,
+    });
+    assert.deepEqual(calls, ['api', 'ledger', 'diff', 'api', 'ledger']);
+  `], { cwd: ephemeral }));
+  const agentExample = join(ephemeral, 'agent-refinement-public-contract.mts');
+  writeFileSync(agentExample, `
+    import { runAgentTeamSynthesis, runAgentInvestigateSynthesis, type AgentSynthesisOptions,
+      type AgentSynthesisResult, type AgentInvestigateSynthesisOptions,
+      type AgentInvestigateSynthesisResult, type AgentSynthesisRuntime } from '@kernlang/agon-mod-agent';
+    declare const options: AgentSynthesisOptions;
+    declare const investigation: AgentInvestigateSynthesisOptions;
+    declare const runtime: AgentSynthesisRuntime;
+    const edit: Promise<AgentSynthesisResult> = runAgentTeamSynthesis(options, runtime);
+    const report: Promise<AgentInvestigateSynthesisResult> = runAgentInvestigateSynthesis(investigation, runtime);
+    void edit; void report;
+  `);
+  requireOk('packed-agent-refinement-public-types', run(process.execPath, [join(root, 'node_modules/typescript/bin/tsc'),
+    '--noEmit', '--strict', '--target', 'ES2022', '--module', 'NodeNext', '--moduleResolution', 'NodeNext',
+    '--types', 'node', '--typeRoots', join(root, 'node_modules/@types'), agentExample], { cwd: ephemeral }));
+  requireOk('packed-agent-events', run(process.execPath, ['--input-type=module', '-e', `
+    import assert from 'node:assert/strict';
+    import { pathToFileURL } from 'node:url';
+    import * as agent from '@kernlang/agon-mod-agent';
+    const installedRoot = pathToFileURL(process.cwd() + '/node_modules/').href;
+    assert.ok(import.meta.resolve('@kernlang/agon-mod-agent').startsWith(installedRoot));
+    assert.deepEqual(agent.makeAssistantChunk('engine', 'hello'), { kind: 'assistant_chunk', engineId: 'engine', text: 'hello' });
+    assert.deepEqual(agent.makeError('engine', 'failed'), { kind: 'error', engineId: 'engine', message: 'failed', recoverable: false });
+    assert.deepEqual(agent.makeTurnComplete('engine', 'end_turn'), { kind: 'turn_complete', engineId: 'engine', stopReason: 'end_turn', usage: null });
+    const rejected = agent.normalizeSessionChunk({ type: 'tool_call', content: 'shell', metadata: { status: 'denied', toolCallId: 'id' } }, 'engine');
+    assert.deepEqual(rejected, agent.makeToolCall('engine', 'shell', 'rejected', { toolCallId: 'id', terminalReason: 'denied' }));
+    assert.equal(agent.normalizeSessionChunk({ type: 'status', content: 'busy' }, 'engine'), null);
+    assert.deepEqual(agent.unavailableUsage(), { promptTokens: 0, completionTokens: 0, totalTokens: 0, source: 'unavailable' });
+    assert.deepEqual(agent.estimatedUsage('12345', '1234'), { promptTokens: 2, completionTokens: 1, totalTokens: 3, source: 'estimated' });
+    assert.deepEqual(agent.buildApiTurnEvents('engine', '', 0, 'end_turn'), [agent.makeTurnComplete('engine', 'end_turn')]);
+  `], { cwd: ephemeral }));
+  const agentEventExample = join(ephemeral, 'agent-events-public-contract.mts');
+  writeFileSync(agentEventExample, `
+    import { makeAssistantChunk, makeToolCall, makeTurnComplete, makeError, normalizeSessionChunk,
+      buildApiTurnEvents, unavailableUsage, estimatedUsage, type AgentEvent, type AgentUsage,
+      type RawSessionChunk } from '@kernlang/agon-mod-agent';
+    const usage: AgentUsage = estimatedUsage('prompt', 'reply');
+    const chunk: RawSessionChunk = { type: 'tool_call', content: 'shell', metadata: { status: 'done' } };
+    const events: AgentEvent[] = [makeAssistantChunk('engine', 'hello'), makeToolCall('engine', 'shell', 'ok'),
+      makeTurnComplete('engine', 'end_turn', usage), makeError('engine', 'failed'),
+      ...buildApiTurnEvents('engine', '', 0, 'end_turn', unavailableUsage())];
+    const normalized: AgentEvent | null = normalizeSessionChunk(chunk, 'engine');
+    for (const event of events) {
+      switch (event.kind) {
+        case 'assistant_chunk': event.text satisfies string; break;
+        case 'tool_call': event.status satisfies 'running' | 'ok' | 'error' | 'rejected'; break;
+        case 'turn_complete': event.usage satisfies AgentUsage | null; break;
+        case 'error': event.recoverable satisfies boolean; break;
+        default: event satisfies never;
+      }
+    }
+    // @ts-expect-error Unknown event kinds must not cross the public boundary.
+    const invalid: AgentEvent = { kind: 'unknown', engineId: 'engine' };
+    void normalized; void invalid;
+  `);
+  requireOk('packed-agent-events-public-types', run(process.execPath, [join(root, 'node_modules/typescript/bin/tsc'),
+    '--noEmit', '--strict', '--target', 'ES2022', '--module', 'NodeNext', '--moduleResolution', 'NodeNext',
+    '--types', 'node', '--typeRoots', join(root, 'node_modules/@types'), agentEventExample], { cwd: ephemeral }));
   // Independent probes must not hide later installer failures. Retain every
   // failed check and reject the whole qualification before emitting success.
   for (const [id, verify] of [

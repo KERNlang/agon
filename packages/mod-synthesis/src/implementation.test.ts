@@ -3,6 +3,18 @@ import type { CommandContribution, ModServices, Registrar } from '@kernlang/agon
 const context = { invocationId: 'synthesis-test', cwd: process.cwd(), platform: 'darwin-arm64' as const, signal: new AbortController().signal, config: {} };
 async function setup(fail = new Set<string>()) { const dispatch = vi.fn(async (engineId: string, prompt: string) => ({ engineId, exitCode: fail.has(`${engineId}:${prompt.startsWith('SYNTHESIS DRAFT') ? 'draft' : 'other'}`) ? 1 : 0, stdout: prompt.startsWith('SYNTHESIS DRAFT') ? `${engineId} draft` : prompt.startsWith('TASK:') && prompt.includes('DRAFT BY') ? `${engineId} improved\n## REASONING\nbetter` : 'SCORE_1: 70\nCONFIDENCE_1: .7\nUNHANDLED_1: none\nSCORE_2: 90\nCONFIDENCE_2: .8\nUNHANDLED_2: edge\nWINNER: beta\nREASONING: strongest', stderr: 'failed', timedOut: false })); const record = vi.fn(async () => 'receipt'); const services = { identity: { id: 'agon.synthesis', version: '1.0.0', contentHash: `sha256:${'a'.repeat(64)}` }, source: 'bundled', logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn() }, receipts: { record }, permissions: { check: vi.fn(async () => 'allow') }, state: { read: vi.fn(), write: vi.fn() }, engines: { listActive: vi.fn(async () => ['alpha', 'beta']), dispatch } } as unknown as ModServices; let command: CommandContribution | undefined; const registrar = { command: (surface: string, value: CommandContribution) => { if (surface === 'cli') command = value; return () => {}; }, tool: () => () => {}, resultType: () => () => {}, config: () => () => {} } as unknown as Registrar; const mod = await createMod(services); await mod.activate(registrar, services); return { command: command!, dispatch, record, services }; }
 describe('physical synthesis mod', () => {
+  it('requests text-only dispatch for drafts, swaps and judging', async () => {
+    const h = await setup();
+    const output = await h.command.run({ prompt: 'Design it', swaps: '1' }, context);
+    expect(output.exitCode).toBe(0);
+    const calls = vi.mocked(h.services.engines.dispatch).mock.calls;
+    expect(calls).toHaveLength(5);
+    expect(calls.map(([, , , options]) => options?.mode))
+      .toEqual(['exec', 'exec', 'exec', 'exec', 'review']);
+    for (const [, , , options] of calls) {
+      expect(options?.textOnly).toBe(true);
+    }
+  });
   it.each([{ engines: [] }, { engines: ['alpha'] }])('rejects cancellation during engine discovery: $engines', async ({ engines }) => {
     const h = await setup();
     const controller = new AbortController();

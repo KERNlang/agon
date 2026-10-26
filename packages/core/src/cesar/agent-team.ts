@@ -2,13 +2,16 @@ import { join } from 'node:path';
 
 import { randomBytes } from 'node:crypto';
 
+import type { AgentTeamMemberResult, AgentTeamResult } from '@kernlang/agon-mod-agent';
+export type { AgentTeamMemberResult, AgentTeamResult } from '@kernlang/agon-mod-agent';
+
 import { repoRoot, worktreeCreate, worktreeRemoveBestEffort, worktreePruneAll, stashSnapshot } from '../blocks/git.js';
 
 import { Semaphore } from '../blocks/semaphore.js';
 
 import { AgentSession } from './agent-session.js';
 
-import type { AgentBudget, AgentStepResult, AgentSessionConfig } from './agent-session.js';
+import type { AgentBudget, AgentSessionConfig } from './agent-session.js';
 
 import type { ApiConfig } from '../api/dispatch.js';
 
@@ -76,28 +79,6 @@ export interface AgentTeamConfig {
 }
 
 /**
- * Per-member outcome from a single AgentTeam.step() invocation.
- */
-export interface AgentTeamMemberResult {
-  engineId: string;
-  worktreePath: string|null;
-  stepResult: AgentStepResult|null;
-  error: Error|null;
-}
-
-/**
- * Aggregate outcome of an AgentTeam.step() call. members preserves the input order.
- */
-export interface AgentTeamResult {
-  members: AgentTeamMemberResult[];
-  runId: string;
-  baseSha: string;
-  durationMs: number;
-  succeeded: number;
-  failed: number;
-}
-
-/**
  * Generate a per-team run ID. Format: team-<base36 ts>-<4 hex>. Two concurrent constructions never collide (4 hex = 65k entropy).
  */
 function makeRunId(): string {
@@ -119,6 +100,8 @@ export class AgentTeam {
   private initialized: boolean = false;
   private disposed: boolean = false;
   private sharedSemaphore: Semaphore|null = null;
+  private activeSteps = new Set<Promise<void>>();
+  private cleanupPromise: Promise<void> | undefined;
 
   constructor(config: AgentTeamConfig) {
     this.config = config;
@@ -172,6 +155,10 @@ export class AgentTeam {
     if (this.initialized) return;
     this.assertExecutionAllowed();
 
+    // Validate permits before creating worktrees. All members share this semaphore.
+    const permits = this.config.heavyToolSemaphorePermits ?? 1;
+    this.sharedSemaphore = new Semaphore(permits);
+
     // PFB-4: capture the user's dirty working tree as a stash-like SHA
     // WITHOUT mutating their working tree. Agents work against this snapshot
     // so synthesized patches apply cleanly against the user's current state.
@@ -224,13 +211,14 @@ export class AgentTeam {
       }
     }
 
-    if (failures.length > 0) {
+    if (this.disposed || failures.length > 0) {
       // RT-14: rollback every worktree that DID get created before another failed.
       // Best-effort removal — we're already in an error path and don't want to
       // mask the original error with cleanup failures.
       for (const s of successes) {
         if (s.wt) worktreeRemoveBestEffort(root, s.wt);
       }
+      if (this.disposed) throw makeAgentTeamDisposedError();
       throw makeAgentTeamError(
         `failed to create ${failures.length}/${this.config.members.length} worktrees: ${failures[0].message}`,
         failures[0],
@@ -243,15 +231,6 @@ export class AgentTeam {
       if (entry.wt) this.worktrees[entry.m.engineId] = entry.wt;
     }
     const settled = successes;
-
-    // RT-26 fix (Gemini): construct ONE shared Semaphore for the whole team.
-    // Heavy tools (npm test, tsc, cargo build) acquire this semaphore before
-    // running so 3 parallel members can't saturate disk I/O. A solo /agent
-    // run never touches this code path because runAgentTeam only fires for
-    // team mode. Default to 1 permit (full serialization) which is the
-    // safest choice for I/O contention; configurable via heavyToolSemaphorePermits.
-    const permits = this.config.heavyToolSemaphorePermits ?? 1;
-    this.sharedSemaphore = new Semaphore(permits);
 
     // Instantiate AgentSession for each member with the right cwd and the
     // SAME Semaphore instance so the serialization actually happens across
@@ -274,7 +253,7 @@ export class AgentTeam {
           toolPermissions: this.config.toolPermissions,
           executionRefusal: this.config.executionRefusal,
           onPermissionAsk: this.config.onPermissionAsk
-            ? (tool: string, command: string, reason: string) => this.config.onPermissionAsk!(m.engineId, tool, command, reason)
+            ? (tool: string, command: string, reason: string) => this.askPermission(m.engineId, tool, command, reason)
             : undefined,
           // Shared ContextThread: all team members read prior history from
           // the same thread and write their output back into it. Appends
@@ -308,37 +287,58 @@ export class AgentTeam {
     if (!this.initialized) throw makeAgentTeamError('step() called before initialize()');
     this.assertExecutionAllowed();
 
+    let finish = () => {};
+    const settled = new Promise<void>(resolve => { finish = resolve; });
+    // Register before callbacks can request cleanup.
+    this.activeSteps.add(settled);
+    try {
+      return await this.runStep(prompt, opts);
+    } finally {
+      this.activeSteps.delete(settled);
+      finish();
+    }
+  }
+
+  private async runStep(prompt: string, opts?: {onEvent?:(event:AgentEvent)=>void}): Promise<AgentTeamResult> {
     this.startedAt = Date.now();
     const onEvent = opts?.onEvent;
 
-    // RT-12: team budget polling. Wrap the user's onEvent callback so that
-    // after every dispatched AgentEvent, we sum the current cumulative cost
-    // and wall-clock across all members and call team.cancel() if either
-    // ceiling is breached. Per-member budgets stay enforced inside each
-    // AgentSession; this polling catches the across-team aggregate which
-    // no per-session check can see.
+    // Team limits apply across members, independently of per-session limits.
     const teamBudget = this.config.teamBudget;
+    const maxWallClockMs = teamBudget?.maxTeamWallClockMs ?? Infinity;
     const costFn = this.config.costFn;
     const startedAt = this.startedAt;
     const self = this;
-    const wrappedOnEvent = (teamBudget && costFn)
+    let deadlineReached = false;
+    const cancelForDeadline = () => {
+      if (deadlineReached) return;
+      deadlineReached = true;
+      console.warn(`[agon] AgentTeam: wall-clock ceiling breached (${Date.now() - startedAt}ms >= ${maxWallClockMs}ms) — cancelling all members`);
+      self.cancel();
+    };
+    const wrappedOnEvent = teamBudget
       ? (event: AgentEvent) => {
-          try { onEvent?.(event); } catch { /* swallow */ }
+          if (costFn) {
+            try { onEvent?.(event); } catch { /* swallow */ }
+          } else {
+            onEvent?.(event);
+          }
           // Poll: sum cost across members. AgentSession.getStats() is cheap.
           let totalCost = 0;
-          for (const eid of Object.keys(self.members)) {
-            try {
-              const stats = self.members[eid].getStats();
-              totalCost += costFn(eid, stats.tokensUsed);
-            } catch { /* skip */ }
+          if (costFn) {
+            for (const eid of Object.keys(self.members)) {
+              try {
+                const stats = self.members[eid].getStats();
+                totalCost += costFn(eid, stats.tokensUsed);
+              } catch { /* skip */ }
+            }
           }
           const elapsed = Date.now() - startedAt;
-          if (totalCost > teamBudget.maxTeamCostUsd) {
+          if (costFn && totalCost > teamBudget.maxTeamCostUsd) {
             console.warn(`[agon] AgentTeam: cost ceiling breached ($${totalCost.toFixed(2)} > $${teamBudget.maxTeamCostUsd}) — cancelling all members`);
             self.cancel();
-          } else if (elapsed > teamBudget.maxTeamWallClockMs) {
-            console.warn(`[agon] AgentTeam: wall-clock ceiling breached (${elapsed}ms > ${teamBudget.maxTeamWallClockMs}ms) — cancelling all members`);
-            self.cancel();
+          } else if (elapsed >= maxWallClockMs) {
+            cancelForDeadline();
           }
         }
       : onEvent;
@@ -376,7 +376,24 @@ export class AgentTeam {
       }
     });
 
-    const settled = await Promise.allSettled(stepPromises);
+    // Silent providers emit no events. A timer must still cancel their signals.
+    let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+    const scheduleDeadline = () => {
+      const remaining = maxWallClockMs - (Date.now() - startedAt);
+      if (remaining <= 0) {
+        cancelForDeadline();
+      } else {
+        // Node clamps larger delays to 1 ms. Split long waits instead.
+        deadlineTimer = setTimeout(scheduleDeadline, Math.min(remaining, 2_147_483_647));
+      }
+    };
+    let settled: PromiseSettledResult<AgentTeamMemberResult>[];
+    try {
+      if (Number.isFinite(maxWallClockMs)) scheduleDeadline();
+      settled = await Promise.allSettled(stepPromises);
+    } finally {
+      if (deadlineTimer !== undefined) clearTimeout(deadlineTimer);
+    }
 
     // Each stepPromise above already catches its own errors and returns an
     // AgentTeamMemberResult; Promise.allSettled wrapping is belt-and-braces
@@ -425,15 +442,46 @@ export class AgentTeam {
     }
   }
 
+  private async askPermission(engineId: string, tool: string, command: string, reason: string): Promise<boolean|string> {
+    const signal = this.members[engineId]?.getSignal();
+    const callback = this.config.onPermissionAsk;
+    if (!signal || signal.aborted || !callback) return false;
+    let onAbort = () => {};
+    try {
+      // Cancellation must release the step even if its approval callback awaits cleanup.
+      return await Promise.race([
+        new Promise<boolean>(resolve => {
+          onAbort = () => resolve(false);
+          signal.addEventListener('abort', onAbort, { once: true });
+        }),
+        Promise.resolve().then(() => signal.aborted ? false : callback(engineId, tool, command, reason)),
+      ]);
+    } finally {
+      signal.removeEventListener('abort', onAbort);
+    }
+  }
+
   async cleanup(): Promise<void> {
+    if (this.cleanupPromise) return this.cleanupPromise;
     if (this.disposed) return;
     this.disposed = true;
+    // Share settlement with concurrent callers, including cancellation callbacks.
+    let resolve = () => {};
+    let reject = (_error: unknown) => {};
+    this.cleanupPromise = new Promise<void>((resolveCleanup, rejectCleanup) => {
+      resolve = resolveCleanup;
+      reject = rejectCleanup;
+    });
+    void this.disposeMembers().then(resolve, reject);
+    return this.cleanupPromise;
+  }
 
-    // Cancel any in-flight sessions first so they release their abort
-    // signals before we yank their worktrees.
+  private async disposeMembers(): Promise<void> {
+    // An abort signal does not prove that a member has stopped using its worktree.
     for (const eid of Object.keys(this.members)) {
       try { this.members[eid].cancel(); } catch { /* swallow */ }
     }
+    await Promise.allSettled(this.activeSteps);
 
     // Remove worktrees. Use best-effort so a single failure doesn't strand
     // the others — the next janitor sweep will catch any stragglers.

@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -20,6 +20,73 @@ beforeEach(() => {
     '-c', 'commit.gpgsign=false', 'commit', '--allow-empty', '-qm', 'fixture'], { cwd: root });
 });
 afterEach(async () => { await team?.cleanup(); team = undefined; rmSync(root, { recursive: true, force: true }); });
+
+it.each([false, true])('does not finish initialization after cleanup: isolate=%s', async isolate => {
+  const registrations = () => execFileSync('git', ['worktree', 'list', '--porcelain'], { cwd: root, encoding: 'utf8' });
+  const baseline = registrations();
+  team = new AgentTeam({
+    members: ['one', 'two'].map(engineId => ({ engineId,
+      api: { baseUrl: 'https://example.invalid', apiKeyEnv: 'UNUSED_FIXTURE_KEY', model: 'fixture' } })),
+    cwd: root, isolate, budget: { maxTurns: 1, maxDurationMs: 120_000 },
+  });
+  const runId = team.getRunId();
+  const initializing = team.initialize();
+  // initialize() suspends after worktree creation, before it records the paths.
+  const initialization = initializing.then(() => null, error => error as Error);
+  await team.cleanup();
+  const result = await initialization;
+  expect(registrations()).toBe(baseline);
+  for (const engine of ['one', 'two']) {
+    expect(existsSync(join(root, '.agon', 'agent-worktrees', runId, engine))).toBe(false);
+  }
+  expect(result?.name).toBe('AgentTeamDisposedError');
+  expect(result?.message).toContain('disposed');
+  await expect(team.step('fixture')).rejects.toThrow('disposed');
+  expect(stream).not.toHaveBeenCalled();
+});
+
+it('keeps healthy isolated worktrees until ordinary cleanup', async () => {
+  const registrations = () => execFileSync('git', ['worktree', 'list', '--porcelain'], { cwd: root, encoding: 'utf8' });
+  const baseline = registrations();
+  team = new AgentTeam({
+    members: ['one', 'two'].map(engineId => ({ engineId,
+      api: { baseUrl: 'https://example.invalid', apiKeyEnv: 'UNUSED_FIXTURE_KEY', model: 'fixture' } })),
+    cwd: root, isolate: true, budget: { maxTurns: 1, maxDurationMs: 120_000 },
+  });
+  await team.initialize();
+  const paths = ['one', 'two'].map(engine => team!.getWorktreePath(engine)!);
+  for (const path of paths) {
+    expect(existsSync(path)).toBe(true);
+    expect(registrations()).toContain(path);
+  }
+  await team.cleanup();
+  expect(registrations()).toBe(baseline);
+  for (const path of paths) expect(existsSync(path)).toBe(false);
+});
+
+it.each([false, true])('rolls back partial creation with the correct error: dispose=%s', async dispose => {
+  const registrations = () => execFileSync('git', ['worktree', 'list', '--porcelain'], { cwd: root, encoding: 'utf8' });
+  const baseline = registrations();
+  team = new AgentTeam({
+    members: ['one', 'two'].map(engineId => ({ engineId,
+      api: { baseUrl: 'https://example.invalid', apiKeyEnv: 'UNUSED_FIXTURE_KEY', model: 'fixture' } })),
+    cwd: root, isolate: true, budget: { maxTurns: 1, maxDurationMs: 120_000 },
+  });
+  const parent = join(root, '.agon', 'agent-worktrees', team.getRunId());
+  const blocked = join(parent, 'two');
+  mkdirSync(blocked, { recursive: true });
+  writeFileSync(join(blocked, 'occupied.txt'), 'fixture');
+  const initialization = team.initialize().then(() => null, error => error as Error);
+  if (dispose) await team.cleanup();
+  const error = await initialization;
+  expect(error?.name).toBe(dispose ? 'AgentTeamDisposedError' : 'AgentTeamError');
+  expect(error?.message).toContain(dispose ? 'disposed' : 'failed to create 1/2 worktrees');
+  if (!dispose) expect(error?.cause).toBeInstanceOf(Error);
+  expect(registrations()).toBe(baseline);
+  expect(existsSync(join(parent, 'one'))).toBe(false);
+  expect(existsSync(join(blocked, 'occupied.txt'))).toBe(true);
+  expect(stream).not.toHaveBeenCalled();
+});
 
 it.each(['healthy', 'initialize', 'step', 'provider', 'approval', 'provider-error'])(
   'enforces authority through real team member sessions: %s', async boundary => {
@@ -72,6 +139,332 @@ it.each(['healthy', 'initialize', 'step', 'provider', 'approval', 'provider-erro
     }
   },
 );
+
+it.each([0, -1])('rejects %i semaphore permits without retaining worktrees', async permits => {
+  const inventory = () => execFileSync('git', ['worktree', 'list', '--porcelain'], { cwd: root, encoding: 'utf8' });
+  const baseline = inventory();
+  team = new AgentTeam({
+    members: [{ engineId: 'fixture', api: { baseUrl: 'https://example.invalid', apiKeyEnv: 'UNUSED_FIXTURE_KEY', model: 'fixture' } }],
+    cwd: root, isolate: true, budget: { maxTurns: 1, maxDurationMs: 1000 },
+    heavyToolSemaphorePermits: permits,
+  });
+  const memberPath = join(root, '.agon', 'agent-worktrees', team.getRunId(), 'fixture');
+  await expect(team.initialize()).rejects.toThrow('Semaphore permits must be >= 1');
+  expect(inventory()).toBe(baseline);
+  expect(existsSync(memberPath)).toBe(false);
+  expect(stream).not.toHaveBeenCalled();
+});
+
+it.each([1, 2])('initializes and cleans real worktrees with %i semaphore permits', async permits => {
+  const inventory = () => execFileSync('git', ['worktree', 'list', '--porcelain'], { cwd: root, encoding: 'utf8' });
+  const baseline = inventory();
+  team = new AgentTeam({
+    members: [{ engineId: 'fixture', api: { baseUrl: 'https://example.invalid', apiKeyEnv: 'UNUSED_FIXTURE_KEY', model: 'fixture' } }],
+    cwd: root, isolate: true, budget: { maxTurns: 1, maxDurationMs: 1000 },
+    heavyToolSemaphorePermits: permits,
+  });
+  await team.initialize();
+  const memberPath = team.getWorktreePath('fixture');
+  expect(memberPath).not.toBeNull();
+  expect(existsSync(memberPath!)).toBe(true);
+  expect(inventory()).not.toBe(baseline);
+  await team.cleanup();
+  expect(inventory()).toBe(baseline);
+  expect(existsSync(memberPath!)).toBe(false);
+  expect(stream).not.toHaveBeenCalled();
+});
+
+it.each([
+  { elapsed: 50, pricing: false },
+  { elapsed: 50, pricing: true },
+  { elapsed: 100, pricing: false },
+  { elapsed: 100, pricing: true },
+  { elapsed: 150, pricing: false },
+  { elapsed: 150, pricing: true },
+])('enforces team wall-clock independently of pricing: $elapsed ms, pricing=$pricing', async ({ elapsed, pricing }) => {
+  let now = Date.now();
+  const clock = vi.spyOn(Date, 'now').mockImplementation(() => now);
+  try {
+    stream.mockImplementation(async function* () {
+      now += elapsed;
+      yield 'done';
+      return { exitCode: 0 };
+    });
+    team = new AgentTeam({
+      members: [{ engineId: 'fixture', api: {
+        baseUrl: 'https://example.invalid', apiKeyEnv: 'UNUSED_FIXTURE_KEY', model: 'fixture',
+      } }],
+      cwd: root, isolate: false, budget: { maxTurns: 1, maxDurationMs: 120_000 },
+      teamBudget: { maxTeamCostUsd: 10, maxTeamWallClockMs: 100 },
+      ...(pricing ? { costFn: () => 0 } : {}),
+    });
+    await team.initialize();
+    const result = await team.step('fixture');
+    expect(stream).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject(elapsed >= 100
+      ? { succeeded: 0, failed: 1, members: [{ stepResult: { stopReason: 'cancelled' } }] }
+      : { succeeded: 1, failed: 0, members: [{ stepResult: { stopReason: 'completed' } }] });
+  } finally {
+    clock.mockRestore();
+  }
+});
+
+it.each([
+  { expires: false, pricing: false },
+  { expires: false, pricing: true },
+  { expires: true, pricing: false },
+  { expires: true, pricing: true },
+  { expires: false, pricing: false, limit: 3_000_000_000 },
+  { expires: false, pricing: true, limit: 3_000_000_000 },
+  { expires: true, pricing: false, limit: 3_000_000_000 },
+  { expires: true, pricing: true, limit: 3_000_000_000 },
+  { expires: false, pricing: false, limit: Infinity },
+  { expires: false, pricing: true, limit: Infinity },
+])('bounds silent providers and clears deadline timers: expires=$expires, pricing=$pricing, limit=$limit', async ({ expires, pricing, limit = 100 }) => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+  let release = () => {};
+  let entered = () => {};
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  let providerSignal: AbortSignal | undefined;
+  let running: ReturnType<AgentTeam['step']> | undefined;
+  try {
+    stream.mockImplementation(async function* (_api: unknown, _messages: unknown, _timeout: number, signal?: AbortSignal) {
+      providerSignal = signal;
+      await new Promise<void>(resolve => {
+        const finish = () => {
+          signal?.removeEventListener('abort', finish);
+          resolve();
+        };
+        release = finish;
+        signal?.addEventListener('abort', finish, { once: true });
+        entered();
+      });
+      yield 'done';
+      return { exitCode: 0 };
+    });
+    team = new AgentTeam({
+      members: [{ engineId: 'fixture', api: {
+        baseUrl: 'https://example.invalid', apiKeyEnv: 'UNUSED_FIXTURE_KEY', model: 'fixture',
+      } }],
+      cwd: root, isolate: false, budget: { maxTurns: 1, maxDurationMs: 120_000 },
+      teamBudget: { maxTeamCostUsd: 10, maxTeamWallClockMs: limit },
+      ...(pricing ? { costFn: () => 0 } : {}),
+    });
+    await team.initialize();
+    running = team.step('fixture');
+    await started;
+    await vi.advanceTimersByTimeAsync(expires ? limit : 50);
+    const abortedWhileSilent = providerSignal?.aborted;
+    release();
+    const result = await running;
+    expect(abortedWhileSilent).toBe(expires);
+    expect(result).toMatchObject(expires
+      ? { succeeded: 0, failed: 1, members: [{ stepResult: { stopReason: 'cancelled' } }] }
+      : { succeeded: 1, failed: 0, members: [{ stepResult: { stopReason: 'completed' } }] });
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    release();
+    try { await running; } finally { vi.useRealTimers(); }
+  }
+});
+
+it('cancels every silent member with a real deadline timer', async () => {
+  const signals: AbortSignal[] = [];
+  stream.mockImplementation(async function* (_api: unknown, _messages: unknown, _timeout: number, signal?: AbortSignal) {
+    if (!signal) throw new Error('Missing provider cancellation signal');
+    signals.push(signal);
+    await new Promise<void>(resolve => {
+      if (signal.aborted) resolve();
+      else signal.addEventListener('abort', () => resolve(), { once: true });
+    });
+    return { exitCode: 0 };
+  });
+  team = new AgentTeam({
+    members: ['one', 'two'].map(engineId => ({ engineId, api: {
+      baseUrl: 'https://example.invalid', apiKeyEnv: 'UNUSED_FIXTURE_KEY', model: 'fixture',
+    } })),
+    cwd: root, isolate: false, budget: { maxTurns: 1, maxDurationMs: 120_000 },
+    teamBudget: { maxTeamCostUsd: 10, maxTeamWallClockMs: 100 },
+  });
+  await team.initialize();
+  const running = team.step('fixture');
+  let watchdog: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const result = await Promise.race([running, new Promise<never>((_resolve, reject) => {
+      watchdog = setTimeout(() => reject(new Error('Team deadline did not cancel silent providers')), 3_000);
+    })]);
+    expect(signals).toHaveLength(2);
+    expect(signals.every(signal => signal.aborted)).toBe(true);
+    expect(result).toMatchObject({ succeeded: 0, failed: 2 });
+    expect(result.members.every(member => member.stepResult?.stopReason === 'cancelled')).toBe(true);
+  } finally {
+    if (watchdog !== undefined) clearTimeout(watchdog);
+    team.cancel();
+    await running;
+  }
+});
+
+it.each([false, true])('preserves callback error handling with pricing=%s', async pricing => {
+  stream.mockImplementation(async function* () { yield 'done'; return { exitCode: 0 }; });
+  team = new AgentTeam({
+    members: [{ engineId: 'fixture', api: {
+      baseUrl: 'https://example.invalid', apiKeyEnv: 'UNUSED_FIXTURE_KEY', model: 'fixture',
+    } }],
+    cwd: root, isolate: false, budget: { maxTurns: 1, maxDurationMs: 120_000 },
+    teamBudget: { maxTeamCostUsd: 10, maxTeamWallClockMs: 10_000 },
+    ...(pricing ? { costFn: () => 0 } : {}),
+  });
+  await team.initialize();
+  const result = await team.step('fixture', { onEvent: () => { throw new Error('callback fixture'); } });
+  expect(result).toMatchObject(pricing ? { succeeded: 1, failed: 0 } : { succeeded: 0, failed: 1 });
+  if (!pricing) expect(result.members[0].stepResult?.error).toContain('callback fixture');
+});
+
+it.each([false, true])('removes worktrees only after member settlement: pending=%s', async pending => {
+  let release = () => {};
+  let entered = () => {};
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  let providerSignal: AbortSignal | undefined;
+  stream.mockImplementation(async function* (_api: unknown, _messages: unknown, _timeout: number, signal?: AbortSignal) {
+    providerSignal = signal;
+    await new Promise<void>(resolve => { release = resolve; entered(); });
+    yield 'done';
+    return { exitCode: 0 };
+  });
+  team = new AgentTeam({
+    members: [{ engineId: 'fixture', api: {
+      baseUrl: 'https://example.invalid', apiKeyEnv: 'UNUSED_FIXTURE_KEY', model: 'fixture',
+    } }],
+    cwd: root, isolate: true, budget: { maxTurns: 1, maxDurationMs: 120_000 },
+  });
+  await team.initialize();
+  const worktree = team.getWorktreePath('fixture')!;
+  expect(existsSync(worktree)).toBe(true);
+  const running = team.step('fixture');
+  let cleanup: Promise<void> | undefined;
+  let secondCleanup: Promise<void> | undefined;
+  let returned = false;
+  let secondReturned = false;
+  try {
+    await started;
+    if (!pending) { release(); await running; }
+    cleanup = team.cleanup().then(() => { returned = true; });
+    const immediatelyAborted = providerSignal?.aborted;
+    secondCleanup = team.cleanup().then(() => { secondReturned = true; });
+    await expect(team.step('must not start')).rejects.toThrow('disposed');
+    await expect(team.initialize()).rejects.toThrow('disposed');
+    await Promise.resolve();
+    const beforeSettlement = { exists: existsSync(worktree), returned, secondReturned };
+    const aborted = providerSignal?.aborted;
+    release();
+    const result = await running;
+    await Promise.all([cleanup, secondCleanup]);
+    if (pending) {
+      expect(immediatelyAborted).toBe(true);
+      expect(aborted).toBe(true);
+      expect(beforeSettlement).toEqual({ exists: true, returned: false, secondReturned: false });
+      expect(result.members[0].stepResult?.stopReason).toBe('cancelled');
+    }
+    expect(existsSync(worktree)).toBe(false);
+    expect(returned && secondReturned).toBe(true);
+  } finally {
+    release();
+    await running;
+    await Promise.all([cleanup, secondCleanup]);
+  }
+});
+
+it.each([false, true])('drains both members and reentrant cleanup: providerRejects=%s', async providerRejects => {
+  const releases: Array<() => void> = [];
+  const reentrant: Array<Promise<void>> = [];
+  let entered = () => {};
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  stream.mockImplementation(async function* (_api: unknown, _messages: unknown, _timeout: number, signal?: AbortSignal) {
+    signal?.addEventListener('abort', () => { reentrant.push(team!.cleanup()); }, { once: true });
+    await new Promise<void>(resolve => {
+      releases.push(resolve);
+      if (releases.length === 2) entered();
+    });
+    if (providerRejects) throw new Error('provider fixture failed after abort');
+    yield 'done';
+    return { exitCode: 0 };
+  });
+  team = new AgentTeam({
+    members: ['one', 'two'].map(engineId => ({ engineId, api: {
+      baseUrl: 'https://example.invalid', apiKeyEnv: 'UNUSED_FIXTURE_KEY', model: 'fixture',
+    } })),
+    cwd: root, isolate: true, budget: { maxTurns: 1, maxDurationMs: 120_000 },
+  });
+  await team.initialize();
+  const worktrees = ['one', 'two'].map(id => team!.getWorktreePath(id)!);
+  const running = team.step('fixture');
+  let cleanup: Promise<void> | undefined;
+  let returned = false;
+  try {
+    await started;
+    cleanup = team.cleanup().then(() => { returned = true; });
+    releases[0]();
+    await new Promise<void>(resolve => setImmediate(resolve));
+    expect(worktrees.every(path => existsSync(path))).toBe(true);
+    expect(returned).toBe(false);
+    expect(reentrant).toHaveLength(2);
+    releases[1]();
+    const result = await running;
+    await Promise.all([cleanup, ...reentrant]);
+    expect(result).toMatchObject({ succeeded: 0, failed: 2 });
+    expect(worktrees.every(path => !existsSync(path))).toBe(true);
+    expect(returned).toBe(true);
+  } finally {
+    for (const release of releases) release();
+    await running;
+    await Promise.all([cleanup, ...reentrant]);
+  }
+});
+
+it('settles cleanup requested by an awaited permission callback', async () => {
+  let releaseApproval = () => {};
+  const escape = new Promise<void>(resolve => { releaseApproval = resolve; });
+  let callbackCleanup: Promise<void> | undefined;
+  stream.mockImplementation(async function* () {
+    yield '<tool name="Write">{"file_path":"../result.txt","content":"fixture"}</tool>';
+    return { exitCode: 0 };
+  });
+  const approval = vi.fn(async () => {
+    callbackCleanup = team!.cleanup();
+    await Promise.race([callbackCleanup, escape]);
+    return true;
+  });
+  team = new AgentTeam({
+    members: [{ engineId: 'fixture', api: {
+      baseUrl: 'https://example.invalid', apiKeyEnv: 'UNUSED_FIXTURE_KEY', model: 'fixture',
+    } }],
+    cwd: root, isolate: true, budget: { maxTurns: 1, maxDurationMs: 120_000 },
+    permissionMode: 'ask', toolPermissions: { Write: 'ask' }, onPermissionAsk: approval,
+  });
+  await team.initialize();
+  const worktree = team.getWorktreePath('fixture')!;
+  const running = team.step('fixture');
+  let watchdog: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const outcome = await Promise.race([
+      running.then(() => 'settled'),
+      new Promise<string>(resolve => { watchdog = setTimeout(() => resolve('deadlock'), 1_000); }),
+    ]);
+    releaseApproval();
+    await running;
+    await callbackCleanup;
+    expect(approval).toHaveBeenCalledOnce();
+    expect(outcome).toBe('settled');
+    expect(existsSync(worktree)).toBe(false);
+    expect(existsSync(join(root, 'result.txt'))).toBe(false);
+    expect(existsSync(join(worktree, '..', 'result.txt'))).toBe(false);
+  } finally {
+    if (watchdog !== undefined) clearTimeout(watchdog);
+    releaseApproval();
+    await running;
+    await callbackCleanup;
+  }
+});
 
 it.each([1, 2])('rolls back real isolated worktrees when authority is lost after %i creations', async threshold => {
   const registrations = () => execFileSync('git', ['worktree', 'list', '--porcelain'], { cwd: root, encoding: 'utf8' });

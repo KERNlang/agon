@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -20,6 +20,73 @@ beforeEach(() => {
     '-c', 'commit.gpgsign=false', 'commit', '--allow-empty', '-qm', 'fixture'], { cwd: root });
 });
 afterEach(async () => { await team?.cleanup(); team = undefined; rmSync(root, { recursive: true, force: true }); });
+
+it.each([false, true])('does not finish initialization after cleanup: isolate=%s', async isolate => {
+  const registrations = () => execFileSync('git', ['worktree', 'list', '--porcelain'], { cwd: root, encoding: 'utf8' });
+  const baseline = registrations();
+  team = new AgentTeam({
+    members: ['one', 'two'].map(engineId => ({ engineId,
+      api: { baseUrl: 'https://example.invalid', apiKeyEnv: 'UNUSED_FIXTURE_KEY', model: 'fixture' } })),
+    cwd: root, isolate, budget: { maxTurns: 1, maxDurationMs: 120_000 },
+  });
+  const runId = team.getRunId();
+  const initializing = team.initialize();
+  // initialize() suspends after worktree creation, before it records the paths.
+  const initialization = initializing.then(() => null, error => error as Error);
+  await team.cleanup();
+  const result = await initialization;
+  expect(registrations()).toBe(baseline);
+  for (const engine of ['one', 'two']) {
+    expect(existsSync(join(root, '.agon', 'agent-worktrees', runId, engine))).toBe(false);
+  }
+  expect(result?.name).toBe('AgentTeamDisposedError');
+  expect(result?.message).toContain('disposed');
+  await expect(team.step('fixture')).rejects.toThrow('disposed');
+  expect(stream).not.toHaveBeenCalled();
+});
+
+it('keeps healthy isolated worktrees until ordinary cleanup', async () => {
+  const registrations = () => execFileSync('git', ['worktree', 'list', '--porcelain'], { cwd: root, encoding: 'utf8' });
+  const baseline = registrations();
+  team = new AgentTeam({
+    members: ['one', 'two'].map(engineId => ({ engineId,
+      api: { baseUrl: 'https://example.invalid', apiKeyEnv: 'UNUSED_FIXTURE_KEY', model: 'fixture' } })),
+    cwd: root, isolate: true, budget: { maxTurns: 1, maxDurationMs: 120_000 },
+  });
+  await team.initialize();
+  const paths = ['one', 'two'].map(engine => team!.getWorktreePath(engine)!);
+  for (const path of paths) {
+    expect(existsSync(path)).toBe(true);
+    expect(registrations()).toContain(path);
+  }
+  await team.cleanup();
+  expect(registrations()).toBe(baseline);
+  for (const path of paths) expect(existsSync(path)).toBe(false);
+});
+
+it.each([false, true])('rolls back partial creation with the correct error: dispose=%s', async dispose => {
+  const registrations = () => execFileSync('git', ['worktree', 'list', '--porcelain'], { cwd: root, encoding: 'utf8' });
+  const baseline = registrations();
+  team = new AgentTeam({
+    members: ['one', 'two'].map(engineId => ({ engineId,
+      api: { baseUrl: 'https://example.invalid', apiKeyEnv: 'UNUSED_FIXTURE_KEY', model: 'fixture' } })),
+    cwd: root, isolate: true, budget: { maxTurns: 1, maxDurationMs: 120_000 },
+  });
+  const parent = join(root, '.agon', 'agent-worktrees', team.getRunId());
+  const blocked = join(parent, 'two');
+  mkdirSync(blocked, { recursive: true });
+  writeFileSync(join(blocked, 'occupied.txt'), 'fixture');
+  const initialization = team.initialize().then(() => null, error => error as Error);
+  if (dispose) await team.cleanup();
+  const error = await initialization;
+  expect(error?.name).toBe(dispose ? 'AgentTeamDisposedError' : 'AgentTeamError');
+  expect(error?.message).toContain(dispose ? 'disposed' : 'failed to create 1/2 worktrees');
+  if (!dispose) expect(error?.cause).toBeInstanceOf(Error);
+  expect(registrations()).toBe(baseline);
+  expect(existsSync(join(parent, 'one'))).toBe(false);
+  expect(existsSync(join(blocked, 'occupied.txt'))).toBe(true);
+  expect(stream).not.toHaveBeenCalled();
+});
 
 it.each(['healthy', 'initialize', 'step', 'provider', 'approval', 'provider-error'])(
   'enforces authority through real team member sessions: %s', async boundary => {

@@ -211,13 +211,14 @@ export class AgentTeam {
       }
     }
 
-    if (failures.length > 0) {
+    if (this.disposed || failures.length > 0) {
       // RT-14: rollback every worktree that DID get created before another failed.
       // Best-effort removal — we're already in an error path and don't want to
       // mask the original error with cleanup failures.
       for (const s of successes) {
         if (s.wt) worktreeRemoveBestEffort(root, s.wt);
       }
+      if (this.disposed) throw makeAgentTeamDisposedError();
       throw makeAgentTeamError(
         `failed to create ${failures.length}/${this.config.members.length} worktrees: ${failures[0].message}`,
         failures[0],

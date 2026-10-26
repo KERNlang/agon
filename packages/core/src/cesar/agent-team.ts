@@ -172,6 +172,10 @@ export class AgentTeam {
     if (this.initialized) return;
     this.assertExecutionAllowed();
 
+    // Validate permits before creating worktrees. All members share this semaphore.
+    const permits = this.config.heavyToolSemaphorePermits ?? 1;
+    this.sharedSemaphore = new Semaphore(permits);
+
     // PFB-4: capture the user's dirty working tree as a stash-like SHA
     // WITHOUT mutating their working tree. Agents work against this snapshot
     // so synthesized patches apply cleanly against the user's current state.
@@ -243,15 +247,6 @@ export class AgentTeam {
       if (entry.wt) this.worktrees[entry.m.engineId] = entry.wt;
     }
     const settled = successes;
-
-    // RT-26 fix (Gemini): construct ONE shared Semaphore for the whole team.
-    // Heavy tools (npm test, tsc, cargo build) acquire this semaphore before
-    // running so 3 parallel members can't saturate disk I/O. A solo /agent
-    // run never touches this code path because runAgentTeam only fires for
-    // team mode. Default to 1 permit (full serialization) which is the
-    // safest choice for I/O contention; configurable via heavyToolSemaphorePermits.
-    const permits = this.config.heavyToolSemaphorePermits ?? 1;
-    this.sharedSemaphore = new Semaphore(permits);
 
     // Instantiate AgentSession for each member with the right cwd and the
     // SAME Semaphore instance so the serialization actually happens across

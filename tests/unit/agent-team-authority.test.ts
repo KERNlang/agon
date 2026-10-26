@@ -73,6 +73,40 @@ it.each(['healthy', 'initialize', 'step', 'provider', 'approval', 'provider-erro
   },
 );
 
+it.each([0, -1])('rejects %i semaphore permits without retaining worktrees', async permits => {
+  const inventory = () => execFileSync('git', ['worktree', 'list', '--porcelain'], { cwd: root, encoding: 'utf8' });
+  const baseline = inventory();
+  team = new AgentTeam({
+    members: [{ engineId: 'fixture', api: { baseUrl: 'https://example.invalid', apiKeyEnv: 'UNUSED_FIXTURE_KEY', model: 'fixture' } }],
+    cwd: root, isolate: true, budget: { maxTurns: 1, maxDurationMs: 1000 },
+    heavyToolSemaphorePermits: permits,
+  });
+  const memberPath = join(root, '.agon', 'agent-worktrees', team.getRunId(), 'fixture');
+  await expect(team.initialize()).rejects.toThrow('Semaphore permits must be >= 1');
+  expect(inventory()).toBe(baseline);
+  expect(existsSync(memberPath)).toBe(false);
+  expect(stream).not.toHaveBeenCalled();
+});
+
+it.each([1, 2])('initializes and cleans real worktrees with %i semaphore permits', async permits => {
+  const inventory = () => execFileSync('git', ['worktree', 'list', '--porcelain'], { cwd: root, encoding: 'utf8' });
+  const baseline = inventory();
+  team = new AgentTeam({
+    members: [{ engineId: 'fixture', api: { baseUrl: 'https://example.invalid', apiKeyEnv: 'UNUSED_FIXTURE_KEY', model: 'fixture' } }],
+    cwd: root, isolate: true, budget: { maxTurns: 1, maxDurationMs: 1000 },
+    heavyToolSemaphorePermits: permits,
+  });
+  await team.initialize();
+  const memberPath = team.getWorktreePath('fixture');
+  expect(memberPath).not.toBeNull();
+  expect(existsSync(memberPath!)).toBe(true);
+  expect(inventory()).not.toBe(baseline);
+  await team.cleanup();
+  expect(inventory()).toBe(baseline);
+  expect(existsSync(memberPath!)).toBe(false);
+  expect(stream).not.toHaveBeenCalled();
+});
+
 it.each([1, 2])('rolls back real isolated worktrees when authority is lost after %i creations', async threshold => {
   const registrations = () => execFileSync('git', ['worktree', 'list', '--porcelain'], { cwd: root, encoding: 'utf8' });
   const baseline = registrations();

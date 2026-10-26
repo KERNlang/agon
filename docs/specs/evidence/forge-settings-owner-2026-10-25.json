@@ -1,5 +1,24 @@
 {
   "schemaVersion": 1,
+  "mainIntegration": {
+    "base": "01a10699fe2199bc50c16da516b455d1fb8b6941",
+    "previousHead": "1fa2e6a65032066527063cb48fa84f61ba7085b2",
+    "reviewedSourcePatchSha256": "51f1ca759cf1b76338d61e5f0fda52e7d7bb88397ea3e1d289bea397b1be30b1",
+    "reviewedSourcePatchUnchanged": true,
+    "headDiffBeforeIndexSha256": "bfff8d0e1cd49a74f923ff8922c84c5a0d8463437926a8911bdfa328fee79796",
+    "receipt": "pr321-main-integration-gates-20261026.receipt.json",
+    "receiptSha256": "eaea060a736b7bcb3ef7faa98c9f3c7d20991766e88604b1fc26c055b78eda23",
+    "logSha256": "ddf5539b11de1e5ca708018882ae2dc5408fcd65b77d7b1486563bdc12f91057",
+    "passedTests": 11876,
+    "skippedTests": 7,
+    "passedTestFiles": 702,
+    "skippedTestFiles": 1,
+    "providerLaunches": 0,
+    "seconds": 948.386,
+    "gates": ["build", "typecheck", "lint", "reexports", "release-set", "supply-chain", "installed-npx", "full-suite", "diff-check"],
+    "cleanCommittedQualification": "pending at commit; external receipt must bind the resulting commit",
+    "limits": "Local integration evidence only; independent approval and full modular acceptance remain separate."
+  },
   "date": "2026-10-25",
   "scope": "Forge settings ownership and retained configuration compatibility; not full modular release acceptance",
   "subject": {

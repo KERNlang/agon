@@ -220,6 +220,7 @@ export function buildCallCommands(opts: CallCommandOptions): BuiltCallCommands {
       ...textFlag('--focus', opts.focus),
       ...textFlag('--confidence', opts.confidence),
       ...timeout,
+      ...textFlag('--engine', opts.engine),
       ...engines,
     ]);
   } else if (workflow === 'council') {

@@ -1,13 +1,17 @@
 import { execFileSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
-import { dirname, extname, join, relative, resolve } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 
 import { runMutants } from './mutant-runner.js';
 import type { MutationReport } from './mutant-runner.js';
 import { clearShadowingDist, prepareSandboxNodeModules, workspacePackageDirs } from './mutation-sandbox.js';
 import { createForgeArena } from './forge-arena.js';
 import { generateMutants } from './mutant-generator.js';
+import {
+  compileChecksFor, discoverLanguageGate, explicitCheckNotice, filesNeedingExplicitCheck, isMutableSource, JS_PROFILE, profileFor,
+} from './mutation-languages.js';
 import { resolveWithinRoot } from './paths.js';
+import { copyUntrackedWork } from './untracked-copy.js';
 
 export interface MutationCandidate {
   readonly id: string;
@@ -65,20 +69,18 @@ export function discoverMutationGate(repoRoot: string): string {
       if (typeof pkg.scripts?.[name] === 'string' && pkg.scripts[name].trim()) return `npm run ${name}`;
     }
   } catch { /* try non-Node project markers */ }
-  if (existsSync(join(repoRoot, 'Cargo.toml'))) return 'cargo test';
-  if (existsSync(join(repoRoot, 'pyproject.toml'))) return 'python -m pytest';
-  if (existsSync(join(repoRoot, 'go.mod'))) return 'go test ./...';
-  return '';
+  return discoverLanguageGate(repoRoot);
 }
 
-const MUTABLE = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.mts', '.cts']);
+// The modular JS pipeline has always excluded hash-prefixed lines (hashbangs, private-field declarations).
+const JS_HASH_LINE = /^\s*#/;
 
 export function generateMechanicalMutants(source: string, file: string, onlyLines?: readonly number[]): MutationCandidate[] {
   const allowed = onlyLines ? new Set(onlyLines) : undefined;
-  // Preserve the runner's hash-prefixed-line exclusion, including executable hashbangs.
+  const profile = profileFor(file) ?? JS_PROFILE;
   const lines = source.split('\n').flatMap((text, index) =>
-    (!allowed || allowed.has(index + 1)) && !/^\s*#/.test(text) ? [index + 1] : []);
-  return generateMutants(source, lines).map(mutant => ({
+    (!allowed || allowed.has(index + 1)) && !(profile === JS_PROFILE && JS_HASH_LINE.test(text)) ? [index + 1] : []);
+  return generateMutants(source, lines, undefined, profile).map(mutant => ({
     ...mutant, id: `${file}:${mutant.id}`, file, origin: 'mechanical',
   }));
 }
@@ -97,8 +99,12 @@ export function changedLinesFromDiff(diff: string): Record<string, number[]> {
     else if (!row.startsWith('-')) line += 1;
   }
   return Object.fromEntries(Object.entries(targets).filter(([fileName, lines]) =>
-    lines.length > 0 && MUTABLE.has(extname(fileName)) && !/(?:^|\/)(?:test|tests|__tests__)(?:\/|$)|\.(?:test|spec)\./i.test(fileName)));
+    lines.length > 0 && isMutableSource(fileName)));
 }
+
+const BASELINE_PHASE_LABEL: Record<NonNullable<MutationReport['baselinePhase']>, string> = {
+  build: 'build is', typecheck: 'typecheck is', 'compile-check': 'compile check is', test: 'tests are',
+};
 
 function within(root: string, path: string): string {
   const base = resolve(root);
@@ -112,6 +118,7 @@ function hydrateAmbientChanges(repoRoot: string, candidateRoot: string, targets:
   if (patch.trim()) execFileSync('git', ['apply', '--binary', '--whitespace=nowarn', '-'], {
     cwd: candidateRoot, input: patch, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], maxBuffer: 64 * 1024 * 1024,
   });
+  copyUntrackedWork(repoRoot, candidateRoot);
   for (const file of targets) {
     const source = within(repoRoot, file);
     const destination = within(candidateRoot, file);
@@ -206,10 +213,16 @@ export async function runMutationAssessment(
   if (!testCmd) return { ok: false, skipped: true, error: 'no test command discovered' };
   const targets = options.diff?.trim() ? changedLinesFromDiff(options.diff) : Object.fromEntries((options.files ?? []).flatMap((file) => {
     const absolute = within(repoRoot, file);
-    if (!existsSync(absolute) || !statSync(absolute).isFile() || !MUTABLE.has(extname(file))) return [];
+    if (!existsSync(absolute) || !statSync(absolute).isFile() || !profileFor(file)) return [];
     return [[relative(repoRoot, absolute), Array.from({ length: readFileSync(absolute, 'utf8').split('\n').length }, (_, index) => index + 1)]];
   }));
-  if (Object.keys(targets).length === 0) return { ok: false, skipped: true, error: 'no mutable source lines in target' };
+  const explicitCheck = Boolean(options.buildCmd?.trim() || options.typecheckCmd?.trim());
+  const needsCheck = filesNeedingExplicitCheck(Object.keys(targets), explicitCheck, repoRoot);
+  for (const file of needsCheck) delete targets[file];
+  const notice = needsCheck.length > 0 ? explicitCheckNotice(needsCheck) : undefined;
+  if (Object.keys(targets).length === 0) {
+    return { ok: false, skipped: true, error: notice ? `no mutable source lines in target: ${notice}` : 'no mutable source lines in target' };
+  }
   const arena = createForgeArena(repoRoot);
   const candidate = arena.create('mutation-assessment');
   let engineCalls = 0;
@@ -224,6 +237,7 @@ export async function runMutationAssessment(
       worktree: candidate.path, testCmd,
       buildCmd: options.buildCmd?.trim() || undefined,
       typecheckCmd: options.typecheckCmd?.trim() || undefined,
+      compileChecks: explicitCheck ? undefined : compileChecksFor(Object.keys(targets), repoRoot),
       perMutantTimeoutSec: options.perMutantTimeoutSec ?? 120,
       totalBudgetSec: options.totalBudgetSec ?? 600,
       signal: context.signal,
@@ -257,7 +271,7 @@ export async function runMutationAssessment(
     const ok = report.baselineOk && !report.aborted && !report.budgetExhausted && !report.baselineError;
     const error = report.aborted ? 'mutation assessment was cancelled'
       : report.budgetExhausted ? 'mutation assessment exhausted its total budget'
-      : !report.baselineOk && report.baselinePhase ? `${report.baselinePhase === 'test' ? 'tests are' : report.baselinePhase + ' is'} red before mutation`
+      : !report.baselineOk && report.baselinePhase ? `${BASELINE_PHASE_LABEL[report.baselinePhase]} red before mutation`
       : report.baselineError;
     mkdirSync(options.outputDir, { recursive: true });
     writeFileSync(join(options.outputDir, 'mutation-report.json'), `${JSON.stringify(report, null, 2)}\n`);
@@ -265,7 +279,7 @@ export async function runMutationAssessment(
     const survivors = outcomes.filter((outcome) => outcome.status === 'survived').map((outcome) => outcome.mutant);
     const byFile: Record<string, MutationCandidate[]> = {};
     for (const mutant of survivors as MutationCandidate[]) (byFile[mutant.file] ??= []).push(mutant);
-    return { ok, ...(error ? { error } : {}), report, survivors, byFile,
+    return { ok, ...(error ? { error } : {}), ...(notice ? { notice } : {}), report, survivors, byFile,
       verdict: !ok ? error : survived ? `${survived} mutation(s) survived`
         : report.killed ? 'all executed mutations were killed' : 'no valid mutations were executed', engineCalls, costUsd: 0,
       outputDir: options.outputDir, ...(options.lens ? { lens: options.lens } : {}), ...(receiptId ? { receiptId } : {}) };

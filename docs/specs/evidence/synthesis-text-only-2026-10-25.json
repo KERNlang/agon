@@ -1,0 +1,30 @@
+{
+  "scope": "Request the existing text-only control in physical Synthesis; not sandboxing or full modular acceptance",
+  "baseCommit": "78b8142a72bfd85da03468f4c6c9c8faf57c24d4",
+  "testedDiffSha256": "da436444037c88c6dfadfb8d723c78fe1a7e1ba60ef6e7430a8caf3722e7beec",
+  "sourceDiffSha256": "2bf3968621a13ba25fa6f25dece7bbb4421fafda9eb00a9abed18c318510e393",
+  "indexAddedAfterTest": true,
+  "archiveRoot": "/Users/ra/dev/modular-agon-remediation",
+  "buildAndMetadata": {
+    "receipt": "synthesis-text-only-full-20261025.receipt.json",
+    "logSha256": "68046a9aee50766d56d1228d60597e9e4c45e2842be42d9a2352370d85500eb9",
+    "note": "Build, release metadata and typecheck passed. The subsequent suite failed under sandbox socket/watch restrictions; the full command is a failure, not a passing receipt."
+  },
+  "remainingGates": {
+    "receipt": "synthesis-text-only-gates-unsandboxed-20261025.receipt.json",
+    "logSha256": "866ddc4ce8789a27e5067fa5f9996fa2b406d016c0f83e35e74e496a3619a501",
+    "exitCode": 0,
+    "testsPassed": 11643,
+    "testsSkipped": 6,
+    "providerLaunches": 0
+  },
+  "negativeControl": "synthesis-text-only-negative-v2-20261025: new assertion fails before the fix; 16 existing tests pass",
+  "focusedTests": "synthesis-text-only-focused-20261025: 42 tests pass across five files",
+  "review": {
+    "receipt": "synthesis-text-only-codex-review.receipt.json",
+    "packetSha256": "a39e72f3e6fc89a3115451778d5b75e70d34a03b8c20c12cb11f67b9cecfd989",
+    "logSha256": "26f62d2ea9205488ef7d2d61fb022e89f29dbb5be98255d4825f5601c1fa2ede",
+    "unresolvedFindings": 0
+  },
+  "limits": ["Text-only enforcement depends on adapter support", "Ring-versus-pair behavior remains separate", "Current main integration must be qualified before merge", "No active installation changed"]
+}

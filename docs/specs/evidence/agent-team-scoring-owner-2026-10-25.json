@@ -21,6 +21,21 @@
       }
     ]
   },
+  "mainIntegration": {
+    "date": "2026-10-26",
+    "previousHead": "e5bee436ed5bb9d4c58d0f0415f937a38cc74e3a",
+    "main": "01a10699fe2199bc50c16da516b455d1fb8b6941",
+    "sourcePatchUnchangedSha256": "2d19e8bb646bdfc9b5e37e8fbbf6eef530a9133bd29f0ffd925ca5f2033d5a6b",
+    "trackedDiffBeforeIndexSha256": "c812c50a4435e97f8364accd409fd5d96ee0885f2a5a6de72555cf036881a171",
+    "fullGate": "pr325-main-integration-gates-20261026.receipt.json",
+    "receiptSha256": "da0414da97eb571f02b4ba63cc68d35d3fd7f1a492092f1fa66fa1a97a9432c6",
+    "logSha256": "a1a51e7ef7164befa73b929d87ae310257aa2ab9441d97ed4626dddffb17e3e9",
+    "passed": 11837,
+    "skipped": 7,
+    "failed": 0,
+    "providerLaunches": 0,
+    "cleanCommittedQualification": "Required on the resulting merge commit; not implied by this integration receipt."
+  },
   "change": {
     "owner": "@kernlang/agon-mod-agent",
     "compatibility": "Core preserves its scoreAgentTeamResult signature and injects the existing Git shortstat reader.",

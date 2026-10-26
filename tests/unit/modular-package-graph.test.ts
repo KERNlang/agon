@@ -96,6 +96,9 @@ describe('frozen first-party package graph', () => {
       expect(assignments.find(row => row.id === id)?.package).toBe('@kernlang/agon-mod-agent');
     }
     expect(assignments.find(row => row.id === 'PostSynthesisFitnessResult')?.package).toBe('@kernlang/agon-mod-forge');
+    for (const id of ['forgeEnableSynthesis', 'forgeSynthesisTimeout']) {
+      expect(assignments.find(row => row.category === 'configKeys' && row.id === id)?.package).toBe('@kernlang/agon-mod-forge');
+    }
     expect(assignments.find(row => row.id === 'SynthesisResult' && row.source.startsWith('packages/forge/src/types-impl.ts:'))?.package).toBe('@kernlang/agon-mod-forge');
   });
 

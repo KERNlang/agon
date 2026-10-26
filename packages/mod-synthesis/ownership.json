@@ -44,22 +44,6 @@
     },
     {
       "category": "resultAndEnvelopeTypes",
-      "id": "AgentInvestigateSynthesisResult",
-      "source": "packages/core/src/cesar/agent-synthesis.ts:401",
-      "class": "user-toggleable-mod-package",
-      "package": "@kernlang/agon-mod-synthesis",
-      "rule": "semantic-source-rule"
-    },
-    {
-      "category": "resultAndEnvelopeTypes",
-      "id": "AgentSynthesisResult",
-      "source": "packages/core/src/cesar/agent-synthesis.ts:68",
-      "class": "user-toggleable-mod-package",
-      "package": "@kernlang/agon-mod-synthesis",
-      "rule": "semantic-source-rule"
-    },
-    {
-      "category": "resultAndEnvelopeTypes",
       "id": "SynthesisResult",
       "source": "packages/forge/src/synthesis-modus.ts:30",
       "class": "user-toggleable-mod-package",

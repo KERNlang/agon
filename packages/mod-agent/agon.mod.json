@@ -54,8 +54,8 @@
       "path": "ownership.json",
       "kind": "documentation",
       "mediaType": "application/json",
-      "contentHash": "sha256:aeb79bee1faf67185ea2c4c2b27718996d6e269dade341b85bdb8470aaadd0d4",
-      "bytes": 9831,
+      "contentHash": "sha256:4799cd64f682d2e62fd2a5b50f78e92fb0136c28f818d0638e8ce68f9c284d88",
+      "bytes": 10429,
       "executable": false,
       "platforms": [
         "darwin-arm64",
@@ -214,11 +214,19 @@
         "aliases": []
       },
       {
+        "id": "resultAndEnvelopeTypes:0005",
+        "aliases": []
+      },
+      {
         "id": "resultAndEnvelopeTypes:0006",
         "aliases": []
       },
       {
         "id": "resultAndEnvelopeTypes:0007",
+        "aliases": []
+      },
+      {
+        "id": "resultAndEnvelopeTypes:0010",
         "aliases": []
       },
       {

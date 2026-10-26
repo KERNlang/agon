@@ -150,8 +150,8 @@
         "@kernlang/agon-support-panel",
         "@kernlang/agon-support-judge"
       ],
-      "assignments": 9,
-      "assignmentHash": "sha256:03db55625d30dd6f91ae478b3d8f09a3f4b82cbe8266a9920e044661a9672c25",
+      "assignments": 7,
+      "assignmentHash": "sha256:e982896a8b572c30dbce6995bb74c206a91605542cae30d413df8d75cb0979a7",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -207,8 +207,8 @@
         "@kernlang/agon-support-engine-runtime",
         "@kernlang/agon-support-agent-runtime"
       ],
-      "assignments": 37,
-      "assignmentHash": "sha256:500ef60053555f71bc56022725f43aaa5a89916ab4776934ec081555ae9abfeb",
+      "assignments": 39,
+      "assignmentHash": "sha256:caaf98638290f4e828b717c766d6278c551e0709ec1ee84170a2390628e06720",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -1109,6 +1109,26 @@
     },
     {
       "category": "resultAndEnvelopeTypes",
+      "id": "AgentInvestigateSynthesisResult",
+      "source": "packages/core/src/cesar/agent-synthesis.ts:401",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-agent",
+      "rule": "agent-team-refinement-owner",
+      "legacyPath": "packages/core/src/cesar/agent-synthesis.ts",
+      "physicalPackage": "packages/mod-agent",
+      "physicalEntrypoint": "packages/mod-agent/src/index.ts",
+      "implementationPaths": [
+        "packages/mod-agent/src/index.ts"
+      ],
+      "ownershipAsset": "packages/mod-agent/ownership.json",
+      "compatibilityAdapter": "packages/core/src/cesar/agent-synthesis.ts",
+      "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
+      "registrationBoundary": "public-mod-api",
+      "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
+    },
+    {
+      "category": "resultAndEnvelopeTypes",
       "id": "AgentProgressSnapshot",
       "source": "packages/cli/src/signals/output.ts:20",
       "class": "user-toggleable-mod-package",
@@ -1142,6 +1162,26 @@
       ],
       "ownershipAsset": "packages/mod-agent/ownership.json",
       "compatibilityAdapter": "packages/core/src/cesar/agent-session.ts",
+      "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
+      "registrationBoundary": "public-mod-api",
+      "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
+    },
+    {
+      "category": "resultAndEnvelopeTypes",
+      "id": "AgentSynthesisResult",
+      "source": "packages/core/src/cesar/agent-synthesis.ts:68",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-agent",
+      "rule": "agent-team-refinement-owner",
+      "legacyPath": "packages/core/src/cesar/agent-synthesis.ts",
+      "physicalPackage": "packages/mod-agent",
+      "physicalEntrypoint": "packages/mod-agent/src/index.ts",
+      "implementationPaths": [
+        "packages/mod-agent/src/index.ts"
+      ],
+      "ownershipAsset": "packages/mod-agent/ownership.json",
+      "compatibilityAdapter": "packages/core/src/cesar/agent-synthesis.ts",
       "authority": "legacy-runtime-until-s6",
       "legacyPresent": true,
       "registrationBoundary": "public-mod-api",
@@ -6747,46 +6787,6 @@
       ],
       "ownershipAsset": "packages/mod-synthesis/ownership.json",
       "compatibilityAdapter": "packages/mcp/src/agon-orchestration.ts",
-      "authority": "legacy-runtime-until-s6",
-      "legacyPresent": true,
-      "registrationBoundary": "public-mod-api",
-      "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
-    },
-    {
-      "category": "resultAndEnvelopeTypes",
-      "id": "AgentInvestigateSynthesisResult",
-      "source": "packages/core/src/cesar/agent-synthesis.ts:401",
-      "class": "user-toggleable-mod-package",
-      "package": "@kernlang/agon-mod-synthesis",
-      "rule": "semantic-source-rule",
-      "legacyPath": "packages/core/src/cesar/agent-synthesis.ts",
-      "physicalPackage": "packages/mod-synthesis",
-      "physicalEntrypoint": "packages/mod-synthesis/src/index.ts",
-      "implementationPaths": [
-        "packages/mod-synthesis/src/index.ts"
-      ],
-      "ownershipAsset": "packages/mod-synthesis/ownership.json",
-      "compatibilityAdapter": "packages/core/src/cesar/agent-synthesis.ts",
-      "authority": "legacy-runtime-until-s6",
-      "legacyPresent": true,
-      "registrationBoundary": "public-mod-api",
-      "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
-    },
-    {
-      "category": "resultAndEnvelopeTypes",
-      "id": "AgentSynthesisResult",
-      "source": "packages/core/src/cesar/agent-synthesis.ts:68",
-      "class": "user-toggleable-mod-package",
-      "package": "@kernlang/agon-mod-synthesis",
-      "rule": "semantic-source-rule",
-      "legacyPath": "packages/core/src/cesar/agent-synthesis.ts",
-      "physicalPackage": "packages/mod-synthesis",
-      "physicalEntrypoint": "packages/mod-synthesis/src/index.ts",
-      "implementationPaths": [
-        "packages/mod-synthesis/src/index.ts"
-      ],
-      "ownershipAsset": "packages/mod-synthesis/ownership.json",
-      "compatibilityAdapter": "packages/core/src/cesar/agent-synthesis.ts",
       "authority": "legacy-runtime-until-s6",
       "legacyPresent": true,
       "registrationBoundary": "public-mod-api",

@@ -12,6 +12,7 @@ describe('first-party semantic receipts', () => {
       runtime: { command: () => { throw new Error('unexpected command'); }, tool: () => { throw new Error('unexpected tool'); }, parseIntent: () => undefined, renderDocs: () => { throw new Error('legacy result renderer must not run'); } },
     });
     const owners = {
+      agent: ['0005', '0010'],
       goal: ['0016', '0064', '0144'], campfire: ['0022'], conquer: ['0037', '0055'],
       council: ['0039'], mutate: ['0083', '0114'], naturalize: ['0085'],
       nero: ['0086'], research: ['0106'], synthesis: ['0126'], think: ['0133'],

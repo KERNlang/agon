@@ -100,6 +100,8 @@ export class AgentTeam {
   private initialized: boolean = false;
   private disposed: boolean = false;
   private sharedSemaphore: Semaphore|null = null;
+  private activeSteps = new Set<Promise<void>>();
+  private cleanupPromise: Promise<void> | undefined;
 
   constructor(config: AgentTeamConfig) {
     this.config = config;
@@ -250,7 +252,7 @@ export class AgentTeam {
           toolPermissions: this.config.toolPermissions,
           executionRefusal: this.config.executionRefusal,
           onPermissionAsk: this.config.onPermissionAsk
-            ? (tool: string, command: string, reason: string) => this.config.onPermissionAsk!(m.engineId, tool, command, reason)
+            ? (tool: string, command: string, reason: string) => this.askPermission(m.engineId, tool, command, reason)
             : undefined,
           // Shared ContextThread: all team members read prior history from
           // the same thread and write their output back into it. Appends
@@ -284,6 +286,19 @@ export class AgentTeam {
     if (!this.initialized) throw makeAgentTeamError('step() called before initialize()');
     this.assertExecutionAllowed();
 
+    let finish = () => {};
+    const settled = new Promise<void>(resolve => { finish = resolve; });
+    // Register before callbacks can request cleanup.
+    this.activeSteps.add(settled);
+    try {
+      return await this.runStep(prompt, opts);
+    } finally {
+      this.activeSteps.delete(settled);
+      finish();
+    }
+  }
+
+  private async runStep(prompt: string, opts?: {onEvent?:(event:AgentEvent)=>void}): Promise<AgentTeamResult> {
     this.startedAt = Date.now();
     const onEvent = opts?.onEvent;
 
@@ -426,15 +441,46 @@ export class AgentTeam {
     }
   }
 
+  private async askPermission(engineId: string, tool: string, command: string, reason: string): Promise<boolean|string> {
+    const signal = this.members[engineId]?.getSignal();
+    const callback = this.config.onPermissionAsk;
+    if (!signal || signal.aborted || !callback) return false;
+    let onAbort = () => {};
+    try {
+      // Cancellation must release the step even if its approval callback awaits cleanup.
+      return await Promise.race([
+        new Promise<boolean>(resolve => {
+          onAbort = () => resolve(false);
+          signal.addEventListener('abort', onAbort, { once: true });
+        }),
+        Promise.resolve().then(() => signal.aborted ? false : callback(engineId, tool, command, reason)),
+      ]);
+    } finally {
+      signal.removeEventListener('abort', onAbort);
+    }
+  }
+
   async cleanup(): Promise<void> {
+    if (this.cleanupPromise) return this.cleanupPromise;
     if (this.disposed) return;
     this.disposed = true;
+    // Share settlement with concurrent callers, including cancellation callbacks.
+    let resolve = () => {};
+    let reject = (_error: unknown) => {};
+    this.cleanupPromise = new Promise<void>((resolveCleanup, rejectCleanup) => {
+      resolve = resolveCleanup;
+      reject = rejectCleanup;
+    });
+    void this.disposeMembers().then(resolve, reject);
+    return this.cleanupPromise;
+  }
 
-    // Cancel any in-flight sessions first so they release their abort
-    // signals before we yank their worktrees.
+  private async disposeMembers(): Promise<void> {
+    // An abort signal does not prove that a member has stopped using its worktree.
     for (const eid of Object.keys(this.members)) {
       try { this.members[eid].cancel(); } catch { /* swallow */ }
     }
+    await Promise.allSettled(this.activeSteps);
 
     // Remove worktrees. Use best-effort so a single failure doesn't strand
     // the others — the next janitor sweep will catch any stragglers.

@@ -275,6 +275,16 @@
       "detail": "exit=0"
     },
     {
+      "id": "packed-synthesis-runtime",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "packed-synthesis-public-types",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
       "id": "packed-mcp-failure-contract",
       "passed": true,
       "detail": "installed server and Jobs daemon: success, blocked-provider failure, missing job via installed CLI, cyclic plan, unknown tool"

@@ -1,0 +1,138 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-26",
+  "scope": "AgentTeam runtime owner extraction; not complete modular acceptance",
+  "base": "a4e06dfb8869acd14fe4c90cc16a88abebeb3243",
+  "status": "Full working-tree qualification passed; clean committed qualification required before readiness",
+  "qualifiedFiles": [
+    {
+      "path": "docs/specs/evidence/modular-agon-npx-qualification.json",
+      "sha256": "632ee6d6d7155ea16403beac869b719a0c6bf7d212bf1f46244e0a075a3d8a6a"
+    },
+    {
+      "path": "docs/specs/evidence/modular-agon-release-set.json",
+      "sha256": "d9fbf36fa1bc01b415cb77a1eaa7b0b935002a549c71b9494fd9ac2e5cfff159"
+    },
+    {
+      "path": "docs/specs/evidence/modular-agon-sbom.cdx.json",
+      "sha256": "f2c398ba0674f596a95c80ba4dbbfbb6f24aaf6fc723193bfec1ed785ba8945b"
+    },
+    {
+      "path": "packages/cli/release-channel.json",
+      "sha256": "20b1506e0a9cb26bc799c9f5cb8e73c099980048b4663046a1d4331b4a5a8ea4"
+    },
+    {
+      "path": "packages/core/src/cesar/agent-team.ts",
+      "sha256": "d4e91907c57f0ed37ee1ee7fb9f7ee0fbbd5040a170056019892651b1169fa39"
+    },
+    {
+      "path": "packages/mod-agent/agon.mod.json",
+      "sha256": "89b94b1566931e31697b30cdddab63a31eb6564fe83b3339bad60550988d960e"
+    },
+    {
+      "path": "packages/mod-agent/src/index.ts",
+      "sha256": "b6e84848ae5f4aed303907320a4ae422207291c5a8da5c55d2681b68dd2ceb23"
+    },
+    {
+      "path": "packages/mod-kernel/src/generated/first-party-surface-catalog.ts",
+      "sha256": "a4e18576697075b7eb275f54498a46abbfa3062765d705212bd22a86569e8b8f"
+    },
+    {
+      "path": "scripts/spec/generate-modular-first-party-packages.mjs",
+      "sha256": "89cb1e529a9deacdd411e92bf23182343045e6baacce3da86020179be050e6ad"
+    },
+    {
+      "path": "scripts/spec/verify-modular-npx.mjs",
+      "sha256": "199ffcaa99d46485f70c8b844bd11f63e2193bdb0f1e8e4a25838ce05b86d8ac"
+    },
+    {
+      "path": "packages/mod-agent/src/team-runtime.ts",
+      "sha256": "0541d83af9b63ce958cd8f798ef51389770e114769181e522920655dd777e296"
+    },
+    {
+      "path": "packages/mod-agent/src/team-runtime.test.ts",
+      "sha256": "8e5741065df395c8d5125c1d0e9acd9bc25e444df5484d147f7403364dd534f8"
+    }
+  ],
+  "owner": "@kernlang/agon-mod-agent",
+  "compatibility": {
+    "path": "packages/core/src/cesar/agent-team.ts",
+    "purpose": "Preserve constructor and public types while injecting existing host operations",
+    "removalCondition": "CLI and remaining hosts compose AgentTeamRuntime directly; public compatibility decision and equivalence tests pass"
+  },
+  "verification": {
+    "mechanicalBodyEqual": true,
+    "bodySha256": "12722f13f4ac7a6ff1ea2ff4e61509b20357b6b10371240e33251c8bf7614d3d",
+    "focusedTests": 79,
+    "installedChecks": 95,
+    "providerLaunches": 0,
+    "performance": "All existing modular-release budgets passed on darwin-arm64 Node26.12.1",
+    "documentation": "Generated docs/modes.md unchanged",
+    "supplyChainSelfTest": "passed; npm provenance remains externally blocked",
+    "fullSuite": {
+      "passed": 11956,
+      "skipped": 7,
+      "failed": 0,
+      "filesPassed": 707,
+      "filesSkipped": 1,
+      "seconds": 851.536
+    },
+    "cleanCommittedQualification": "pending",
+    "review": {
+      "codex": "No introduced defect found; source adjudication archived",
+      "kimi": "Unavailable; not a passing review"
+    }
+  },
+  "limits": [
+    "Generated team-agent behavior parity remains open",
+    "CLI host effects and Core AgentSession adapter remain",
+    "No native cross-platform or live-provider qualification claimed",
+    "No global installation, personal-state changes, or new dependency"
+  ],
+  "archive": {
+    "location": "Durable modular-agon-remediation directory outside Git worktrees",
+    "retention": "Never delete without Raphael approval",
+    "artifacts": [
+      {
+        "path": "agent-team-runtime-perf-docs-20261026.receipt.json",
+        "sha256": "69beef68e97845a5f6831effaafdb7fcc39869326a785a03b776b52387b672c8"
+      },
+      {
+        "path": "agent-team-runtime-baseline-20261026.receipt.json",
+        "sha256": "015b265b589d740dfe3bf152e579e18f75565b23e392dd53a3117bed69d49814"
+      },
+      {
+        "path": "agent-team-runtime-types-20261026.receipt.json",
+        "sha256": "1651995ee9c79ed0d5b7333a5d9abc45e848ec5fc42e863f2163b2fb8c026b1c"
+      },
+      {
+        "path": "agent-team-runtime-existing-tests-20261026.receipt.json",
+        "sha256": "71c8ce24fd8ba241665dcac5472436c7472b9505442516c184852ce1e347e2f8"
+      },
+      {
+        "path": "agent-team-runtime-owner-tests-20261026.receipt.json",
+        "sha256": "1c6a137912f5c0b14fb4b7f808f07a1a10c9332cbf315c440a78baeab8538d14"
+      },
+      {
+        "path": "agent-team-runtime-pack-20261026.receipt.json",
+        "sha256": "5a775d14395c66b38dd53237fbbccd454f9802a5cd732a10125f2b67358738ad"
+      },
+      {
+        "path": "agent-team-runtime-owner-codex-review.receipt.json",
+        "sha256": "3c336bad352bf9fad603446fd05deefb8b80a35e798497ece11d1728acf67c46"
+      },
+      {
+        "path": "agent-team-runtime-owner-kimi-review.receipt.json",
+        "sha256": "1acc0050b3407e1a870e50ed52213dca6913f35d0147e69af41ae9dc5c06c1ed"
+      },
+      {
+        "path": "agent-team-runtime-review-adjudication-20261026.md",
+        "sha256": "14e1d806fbb314ed746565d5f290bb101a0cf3ec97413fcd2be6f156a689ed6f"
+      },
+      {
+        "path": "agent-team-runtime-full-20261026.receipt.json",
+        "sha256": "a8caf07f1ba75fc620320b2d187399f84fdcaa69afeb4ac520d64c9d0b431b4e"
+      }
+    ]
+  }
+}

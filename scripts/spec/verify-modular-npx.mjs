@@ -75,8 +75,53 @@ try {
     assert.equal(result.pass, true); assert.equal(result.score, 100); assert.equal(result.durationSec, 2);
     assert.equal(scoreAgentTeamResult(team, 'investigate', undefined, () => { throw new Error('unexpected Git read'); }).get('worker').pass, true);
   `], { cwd: ephemeral }));
+  requireOk('packed-agent-team-runtime-owner', run(process.execPath, ['--input-type=module', '-e', `
+    import assert from 'node:assert/strict';
+    import { AgentTeamRuntime } from '@kernlang/agon-mod-agent';
+    const controller = new AbortController();
+    let sessions = 0, cancellations = 0;
+    const effects = {
+      repoRoot: cwd => cwd, stashSnapshot: () => 'snapshot', worktreePruneAll: () => {},
+      worktreeCreate: () => { throw new Error('non-isolated run created a worktree'); },
+      worktreeRemoveBestEffort: () => { throw new Error('non-isolated run removed a worktree'); },
+      createSession: config => {
+        sessions++; assert.equal(config.cwd, '/fixture');
+        return { step: async prompt => ({ response: prompt, toolCalls: 0, innerSteps: 1,
+          tokensUsed: 1, costUsd: 0, stopReason: 'completed' }),
+          cancel: () => { cancellations++; controller.abort(); },
+          getSignal: () => controller.signal, getStats: () => ({ tokensUsed: 0 }) };
+      },
+    };
+    const config = { cwd: '/fixture', isolate: false, budget: { maxTurns: 1, maxDurationMs: 1000 },
+      members: [{ engineId: 'one', api: { baseUrl: 'https://example.invalid', apiKeyEnv: 'UNUSED_FIXTURE_KEY', model: 'fixture' } }] };
+    const team = new AgentTeamRuntime(config, effects);
+    await team.initialize();
+    const result = await team.step('fixture answer');
+    assert.equal(result.members[0].stepResult.response, 'fixture answer');
+    assert.equal(result.baseSha, 'snapshot'); assert.equal(result.succeeded, 1);
+    await team.cleanup(); assert.equal(sessions, 1); assert.equal(cancellations, 1);
+    await assert.rejects(team.step('again'), { name: 'AgentTeamDisposedError' });
+    const refused = new AgentTeamRuntime({ ...config, executionRefusal: () => 'Agent disabled' },
+      { ...effects, stashSnapshot: () => { throw new Error('effect before authority check'); } });
+    await assert.rejects(refused.initialize(), /Agent disabled/);
+    assert.equal(sessions, 1);
+  `], { cwd: ephemeral }));
   const agentTypes = join(ephemeral, 'agent-team-types.mts');
   writeFileSync(agentTypes, `import { scoreAgentTeamResult, type AgentTeamResult, type AgentTeamMemberResult, type AgentTeamScore, type AgentTeamShortstatReader } from '@kernlang/agon-mod-agent';
+    import { AgentTeamRuntime, type AgentTeamConfig, type AgentTeamRuntimeEffects, type AgentTeamSession } from '@kernlang/agon-mod-agent';
+    declare const config: AgentTeamConfig;
+    declare const effects: AgentTeamRuntimeEffects;
+    declare const session: AgentTeamSession;
+    const runtime = new AgentTeamRuntime(config, effects);
+    const completion: Promise<AgentTeamResult> = runtime.step('task', { onEvent: event => {
+      // @ts-expect-error The public event contract must not become any.
+      event.notAnAgentEventField;
+    } });
+    // @ts-expect-error Host composition is required; the owner must not fall back to Core.
+    new AgentTeamRuntime(config);
+    // @ts-expect-error Unknown stop reasons must not cross the session boundary.
+    const invalidSession: AgentTeamSession = { ...session, step: async () => ({ response: '', toolCalls: 0, innerSteps: 0, tokensUsed: 0, costUsd: 0, stopReason: 'invented' }) };
+    void completion; void invalidSession;
     const member: AgentTeamMemberResult = { engineId: 'worker', worktreePath: null, error: null,
       stepResult: { response: 'answer', toolCalls: 1, innerSteps: 1, tokensUsed: 1, costUsd: 0, stopReason: 'completed' } };
     const team: AgentTeamResult = { members: [member], runId: 'run', baseSha: 'base', durationMs: 0, succeeded: 0, failed: 1 };

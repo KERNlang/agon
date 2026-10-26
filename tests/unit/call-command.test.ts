@@ -170,6 +170,12 @@ describe('agon call command mapping', () => {
     ]);
   });
 
+  it('forwards --engine to nero', () => {
+    expect(buildCallCommands({ workflow: 'nero', input: 'x', engine: 'codex' }).commands).toEqual([
+      ['nero', 'x', '--engine', 'codex'],
+    ]);
+  });
+
   it('maps nero with just the decision', () => {
     expect(buildCallCommands({ workflow: 'nero', input: 'Ship the migration tonight' }).commands).toEqual([
       ['nero', 'Ship the migration tonight'],

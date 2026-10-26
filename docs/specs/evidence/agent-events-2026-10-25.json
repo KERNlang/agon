@@ -1,5 +1,24 @@
 {
   "schemaVersion": 1,
+  "mainIntegration": {
+    "base": "01a10699fe2199bc50c16da516b455d1fb8b6941",
+    "previousHead": "61f2cb5c572f52ba00023ef0c3398c0cb69de27c",
+    "reviewedSourcePatchSha256": "8a470167978aeeec18f673eb3fd13b4d5531e61c6ddf4578ec61baa9748ae03b",
+    "reviewedSourcePatchUnchanged": true,
+    "headDiffBeforeIndexSha256": "c050ae4a3f9df6601aa63e8dbb8aab2b8375eed0750056442148e49dbea65e2b",
+    "receipt": "pr322-main-integration-gates-20261026.receipt.json",
+    "receiptSha256": "e1d7b17b9632a63103f0b0a71cd4e0a19fadbf1b6d1a3e8932fda911b71d6c80",
+    "logSha256": "d41f5eb8179c9ab60954017684c5fc103985879f3db0a72c6dac8267e021ebc8",
+    "passedTests": 11833,
+    "skippedTests": 7,
+    "passedTestFiles": 702,
+    "skippedTestFiles": 1,
+    "providerLaunches": 0,
+    "seconds": 946.109,
+    "gates": ["build", "typecheck", "lint", "reexports", "release-set", "supply-chain", "installed-npx", "full-suite", "diff-check"],
+    "cleanCommittedQualification": "pending at commit; external receipt must bind the resulting commit",
+    "limits": "Integration evidence only; independent approval and full modular acceptance remain separate."
+  },
   "date": "2026-10-25",
   "scope": "Agent event ownership, not full Agent or modular release acceptance",
   "subject": {

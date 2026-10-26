@@ -78,6 +78,8 @@ export function formatMutateProgressLine(event: {type:string,data?:Record<string
       return clean(`semantic: ${d.engineId} → ${d.accepted} accepted, ${d.dropped} dropped`);
     case 'mutate:semantic':
       return `semantic: ${d.accepted} mutant(s) accepted`;
+    case 'mutate:notice':
+      return typeof d.message === 'string' ? clean(d.message) : null;
     case 'mutate:pool':
       return `pool: ${d.total} mutant(s) (${d.semantic} semantic, ${d.mechanical} mechanical)`;
     case 'mutate:sandbox': {

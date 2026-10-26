@@ -1,5 +1,25 @@
 {
   "schemaVersion": 1,
+  "mainIntegration": {
+    "date": "2026-10-26",
+    "previousHead": "59a95a2b7c13f396f4bbb9662aaa6a2c35219ca8",
+    "base": "01a10699fe2199bc50c16da516b455d1fb8b6941",
+    "reviewedSourcePatchUnchanged": true,
+    "reviewedSourcePatchSha256": "d4ce480b0b0d45ed729723aa41c2745d289e2dc3792be91e7a8cb29253e11ff6",
+    "headDiffBeforeIndexSha256": "5ef758997892c459284da2bfa52975ff12d8bca74c16bfcd0d8fb0156b9c0603",
+    "receipt": "pr324-main-integration-gates-20261026.receipt.json",
+    "receiptSha256": "a2b7af75a9ba4ff4aae84f2bed8f867ae848187fc45ba8a289e3f56a3f1e2327",
+    "logSha256": "4ff9ce8b14efff2add84799029c01e63e1a43fd3a7a726d4dde12753cb1ebba8",
+    "seconds": 961.593,
+    "passedTests": 11845,
+    "skippedTests": 7,
+    "passedTestFiles": 702,
+    "skippedTestFiles": 1,
+    "providerLaunches": 0,
+    "gates": ["build", "typecheck", "lint", "reexports", "release-set", "supply-chain", "installed-npx", "full-suite", "diff-check"],
+    "cleanCommittedQualification": "Required separately on the resulting commit; not implied by this integration receipt.",
+    "scope": "Main integration and generated release metadata only; no new production policy or full modular acceptance claim."
+  },
   "date": "2026-10-25",
   "scope": "Provenance report ownership and disclosed report regressions, not full modular acceptance",
   "subject": {

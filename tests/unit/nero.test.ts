@@ -48,9 +48,14 @@ describe('rankEnginesByRating', () => {
   });
 
   it('breaks ties on mu, then engine id', () => {
-    // same floor: higher phi means lower mu pairing — force equal floor, different mu
-    const r = ratings({ global: { a: { ...rating(1600, 50) }, b: { ...rating(1600, 50) } } });
-    expect(rankEnginesByRating(['b', 'a'], r)).toEqual(['a', 'b']);
+    const now = Date.UTC(2026, 0, 1);
+    // Equal timestamps keep inactivity decay from changing the tie.
+    const shared = { ...rating(1600, 50), lastActive: new Date(now).toISOString() };
+    const r = ratings({ global: { a: { ...shared }, b: { ...shared } } });
+    expect(rankEnginesByRating(['b', 'a'], r, undefined, { now })).toEqual(['a', 'b']);
+
+    const equalFloor = ratings({ global: { a: { ...shared }, b: { ...shared, mu: 1700, phi: 100 } } });
+    expect(rankEnginesByRating(['a', 'b'], equalFloor, undefined, { now })).toEqual(['b', 'a']);
   });
 });
 

@@ -224,7 +224,8 @@ export class Speculator {
     let winnerOutcome: MemberOutcome | null = null;
     let winnerScore = -1;
     for (const s of outcomes) {
-      if (!s.eligible) continue;
+      // Cancellation revokes publication even when a member already finished.
+      if (opts.signal?.aborted || !s.eligible) continue;
       if (s.score > winnerScore) {
         winnerOutcome = s;
         winnerScore = s.score;

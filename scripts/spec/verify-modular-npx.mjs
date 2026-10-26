@@ -123,7 +123,7 @@ try {
   requireOk('packed-synthesis-runtime', run(process.execPath, ['--input-type=module', '-e', `
     import assert from 'node:assert/strict';
     import { pathToFileURL } from 'node:url';
-    import { runSynthesisRuntime, buildSynthesisDraftPrompt } from '@kernlang/agon-mod-synthesis';
+    import { runSynthesisRuntime, buildSynthesisDraftPrompt, createSynthesisHostServices, createMod } from '@kernlang/agon-mod-synthesis';
     const installedRoot = pathToFileURL(process.cwd() + '/node_modules/').href;
     assert.ok(import.meta.resolve('@kernlang/agon-mod-synthesis').startsWith(installedRoot));
     assert.match(buildSynthesisDraftPrompt('Design'), /^## SYNTHESIS DRAFT/);
@@ -145,16 +145,85 @@ try {
     assert.equal(result.swaps.length, 1);
     assert.equal(result.winner, 'alpha');
     assert.deepEqual(events.map(event => event.type), ['synthesis:draft', 'synthesis:draft', 'synthesis:swap', 'synthesis:score']);
+    const surfaces = new Map(), finishes = [], receipts = [];
+    let revoked = false;
+    const context = { invocationId: 'packed-synthesis', cwd: process.cwd(),
+      platform: process.platform + '-' + process.arch, signal: new AbortController().signal, config: {} };
+    const services = {
+      engines: { listActive: async () => ['alpha', 'beta'] },
+      runs: { start: async () => ({ id: 'packed', path: process.cwd(), startedAt: 'fixture' }),
+        finish: async (_handle, status) => { finishes.push(status); } },
+      receipts: { record: async (...args) => { receipts.push(args); return 'receipt'; } },
+      synthesis: createSynthesisHostServices({
+        openRegistry: cwd => { assert.equal(cwd, context.cwd); return { get: id => ({ id }), findBinary: () => null }; },
+        createAdapter: () => ({ dispatch: async request => {
+          calls.push(request);
+          assert.equal(request.cwd, context.cwd);
+          return { stdout: request.mode === 'review'
+            ? 'SCORE_1: 80\\nSCORE_2: 60\\nWINNER: alpha\\nREASONING: fixture'
+            : 'fixture draft', stderr: '', exitCode: 0, timedOut: false };
+        } }),
+        captureAuthority: () => () => { if (revoked) throw new Error('generation revoked'); },
+        loadConfig: () => ({}), warn: message => { throw new Error(message); },
+      }),
+    };
+    const registrar = new Proxy({}, { get: (_target, method) => (...args) => {
+      if (method === 'command' || method === 'tool') {
+        const [surface, contribution] = args;
+        surfaces.set(surface, contribution);
+        return () => { surfaces.delete(surface); };
+      }
+      return () => {};
+    } });
+    const dispose = await (await createMod(services)).activate(registrar);
+    assert.deepEqual([...surfaces.keys()].sort(), ['cli', 'mcp', 'tui']);
+    for (const [surface, contribution] of surfaces) {
+      calls.length = 0;
+      const input = surface === 'tui'
+        ? contribution.parse('/synthesis --swaps 1 Design')
+        : { prompt: 'Design', swaps: '1', engines: 'alpha,beta' };
+      const output = await contribution.run(input, context);
+      const value = surface === 'mcp' ? output : output.result;
+      if (surface !== 'mcp') assert.equal(output.exitCode, 0);
+      assert.equal(value.winner, 'alpha');
+      assert.equal(value.drafts.length, 2);
+      assert.equal(value.swaps.length, 1);
+      assert.equal(calls.length, 4);
+      assert.ok(calls.every(request => request.textOnly === true));
+      assert.equal(calls.at(-1).mode, 'review');
+    }
+    assert.equal(finishes.length, 3);
+    assert.ok(finishes.every(status => status.ok === true));
+    assert.equal(receipts.length, 3);
+    revoked = true;
+    calls.length = 0;
+    for (const [surface, contribution] of surfaces) {
+      await assert.rejects(() => contribution.run(surface === 'tui' ? { input: 'Design' } : { prompt: 'Design' }, context), /generation revoked/);
+    }
+    assert.equal(calls.length, 0);
+    assert.equal(finishes.length, 3);
+    assert.equal(receipts.length, 3);
+    await dispose();
+    assert.equal(surfaces.size, 0);
   `], { cwd: ephemeral, env: { AGON_FORCE_HEALTH_PROBE: '', AGON_DISABLE_FORGE_HEALTH_CHECK: '1' } }));
   const synthesisExample = join(ephemeral, 'synthesis-public-contract.mts');
   writeFileSync(synthesisExample, `
     import { runSynthesisRuntime, type SynthesisRuntimeOptions, type SynthesisRuntimeEffects,
-      type SynthesisResult, type SynthesisRuntimeEvent } from '@kernlang/agon-mod-synthesis';
+      type SynthesisResult, type SynthesisRuntimeEvent, createSynthesisHostServices,
+      type SynthesisHostServices } from '@kernlang/agon-mod-synthesis';
     declare const options: SynthesisRuntimeOptions;
     declare const effects: SynthesisRuntimeEffects;
     const result: Promise<SynthesisResult> = runSynthesisRuntime(options, effects);
     const event: SynthesisRuntimeEvent = { type: 'synthesis:draft', engineId: 'fixture', data: { round: 0 } };
     void result; void event;
+    declare const hostEffects: Parameters<typeof createSynthesisHostServices>[0];
+    const host: SynthesisHostServices = createSynthesisHostServices(hostEffects);
+    const { captureAuthority, ...withoutAuthority } = hostEffects;
+    void captureAuthority;
+    // @ts-expect-error Every host must capture generation authority.
+    createSynthesisHostServices(withoutAuthority);
+    // @ts-expect-error Opening a host requires an invocation context.
+    host.open();
   `);
   requireOk('packed-synthesis-public-types', run(process.execPath, [join(root, 'node_modules/typescript/bin/tsc'),
     '--noEmit', '--strict', '--target', 'ES2022', '--module', 'NodeNext', '--moduleResolution', 'NodeNext',

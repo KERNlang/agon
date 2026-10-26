@@ -10,6 +10,8 @@ export { createMod } from './implementation.js';
 export { createMod as default } from './implementation.js';
 export { normalizeSynthesisWinner, parseSynthesisJudgeOutput } from './judge-parser.js';
 export type { SynthesisScore } from './judge-parser.js';
+export { createSynthesisHostServices } from './host.js';
+export type { SynthesisHostServices, SynthesisHostSession, SynthesisHostEffects, SynthesisModServices } from './host.js';
 export {
   runSynthesisRuntime,
   buildSynthesisDraftPrompt,

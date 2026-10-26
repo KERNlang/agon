@@ -9,6 +9,7 @@ import { buildKernDraftPrompt, parseKernDraft } from '@kernlang/protocol';
 import { EngineRegistry as CatalogEngineRegistry } from '@kernlang/agon-support-engine-catalog';
 import { tracker } from '../../packages/core/src/signals/token-tracker.js';
 import type { BrainstormModServices } from '@kernlang/agon-mod-brainstorm';
+import type { SynthesisModServices } from '@kernlang/agon-mod-synthesis';
 import type { TribunalModServices } from '@kernlang/agon-mod-tribunal';
 import { createTribunalRuntime } from '@kernlang/agon-mod-tribunal';
 import * as kernel from '@kernlang/agon-kernel';
@@ -260,6 +261,39 @@ describe.each([
   it('does not expose Tribunal host effects to unrelated mods', async () => {
     expect(await decorate({ id: 'custom.example' } as never, {} as never))
       .not.toHaveProperty('tribunal');
+  });
+});
+
+describe.each([decorateCliFirstPartyServices, decorateMcpFirstPartyServices])('Synthesis host wiring', decorate => {
+  it('binds the real registry and stops dispatch after captured authority expires', async () => {
+    const load = vi.spyOn(CatalogEngineRegistry.prototype, 'load').mockImplementation(() => {});
+    vi.spyOn(CatalogEngineRegistry.prototype, 'get').mockReturnValue(fixture.engine as never);
+    const services = await decorate({ id: 'agon.synthesis' } as never, {} as never) as SynthesisModServices;
+    expect(load).not.toHaveBeenCalled();
+    expect(fixture.adapterOpened).not.toHaveBeenCalled();
+    const context: InvocationContext = { invocationId: 'synthesis-host', cwd: '/fixture/invocation',
+      platform: 'darwin-arm64', signal: new AbortController().signal, config: {} };
+    const session = await services.synthesis!.open(context);
+    expect(session.registry).toBeInstanceOf(CatalogEngineRegistry);
+    expect(load).toHaveBeenCalledExactlyOnceWith('/fixture/engines');
+    session.effects.health.loadConfig('/unrelated');
+    expect(fixture.loadConfig).toHaveBeenCalledWith(context.cwd);
+    expect(session.effects.resolveWorkingDir()).toBe(context.cwd);
+    const request = { engine: session.registry.get('fixture-engine'), prompt: 'fixture',
+      cwd: context.cwd, timeout: 12, mode: 'exec' as const, outputDir: '/fixture/output', signal: context.signal };
+    await session.adapter.dispatch(request);
+    expect(fixture.dispatch).toHaveBeenCalledExactlyOnceWith(request);
+    if (decorate === decorateCliFirstPartyServices) expect(fixture.assertCli).toHaveBeenCalledWith('cli', 'synthesis');
+    else expect(fixture.captureMcp).toHaveBeenCalledWith('Synthesis');
+    fixture.assertCurrent.mockImplementation(() => { throw new Error('generation expired'); });
+    await expect(session.adapter.dispatch(request)).rejects.toThrow('generation expired');
+    expect(() => session.assertCurrent()).toThrow('generation expired');
+    expect(fixture.dispatch).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not expose the bundled Synthesis capability to an unrelated owner', async () => {
+    const services = await decorate({ id: 'agon.ask' } as never, {} as never) as SynthesisModServices;
+    expect(services.synthesis).toBeUndefined();
   });
 });
 

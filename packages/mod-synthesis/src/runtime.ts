@@ -195,7 +195,7 @@ export async function runSynthesisRuntime(opts: SynthesisRuntimeOptions, effects
     const swapPromises = pairs.map(async ([fromId, toId]) => {
       check();
       const original = currentDrafts.get(fromId);
-      if (!original) return;
+      if (!original || original.startsWith('[draft failed')) return;
       const engine = registry.get(toId);
       try {
         const result = await adapter.dispatch({

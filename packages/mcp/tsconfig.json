@@ -17,6 +17,7 @@
     { "path": "../support-engine-catalog" },
     { "path": "../mod-jobs" },
     { "path": "../mod-rooms" },
+    { "path": "../mod-synthesis" },
     { "path": "../support-engine-runtime" },
     { "path": "../support-verification" },
     { "path": "../core" },

@@ -127,6 +127,7 @@
       "dist/implementation.d.ts",
       "dist/judge-parser.d.ts",
       "dist/runtime.d.ts",
+      "dist/host.d.ts",
       "ownership.json",
       "schemas/config.schema.json"
     ],

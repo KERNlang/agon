@@ -7,7 +7,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.agent",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:7dab13f2aa5bcc3033f4a6753d516ff3ece6e153dab0dd54b446446467277f00"
+      "contentHash": "sha256:8f83dcf8b167129870f57575d66ec3427b9a3e88de7d6042fcfeb86a59d3d92c"
     },
     "payload": {
       "publicId": "agent",
@@ -26,7 +26,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.agent",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:7dab13f2aa5bcc3033f4a6753d516ff3ece6e153dab0dd54b446446467277f00"
+      "contentHash": "sha256:8f83dcf8b167129870f57575d66ec3427b9a3e88de7d6042fcfeb86a59d3d92c"
     },
     "payload": {
       "publicId": "agent",
@@ -178,7 +178,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.agent",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:7dab13f2aa5bcc3033f4a6753d516ff3ece6e153dab0dd54b446446467277f00"
+      "contentHash": "sha256:8f83dcf8b167129870f57575d66ec3427b9a3e88de7d6042fcfeb86a59d3d92c"
     },
     "payload": {
       "publicId": "bug-fix",
@@ -349,7 +349,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.agent",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:7dab13f2aa5bcc3033f4a6753d516ff3ece6e153dab0dd54b446446467277f00"
+      "contentHash": "sha256:8f83dcf8b167129870f57575d66ec3427b9a3e88de7d6042fcfeb86a59d3d92c"
     },
     "payload": {
       "publicId": "delegate",
@@ -368,7 +368,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.agent",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:7dab13f2aa5bcc3033f4a6753d516ff3ece6e153dab0dd54b446446467277f00"
+      "contentHash": "sha256:8f83dcf8b167129870f57575d66ec3427b9a3e88de7d6042fcfeb86a59d3d92c"
     },
     "payload": {
       "publicId": "delegate",
@@ -387,7 +387,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.agent",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:7dab13f2aa5bcc3033f4a6753d516ff3ece6e153dab0dd54b446446467277f00"
+      "contentHash": "sha256:8f83dcf8b167129870f57575d66ec3427b9a3e88de7d6042fcfeb86a59d3d92c"
     },
     "payload": {
       "publicId": "delegate",
@@ -444,7 +444,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.forge",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:4b81628e5322b54d19d98961cd6346bce97bbd4ab3e94b8c697a1caac511be74"
+      "contentHash": "sha256:695080849f2be6ca241f429e8269f8fc4878f0dec9ce920ec262795f4b9875a8"
     },
     "payload": {
       "publicId": "forge",
@@ -463,7 +463,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.forge",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:4b81628e5322b54d19d98961cd6346bce97bbd4ab3e94b8c697a1caac511be74"
+      "contentHash": "sha256:695080849f2be6ca241f429e8269f8fc4878f0dec9ce920ec262795f4b9875a8"
     },
     "payload": {
       "publicId": "forge",
@@ -482,7 +482,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.forge",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:4b81628e5322b54d19d98961cd6346bce97bbd4ab3e94b8c697a1caac511be74"
+      "contentHash": "sha256:695080849f2be6ca241f429e8269f8fc4878f0dec9ce920ec262795f4b9875a8"
     },
     "payload": {
       "publicId": "forge",
@@ -501,7 +501,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.forge",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:4b81628e5322b54d19d98961cd6346bce97bbd4ab3e94b8c697a1caac511be74"
+      "contentHash": "sha256:695080849f2be6ca241f429e8269f8fc4878f0dec9ce920ec262795f4b9875a8"
     },
     "payload": {
       "publicId": "forge-full",
@@ -520,7 +520,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.forge",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:4b81628e5322b54d19d98961cd6346bce97bbd4ab3e94b8c697a1caac511be74"
+      "contentHash": "sha256:695080849f2be6ca241f429e8269f8fc4878f0dec9ce920ec262795f4b9875a8"
     },
     "payload": {
       "publicId": "forge-slice",
@@ -539,7 +539,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.forge",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:4b81628e5322b54d19d98961cd6346bce97bbd4ab3e94b8c697a1caac511be74"
+      "contentHash": "sha256:695080849f2be6ca241f429e8269f8fc4878f0dec9ce920ec262795f4b9875a8"
     },
     "payload": {
       "publicId": "forge-slice",
@@ -767,7 +767,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.agent",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:7dab13f2aa5bcc3033f4a6753d516ff3ece6e153dab0dd54b446446467277f00"
+      "contentHash": "sha256:8f83dcf8b167129870f57575d66ec3427b9a3e88de7d6042fcfeb86a59d3d92c"
     },
     "payload": {
       "publicId": "quick-fix",
@@ -786,7 +786,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.agent",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:7dab13f2aa5bcc3033f4a6753d516ff3ece6e153dab0dd54b446446467277f00"
+      "contentHash": "sha256:8f83dcf8b167129870f57575d66ec3427b9a3e88de7d6042fcfeb86a59d3d92c"
     },
     "payload": {
       "publicId": "quick-fix",
@@ -1128,7 +1128,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.agent",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:7dab13f2aa5bcc3033f4a6753d516ff3ece6e153dab0dd54b446446467277f00"
+      "contentHash": "sha256:8f83dcf8b167129870f57575d66ec3427b9a3e88de7d6042fcfeb86a59d3d92c"
     },
     "payload": {
       "publicId": "team-agent",
@@ -1147,7 +1147,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.agent",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:7dab13f2aa5bcc3033f4a6753d516ff3ece6e153dab0dd54b446446467277f00"
+      "contentHash": "sha256:8f83dcf8b167129870f57575d66ec3427b9a3e88de7d6042fcfeb86a59d3d92c"
     },
     "payload": {
       "publicId": "team-agent",
@@ -1337,7 +1337,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.agent",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:7dab13f2aa5bcc3033f4a6753d516ff3ece6e153dab0dd54b446446467277f00"
+      "contentHash": "sha256:8f83dcf8b167129870f57575d66ec3427b9a3e88de7d6042fcfeb86a59d3d92c"
     },
     "payload": {
       "publicId": "Agent",
@@ -1451,7 +1451,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.agent",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:7dab13f2aa5bcc3033f4a6753d516ff3ece6e153dab0dd54b446446467277f00"
+      "contentHash": "sha256:8f83dcf8b167129870f57575d66ec3427b9a3e88de7d6042fcfeb86a59d3d92c"
     },
     "payload": {
       "publicId": "Delegate",
@@ -1527,7 +1527,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.forge",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:4b81628e5322b54d19d98961cd6346bce97bbd4ab3e94b8c697a1caac511be74"
+      "contentHash": "sha256:695080849f2be6ca241f429e8269f8fc4878f0dec9ce920ec262795f4b9875a8"
     },
     "payload": {
       "publicId": "Forge",
@@ -2306,7 +2306,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.forge",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:4b81628e5322b54d19d98961cd6346bce97bbd4ab3e94b8c697a1caac511be74"
+      "contentHash": "sha256:695080849f2be6ca241f429e8269f8fc4878f0dec9ce920ec262795f4b9875a8"
     },
     "payload": {
       "publicId": "forge",
@@ -3161,7 +3161,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.synthesis",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:9077629a6ba231b683d248e0c7b2629fe17fae305e678d2bfa6cb94aa1685777"
+      "contentHash": "sha256:733e9ca9570b0c9b578662aeee94d1c336f655606b83a5cd641c4ebb23d7a330"
     },
     "payload": {
       "publicId": "synthesis",
@@ -3408,7 +3408,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.agent",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:7dab13f2aa5bcc3033f4a6753d516ff3ece6e153dab0dd54b446446467277f00"
+      "contentHash": "sha256:8f83dcf8b167129870f57575d66ec3427b9a3e88de7d6042fcfeb86a59d3d92c"
     },
     "payload": {
       "publicId": "Agent",
@@ -3522,7 +3522,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.agent",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:7dab13f2aa5bcc3033f4a6753d516ff3ece6e153dab0dd54b446446467277f00"
+      "contentHash": "sha256:8f83dcf8b167129870f57575d66ec3427b9a3e88de7d6042fcfeb86a59d3d92c"
     },
     "payload": {
       "publicId": "Delegate",
@@ -3579,7 +3579,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.forge",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:4b81628e5322b54d19d98961cd6346bce97bbd4ab3e94b8c697a1caac511be74"
+      "contentHash": "sha256:695080849f2be6ca241f429e8269f8fc4878f0dec9ce920ec262795f4b9875a8"
     },
     "payload": {
       "publicId": "Forge",
@@ -3997,7 +3997,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.synthesis",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:9077629a6ba231b683d248e0c7b2629fe17fae305e678d2bfa6cb94aa1685777"
+      "contentHash": "sha256:733e9ca9570b0c9b578662aeee94d1c336f655606b83a5cd641c4ebb23d7a330"
     },
     "payload": {
       "publicId": "Synthesis",
@@ -4035,7 +4035,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.agent",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:7dab13f2aa5bcc3033f4a6753d516ff3ece6e153dab0dd54b446446467277f00"
+      "contentHash": "sha256:8f83dcf8b167129870f57575d66ec3427b9a3e88de7d6042fcfeb86a59d3d92c"
     },
     "payload": {
       "publicId": "agent",
@@ -4054,7 +4054,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.agent",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:7dab13f2aa5bcc3033f4a6753d516ff3ece6e153dab0dd54b446446467277f00"
+      "contentHash": "sha256:8f83dcf8b167129870f57575d66ec3427b9a3e88de7d6042fcfeb86a59d3d92c"
     },
     "payload": {
       "publicId": "agent-solo",
@@ -4073,7 +4073,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.forge",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:4b81628e5322b54d19d98961cd6346bce97bbd4ab3e94b8c697a1caac511be74"
+      "contentHash": "sha256:695080849f2be6ca241f429e8269f8fc4878f0dec9ce920ec262795f4b9875a8"
     },
     "payload": {
       "publicId": "apply",
@@ -4149,7 +4149,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.agent",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:7dab13f2aa5bcc3033f4a6753d516ff3ece6e153dab0dd54b446446467277f00"
+      "contentHash": "sha256:8f83dcf8b167129870f57575d66ec3427b9a3e88de7d6042fcfeb86a59d3d92c"
     },
     "payload": {
       "publicId": "build",
@@ -4643,7 +4643,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.forge",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:4b81628e5322b54d19d98961cd6346bce97bbd4ab3e94b8c697a1caac511be74"
+      "contentHash": "sha256:695080849f2be6ca241f429e8269f8fc4878f0dec9ce920ec262795f4b9875a8"
     },
     "payload": {
       "publicId": "forge",
@@ -5061,7 +5061,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.agent",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:7dab13f2aa5bcc3033f4a6753d516ff3ece6e153dab0dd54b446446467277f00"
+      "contentHash": "sha256:8f83dcf8b167129870f57575d66ec3427b9a3e88de7d6042fcfeb86a59d3d92c"
     },
     "payload": {
       "publicId": "speculate",
@@ -5099,7 +5099,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.forge",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:4b81628e5322b54d19d98961cd6346bce97bbd4ab3e94b8c697a1caac511be74"
+      "contentHash": "sha256:695080849f2be6ca241f429e8269f8fc4878f0dec9ce920ec262795f4b9875a8"
     },
     "payload": {
       "publicId": "suggest-forge",
@@ -5137,7 +5137,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.agent",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:7dab13f2aa5bcc3033f4a6753d516ff3ece6e153dab0dd54b446446467277f00"
+      "contentHash": "sha256:8f83dcf8b167129870f57575d66ec3427b9a3e88de7d6042fcfeb86a59d3d92c"
     },
     "payload": {
       "publicId": "team-agent",
@@ -5327,7 +5327,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.agent",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:7dab13f2aa5bcc3033f4a6753d516ff3ece6e153dab0dd54b446446467277f00"
+      "contentHash": "sha256:8f83dcf8b167129870f57575d66ec3427b9a3e88de7d6042fcfeb86a59d3d92c"
     },
     "payload": {
       "publicId": "agent",
@@ -5346,7 +5346,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.agent",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:7dab13f2aa5bcc3033f4a6753d516ff3ece6e153dab0dd54b446446467277f00"
+      "contentHash": "sha256:8f83dcf8b167129870f57575d66ec3427b9a3e88de7d6042fcfeb86a59d3d92c"
     },
     "payload": {
       "publicId": "agent-solo",
@@ -5365,7 +5365,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.forge",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:4b81628e5322b54d19d98961cd6346bce97bbd4ab3e94b8c697a1caac511be74"
+      "contentHash": "sha256:695080849f2be6ca241f429e8269f8fc4878f0dec9ce920ec262795f4b9875a8"
     },
     "payload": {
       "publicId": "apply",
@@ -5460,7 +5460,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.agent",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:7dab13f2aa5bcc3033f4a6753d516ff3ece6e153dab0dd54b446446467277f00"
+      "contentHash": "sha256:8f83dcf8b167129870f57575d66ec3427b9a3e88de7d6042fcfeb86a59d3d92c"
     },
     "payload": {
       "publicId": "build",
@@ -5802,7 +5802,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.forge",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:4b81628e5322b54d19d98961cd6346bce97bbd4ab3e94b8c697a1caac511be74"
+      "contentHash": "sha256:695080849f2be6ca241f429e8269f8fc4878f0dec9ce920ec262795f4b9875a8"
     },
     "payload": {
       "publicId": "forge",
@@ -6125,7 +6125,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.agent",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:7dab13f2aa5bcc3033f4a6753d516ff3ece6e153dab0dd54b446446467277f00"
+      "contentHash": "sha256:8f83dcf8b167129870f57575d66ec3427b9a3e88de7d6042fcfeb86a59d3d92c"
     },
     "payload": {
       "publicId": "speculate",
@@ -6144,7 +6144,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.agent",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:7dab13f2aa5bcc3033f4a6753d516ff3ece6e153dab0dd54b446446467277f00"
+      "contentHash": "sha256:8f83dcf8b167129870f57575d66ec3427b9a3e88de7d6042fcfeb86a59d3d92c"
     },
     "payload": {
       "publicId": "team-agent",
@@ -7151,7 +7151,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.agent",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:7dab13f2aa5bcc3033f4a6753d516ff3ece6e153dab0dd54b446446467277f00"
+      "contentHash": "sha256:8f83dcf8b167129870f57575d66ec3427b9a3e88de7d6042fcfeb86a59d3d92c"
     },
     "payload": {
       "publicId": "/agent",
@@ -7170,7 +7170,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.agent",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:7dab13f2aa5bcc3033f4a6753d516ff3ece6e153dab0dd54b446446467277f00"
+      "contentHash": "sha256:8f83dcf8b167129870f57575d66ec3427b9a3e88de7d6042fcfeb86a59d3d92c"
     },
     "payload": {
       "publicId": "/agent-solo",
@@ -7189,7 +7189,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.forge",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:4b81628e5322b54d19d98961cd6346bce97bbd4ab3e94b8c697a1caac511be74"
+      "contentHash": "sha256:695080849f2be6ca241f429e8269f8fc4878f0dec9ce920ec262795f4b9875a8"
     },
     "payload": {
       "publicId": "/apply",
@@ -7284,7 +7284,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.agent",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:7dab13f2aa5bcc3033f4a6753d516ff3ece6e153dab0dd54b446446467277f00"
+      "contentHash": "sha256:8f83dcf8b167129870f57575d66ec3427b9a3e88de7d6042fcfeb86a59d3d92c"
     },
     "payload": {
       "publicId": "/build",
@@ -7778,7 +7778,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.forge",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:4b81628e5322b54d19d98961cd6346bce97bbd4ab3e94b8c697a1caac511be74"
+      "contentHash": "sha256:695080849f2be6ca241f429e8269f8fc4878f0dec9ce920ec262795f4b9875a8"
     },
     "payload": {
       "publicId": "/forge",
@@ -8310,7 +8310,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.agent",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:7dab13f2aa5bcc3033f4a6753d516ff3ece6e153dab0dd54b446446467277f00"
+      "contentHash": "sha256:8f83dcf8b167129870f57575d66ec3427b9a3e88de7d6042fcfeb86a59d3d92c"
     },
     "payload": {
       "publicId": "/speculate",
@@ -8348,7 +8348,7 @@ export const LEGACY_SURFACE_CATALOG = [
     "owner": {
       "id": "agon.synthesis",
       "version": "0.2.5-legacy-compat",
-      "contentHash": "sha256:9077629a6ba231b683d248e0c7b2629fe17fae305e678d2bfa6cb94aa1685777"
+      "contentHash": "sha256:733e9ca9570b0c9b578662aeee94d1c336f655606b83a5cd641c4ebb23d7a330"
     },
     "payload": {
       "publicId": "/synthesis",

@@ -58,8 +58,8 @@
       "path": "ownership.json",
       "kind": "documentation",
       "mediaType": "application/json",
-      "contentHash": "sha256:d83772c2eb7c12ae78378808a37a0b67f28e7e3b65278e721af3078d579313e9",
-      "bytes": 1968,
+      "contentHash": "sha256:f81405b7418bdb23a53e8b498e3b391fe3160b62842153d883ef7cdaa7708c1c",
+      "bytes": 1429,
       "executable": false,
       "platforms": [
         "darwin-arm64",
@@ -72,8 +72,8 @@
       "path": "schemas/config.schema.json",
       "kind": "schema",
       "mediaType": "application/schema+json",
-      "contentHash": "sha256:77155dd3bc5fca8748e83fcf21dd72e7dbd4414e2dddf280b35280a2f845c7ec",
-      "bytes": 581,
+      "contentHash": "sha256:78e57f72296e1cc41c87b457096ebd4386127c0637d06d564ecaef52847c8721",
+      "bytes": 396,
       "executable": false,
       "platforms": [
         "darwin-arm64",
@@ -111,14 +111,6 @@
       }
     ],
     "configKeys": [
-      {
-        "id": "configKeys:0071",
-        "aliases": []
-      },
-      {
-        "id": "configKeys:0082",
-        "aliases": []
-      },
       {
         "id": "configKeys:0113",
         "aliases": []

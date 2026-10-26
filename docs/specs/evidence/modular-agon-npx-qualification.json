@@ -3,7 +3,7 @@
   "slice": "S9",
   "passed": true,
   "platform": "darwin-arm64",
-  "node": "v26.12.1",
+  "node": "v22.22.0",
   "profile": "minimal+think+review",
   "installedPackageCount": 15,
   "cacheDeletionSurvived": true,
@@ -300,6 +300,26 @@
       "detail": "exit=0"
     },
     {
+      "id": "packed-agent-refinement",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "packed-agent-refinement-public-types",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "packed-agent-events",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "packed-agent-events-public-types",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
       "id": "packed-mcp-failure-contract",
       "passed": true,
       "detail": "installed server and Jobs daemon: success, blocked-provider failure, missing job via installed CLI, cyclic plan, unknown tool"
@@ -377,7 +397,7 @@
     {
       "id": "disabled-think-unreachable",
       "passed": true,
-      "detail": "[error] Unknown command `think`\n[log] Any AI can join. They compete. You ship. (agon v1.0.0)\n\nUSAGE `agon engine|doctor|models|provider|config|call|attach|login|update|upgrade|mod|setup|ask|review`\n\nCOMMANDS\n\n    `engine`    Manage AI engines                                                                                                                               \n    `doctor`    Diagnose Agon engine and worktree health                                                                                                        \n    `models`    Manage engine→model mappings                                                                                                                    \n  `provider`    Add, remove, or list API providers; connect/disconnect and manage API keys                                                                      \n    `config`    View and modify Agon configuration                                                                                                              \n      `call`    Live bridge for external CLIs to run Agon modes                                                                                                 \n    `attach`    Attach (r"
+      "detail": "\n ERROR  Unknown command think\n\nAny AI can join. They compete. You ship. (agon v1.0.0)\n\nUSAGE agon engine|doctor|models|provider|config|call|attach|login|update|upgrade|mod|setup|ask|review\n\nCOMMANDS\n\n    engine    Manage AI engines                                                                                                                               \n    doctor    Diagnose Agon engine and worktree health                                                                                                        \n    models    Manage engine→model mappings                                                                                                                    \n  provider    Add, remove, or list API providers; connect/disconnect and manage API keys                                                                      \n    config    View and modify Agon configuration                                                                                                              \n      call    Live bridge for external CLIs to run Agon modes                                                                                                 \n    attach    Attach (read-only) to a session"
     },
     {
       "id": "installed-enable-preview",

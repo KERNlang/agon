@@ -3740,7 +3740,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.research",
       "version": "1.0.0",
-      "contentHash": "sha256:9dedd8a806cbe2a3c2346e0de4f795a222d72d188e03daffa5f40c82f67b8271"
+      "contentHash": "sha256:9e12c1878535493327af2860322c15f2a41eb0fcb0d19db9e109ea43530a732b"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "research",
@@ -3855,7 +3855,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.synthesis",
       "version": "1.0.0",
-      "contentHash": "sha256:7c1633254412ee59b97e4712280596fdf8ed670304e9318ec92c7c9fc6bd83ae"
+      "contentHash": "sha256:479cc189cc33849c26399f5a7d7804eac3e26d281ecd204bc75165afba1658cc"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "synthesis",
@@ -4892,7 +4892,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.synthesis",
       "version": "1.0.0",
-      "contentHash": "sha256:7c1633254412ee59b97e4712280596fdf8ed670304e9318ec92c7c9fc6bd83ae"
+      "contentHash": "sha256:479cc189cc33849c26399f5a7d7804eac3e26d281ecd204bc75165afba1658cc"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "Synthesis",
@@ -10020,7 +10020,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.research",
       "version": "1.0.0",
-      "contentHash": "sha256:9dedd8a806cbe2a3c2346e0de4f795a222d72d188e03daffa5f40c82f67b8271"
+      "contentHash": "sha256:9e12c1878535493327af2860322c15f2a41eb0fcb0d19db9e109ea43530a732b"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "<question> [--count N] [--engine X] — keyless web-grounded cited research (npm/GitHub/MDN/IETF/SO/Wikipedia)",
@@ -10211,7 +10211,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.synthesis",
       "version": "1.0.0",
-      "contentHash": "sha256:7c1633254412ee59b97e4712280596fdf8ed670304e9318ec92c7c9fc6bd83ae"
+      "contentHash": "sha256:479cc189cc33849c26399f5a7d7804eac3e26d281ecd204bc75165afba1658cc"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "<task> [--swaps 2]       — engines draft, swap, improve; judge picks winner",

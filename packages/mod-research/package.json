@@ -17,6 +17,10 @@
       "types": "./dist/format-policy.d.ts",
       "import": "./dist/format-policy.js"
     },
+    "./response-policy": {
+      "types": "./dist/response-policy.d.ts",
+      "import": "./dist/response-policy.js"
+    },
     "./manifest": "./agon.mod.json",
     "./ownership": "./ownership.json"
   },

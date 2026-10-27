@@ -1,5 +1,6 @@
 import { formatResearchResult } from './format-policy.js';
 export { formatResearchResult } from './format-policy.js';
+import { parseAuthoritativeResults } from './response-policy.js';
 import { lookup } from "node:dns/promises";
 import { BlockList, isIP } from "node:net";
 import { Agent } from "undici";
@@ -96,61 +97,6 @@ export function discoveryRequest(intent: Intent, q: string, count: number) {
       headers: h,
     };
   return null;
-}
-function parse(
-  intent: Intent,
-  text: string,
-): Omit<Source, "fetched" | "content">[] {
-  let d: any;
-  try {
-    d = JSON.parse(text);
-  } catch {
-    return [];
-  }
-  const strip = (v: any) =>
-    String(v ?? "")
-      .replace(/<[^>]+>/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
-  if (intent === "package")
-    return (d.objects ?? []).map((x: any) => ({
-      title: String(x.package?.name ?? ""),
-      url: String(x.package?.links?.npm ?? ""),
-      snippet: String(x.package?.description ?? ""),
-    }));
-  if (intent === "github")
-    return (d.items ?? []).map((x: any) => ({
-      title: String(x.full_name ?? ""),
-      url: String(x.html_url ?? ""),
-      snippet: String(x.description ?? ""),
-    }));
-  if (intent === "fact")
-    return (d.pages ?? []).map((x: any) => ({
-      title: String(x.title ?? ""),
-      url: `https://en.wikipedia.org/wiki/${encodeURIComponent(String(x.key ?? ""))}`,
-      snippet: strip(x.excerpt ?? x.description),
-    }));
-  if (intent === "standard")
-    return (d.documents ?? []).map((x: any) => ({
-      title: String(x.title ?? ""),
-      url: String(x.mdn_url ?? "").startsWith("http")
-        ? x.mdn_url
-        : `https://developer.mozilla.org${x.mdn_url ?? ""}`,
-      snippet: strip(x.summary),
-    }));
-  if (intent === "rfc")
-    return (d.objects ?? []).map((x: any) => ({
-      title: String(x.title ?? x.name ?? ""),
-      url: `https://datatracker.ietf.org/doc/${encodeURIComponent(String(x.name ?? ""))}/`,
-      snippet: String(x.abstract ?? ""),
-    }));
-  if (intent === "qa")
-    return (d.items ?? []).map((x: any) => ({
-      title: strip(x.title),
-      url: String(x.link ?? ""),
-      snippet: `score ${Number(x.score ?? 0)}`,
-    }));
-  return [];
 }
 export function validateUrl(raw: string) {
   let u: URL;
@@ -355,7 +301,7 @@ export async function runResearch(
         stderr: `Discovery failed: HTTP ${discovered.status}.\n`,
       };
     }
-    const found = parse(intent, await discovered.text())
+    const found = parseAuthoritativeResults(intent, await discovered.text())
       .filter((s) => validateUrl(s.url))
       .slice(0, Math.min(10, Math.max(1, Number(x.count ?? 5))));
     if (!found.length) {

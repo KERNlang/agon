@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "scope": "Research discovery-response parser ownership; not full modular acceptance",
+  "baseCommit": "a4e06dfb8869acd14fe4c90cc16a88abebeb3243",
+  "archiveRoot": "/Users/ra/dev/modular-agon-remediation",
+  "archiveRetention": "Do not delete without Raphael's explicit approval",
+  "owner": "@kernlang/agon-mod-research",
+  "implementation": "packages/mod-research/src/response-policy.ts",
+  "publicEntry": "@kernlang/agon-mod-research/response-policy",
+  "compatibility": {
+    "source": "packages/core/src/tools/research-router.ts",
+    "policy": "Legacy parser body preserved byte-for-byte except the structural result type name",
+    "physicalRepair": "Malformed response collections return no sources instead of internal property-access errors",
+    "aliases": "Core, Research root and pure subpath expose the same parser",
+    "remainingOwners": "Request, classifier, transport and workflow ownership are outside this slice",
+    "dependency": "Existing internal Core to Research dependency; no external version changes",
+    "isolation": "Standalone emitted entry has no runtime imports; Core compatibility install is separate from launcher fixture"
+  },
+  "evidence": [
+    {
+      "receipt": "research-response-negative-20261027.receipt.json",
+      "result": "expected failure before repair",
+      "scope": "Three malformed-response workflow regressions fail; 35 existing tests pass",
+      "logSha256": "3e3727e544e2d0b6891ae780a10cd5820001f107298e573db8151a02e80375ba"
+    },
+    {
+      "receipt": "research-response-first-green-20261027.receipt.json",
+      "result": "passed",
+      "scope": "Research build, typecheck, 38 focused tests and re-export guard",
+      "logSha256": "11060574917b9c0c116ec869d0a1d2627eed3f965c8086275d9e50fcc1d026d5"
+    },
+    {
+      "receipt": "research-response-full-gates-20261027.receipt.json",
+      "result": "passed",
+      "scope": "Cold types before build; generated checks; release/SBOM self-tests; lint; re-export guard; 11958 tests passed, 7 skipped; 99 installed checks",
+      "logSha256": "d2d109351c4502ef2585424675a1afe2e5d7853d986e7b8c49761371160d67f4",
+      "providerLaunches": 0
+    }
+  ],
+  "review": {
+    "packet": "research-response-owner-review-input.txt",
+    "packetSha256": "c4e949ca81e925304d802655cbb327633ab25464156a2afd0bf2c00d4624f5dd",
+    "codexLogSha256": "3d49a52976899d04a26165171a9a83ff9fd2c39c7fc0c6420854da1ea91fd052",
+    "codex": "No concrete introduced defect; static review only",
+    "kimi": "Exit 1 with no answer; not a passing review",
+    "kimiLogSha256": "a4eebf5d7d44f5490f265ba973efba6a7b0a1712213a895f830b6440c27cdbff",
+    "adjudications": [
+      "Local diff confirms physical normalization changes restore the legacy parser and preserve URL filtering, source bounds and transport",
+      "Packed standalone subprocess verifies pure-entry loading independently of root and Core imports",
+      "Packed public type checks use skipLibCheck; cold project compilation is separate evidence, not exhaustive third-party declaration validation"
+    ]
+  },
+  "limits": [
+    "Exact clean committed-checkout qualification pending",
+    "Independent of pending Research PRs; shared generator and export changes need merge reconciliation",
+    "OSV still reports 24 advisory instances across 10 packages; security debt is not passing",
+    "Network guard inconsistency is separately documented, not repaired in this slice",
+    "Native platform, live-provider and publishing acceptance not established"
+  ]
+}

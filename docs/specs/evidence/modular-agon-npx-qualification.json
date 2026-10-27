@@ -280,6 +280,31 @@
       "detail": "exit=0"
     },
     {
+      "id": "pack:legacy-core",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "legacy-core-frozen-hydration",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "packed-research-response-standalone",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "packed-research-response-owner",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "packed-research-response-public-types",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
       "id": "packed-agent-team-public-types",
       "passed": true,
       "detail": "exit=0"

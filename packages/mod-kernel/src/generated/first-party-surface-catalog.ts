@@ -3740,7 +3740,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.research",
       "version": "1.0.0",
-      "contentHash": "sha256:3b5edf5f3f1c808425b4b435735dad3e06b5779f4c6ba9cd5d06e708eedbb6e4"
+      "contentHash": "sha256:9dedd8a806cbe2a3c2346e0de4f795a222d72d188e03daffa5f40c82f67b8271"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "research",
@@ -10020,7 +10020,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.research",
       "version": "1.0.0",
-      "contentHash": "sha256:3b5edf5f3f1c808425b4b435735dad3e06b5779f4c6ba9cd5d06e708eedbb6e4"
+      "contentHash": "sha256:9dedd8a806cbe2a3c2346e0de4f795a222d72d188e03daffa5f40c82f67b8271"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "<question> [--count N] [--engine X] — keyless web-grounded cited research (npm/GitHub/MDN/IETF/SO/Wikipedia)",

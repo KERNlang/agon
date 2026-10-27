@@ -1,4 +1,4 @@
-import { beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
 const effects = vi.hoisted(() => ({ append: vi.fn(), track: vi.fn(), add: vi.fn(), record: vi.fn(), command: vi.fn(), current: vi.fn() }));
 vi.mock('../../packages/cli/src/surface-authority-runtime.js', async original => {
@@ -26,6 +26,7 @@ import { createMod } from '../../packages/mod-synthesis/src/implementation.js';
 import type { IntentContribution, Registrar } from '@kernlang/agon-mod-api';
 
 beforeEach(() => vi.resetAllMocks());
+afterEach(() => vi.restoreAllMocks());
 
 it('retains the winning Synthesis revision in the interactive session through generated routing', async () => {
   const original = { id: 'original', messages: [] };
@@ -166,7 +167,11 @@ it.each(['cancelled', 'stale'])('disposes pending progress safely when the invoc
   } finally { vi.useRealTimers(); }
 });
 
-it('parses and runs the real Synthesis contribution with the session-selected engines', async () => {
+it.each([
+  { random: 0, improver: 'alpha', winnerContent: 'alpha improved' },
+  { random: 0.99, improver: 'beta', winnerContent: 'alpha initial' },
+])('parses and runs the real Synthesis contribution when $improver improves the draft', async ({ random, improver, winnerContent }) => {
+  vi.spyOn(Math, 'random').mockReturnValue(random);
   let contribution: IntentContribution | undefined;
   const dispatch = vi.fn(async (engine: string, prompt: string) => ({ exitCode: 0, stderr: '', timedOut: false,
     stdout: prompt.startsWith('## SYNTHESIS DRAFT') ? `${engine} initial`
@@ -195,8 +200,10 @@ it('parses and runs the real Synthesis contribution with the session-selected en
   await runPhysicalTuiContribution({ owner: { id: 'agon.synthesis' }, payload: contribution },
     parsed as never, 'synthesis', cb as never, new AbortController().signal);
   expect(new Set(dispatch.mock.calls.map(([engine]) => engine))).toEqual(new Set(['alpha', 'beta']));
+  expect(dispatch.mock.calls.filter(([, prompt]) => prompt.startsWith('## SYNTHESIS SWAP'))
+    .map(([engine]) => engine)).toEqual([improver]);
   expect(record).toHaveBeenCalledOnce();
   expect(effects.append).toHaveBeenLastCalledWith(cb.ctx.chatSession,
-    expect.objectContaining({ role: 'engine', engineId: 'alpha', content: 'alpha improved' }));
+    expect.objectContaining({ role: 'engine', engineId: 'alpha', content: winnerContent }));
   expect(effects.add).toHaveBeenCalledOnce();
 });

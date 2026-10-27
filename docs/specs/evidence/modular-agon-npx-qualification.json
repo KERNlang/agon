@@ -320,6 +320,16 @@
       "detail": "exit=0"
     },
     {
+      "id": "packed-post-synthesis-fitness-owner",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "packed-post-synthesis-fitness-types",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
       "id": "packed-synthesis-runtime",
       "passed": true,
       "detail": "exit=0"

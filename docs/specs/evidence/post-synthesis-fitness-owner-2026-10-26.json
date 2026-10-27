@@ -1,0 +1,28 @@
+{
+  "scope": "Move post-synthesis fitness implementation and result type to Forge; retain Core compatibility exports",
+  "base": "a4e06dfb8869acd14fe4c90cc16a88abebeb3243",
+  "status": "working-tree qualification passed; committed clean-checkout qualification pending",
+  "archive": "/Users/ra/dev/modular-agon-remediation",
+  "verification": {
+    "negativeControl": { "log": "post-synthesis-fitness-baseline-negative-20261026.log", "sha256": "3ea5cf982e0e1dbe607140a41926dfc6498082543c58de20279127aab1acb9ac", "result": "Owner identity fails before extraction; 49 other assertions pass" },
+    "focused": { "log": "post-synthesis-fitness-focused-20261026.log", "sha256": "e7a47d18130f78d144f18bfad5a47c029cc13cc58b4fd87cec14a3e6864cfa71", "passed": 107 },
+    "initialGates": { "log": "post-synthesis-fitness-full-20261026.log", "sha256": "55ab32695f6e66ec825e22dccf2c53c45d5274bfd3754e49ded831de4749c605", "result": "Build, types, lint, re-export and first-party drift passed; subsequent command failed because operator named a nonexistent generator" },
+    "remainingGates": { "log": "post-synthesis-fitness-remaining-20261026.log", "sha256": "d9cb5c0f1157c4e1fe801a09083eeafa3082a99322c2b7c1e6a219f800b67ba9", "passed": true, "testsPassed": 11955, "testsSkipped": 7, "packedChecksPassed": 96, "providerLaunches": 0 }
+  },
+  "review": {
+    "packetSha256": "2b58e07a0095edb6270ab24d30cbaeeabd94f41490d7c2c2fdea5d9b64860f47",
+    "codex": "No concrete introduced defect; source-verified against unchanged function body and direct exports",
+    "codexLogSha256": "77f95f849709f1508252f0e7dbf94701af969d1275d32790039f90e0c4d562a2",
+    "kimi": "No answer; not counted as passing review",
+    "kimiLogSha256": "a4eebf5d7d44f5490f265ba973efba6a7b0a1712213a895f830b6440c27cdbff"
+  },
+  "sourceSha256": {
+    "packages/core/src/cesar/agent-synthesis.ts": "078c891b4ecd6a57f71a6ffe03c4b5d483aee1b4ddd86bd41936344767240a70",
+    "packages/mod-forge/src/fitness.ts": "a2cd7150cf4439bcc64804b4ca528484782dc515ff22fd3129c999c635fbf16d",
+    "packages/mod-forge/src/index.ts": "060c6895e498f42ba1add5324e27601cc59ab248c960a876903b636692f9b5be",
+    "scripts/spec/generate-modular-first-party-packages.mjs": "3a0ced50ec4c6b57ec674533e6e58e50e0344123d03028428db57060d272d748",
+    "scripts/spec/verify-modular-npx.mjs": "de3625b553bf9f743df8480fdc516c4a53a2b966bb0c1577780ef3f2dfac6a56",
+    "tests/unit/agent-synthesis.test.ts": "566b82e05cc1b9f0dced3794f780f5de7a7f392542800a8b4d514f177fbc14da"
+  },
+  "limits": ["Core compatibility exports remain", "Interactive Agent/Synthesis host ownership remains separate", "No aggregate modular release acceptance", "No live provider or unavailable native platform qualification"]
+}

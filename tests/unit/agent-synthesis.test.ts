@@ -17,10 +17,10 @@ vi.mock('../../packages/core/src/blocks/git.js', async () => {
 });
 
 // Mock spawnWithTimeout so runPostSynthesisFitnessCheck tests don't actually
-// spawn subprocesses. Must preserve the other exports from process.js.
-vi.mock('../../packages/core/src/blocks/process.js', async () => {
-  const actual = await vi.importActual<typeof import('../../packages/core/src/blocks/process.js')>(
-    '../../packages/core/src/blocks/process.js',
+// spawn subprocesses. Preserve the other shared runtime exports.
+vi.mock('@kernlang/agon-support-engine-runtime', async () => {
+  const actual = await vi.importActual<typeof import('@kernlang/agon-support-engine-runtime')>(
+    '@kernlang/agon-support-engine-runtime',
   );
   return {
     ...actual,
@@ -41,6 +41,11 @@ import { runApiAgentLoop } from '../../packages/core/src/api/agent-loop.js';
 import { worktreeChangedDiff } from '../../packages/core/src/blocks/git.js';
 import { spawnWithTimeout } from '../../packages/core/src/blocks/process.js';
 import * as physicalAgent from '@kernlang/agon-mod-agent';
+import * as physicalForge from '@kernlang/agon-mod-forge';
+
+it('uses the physical Forge owner for post-synthesis fitness', () => {
+  expect(Reflect.get(physicalForge, 'runPostSynthesisFitnessCheck')).toBe(runPostSynthesisFitnessCheck);
+});
 
 it.each([
   ['buildAgentSynthesisPrompt', buildAgentSynthesisPrompt],

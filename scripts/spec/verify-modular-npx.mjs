@@ -566,6 +566,39 @@ try {
     assert.deepEqual(worktree.parseChangedLines(diff), { 'tests/example.test.ts': [1, 2] });
     assert.deepEqual(worktree.newFilesInDiff(diff), ['tests/example.test.ts']);
   `], { cwd: ephemeral }));
+  requireOk('packed-post-synthesis-fitness-owner', run(process.execPath, ['--input-type=module', '-e', `
+    import assert from 'node:assert/strict';
+    import { existsSync } from 'node:fs';
+    import { pathToFileURL } from 'node:url';
+    import { runPostSynthesisFitnessCheck } from '@kernlang/agon-mod-forge';
+    assert.ok(import.meta.resolve('@kernlang/agon-mod-forge').startsWith(pathToFileURL(process.cwd() + '/node_modules/').href));
+    const worktreePath = process.cwd();
+    const success = await runPostSynthesisFitnessCheck({ worktreePath, fitnessCmd: 'test -d node_modules' });
+    assert.equal(success.passed, true); assert.equal(success.exitCode, 0); assert.equal(success.error, null);
+    const failure = await runPostSynthesisFitnessCheck({ worktreePath, fitnessCmd: 'exit 7' });
+    assert.equal(failure.passed, false); assert.equal(failure.exitCode, 7); assert.equal(failure.error, null);
+    const timeout = await runPostSynthesisFitnessCheck({ worktreePath, fitnessCmd: 'sleep 5', timeoutSec: 0.05 });
+    assert.equal(timeout.passed, false); assert.equal(timeout.exitCode, 124);
+    const abort = new AbortController(); abort.abort(new Error('fixture cancelled'));
+    const cancelled = await runPostSynthesisFitnessCheck({ worktreePath, fitnessCmd: 'touch forbidden-fitness', signal: abort.signal });
+    assert.equal(cancelled.passed, false); assert.equal(cancelled.error, 'fixture cancelled');
+    const denied = await runPostSynthesisFitnessCheck({ worktreePath, fitnessCmd: 'touch forbidden-fitness', executionRefusal: () => 'fixture disabled' });
+    assert.equal(denied.passed, false); assert.equal(denied.error, 'fixture disabled');
+    assert.equal(existsSync('forbidden-fitness'), false);
+  `], { cwd: ephemeral }));
+  const fitnessExample = join(ephemeral, 'post-synthesis-fitness-contract.mts');
+  writeFileSync(fitnessExample, `
+    import { runPostSynthesisFitnessCheck, type PostSynthesisFitnessResult } from '@kernlang/agon-mod-forge';
+    const result: Promise<PostSynthesisFitnessResult> = runPostSynthesisFitnessCheck({ worktreePath: '.', fitnessCmd: 'true', timeoutSec: 1 });
+    void result;
+    // @ts-expect-error A fitness invocation requires its command.
+    runPostSynthesisFitnessCheck({ worktreePath: '.' });
+    // @ts-expect-error Authority refusals are reasons, not booleans.
+    runPostSynthesisFitnessCheck({ worktreePath: '.', fitnessCmd: 'true', executionRefusal: () => false });
+  `);
+  requireOk('packed-post-synthesis-fitness-types', run(process.execPath, [join(root, 'node_modules/typescript/bin/tsc'),
+    '--noEmit', '--strict', '--skipLibCheck', '--module', 'NodeNext', '--moduleResolution', 'NodeNext',
+    '--target', 'ES2022', '--types', 'node', '--typeRoots', join(root, 'node_modules/@types'), fitnessExample], { cwd: ephemeral }));
   requireOk('packed-synthesis-runtime', run(process.execPath, ['--input-type=module', '-e', `
     import assert from 'node:assert/strict';
     import { pathToFileURL } from 'node:url';

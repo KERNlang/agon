@@ -61,6 +61,70 @@ try {
   writeFileSync(join(ephemeral, 'package-lock.json'), lockBytes);
   requireOk('ephemeral-npx-hydration', run('npm', ['ci', '--ignore-scripts', '--no-audit', '--no-fund', '--omit=optional', '--offline'], { cwd: ephemeral }));
   if (readFileSync(join(ephemeral, 'package-lock.json'), 'utf8') !== lockBytes) throw new Error('packed hydration changed the frozen dependency lock');
+  requireOk('packed-research-prompt-pure-import', run(process.execPath, ['--input-type=module', '-e', `
+    import assert from 'node:assert/strict';
+    import { register } from 'node:module';
+    register('data:text/javascript,' + encodeURIComponent(
+      "export async function resolve(id, context, next) { if (['undici', 'node:dns/promises', 'node:net'].includes(id)) throw new Error('blocked network import: ' + id); return next(id, context); }"
+    ));
+    const { buildResearchPrompt, buildPrompt } = await import('@kernlang/agon-mod-research/prompt-policy');
+    assert.match(buildResearchPrompt('Question', []), /QUESTION:/);
+    assert.match(buildPrompt('Question', []), /QUESTION:/);
+    await assert.rejects(import('@kernlang/agon-mod-research'), /blocked network import/);
+  `], { cwd: ephemeral }));
+  requireOk('compiled-forge-research-prompt-owner', run(process.execPath, ['--input-type=module', '-e', `
+    import assert from 'node:assert/strict';
+    import { buildResearchPrompt as legacy } from ${JSON.stringify(join(root, 'packages/forge/dist/index.js'))};
+    import { buildResearchPrompt as owner } from '@kernlang/agon-mod-research/prompt-policy';
+    assert.equal(legacy, owner);
+  `]));
+  requireOk('packed-research-prompt-owner', run(process.execPath, ['--input-type=module', '-e', `
+    import assert from 'node:assert/strict';
+    import { pathToFileURL } from 'node:url';
+    import * as physical from '@kernlang/agon-mod-research';
+    import { buildResearchPrompt, buildPrompt } from '@kernlang/agon-mod-research/prompt-policy';
+    assert.ok(import.meta.resolve('@kernlang/agon-mod-research/prompt-policy').startsWith(pathToFileURL(process.cwd() + '/node_modules/').href));
+    assert.equal(physical.buildResearchPrompt, buildResearchPrompt);
+    assert.equal(physical.buildPrompt, buildPrompt);
+    const source = { title: '', url: 'https://example.org', content: '  ', snippet: ' two\\n words ', fetched: true };
+    assert.equal(buildResearchPrompt('  Question?  ', [source]), [
+      'You are a careful research assistant. Answer the QUESTION using ONLY the SOURCES below.',
+      'Do NOT use prior knowledge or invent facts or URLs. If the sources do not answer the question, say so plainly.',
+      '', 'QUESTION:', 'Question?', '', 'SOURCES:',
+      '[1] https://example.org', '    https://example.org', '    two words', '', 'INSTRUCTIONS:',
+      '1. Answer the question directly and concisely, grounded in the sources.',
+      '2. Cite every claim inline with the source number in brackets, e.g. [1], [2].',
+      '3. Do not cite a source you did not use; do not invent sources or URLs.',
+      '4. End with a "Sources:" section listing each [n] and its URL.'
+    ].join('\\n'));
+    assert.equal(buildPrompt('  Question?  ', [source]), [
+      'Answer the QUESTION using ONLY the numbered SOURCES. Cite every factual claim inline as [n]. Never invent URLs or facts. If evidence is insufficient, say so.',
+      '', 'QUESTION:', '  Question?  ', '', 'SOURCES:', '[1] ', 'https://example.org', '  '
+    ].join('\\n'));
+  `], { cwd: ephemeral }));
+  const researchPromptTypes = join(ephemeral, 'research-prompt-types.mts');
+  writeFileSync(researchPromptTypes, `import { buildResearchPrompt, buildPrompt, type Source } from '@kernlang/agon-mod-research/prompt-policy';
+    import { buildResearchPrompt as rootPrompt, buildPrompt as rootPhysical } from '@kernlang/agon-mod-research';
+    import { buildResearchPrompt as legacy } from ${JSON.stringify(join(root, 'packages/forge/dist/research.js'))};
+    import type { Source as PreviousSource } from ${JSON.stringify(join(root, 'packages/mod-research/dist/implementation.js'))};
+    const source: Source = { title: 'Doc', url: 'https://example.org', snippet: 'body', fetched: true };
+    const previous: PreviousSource = source;
+    for (const build of [buildResearchPrompt, rootPrompt, legacy]) {
+      const output: string = build('Question', [{ title: 'Doc', url: 'https://example.org' }]);
+      void output;
+      // @ts-expect-error Source URLs must remain strings.
+      build('Question', [{ title: 'Doc', url: 1 }]);
+    }
+    for (const build of [buildPrompt, rootPhysical]) {
+      const output: string = build('Question', [previous]);
+      void output;
+      // @ts-expect-error The physical source contract retains fetched.
+      build('Question', [{ title: 'Doc', url: 'https://example.org', snippet: 'body' }]);
+    }
+  `);
+  requireOk('packed-research-prompt-types', run(process.execPath, [join(root, 'node_modules/typescript/bin/tsc'),
+    '--noEmit', '--strict', '--skipLibCheck', '--module', 'NodeNext', '--moduleResolution', 'NodeNext',
+    '--target', 'ES2022', researchPromptTypes], { cwd: ephemeral }));
   requireOk('packed-agent-team-scoring-owner', run(process.execPath, ['--input-type=module', '-e', `
     import assert from 'node:assert/strict';
     import { pathToFileURL } from 'node:url';

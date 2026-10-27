@@ -9,6 +9,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./prompt-policy": {
+      "types": "./dist/prompt-policy.d.ts",
+      "import": "./dist/prompt-policy.js"
+    },
     "./manifest": "./agon.mod.json",
     "./ownership": "./ownership.json"
   },

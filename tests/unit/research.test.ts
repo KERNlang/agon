@@ -10,6 +10,48 @@ import {
   runResearch,
 } from '../../packages/forge/src/research.js';
 import type { ResearchResult } from '../../packages/forge/src/research.js';
+import * as researchOwner from '@kernlang/agon-mod-research';
+import { buildPrompt } from '../../packages/mod-research/src/implementation.js';
+import { buildPrompt as sourcePromptOwner } from '../../packages/mod-research/src/prompt-policy.js';
+import { buildPrompt as packedPromptOwner } from '@kernlang/agon-mod-research/prompt-policy';
+
+describe('Research prompt ownership', () => {
+  it('uses the Research owner for both compatibility formats', () => {
+    const owner = researchOwner as unknown as Record<string, unknown>;
+    expect(buildResearchPrompt).toBe(owner.buildResearchPrompt);
+    expect(buildPrompt).toBe(sourcePromptOwner);
+    expect(packedPromptOwner).toBe(owner.buildPrompt);
+  });
+
+  it('preserves legacy prompt bytes and normalization', () => {
+    expect(buildResearchPrompt('  Question?  ', [
+      { title: '', url: 'https://example.org', content: '  ', snippet: ' two\n words ' },
+    ])).toBe([
+      'You are a careful research assistant. Answer the QUESTION using ONLY the SOURCES below.',
+      'Do NOT use prior knowledge or invent facts or URLs. If the sources do not answer the question, say so plainly.',
+      '', 'QUESTION:', 'Question?', '', 'SOURCES:',
+      '[1] https://example.org', '    https://example.org', '    two words', '',
+      'INSTRUCTIONS:',
+      '1. Answer the question directly and concisely, grounded in the sources.',
+      '2. Cite every claim inline with the source number in brackets, e.g. [1], [2].',
+      '3. Do not cite a source you did not use; do not invent sources or URLs.',
+      '4. End with a "Sources:" section listing each [n] and its URL.',
+    ].join('\n'));
+  });
+
+  it('preserves the physical prompt format without legacy normalization', () => {
+    expect(buildPrompt('  Question?  ', [
+      { title: '', url: 'https://example.org', content: '  ', snippet: 'fallback', fetched: true },
+    ])).toBe('Answer the QUESTION using ONLY the numbered SOURCES. Cite every factual claim inline as [n]. Never invent URLs or facts. If evidence is insufficient, say so.\n\nQUESTION:\n  Question?  \n\nSOURCES:\n[1] \nhttps://example.org\n  ');
+  });
+
+  it('retains distinct source body bounds', () => {
+    const source = { title: 'Source', url: 'https://example.org', content: 'x'.repeat(3500) + 'TAIL', snippet: '', fetched: true };
+    expect(buildResearchPrompt('Question', [source])).toContain('x'.repeat(3500));
+    expect(buildResearchPrompt('Question', [source])).not.toContain('TAIL');
+    expect(buildPrompt('Question', [source])).toContain(source.content);
+  });
+});
 
 describe('buildResearchPrompt', () => {
   it('includes the question, numbered sources with URLs + content, and citation rules', () => {

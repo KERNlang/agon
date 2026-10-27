@@ -1,6 +1,10 @@
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import { Agent } from "undici";
+import { buildPrompt } from './prompt-policy.js';
+import type { Source } from './prompt-policy.js';
+export { buildPrompt } from './prompt-policy.js';
+export type { Source } from './prompt-policy.js';
 import type {
   AgonModFactory,
   CommandResult,
@@ -18,13 +22,6 @@ export type Intent =
   | "qa"
   | "fact"
   | "general";
-export interface Source {
-  title: string;
-  url: string;
-  snippet: string;
-  content?: string;
-  fetched: boolean;
-}
 export interface CitationVerdict {
   url: string;
   verdict: "verified" | "blocked" | "dead" | "redirected" | "unreachable";
@@ -295,9 +292,6 @@ async function fetchBounded(url: string, signal: AbortSignal, max = 3500) {
     };
   }
   throw new Error("too many redirects");
-}
-export function buildPrompt(question: string, sources: Source[]) {
-  return `Answer the QUESTION using ONLY the numbered SOURCES. Cite every factual claim inline as [n]. Never invent URLs or facts. If evidence is insufficient, say so.\n\nQUESTION:\n${question}\n\nSOURCES:\n${sources.map((s, i) => `[${i + 1}] ${s.title}\n${s.url}\n${s.content || s.snippet}`).join("\n\n")}`;
 }
 export function formatResearchResult(result: {
   ok: boolean; answer: string; intent: Intent; engineId: string; sources: Source[];

@@ -233,7 +233,7 @@ function expectedFiles(packageRecord) {
     private: false,
     license: 'MIT',
     type: 'module',
-    exports: { '.': { types: './dist/index.d.ts', import: './dist/index.js' }, './manifest': './agon.mod.json', './ownership': './ownership.json' },
+    exports: { '.': { types: './dist/index.d.ts', import: './dist/index.js' }, ...(short === 'research' ? { './prompt-policy': { types: './dist/prompt-policy.d.ts', import: './dist/prompt-policy.js' } } : {}), './manifest': './agon.mod.json', './ownership': './ownership.json' },
     main: './dist/index.js',
     types: './dist/index.d.ts',
     files: short === 'plan'
@@ -321,6 +321,7 @@ export type * from './types.js';
 export { runRag, buildRagIndex, queryRag, collectCorpusFiles, chunkMarkdown } from './implementation.js';
 ` : short === 'history' ? `export { runHistory } from './implementation.js';
 ` : short === 'research' ? `export { runResearch, classifyQuery, validateUrl, formatResearchResult } from './implementation.js';
+export { buildResearchPrompt, buildPrompt } from './prompt-policy.js';
 ` : short === 'mutate' ? `export { runMutate, generateMutants } from './implementation.js';
 ` : short === 'naturalize' ? `export { runNaturalize } from './implementation.js';
 ` : short === 'sanitize' ? `export { runSanitize, scanText, cleanText } from './implementation.js';
@@ -549,7 +550,7 @@ export type { CouncilSessionHost, CouncilSessionContext, CouncilSessionCommandRe
     [resolve(directory, 'src/index.ts'), indexSource],
     [resolve(directory, 'LICENSE'), readFileSync(resolve(root, 'LICENSE'), 'utf8')],
     [resolve(directory, 'tsconfig.json'), json(tsconfig)],
-    [resolve(directory, 'tsup.config.ts'), "import { defineConfig } from 'tsup';\n\nexport default defineConfig({ entry: ['src/index.ts'], format: ['esm'], dts: false, sourcemap: false, clean: true, target: 'es2022' });\n"],
+    [resolve(directory, 'tsup.config.ts'), `import { defineConfig } from 'tsup';\n\nexport default defineConfig({ entry: [${short === 'research' ? "'src/index.ts', 'src/prompt-policy.ts'" : "'src/index.ts'"}], format: ['esm'], dts: false, sourcemap: false, clean: true, target: 'es2022' });\n`],
   ]);
 }
 

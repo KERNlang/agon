@@ -1,4 +1,6 @@
 import type { EngineAdapter, EngineRegistry, RatingRecord, SearchResult, CitationReport, ResearchIntent } from '@kernlang/agon-core';
+import { buildResearchPrompt } from '@kernlang/agon-mod-research/prompt-policy';
+export { buildResearchPrompt } from '@kernlang/agon-mod-research/prompt-policy';
 
 import { resolveWorkingDir, getRatings, loadConfig, pickTopRatedEngine, resolveCurrentIdentities, seedNewEnginesFromRegistry, classifyQuery, buildAuthoritativeRequest, parseAuthoritativeResults, createWebFetchTool, extractCitations, verifyCitations } from '@kernlang/agon-core';
 
@@ -34,33 +36,6 @@ export interface ResearchResult {
   citations: CitationReport;
   outputDir: string;
   note?: string | undefined;
-}
-
-/**
- * Build the grounded-research prompt: the question plus each numbered source's URL and fetched content. Instructs the engine to answer ONLY from the sources, cite inline as [n], and end with a Sources: list. Pure — exported for testing.
- */
-export function buildResearchPrompt(question: string, sources: { title:string; url:string; snippet?:string; content?:string }[]): string {
-  const lines: string[] = [];
-  lines.push('You are a careful research assistant. Answer the QUESTION using ONLY the SOURCES below.');
-  lines.push('Do NOT use prior knowledge or invent facts or URLs. If the sources do not answer the question, say so plainly.');
-  lines.push('');
-  lines.push('QUESTION:');
-  lines.push(String(question ?? '').trim());
-  lines.push('');
-  lines.push('SOURCES:');
-  (sources ?? []).forEach((s, i) => {
-    lines.push(`[${i + 1}] ${s.title || s.url}`);
-    lines.push(`    ${s.url}`);
-    const body = String(s.content ?? '').trim() || String(s.snippet ?? '').trim();
-    if (body) lines.push(`    ${body.replace(/\s+/g, ' ').slice(0, 3500)}`);
-    lines.push('');
-  });
-  lines.push('INSTRUCTIONS:');
-  lines.push('1. Answer the question directly and concisely, grounded in the sources.');
-  lines.push('2. Cite every claim inline with the source number in brackets, e.g. [1], [2].');
-  lines.push('3. Do not cite a source you did not use; do not invent sources or URLs.');
-  lines.push('4. End with a "Sources:" section listing each [n] and its URL.');
-  return lines.join('\n');
 }
 
 /**

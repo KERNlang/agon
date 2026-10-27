@@ -12,6 +12,7 @@ export * from './mutation-runner.js';
 export * from './mutant-generator.js';
 export * from './mutant-runner.js';
 export * from './mutation-languages.js';
+export * from './untracked-copy.js';
 export * from './mutation-lexer.js';
 export * from './mutation-operators.js';
 export * from './mutation-sandbox.js';

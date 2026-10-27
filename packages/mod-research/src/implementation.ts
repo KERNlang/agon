@@ -10,14 +10,10 @@ import type {
   ModServices,
   Registrar,
 } from "@kernlang/agon-mod-api";
-export type Intent =
-  | "package"
-  | "github"
-  | "standard"
-  | "rfc"
-  | "qa"
-  | "fact"
-  | "general";
+import { classifyQuery } from "./query-policy.js";
+import type { ResearchIntent as Intent } from "./query-policy.js";
+export { classifyQuery } from "./query-policy.js";
+export type { ResearchIntent as Intent } from "./query-policy.js";
 export interface Source {
   title: string;
   url: string;
@@ -30,25 +26,6 @@ export interface CitationVerdict {
   verdict: "verified" | "blocked" | "dead" | "redirected" | "unreachable";
   httpStatus: number;
   detail: string;
-}
-export function classifyQuery(value: string): Intent {
-  const q = value.toLowerCase();
-  if (/stack\s?overflow|stackexchange/.test(q)) return "qa";
-  if (
-    /github|repositor|\brepos?\b/.test(q) &&
-    !/issues?|pull.?requests?|commits?/.test(q)
-  )
-    return "github";
-  if (
-    /npm|node|yarn|pnpm|packages?|librar|modules?|dependenc/.test(q) &&
-    !/pypi|python|cargo|rust|maven|gradle|nuget/.test(q)
-  )
-    return "package";
-  if (/\brfc\b|ietf/.test(q)) return "rfc";
-  if (/specification|standards?|w3c|whatwg|ecma|mdn/.test(q)) return "standard";
-  if (/^(who|what|when|where|why|how)\b|wikipedia|definition/.test(q))
-    return "fact";
-  return "general";
 }
 const clean = (q: string) =>
   q

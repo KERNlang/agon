@@ -161,6 +161,48 @@ try {
   requireOk('packed-research-prompt-types', run(process.execPath, [join(root, 'node_modules/typescript/bin/tsc'),
     '--noEmit', '--strict', '--skipLibCheck', '--module', 'NodeNext', '--moduleResolution', 'NodeNext',
     '--target', 'ES2022', researchPromptTypes], { cwd: ephemeral }));
+  requireOk('packed-research-format-pure-import', run(process.execPath, ['--input-type=module', '-e', `
+    import assert from 'node:assert/strict';
+    import { register } from 'node:module';
+    register('data:text/javascript,' + encodeURIComponent(
+      "export async function resolve(id, context, next) { if (['undici', 'node:dns/promises', 'node:net'].includes(id)) throw new Error('blocked network import: ' + id); return next(id, context); }"
+    ));
+    const { formatResearchResult } = await import('@kernlang/agon-mod-research/format-policy');
+    assert.equal(formatResearchResult({ ok: false, note: 'fixture' }), 'Research produced no grounded answer — fixture');
+    await assert.rejects(import('@kernlang/agon-mod-research'), /blocked network import/);
+  `], { cwd: ephemeral }));
+  requireOk('compiled-forge-research-format-owner', run(process.execPath, ['--input-type=module', '-e', `
+    import assert from 'node:assert/strict';
+    import { formatResearchResult as legacy } from ${JSON.stringify(join(root, 'packages/forge/dist/index.js'))};
+    import { formatResearchResult as owner } from '@kernlang/agon-mod-research/format-policy';
+    assert.equal(legacy, owner);
+  `]));
+  requireOk('packed-research-format-owner', run(process.execPath, ['--input-type=module', '-e', `
+    import assert from 'node:assert/strict';
+    import { pathToFileURL } from 'node:url';
+    import { formatResearchResult as physical } from '@kernlang/agon-mod-research';
+    import { formatResearchResult as owner } from '@kernlang/agon-mod-research/format-policy';
+    assert.ok(import.meta.resolve('@kernlang/agon-mod-research/format-policy').startsWith(pathToFileURL(process.cwd() + '/node_modules/').href));
+    assert.equal(physical, owner);
+    const result = { ok: true, answer: 'Claim [1].', intent: 'standard', engineId: 'fixture',
+      sources: [{ title: 'Doc', url: 'https://source.example' }],
+      citations: { total: 2, verified: 1, blocked: 1, results: [
+        { url: 'https://source.example', verdict: 'verified', detail: 'HTTP 200' },
+        { url: 'https://blocked.example', verdict: 'blocked', detail: 'HTTP 403' }
+      ] }
+    };
+    const output = owner(result);
+    assert.match(output, /1\\/2 verified · 1 blocked/);
+    assert.match(output, /Could not verify/);
+    assert.doesNotMatch(output, /Unverified citations/);
+    assert.equal(output, [
+      'Claim [1].', '', 'Sources (1) · citations 1/2 verified · 1 blocked · standard · engine fixture',
+      '  [1] Doc', '      https://source.example', '',
+      'ⓘ Could not verify (host blocked our re-fetch — citation not disproven):',
+      '  ⚠ [blocked] https://blocked.example — HTTP 403'
+    ].join('\\n'));
+    assert.equal(owner({ ...result, ok: false, note: 'no evidence' }), 'Research produced no grounded answer — no evidence');
+  `], { cwd: ephemeral }));
   requireOk('packed-agent-team-scoring-owner', run(process.execPath, ['--input-type=module', '-e', `
     import assert from 'node:assert/strict';
     import { pathToFileURL } from 'node:url';
@@ -175,6 +217,31 @@ try {
     assert.equal(result.pass, true); assert.equal(result.score, 100); assert.equal(result.durationSec, 2);
     assert.equal(scoreAgentTeamResult(team, 'investigate', undefined, () => { throw new Error('unexpected Git read'); }).get('worker').pass, true);
   `], { cwd: ephemeral }));
+  const researchFormatTypes = join(ephemeral, 'research-format-types.mts');
+  writeFileSync(researchFormatTypes, `import { formatResearchResult, type ResearchFormatInput } from '@kernlang/agon-mod-research/format-policy';
+    import { formatResearchResult as physical } from '@kernlang/agon-mod-research';
+    import { formatResearchResult as legacyFormat } from ${JSON.stringify(join(root, 'packages/forge/dist/research.js'))};
+    import type { ResearchResult } from ${JSON.stringify(join(root, 'packages/forge/dist/research.js'))};
+    declare const legacy: ResearchResult;
+    const compatible: ResearchFormatInput = legacy;
+    const rendered: string = formatResearchResult(compatible);
+    void rendered;
+    for (const format of [formatResearchResult, physical, legacyFormat]) {
+      format({ ok: true, question: 'q', outputDir: '/fixture', answer: 'Claim [1].', intent: 'general', engineId: 'fixture',
+        sources: [{ title: 'Doc', url: 'https://source.example', snippet: 'snippet', fetched: true, content: 'content' }],
+        citations: { total: 1, verified: 1, blocked: 0, rejected: 0, invalidNumbers: [], results: [
+          { url: 'https://source.example', verdict: 'verified', detail: 'ok', httpStatus: 200, finalUrl: 'https://source.example' }
+        ] }
+      });
+      format({ ok: false, question: 'q', intent: 'general', engineId: '', answer: '', sources: [],
+        citations: { total: 0, verified: 0, blocked: 0, rejected: 0, results: [] }, outputDir: '/fixture', note: 'no engine available' });
+    }
+    // @ts-expect-error Citation counts must remain numeric.
+    formatResearchResult({ ...compatible, citations: { ...compatible.citations, total: 'one' } });
+  `);
+  requireOk('packed-research-format-types', run(process.execPath, [join(root, 'node_modules/typescript/bin/tsc'),
+    '--noEmit', '--strict', '--skipLibCheck', '--module', 'NodeNext', '--moduleResolution', 'NodeNext',
+    '--target', 'ES2022', researchFormatTypes], { cwd: ephemeral }));
   const agentTypes = join(ephemeral, 'agent-team-types.mts');
   writeFileSync(agentTypes, `import { scoreAgentTeamResult, type AgentTeamResult, type AgentTeamMemberResult, type AgentTeamScore, type AgentTeamShortstatReader } from '@kernlang/agon-mod-agent';
     const member: AgentTeamMemberResult = { engineId: 'worker', worktreePath: null, error: null,

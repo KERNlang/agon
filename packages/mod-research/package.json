@@ -13,6 +13,10 @@
       "types": "./dist/prompt-policy.d.ts",
       "import": "./dist/prompt-policy.js"
     },
+    "./format-policy": {
+      "types": "./dist/format-policy.d.ts",
+      "import": "./dist/format-policy.js"
+    },
     "./manifest": "./agon.mod.json",
     "./ownership": "./ownership.json"
   },

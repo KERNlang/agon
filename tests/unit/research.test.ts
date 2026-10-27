@@ -52,6 +52,7 @@ describe('Research prompt ownership', () => {
     expect(buildPrompt('Question', [source])).toContain(source.content);
   });
 });
+import { formatResearchResult as physicalFormatResearchResult } from '@kernlang/agon-mod-research';
 
 describe('buildResearchPrompt', () => {
   it('includes the question, numbered sources with URLs + content, and citation rules', () => {
@@ -88,6 +89,10 @@ const ok = (over: Partial<ResearchResult>): ResearchResult => ({
 });
 
 describe('formatResearchResult', () => {
+  it('uses one Research-owned formatter across legacy and physical execution', () => {
+    expect(formatResearchResult).toBe(physicalFormatResearchResult);
+  });
+
   it('renders the cited answer, source list, and a verified summary', () => {
     const out = formatResearchResult(ok({}));
     expect(out).toContain('The answer [1].');

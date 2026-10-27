@@ -2,6 +2,7 @@
 // intent classification, first-party request construction (npm/GitHub/Wikipedia),
 // and JSON parsing. No network here — the live fetch lives in tool-web-search.
 import { describe, it, expect } from 'vitest';
+import { parseAuthoritativeResults as ownedParser } from '@kernlang/agon-mod-research';
 import {
   classifyQuery,
   cleanQuery,
@@ -153,6 +154,9 @@ describe('buildAuthoritativeRequest', () => {
 });
 
 describe('parseAuthoritativeResults', () => {
+  it('uses the Research-owned parser through the Core compatibility export', () => {
+    expect(parseAuthoritativeResults).toBe(ownedParser);
+  });
   it('normalizes npm registry search JSON', () => {
     const raw = JSON.stringify({
       objects: [

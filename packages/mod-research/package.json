@@ -9,6 +9,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./response-policy": {
+      "types": "./dist/response-policy.d.ts",
+      "import": "./dist/response-policy.js"
+    },
     "./manifest": "./agon.mod.json",
     "./ownership": "./ownership.json"
   },

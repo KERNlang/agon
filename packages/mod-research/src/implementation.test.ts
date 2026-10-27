@@ -13,6 +13,19 @@ function services(answer = 'Supported claim [1].') {
     engines: { listActive: vi.fn(async () => ['writer']), dispatch: vi.fn(async () => ({ exitCode: 0, stdout: answer })) } } as unknown as ModServices;
 }
 describe('physical research mod', () => {
+  it.each(['null', '{"items":{}}', '{"items":[null]}'])('treats malformed discovery payload %s as no sources', async (payload) => {
+    globalThis.fetch = vi.fn().mockResolvedValue(new Response(payload, { status: 200 }));
+    const s = services();
+    const out = await runResearch({ question: 'github repo parser' }, context, s);
+    expect(out).toEqual({ exitCode: 1, stderr: 'No authoritative sources found.\n' });
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    expect(s.engines.dispatch).not.toHaveBeenCalled();
+    expect(s.runs!.finish).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'run' }),
+      expect.objectContaining({ ok: false, summary: 'no authoritative sources found' }),
+      context,
+    );
+  });
   it('rejects a hostname if any resolved address enters private space', async () => {
     expect(isBlockedAddress('127.0.0.1')).toBe(true); expect(isBlockedAddress('100.64.0.1')).toBe(true); expect(isBlockedAddress('fe80::1')).toBe(true);
     await expect(resolvePublicHost('public.example', vi.fn(async () => [{ address: '93.184.216.34', family: 4 }, { address: '10.0.0.1', family: 4 }]) as any)).rejects.toThrow(/blocked address/);

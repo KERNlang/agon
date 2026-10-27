@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process';
 import { verifyPackedMcp } from './verify-packed-mcp.mjs';
 import { verifyPackedBrainstorm } from './verify-packed-brainstorm.mjs';
 import { verifyPackedBrainstormTui } from './verify-packed-brainstorm-tui.mjs';
-import { createFrozenNpmInstall, DurableModHost, ManagedLifecycleService, hashInstalledPackagePayload } from '../../packages/mod-kernel/dist/index.js';
+import { createFrozenNpmInstall, createNpmReleaseCatalog, DurableModHost, ManagedLifecycleService, hashInstalledPackagePayload } from '../../packages/mod-kernel/dist/index.js';
 
 const root = resolve(import.meta.dirname, '../..');
 const output = join(root, 'docs/specs/evidence/modular-agon-npx-qualification.json');
@@ -75,6 +75,67 @@ try {
     assert.equal(result.pass, true); assert.equal(result.score, 100); assert.equal(result.durationSec, 2);
     assert.equal(scoreAgentTeamResult(team, 'investigate', undefined, () => { throw new Error('unexpected Git read'); }).get('worker').pass, true);
   `], { cwd: ephemeral }));
+  // Keep Core outside the launcher fixture so missing dependencies remain visible.
+  const coreCompatibility = join(scratch, 'core-compatibility');
+  mkdirSync(coreCompatibility);
+  const corePack = requireOk('pack:legacy-core', run('npm', ['pack', '--json', '--ignore-scripts', '--pack-destination', packRoot], { cwd: join(root, 'packages/core') }));
+  const packedCore = JSON.parse(corePack.stdout)[0];
+  const coreCatalog = createNpmReleaseCatalog(JSON.parse(readFileSync(join(root, 'package-lock.json'), 'utf8')), ['packages/core']);
+  const coreArtifacts = Object.fromEntries(Object.entries(artifacts).filter(([id]) => coreCatalog.packages[`node_modules/${id}`]));
+  coreArtifacts['@kernlang/agon-core'] = { version: packedCore.version, resolved: `file:${join(packRoot, packedCore.filename)}`, integrity: packedCore.integrity };
+  const coreFrozen = createFrozenNpmInstall(coreCatalog, ['@kernlang/agon-core'], coreArtifacts);
+  writeFileSync(join(coreCompatibility, 'package.json'), JSON.stringify(coreFrozen.manifest, null, 2));
+  const coreLockBytes = JSON.stringify(coreFrozen.lock, null, 2);
+  writeFileSync(join(coreCompatibility, 'package-lock.json'), coreLockBytes);
+  requireOk('legacy-core-frozen-hydration', run('npm', ['ci', '--ignore-scripts', '--no-audit', '--no-fund', '--omit=optional', '--offline'], { cwd: coreCompatibility }));
+  if (readFileSync(join(coreCompatibility, 'package-lock.json'), 'utf8') !== coreLockBytes) throw new Error('Core compatibility hydration changed the frozen lock');
+  requireOk('packed-research-response-standalone', run(process.execPath, ['--input-type=module', '-e', `
+    import assert from 'node:assert/strict';
+    import { readFileSync } from 'node:fs';
+    import { parseAuthoritativeResults } from '@kernlang/agon-mod-research/response-policy';
+    const entry = new URL(import.meta.resolve('@kernlang/agon-mod-research/response-policy'));
+    assert.doesNotMatch(readFileSync(entry, 'utf8'), /\\bimport\\s*(?:[('"*{]|[A-Za-z_$])/);
+    for (const raw of ['null', '{"items":{}}', '{"items":[null]}', 'not json']) {
+      assert.deepEqual(parseAuthoritativeResults('github', raw), []);
+    }
+    assert.deepEqual(parseAuthoritativeResults('package', '{"objects":[{"package":{"name":"yaml"}}]}'),
+      [{ title: 'yaml', url: 'https://www.npmjs.com/package/yaml', snippet: '' }]);
+  `], { cwd: coreCompatibility }));
+  requireOk('packed-research-response-owner', run(process.execPath, ['--input-type=module', '-e', `
+    import assert from 'node:assert/strict';
+    import { pathToFileURL } from 'node:url';
+    import * as research from '@kernlang/agon-mod-research';
+    import * as policy from '@kernlang/agon-mod-research/response-policy';
+    import * as core from '@kernlang/agon-core';
+    const installedRoot = pathToFileURL(process.cwd() + '/node_modules/').href;
+    for (const id of ['@kernlang/agon-mod-research', '@kernlang/agon-mod-research/response-policy', '@kernlang/agon-core']) {
+      assert.ok(import.meta.resolve(id).startsWith(installedRoot));
+    }
+    assert.equal(core.parseAuthoritativeResults, policy.parseAuthoritativeResults);
+    assert.equal(research.parseAuthoritativeResults, policy.parseAuthoritativeResults);
+  `], { cwd: coreCompatibility }));
+  const responseTypes = join(coreCompatibility, 'research-response-types.mts');
+  writeFileSync(responseTypes, `
+    import { parseAuthoritativeResults, type ResearchSearchResult } from '@kernlang/agon-mod-research';
+    import { parseAuthoritativeResults as policy } from '@kernlang/agon-mod-research/response-policy';
+    import { parseAuthoritativeResults as legacy, type SearchResult } from '@kernlang/agon-core';
+    const result: ResearchSearchResult[] = parseAuthoritativeResults('github', '{}');
+    const oldResult: SearchResult[] = result;
+    const compatible: ResearchSearchResult[] = oldResult;
+    const legacySignature: typeof parseAuthoritativeResults = legacy;
+    const reverseSignature: typeof legacy = parseAuthoritativeResults;
+    const policySignature: typeof parseAuthoritativeResults = policy;
+    // @ts-expect-error Unsupported routing lanes remain invalid.
+    parseAuthoritativeResults('pypi', '{}');
+    // @ts-expect-error The parser takes JSON text, not a parsed object.
+    parseAuthoritativeResults('github', {});
+    // @ts-expect-error Public result fields remain strings.
+    const invalid: ResearchSearchResult = { title: 'title', url: 42, snippet: '' };
+    void [compatible, legacySignature, reverseSignature, policySignature, invalid];
+  `);
+  requireOk('packed-research-response-public-types', run(process.execPath, [join(root, 'node_modules/typescript/bin/tsc'),
+    '--noEmit', '--strict', '--skipLibCheck', '--module', 'NodeNext', '--moduleResolution', 'NodeNext',
+    '--target', 'ES2022', responseTypes], { cwd: coreCompatibility }));
   const agentTypes = join(ephemeral, 'agent-team-types.mts');
   writeFileSync(agentTypes, `import { scoreAgentTeamResult, type AgentTeamResult, type AgentTeamMemberResult, type AgentTeamScore, type AgentTeamShortstatReader } from '@kernlang/agon-mod-agent';
     const member: AgentTeamMemberResult = { engineId: 'worker', worktreePath: null, error: null,

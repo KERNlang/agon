@@ -120,6 +120,8 @@
       "dist/response-policy.d.ts",
       "dist/discovery-policy.js",
       "dist/discovery-policy.d.ts",
+      "dist/query-policy.js",
+      "dist/query-policy.d.ts",
       "ownership.json",
       "schemas/config.schema.json"
     ],

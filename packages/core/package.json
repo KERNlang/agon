@@ -25,6 +25,7 @@
     "@kernlang/agon-kernel": "1.0.0",
     "@kernlang/agon-mod-agent": "1.0.0",
     "@kernlang/agon-mod-rag": "1.0.0",
+    "@kernlang/agon-mod-research": "1.0.0",
     "@kernlang/agon-mod-ratings": "1.0.0",
     "@kernlang/agon-mod-research": "1.0.0",
     "@kernlang/agon-mod-jobs": "1.0.0",

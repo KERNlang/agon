@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "scope": "Research query classification ownership and pip routing repair; not full modular acceptance",
+  "baseCommit": "a4e06dfb8869acd14fe4c90cc16a88abebeb3243",
+  "archiveRoot": "/Users/ra/dev/modular-agon-remediation",
+  "archiveRetention": "Do not delete without Raphael's explicit approval",
+  "owner": "@kernlang/agon-mod-research",
+  "implementation": "packages/mod-research/src/query-policy.ts",
+  "publicEntry": "@kernlang/agon-mod-research/query-policy",
+  "compatibility": {
+    "source": "packages/core/src/tools/research-router.ts",
+    "policy": "Legacy type and function block moved unchanged; Core retains public re-exports",
+    "physicalRepair": "Python pip module queries no longer trigger npm discovery or engine dispatch",
+    "remainingOwners": "Request construction, response parsing and network probing are unchanged",
+    "dependency": "Existing internal Core to Research workspace dependency; no new external version",
+    "isolation": "Pure entry has no runtime imports; separate installed Core prefix cannot hide missing launcher dependencies"
+  },
+  "evidence": [
+    {
+      "receipt": "research-query-owner-negative-20261027.receipt.json",
+      "result": "expected failure before repair",
+      "scope": "35 tests passed, pip routing regression failed",
+      "logSha256": "fe2af7c49f42679a45c8ed56511593064cb9b04158f62e84187253f06177cbe1"
+    },
+    {
+      "receipt": "research-query-owner-focused-20261027.receipt.json",
+      "result": "passed",
+      "scope": "37 focused tests, including public owner identity and no-fetch/no-dispatch regression",
+      "logSha256": "5b9288307040ee231004bf1bc6d25800a418de37b6b3c677210689ceaf85a87c"
+    },
+    {
+      "receipt": "research-query-cold-gates-20261027.receipt.json",
+      "result": "failed; corrected and superseded by final gates",
+      "scope": "Lint found an unused Core import; removed it without changing the public re-export",
+      "logSha256": "3c6c78e0bbef28411aac8bfd298a30b7191bf277f1e292d1941c4b6a9ea9e3e0"
+    },
+    {
+      "receipt": "research-query-final-gates-20261027.receipt.json",
+      "result": "passed",
+      "scope": "Cold types before build; generator checks; release/SBOM self-tests; lint; re-export guard; 11956 tests passed, 7 skipped; 98 installed checks",
+      "logSha256": "71ca3e1caa095cae39bb1c3031d2f8038b11df439455089a5496e3e8637eea7b",
+      "providerLaunches": 0
+    }
+  ],
+  "review": {
+    "packet": "research-query-owner-review-input.txt",
+    "packetSha256": "a109846dccd64dc8c343eed487eae47dcdcdf9fdd80e62225e44050d06013cf6",
+    "codexLogSha256": "76591d5a60c9cdb2d5d32cf717b0bd27708470a6ed1d3573653a9c256394396d",
+    "codex": "No concrete introduced defect; packaging verification was pending during review and subsequently passed",
+    "kimi": "Exit 1 with no answer; not a passing review",
+    "kimiLogSha256": "a4eebf5d7d44f5490f265ba973efba6a7b0a1712213a895f830b6440c27cdbff",
+    "postReviewChange": "Removed unused Core local import; retained public export; full qualification passed afterward",
+    "adjudications": [
+      "Core runtime dependency DFS visited 22 workspace packages with no cycle",
+      "Standalone emitted policy imports no runtime module and classifies pip query as general",
+      "Installed API checks prove Core/root/subpath identity and historical type compatibility",
+      "Pure helper import does not activate a mod; no change to execution registration or disabled-mod dispatch"
+    ]
+  },
+  "limits": [
+    "Exact clean committed-checkout qualification remains pending",
+    "Request construction, parsing and network/workflow ownership remain outside this slice",
+    "OSV reports 24 existing advisories across 10 packages; no external lock entries changed",
+    "Native platform, live-provider and publishing acceptance not established"
+  ]
+}

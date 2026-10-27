@@ -4,6 +4,7 @@
 import { describe, it, expect } from 'vitest';
 import { parseAuthoritativeResults as ownedParser } from '@kernlang/agon-mod-research';
 import { cleanQuery as ownedCleanQuery, buildAuthoritativeRequest as ownedRequest } from '@kernlang/agon-mod-research';
+import { classifyQuery as ownedClassifyQuery } from '@kernlang/agon-mod-research';
 import {
   classifyQuery,
   cleanQuery,
@@ -15,6 +16,9 @@ describe('classifyQuery', () => {
   it('retains the Research-owned discovery functions through Core', () => {
     expect(cleanQuery).toBe(ownedCleanQuery);
     expect(buildAuthoritativeRequest).toBe(ownedRequest);
+  });
+  it('uses the public Research-owned classifier', () => {
+    expect(classifyQuery).toBe(ownedClassifyQuery);
   });
   it('routes npm package/library queries to the package lane', () => {
     expect(classifyQuery('how do I install the express npm package')).toBe('package');

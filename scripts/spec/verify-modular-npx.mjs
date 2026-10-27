@@ -392,6 +392,59 @@ try {
   requireOk('packed-research-discovery-public-types', run(process.execPath, [join(root, 'node_modules/typescript/bin/tsc'),
     '--noEmit', '--strict', '--skipLibCheck', '--module', 'NodeNext', '--moduleResolution', 'NodeNext',
     '--target', 'ES2022', discoveryTypes], { cwd: coreCompatibility }));
+  // Keep legacy Core separate so it cannot supply missing launcher dependencies.
+  const coreCompatibility = join(scratch, 'core-compatibility');
+  mkdirSync(coreCompatibility);
+  const corePack = requireOk('pack:legacy-core', run('npm', ['pack', '--json', '--ignore-scripts', '--pack-destination', packRoot], { cwd: join(root, 'packages/core') }));
+  const packedCore = JSON.parse(corePack.stdout)[0];
+  const coreCatalog = createNpmReleaseCatalog(JSON.parse(readFileSync(join(root, 'package-lock.json'), 'utf8')), ['packages/core']);
+  const coreArtifacts = Object.fromEntries(Object.entries(artifacts).filter(([id]) => coreCatalog.packages[`node_modules/${id}`]));
+  coreArtifacts['@kernlang/agon-core'] = { version: packedCore.version, resolved: `file:${join(packRoot, packedCore.filename)}`, integrity: packedCore.integrity };
+  const coreFrozen = createFrozenNpmInstall(coreCatalog, ['@kernlang/agon-core'], coreArtifacts);
+  writeFileSync(join(coreCompatibility, 'package.json'), JSON.stringify(coreFrozen.manifest, null, 2));
+  const coreLockBytes = JSON.stringify(coreFrozen.lock, null, 2);
+  writeFileSync(join(coreCompatibility, 'package-lock.json'), coreLockBytes);
+  requireOk('legacy-core-frozen-hydration', run('npm', ['ci', '--ignore-scripts', '--no-audit', '--no-fund', '--omit=optional', '--offline'], { cwd: coreCompatibility }));
+  if (readFileSync(join(coreCompatibility, 'package-lock.json'), 'utf8') !== coreLockBytes) throw new Error('Core compatibility hydration changed the frozen lock');
+  requireOk('packed-research-query-owner', run(process.execPath, ['--input-type=module', '-e', `
+    import assert from 'node:assert/strict';
+    import { pathToFileURL } from 'node:url';
+    import { classifyQuery } from '@kernlang/agon-mod-research';
+    import { classifyQuery as policy } from '@kernlang/agon-mod-research/query-policy';
+    import { classifyQuery as legacy } from '@kernlang/agon-core';
+    const installedRoot = pathToFileURL(process.cwd() + '/node_modules/').href;
+    for (const id of ['@kernlang/agon-mod-research', '@kernlang/agon-mod-research/query-policy', '@kernlang/agon-core']) {
+      assert.ok(import.meta.resolve(id).startsWith(installedRoot));
+    }
+    assert.equal(classifyQuery, policy);
+    assert.equal(classifyQuery, legacy);
+    for (const [query, expected] of [
+      ['pip module for parsing yaml', 'general'], ['npm package for parsing yaml', 'package'],
+      ['github repository for yaml', 'github'], ['github issues', 'general'],
+      ['Stack Overflow npm package', 'qa'], ['RFC 9110', 'rfc'],
+      ['WHATWG specification', 'standard'], ['what is yaml', 'fact']
+    ]) assert.equal(classifyQuery(query), expected, query);
+  `], { cwd: coreCompatibility }));
+  const queryTypes = join(coreCompatibility, 'research-query-types.mts');
+  writeFileSync(queryTypes, `
+    import { classifyQuery, type ResearchIntent } from '@kernlang/agon-mod-research';
+    import { classifyQuery as policy, type ResearchIntent as PolicyIntent } from '@kernlang/agon-mod-research/query-policy';
+    import { classifyQuery as legacy, type ResearchIntent as LegacyIntent } from '@kernlang/agon-core';
+    const result: ResearchIntent = classifyQuery('npm package');
+    const oldResult: LegacyIntent = result;
+    const policyResult: PolicyIntent = oldResult;
+    const compatible: ResearchIntent = policyResult;
+    const legacySignature: typeof classifyQuery = legacy;
+    const policySignature: typeof classifyQuery = policy;
+    // @ts-expect-error Unsupported routing lanes must remain invalid.
+    const invalid: ResearchIntent = 'pypi';
+    // @ts-expect-error The public query input must remain a string.
+    classifyQuery(42);
+    void [compatible, legacySignature, policySignature, invalid];
+  `);
+  requireOk('packed-research-query-public-types', run(process.execPath, [join(root, 'node_modules/typescript/bin/tsc'),
+    '--noEmit', '--strict', '--skipLibCheck', '--module', 'NodeNext', '--moduleResolution', 'NodeNext',
+    '--target', 'ES2022', queryTypes], { cwd: coreCompatibility }));
   const agentTypes = join(ephemeral, 'agent-team-types.mts');
   writeFileSync(agentTypes, `import { scoreAgentTeamResult, type AgentTeamResult, type AgentTeamMemberResult, type AgentTeamScore, type AgentTeamShortstatReader } from '@kernlang/agon-mod-agent';
     const member: AgentTeamMemberResult = { engineId: 'worker', worktreePath: null, error: null,

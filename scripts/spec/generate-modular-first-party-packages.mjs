@@ -4,7 +4,8 @@ import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '../..');
 const check = process.argv.includes('--check');
-const researchPolicyEntries = ['prompt-policy', 'format-policy', 'response-policy', 'discovery-policy'];
+const researchPolicyEntries = ['prompt-policy', 'format-policy', 'response-policy', 'discovery-policy', 'query-policy'];
+const researchExternalEntries = ['query-policy'];
 const packageMap = JSON.parse(readFileSync(resolve(root, 'docs/specs/evidence/modular-agon-package-map.json'), 'utf8'));
 const ownership = JSON.parse(readFileSync(resolve(root, 'docs/specs/evidence/modular-agon-ownership.json'), 'utf8'));
 const inventory = JSON.parse(readFileSync(resolve(root, 'docs/specs/evidence/modular-agon-current-inventory.json'), 'utf8'));
@@ -321,7 +322,9 @@ export * from './grounding.js';
 export type * from './types.js';
 export { runRag, buildRagIndex, queryRag, collectCorpusFiles, chunkMarkdown } from './implementation.js';
 ` : short === 'history' ? `export { runHistory } from './implementation.js';
-` : short === 'research' ? `export { runResearch, classifyQuery, validateUrl, formatResearchResult } from './implementation.js';
+` : short === 'research' ? `export { runResearch, validateUrl, formatResearchResult } from './implementation.js';
+export { classifyQuery } from './query-policy.js';
+export type { ResearchIntent } from './query-policy.js';
 export { buildResearchPrompt, buildPrompt } from './prompt-policy.js';
 export { parseAuthoritativeResults } from './response-policy.js';
 export type { ResearchSearchResult } from './response-policy.js';
@@ -555,7 +558,7 @@ export type { CouncilSessionHost, CouncilSessionContext, CouncilSessionCommandRe
     [resolve(directory, 'src/index.ts'), indexSource],
     [resolve(directory, 'LICENSE'), readFileSync(resolve(root, 'LICENSE'), 'utf8')],
     [resolve(directory, 'tsconfig.json'), json(tsconfig)],
-    [resolve(directory, 'tsup.config.ts'), `import { defineConfig } from 'tsup';\n\nexport default defineConfig({ entry: [${['src/index.ts', ...(short === 'research' ? researchPolicyEntries.map((entry) => `src/${entry}.ts`) : [])].map((entry) => `'${entry}'`).join(', ')}], format: ['esm'], dts: false, sourcemap: false, clean: true, target: 'es2022' });\n`],
+    [resolve(directory, 'tsup.config.ts'), `import { defineConfig } from 'tsup';\n\nexport default defineConfig({ entry: [${['src/index.ts', ...(short === 'research' ? researchPolicyEntries.map((entry) => `src/${entry}.ts`) : [])].map((entry) => `'${entry}'`).join(', ')}], ${short === 'research' ? `external: [${researchExternalEntries.map((entry) => `'./${entry}.js'`).join(', ')}], ` : ''}format: ['esm'], dts: false, sourcemap: false, clean: true, target: 'es2022' });\n`],
   ]);
 }
 

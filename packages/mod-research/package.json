@@ -25,6 +25,10 @@
       "types": "./dist/discovery-policy.d.ts",
       "import": "./dist/discovery-policy.js"
     },
+    "./query-policy": {
+      "types": "./dist/query-policy.d.ts",
+      "import": "./dist/query-policy.js"
+    },
     "./manifest": "./agon.mod.json",
     "./ownership": "./ownership.json"
   },

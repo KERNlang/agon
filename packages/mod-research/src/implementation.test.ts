@@ -87,6 +87,15 @@ describe('physical research mod', () => {
       expect.objectContaining({ headers: { Accept: 'application/json', 'User-Agent': 'agon-research/0.1 (+https://github.com/KERNlang/agon)' } }),
     );
   });
+  it('does not fetch npm or dispatch an engine for a Python pip module query', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ objects: [] }), { status: 200 })) as any;
+    const s = services();
+    const out = await runResearch({ question: 'pip module for parsing yaml' }, context, s);
+    expect(out.exitCode).toBe(1);
+    expect(out.stderr).toContain('No keyless authoritative lane for general research');
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    expect(s.engines.dispatch).not.toHaveBeenCalled();
+  });
   it('rejects a hostname if any resolved address enters private space', async () => {
     expect(isBlockedAddress('127.0.0.1')).toBe(true); expect(isBlockedAddress('100.64.0.1')).toBe(true); expect(isBlockedAddress('fe80::1')).toBe(true);
     await expect(resolvePublicHost('public.example', vi.fn(async () => [{ address: '93.184.216.34', family: 4 }, { address: '10.0.0.1', family: 4 }]) as any)).rejects.toThrow(/blocked address/);

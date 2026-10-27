@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CommandContribution, ModServices, Registrar } from '@kernlang/agon-mod-api';
 import { createMod } from '../../packages/mod-synthesis/src/implementation.js';
-import { runSynthesisModus as frozen } from '../fixtures/modular-synthesis-legacy.js';
+import { createSynthesisHostServices } from '../../packages/mod-synthesis/src/host.js';
+import { runSynthesisModus as frozen, synthesisRoutingAdvice } from '../fixtures/modular-synthesis-legacy.js';
 
 vi.mock('@kernlang/agon-core', async original => ({
   ...await original<object>(),
@@ -12,6 +13,57 @@ vi.mock('@kernlang/agon-core', async original => ({
 afterEach(() => vi.restoreAllMocks());
 
 describe('generated Synthesis uses the legacy pairing policy', () => {
+  it.each([
+    { scenario: 'CLI code', surface: 'cli', quiet: false, environmentQuiet: false, taskClass: 'bugfix', expectedAdvice: true },
+    { scenario: 'CLI quiet flag', surface: 'cli', quiet: true, environmentQuiet: false, taskClass: 'bugfix', expectedAdvice: false },
+    { scenario: 'CLI quiet environment', surface: 'cli', quiet: false, environmentQuiet: true, taskClass: 'bugfix', expectedAdvice: false },
+    { scenario: 'CLI prose', surface: 'cli', quiet: false, environmentQuiet: false, taskClass: 'docs', expectedAdvice: false },
+    { scenario: 'MCP code', surface: 'mcp', quiet: false, environmentQuiet: false, taskClass: 'bugfix', expectedAdvice: false },
+    { scenario: 'TUI code', surface: 'tui', quiet: false, environmentQuiet: false, taskClass: 'bugfix', expectedAdvice: false },
+  ])('preserves routing advice presentation: $scenario', async ({ surface, quiet, environmentQuiet, taskClass, expectedAdvice }) => {
+    const prompt = taskClass === 'docs' ? 'Write a README explaining the architecture' : 'fix the login crash';
+    const order: string[] = [];
+    const showRoutingAdvice = vi.fn(() => { order.push('warning'); });
+    const adapter = { dispatch: vi.fn(async (request: { mode: string }) => {
+      order.push('dispatch');
+      return { stdout: request.mode === 'review'
+        ? 'SCORE_1: 90\nWINNER: alpha\nREASONING: fixture' : 'draft',
+      stderr: '', exitCode: 0, timedOut: false };
+    }) };
+    const hostEffects = {
+      openRegistry: () => ({ get: (id: string) => ({ id }), findBinary: () => null }),
+      createAdapter: () => adapter,
+      captureAuthority: () => () => {}, loadConfig: () => ({}), warn: vi.fn(),
+      routingAdvice: { classifyTask: () => taskClass, isQuiet: () => environmentQuiet, show: showRoutingAdvice },
+    };
+    const services = {
+      engines: { listActive: async () => ['alpha'] },
+      receipts: { record: vi.fn(async () => 'receipt') },
+      runs: { start: async () => ({ id: 'fixture', path: '/fixture/run', startedAt: 'fixture' }), finish: vi.fn() },
+      synthesis: createSynthesisHostServices(hostEffects as never),
+    } as unknown as ModServices;
+    let command!: CommandContribution;
+    const registrar = new Proxy({}, { get: (_target, method) => (...args: unknown[]) => {
+      if (method === (surface === 'mcp' ? 'tool' : 'command') && args[0] === surface) command = args[1] as CommandContribution;
+      return () => {};
+    } }) as Registrar;
+    const dispose = await (await createMod(services)).activate(registrar);
+    try {
+      const outcome = await command.run(surface === 'tui'
+        ? { input: prompt, engines: 'alpha', swaps: 0 }
+        : { prompt, engines: 'alpha', swaps: '0', quiet }, {
+        cwd: '/fixture', invocationId: 'synthesis-routing-advice', platform: 'darwin-arm64',
+        signal: new AbortController().signal, config: {},
+      });
+      if (surface === 'mcp') expect(outcome).toMatchObject({ winner: 'alpha' });
+      else expect(outcome.exitCode).toBe(0);
+      if (expectedAdvice) expect(showRoutingAdvice).toHaveBeenCalledExactlyOnceWith(synthesisRoutingAdvice(prompt));
+      else expect(showRoutingAdvice).not.toHaveBeenCalled();
+      expect(order[0]).toBe(expectedAdvice ? 'warning' : 'dispatch');
+      expect(adapter.dispatch).toHaveBeenCalledTimes(2);
+    } finally { await dispose(); }
+  });
+
   it.each([2, 3, 4])('uses disjoint pairs for %i engines, not a ring', async count => {
     const engines = ['alpha', 'beta', 'gamma', 'delta'].slice(0, count);
     const calls: Array<{ engineId: string; prompt: string }> = [];

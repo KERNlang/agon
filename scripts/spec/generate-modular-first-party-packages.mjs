@@ -187,7 +187,7 @@ function expectedFiles(packageRecord) {
     : short === 'council' ? ['dist/runtime.d.ts', 'dist/host.d.ts', 'dist/presentation.d.ts', 'dist/command.d.ts', 'dist/session-workflow.d.ts']
     : short === 'review' ? ['dist/consensus.d.ts', 'dist/findings.d.ts']
     : short === 'provenance' ? ['dist/models.d.ts', 'dist/reports.d.ts']
-    : short === 'synthesis' ? ['dist/judge-parser.d.ts', 'dist/runtime.d.ts', 'dist/host.d.ts', 'dist/session-workflow.d.ts']
+    : short === 'synthesis' ? ['dist/judge-parser.d.ts', 'dist/runtime.d.ts', 'dist/host.d.ts', 'dist/session-workflow.d.ts', 'dist/routing-policy.d.ts']
     : short === 'agent' ? ['dist/team-refinement.d.ts', 'dist/events.d.ts', 'dist/team-results.d.ts', 'dist/team-scoring.d.ts', 'dist/team-runtime.d.ts']
     : short === 'conquer' ? ['dist/completion-policy.d.ts', 'dist/workflow.d.ts', 'dist/falsifier.d.ts', 'dist/host.d.ts', 'dist/isolation.d.ts', 'dist/publication.d.ts']
     : short === 'nero' ? ['dist/verdict.d.ts', 'dist/critic-cascade.d.ts']
@@ -526,6 +526,7 @@ export * from './consensus.js';
 export { extractReviewFindings } from './findings.js';
 ` : short === 'synthesis' ? `export { normalizeSynthesisWinner, parseSynthesisJudgeOutput } from './judge-parser.js';
 export type { SynthesisScore } from './judge-parser.js';
+export { synthesisRoutingAdviceForTaskClass } from './routing-policy.js';
 export { createSynthesisHostServices } from './host.js';
 export type { SynthesisHostServices, SynthesisHostSession, SynthesisHostEffects, SynthesisModServices } from './host.js';
 export {

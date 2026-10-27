@@ -1,0 +1,62 @@
+{
+  "scope": "Restore legacy code-task routing advice on generated Synthesis CLI; preserve quiet, MCP and TUI behavior",
+  "baseCommit": "cd7137279d2806c722bacc31e7732023361244f3",
+  "status": "Local gates passed; clean committed replay pending",
+  "archive": "/Users/ra/dev/modular-agon-remediation",
+  "receipts": [
+    {
+      "id": "synthesis-routing-final-suite-20261028",
+      "result": "12106 tests passed, 7 skipped; 712 files passed, 1 skipped; zero provider launches",
+      "logSha256": "9ef255b3d18982523d500e73972e011df1318a0a72c5720fbdb2d5367129fd70"
+    },
+    {
+      "id": "synthesis-routing-advice-red-20261028",
+      "result": "Expected failure: generated CLI contribution omitted advice",
+      "logSha256": "537d55822f55479f3120a25a945ec36c25746b4a4eb7af069f101eedeb9b869b"
+    },
+    {
+      "id": "synthesis-routing-hygiene-20261028",
+      "result": "Types, repository lint, re-export guard, generated checks, 43 focused tests and diff check passed; zero provider launches",
+      "logSha256": "294f21bbda6f05c102733be607b27143dfdeb07e2d11230f54cf599a57d972b7"
+    },
+    {
+      "id": "synthesis-routing-full-suite-20261028",
+      "result": "12068 passed, 38 failed, 7 skipped; all failures at stale launcher inventory; zero provider launches",
+      "logSha256": "8ac4af3543c1f9028050ac17848ecf1b21cdc930b2190796600453cd7cc50235"
+    },
+    {
+      "id": "synthesis-routing-release-refresh-20261028",
+      "result": "Release/SBOM generators, self-tests, check replays and all 80 setup-selection tests passed; zero provider launches",
+      "logSha256": "085ee25fe15c21922139a6e325f55e96662cebc59452549b87d81c2fdf7b4b4d"
+    },
+    {
+      "id": "synthesis-routing-npx-refreshed-20261028",
+      "result": "128 offline packed qualification checks passed; 15-package installation, idempotence and cache deletion survival; zero provider launches",
+      "logSha256": "7fae1f60ceaf01a2cb54c290b8f52377fcc5307548dbf8186c9302333cbf02fc"
+    }
+  ],
+  "negativeControls": [
+    "Contribution test fails without advice wiring",
+    "Cancellation and generation revocation before, during classification and during presentation",
+    "Installed fixture refuses provider spawn when advice is suppressed",
+    "Installed fixture refuses provider spawn when advice is delayed until after dispatch",
+    "Prose, flag quiet and environment quiet remain silent; MCP and TUI do not gain advice"
+  ],
+  "review": {
+    "packetSha256": "bed985944f52e204798fd61bf7b0645ea1987e1482c334ab3a31911c81b0472b",
+    "adjudication": "synthesis-routing-advice-review-adjudication-20261028.md",
+    "codex": "Two confirmed test-oracle gaps fixed and verified with installed CLI controls",
+    "kimi": "No answer; not counted as a passing review"
+  },
+  "preservedReleaseMetadata": {
+    "archive": "synthesis-release-baseline-cd7137279-20261028.tar",
+    "sha256": "affe7bb72227a571935a840125d3ef17662ae57ae7f342509e1517d43b2b9ead",
+    "retrieval": "Each archived file compared byte-for-byte with the base Git object"
+  },
+  "limits": [
+    "Generated using Node 26.12.1/npm 11.20.0, not pinned Node 22.22.0/npm 10.9.4",
+    "Kernel and Synthesis payloads changed, plus launcher; remaining 47 modular package payloads match base but archive identities changed",
+    "Fixture providers do not qualify live models or external platforms",
+    "This slice does not establish full modular acceptance"
+  ]
+}

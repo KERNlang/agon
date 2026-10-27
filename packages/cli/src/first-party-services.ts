@@ -137,6 +137,7 @@ export async function decorateCliFirstPartyServices(manifest: ModManifest, base:
   return Object.freeze({ ...base, runs, ...(browser ? { browser } : {}), ...(workspace ? { workspace } : {}),
     ...(brainstorm ? { brainstorm } : {}),
     ...(manifest.id === 'agon.synthesis' ? { synthesis: createSynthesisHostServices({
+      routingAdvice: { classifyTask, isQuiet: () => process.env.AGON_QUIET === '1', show: warn },
       openRegistry: () => {
         const registry = new CatalogEngineRegistry();
         registry.load(resolveBuiltinEnginesDir()); return registry;

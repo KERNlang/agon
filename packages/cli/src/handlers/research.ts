@@ -13,9 +13,14 @@ import { recordRun, formatRunSummary } from '../telemetry/index.js';
 import type { Dispatch, HandlerContext, EngineProgress } from './types.js';
 
 import { filterDefaultOrchestrationEngines } from './engine-filter.js';
+import { captureProcessSurfaceAuthority, processSurfaceClient } from '../surface-authority-runtime.js';
 
-export async function handleResearch(question: string, dispatch: Dispatch, ctx: HandlerContext, opts?: {engine?:string, count?:number}): Promise<void> {
+export async function handleResearch(question: string, dispatch: Dispatch, ctx: HandlerContext, opts?: {engine?:string, count?:number, signal?: AbortSignal}): Promise<void> {
+  const assertSelected = captureProcessSurfaceAuthority();
+  processSurfaceClient('tui').assertAvailable('/research');
   const rsAbort = new AbortController();
+  const signal = opts?.signal ? AbortSignal.any([opts.signal, rsAbort.signal]) : rsAbort.signal;
+  signal.throwIfAborted();
   try {
     ensureAgonHome();
     
@@ -51,6 +56,13 @@ export async function handleResearch(question: string, dispatch: Dispatch, ctx: 
     
     const startTime = Date.now();
     const progressInterval = setInterval(() => {
+      if (signal.aborted) { clearProgress(); return; }
+      try { assertSelected(); }
+      catch (error) {
+        rsAbort.abort(error);
+        clearProgress();
+        return;
+      }
       const elapsed = Math.floor((Date.now() - startTime) / 1000);
       const progress: EngineProgress[] = [{ id: forced ?? 'research', status: `researching… ${elapsed}s`, elapsed, done: false, failed: false }];
       dispatch({ type: 'progress-update', engines: progress });
@@ -76,15 +88,21 @@ export async function handleResearch(question: string, dispatch: Dispatch, ctx: 
         timeout: 120,
         outputDir,
         cwd: resolveWorkingDir(),
-        signal: rsAbort.signal,
+        signal,
         // Surface discover/read/draft/verify narration in the REPL transcript.
-        onStatus: (m: string) => dispatch({ type: 'info', message: m }),
+        onStatus: (m: string) => {
+          if (signal.aborted) return;
+          assertSelected();
+          dispatch({ type: 'info', message: m });
+        },
       });
     } catch (err) {
       clearProgress();
       throw err;
     }
     clearProgress();
+    signal.throwIfAborted();
+    assertSelected();
     
     if (!result.ok) {
       dispatch({ type: 'error', message: `No grounded answer${result.note ? `: ${result.note}` : '.'}` });

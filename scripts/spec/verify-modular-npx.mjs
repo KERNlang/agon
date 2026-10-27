@@ -61,6 +61,36 @@ try {
   writeFileSync(join(ephemeral, 'package-lock.json'), lockBytes);
   requireOk('ephemeral-npx-hydration', run('npm', ['ci', '--ignore-scripts', '--no-audit', '--no-fund', '--omit=optional', '--offline'], { cwd: ephemeral }));
   if (readFileSync(join(ephemeral, 'package-lock.json'), 'utf8') !== lockBytes) throw new Error('packed hydration changed the frozen dependency lock');
+  requireOk('packed-research-address-guard', run(process.execPath, ['--input-type=module', '-e', `
+    import assert from 'node:assert/strict';
+    import dns from 'node:dns/promises';
+    import { syncBuiltinESMExports } from 'node:module';
+    import { pathToFileURL } from 'node:url';
+    let address = '::ffff:7f00:1';
+    dns.lookup = async () => [{ address, family: 6 }];
+    syncBuiltinESMExports();
+    const { runResearch } = await import('@kernlang/agon-mod-research');
+    assert.ok(import.meta.resolve('@kernlang/agon-mod-research').startsWith(pathToFileURL(process.cwd() + '/node_modules/').href));
+    const context = { invocationId: 'packed-research', cwd: process.cwd(), platform: 'darwin-arm64', signal: new AbortController().signal, config: {} };
+    const services = { permissions: { check: async () => 'allow' }, receipts: { record: async () => 'fixture-receipt' }, engines: {
+      listActive: async () => ['fixture'], dispatch: async () => ({ exitCode: 0, stdout: 'Supported claim [1].' })
+    } };
+    for (const candidate of ['::ffff:7f00:1', '0:0:0:0:0:ffff:7f00:1', '::ffff:a00:1', '0:0:0:0:0:0:0:1', '::ffff:808:808']) {
+      address = candidate;
+      let calls = 0;
+      globalThis.fetch = async (input) => {
+        calls++;
+        return new Response(String(input).startsWith('https://registry.npmjs.org/')
+          ? JSON.stringify({ objects: [{ package: { name: 'pkg', links: { npm: 'https://source.example/pkg' } } }] })
+          : 'Evidence', { status: 200 });
+      };
+      const result = await runResearch({ question: 'npm package pkg' }, context, services);
+      const allowed = candidate === '::ffff:808:808';
+      assert.equal(calls, allowed ? 3 : 1, candidate);
+      assert.equal(result.exitCode, allowed ? 0 : 1, candidate);
+      assert.equal(result.result.citations.verified, allowed ? 1 : 0, candidate);
+    }
+  `], { cwd: ephemeral }));
   requireOk('packed-agent-team-scoring-owner', run(process.execPath, ['--input-type=module', '-e', `
     import assert from 'node:assert/strict';
     import { pathToFileURL } from 'node:url';

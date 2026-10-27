@@ -29,6 +29,10 @@
       "types": "./dist/query-policy.d.ts",
       "import": "./dist/query-policy.js"
     },
+    "./citation-policy": {
+      "types": "./dist/citation-policy.d.ts",
+      "import": "./dist/citation-policy.js"
+    },
     "./manifest": "./agon.mod.json",
     "./ownership": "./ownership.json"
   },

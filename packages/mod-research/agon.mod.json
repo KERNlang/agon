@@ -122,6 +122,8 @@
       "dist/discovery-policy.d.ts",
       "dist/query-policy.js",
       "dist/query-policy.d.ts",
+      "dist/citation-policy.js",
+      "dist/citation-policy.d.ts",
       "ownership.json",
       "schemas/config.schema.json"
     ],

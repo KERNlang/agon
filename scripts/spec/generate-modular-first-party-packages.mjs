@@ -4,8 +4,8 @@ import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '../..');
 const check = process.argv.includes('--check');
-const researchPolicyEntries = ['prompt-policy', 'format-policy', 'response-policy', 'discovery-policy', 'query-policy'];
-const researchExternalEntries = ['query-policy'];
+const researchPolicyEntries = ['prompt-policy', 'format-policy', 'response-policy', 'discovery-policy', 'query-policy', 'citation-policy'];
+const researchExternalEntries = ['query-policy', 'citation-policy'];
 const packageMap = JSON.parse(readFileSync(resolve(root, 'docs/specs/evidence/modular-agon-package-map.json'), 'utf8'));
 const ownership = JSON.parse(readFileSync(resolve(root, 'docs/specs/evidence/modular-agon-ownership.json'), 'utf8'));
 const inventory = JSON.parse(readFileSync(resolve(root, 'docs/specs/evidence/modular-agon-current-inventory.json'), 'utf8'));
@@ -187,6 +187,7 @@ function expectedFiles(packageRecord) {
     : short === 'think' ? ['dist/thinking.d.ts', 'dist/runtime.d.ts', 'dist/host.d.ts', 'dist/presentation.d.ts', 'dist/session-workflow.d.ts']
     : short === 'council' ? ['dist/runtime.d.ts', 'dist/host.d.ts', 'dist/presentation.d.ts', 'dist/command.d.ts', 'dist/session-workflow.d.ts']
     : short === 'review' ? ['dist/consensus.d.ts', 'dist/findings.d.ts']
+    : short === 'research' ? ['dist/citation-policy.js', 'dist/citation-policy.d.ts']
     : short === 'synthesis' ? ['dist/judge-parser.d.ts', 'dist/runtime.d.ts']
     : short === 'agent' ? ['dist/team-refinement.d.ts', 'dist/events.d.ts', 'dist/team-results.d.ts', 'dist/team-scoring.d.ts']
     : short === 'conquer' ? ['dist/completion-policy.d.ts', 'dist/workflow.d.ts', 'dist/falsifier.d.ts', 'dist/host.d.ts', 'dist/isolation.d.ts', 'dist/publication.d.ts']
@@ -330,6 +331,8 @@ export { parseAuthoritativeResults } from './response-policy.js';
 export type { ResearchSearchResult } from './response-policy.js';
 export { cleanQuery, buildAuthoritativeRequest } from './discovery-policy.js';
 export type { ResearchRequest } from './discovery-policy.js';
+export { extractCitations, judgeProbe, formatCitationReport } from './citation-policy.js';
+export type { CitationStatus, CitationProbe, CitationVerdict, CitationReport } from './citation-policy.js';
 ` : short === 'mutate' ? `export { runMutate, generateMutants } from './implementation.js';
 ` : short === 'naturalize' ? `export { runNaturalize } from './implementation.js';
 ` : short === 'sanitize' ? `export { runSanitize, scanText, cleanText } from './implementation.js';

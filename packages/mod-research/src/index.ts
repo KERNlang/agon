@@ -16,3 +16,5 @@ export { parseAuthoritativeResults } from './response-policy.js';
 export type { ResearchSearchResult } from './response-policy.js';
 export { cleanQuery, buildAuthoritativeRequest } from './discovery-policy.js';
 export type { ResearchRequest } from './discovery-policy.js';
+export { extractCitations, judgeProbe, formatCitationReport } from './citation-policy.js';
+export type { CitationStatus, CitationProbe, CitationVerdict, CitationReport } from './citation-policy.js';

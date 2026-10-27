@@ -24,7 +24,7 @@ export function gradeMutationAssessment(mutation: Record<string, any>): GoalMuta
   const outcomes: any[] = Array.isArray(report?.outcomes) ? report.outcomes : [];
   const nonCompiling = outcomes.filter(isNonCompiling).length;
   if (mutation.ok !== true || report?.baselineOk !== true || report.aborted === true ||
-      report.budgetExhausted === true || report.notRun > 0 || report.invalid > nonCompiling ||
+      report.budgetExhausted === true || report.notRun > 0 || (report.invalid ?? 0) !== nonCompiling ||
       !Array.isArray(report.outcomes) || report.generated !== outcomes.length || outcomes.some(outcome =>
         !(GRADED_STATUSES.includes(outcome?.status) || isNonCompiling(outcome)) ||
         typeof outcome?.mutant?.file !== 'string' || !outcome.mutant.file.trim() ||
@@ -34,6 +34,12 @@ export function gradeMutationAssessment(mutation: Record<string, any>): GoalMuta
   const graded = outcomes.filter(outcome => GRADED_STATUSES.includes(outcome.status));
   if (graded.length === 0 && nonCompiling > 0) {
     return { ok: false, error: `mutation assessment produced no gradable mutants (${nonCompiling} non-compiling)`, nonCompiling };
+  }
+  const gradedFiles = new Set(graded.map(outcome => outcome.mutant.file));
+  const ungraded = outcomes.filter(outcome => !gradedFiles.has(outcome.mutant.file));
+  if (ungraded.length > 0) {
+    const files = [...new Set(ungraded.map(outcome => outcome.mutant.file))].join(', ');
+    return { ok: false, error: `mutation assessment produced no gradable mutants for ${files} (${ungraded.length} non-compiling)`, nonCompiling };
   }
   return { ok: true, graded, nonCompiling };
 }

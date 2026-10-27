@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "status": "working-tree qualification passed; exact committed replay pending",
+  "scope": "Naturalize lexical policy ownership and formatting-only gate regression; not full runtime extraction",
+  "baseCommit": "a4e06dfb8869acd14fe4c90cc16a88abebeb3243",
+  "archiveRoot": "/Users/ra/dev/modular-agon-remediation",
+  "retention": "Do not delete archived evidence without Raphael's approval",
+  "sourceManifest": "naturalize-lexical-source-manifest-v2-20261027.json",
+  "evidence": [
+    {
+      "log": "naturalize-lexical-negative-20261027.log",
+      "sha256": "6b17ef996e02f43f3d09ca9c972616fc3b0ca5191ace81236ca167f31c76a76a",
+      "result": "Before repair: two expected case/punctuation failures,27 passes"
+    },
+    {
+      "log": "naturalize-lexical-owner-boundary-20261027.log",
+      "sha256": "d4fa31def40425e92c956c6a8b9063af487561684a0e89030740b7d1d6d42159",
+      "result": "Naturalize and Forge build/types,re-export guard and generated checks pass"
+    },
+    {
+      "log": "naturalize-lexical-first-green-20261027.log",
+      "sha256": "ad7354360bc26c0af2a2acaf09c549c702e2761ffae6a062b0759d2cff2c1f07",
+      "result": "Thirty focused tests pass,including formatting/reordering rejection and real-rewrite acceptance"
+    },
+    {
+      "log": "naturalize-lexical-full-gates-20261027.log",
+      "receipt": "naturalize-lexical-full-gates-20261027.receipt.json",
+      "sha256": "434219290f9ea6893a86dee801bf89eeabd6e31f596e06b93216d7084248803a",
+      "result": "Build,types,lint,re-export/generated/release/supply-chain gates pass;11959 tests pass,7 skipped;98 npm/npx checks;zero provider launches"
+    }
+  ],
+  "review": {
+    "packet": "naturalize-lexical-owner-review-input.txt",
+    "packetSha256": "381c0c6a986ddb79d8c6b1213f6ef6aa43ce51371b9ac1cb76e7feb269916f8d",
+    "codexLog": "naturalize-lexical-owner-codex-review.log",
+    "codexLogSha256": "60476072079805e21bf66c850dc0fb60e42b132117b5fe85beef74716ebb1604",
+    "result": "No concrete regression found; moved function bodies compared with main",
+    "limits": "Kimi returned no answer,not a pass. Subsequent local fixture correction rejects both fs and node:fs after compiled negative control exposed normalization. All installed fixtures then passed in the full gate."
+  },
+  "limits": [
+    "Exact clean committed replay pending; working-tree qualification is not a committed-subject receipt",
+    "Installed Naturalize fixtures and compiled-workspace Forge identity prove different boundaries",
+    "Other native platform and Node-version cells remain open",
+    "Existing OSV debt:24 advisories across ten packages,two critical;no external versions changed",
+    "Strict ignored-file contamination and aggregate acceptance remain separate requirements",
+    "No OpenCode invocation or active/global Agon change"
+  ]
+}

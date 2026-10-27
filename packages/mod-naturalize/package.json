@@ -9,6 +9,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./lexical-policy": {
+      "types": "./dist/lexical-policy.d.ts",
+      "import": "./dist/lexical-policy.js"
+    },
     "./manifest": "./agon.mod.json",
     "./ownership": "./ownership.json"
   },

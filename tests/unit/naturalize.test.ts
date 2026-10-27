@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import type { ModServices } from '@kernlang/agon-mod-api';
+import { runNaturalize as runPhysicalNaturalize } from '../../packages/mod-naturalize/src/implementation.js';
+import { wordDiffStats as ownedWordDiffStats } from '@kernlang/agon-mod-naturalize/lexical-policy';
 
 import {
   runNaturalize,
@@ -9,7 +12,41 @@ import {
 
 // ── wordDiffStats ────────────────────────────────────────────────────────────
 
+describe('physical Naturalize lexical-change gate', () => {
+  it.each([
+    ['case only', 'hello world', 'HELLO WORLD', false],
+    ['punctuation only', 'hello world', 'hello, world!', false],
+    ['reordered words', 'one two three', 'three two one', false],
+    ['different words', 'alpha beta gamma', 'delta epsilon zeta', true],
+  ])('preserves the legacy gate for %s', async (_label, input, output, accepted) => {
+    let calls = 0;
+    const services = {
+      engines: {
+        listActive: async () => ['fixture-rewriter'],
+        dispatch: async () => { calls++; return { exitCode: 0, stdout: output }; },
+      },
+      receipts: { record: async () => 'fixture-receipt' },
+    } as unknown as ModServices;
+    const result = await runPhysicalNaturalize(
+      { text: input, engine: 'fixture-rewriter', minChange: 50, maxAttempts: 1 },
+      { invocationId: 'lexical-test', cwd: process.cwd(), platform: 'darwin-arm64', signal: new AbortController().signal, config: {} },
+      services,
+    );
+    expect(calls).toBe(1);
+    expect(result.exitCode === 0).toBe(accepted);
+    if (accepted) {
+      expect(result.result).toMatchObject({ ...wordDiffStats(input, output), minChangeMet: true });
+    } else {
+      expect(result.failure?.code).toBe('NATURALIZE_GATE_FAILED');
+      expect(result.stdout).toBeUndefined();
+    }
+  });
+});
+
 describe('naturalize — wordDiffStats', () => {
+  it('uses the physical Naturalize policy through the legacy API', () => {
+    expect(wordDiffStats).toBe(ownedWordDiffStats);
+  });
   it('identical text → unchangedRatio 1, zero changed words', () => {
     const d = wordDiffStats('the quick brown fox', 'the quick brown fox');
     expect(d).toEqual({ wordsBefore: 4, wordsAfter: 4, changedWords: 0, unchangedRatio: 1 });

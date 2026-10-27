@@ -9,6 +9,7 @@ import type {
   Registrar,
 } from "@kernlang/agon-mod-api";
 import { cleanText, scanText } from "@kernlang/agon-mod-sanitize";
+import { wordDiffStats } from './lexical-policy.js';
 const schema = Object.freeze({
   type: "object",
   additionalProperties: true,
@@ -45,27 +46,6 @@ async function readStdin(): Promise<string> {
   for await (const chunk of process.stdin)
     chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
   return Buffer.concat(chunks).toString("utf8");
-}
-const words = (v: string) => v.trim().split(/\s+/).filter(Boolean);
-function change(a: string, b: string) {
-  const x = words(a),
-    y = words(b);
-  let same = 0;
-  const count = new Map<string, number>();
-  for (const w of x) count.set(w, (count.get(w) ?? 0) + 1);
-  for (const w of y) {
-    const n = count.get(w) ?? 0;
-    if (n) {
-      same++;
-      count.set(w, n - 1);
-    }
-  }
-  return {
-    wordsBefore: x.length,
-    wordsAfter: y.length,
-    changedWords: Math.max(x.length, y.length) - same,
-    unchangedRatio: same / Math.max(1, Math.max(x.length, y.length)),
-  };
 }
 export async function runNaturalize(
   raw: Json,
@@ -106,7 +86,7 @@ export async function runNaturalize(
   const source = cleanText(input).output;
   const run = services.runs ? await services.runs.start("naturalize", undefined, context) : undefined;
   let output = "",
-    stats = change(source, source),
+    stats = wordDiffStats(source, source),
     actualAttempts = 0,
     lastDispatchError = "";
   for (let attempt = 1; attempt <= attempts; attempt++) {
@@ -125,7 +105,7 @@ export async function runNaturalize(
     }
     if (response.exitCode !== 0 || response.timedOut === true) continue;
     output = cleanText(String(response.stdout ?? "")).output.trim();
-    stats = change(source, output);
+    stats = wordDiffStats(source, output);
     if (output && 1 - stats.unchangedRatio >= min) break;
   }
   if (!output || 1 - stats.unchangedRatio < min) {

@@ -61,6 +61,56 @@ try {
   writeFileSync(join(ephemeral, 'package-lock.json'), lockBytes);
   requireOk('ephemeral-npx-hydration', run('npm', ['ci', '--ignore-scripts', '--no-audit', '--no-fund', '--omit=optional', '--offline'], { cwd: ephemeral }));
   if (readFileSync(join(ephemeral, 'package-lock.json'), 'utf8') !== lockBytes) throw new Error('packed hydration changed the frozen dependency lock');
+  requireOk('packed-naturalize-lexical-pure-import', run(process.execPath, ['--input-type=module', '-e', `
+    import assert from 'node:assert/strict';
+    import { register } from 'node:module';
+    register('data:text/javascript,' + encodeURIComponent(
+      "export async function resolve(id, context, next) { if (id === 'node:fs' || id === 'fs') throw new Error('blocked filesystem import'); return next(id, context); }"
+    ));
+    const { wordDiffStats } = await import('@kernlang/agon-mod-naturalize/lexical-policy');
+    assert.equal(wordDiffStats('Hello, World!', 'hello world').changedWords, 0);
+    await assert.rejects(import('@kernlang/agon-mod-naturalize'), /blocked filesystem import/);
+  `], { cwd: ephemeral }));
+  requireOk('compiled-naturalize-lexical-owner', run(process.execPath, ['--input-type=module', '-e', `
+    import assert from 'node:assert/strict';
+    import { wordDiffStats as legacy } from ${JSON.stringify(join(root, 'packages/forge/dist/naturalize.js'))};
+    import { wordDiffStats as owner } from '@kernlang/agon-mod-naturalize/lexical-policy';
+    assert.equal(legacy, owner);
+  `]));
+  requireOk('packed-naturalize-lexical-gate', run(process.execPath, ['--input-type=module', '-e', `
+    import assert from 'node:assert/strict';
+    import { pathToFileURL } from 'node:url';
+    import { runNaturalize, wordDiffStats as rootStats } from '@kernlang/agon-mod-naturalize';
+    import { wordDiffStats, tokenizeWords } from '@kernlang/agon-mod-naturalize/lexical-policy';
+    assert.ok(import.meta.resolve('@kernlang/agon-mod-naturalize/lexical-policy').startsWith(pathToFileURL(process.cwd() + '/node_modules/').href));
+    assert.equal(rootStats, wordDiffStats);
+    assert.deepEqual(tokenizeWords('Hello, WORLD!'), ['hello', 'world']);
+    for (const [input, output, accepted] of [['hello world', 'HELLO WORLD', false], ['hello world', 'hello, world!', false], ['one two three', 'three two one', false], ['alpha beta gamma', 'delta epsilon zeta', true]]) {
+      let dispatches = 0;
+      const services = { engines: { listActive: async () => ['fixture'], dispatch: async () => { dispatches++; return { exitCode: 0, stdout: output }; } }, receipts: { record: async () => 'receipt' } };
+      const context = { invocationId: 'lexical', cwd: process.cwd(), platform: 'darwin-arm64', signal: new AbortController().signal, config: {} };
+      const result = await runNaturalize({ text: input, engine: 'fixture', minChange: 50, maxAttempts: 1 }, context, services);
+      assert.equal(dispatches, 1);
+      assert.equal(result.exitCode === 0, accepted);
+      if (accepted) assert.equal(result.result.changedWords, 3);
+      else { assert.equal(result.failure.code, 'NATURALIZE_GATE_FAILED'); assert.equal(result.stdout, undefined); }
+    }
+  `], { cwd: ephemeral }));
+  const naturalizeTypes = join(ephemeral, 'naturalize-lexical-types.mts');
+  writeFileSync(naturalizeTypes, `import { wordDiffStats, tokenizeWords } from '@kernlang/agon-mod-naturalize/lexical-policy';
+    import { wordDiffStats as rootStats } from '@kernlang/agon-mod-naturalize';
+    for (const stats of [wordDiffStats, rootStats]) {
+      const result: { wordsBefore: number; wordsAfter: number; changedWords: number; unchangedRatio: number } = stats('before', 'after');
+      void result;
+      // @ts-expect-error Inputs must remain strings.
+      stats(1, 'after');
+    }
+    const tokens: string[] = tokenizeWords('words');
+    void tokens;
+  `);
+  requireOk('packed-naturalize-lexical-types', run(process.execPath, [join(root, 'node_modules/typescript/bin/tsc'),
+    '--noEmit', '--strict', '--skipLibCheck', '--module', 'NodeNext', '--moduleResolution', 'NodeNext',
+    '--target', 'ES2022', naturalizeTypes], { cwd: ephemeral }));
   requireOk('packed-agent-team-scoring-owner', run(process.execPath, ['--input-type=module', '-e', `
     import assert from 'node:assert/strict';
     import { pathToFileURL } from 'node:url';

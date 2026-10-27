@@ -179,7 +179,7 @@ function expectedFiles(packageRecord) {
   if (['conquer', 'goal', 'pipeline-delivery', 'pipeline-orchestration'].includes(short)) inferredPermissions.add('engine.dispatch');
   // These workflows dispatch through host services in separate modules.
   // The entrypoint scan cannot see these effects.
-  if (['brainstorm', 'forge', 'team-brainstorm', 'tribunal', 'campfire', 'think'].includes(short)) inferredPermissions.add('engine.dispatch');
+  if (['brainstorm', 'forge', 'team-brainstorm', 'tribunal', 'campfire', 'think', 'synthesis'].includes(short)) inferredPermissions.add('engine.dispatch');
   // Jobs persists scheduler observations through its separate storage adapter.
   if (short === 'jobs') inferredPermissions.add('state.write');
   if (short === 'conquer') inferredPermissions.add('git.write');
@@ -187,7 +187,7 @@ function expectedFiles(packageRecord) {
     : short === 'think' ? ['dist/thinking.d.ts', 'dist/runtime.d.ts', 'dist/host.d.ts', 'dist/presentation.d.ts', 'dist/session-workflow.d.ts']
     : short === 'council' ? ['dist/runtime.d.ts', 'dist/host.d.ts', 'dist/presentation.d.ts', 'dist/command.d.ts', 'dist/session-workflow.d.ts']
     : short === 'review' ? ['dist/consensus.d.ts', 'dist/findings.d.ts']
-    : short === 'synthesis' ? ['dist/judge-parser.d.ts', 'dist/runtime.d.ts', 'dist/session-workflow.d.ts']
+    : short === 'synthesis' ? ['dist/judge-parser.d.ts', 'dist/runtime.d.ts', 'dist/host.d.ts', 'dist/session-workflow.d.ts']
     : short === 'agent' ? ['dist/team-refinement.d.ts', 'dist/events.d.ts', 'dist/team-results.d.ts', 'dist/team-scoring.d.ts']
     : short === 'conquer' ? ['dist/completion-policy.d.ts', 'dist/workflow.d.ts', 'dist/falsifier.d.ts', 'dist/host.d.ts', 'dist/isolation.d.ts', 'dist/publication.d.ts']
     : short === 'nero' ? ['dist/verdict.d.ts', 'dist/critic-cascade.d.ts']
@@ -524,6 +524,8 @@ export * from './consensus.js';
 export { extractReviewFindings } from './findings.js';
 ` : short === 'synthesis' ? `export { normalizeSynthesisWinner, parseSynthesisJudgeOutput } from './judge-parser.js';
 export type { SynthesisScore } from './judge-parser.js';
+export { createSynthesisHostServices } from './host.js';
+export type { SynthesisHostServices, SynthesisHostSession, SynthesisHostEffects, SynthesisModServices } from './host.js';
 export {
   runSynthesisRuntime,
   buildSynthesisDraftPrompt,

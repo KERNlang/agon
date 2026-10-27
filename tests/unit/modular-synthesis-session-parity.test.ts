@@ -168,14 +168,21 @@ it.each(['cancelled', 'stale'])('disposes pending progress safely when the invoc
 
 it('parses and runs the real Synthesis contribution with the session-selected engines', async () => {
   let contribution: IntentContribution | undefined;
-  const dispatch = vi.fn(async (engine: string, prompt: string) => ({ exitCode: 0, stderr: '',
-    stdout: prompt.includes('SCORE_N')
-      ? 'SCORE_1: 90\nSCORE_2: 80\nWINNER: alpha\nREASONING: selected'
-      : prompt.includes('DRAFT BY') ? `${engine} improved\n## REASONING\nclearer` : `${engine} initial`,
+  const dispatch = vi.fn(async (engine: string, prompt: string) => ({ exitCode: 0, stderr: '', timedOut: false,
+    stdout: prompt.startsWith('## SYNTHESIS DRAFT') ? `${engine} initial`
+      : prompt.startsWith('## SYNTHESIS SWAP') ? `${engine} improved\n## REASONING\nclearer`
+        : 'SCORE_1: 90\nCONFIDENCE_1: .9\nUNHANDLED_1: none\nSCORE_2: 80\nCONFIDENCE_2: .8\nUNHANDLED_2: none\nWINNER: alpha\nREASONING: selected',
   }));
   const record = vi.fn();
   const mod = createMod({ engines: { listActive: async () => ['wrong-default'], dispatch },
     receipts: { record },
+    runs: { start: async () => ({ id: 'fixture', path: '/fixture/run', startedAt: 'fixture' }), finish: vi.fn() },
+    synthesis: { open: (invocation: { cwd: string; signal: AbortSignal }) => ({
+      registry: { get: (id: string) => ({ id }), findBinary: () => null },
+      adapter: { dispatch: (request: { engine: { id: string }; prompt: string }) => dispatch(request.engine.id, request.prompt) },
+      assertCurrent: () => invocation.signal.throwIfAborted(),
+      effects: { resolveWorkingDir: () => invocation.cwd, health: { loadConfig: () => ({}) }, warn: vi.fn() },
+    }) },
   } as never);
   await mod.activate({
     command: (surface, value) => { if (surface === 'tui') contribution = value as IntentContribution; return () => {}; },

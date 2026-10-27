@@ -333,20 +333,6 @@ try {
   requireOk('packed-research-response-public-types', run(process.execPath, [join(root, 'node_modules/typescript/bin/tsc'),
     '--noEmit', '--strict', '--skipLibCheck', '--module', 'NodeNext', '--moduleResolution', 'NodeNext',
     '--target', 'ES2022', responseTypes], { cwd: coreCompatibility }));
-  // Keep legacy Core separate so it cannot supply missing launcher dependencies.
-  const coreCompatibility = join(scratch, 'core-compatibility');
-  mkdirSync(coreCompatibility);
-  const corePack = requireOk('pack:legacy-core', run('npm', ['pack', '--json', '--ignore-scripts', '--pack-destination', packRoot], { cwd: join(root, 'packages/core') }));
-  const packedCore = JSON.parse(corePack.stdout)[0];
-  const coreCatalog = createNpmReleaseCatalog(JSON.parse(readFileSync(join(root, 'package-lock.json'), 'utf8')), ['packages/core']);
-  const coreArtifacts = Object.fromEntries(Object.entries(artifacts).filter(([id]) => coreCatalog.packages[`node_modules/${id}`]));
-  coreArtifacts['@kernlang/agon-core'] = { version: packedCore.version, resolved: `file:${join(packRoot, packedCore.filename)}`, integrity: packedCore.integrity };
-  const coreFrozen = createFrozenNpmInstall(coreCatalog, ['@kernlang/agon-core'], coreArtifacts);
-  writeFileSync(join(coreCompatibility, 'package.json'), JSON.stringify(coreFrozen.manifest, null, 2));
-  const coreLockBytes = JSON.stringify(coreFrozen.lock, null, 2);
-  writeFileSync(join(coreCompatibility, 'package-lock.json'), coreLockBytes);
-  requireOk('legacy-core-frozen-hydration', run('npm', ['ci', '--ignore-scripts', '--no-audit', '--no-fund', '--omit=optional', '--offline'], { cwd: coreCompatibility }));
-  if (readFileSync(join(coreCompatibility, 'package-lock.json'), 'utf8') !== coreLockBytes) throw new Error('Core compatibility hydration changed the frozen lock');
   requireOk('packed-research-discovery-owner', run(process.execPath, ['--input-type=module', '-e', `
     import assert from 'node:assert/strict';
     import { pathToFileURL } from 'node:url';
@@ -392,20 +378,6 @@ try {
   requireOk('packed-research-discovery-public-types', run(process.execPath, [join(root, 'node_modules/typescript/bin/tsc'),
     '--noEmit', '--strict', '--skipLibCheck', '--module', 'NodeNext', '--moduleResolution', 'NodeNext',
     '--target', 'ES2022', discoveryTypes], { cwd: coreCompatibility }));
-  // Keep legacy Core separate so it cannot supply missing launcher dependencies.
-  const coreCompatibility = join(scratch, 'core-compatibility');
-  mkdirSync(coreCompatibility);
-  const corePack = requireOk('pack:legacy-core', run('npm', ['pack', '--json', '--ignore-scripts', '--pack-destination', packRoot], { cwd: join(root, 'packages/core') }));
-  const packedCore = JSON.parse(corePack.stdout)[0];
-  const coreCatalog = createNpmReleaseCatalog(JSON.parse(readFileSync(join(root, 'package-lock.json'), 'utf8')), ['packages/core']);
-  const coreArtifacts = Object.fromEntries(Object.entries(artifacts).filter(([id]) => coreCatalog.packages[`node_modules/${id}`]));
-  coreArtifacts['@kernlang/agon-core'] = { version: packedCore.version, resolved: `file:${join(packRoot, packedCore.filename)}`, integrity: packedCore.integrity };
-  const coreFrozen = createFrozenNpmInstall(coreCatalog, ['@kernlang/agon-core'], coreArtifacts);
-  writeFileSync(join(coreCompatibility, 'package.json'), JSON.stringify(coreFrozen.manifest, null, 2));
-  const coreLockBytes = JSON.stringify(coreFrozen.lock, null, 2);
-  writeFileSync(join(coreCompatibility, 'package-lock.json'), coreLockBytes);
-  requireOk('legacy-core-frozen-hydration', run('npm', ['ci', '--ignore-scripts', '--no-audit', '--no-fund', '--omit=optional', '--offline'], { cwd: coreCompatibility }));
-  if (readFileSync(join(coreCompatibility, 'package-lock.json'), 'utf8') !== coreLockBytes) throw new Error('Core compatibility hydration changed the frozen lock');
   requireOk('packed-research-query-owner', run(process.execPath, ['--input-type=module', '-e', `
     import assert from 'node:assert/strict';
     import { pathToFileURL } from 'node:url';
@@ -446,20 +418,6 @@ try {
     '--noEmit', '--strict', '--skipLibCheck', '--module', 'NodeNext', '--moduleResolution', 'NodeNext',
     '--target', 'ES2022', queryTypes], { cwd: coreCompatibility }));
   // Core is a legacy public API, not part of the modular launcher release set.
-  // Keep its compatibility installation separate so it cannot supply missing launcher dependencies.
-  const coreCompatibility = join(scratch, 'core-compatibility');
-  mkdirSync(coreCompatibility);
-  const corePack = requireOk('pack:legacy-core', run('npm', ['pack', '--json', '--ignore-scripts', '--pack-destination', packRoot], { cwd: join(root, 'packages/core') }));
-  const packedCore = JSON.parse(corePack.stdout)[0];
-  const coreCatalog = createNpmReleaseCatalog(JSON.parse(readFileSync(join(root, 'package-lock.json'), 'utf8')), ['packages/core']);
-  const coreArtifacts = Object.fromEntries(Object.entries(artifacts).filter(([id]) => coreCatalog.packages[`node_modules/${id}`]));
-  coreArtifacts['@kernlang/agon-core'] = { version: packedCore.version, resolved: `file:${join(packRoot, packedCore.filename)}`, integrity: packedCore.integrity };
-  const coreFrozen = createFrozenNpmInstall(coreCatalog, ['@kernlang/agon-core'], coreArtifacts);
-  writeFileSync(join(coreCompatibility, 'package.json'), JSON.stringify(coreFrozen.manifest, null, 2));
-  const coreLockBytes = JSON.stringify(coreFrozen.lock, null, 2);
-  writeFileSync(join(coreCompatibility, 'package-lock.json'), coreLockBytes);
-  requireOk('legacy-core-frozen-hydration', run('npm', ['ci', '--ignore-scripts', '--no-audit', '--no-fund', '--omit=optional', '--offline'], { cwd: coreCompatibility }));
-  if (readFileSync(join(coreCompatibility, 'package-lock.json'), 'utf8') !== coreLockBytes) throw new Error('Core compatibility hydration changed the frozen lock');
   requireOk('packed-research-citation-owner', run(process.execPath, ['--input-type=module', '-e', `
     import assert from 'node:assert/strict';
     import { pathToFileURL } from 'node:url';
@@ -831,13 +789,13 @@ try {
     // @ts-expect-error Session execution requires a complete effect host.
     runSynthesisSession({}, context, {}, execute);
     declare const hostEffects: Parameters<typeof createSynthesisHostServices>[0];
-    const host: SynthesisHostServices = createSynthesisHostServices(hostEffects);
+    const hostServices: SynthesisHostServices = createSynthesisHostServices(hostEffects);
     const { captureAuthority, ...withoutAuthority } = hostEffects;
     void captureAuthority;
     // @ts-expect-error Every host must capture generation authority.
     createSynthesisHostServices(withoutAuthority);
     // @ts-expect-error Opening a host requires an invocation context.
-    host.open();
+    hostServices.open();
   `);
   requireOk('packed-synthesis-public-types', run(process.execPath, [join(root, 'node_modules/typescript/bin/tsc'),
     '--noEmit', '--strict', '--target', 'ES2022', '--module', 'NodeNext', '--moduleResolution', 'NodeNext',

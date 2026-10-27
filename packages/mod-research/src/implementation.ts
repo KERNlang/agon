@@ -19,7 +19,6 @@ import type {
 } from "@kernlang/agon-mod-api";
 import { buildAuthoritativeRequest } from "./discovery-policy.js";
 import { classifyQuery } from "./query-policy.js";
-import type { ResearchIntent as Intent } from "./query-policy.js";
 export { classifyQuery } from "./query-policy.js";
 export type { ResearchIntent as Intent } from "./query-policy.js";
 export interface CitationVerdict {

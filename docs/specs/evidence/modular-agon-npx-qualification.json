@@ -325,6 +325,11 @@
       "detail": "exit=0"
     },
     {
+      "id": "packed-synthesis-session",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
       "id": "packed-synthesis-public-types",
       "passed": true,
       "detail": "exit=0"

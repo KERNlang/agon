@@ -187,8 +187,7 @@ function expectedFiles(packageRecord) {
     : short === 'think' ? ['dist/thinking.d.ts', 'dist/runtime.d.ts', 'dist/host.d.ts', 'dist/presentation.d.ts', 'dist/session-workflow.d.ts']
     : short === 'council' ? ['dist/runtime.d.ts', 'dist/host.d.ts', 'dist/presentation.d.ts', 'dist/command.d.ts', 'dist/session-workflow.d.ts']
     : short === 'review' ? ['dist/consensus.d.ts', 'dist/findings.d.ts']
-    : short === 'research' ? ['dist/citation-policy.js', 'dist/citation-policy.d.ts']
-    : short === 'synthesis' ? ['dist/judge-parser.d.ts', 'dist/runtime.d.ts']
+    : short === 'synthesis' ? ['dist/judge-parser.d.ts', 'dist/runtime.d.ts', 'dist/session-workflow.d.ts']
     : short === 'agent' ? ['dist/team-refinement.d.ts', 'dist/events.d.ts', 'dist/team-results.d.ts', 'dist/team-scoring.d.ts']
     : short === 'conquer' ? ['dist/completion-policy.d.ts', 'dist/workflow.d.ts', 'dist/falsifier.d.ts', 'dist/host.d.ts', 'dist/isolation.d.ts', 'dist/publication.d.ts']
     : short === 'nero' ? ['dist/verdict.d.ts', 'dist/critic-cascade.d.ts']
@@ -533,6 +532,8 @@ export {
   shuffleSynthesisEnginesInPlace,
 } from './runtime.js';
 export type { SynthesisDraft, SynthesisSwap, SynthesisResult, SynthesisRuntimeOptions, SynthesisRuntimeEvent, SynthesisRuntimeEffects } from './runtime.js';
+export { runSynthesisSession } from './session-workflow.js';
+export type { SynthesisSessionContext, SynthesisSessionCommandResult, SynthesisSessionEvent, SynthesisSessionHost } from './session-workflow.js';
 ` : short === 'agent' ? `export { runAgentTask } from './implementation.js';
 export * from './team-refinement.js';
 export { makeAssistantChunk, makeToolCall, makeTurnComplete, makeError, normalizeSessionChunk, buildApiTurnEvents, unavailableUsage, estimatedUsage } from './events.js';

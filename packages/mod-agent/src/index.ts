@@ -15,3 +15,5 @@ export type { AgentEvent, AgentUsage, RawSessionChunk } from './events.js';
 export { scoreAgentTeamResult } from './team-scoring.js';
 export type { AgentTeamScore, AgentTeamShortstatReader } from './team-scoring.js';
 export type { AgentTeamMemberResult, AgentTeamResult } from './team-results.js';
+export { AgentTeamRuntime, makeAgentTeamError, makeAgentTeamDisposedError } from './team-runtime.js';
+export type { AgentTeamConfig, AgentTeamMemberConfig, AgentTeamBudget, AgentTeamSession, AgentTeamRuntimeEffects } from './team-runtime.js';

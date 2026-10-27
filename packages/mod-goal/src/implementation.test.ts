@@ -1556,6 +1556,104 @@ describe('physical goal mod', () => {
     expect((out.result as any).patch).toContain('+Documentation only.');
   });
 
+  const multilangMutant = (index: number, cls: 'high-signal' | 'equiv-prone', file = 'second.ts') =>
+    ({ file, class: cls, id: `${file}:${index}`, line: index + 1, operator: 'test-operator', before: 'before', after: 'after' });
+
+  it('goal-multilang: non-compiling mutants are tolerated and excluded from mutation evidence', async () => {
+    const cwd = repo(); const h = harness();
+    const outcomes = [
+      ...[0, 1, 2].map(index => ({ status: 'survived', mutant: multilangMutant(index, 'equiv-prone') })),
+      { status: 'invalid', invalidCause: 'non-compiling', reason: 'the mutated source does not compile', mutant: multilangMutant(3, 'high-signal') },
+    ];
+    vi.spyOn(worktreeSupport, 'runMutationAssessment').mockResolvedValue({ ok: true,
+      report: { baselineOk: true, generated: outcomes.length, outcomes, notRun: 0, invalid: 1 } });
+    const out = await runGoal({ intent: 'non compiling', gate: 'test -f base.txt', engine: 'builder',
+      reviewEngines: 'reviewer', requireTests: false, maxAttempts: 1 }, context(cwd), h.services);
+    expect(out.exitCode).toBe(0);
+    const reviewCalls = h.dispatch.mock.calls.filter(call => call[3].mode === 'review');
+    expect(reviewCalls).toHaveLength(1);
+    expect(reviewCalls[0][1]).toContain('MUTATION EVIDENCE');
+    expect(reviewCalls[0][1]).toContain('3/3');
+    expect((out.result as any).state.events).toContainEqual(expect.objectContaining({
+      type: 'mutation-gate', detail: expect.stringContaining('1 non-compiling mutant(s) excluded') }));
+    expect(execFileSync('git', ['rev-list', '--count', 'main..goal/non-compiling'], { cwd, encoding: 'utf8' }).trim()).toBe('1');
+  });
+
+  it.each([
+    ['missing cause', {}],
+    ['unplaceable', { invalidCause: 'unplaceable' }],
+  ])('goal-multilang: an invalid mutant with %s stays fatal', async (_label, cause) => {
+    const cwd = repo(); const h = harness();
+    const outcomes = [
+      { status: 'killed', mutant: multilangMutant(0, 'high-signal') },
+      { status: 'invalid', ...cause, mutant: multilangMutant(1, 'high-signal') },
+    ];
+    vi.spyOn(worktreeSupport, 'runMutationAssessment').mockResolvedValue({ ok: true,
+      report: { baselineOk: true, generated: outcomes.length, outcomes, notRun: 0, invalid: 1 } });
+    const out = await runGoal({ intent: 'fatal invalid', gate: 'test -f base.txt', engine: 'builder',
+      reviewEngines: 'reviewer', requireTests: false, maxAttempts: 1 }, context(cwd), h.services);
+    expect(out.exitCode).toBe(1);
+    expect(h.dispatch).toHaveBeenCalledOnce();
+    expect((out.result as any).state.events).toContainEqual(expect.objectContaining({ type: 'mutation-assessment-failed' }));
+    expect(execFileSync('git', ['rev-list', '--count', 'main..goal/fatal-invalid'], { cwd, encoding: 'utf8' }).trim()).toBe('0');
+  });
+
+  it('goal-multilang: an assessment with only non-compiling mutants is not evidence and re-queues', async () => {
+    const cwd = repo(); const h = harness();
+    const outcomes = [0, 1].map(index => ({ status: 'invalid', invalidCause: 'non-compiling', mutant: multilangMutant(index, 'high-signal') }));
+    const mutation = vi.spyOn(worktreeSupport, 'runMutationAssessment').mockResolvedValue({ ok: true,
+      report: { baselineOk: true, generated: outcomes.length, outcomes, notRun: 0, invalid: 2 } });
+    const out = await runGoal({ intent: 'no gradable', gate: 'test -f base.txt', engine: 'builder',
+      reviewEngines: 'reviewer', requireTests: false, maxAttempts: 2 }, context(cwd), h.services);
+    expect(out.exitCode).toBe(1);
+    expect(mutation).toHaveBeenCalledTimes(2);
+    const task = (out.result as any).state.tasks[0];
+    expect(task.error).toBe('mutation assessment produced no gradable mutants (2 non-compiling)');
+    expect(task.attemptLog[0]).toEqual(expect.objectContaining({ outcome: 'error', nonCompiling: 2,
+      error: 'mutation assessment produced no gradable mutants (2 non-compiling)' }));
+    expect((out.result as any).state.events).toContainEqual(expect.objectContaining({ type: 'mutation-assessment-failed' }));
+    expect(h.dispatch.mock.calls.filter(call => call[3].mode === 'review')).toHaveLength(0);
+    expect(execFileSync('git', ['rev-list', '--count', 'main..goal/no-gradable'], { cwd, encoding: 'utf8' }).trim()).toBe('0');
+  });
+
+  const writeC = (h: ReturnType<typeof harness>) => h.dispatch.mockImplementation(async (_id: string, _prompt: string, invocation: any, options: any) => {
+    if (options.mode === 'agent') writeFileSync(join(invocation.cwd, 'second.c'), 'int second(int a, int b) { return a + b; }\n');
+    return { exitCode: 0, stdout: '<!--AGON_REVIEW_FINDINGS_v1-->\n```json\n[]\n```', stderr: '', timedOut: false };
+  });
+
+  it('goal-multilang: a C diff without an explicit compile check parks without running mutation', async () => {
+    const cwd = repo(); const h = harness(); writeC(h);
+    const mutation = vi.spyOn(worktreeSupport, 'runMutationAssessment');
+    const out = await runGoal({ intent: 'c only', gate: 'test -f base.txt', engine: 'builder',
+      reviewEngines: 'reviewer', requireTests: false, maxAttempts: 3 }, context(cwd), h.services);
+    const expected = 'mutation needs an explicit compile check for second.c: rerun goal with --mutate-typecheck "<cmd>" or --mutate-build "<cmd>"';
+    expect(out.exitCode).toBe(1);
+    expect(mutation).not.toHaveBeenCalled();
+    expect(h.dispatch).toHaveBeenCalledOnce();
+    const task = (out.result as any).state.tasks[0];
+    expect(task.status).toBe('parked');
+    expect(task.error).toBe(expected);
+    expect(task.attempts).toBe(1);
+    const events = (out.result as any).state.events;
+    expect(events).toContainEqual(expect.objectContaining({ type: 'mutation-explicit-check-required', detail: expected }));
+    expect(events).toContainEqual(expect.objectContaining({ type: 'task-parked', detail: expected }));
+  });
+
+  it.each([
+    ['mutateTypecheck', 'typecheckCmd'],
+    ['mutateBuild', 'buildCmd'],
+  ])('goal-multilang: %s reaches the mutation assessment as %s', async (option, field) => {
+    const cwd = repo(); const h = harness(); writeC(h);
+    const mutation = vi.spyOn(worktreeSupport, 'runMutationAssessment').mockResolvedValue({ ok: true,
+      report: { baselineOk: true, generated: 1, notRun: 0, invalid: 0,
+        outcomes: [{ status: 'killed', mutant: multilangMutant(0, 'high-signal', 'second.c') }] } });
+    const out = await runGoal({ intent: 'c checked', gate: 'test -f base.txt', engine: 'builder',
+      reviewEngines: 'reviewer', requireTests: false, maxAttempts: 1, [option]: 'cc -fsyntax-only second.c' }, context(cwd), h.services);
+    expect(out.exitCode).toBe(0);
+    expect(mutation).toHaveBeenCalledOnce();
+    expect((mutation.mock.calls[0][0] as unknown as Record<string, unknown>)[field]).toBe('cc -fsyntax-only second.c');
+  });
+
   it('does not silently skip required mutation verification without run storage', async () => {
     const cwd = repo(); const h = harness();
     const out = await runGoal({ intent: 'missing run storage', gate: 'test -f base.txt',

@@ -24,6 +24,7 @@ export interface AttemptRecord {
   outcome: 'gate-pass'|'gate-fail'|'witness-fail'|'verify-fail'|'mutation-survived'|'review-block'|'error';
   gateFailureSignature?: string;
   mutantsSurvived?: number;
+  nonCompiling?: number;
   error?: string;
 }
 

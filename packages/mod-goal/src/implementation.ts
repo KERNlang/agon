@@ -24,6 +24,8 @@ import { GoalOracleInvalidError } from './oracle.js';
 import { buildOracleCheatPrompt, oracleProbeConclusive, oracleGateDecision } from './oracle-redteam.js';
 import { mutationGateDecision, foldMutationVerdicts, gateFailureSignature, taskParkDecision, globalBreaker, pickImplementWinner, chooseImplementRoster } from './policy.js';
 import { recordAttempt } from './journal.js';
+import { explicitCheckBlocker, gradeMutationAssessment } from './mutation-evidence.js';
+import { isGoalSourcePath, isGoalTestPath } from './test-paths.js';
 import { summarizeGoal } from './artifacts.js';
 import type { AttemptRecord } from './journal-types.js';
 import { runFitnessCommand } from "@kernlang/agon-support-verification";
@@ -269,6 +271,8 @@ const schema = Object.freeze({
     reviewEngines: { type: "string" },
     maxAttempts: { type: "number" },
     gateTimeout: { type: "number" },
+    mutateBuild: { type: "string" },
+    mutateTypecheck: { type: "string" },
     resume: { type: "boolean" },
     supervisorRunId: { type: "string" },
     dryRun: { type: "boolean" },
@@ -304,6 +308,8 @@ const cliSchema = Object.freeze({
     mutationHighSignalMax: { type: "string" },
     mutationSurvivorRatio: { type: "string" },
     mutationFloor: { type: "string" },
+    mutateBuild: { type: "string" },
+    mutateTypecheck: { type: "string" },
     cwd: { type: "string", default: process.cwd() },
     requireTests: { type: "boolean", default: true },
     commit: { type: "boolean", default: true },
@@ -1317,8 +1323,7 @@ export async function runGoal(
           state.spentUsd += competitionCost(manifest.dispatchLog ?? []);
           runnable.competition.costAccounted = true;
           const readPatch = (path?: string) => path ? readFileSync(path, 'utf8') : '';
-          const addsTest = (patch: string) => parsePatch(patch).some(file =>
-            /(?:^|\/)(?:test|tests|__tests__)(?:\/|$)|\.(?:test|spec)\./i.test(file.path));
+          const addsTest = (patch: string) => parsePatch(patch).some(file => isGoalTestPath(file.path));
           let winningPatch = '';
           if (manifest.winner) {
             const synthesized = manifest.winner === 'synthesis' ? readPatch(manifest.synthesis?.patchPath) : '';
@@ -1383,10 +1388,10 @@ export async function runGoal(
           }
           const taskDiff = readWorktreePatch(worktree.path, taskBaseSha, taskBasePatch);
           const paths = parsePatch(taskDiff).map(file => file.path);
-          const testPaths = new Set(paths.filter(path => /(?:^|\/)(?:test|tests|__tests__)(?:\/|$)|\.(?:test|spec)\./i.test(path)));
+          const testPaths = new Set(paths.filter(isGoalTestPath));
           const testFiles = [...testPaths].filter(path => existsSync(resolveWithinRoot(worktree.path, path)));
           if (requireTests && taskDiff.trim()) {
-            const sourceChanged = paths.some((path) => /\.(?:[cm]?[jt]sx?|py|rs|go|java|kt)$/.test(path) && !testPaths.has(path));
+            const sourceChanged = paths.some(isGoalSourcePath);
             const testChanged = testFiles.length > 0;
             if (sourceChanged && !testChanged) {
               runnable.status = "queued";
@@ -1439,6 +1444,16 @@ export async function runGoal(
           }
           let mutationEvidence: string | undefined;
           if (Object.keys(changedLinesFromDiff(taskDiff)).length > 0) {
+            const mutateBuild = typeof input.mutateBuild === 'string' ? input.mutateBuild.trim() || undefined : undefined;
+            const mutateTypecheck = typeof input.mutateTypecheck === 'string' ? input.mutateTypecheck.trim() || undefined : undefined;
+            const checkBlocker = explicitCheckBlocker(taskDiff, worktree.path, mutateBuild, mutateTypecheck);
+            if (checkBlocker) {
+              runnable.error = checkBlocker;
+              concludeAttempt({ outcome: 'error', error: checkBlocker });
+              state = event(state, 'mutation-explicit-check-required', runnable.id, checkBlocker);
+              await save();
+              break;
+            }
             const mutation = run ? (await runMutationAssessment(
               {
                 repoRoot: worktree.path,
@@ -1447,6 +1462,8 @@ export async function runGoal(
                 engines: reviewEngines ? reviewEngines.split(",").filter(Boolean) : [],
                 semantic: false,
                 testCmd: witnessCmd,
+                buildCmd: mutateBuild,
+                typecheckCmd: mutateTypecheck,
                 maxMutants: 'all',
               },
               { ...context, cwd: worktree.path },
@@ -1457,23 +1474,17 @@ export async function runGoal(
               },
             )) as any : { ok: false, error: 'Goal mutation verification requires run artifact storage. Restart with a compatible host.' };
             await assertExecution();
-            // Missing or incomplete execution is not evidence that mutations were killed.
-            const report = mutation.report;
-            const outcomes = Array.isArray(report?.outcomes) ? report.outcomes as Array<any> : [];
-            if (mutation.ok !== true || report?.baselineOk !== true || report.aborted === true ||
-                report.budgetExhausted === true || report.notRun > 0 || report.invalid > 0 ||
-                !Array.isArray(report.outcomes) || report.generated !== outcomes.length || outcomes.some(outcome =>
-                  !['killed', 'survived', 'timeout'].includes(outcome?.status) ||
-                  typeof outcome?.mutant?.file !== 'string' || !outcome.mutant.file.trim() ||
-                  !['high-signal', 'equiv-prone'].includes(outcome?.mutant?.class))) {
+            const evidence = gradeMutationAssessment(mutation);
+            if (!evidence.ok) {
               runnable.status = "queued";
-              runnable.error = `mutation assessment failed: ${String(mutation.error ?? 'incomplete verification evidence')}`;
-              concludeAttempt({ outcome: 'error', error: runnable.error });
+              runnable.error = evidence.error;
+              concludeAttempt({ outcome: 'error', error: runnable.error, ...(evidence.nonCompiling ? { nonCompiling: evidence.nonCompiling } : {}) });
               state.noProgressStreak += 1;
               state = event(state, "mutation-assessment-failed", runnable.id, runnable.error);
               await save();
               continue;
             }
+            const outcomes = evidence.graded;
             const files = new Map<string, typeof outcomes>();
             for (const outcome of outcomes) {
               const file = outcome.mutant.file as string;
@@ -1488,13 +1499,15 @@ export async function runGoal(
               }) };
             });
             const verdict = foldMutationVerdicts(grades.map(grade => grade.verdict));
-            const detail = grades.map(grade => `${grade.file}: ${grade.verdict} (${grade.reason})`).join('; ');
+            const detail = grades.map(grade => `${grade.file}: ${grade.verdict} (${grade.reason})`).join('; ') +
+              (evidence.nonCompiling ? `; ${evidence.nonCompiling} non-compiling mutant(s) excluded` : '');
             state = event(state, 'mutation-gate', runnable.id, detail);
             if (verdict === 'park') {
               runnable.status = 'queued';
               runnable.error = `mutation gate: ${detail}`;
               concludeAttempt({ outcome: 'mutation-survived', error: runnable.error,
-                mutantsSurvived: outcomes.filter(outcome => outcome.status === 'survived').length });
+                mutantsSurvived: outcomes.filter(outcome => outcome.status === 'survived').length,
+                ...(evidence.nonCompiling ? { nonCompiling: evidence.nonCompiling } : {}) });
               state.noProgressStreak += 1;
               state = event(state, 'task-retry', runnable.id, runnable.error);
               continue;

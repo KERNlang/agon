@@ -9,3 +9,5 @@ export const IMPLEMENTATION_KIND = 'physical' as const;
 export { createMod } from './implementation.js';
 export { createMod as default } from './implementation.js';
 export { runResearch, classifyQuery, validateUrl, formatResearchResult } from './implementation.js';
+export { extractCitations, judgeProbe, formatCitationReport } from './citation-policy.js';
+export type { CitationStatus, CitationProbe, CitationVerdict, CitationReport } from './citation-policy.js';

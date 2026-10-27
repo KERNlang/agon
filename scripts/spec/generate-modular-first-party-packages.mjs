@@ -185,6 +185,7 @@ function expectedFiles(packageRecord) {
     : short === 'think' ? ['dist/thinking.d.ts', 'dist/runtime.d.ts', 'dist/host.d.ts', 'dist/presentation.d.ts', 'dist/session-workflow.d.ts']
     : short === 'council' ? ['dist/runtime.d.ts', 'dist/host.d.ts', 'dist/presentation.d.ts', 'dist/command.d.ts', 'dist/session-workflow.d.ts']
     : short === 'review' ? ['dist/consensus.d.ts', 'dist/findings.d.ts']
+    : short === 'research' ? ['dist/citation-policy.js', 'dist/citation-policy.d.ts']
     : short === 'synthesis' ? ['dist/judge-parser.d.ts', 'dist/runtime.d.ts']
     : short === 'agent' ? ['dist/team-refinement.d.ts', 'dist/events.d.ts', 'dist/team-results.d.ts', 'dist/team-scoring.d.ts']
     : short === 'conquer' ? ['dist/completion-policy.d.ts', 'dist/workflow.d.ts', 'dist/falsifier.d.ts', 'dist/host.d.ts', 'dist/isolation.d.ts', 'dist/publication.d.ts']
@@ -233,7 +234,9 @@ function expectedFiles(packageRecord) {
     private: false,
     license: 'MIT',
     type: 'module',
-    exports: { '.': { types: './dist/index.d.ts', import: './dist/index.js' }, './manifest': './agon.mod.json', './ownership': './ownership.json' },
+    exports: { '.': { types: './dist/index.d.ts', import: './dist/index.js' },
+      ...(short === 'research' ? { './citation-policy': { types: './dist/citation-policy.d.ts', import: './dist/citation-policy.js' } } : {}),
+      './manifest': './agon.mod.json', './ownership': './ownership.json' },
     main: './dist/index.js',
     types: './dist/index.d.ts',
     files: short === 'plan'
@@ -321,6 +324,8 @@ export type * from './types.js';
 export { runRag, buildRagIndex, queryRag, collectCorpusFiles, chunkMarkdown } from './implementation.js';
 ` : short === 'history' ? `export { runHistory } from './implementation.js';
 ` : short === 'research' ? `export { runResearch, classifyQuery, validateUrl, formatResearchResult } from './implementation.js';
+export { extractCitations, judgeProbe, formatCitationReport } from './citation-policy.js';
+export type { CitationStatus, CitationProbe, CitationVerdict, CitationReport } from './citation-policy.js';
 ` : short === 'mutate' ? `export { runMutate, generateMutants } from './implementation.js';
 ` : short === 'naturalize' ? `export { runNaturalize } from './implementation.js';
 ` : short === 'sanitize' ? `export { runSanitize, scanText, cleanText } from './implementation.js';
@@ -549,7 +554,9 @@ export type { CouncilSessionHost, CouncilSessionContext, CouncilSessionCommandRe
     [resolve(directory, 'src/index.ts'), indexSource],
     [resolve(directory, 'LICENSE'), readFileSync(resolve(root, 'LICENSE'), 'utf8')],
     [resolve(directory, 'tsconfig.json'), json(tsconfig)],
-    [resolve(directory, 'tsup.config.ts'), "import { defineConfig } from 'tsup';\n\nexport default defineConfig({ entry: ['src/index.ts'], format: ['esm'], dts: false, sourcemap: false, clean: true, target: 'es2022' });\n"],
+    [resolve(directory, 'tsup.config.ts'), short === 'research'
+      ? "import { defineConfig } from 'tsup';\n\nexport default defineConfig({ entry: ['src/index.ts', 'src/citation-policy.ts'], external: ['./citation-policy.js'], format: ['esm'], dts: false, sourcemap: false, clean: true, target: 'es2022' });\n"
+      : "import { defineConfig } from 'tsup';\n\nexport default defineConfig({ entry: ['src/index.ts'], format: ['esm'], dts: false, sourcemap: false, clean: true, target: 'es2022' });\n"],
   ]);
 }
 

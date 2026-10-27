@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process';
 import { verifyPackedMcp } from './verify-packed-mcp.mjs';
 import { verifyPackedBrainstorm } from './verify-packed-brainstorm.mjs';
 import { verifyPackedBrainstormTui } from './verify-packed-brainstorm-tui.mjs';
-import { createFrozenNpmInstall, DurableModHost, ManagedLifecycleService, hashInstalledPackagePayload } from '../../packages/mod-kernel/dist/index.js';
+import { createFrozenNpmInstall, createNpmReleaseCatalog, DurableModHost, ManagedLifecycleService, hashInstalledPackagePayload } from '../../packages/mod-kernel/dist/index.js';
 
 const root = resolve(import.meta.dirname, '../..');
 const output = join(root, 'docs/specs/evidence/modular-agon-npx-qualification.json');
@@ -75,6 +75,82 @@ try {
     assert.equal(result.pass, true); assert.equal(result.score, 100); assert.equal(result.durationSec, 2);
     assert.equal(scoreAgentTeamResult(team, 'investigate', undefined, () => { throw new Error('unexpected Git read'); }).get('worker').pass, true);
   `], { cwd: ephemeral }));
+  // Core is a legacy public API, not part of the modular launcher release set.
+  // Keep its compatibility installation separate so it cannot supply missing launcher dependencies.
+  const coreCompatibility = join(scratch, 'core-compatibility');
+  mkdirSync(coreCompatibility);
+  const corePack = requireOk('pack:legacy-core', run('npm', ['pack', '--json', '--ignore-scripts', '--pack-destination', packRoot], { cwd: join(root, 'packages/core') }));
+  const packedCore = JSON.parse(corePack.stdout)[0];
+  const coreCatalog = createNpmReleaseCatalog(JSON.parse(readFileSync(join(root, 'package-lock.json'), 'utf8')), ['packages/core']);
+  const coreArtifacts = Object.fromEntries(Object.entries(artifacts).filter(([id]) => coreCatalog.packages[`node_modules/${id}`]));
+  coreArtifacts['@kernlang/agon-core'] = { version: packedCore.version, resolved: `file:${join(packRoot, packedCore.filename)}`, integrity: packedCore.integrity };
+  const coreFrozen = createFrozenNpmInstall(coreCatalog, ['@kernlang/agon-core'], coreArtifacts);
+  writeFileSync(join(coreCompatibility, 'package.json'), JSON.stringify(coreFrozen.manifest, null, 2));
+  const coreLockBytes = JSON.stringify(coreFrozen.lock, null, 2);
+  writeFileSync(join(coreCompatibility, 'package-lock.json'), coreLockBytes);
+  requireOk('legacy-core-frozen-hydration', run('npm', ['ci', '--ignore-scripts', '--no-audit', '--no-fund', '--omit=optional', '--offline'], { cwd: coreCompatibility }));
+  if (readFileSync(join(coreCompatibility, 'package-lock.json'), 'utf8') !== coreLockBytes) throw new Error('Core compatibility hydration changed the frozen lock');
+  requireOk('packed-research-citation-owner', run(process.execPath, ['--input-type=module', '-e', `
+    import assert from 'node:assert/strict';
+    import { pathToFileURL } from 'node:url';
+    import * as research from '@kernlang/agon-mod-research';
+    import * as policy from '@kernlang/agon-mod-research/citation-policy';
+    import * as core from '@kernlang/agon-core';
+    const installedRoot = pathToFileURL(process.cwd() + '/node_modules/').href;
+    for (const id of ['@kernlang/agon-mod-research', '@kernlang/agon-core']) {
+      assert.ok(import.meta.resolve(id).startsWith(installedRoot));
+    }
+    for (const name of ['extractCitations', 'judgeProbe', 'formatCitationReport']) {
+      assert.equal(typeof research[name], 'function');
+      assert.equal(core[name], research[name], name);
+      assert.equal(policy[name], research[name], name);
+    }
+    assert.deepEqual(research.extractCitations('(see https://example.org/Page_(topic)).'), ['https://example.org/Page_(topic)']);
+    const probe = { url: 'https://example.org', finalUrl: 'https://example.org/', ok: true,
+      status: 200, crossHostRedirect: false, sample: 'unrelated text' };
+    const verdict = research.judgeProbe(probe, ['evidence']);
+    assert.equal(verdict.verdict, 'irrelevant');
+    assert.equal(verdict.finalUrl, probe.finalUrl);
+    assert.equal(research.judgeProbe({ ...probe, status: 999 }).verdict, 'blocked');
+    assert.ok(research.formatCitationReport({ total: 1, verified: 0, rejected: 1, blocked: 0, results: [verdict] }).includes('0/1 verified'));
+  `], { cwd: coreCompatibility }));
+  const citationTypes = join(coreCompatibility, 'research-citation-types.mts');
+  writeFileSync(citationTypes, `
+    import { extractCitations, judgeProbe, formatCitationReport,
+      type CitationStatus, type CitationProbe, type CitationVerdict, type CitationReport } from '@kernlang/agon-mod-research';
+    import { judgeProbe as legacyJudge, type CitationStatus as LegacyStatus,
+      type CitationProbe as LegacyProbe, type CitationVerdict as LegacyVerdict,
+      type CitationReport as LegacyReport } from '@kernlang/agon-core';
+    const status: CitationStatus = 'irrelevant';
+    const probe: CitationProbe = { url: 'https://example.org', finalUrl: 'https://example.org',
+      ok: true, status: 200, crossHostRedirect: false, sample: 'evidence' };
+    const verdict: CitationVerdict = judgeProbe(probe, ['evidence']);
+    const report: CitationReport = { total: 1, verified: 1, rejected: 0, blocked: 0, results: [verdict] };
+    const legacy: LegacyReport = report;
+    const compatible: CitationReport = legacy;
+    const sameSignature: typeof judgeProbe = legacyJudge;
+    const legacyStatus: LegacyStatus = status;
+    const legacyProbe: LegacyProbe = probe;
+    const legacyVerdict: LegacyVerdict = verdict;
+    const currentStatus: CitationStatus = legacyStatus;
+    const currentProbe: CitationProbe = legacyProbe;
+    const currentVerdict: CitationVerdict = legacyVerdict;
+    const urls: string[] = extractCitations('text', 20);
+    const formatted: string = formatCitationReport(compatible);
+    // @ts-expect-error Unknown verdicts must remain invalid.
+    const invalidStatus: CitationStatus = 'probably';
+    // @ts-expect-error Historical reports require the rejected count.
+    const missingCount: CitationReport = { total: 0, verified: 0, blocked: 0, results: [] };
+    // @ts-expect-error HTTP status must remain numeric.
+    judgeProbe({ ...probe, status: '200' });
+    // @ts-expect-error Historical verdicts require the final URL.
+    const missingFinalUrl: LegacyVerdict = { url: probe.url, verdict: 'verified', httpStatus: 200, detail: 'ok' };
+    void [status, sameSignature, urls, formatted, invalidStatus, missingCount, missingFinalUrl,
+      currentStatus, currentProbe, currentVerdict];
+  `);
+  requireOk('packed-research-citation-public-types', run(process.execPath, [join(root, 'node_modules/typescript/bin/tsc'),
+    '--noEmit', '--strict', '--skipLibCheck', '--module', 'NodeNext', '--moduleResolution', 'NodeNext',
+    '--target', 'ES2022', citationTypes], { cwd: coreCompatibility }));
   const agentTypes = join(ephemeral, 'agent-team-types.mts');
   writeFileSync(agentTypes, `import { scoreAgentTeamResult, type AgentTeamResult, type AgentTeamMemberResult, type AgentTeamScore, type AgentTeamShortstatReader } from '@kernlang/agon-mod-agent';
     const member: AgentTeamMemberResult = { engineId: 'worker', worktreePath: null, error: null,

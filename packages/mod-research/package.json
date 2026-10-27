@@ -9,6 +9,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./format-policy": {
+      "types": "./dist/format-policy.d.ts",
+      "import": "./dist/format-policy.js"
+    },
     "./manifest": "./agon.mod.json",
     "./ownership": "./ownership.json"
   },

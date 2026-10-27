@@ -1,3 +1,5 @@
+import { formatResearchResult } from './format-policy.js';
+export { formatResearchResult } from './format-policy.js';
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import { Agent } from "undici";
@@ -298,20 +300,6 @@ async function fetchBounded(url: string, signal: AbortSignal, max = 3500) {
 }
 export function buildPrompt(question: string, sources: Source[]) {
   return `Answer the QUESTION using ONLY the numbered SOURCES. Cite every factual claim inline as [n]. Never invent URLs or facts. If evidence is insufficient, say so.\n\nQUESTION:\n${question}\n\nSOURCES:\n${sources.map((s, i) => `[${i + 1}] ${s.title}\n${s.url}\n${s.content || s.snippet}`).join("\n\n")}`;
-}
-export function formatResearchResult(result: {
-  ok: boolean; answer: string; intent: Intent; engineId: string; sources: Source[];
-  citations: { total: number; verified: number; blocked: number; results: CitationVerdict[] };
-  note?: string;
-}): string {
-  if (!result.ok) return result.note ? `Research produced no grounded answer — ${result.note}` : "Research produced no grounded answer.";
-  const lines = [result.answer, "", `Sources (${result.sources.length}) · citations ${result.citations.verified}/${result.citations.total} verified${result.citations.blocked ? ` · ${result.citations.blocked} blocked` : ""} · ${result.intent} · engine ${result.engineId}`];
-  result.sources.forEach((source, index) => lines.push(`  [${index + 1}] ${source.title || source.url}`, `      ${source.url}`));
-  const failed = result.citations.results.filter((citation) => !["verified", "blocked"].includes(citation.verdict));
-  if (failed.length) lines.push("", "⚠ Unverified citations:", ...failed.map((citation) => `  ✗ [${citation.verdict}] ${citation.url} — ${citation.detail}`));
-  const blocked = result.citations.results.filter((citation) => citation.verdict === "blocked");
-  if (blocked.length) lines.push("", "ⓘ Could not verify (host blocked our re-fetch — citation not disproven):", ...blocked.map((citation) => `  ⚠ [blocked] ${citation.url} — ${citation.detail}`));
-  return lines.join("\n");
 }
 const schema = Object.freeze({
   type: "object",

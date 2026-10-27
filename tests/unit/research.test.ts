@@ -10,6 +10,7 @@ import {
   runResearch,
 } from '../../packages/forge/src/research.js';
 import type { ResearchResult } from '../../packages/forge/src/research.js';
+import { formatResearchResult as physicalFormatResearchResult } from '@kernlang/agon-mod-research';
 
 describe('buildResearchPrompt', () => {
   it('includes the question, numbered sources with URLs + content, and citation rules', () => {
@@ -46,6 +47,10 @@ const ok = (over: Partial<ResearchResult>): ResearchResult => ({
 });
 
 describe('formatResearchResult', () => {
+  it('uses one Research-owned formatter across legacy and physical execution', () => {
+    expect(formatResearchResult).toBe(physicalFormatResearchResult);
+  });
+
   it('renders the cited answer, source list, and a verified summary', () => {
     const out = formatResearchResult(ok({}));
     expect(out).toContain('The answer [1].');

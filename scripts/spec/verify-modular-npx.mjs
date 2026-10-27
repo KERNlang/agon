@@ -61,6 +61,34 @@ try {
   writeFileSync(join(ephemeral, 'package-lock.json'), lockBytes);
   requireOk('ephemeral-npx-hydration', run('npm', ['ci', '--ignore-scripts', '--no-audit', '--no-fund', '--omit=optional', '--offline'], { cwd: ephemeral }));
   if (readFileSync(join(ephemeral, 'package-lock.json'), 'utf8') !== lockBytes) throw new Error('packed hydration changed the frozen dependency lock');
+  requireOk('packed-nero-receipt-boundary', run(process.execPath, ['--input-type=module', '-e', `
+    import assert from 'node:assert/strict';
+    import { pathToFileURL } from 'node:url';
+    import { runNero } from '@kernlang/agon-mod-nero';
+    assert.ok(import.meta.resolve('@kernlang/agon-mod-nero').startsWith(pathToFileURL(process.cwd() + '/node_modules/').href));
+    for (const quiet of [false, true]) {
+      let dispatches = 0;
+      let receipts = 0;
+      const services = {
+        engines: { listActive: async () => ['critic'], dispatch: async () => {
+          dispatches++;
+          return { exitCode: 0, stdout: 'Confidence: 80%\\nVERDICT: SOUND' };
+        } },
+        receipts: { record: async () => { receipts++; throw new Error('receipt unavailable'); } },
+      };
+      const context = { invocationId: 'receipt-failure', cwd: process.cwd(), platform: 'darwin-arm64', signal: new AbortController().signal, config: {} };
+      const result = await runNero({ decision: 'Ship now', quiet }, context, services);
+      assert.equal(result.exitCode, 1);
+      assert.equal(result.failure.code, 'NERO_RECEIPT_FAILED');
+      assert.equal(result.failure.retryable, false);
+      assert.equal(result.result.verdict, 'sound');
+      assert.match(result.stderr, /receipt unavailable/);
+      if (quiet) assert.equal(result.stdout, 'SOUND — critic\\n');
+      else assert.equal(JSON.parse(result.stdout).verdict, 'sound');
+      assert.equal(dispatches, 1);
+      assert.equal(receipts, 1);
+    }
+  `], { cwd: ephemeral }));
   requireOk('packed-agent-team-scoring-owner', run(process.execPath, ['--input-type=module', '-e', `
     import assert from 'node:assert/strict';
     import { pathToFileURL } from 'node:url';

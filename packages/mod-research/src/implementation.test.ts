@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ModServices } from '@kernlang/agon-mod-api';
+import { lookup } from 'node:dns/promises';
 vi.mock('node:dns/promises', () => ({ lookup: vi.fn(async () => [{ address: '93.184.216.34', family: 4 }]) }));
 import { classifyQuery, formatResearchResult, isBlockedAddress, resolvePublicHost, runResearch, validateUrl } from './implementation.js';
 
@@ -13,6 +14,45 @@ function services(answer = 'Supported claim [1].') {
     engines: { listActive: vi.fn(async () => ['writer']), dispatch: vi.fn(async () => ({ exitCode: 0, stdout: answer })) } } as unknown as ModServices;
 }
 describe('physical research mod', () => {
+  it.each([
+    '0.255.255.255', '10.255.255.255', '127.255.255.255',
+    '169.254.255.255', '172.16.0.0', '172.31.255.255', '192.168.255.255',
+    '100.64.0.0', '100.127.255.255', '::', '::1', 'fc00::', 'fdff:ffff::1',
+    'fe80::', 'febf:ffff::1', '::ffff:100.64.0.1', '[::FFFF:7F00:1]',
+  ])('blocks reserved range address %s', (address) => {
+    expect(isBlockedAddress(address)).toBe(true);
+  });
+  it.each([
+    '1.0.0.0', '9.255.255.255', '11.0.0.0', '126.255.255.255', '128.0.0.0',
+    '169.253.255.255', '169.255.0.0', '172.15.255.255', '172.32.0.0',
+    '192.167.255.255', '192.169.0.0', '100.63.255.255', '100.128.0.0',
+    '2606:4700:4700::1111', '::ffff:8.8.8.8', '::ffff:808:808',
+  ])('allows address outside blocked ranges %s', (address) => {
+    expect(isBlockedAddress(address)).toBe(false);
+  });
+  it.each(['', 'not-an-address', '127.0.0.999', '::ffff:xyz'])('fails closed on invalid address %s', (address) => {
+    expect(isBlockedAddress(address)).toBe(true);
+  });
+  it.each(['::ffff:7f00:1', '0:0:0:0:0:ffff:7f00:1', '::ffff:a00:1', '0:0:0:0:0:0:0:1'])('rejects private address spelling %s', async (address) => {
+    expect(isBlockedAddress(address)).toBe(true);
+    await expect(resolvePublicHost('public.example', vi.fn(async () => [
+      { address: '93.184.216.34', family: 4 }, { address, family: 6 },
+    ]) as any)).rejects.toThrow(/blocked address/);
+  });
+  it('never fetches a source resolved to mapped loopback', async () => {
+    vi.mocked(lookup)
+      .mockResolvedValueOnce([{ address: '::ffff:7f00:1', family: 6 }] as any)
+      .mockResolvedValueOnce([{ address: '::ffff:7f00:1', family: 6 }] as any);
+    const discovered = { objects: [{ package: { name: 'pkg', links: { npm: 'https://source.example/pkg' } } }] };
+    globalThis.fetch = vi.fn(async (input) => new Response(
+      String(input).startsWith('https://registry.npmjs.org/') ? JSON.stringify(discovered) : 'Evidence',
+      { status: 200 },
+    ));
+    const out = await runResearch({ question: 'npm package pkg' }, context, services());
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    expect(out.exitCode).toBe(1);
+    expect((out.result as any).citations.verified).toBe(0);
+  });
   it('rejects a hostname if any resolved address enters private space', async () => {
     expect(isBlockedAddress('127.0.0.1')).toBe(true); expect(isBlockedAddress('100.64.0.1')).toBe(true); expect(isBlockedAddress('fe80::1')).toBe(true);
     await expect(resolvePublicHost('public.example', vi.fn(async () => [{ address: '93.184.216.34', family: 4 }, { address: '10.0.0.1', family: 4 }]) as any)).rejects.toThrow(/blocked address/);

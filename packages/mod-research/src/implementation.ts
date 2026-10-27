@@ -1,7 +1,7 @@
 import { formatResearchResult } from './format-policy.js';
 export { formatResearchResult } from './format-policy.js';
 import { lookup } from "node:dns/promises";
-import { isIP } from "node:net";
+import { BlockList, isIP } from "node:net";
 import { Agent } from "undici";
 import { buildPrompt } from './prompt-policy.js';
 import type { Source } from './prompt-policy.js';
@@ -179,28 +179,24 @@ export function validateUrl(raw: string) {
   }
   return u;
 }
+const blockedAddresses = new BlockList();
+blockedAddresses.addSubnet("0.0.0.0", 8, "ipv4");
+blockedAddresses.addSubnet("10.0.0.0", 8, "ipv4");
+blockedAddresses.addSubnet("127.0.0.0", 8, "ipv4");
+blockedAddresses.addSubnet("169.254.0.0", 16, "ipv4");
+blockedAddresses.addSubnet("172.16.0.0", 12, "ipv4");
+blockedAddresses.addSubnet("192.168.0.0", 16, "ipv4");
+blockedAddresses.addSubnet("100.64.0.0", 10, "ipv4");
+blockedAddresses.addAddress("::", "ipv6");
+blockedAddresses.addAddress("::1", "ipv6");
+blockedAddresses.addSubnet("fc00::", 7, "ipv6");
+blockedAddresses.addSubnet("fe80::", 10, "ipv6");
+
 export function isBlockedAddress(raw: string) {
   const value = raw.toLowerCase().replace(/^\[|\]$/g, "");
-  if (value === "::" || value === "::1") return true;
-  if (
-    value.startsWith("fc") ||
-    value.startsWith("fd") ||
-    /^fe[89ab]/.test(value)
-  )
-    return true;
-  const mapped = value.match(/^(?:::ffff:)?(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
-  if (!mapped) return false;
-  const a = Number(mapped[1]),
-    b = Number(mapped[2]);
-  return (
-    a === 0 ||
-    a === 10 ||
-    a === 127 ||
-    (a === 169 && b === 254) ||
-    (a === 172 && b >= 16 && b <= 31) ||
-    (a === 192 && b === 168) ||
-    (a === 100 && b >= 64 && b <= 127)
-  );
+  const family = isIP(value);
+  if (!family) return true;
+  return blockedAddresses.check(value, family === 4 ? "ipv4" : "ipv6");
 }
 export async function resolvePublicHost(
   hostname: string,

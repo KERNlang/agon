@@ -333,6 +333,65 @@ try {
   requireOk('packed-research-response-public-types', run(process.execPath, [join(root, 'node_modules/typescript/bin/tsc'),
     '--noEmit', '--strict', '--skipLibCheck', '--module', 'NodeNext', '--moduleResolution', 'NodeNext',
     '--target', 'ES2022', responseTypes], { cwd: coreCompatibility }));
+  // Keep legacy Core separate so it cannot supply missing launcher dependencies.
+  const coreCompatibility = join(scratch, 'core-compatibility');
+  mkdirSync(coreCompatibility);
+  const corePack = requireOk('pack:legacy-core', run('npm', ['pack', '--json', '--ignore-scripts', '--pack-destination', packRoot], { cwd: join(root, 'packages/core') }));
+  const packedCore = JSON.parse(corePack.stdout)[0];
+  const coreCatalog = createNpmReleaseCatalog(JSON.parse(readFileSync(join(root, 'package-lock.json'), 'utf8')), ['packages/core']);
+  const coreArtifacts = Object.fromEntries(Object.entries(artifacts).filter(([id]) => coreCatalog.packages[`node_modules/${id}`]));
+  coreArtifacts['@kernlang/agon-core'] = { version: packedCore.version, resolved: `file:${join(packRoot, packedCore.filename)}`, integrity: packedCore.integrity };
+  const coreFrozen = createFrozenNpmInstall(coreCatalog, ['@kernlang/agon-core'], coreArtifacts);
+  writeFileSync(join(coreCompatibility, 'package.json'), JSON.stringify(coreFrozen.manifest, null, 2));
+  const coreLockBytes = JSON.stringify(coreFrozen.lock, null, 2);
+  writeFileSync(join(coreCompatibility, 'package-lock.json'), coreLockBytes);
+  requireOk('legacy-core-frozen-hydration', run('npm', ['ci', '--ignore-scripts', '--no-audit', '--no-fund', '--omit=optional', '--offline'], { cwd: coreCompatibility }));
+  if (readFileSync(join(coreCompatibility, 'package-lock.json'), 'utf8') !== coreLockBytes) throw new Error('Core compatibility hydration changed the frozen lock');
+  requireOk('packed-research-discovery-owner', run(process.execPath, ['--input-type=module', '-e', `
+    import assert from 'node:assert/strict';
+    import { pathToFileURL } from 'node:url';
+    import * as research from '@kernlang/agon-mod-research';
+    import * as policy from '@kernlang/agon-mod-research/discovery-policy';
+    import * as core from '@kernlang/agon-core';
+    const installedRoot = pathToFileURL(process.cwd() + '/node_modules/').href;
+    for (const id of ['@kernlang/agon-mod-research', '@kernlang/agon-mod-research/discovery-policy', '@kernlang/agon-core']) {
+      assert.ok(import.meta.resolve(id).startsWith(installedRoot));
+    }
+    for (const name of ['cleanQuery', 'buildAuthoritativeRequest']) {
+      assert.equal(research[name], policy[name]);
+      assert.equal(core[name], policy[name]);
+    }
+    assert.equal(policy.cleanQuery('npm a charting library'), 'charting');
+    assert.equal(new URL(policy.buildAuthoritativeRequest('rfc', 'RFC 07231').url).searchParams.get('name__icontains'), 'rfc7231');
+    assert.equal(policy.buildAuthoritativeRequest('package', '   '), null);
+    assert.equal(policy.buildAuthoritativeRequest('general', 'hello'), null);
+    assert.equal(new URL(policy.buildAuthoritativeRequest('package', 'yaml', 0).url).searchParams.get('size'), '5');
+  `], { cwd: coreCompatibility }));
+  const discoveryTypes = join(coreCompatibility, 'research-discovery-types.mts');
+  writeFileSync(discoveryTypes, `
+    import { buildAuthoritativeRequest, type ResearchRequest } from '@kernlang/agon-mod-research';
+    import { buildAuthoritativeRequest as policy } from '@kernlang/agon-mod-research/discovery-policy';
+    import { buildAuthoritativeRequest as legacy, type SearchRequest } from '@kernlang/agon-core';
+    const result: ResearchRequest | null = buildAuthoritativeRequest('rfc', 'RFC 9110');
+    const oldResult: SearchRequest | null = result;
+    const compatible: ResearchRequest | null = oldResult;
+    const legacySignature: typeof buildAuthoritativeRequest = legacy;
+    const reverseSignature: typeof legacy = buildAuthoritativeRequest;
+    const policySignature: typeof buildAuthoritativeRequest = policy;
+    const post: ResearchRequest = { url: 'https://example.org', method: 'POST', headers: {}, body: 'body' };
+    const oldPost: SearchRequest = post;
+    const newPost: ResearchRequest = oldPost;
+    // @ts-expect-error Unsupported routing lanes remain invalid.
+    buildAuthoritativeRequest('pypi', 'yaml');
+    // @ts-expect-error Count remains numeric.
+    buildAuthoritativeRequest('package', 'yaml', 'five');
+    // @ts-expect-error Method remains a closed union.
+    const invalid: ResearchRequest = { ...post, method: 'DELETE' };
+    void [compatible, legacySignature, reverseSignature, policySignature, newPost, invalid];
+  `);
+  requireOk('packed-research-discovery-public-types', run(process.execPath, [join(root, 'node_modules/typescript/bin/tsc'),
+    '--noEmit', '--strict', '--skipLibCheck', '--module', 'NodeNext', '--moduleResolution', 'NodeNext',
+    '--target', 'ES2022', discoveryTypes], { cwd: coreCompatibility }));
   const agentTypes = join(ephemeral, 'agent-team-types.mts');
   writeFileSync(agentTypes, `import { scoreAgentTeamResult, type AgentTeamResult, type AgentTeamMemberResult, type AgentTeamScore, type AgentTeamShortstatReader } from '@kernlang/agon-mod-agent';
     const member: AgentTeamMemberResult = { engineId: 'worker', worktreePath: null, error: null,

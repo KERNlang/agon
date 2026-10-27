@@ -21,6 +21,10 @@
       "types": "./dist/response-policy.d.ts",
       "import": "./dist/response-policy.js"
     },
+    "./discovery-policy": {
+      "types": "./dist/discovery-policy.d.ts",
+      "import": "./dist/discovery-policy.js"
+    },
     "./manifest": "./agon.mod.json",
     "./ownership": "./ownership.json"
   },

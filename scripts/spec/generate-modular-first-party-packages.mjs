@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '../..');
 const check = process.argv.includes('--check');
-const researchPolicyEntries = ['prompt-policy', 'format-policy', 'response-policy'];
+const researchPolicyEntries = ['prompt-policy', 'format-policy', 'response-policy', 'discovery-policy'];
 const packageMap = JSON.parse(readFileSync(resolve(root, 'docs/specs/evidence/modular-agon-package-map.json'), 'utf8'));
 const ownership = JSON.parse(readFileSync(resolve(root, 'docs/specs/evidence/modular-agon-ownership.json'), 'utf8'));
 const inventory = JSON.parse(readFileSync(resolve(root, 'docs/specs/evidence/modular-agon-current-inventory.json'), 'utf8'));
@@ -182,7 +182,7 @@ function expectedFiles(packageRecord) {
   // Jobs persists scheduler observations through its separate storage adapter.
   if (short === 'jobs') inferredPermissions.add('state.write');
   if (short === 'conquer') inferredPermissions.add('git.write');
-  const physicalPackFiles = ['dist/implementation.d.ts', ...(short === 'research' ? ['dist/response-policy.js', 'dist/response-policy.d.ts'] : short === 'rag' ? ['dist/store.d.ts', 'dist/types.d.ts', 'dist/grounding.d.ts']
+  const physicalPackFiles = ['dist/implementation.d.ts', ...(short === 'research' ? researchPolicyEntries.flatMap((entry) => [`dist/${entry}.js`, `dist/${entry}.d.ts`]) : short === 'rag' ? ['dist/store.d.ts', 'dist/types.d.ts', 'dist/grounding.d.ts']
     : short === 'think' ? ['dist/thinking.d.ts', 'dist/runtime.d.ts', 'dist/host.d.ts', 'dist/presentation.d.ts', 'dist/session-workflow.d.ts']
     : short === 'council' ? ['dist/runtime.d.ts', 'dist/host.d.ts', 'dist/presentation.d.ts', 'dist/command.d.ts', 'dist/session-workflow.d.ts']
     : short === 'review' ? ['dist/consensus.d.ts', 'dist/findings.d.ts']
@@ -325,6 +325,8 @@ export { runRag, buildRagIndex, queryRag, collectCorpusFiles, chunkMarkdown } fr
 export { buildResearchPrompt, buildPrompt } from './prompt-policy.js';
 export { parseAuthoritativeResults } from './response-policy.js';
 export type { ResearchSearchResult } from './response-policy.js';
+export { cleanQuery, buildAuthoritativeRequest } from './discovery-policy.js';
+export type { ResearchRequest } from './discovery-policy.js';
 ` : short === 'mutate' ? `export { runMutate, generateMutants } from './implementation.js';
 ` : short === 'naturalize' ? `export { runNaturalize } from './implementation.js';
 ` : short === 'sanitize' ? `export { runSanitize, scanText, cleanText } from './implementation.js';

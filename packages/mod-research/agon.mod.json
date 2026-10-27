@@ -118,6 +118,8 @@
       "dist/implementation.d.ts",
       "dist/response-policy.js",
       "dist/response-policy.d.ts",
+      "dist/discovery-policy.js",
+      "dist/discovery-policy.d.ts",
       "ownership.json",
       "schemas/config.schema.json"
     ],

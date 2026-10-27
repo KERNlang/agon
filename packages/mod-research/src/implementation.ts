@@ -17,6 +17,7 @@ import type {
   ModServices,
   Registrar,
 } from "@kernlang/agon-mod-api";
+import { buildAuthoritativeRequest } from "./discovery-policy.js";
 export type Intent =
   | "package"
   | "github"
@@ -50,54 +51,7 @@ export function classifyQuery(value: string): Intent {
     return "fact";
   return "general";
 }
-const clean = (q: string) =>
-  q
-    .replace(
-      /^(who|what|when|where|why|how)(\s+(is|are|was|were|did|does|do))?\s+/i,
-      "",
-    )
-    .replace(
-      /\b(github|repositor(?:y|ies)|repos?|npm|packages?|librar(?:y|ies)|modules?|dependenc(?:y|ies)|mdn|rfc|ietf|w3c|whatwg|ecma|specification|standards?|stack\s?overflow|stackexchange)\b/gi,
-      " ",
-    )
-    .replace(/\s+/g, " ")
-    .trim() || q.trim();
-export function discoveryRequest(intent: Intent, q: string, count: number) {
-  const e = encodeURIComponent(clean(q)),
-    n = Math.min(10, Math.max(1, count)),
-    h = { accept: "application/json", "user-agent": "agon-research/1.0" };
-  if (intent === "package")
-    return {
-      url: `https://registry.npmjs.org/-/v1/search?text=${e}&size=${n}`,
-      headers: h,
-    };
-  if (intent === "github")
-    return {
-      url: `https://api.github.com/search/repositories?q=${e}&per_page=${n}`,
-      headers: h,
-    };
-  if (intent === "fact")
-    return {
-      url: `https://en.wikipedia.org/w/rest.php/v1/search/page?q=${e}&limit=${n}`,
-      headers: h,
-    };
-  if (intent === "standard")
-    return {
-      url: `https://developer.mozilla.org/api/v1/search?q=${e}`,
-      headers: h,
-    };
-  if (intent === "rfc")
-    return {
-      url: `https://datatracker.ietf.org/api/v1/doc/document/?format=json&limit=${n}&name__icontains=${e}`,
-      headers: h,
-    };
-  if (intent === "qa")
-    return {
-      url: `https://api.stackexchange.com/2.3/search/advanced?order=desc&sort=relevance&site=stackoverflow&pagesize=${n}&q=${e}`,
-      headers: h,
-    };
-  return null;
-}
+export const discoveryRequest = buildAuthoritativeRequest;
 export function validateUrl(raw: string) {
   let u: URL;
   try {

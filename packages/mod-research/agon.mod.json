@@ -116,6 +116,8 @@
       "dist/index.js",
       "dist/index.d.ts",
       "dist/implementation.d.ts",
+      "dist/discovery-policy.js",
+      "dist/discovery-policy.d.ts",
       "ownership.json",
       "schemas/config.schema.json"
     ],

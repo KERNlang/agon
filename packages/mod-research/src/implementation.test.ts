@@ -13,6 +13,27 @@ function services(answer = 'Supported claim [1].') {
     engines: { listActive: vi.fn(async () => ['writer']), dispatch: vi.fn(async () => ({ exitCode: 0, stdout: answer })) } } as unknown as ModServices;
 }
 describe('physical research mod', () => {
+  it.each([
+    ['RFC 9110', 'https://datatracker.ietf.org/api/v1/doc/document/?format=json&limit=5&name__icontains=rfc9110'],
+    ['RFC 07231', 'https://datatracker.ietf.org/api/v1/doc/document/?format=json&limit=5&name__icontains=rfc7231'],
+    ['npm a charting library', 'https://registry.npmjs.org/-/v1/search?text=charting&size=5'],
+  ])('preserves the authoritative discovery request for %s', async (question, url) => {
+    globalThis.fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ objects: [] }), { status: 200 }));
+    const s = services();
+    const out = await runResearch({ question }, context, s);
+    expect(globalThis.fetch).toHaveBeenCalledExactlyOnceWith(url, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    expect(out.exitCode).toBe(1);
+    expect(out.stderr).toBe('No authoritative sources found.\n');
+    expect(s.engines.dispatch).not.toHaveBeenCalled();
+  });
+  it.each([[0, 5], [99, 10]])('preserves legacy discovery count %s as %s', async (count, expected) => {
+    globalThis.fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ objects: [] }), { status: 200 }));
+    await runResearch({ question: 'npm package yaml', count }, context, services());
+    expect(globalThis.fetch).toHaveBeenCalledExactlyOnceWith(
+      `https://registry.npmjs.org/-/v1/search?text=yaml&size=${expected}`,
+      expect.objectContaining({ headers: { Accept: 'application/json', 'User-Agent': 'agon-research/0.1 (+https://github.com/KERNlang/agon)' } }),
+    );
+  });
   it('rejects a hostname if any resolved address enters private space', async () => {
     expect(isBlockedAddress('127.0.0.1')).toBe(true); expect(isBlockedAddress('100.64.0.1')).toBe(true); expect(isBlockedAddress('fe80::1')).toBe(true);
     await expect(resolvePublicHost('public.example', vi.fn(async () => [{ address: '93.184.216.34', family: 4 }, { address: '10.0.0.1', family: 4 }]) as any)).rejects.toThrow(/blocked address/);

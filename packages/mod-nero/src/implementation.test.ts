@@ -11,6 +11,16 @@ describe('physical nero mod', () => {
     expect(h.dispatch).toHaveBeenCalledOnce();
   });
   it('uses host rating order and parses the required verdict', async () => { const h = await setup({ beta: 'Confidence: 25%\nChallenge\nVERDICT: FLAWED' }); const result = await h.command.run({ decision: 'Ship now' }, context); const parsed = JSON.parse((result as { stdout: string }).stdout); expect(parsed).toMatchObject({ ok: true, engineId: 'beta', reason: 'top-rated', scope: 'critique', verdict: 'flawed', challengeConfidence: 25 }); expect(h.rank).toHaveBeenCalled(); expect(h.record).toHaveBeenCalled(); });
-  it('down-passes after two empty attempts', async () => { const h = await setup({ alpha: 'Confidence: 80%\nNo fatal issue\nVERDICT: SOUND' }); const result = await h.command.run({ decision: 'Ship now' }, context); const parsed = JSON.parse((result as { stdout: string }).stdout); expect(parsed).toMatchObject({ ok: true, engineId: 'alpha', verdict: 'sound' }); expect(h.dispatch.mock.calls.map((call) => call[0])).toEqual(['beta', 'beta', 'alpha']); });
+  it('keeps text-only dispatch on the first attempt, retry and critic down-pass', async () => {
+    const h = await setup({ alpha: 'Confidence: 80%\nNo fatal issue\nVERDICT: SOUND' });
+    const result = await h.command.run({ decision: 'Ship now' }, context);
+    const parsed = JSON.parse((result as { stdout: string }).stdout);
+    expect(parsed).toMatchObject({ ok: true, engineId: 'alpha', verdict: 'sound' });
+    expect(h.dispatch.mock.calls.map((call) => call[0])).toEqual(['beta', 'beta', 'alpha']);
+    for (const [index, engine] of ['beta', 'beta', 'alpha'].entries()) {
+      expect(h.dispatch).toHaveBeenNthCalledWith(index + 1, engine, expect.any(String), context,
+        expect.objectContaining({ textOnly: true }));
+    }
+  });
   it('rejects an inactive forced engine', async () => { const h = await setup({}); await expect(h.command.run({ decision: 'Ship', engine: 'ghost' }, context)).resolves.toMatchObject({ exitCode: 1 }); expect(h.dispatch).not.toHaveBeenCalled(); });
 });

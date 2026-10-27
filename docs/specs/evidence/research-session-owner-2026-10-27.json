@@ -1,9 +1,33 @@
 {
   "scope": "Research interactive session ownership and selected-contribution routing",
   "base": "a4e06dfb8869acd14fe4c90cc16a88abebeb3243",
-  "status": "working-tree qualification passed; clean committed-checkout qualification pending",
+  "status": "Cold typecheck defect reproduced and repaired; full local repair gates passed, remote CI pending",
   "archive": "/Users/ra/dev/modular-agon-remediation",
   "verification": {
+    "coldRepairFullGates": {
+      "receipt": "research-session-cold-reference-gates-20261027.receipt.json",
+      "log": "research-session-cold-reference-gates-20261027.log",
+      "sha256": "443be436953eb23c217483308479f20439c28cc61ef07fb19c3cf1dd0c63b393",
+      "passed": true,
+      "seconds": 971.858,
+      "testsPassed": 11969,
+      "testsSkipped": 7,
+      "installedChecksPassed": 96,
+      "providerLaunches": 0,
+      "scope": "Cold types before build, lint, reexports, release/supply-chain self-tests, full suite and isolated installed-package checks. Subject is 892e3fc339f1b5fb28e7cfa2dadfffa425aed442 plus the recorded CLI project-reference repair; not aggregate release acceptance."
+    },
+    "coldTypecheckRepair": {
+      "subject": "892e3fc339f1b5fb28e7cfa2dadfffa425aed442 plus CLI Research project reference",
+      "ciJob": "https://github.com/KERNlang/agon/actions/runs/40491783902/job/122147242613",
+      "ciLog": "research-session-pr338-ci-failure-20261027.txt",
+      "ciLogSha256": "3718af8d122c3dcd90f9d8e6b1b6c6fc1659e34536ddb081bda08f3d223fcd71",
+      "localRecord": "research-session-cold-typecheck-20261027.md",
+      "localRecordSha256": "04dbda725a86033e002adcda16345e9113b9a2eeef68495bce896841533184f9",
+      "command": "node node_modules/typescript/bin/tsc -b --clean && node node_modules/typescript/bin/tsc -b",
+      "beforeExit": 2,
+      "afterExit": 0,
+      "qualificationCorrection": "Run cold types before build. Prior build-first qualification masked the missing CLI-to-Research project reference."
+    },
     "reviewNegative": { "log": "research-session-review-negative-20261027.log", "sha256": "4c3a35281080f050a60d452ced6f3987cc4ec4d100bc1f5e23d9cdd3d2db0791", "expectedFailures": 2 },
     "focused": { "log": "research-session-review-fixed-20261027.log", "sha256": "08373342c7b003cd25d3c5c3292b9c483f341cc06019ea09426cfedd18f801a4", "testsPassed": 27 },
     "installed": { "log": "research-session-pack-boundary-20261027.log", "sha256": "4edcbb1877194f43d4eb314b068f3eebae9c50a74d51a346b484f5a3aa0ee103", "passed": true, "checksPassed": 96, "providerLaunches": 0 },

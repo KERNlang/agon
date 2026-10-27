@@ -1,0 +1,36 @@
+{
+  "scope": "Research interactive session ownership and selected-contribution routing",
+  "base": "a4e06dfb8869acd14fe4c90cc16a88abebeb3243",
+  "status": "working-tree qualification passed; clean committed-checkout qualification pending",
+  "archive": "/Users/ra/dev/modular-agon-remediation",
+  "verification": {
+    "reviewNegative": { "log": "research-session-review-negative-20261027.log", "sha256": "4c3a35281080f050a60d452ced6f3987cc4ec4d100bc1f5e23d9cdd3d2db0791", "expectedFailures": 2 },
+    "focused": { "log": "research-session-review-fixed-20261027.log", "sha256": "08373342c7b003cd25d3c5c3292b9c483f341cc06019ea09426cfedd18f801a4", "testsPassed": 27 },
+    "installed": { "log": "research-session-pack-boundary-20261027.log", "sha256": "4edcbb1877194f43d4eb314b068f3eebae9c50a74d51a346b484f5a3aa0ee103", "passed": true, "checksPassed": 96, "providerLaunches": 0 },
+    "full": { "log": "research-session-final-suite-20261027.log", "sha256": "4369eb485bba411c2d257bbcaf58cfbb4cc23dc4f8c74163e829b03156daf233", "passed": true, "testsPassed": 11969, "testsSkipped": 7, "providerLaunches": 0 },
+    "boundaryNegative": { "log": "research-session-reviewed-full-gates-20261027.log", "sha256": "92637eb633a5cc96af749a6a0bdaff83786104e9e1b7ed78fbf8453230a06347", "passed": false },
+    "retainedFailures": ["research-session-baseline-negative-20261027", "research-session-failure-negative-20261027", "research-session-first-fix-20261027", "research-session-focused-types-20261027", "research-session-alias-negative-20261027", "research-session-full-gates-20261027"],
+    "failureNotes": "Negative controls prove missing session effects, swallowed job failure, dropped command inputs and lost failure diagnostics. Precursors exposed count normalization, alias selection and sandbox socket restrictions. Approved-access installed probes exposed Undici CommonJS bundled into CLI ESM; externalizing the already-declared Research package fixed both unchanged TUI probes. Failed precursors did not run the full suite."
+  },
+  "review": {
+    "packetSha256": "4953b6fc63af3c6be23155942f3d3ffbb43e2c83dfec21cbd2e0b5c4bdce66f5",
+    "codexLogSha256": "404c2843fcadb9e0b2d1ec0075fd639590bdd6b41586cc1205ec66f82eb68d12",
+    "kimi": "Engine exit 1, no usable answer; not counted as passing review",
+    "kimiLogSha256": "a4eebf5d7d44f5490f265ba973efba6a7b0a1712213a895f830b6440c27cdbff",
+    "resolved": ["Preserve selected contribution fields while normalizing engine/count", "Preserve structured grounding failure note when JSON output has no stderr"],
+    "resolutionEvidence": "Both claims source-verified, reproduced by failing assertions and fixed with the same assertions passing."
+  },
+  "sourceSha256": {
+    "packages/cli/tsup.config.ts": "d3c528b5925b0ff34af27ce393b9a015adc459c5086630b3646f777db84a35f4",
+    "packages/mod-research/src/session-workflow.ts": "84af9889e9cebe05eb8799d5bc4a08efb56371d59f55b2b873733723b2af5ab4",
+    "packages/cli/src/blocks/research-session.ts": "39b5b55a5f343b6cbbe0a9a866f196f3dd0b94dfc77469870a8dbbc9adfae467",
+    "packages/cli/src/handlers/research.ts": "18faa6b0a5b17b4f1e69b436b4c33fa160bdd4883e5658093a0bffc899be9aab",
+    "packages/cli/src/signals/dispatch/intent-router.ts": "b2105e79eacce0610b40ba7e70b08a0c5b20f3d3dba1d0ac6c77a0146b85cad8",
+    "packages/cli/src/signals/dispatch/intent-session.ts": "4b0ad4707959efb1eda74d578bf9e4a982a201a6028cac8e6907625527077cff",
+    "packages/cli/src/signals/dispatch/intent-orchestration.ts": "b41de86cb569b9dac1f150b5abc1aedbc911d99d7977824eb38f656ad4ccdb40",
+    "tests/unit/modular-research-session-parity.test.ts": "04323cedf3797ee37d15df4a3f3eec2c128f955adcf86f0d99315e458c60c7c7",
+    "scripts/spec/generate-modular-first-party-packages.mjs": "3393a805f884a855c68afe168d791bf240243b6af4f06f8e50d110e18dd90377",
+    "scripts/spec/verify-modular-npx.mjs": "02aeff92fa28c9f1ac891303e484f1095aad5416126fd6b8ef42f2f13add3810"
+  },
+  "limits": ["Legacy Forge Research runtime and Core citation-verifier ownership remain", "Compatibility handler remains", "Fixture network/provider boundaries, not live-provider evidence", "No aggregate release acceptance", "Clean committed-checkout qualification pending"]
+}

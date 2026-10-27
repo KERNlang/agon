@@ -75,6 +75,26 @@ try {
     assert.equal(result.pass, true); assert.equal(result.score, 100); assert.equal(result.durationSec, 2);
     assert.equal(scoreAgentTeamResult(team, 'investigate', undefined, () => { throw new Error('unexpected Git read'); }).get('worker').pass, true);
   `], { cwd: ephemeral }));
+  const researchTypes = join(ephemeral, 'research-session-types.mts');
+  writeFileSync(researchTypes, `import { runResearchSession, type ResearchSessionContext, type ResearchSessionHost } from '@kernlang/agon-mod-research';
+    const context: ResearchSessionContext = { cwd: '/fixture', signal: new AbortController().signal };
+    declare const host: ResearchSessionHost;
+    void runResearchSession({ question: 'npm parser' }, context, host, async () => ({ exitCode: 1, stderr: 'fixture' }));
+    // @ts-expect-error Session cancellation must retain its public type.
+    const invalid: ResearchSessionContext = { cwd: '/fixture', signal: 'cancel' };
+    void invalid;
+  `);
+  requireOk('packed-research-session-public-types', run(process.execPath, [join(root, 'node_modules/typescript/bin/tsc'),
+    '--noEmit', '--strict', '--skipLibCheck', '--module', 'NodeNext', '--moduleResolution', 'NodeNext',
+    '--target', 'ES2022', researchTypes], { cwd: ephemeral }));
+  requireOk('packed-research-session-cancellation', run(process.execPath, ['--input-type=module', '-e', `
+    import assert from 'node:assert/strict';
+    import { runResearchSession } from '@kernlang/agon-mod-research';
+    const controller = new AbortController(); controller.abort(new Error('cancelled'));
+    await assert.rejects(runResearchSession({ question: 'npm parser' }, { cwd: '/fixture', signal: controller.signal },
+      new Proxy({}, { get() { throw new Error('unexpected host effect'); } }),
+      async () => { throw new Error('unexpected execution'); }), /cancelled/);
+  `], { cwd: ephemeral }));
   const agentTypes = join(ephemeral, 'agent-team-types.mts');
   writeFileSync(agentTypes, `import { scoreAgentTeamResult, type AgentTeamResult, type AgentTeamMemberResult, type AgentTeamScore, type AgentTeamShortstatReader } from '@kernlang/agon-mod-agent';
     const member: AgentTeamMemberResult = { engineId: 'worker', worktreePath: null, error: null,

@@ -31,6 +31,8 @@ export default defineConfig({
   external: [
     '@kernlang/agon-engines', '@kernlang/agon-dedup', '@kernlang/agon-mod-api',
     '@kernlang/agon-kernel',
+    // Research owns Undici; keep its CommonJS dependency outside the ESM bundle.
+    '@kernlang/agon-mod-research',
     '@kernlang/agon-support-agent-runtime', '@kernlang/agon-support-browser-bridge',
     '@kernlang/agon-support-dedup', '@kernlang/agon-support-engine-catalog',
     '@kernlang/agon-support-engine-runtime', '@kernlang/agon-support-judge',

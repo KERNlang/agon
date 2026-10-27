@@ -5,7 +5,7 @@ import { runPhysicalTuiContribution } from './intent-session.js';
 
 import { ENGINE_COLORS } from '../../blocks/output-format.js';
 
-import { handleForge, handleSynthesis, handleNeroChallenge, handleResearch, handleChrome, handleBuild, handleReviewMany, handleSanitize, handleNaturalize, handleMutate, runAgentMode, runAgentTeam } from '../../handlers/index.js';
+import { handleForge, handleSynthesis, handleNeroChallenge, handleChrome, handleBuild, handleReviewMany, handleSanitize, handleNaturalize, handleMutate, runAgentMode, runAgentTeam } from '../../handlers/index.js';
 
 import { handleTeamTribunal } from '../../handlers/team-tribunal.js';
 
@@ -149,11 +149,16 @@ export async function dispatchOrchestrationIntent(intent: any, input: string, cb
       const _rsLabel = intent.question?.slice(0, 40) ?? 'research';
       const continuationEpoch = cb.ctx.inputEpoch ?? 0;
       const continuationUserTurns = countTrackedUserTurns(cb.ctx);
-      cb.runAsJob('research', _rsLabel, withThreadOutcome(_rsCwd, 'research', _rsLabel, async () => {
-        await handleResearch(intent.question, cb.dispatch, cb.ctx, { engine: intent.engineId, count: intent.count });
+      const assertSelected = captureProcessSurfaceAuthority();
+      const record = processSurfaceClient('tui').assertAvailable('/research');
+      cb.runAsJob('research', _rsLabel, signal => withThreadOutcome(_rsCwd, 'research', _rsLabel, async () => {
+        assertSelected();
+        const { type: _type, _modSurface: _marker, engineId, ...request } = intent;
+        await runPhysicalTuiContribution(record, { ...request, question: intent.question, engine: intent.engine ?? engineId,
+          ...(intent.count !== undefined ? { count: String(intent.count) } : {}) }, 'research', cb, signal, _rsCwd);
         const chatContext = collectRecentEngineContext(cb.ctx, 12, 2000);
         if (chatContext) await continueCesarAfterResult(`Research (keyless, web-grounded, cited) on: "${(intent.question ?? '').slice(0, 200)}"\n\n${chatContext}\n\nSummarize the findings WITH their citations, flag any unverified ones, then take the next concrete step.`, cb, continuationEpoch, continuationUserTurns);
-      }, cb.ctx));
+      }, cb.ctx)());
       return { handled: true, ranAsJob: true };
     }
     case 'conquer': {

@@ -184,6 +184,7 @@ function expectedFiles(packageRecord) {
   const physicalPackFiles = ['dist/implementation.d.ts', ...(short === 'rag' ? ['dist/store.d.ts', 'dist/types.d.ts', 'dist/grounding.d.ts']
     : short === 'think' ? ['dist/thinking.d.ts', 'dist/runtime.d.ts', 'dist/host.d.ts', 'dist/presentation.d.ts', 'dist/session-workflow.d.ts']
     : short === 'council' ? ['dist/runtime.d.ts', 'dist/host.d.ts', 'dist/presentation.d.ts', 'dist/command.d.ts', 'dist/session-workflow.d.ts']
+    : short === 'research' ? ['dist/session-workflow.d.ts']
     : short === 'review' ? ['dist/consensus.d.ts', 'dist/findings.d.ts']
     : short === 'synthesis' ? ['dist/judge-parser.d.ts', 'dist/runtime.d.ts']
     : short === 'agent' ? ['dist/team-refinement.d.ts', 'dist/events.d.ts', 'dist/team-results.d.ts', 'dist/team-scoring.d.ts']
@@ -321,6 +322,8 @@ export type * from './types.js';
 export { runRag, buildRagIndex, queryRag, collectCorpusFiles, chunkMarkdown } from './implementation.js';
 ` : short === 'history' ? `export { runHistory } from './implementation.js';
 ` : short === 'research' ? `export { runResearch, classifyQuery, validateUrl, formatResearchResult } from './implementation.js';
+export { runResearchSession } from './session-workflow.js';
+export type { ResearchSessionContext, ResearchSessionHost } from './session-workflow.js';
 ` : short === 'mutate' ? `export { runMutate, generateMutants } from './implementation.js';
 ` : short === 'naturalize' ? `export { runNaturalize } from './implementation.js';
 ` : short === 'sanitize' ? `export { runSanitize, scanText, cleanText } from './implementation.js';

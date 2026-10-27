@@ -61,6 +61,24 @@ try {
   writeFileSync(join(ephemeral, 'package-lock.json'), lockBytes);
   requireOk('ephemeral-npx-hydration', run('npm', ['ci', '--ignore-scripts', '--no-audit', '--no-fund', '--omit=optional', '--offline'], { cwd: ephemeral }));
   if (readFileSync(join(ephemeral, 'package-lock.json'), 'utf8') !== lockBytes) throw new Error('packed hydration changed the frozen dependency lock');
+  requireOk('packed-nero-text-only', run(process.execPath, ['--input-type=module', '-e', `
+    import assert from 'node:assert/strict';
+    import { pathToFileURL } from 'node:url';
+    import { runNero } from '@kernlang/agon-mod-nero';
+    assert.ok(import.meta.resolve('@kernlang/agon-mod-nero').startsWith(pathToFileURL(process.cwd() + '/node_modules/').href));
+    const calls = [];
+    const services = {
+      engines: { listActive: async () => ['first', 'second'], dispatch: async (engine, _prompt, _context, options) => {
+        calls.push({ engine, textOnly: options?.textOnly });
+        return { exitCode: 0, stdout: engine === 'first' ? '' : 'Confidence: 80%\\nVERDICT: SOUND' };
+      } },
+      receipts: { record: async () => 'fixture-receipt' },
+    };
+    const context = { invocationId: 'text-only', cwd: process.cwd(), platform: 'darwin-arm64', signal: new AbortController().signal, config: {} };
+    const result = await runNero({ decision: 'Ship now' }, context, services);
+    assert.equal(result.exitCode, 0);
+    assert.deepEqual(calls, [{ engine: 'first', textOnly: true }, { engine: 'first', textOnly: true }, { engine: 'second', textOnly: true }]);
+  `], { cwd: ephemeral }));
   requireOk('packed-agent-team-scoring-owner', run(process.execPath, ['--input-type=module', '-e', `
     import assert from 'node:assert/strict';
     import { pathToFileURL } from 'node:url';

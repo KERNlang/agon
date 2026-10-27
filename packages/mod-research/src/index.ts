@@ -9,3 +9,4 @@ export const IMPLEMENTATION_KIND = 'physical' as const;
 export { createMod } from './implementation.js';
 export { createMod as default } from './implementation.js';
 export { runResearch, classifyQuery, validateUrl, formatResearchResult } from './implementation.js';
+export { buildResearchPrompt, buildPrompt } from './prompt-policy.js';

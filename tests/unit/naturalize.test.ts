@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import type { ModServices } from '@kernlang/agon-mod-api';
+import { runNaturalize as runPhysicalNaturalize } from '../../packages/mod-naturalize/src/implementation.js';
 
 import {
   runNaturalize,
@@ -8,6 +10,31 @@ import {
 } from '../../packages/forge/src/naturalize.js';
 
 // ── wordDiffStats ────────────────────────────────────────────────────────────
+
+describe('physical Naturalize dispatch restrictions', () => {
+  it('requests text-only execution on the first attempt and retry', async () => {
+    const textOnly: Array<boolean | undefined> = [];
+    const services = {
+      engines: {
+        listActive: async () => ['fixture'],
+        dispatch: async (_engine, _prompt, _context, options) => {
+          textOnly.push(options?.textOnly);
+          return textOnly.length === 1
+            ? { exitCode: 1, stdout: '' }
+            : { exitCode: 0, stdout: 'Rewritten plain prose.' };
+        },
+      },
+      receipts: { record: async () => 'fixture-receipt' },
+    } as ModServices;
+    const result = await runPhysicalNaturalize(
+      { text: 'Original plain prose.', engine: 'fixture', maxAttempts: 2 },
+      { invocationId: 'text-only', cwd: process.cwd(), platform: 'darwin-arm64', signal: new AbortController().signal, config: {} },
+      services,
+    );
+    expect(result.exitCode).toBe(0);
+    expect(textOnly).toEqual([true, true]);
+  });
+});
 
 describe('naturalize — wordDiffStats', () => {
   it('identical text → unchangedRatio 1, zero changed words', () => {

@@ -79,6 +79,24 @@ try {
     assert.equal(result.exitCode, 0);
     assert.deepEqual(calls, [{ engine: 'first', textOnly: true }, { engine: 'first', textOnly: true }, { engine: 'second', textOnly: true }]);
   `], { cwd: ephemeral }));
+  requireOk('packed-naturalize-text-only', run(process.execPath, ['--input-type=module', '-e', `
+    import assert from 'node:assert/strict';
+    import { pathToFileURL } from 'node:url';
+    import { runNaturalize } from '@kernlang/agon-mod-naturalize';
+    assert.ok(import.meta.resolve('@kernlang/agon-mod-naturalize').startsWith(pathToFileURL(process.cwd() + '/node_modules/').href));
+    const flags = [];
+    const services = {
+      engines: { listActive: async () => ['fixture'], dispatch: async (_engine, _prompt, _context, options) => {
+        flags.push(options?.textOnly);
+        return flags.length === 1 ? { exitCode: 1, stdout: '' } : { exitCode: 0, stdout: 'Rewritten plain prose.' };
+      } },
+      receipts: { record: async () => 'fixture-receipt' },
+    };
+    const context = { invocationId: 'text-only', cwd: process.cwd(), platform: 'darwin-arm64', signal: new AbortController().signal, config: {} };
+    const result = await runNaturalize({ text: 'Original plain prose.', engine: 'fixture', maxAttempts: 2 }, context, services);
+    assert.equal(result.exitCode, 0);
+    assert.deepEqual(flags, [true, true]);
+  `], { cwd: ephemeral }));
   requireOk('packed-agent-team-scoring-owner', run(process.execPath, ['--input-type=module', '-e', `
     import assert from 'node:assert/strict';
     import { pathToFileURL } from 'node:url';

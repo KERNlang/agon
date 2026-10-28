@@ -1,9 +1,46 @@
 {
   "scope": "Research interactive session ownership and selected-contribution routing",
   "base": "a4e06dfb8869acd14fe4c90cc16a88abebeb3243",
-  "status": "Cold typecheck defect reproduced and repaired; full local repair gates passed, remote CI pending",
+  "status": "Caller cancellation repair qualified on PR338; current-main conflict reconciliation and clean committed qualification remain pending",
   "archive": "/Users/ra/dev/modular-agon-remediation",
   "verification": {
+    "callerCancellationRepair": {
+      "base": "bc9e7e076b302801b65e387d23f242394b062776",
+      "scope": "Base plus the two source/test files identified below; this does not qualify a merge with current main. Earlier receipts retain their historical subjects.",
+      "sourceSha256": {
+        "packages/cli/src/handlers/research.ts": "1508801a22f0d50dea86e1dd18894a6de0aa63b7bea502f5649a9158244208a2",
+        "tests/unit/modular-research-session-parity.test.ts": "cb820ccf5ec11c60aef738c11a6412aaaf5227bdd6973cd6b9f52226daf79cd7"
+      },
+      "negativeControl": {
+        "receipt": "research-session-cancel-red-20261028.receipt.json",
+        "logSha256": "8a2e7ade880d286e3fe77d20e5c2d34401de0e4e39242805f3a1f636a6fb249f",
+        "expectedFailures": 2
+      },
+      "fullGates": {
+        "receipt": "research-session-cancel-full-20261028.receipt.json",
+        "logSha256": "50ea3aad43790f21d83dc4a125e7d050c0c0ff5d97e1e4d37582b2a34c789cea",
+        "testsPassed": 11973,
+        "testsSkipped": 7,
+        "seconds": 896.071,
+        "providerLaunches": 0
+      },
+      "installed": {
+        "receipt": "research-session-cancel-installed-20261028.receipt.json",
+        "logSha256": "23a3b55261bc3ad59c31c9ee2f95d0a99e160612a678168af58b09231eae3943",
+        "checksPassed": 96,
+        "seconds": 139.643,
+        "providerLaunches": 0,
+        "scope": "Existing packed runtime matrix; direct-handler cancellation is covered by the source integration regressions."
+      },
+      "review": {
+        "engine": "codex",
+        "receipt": "research-session-cancel-codex-review.receipt.json",
+        "packetSha256": "9e5b78fcc4a4f297c0526894455dab15796569fc618053e887220008b324a3af",
+        "logSha256": "35b8f6ef0922d58e73e674b18725b9bce2a45110c2b8e951cf960760c25ed20f",
+        "findings": 0,
+        "scope": "Bounded source review; reviewer did not independently execute tests."
+      }
+    },
     "coldRepairFullGates": {
       "receipt": "research-session-cold-reference-gates-20261027.receipt.json",
       "log": "research-session-cold-reference-gates-20261027.log",

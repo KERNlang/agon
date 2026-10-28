@@ -24,6 +24,7 @@ vi.mock('../../packages/cli/src/signals/dispatch/delegation.js', async original 
   collectRecentEngineContext: () => '',
 }));
 import { dispatchIntent } from '../../packages/cli/src/signals/dispatch/intent-router.js';
+import { handleResearch } from '../../packages/cli/src/handlers/research.js';
 import { runPhysicalTuiContribution } from '../../packages/cli/src/signals/dispatch/intent-session.js';
 import { createMod } from '../../packages/mod-research/src/implementation.js';
 
@@ -42,6 +43,39 @@ function runSession(cb: ReturnType<typeof callbacks>, signal: AbortSignal, owner
     inputSchema: { type: 'object' }, run: effects.command,
   } }, { question: 'npm parser' }, 'research', cb as never, signal);
 }
+
+it.each(['before', 'during', 'ui'])('preserves compatibility-handler cancellation: %s', async phase => {
+  const cb = callbacks();
+  const caller = new AbortController();
+  const reason = new Error('cancelled');
+  if (phase === 'before') caller.abort(reason);
+  effects.command.mockImplementation(async () => {
+    if (phase === 'during') caller.abort(reason);
+    if (phase === 'ui') cb.ctx.setActiveAbort.mock.calls[0][0].abort(reason);
+    return { exitCode: 0, result: grounded };
+  });
+  await expect(handleResearch('npm parser', cb.dispatch, cb.ctx as never,
+    { signal: caller.signal })).rejects.toBe(reason);
+  expect(effects.command).toHaveBeenCalledTimes(phase === 'before' ? 0 : 1);
+  expect(effects.append).not.toHaveBeenCalled();
+  expect(effects.track).not.toHaveBeenCalled();
+  expect(effects.add).not.toHaveBeenCalled();
+  expect(effects.record).not.toHaveBeenCalled();
+  if (phase === 'before') expect(cb.ctx.setActiveAbort).not.toHaveBeenCalled();
+  else expect(cb.ctx.setActiveAbort).toHaveBeenLastCalledWith(null);
+  if (phase === 'ui') expect(caller.signal.aborted).toBe(false);
+});
+
+it('preserves successful compatibility-handler execution and cleanup', async () => {
+  const cb = callbacks();
+  effects.command.mockResolvedValue({ exitCode: 0, result: grounded });
+  await handleResearch('npm parser', cb.dispatch, cb.ctx as never);
+  expect(effects.command).toHaveBeenCalledOnce();
+  expect(effects.append).toHaveBeenCalledTimes(2);
+  expect(effects.add).toHaveBeenCalledOnce();
+  expect(effects.record).toHaveBeenCalledOnce();
+  expect(cb.ctx.setActiveAbort).toHaveBeenLastCalledWith(null);
+});
 
 it('saves only to the captured chat when the user switches sessions', async () => {
   const cb = callbacks();

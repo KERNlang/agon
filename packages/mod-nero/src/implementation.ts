@@ -34,7 +34,48 @@ export async function runNero(raw: Json, context: Parameters<ModServices['engine
   if (!pool.length) return { exitCode: 1, stderr: 'No active engine can play Nero.\n' };
   let ranked: readonly RankedEngine[] = pool.map((engineId) => ({ engineId, reason: 'random' as const, scope: null })); if (!forced && services.engines.rank) ranked = await services.engines.rank(pool, ['critique', 'tribunal'], context); if (forced) ranked = [{ engineId: forced, reason: 'top-rated', scope: null }];
   const timeoutSeconds = Math.max(1, Number.parseInt(text(input.timeout) || '120', 10)); const attempts: { engineId: string; attempt: number; error: string }[] = []; let lastText = '';
-  for (const critic of ranked) { for (let attempt = 1; attempt <= 2; attempt++) { if (context.signal.aborted) return { exitCode: 1, stderr: 'Nero aborted before a verdict.\n' }; try { const output = await services.engines.dispatch(critic.engineId, prompt(input, decision), context, { textOnly: true, timeoutSeconds: attempt === 1 ? timeoutSeconds : Math.max(1, Math.floor(timeoutSeconds / 2)), systemPrompt: 'You are an adversarial critic. Respond directly. Do not use tools.' }) as Record<string, Json>; lastText = text(output.stdout).replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim(); const parsed = verdict(lastText); if (output.exitCode === 0 && output.timedOut !== true && lastText && parsed !== 'unknown') { const result = { ok: true, engineId: critic.engineId, reason: forced ? 'forced' : critic.reason, scope: critic.scope, verdict: parsed, challengeConfidence: confidence(lastText), challengeText: lastText, attempts }; await services.receipts.record('nero', { engineId: critic.engineId, verdict: parsed, attempts: attempts.length + 1 }); const stdout = input.quiet === true ? `${parsed.toUpperCase()} — ${critic.engineId}\n` : `${JSON.stringify(result, null, 2)}\n`; return { exitCode: 0, stdout, result: result as Json }; } const why = output.timedOut === true ? 'timed out' : !lastText ? text(output.stderr) || 'empty response' : 'no parseable verdict'; attempts.push({ engineId: critic.engineId, attempt, error: why }); if (lastText && parsed === 'unknown') break; } catch (error) { attempts.push({ engineId: critic.engineId, attempt, error: error instanceof Error ? error.message : String(error) }); } } }
+  for (const critic of ranked) {
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      if (context.signal.aborted) return { exitCode: 1, stderr: 'Nero aborted before a verdict.\n' };
+      try {
+        const output = await services.engines.dispatch(critic.engineId, prompt(input, decision), context, {
+          textOnly: true,
+          timeoutSeconds: attempt === 1 ? timeoutSeconds : Math.max(1, Math.floor(timeoutSeconds / 2)),
+          systemPrompt: 'You are an adversarial critic. Respond directly. Do not use tools.',
+        }) as Record<string, Json>;
+        lastText = text(output.stdout).replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
+        const parsed = verdict(lastText);
+        if (output.exitCode === 0 && output.timedOut !== true && lastText && parsed !== 'unknown') {
+          const result = {
+            ok: true, engineId: critic.engineId, reason: forced ? 'forced' : critic.reason,
+            scope: critic.scope, verdict: parsed, challengeConfidence: confidence(lastText),
+            challengeText: lastText, attempts,
+          };
+          const stdout = input.quiet === true
+            ? `${parsed.toUpperCase()} — ${critic.engineId}\n`
+            : `${JSON.stringify(result, null, 2)}\n`;
+          try {
+            await services.receipts.record('nero', {
+              engineId: critic.engineId, verdict: parsed, attempts: attempts.length + 1,
+            });
+          } catch (error) {
+            const message = `Nero completed, but its receipt could not be recorded: ${error instanceof Error ? error.message : String(error)}. The verdict is retained; do not rerun the critique to retry receipt storage.`;
+            return {
+              exitCode: 1, stdout, stderr: message + '\n', result: result as Json,
+              failure: { code: 'NERO_RECEIPT_FAILED', message, retryable: false },
+            };
+          }
+          return { exitCode: 0, stdout, result: result as Json };
+        }
+        const why = output.timedOut === true ? 'timed out'
+          : !lastText ? text(output.stderr) || 'empty response' : 'no parseable verdict';
+        attempts.push({ engineId: critic.engineId, attempt, error: why });
+        if (lastText && parsed === 'unknown') break;
+      } catch (error) {
+        attempts.push({ engineId: critic.engineId, attempt, error: error instanceof Error ? error.message : String(error) });
+      }
+    }
+  }
   const result = { ok: false, engineId: ranked.at(-1)?.engineId ?? '', reason: 'none', scope: null, verdict: 'unknown', challengeConfidence: confidence(lastText), challengeText: lastText || 'No critic produced a valid verdict.', attempts }; return { exitCode: 1, stderr: 'Nero produced no usable challenge.\n', result: result as Json };
 }
 

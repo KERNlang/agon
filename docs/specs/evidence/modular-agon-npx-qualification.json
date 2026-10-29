@@ -270,6 +270,11 @@
       "detail": "exit=0"
     },
     {
+      "id": "packed-nero-receipt-boundary",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
       "id": "packed-nero-text-only",
       "passed": true,
       "detail": "exit=0"
@@ -463,6 +468,11 @@
       "id": "packed-mcp-failure-contract",
       "passed": true,
       "detail": "installed server and Jobs daemon: success, blocked-provider failure, missing job via installed CLI, cyclic plan, unknown tool"
+    },
+    {
+      "id": "packed-synthesis-cli-advice",
+      "passed": true,
+      "detail": "installed CLI code/prose/flag quiet/environment quiet; exact warning and result formatting; synchronous stdout-before-spawn check; suppressed/delayed warning negative controls; fake engine only"
     },
     {
       "id": "packed-brainstorm-cli",

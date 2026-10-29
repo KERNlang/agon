@@ -1,0 +1,45 @@
+{
+  "scope": "Deterministic coverage of both Synthesis session shuffle orientations; no production change",
+  "baseCommit": "cd7137279d2806c722bacc31e7732023361244f3",
+  "source": "tests/unit/modular-synthesis-session-parity.test.ts",
+  "sourceSha256": "2dfe7418dc4b7c119933b029fda890d5e79feb4761f7256bea93b95fb03be96f",
+  "archive": "/Users/ra/dev/modular-agon-remediation",
+  "receipts": [
+    {
+      "id": "synthesis-session-shuffle-main-negative-20261027",
+      "result": "Expected failure: old assertion with the opposite shuffle order",
+      "logSha256": "9cb022c6e13583aba8281790b66007dd4b48e2fb973e1490d11e92f5fc54afda"
+    },
+    {
+      "id": "synthesis-session-winner-built-mutation-20261027",
+      "result": "Expected failure: both cases reject rebuilt wrong-winner behavior",
+      "logSha256": "03f275a4ba693adb9c49ed28856c30766dbb0068aadccaf6576d290672695c39"
+    },
+    {
+      "id": "synthesis-session-shuffle-restored-20261027",
+      "result": "Passed: 57 parity tests, three additional 16-test session runs, lint, types and diff check",
+      "logSha256": "fa244f94c521d2ce59379049fce6914090448176179f40a2f47975c522800b0e"
+    },
+    {
+      "id": "synthesis-session-shuffle-full-suite-20261027",
+      "result": "Passed: 12095 tests, 7 skipped; 712 files passed, 1 skipped; zero provider launches",
+      "logSha256": "51afee42dfa6aa33de59fd017a46dc6304646e05504172392537f4755ebbec03"
+    },
+    {
+      "id": "synthesis-session-shuffle-full-gates-20261027",
+      "result": "Build, types, lint, re-export guard and generated checks passed; release check failed on archive drift before later gates",
+      "logSha256": "360caa14ea3e798dda6bd8796b0e0242b6875ee6fb8b5c52ba42cb6ee3269d25"
+    }
+  ],
+  "review": {
+    "adjudication": "synthesis-session-shuffle-review-adjudication-20261027.md",
+    "packetSha256": "510005f797647e1fe2051c2074853986e8f11434d238439cff4c64bfcfe22ddc",
+    "codex": "Completed; no concrete finding; local evidence checked independently",
+    "kimi": "No answer; not counted as a passing review"
+  },
+  "limits": [
+    "Local Node 26.12.1/npm 11.20.0 differs from pinned Node 22.22.0/npm 10.9.4. All 49 package payload hashes match, but archive identities differ. Pinned-toolchain release reproduction remains open.",
+    "A source-only wrong-winner mutation did not affect built package imports; it is preserved in the archive but is not counted as a killed mutant.",
+    "Clean committed replay and installed-candidate qualification are not claimed by this index. This is not full modular release acceptance."
+  ]
+}

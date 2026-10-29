@@ -10,7 +10,7 @@ import { runSynthesisRuntime } from './runtime.js';
 import type { SynthesisResult } from './runtime.js';
 import type { SynthesisModServices } from './host.js';
 
-async function run(raw: Json, context: Parameters<ModServices['engines']['dispatch']>[2], services: SynthesisModServices): Promise<CommandResult> {
+async function run(raw: Json, context: Parameters<ModServices['engines']['dispatch']>[2], services: SynthesisModServices, showAdvice = false): Promise<CommandResult> {
   const check = () => { context.signal.throwIfAborted(); context.assertCurrent?.(); };
   check();
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
@@ -42,6 +42,8 @@ async function run(raw: Json, context: Parameters<ModServices['engines']['dispat
   let judgeSucceeded = false;
   let outcome: SynthesisResult;
   try {
+    assertCurrent();
+    if (showAdvice && input.quiet !== true) host.showRoutingAdvice?.(prompt);
     assertCurrent();
     outcome = await runSynthesisRuntime({
       prompt, engines, swaps, judge: text(input.judge) || undefined, timeout,
@@ -129,4 +131,4 @@ function tuiRequest(raw: Json): Json {
     ...(typeof input.judge === 'string' ? { judge: input.judge } : {}) };
 }
 function parseSynthesis(value: string) { const parts = value.replace(/^\/(?:synthesis|synth)\s*/i, '').split(/\s+/); let swaps: number | undefined; const prompt: string[] = []; for (let index = 0; index < parts.length; index += 1) { if ((parts[index] === '--swaps' || parts[index] === '-s') && parts[index + 1]) { const parsed = Number.parseInt(parts[index + 1], 10); if (!Number.isNaN(parsed)) swaps = parsed; index += 1; } else prompt.push(parts[index]); } return { input: prompt.join(' ').trim(), swaps }; }
-export const createMod: AgonModFactory = (services) => Object.freeze({ apiVersion: '1' as const, async activate(registrar: Registrar): Promise<Dispose> { const d: Dispose[] = []; const command = { description: 'Competitive cross-pollination: draft, swap, improve, and judge', inputSchema: schema, cli, run: (input: Json, context: any) => run(input, context, services) }; d.push(registrar.command('cli', { id: 'cliCommands:0067', ...command })); d.push(registrar.command('tui', { id: 'tuiSlashCommands:0063', ...command, inputSchema: tuiSchema, parse: parseSynthesis, run: (input, context) => run(tuiRequest(input), context, services) })); d.push(registrar.tool('mcp', { id: 'mcpTools:0031', description: 'Run synthesis', inputSchema: schema, effect: 'process', run: async (input, context) => commandResultToToolResult(await run(input, context, services)) })); for (const id of ['resultAndEnvelopeTypes:0126']) d.push(registrar.resultType({ id, schema: { type: 'object', additionalProperties: true }, readableVersions: '>=0.2.0', render: async (payload) => ({ text: JSON.stringify(payload, null, 2) }) })); for (const id of ['configKeys:0113']) d.push(registrar.config(id, configSchema)); return async () => { for (const dispose of [...d].reverse()) await dispose(); }; } }); export default createMod;
+export const createMod: AgonModFactory = (services) => Object.freeze({ apiVersion: '1' as const, async activate(registrar: Registrar): Promise<Dispose> { const d: Dispose[] = []; const command = { description: 'Competitive cross-pollination: draft, swap, improve, and judge', inputSchema: schema, cli, run: (input: Json, context: any) => run(input, context, services) }; d.push(registrar.command('cli', { id: 'cliCommands:0067', ...command, run: (input, context) => run(input, context, services, true) })); d.push(registrar.command('tui', { id: 'tuiSlashCommands:0063', ...command, inputSchema: tuiSchema, parse: parseSynthesis, run: (input, context) => run(tuiRequest(input), context, services) })); d.push(registrar.tool('mcp', { id: 'mcpTools:0031', description: 'Run synthesis', inputSchema: schema, effect: 'process', run: async (input, context) => commandResultToToolResult(await run(input, context, services)) })); for (const id of ['resultAndEnvelopeTypes:0126']) d.push(registrar.resultType({ id, schema: { type: 'object', additionalProperties: true }, readableVersions: '>=0.2.0', render: async (payload) => ({ text: JSON.stringify(payload, null, 2) }) })); for (const id of ['configKeys:0113']) d.push(registrar.config(id, configSchema)); return async () => { for (const dispose of [...d].reverse()) await dispose(); }; } }); export default createMod;

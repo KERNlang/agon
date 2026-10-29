@@ -3,8 +3,9 @@ import type { InvocationContext } from '@kernlang/agon-mod-api';
 import type { EngineAdapter } from '@kernlang/agon-support-engine-runtime';
 import type { PanelEngineRegistry } from '@kernlang/agon-support-panel';
 import { createSynthesisHostServices } from '../../packages/mod-synthesis/src/host.js';
+import type { SynthesisHostEffects } from '../../packages/mod-synthesis/src/host.js';
 
-function fixture() {
+function fixture(routingAdvice?: SynthesisHostEffects<PanelEngineRegistry>['routingAdvice']) {
   const controller = new AbortController();
   const context: InvocationContext = {
     cwd: '/fixture/project', invocationId: 'synthesis-host', platform: 'darwin-arm64',
@@ -17,7 +18,7 @@ function fixture() {
   const loadConfig = vi.fn(() => ({}));
   const captureAuthority = vi.fn(() => () => { if (revoked) throw new Error('generation revoked'); });
   const host = createSynthesisHostServices({
-    openRegistry, loadConfig, captureAuthority, warn: vi.fn(),
+    openRegistry, loadConfig, captureAuthority, warn: vi.fn(), routingAdvice,
     createAdapter: () => ({ dispatch } as unknown as EngineAdapter),
   });
   return { host, context, controller, dispatch, openRegistry, loadConfig, captureAuthority,
@@ -25,6 +26,26 @@ function fixture() {
 }
 
 describe('Synthesis bundled host boundary', () => {
+  it.each(['before', 'classify', 'show'].flatMap(phase =>
+    ['cancelled', 'revoked'].map(kind => ({ phase, kind }))))(
+    'stops advice effects when $kind at $phase', async ({ phase, kind }) => {
+      let interrupt = () => {};
+      const classifyTask = vi.fn(() => {
+        if (phase === 'classify') interrupt();
+        return 'bugfix';
+      });
+      const show = vi.fn(() => { if (phase === 'show') interrupt(); });
+      const f = fixture({ classifyTask, isQuiet: () => false, show });
+      interrupt = kind === 'revoked' ? f.revoke : () => f.controller.abort(new Error('cancelled'));
+      const session = await f.host.open(f.context);
+      if (phase === 'before') interrupt();
+      expect(() => session.showRoutingAdvice!('fix the login crash')).toThrow(kind);
+      expect(classifyTask).toHaveBeenCalledTimes(phase === 'before' ? 0 : 1);
+      expect(show).toHaveBeenCalledTimes(phase === 'show' ? 1 : 0);
+      expect(f.dispatch).not.toHaveBeenCalled();
+    },
+  );
+
   it('opens lazily and binds registry, configuration and cwd to the invocation', async () => {
     const f = fixture();
     expect(f.openRegistry).not.toHaveBeenCalled();

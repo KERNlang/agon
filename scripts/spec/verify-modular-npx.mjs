@@ -5,6 +5,7 @@ import { spawnSync } from 'node:child_process';
 import { verifyPackedMcp } from './verify-packed-mcp.mjs';
 import { verifyPackedBrainstorm } from './verify-packed-brainstorm.mjs';
 import { verifyPackedBrainstormTui } from './verify-packed-brainstorm-tui.mjs';
+import { verifyPackedSynthesis } from './verify-packed-synthesis.mjs';
 import { createFrozenNpmInstall, createNpmReleaseCatalog, DurableModHost, ManagedLifecycleService, hashInstalledPackagePayload } from '../../packages/mod-kernel/dist/index.js';
 
 const root = resolve(import.meta.dirname, '../..');
@@ -891,6 +892,7 @@ try {
   // failed check and reject the whole qualification before emitting success.
   for (const [id, verify] of [
     ['packed-mcp', () => verifyPackedMcp(ephemeral, scratch, { ...process.env, npm_config_cache: npmCache })],
+    ['packed-synthesis', () => verifyPackedSynthesis(ephemeral, scratch, { ...process.env, npm_config_cache: npmCache })],
     ['packed-brainstorm', () => verifyPackedBrainstorm(ephemeral, scratch, { ...process.env, npm_config_cache: npmCache })],
     ['packed-brainstorm-tui', () => verifyPackedBrainstormTui(ephemeral, scratch, { ...process.env, npm_config_cache: npmCache })],
     ['packed-brainstorm-tui-active-exit', () => verifyPackedBrainstormTui(ephemeral, scratch, { ...process.env, npm_config_cache: npmCache }, { activeExit: true })],

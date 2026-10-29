@@ -3,12 +3,14 @@ import { guardEngineAdapter } from '@kernlang/agon-support-engine-runtime';
 import type { EngineAdapter } from '@kernlang/agon-support-engine-runtime';
 import type { PanelEngineRegistry, PanelHealthRuntime } from '@kernlang/agon-support-panel';
 import type { SynthesisRuntimeEffects } from './runtime.js';
+import { synthesisRoutingAdviceForTaskClass } from './routing-policy.js';
 
 export interface SynthesisHostSession {
   readonly registry: PanelEngineRegistry;
   readonly adapter: EngineAdapter;
   readonly effects: SynthesisRuntimeEffects;
   assertCurrent(): void;
+  showRoutingAdvice?(prompt: string): void;
 }
 
 /** Bundled host effects only. The Synthesis mod owns the workflow. */
@@ -26,6 +28,11 @@ export interface SynthesisHostEffects<Registry extends PanelEngineRegistry> {
   captureAuthority(): () => void;
   loadConfig: PanelHealthRuntime['loadConfig'];
   warn(message: string): void;
+  readonly routingAdvice?: {
+    classifyTask(prompt: string): string;
+    isQuiet(): boolean;
+    show(message: string): void;
+  };
 }
 
 /** Capture authority per invocation, not when the host starts. */
@@ -53,6 +60,15 @@ export function createSynthesisHostServices<Registry extends PanelEngineRegistry
         registry,
         adapter,
         assertCurrent,
+        ...(effects.routingAdvice ? { showRoutingAdvice(prompt: string) {
+          assertCurrent();
+          const presentation = effects.routingAdvice!;
+          if (presentation.isQuiet()) return;
+          const advice = synthesisRoutingAdviceForTaskClass(presentation.classifyTask(prompt));
+          assertCurrent();
+          if (advice) presentation.show(advice);
+          assertCurrent();
+        } } : {}),
         effects: {
           resolveWorkingDir: () => context.cwd,
           health: { loadConfig: () => {

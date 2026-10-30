@@ -1,12 +1,53 @@
 import { describe, expect, it } from 'vitest';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { runInNewContext } from 'node:vm';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import ts from 'typescript';
 import { FIRST_PARTY_PACKAGE_GRAPH } from '../../packages/mod-kernel/src/generated/first-party-package-graph.js';
 
+function duplicateMetadataKeys(text: string): string[] {
+  JSON.parse(text);
+  const source = ts.parseJsonText('package.json', text);
+  const duplicates: string[] = [];
+  function visit(node: ts.Node): void {
+    if (ts.isObjectLiteralExpression(node)) {
+      const keys = new Set<string>();
+      for (const property of node.properties) {
+        if (!ts.isPropertyAssignment(property) || !ts.isStringLiteral(property.name)) continue;
+        const key = property.name.text;
+        if (keys.has(key)) duplicates.push(key);
+        keys.add(key);
+      }
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(source);
+  return duplicates;
+}
+
 describe('frozen first-party package graph', () => {
+  it.each<[string, string[]]>([
+    ['{"name":"first","name":"second"}', ['name']],
+    ['{"dependencies":{"owner":"1","owner":"1"}}', ['owner']],
+    ['{"dependencies":{"own\\u0065r":"1","owner":"2"}}', ['owner']],
+    ['{"dependencies":{"owner":"1"},"devDependencies":{"owner":"1"}}', []],
+    ['{"records":[{"owner":1,"owner":2}]}', ['owner']],
+  ])('detects duplicate raw metadata keys: %s', (text, expected) => {
+    expect(duplicateMetadataKeys(text)).toEqual(expected);
+  });
+
+  it('keeps root and package metadata keys unambiguous before JSON parsing', () => {
+    const root = fileURLToPath(new URL('../../', import.meta.url));
+    const paths = ['package.json', ...readdirSync(join(root, 'packages'))
+      .map(name => `packages/${name}/package.json`)
+      .filter(path => existsSync(join(root, path)))];
+    const duplicates = paths.flatMap(path => duplicateMetadataKeys(readFileSync(join(root, path), 'utf8'))
+      .map(key => `${path}: ${key}`));
+    expect(duplicates).toEqual([]);
+  });
+
   it.each(['valid', 'duplicate', 'missing-schema', 'other-owner', 'invalid-enum', 'reserved'] as const)(
     'generates new owner settings without changing frozen ownership: %s', variant => {
       const generator = new URL('../../scripts/spec/generate-modular-first-party-packages.mjs', import.meta.url);

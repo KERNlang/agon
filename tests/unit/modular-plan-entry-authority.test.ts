@@ -22,6 +22,8 @@ import { executeApprovedPlan, resumeCesarPlan, handleProposedCesarPlan, approveP
 import { dispatchSessionInfoIntent, runPhysicalTuiContribution } from '../../packages/cli/src/signals/dispatch/intent-session.js';
 import { createPlanExecutionSession } from '../../packages/cli/src/blocks/plan-execution-effects.js';
 import { createTaskExecutionLease } from '../../packages/cli/src/cesar/task-execution-lease.js';
+import * as taskLease from '../../packages/cli/src/cesar/task-execution-lease.js';
+import { planCostEstimator } from '@kernlang/agon-core';
 import { createMod } from '../../packages/mod-plan/src/implementation.js';
 import { planSessionHost } from '@kernlang/agon-mod-plan';
 import type { IntentContribution, ModServices, Registrar } from '@kernlang/agon-mod-api';
@@ -114,6 +116,53 @@ it('reads current approval config, AUTO mode and lease on every proposal', async
   expect(effects.execute).toHaveBeenCalledOnce();
   expect(cb.dispatch).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('task lease unavailable') }));
 });
+
+it.each([false, true].flatMap(agentic => [19, 20, null].map(ceiling => ({ agentic, ceiling }))))(
+  'binds live approval grants and pricing (agentic=$agentic, ceiling=$ceiling)', async ({ agentic, ceiling }) => {
+    await install(false);
+    await initializeProcessSurfaceAuthority(root);
+    const cb = callbacks();
+    cb.ctx.autoModeQueued = agentic;
+    cb.ctx.config = { ...cb.ctx.config,
+      cesarAutoApproveMode: ceiling === null ? 'off' : agentic ? 'cost-bounded' : 'always',
+      cesarAutoApproveMaxCostUsd: ceiling };
+    const lease = createTaskExecutionLease('implement and test the local parser', true, root, undefined, 'agentic');
+    cb.ctx.cesar!.taskExecutionLease = lease;
+    const plan = { ...proposal(), selfReview: true, totalEstimatedCostUsd: 14,
+      steps: [{ id: 'step', type: 'self' as const, description: 'change', estimatedTokens: 1,
+        estimatedCostUsd: 14, state: 'pending' as const, fitnessCmd: 'npm test', verifyCmd: 'npm run lint' }] };
+    const action = vi.spyOn(taskLease, 'evaluateTaskAction');
+    const estimate = vi.spyOn(planCostEstimator, 'estimate').mockReturnValue({ tokens: 42, costUsd: 3 });
+    try {
+      await createPlanExecutionSession(cb).propose(plan);
+      if (ceiling === null) {
+        expect(action).not.toHaveBeenCalled();
+        expect(estimate).not.toHaveBeenCalled();
+        expect(effects.execute).not.toHaveBeenCalled();
+        expect(cb.dispatch).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('cesarAutoApproveMode=off') }));
+        return;
+      }
+      expect(estimate).toHaveBeenCalledExactlyOnceWith('review', []);
+      if (agentic) {
+        expect(action.mock.calls).toEqual([
+          [lease, 'self', 'change\nnpm test\nnpm run lint'],
+          [lease, 'Bash', 'npm test\nnpm run lint'],
+        ]);
+        expect(estimate.mock.invocationCallOrder[0]).toBeGreaterThan(action.mock.invocationCallOrder[1]);
+      } else expect(action).not.toHaveBeenCalled();
+      if (ceiling === 19) {
+        expect(effects.execute).not.toHaveBeenCalled();
+        expect(cb.setActivePlan).toHaveBeenCalledWith(plan);
+        expect(cb.dispatch).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('estimated cost $20.00 exceeds ceiling $19.00') }));
+      } else {
+        expect(effects.execute).toHaveBeenCalledOnce();
+        expect(cb.dispatch).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('always policy passed (cost $20.0000)') }));
+      }
+    } finally {
+      action.mockRestore();
+      estimate.mockRestore();
+    }
+  });
 
 it.each(['1', '2'])('blocks physical resume choice %s after generation changes during its prompt', async choice => {
   await install(false);

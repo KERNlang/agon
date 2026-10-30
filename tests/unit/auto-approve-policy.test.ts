@@ -1,9 +1,16 @@
 import { describe, it, expect } from 'vitest';
-import { applyAgenticAutoApprovePolicy, applyAutoApprovePolicy } from '../../packages/cli/src/cesar/auto-approve-policy.js';
-import { createTaskExecutionLease } from '../../packages/cli/src/cesar/task-execution-lease.js';
-import { createCesarPlan } from '@kernlang/agon-mod-plan';
+import { createTaskExecutionLease, evaluateTaskAction } from '../../packages/cli/src/cesar/task-execution-lease.js';
+import type { TaskExecutionLease } from '../../packages/cli/src/cesar/task-execution-lease.js';
+import { createCesarPlan, evaluatePlanAutoApproval, evaluateAgenticPlanAutoApproval } from '@kernlang/agon-mod-plan';
 import type { AgonConfig } from '../../packages/core/src/models/types.js';
 import type { CesarPlan, CesarPlanStep, CesarStepType } from '@kernlang/agon-mod-plan';
+
+const reviewEffects = { estimateReviewCostUsd: () => 0.04 };
+const applyAutoApprovePolicy = (plan: CesarPlan, config: AgonConfig) =>
+  evaluatePlanAutoApproval(plan, config, reviewEffects);
+const applyAgenticAutoApprovePolicy = (plan: CesarPlan, config: AgonConfig, lease: TaskExecutionLease | undefined) =>
+  evaluateAgenticPlanAutoApproval(plan, config, reviewEffects,
+    lease ? (action, text) => evaluateTaskAction(lease, action, text) : undefined);
 
 const makeStep = (id: string, type: CesarStepType, overrides?: Partial<CesarPlanStep>): CesarPlanStep => ({
   id,

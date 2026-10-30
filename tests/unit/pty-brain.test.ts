@@ -4,6 +4,13 @@ import { PassThrough } from 'node:stream';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import type { SessionChunk } from '../../packages/core/src/sessions/persistent-session.js';
+import type { ControlPlaneEnvelopeV1 } from '../../packages/core/src/sessions/turn-protocol.js';
+
+// The factory must work without loading the legacy compatibility path.
+vi.mock('../../packages/core/src/sessions/session-pty.js', () => {
+  throw new Error('Legacy PTY adapter must not load');
+});
 
 // ── Mock the kern-engines PTY claude session ────────────────────────────────
 // session-pty.ts lazy-imports '@kernlang/agon-engines/cli/claude.js'.
@@ -95,7 +102,7 @@ const claudeConfig = (extra: Record<string, unknown> = {}) => ({
 
 describe('createPtySession — answer channel', () => {
   it('returns the DeliverAnswer channel text, not the scraped extract', async () => {
-    const { createPtySession } = await import('../../packages/core/src/sessions/session-pty.js');
+    const { createPtySession } = await import('@kernlang/agon-support-persistence');
     const answerChannelPath = join(tmp, 'cesar-1-answer.json');
     const session = createPtySession(claudeConfig({ answerChannelPath }) as any);
     await session.start();
@@ -110,7 +117,7 @@ describe('createPtySession — answer channel', () => {
   });
 
   it('clears a stale answer file before the turn (no carry-over from a prior turn)', async () => {
-    const { createPtySession } = await import('../../packages/core/src/sessions/session-pty.js');
+    const { createPtySession } = await import('@kernlang/agon-support-persistence');
     const answerChannelPath = join(tmp, 'cesar-1-answer.json');
     // Stale answer from a "previous turn" still on disk.
     writeFileSync(answerChannelPath, JSON.stringify({ type: 'answer', text: 'STALE' }));
@@ -127,7 +134,7 @@ describe('createPtySession — answer channel', () => {
   });
 
   it('falls back to the substantive scraped extract when DeliverAnswer was not called', async () => {
-    const { createPtySession } = await import('../../packages/core/src/sessions/session-pty.js');
+    const { createPtySession } = await import('@kernlang/agon-support-persistence');
     const session = createPtySession(claudeConfig({ answerChannelPath: join(tmp, 'cesar-1-answer.json') }) as any);
     await session.start();
     // >=20 visible chars → substantive → short-circuits the retry-nudge.
@@ -137,7 +144,7 @@ describe('createPtySession — answer channel', () => {
   });
 
   it('B5: yields an honest "image(s) not sent" status when images are passed (PTY has no vision channel)', async () => {
-    const { createPtySession } = await import('../../packages/core/src/sessions/session-pty.js');
+    const { createPtySession } = await import('@kernlang/agon-support-persistence');
     const session = createPtySession(claudeConfig({ answerChannelPath: join(tmp, 'cesar-1-answer.json') }) as any);
     await session.start();
     ptyState.onAsk = () => ({ scraped: 'a substantive scraped answer body' });
@@ -152,7 +159,7 @@ describe('createPtySession — answer channel', () => {
   });
 
   it('B5: emits no image status on a normal (image-less) turn', async () => {
-    const { createPtySession } = await import('../../packages/core/src/sessions/session-pty.js');
+    const { createPtySession } = await import('@kernlang/agon-support-persistence');
     const session = createPtySession(claudeConfig({ answerChannelPath: join(tmp, 'cesar-1-answer.json') }) as any);
     await session.start();
     ptyState.onAsk = () => ({ scraped: 'a substantive scraped answer body' });
@@ -162,7 +169,7 @@ describe('createPtySession — answer channel', () => {
   });
 
   it('prepends the system prompt on the first turn only', async () => {
-    const { createPtySession } = await import('../../packages/core/src/sessions/session-pty.js');
+    const { createPtySession } = await import('@kernlang/agon-support-persistence');
     const session = createPtySession(claudeConfig({ answerChannelPath: join(tmp, 'cesar-1-answer.json') }) as any);
     await session.start();
     // Substantive scrape so neither turn triggers a retry-nudge (which would
@@ -178,7 +185,7 @@ describe('createPtySession — answer channel', () => {
   });
 
   it('injects --mcp-config, --strict-mcp-config and disallows native writes', async () => {
-    const { createPtySession } = await import('../../packages/core/src/sessions/session-pty.js');
+    const { createPtySession } = await import('@kernlang/agon-support-persistence');
     const session = createPtySession(claudeConfig({
       answerChannelPath: join(tmp, 'cesar-1-answer.json'),
       mcpServers: [{ name: 'agon-orchestration', command: 'node', args: ['/x/index.js'] }],
@@ -203,7 +210,7 @@ const INCOMPLETE_MARKER = '[turn incomplete — the engine did not deliver an an
 
 describe('createPtySession — DeliverAnswer retry-nudge', () => {
   it('isSubstantiveScrape: pure heuristic boundary at 20 visible chars', async () => {
-    const { isSubstantiveScrape } = await import('../../packages/core/src/sessions/session-pty.js');
+    const { isSubstantiveScrape } = await import('@kernlang/agon-support-persistence');
     expect(isSubstantiveScrape(null)).toBe(false);
     expect(isSubstantiveScrape(undefined)).toBe(false);
     expect(isSubstantiveScrape('')).toBe(false);
@@ -215,7 +222,7 @@ describe('createPtySession — DeliverAnswer retry-nudge', () => {
   });
 
   it('fires exactly one nudge and returns the retry channel file (tier 1)', async () => {
-    const { createPtySession } = await import('../../packages/core/src/sessions/session-pty.js');
+    const { createPtySession } = await import('@kernlang/agon-support-persistence');
     const answerChannelPath = join(tmp, 'cesar-1-answer.json');
     const session = createPtySession(claudeConfig({ answerChannelPath }) as any);
     await session.start();
@@ -236,7 +243,7 @@ describe('createPtySession — DeliverAnswer retry-nudge', () => {
   });
 
   it('does NOT nudge when the first scrape is substantive (short-circuit)', async () => {
-    const { createPtySession } = await import('../../packages/core/src/sessions/session-pty.js');
+    const { createPtySession } = await import('@kernlang/agon-support-persistence');
     const session = createPtySession(claudeConfig({ answerChannelPath: join(tmp, 'cesar-1-answer.json') }) as any);
     await session.start();
     ptyState.onAsk = () => ({ scraped: 'a fully substantive first-turn answer' });
@@ -246,7 +253,7 @@ describe('createPtySession — DeliverAnswer retry-nudge', () => {
   });
 
   it('does NOT nudge when the first turn delivered via the channel', async () => {
-    const { createPtySession } = await import('../../packages/core/src/sessions/session-pty.js');
+    const { createPtySession } = await import('@kernlang/agon-support-persistence');
     const answerChannelPath = join(tmp, 'cesar-1-answer.json');
     const session = createPtySession(claudeConfig({ answerChannelPath }) as any);
     await session.start();
@@ -262,7 +269,7 @@ describe('createPtySession — DeliverAnswer retry-nudge', () => {
     // strictly better than re-asking when we already hold a good answer. (Tiers
     // 3 vs 4 only contend inside the nudge block, which is entered solely on a
     // NON-substantive first scrape — so tier 4 is the one exercised there below.)
-    const { createPtySession } = await import('../../packages/core/src/sessions/session-pty.js');
+    const { createPtySession } = await import('@kernlang/agon-support-persistence');
     const answerChannelPath = join(tmp, 'cesar-1-answer.json');
     const session = createPtySession(claudeConfig({ answerChannelPath }) as any);
     await session.start();
@@ -273,7 +280,7 @@ describe('createPtySession — DeliverAnswer retry-nudge', () => {
   });
 
   it('tier 4: retry channel empty, first scrape thin → retry-turn substantive scrape', async () => {
-    const { createPtySession } = await import('../../packages/core/src/sessions/session-pty.js');
+    const { createPtySession } = await import('@kernlang/agon-support-persistence');
     const answerChannelPath = join(tmp, 'cesar-1-answer.json');
     const session = createPtySession(claudeConfig({ answerChannelPath }) as any);
     await session.start();
@@ -287,7 +294,7 @@ describe('createPtySession — DeliverAnswer retry-nudge', () => {
   });
 
   it('tier 5: nudge yields nothing substantive → explicit incomplete marker', async () => {
-    const { createPtySession } = await import('../../packages/core/src/sessions/session-pty.js');
+    const { createPtySession } = await import('@kernlang/agon-support-persistence');
     const answerChannelPath = join(tmp, 'cesar-1-answer.json');
     const session = createPtySession(claudeConfig({ answerChannelPath }) as any);
     await session.start();
@@ -300,7 +307,7 @@ describe('createPtySession — DeliverAnswer retry-nudge', () => {
   });
 
   it('a late first-turn DeliverAnswer with a thin scrape is returned WITHOUT a nudge (tier 2)', async () => {
-    const { createPtySession } = await import('../../packages/core/src/sessions/session-pty.js');
+    const { createPtySession } = await import('@kernlang/agon-support-persistence');
     const answerChannelPath = join(tmp, 'cesar-1-answer.json');
     const session = createPtySession(claudeConfig({ answerChannelPath }) as any);
     await session.start();
@@ -316,7 +323,7 @@ describe('createPtySession — DeliverAnswer retry-nudge', () => {
   });
 
   it('a nudge-turn error yields the explicit incomplete marker, never a throw or silent garbage', async () => {
-    const { createPtySession } = await import('../../packages/core/src/sessions/session-pty.js');
+    const { createPtySession } = await import('@kernlang/agon-support-persistence');
     const session = createPtySession(claudeConfig({ answerChannelPath: join(tmp, 'cesar-1-answer.json') }) as any);
     await session.start();
     ptyState.onAsk = (prompt: string) => {
@@ -329,7 +336,7 @@ describe('createPtySession — DeliverAnswer retry-nudge', () => {
   });
 
   it('the nudge PTY turn runs under its own short ceiling, not the 15-min turn timeout', async () => {
-    const { createPtySession } = await import('../../packages/core/src/sessions/session-pty.js');
+    const { createPtySession } = await import('@kernlang/agon-support-persistence');
     const answerChannelPath = join(tmp, 'cesar-1-answer.json');
     const session = createPtySession(claudeConfig({ answerChannelPath }) as any);
     await session.start();
@@ -348,7 +355,7 @@ describe('createPtySession — DeliverAnswer retry-nudge', () => {
   });
 
   it('aborted turn never nudges', async () => {
-    const { createPtySession } = await import('../../packages/core/src/sessions/session-pty.js');
+    const { createPtySession } = await import('@kernlang/agon-support-persistence');
     const answerChannelPath = join(tmp, 'cesar-1-answer.json');
     const session = createPtySession(claudeConfig({ answerChannelPath }) as any);
     await session.start();
@@ -365,7 +372,7 @@ describe('createPtySession — DeliverAnswer retry-nudge', () => {
   });
 
   it('an abort during the nudge turn cancels — no fallback text leaks out', async () => {
-    const { createPtySession } = await import('../../packages/core/src/sessions/session-pty.js');
+    const { createPtySession } = await import('@kernlang/agon-support-persistence');
     const answerChannelPath = join(tmp, 'cesar-1-answer.json');
     const session = createPtySession(claudeConfig({ answerChannelPath }) as any);
     await session.start();
@@ -385,7 +392,7 @@ describe('createPtySession — DeliverAnswer retry-nudge', () => {
   });
 
   it('an explicitly EMPTY DeliverAnswer is not nudged — explicit marker, no raw scrape', async () => {
-    const { createPtySession } = await import('../../packages/core/src/sessions/session-pty.js');
+    const { createPtySession } = await import('@kernlang/agon-support-persistence');
     const answerChannelPath = join(tmp, 'cesar-1-answer.json');
     const session = createPtySession(claudeConfig({ answerChannelPath }) as any);
     await session.start();
@@ -402,7 +409,7 @@ describe('createPtySession — DeliverAnswer retry-nudge', () => {
 
 describe('sanitizePreviewFrame — pure speculative-preview gate', () => {
   it('suppresses null / undefined / empty / whitespace', async () => {
-    const { sanitizePreviewFrame } = await import('../../packages/core/src/sessions/session-pty.js');
+    const { sanitizePreviewFrame } = await import('@kernlang/agon-support-persistence');
     expect(sanitizePreviewFrame(null, '')).toBeNull();
     expect(sanitizePreviewFrame(undefined, '')).toBeNull();
     expect(sanitizePreviewFrame('', '')).toBeNull();
@@ -410,13 +417,13 @@ describe('sanitizePreviewFrame — pure speculative-preview gate', () => {
   });
 
   it('suppresses sub-threshold (<20 visible chars after trim)', async () => {
-    const { sanitizePreviewFrame } = await import('../../packages/core/src/sessions/session-pty.js');
+    const { sanitizePreviewFrame } = await import('@kernlang/agon-support-persistence');
     expect(sanitizePreviewFrame('too short', '')).toBeNull();           // 9 chars
     expect(sanitizePreviewFrame('  nineteen chars!! ', '')).toBeNull(); // 17 after trim
   });
 
   it('suppresses chrome-like frames (spinner / status / box-drawing glyphs)', async () => {
-    const { sanitizePreviewFrame } = await import('../../packages/core/src/sessions/session-pty.js');
+    const { sanitizePreviewFrame } = await import('@kernlang/agon-support-persistence');
     // All >=20 chars but chrome — must be dropped.
     expect(sanitizePreviewFrame('⏺ · Osmosing… please wait', '')).toBeNull();
     expect(sanitizePreviewFrame('┌── claude ─────────────────', '')).toBeNull();
@@ -425,14 +432,14 @@ describe('sanitizePreviewFrame — pure speculative-preview gate', () => {
   });
 
   it('emits a substantive non-chrome frame that grows past prev', async () => {
-    const { sanitizePreviewFrame } = await import('../../packages/core/src/sessions/session-pty.js');
+    const { sanitizePreviewFrame } = await import('@kernlang/agon-support-persistence');
     expect(sanitizePreviewFrame('This is a real draft answer.', '')).toBe('This is a real draft answer.');
     // Grows past a shorter prev → emit the longer one.
     expect(sanitizePreviewFrame('The answer is forty-two for sure.', 'The answer is')).toBe('The answer is forty-two for sure.');
   });
 
   it('growth-gates: a redraw at same/shorter length than prev is suppressed', async () => {
-    const { sanitizePreviewFrame } = await import('../../packages/core/src/sessions/session-pty.js');
+    const { sanitizePreviewFrame } = await import('@kernlang/agon-support-persistence');
     const prev = 'The answer is forty-two for sure.';
     // Identical content (repaint) → drop.
     expect(sanitizePreviewFrame(prev, prev)).toBeNull();
@@ -443,7 +450,7 @@ describe('sanitizePreviewFrame — pure speculative-preview gate', () => {
 
 describe('createPtySession — speculative preview chunks', () => {
   it('emits a preview chunk for a substantive non-chrome intermediate frame', async () => {
-    const { createPtySession } = await import('../../packages/core/src/sessions/session-pty.js');
+    const { createPtySession } = await import('@kernlang/agon-support-persistence');
     const answerChannelPath = join(tmp, 'cesar-1-answer.json');
     const session = createPtySession(claudeConfig({ answerChannelPath }) as any);
     await session.start();
@@ -460,7 +467,7 @@ describe('createPtySession — speculative preview chunks', () => {
   });
 
   it('emits NO preview for chrome-only intermediate frames', async () => {
-    const { createPtySession } = await import('../../packages/core/src/sessions/session-pty.js');
+    const { createPtySession } = await import('@kernlang/agon-support-persistence');
     const answerChannelPath = join(tmp, 'cesar-1-answer.json');
     const session = createPtySession(claudeConfig({ answerChannelPath }) as any);
     await session.start();
@@ -481,7 +488,7 @@ describe('createPtySession — speculative preview chunks', () => {
   });
 
   it('throttle is growth-gated: two identical frames yield at most one preview', async () => {
-    const { createPtySession } = await import('../../packages/core/src/sessions/session-pty.js');
+    const { createPtySession } = await import('@kernlang/agon-support-persistence');
     const answerChannelPath = join(tmp, 'cesar-1-answer.json');
     const session = createPtySession(claudeConfig({ answerChannelPath }) as any);
     await session.start();
@@ -499,7 +506,7 @@ describe('createPtySession — speculative preview chunks', () => {
 
   it('AGON_NO_PREVIEW=1 disables preview emission at the source', async () => {
     process.env.AGON_NO_PREVIEW = '1';
-    const { createPtySession } = await import('../../packages/core/src/sessions/session-pty.js');
+    const { createPtySession } = await import('@kernlang/agon-support-persistence');
     const answerChannelPath = join(tmp, 'cesar-1-answer.json');
     const session = createPtySession(claudeConfig({ answerChannelPath }) as any);
     await session.start();
@@ -514,7 +521,7 @@ describe('createPtySession — speculative preview chunks', () => {
   });
 
   it('the authoritative channel answer is returned EXACTLY, never the preview text', async () => {
-    const { createPtySession } = await import('../../packages/core/src/sessions/session-pty.js');
+    const { createPtySession } = await import('@kernlang/agon-support-persistence');
     const answerChannelPath = join(tmp, 'cesar-1-answer.json');
     const session = createPtySession(claudeConfig({ answerChannelPath }) as any);
     await session.start();
@@ -531,7 +538,7 @@ describe('createPtySession — speculative preview chunks', () => {
   });
 
   it('preview never alters the scrape-fallback tiers (no channel answer)', async () => {
-    const { createPtySession } = await import('../../packages/core/src/sessions/session-pty.js');
+    const { createPtySession } = await import('@kernlang/agon-support-persistence');
     const answerChannelPath = join(tmp, 'cesar-1-answer.json');
     const session = createPtySession(claudeConfig({ answerChannelPath }) as any);
     await session.start();
@@ -547,7 +554,7 @@ describe('createPtySession — speculative preview chunks', () => {
   });
 
   it('the nudge turn emits no previews even when its frames look substantive', async () => {
-    const { createPtySession } = await import('../../packages/core/src/sessions/session-pty.js');
+    const { createPtySession } = await import('@kernlang/agon-support-persistence');
     const answerChannelPath = join(tmp, 'cesar-1-answer.json');
     const session = createPtySession(claudeConfig({ answerChannelPath }) as any);
     await session.start();
@@ -572,6 +579,37 @@ describe('createPtySession — speculative preview chunks', () => {
 });
 
 describe('createPersistentSession — claude routing', () => {
+  it('preserves the turn envelope and live lifecycle through the public PTY owner', async () => {
+    process.env.AGON_CLAUDE_PTY = '1';
+    const { createPersistentSession } = await import('../../packages/core/src/persistent-session.js');
+    const answerChannelPath = join(tmp, 'factory-answer.json');
+    const session = createPersistentSession(claudeConfig({ answerChannelPath }));
+    const controlPlane: ControlPlaneEnvelopeV1 = {
+      schemaVersion: 1, sessionId: 'pty-session', turnId: 'pty-turn',
+      leaseEpoch: 3, attempt: 1, producerId: 'session:claude',
+    };
+    expect(session.alive).toBe(false);
+    try {
+      await session.start();
+      expect(session.alive).toBe(true);
+      expect(ptyState.spawnOpts).not.toBeNull();
+      expect(spawnMock).not.toHaveBeenCalled();
+      ptyState.onAsk = () => ({
+        scraped: 'Untrusted scraped answer',
+        writeAnswer: () => writeFileSync(answerChannelPath, JSON.stringify({ text: 'Factory answer' })),
+      });
+      const chunks: SessionChunk[] = [];
+      for await (const chunk of session.send({ message: 'hello', controlPlane })) chunks.push(chunk);
+      expect(chunks.filter(chunk => chunk.type === 'text').map(chunk => chunk.content)).toEqual(['Factory answer']);
+      expect(chunks.some(chunk => chunk.type === 'done')).toBe(true);
+      for (const chunk of chunks) expect(chunk.metadata?.controlPlane).toBe(controlPlane);
+    } finally {
+      session.close();
+    }
+    expect(session.alive).toBe(false);
+    expect(ptyState.closed).toBe(true);
+  });
+
   it('routes claude to --print (stream-json) by DEFAULT (Anthropic no longer meters -p)', async () => {
     spawnMock.mockImplementation(() => fakePrintProc());
     const { createPersistentSession } = await import('../../packages/core/src/persistent-session.js');
@@ -590,6 +628,25 @@ describe('createPersistentSession — claude routing', () => {
     await session.start();
     expect(ptyState.spawnOpts).not.toBeNull();   // PTY spawn happened
     expect(spawnMock).not.toHaveBeenCalled();     // no `claude --print`
+  });
+
+  it('keeps another stream-json engine on its print route when Claude PTY is enabled', async () => {
+    process.env.AGON_CLAUDE_PTY = '1';
+    spawnMock.mockImplementation(() => fakePrintProc());
+    const { createPersistentSession } = await import('../../packages/core/src/persistent-session.js');
+    const session = createPersistentSession(claudeConfig({
+      engine: { id: 'other-stream', binary: 'other-stream', companion: { protocol: 'stream-json' } },
+      binaryPath: '/fixture/other-stream',
+    }));
+    try {
+      await session.start();
+      expect(ptyState.spawnOpts).toBeNull();
+      expect(spawnMock).toHaveBeenCalled();
+      expect(spawnMock.mock.calls[0][0]).toBe('/fixture/other-stream');
+      expect(spawnMock.mock.calls[0][1]).toContain('--print');
+    } finally {
+      session.close();
+    }
   });
 
   it('B5: the default --print (stream-json) path yields an honest "image(s) not sent" status', async () => {

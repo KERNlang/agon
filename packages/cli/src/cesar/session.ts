@@ -893,6 +893,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
         ctx.cesar!.proposedPlan = plan;
       } catch (err) {
         console.warn(`[agon] ProposePlan handling failed: ${err instanceof Error ? err.message : String(err)}`);
+        return '[DELEGATION_BREAK] [PLAN_ERROR] Plan proposal did not finish. Check existing plans and logs before retrying.';
       }
       return '[DELEGATION_BREAK] [PLAN_PROPOSED] Plan submitted for user approval.';
     }

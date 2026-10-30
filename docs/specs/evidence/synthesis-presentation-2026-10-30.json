@@ -1,8 +1,23 @@
 {
   "schemaVersion": 1,
-  "status": "Working-tree gates passed; clean committed qualification pending",
+  "status": "Exact committed checkout qualification passed; full modular release acceptance remains open",
   "scope": "Restore mod-owned Synthesis CLI presentation, preserve routing advice and verify mixed-failure contracts across CLI/TUI/MCP",
   "baseCommit": "26c026356a28dfd681aeacbc0e3aa2b4acd7c0d7",
+  "qualifiedCommit": "e0daf69c2f2b1160b23dcd6b3250a7a3530025d8",
+  "qualifiedTree": "35d9e3872fa3877bb11cc2f3c9229e7f98682e6c",
+  "qualification": {
+    "cleanBeforeAndAfter": true,
+    "sourceBearingContamination": { "ignored": [], "untracked": [], "unstaged": [] },
+    "metadataRegeneratedInCleanCheckout": false,
+    "testsPassed": 12139,
+    "testsSkipped": 7,
+    "installedChecks": 130,
+    "installedPackages": 15,
+    "cacheDeletionSurvived": true,
+    "idempotent": true,
+    "providerLaunches": 0,
+    "subsequentCommitScope": "Evidence index only; runtime qualification binds qualifiedCommit, not a later evidence-only commit"
+  },
   "archive": {
     "id": "modular-agon-remediation",
     "locator": "Operator-owned durable archive outside Git worktrees",
@@ -10,6 +25,16 @@
     "sourceSnapshot": "synthesis-presentation-source-snapshot-20261030.json"
   },
   "receipts": [
+    {
+      "file": "synthesis-presentation-clean-build-20261030.receipt.json",
+      "sha256": "f6a2877eae28f430efbd029767d4d726f7b1ebb4af79bdaf2f52838b62e06195",
+      "passed": true
+    },
+    {
+      "file": "synthesis-presentation-clean-runtime-20261030.receipt.json",
+      "sha256": "33a3776f7078d8fceb81c73e2f45aa1afb9c1480e24f1e4c6b675e42e20feb88",
+      "passed": true
+    },
     {
       "file": "synthesis-presentation-recovered-runtime-20261030.receipt.json",
       "sha256": "558d6b3a3a9f135660dd1d29394720a72f5911ea65d88f980cd025eafb072a98",

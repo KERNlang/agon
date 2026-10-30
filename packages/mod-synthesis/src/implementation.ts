@@ -9,8 +9,10 @@ const schema = Object.freeze({ type: 'object', additionalProperties: true, requi
 import { runSynthesisRuntime } from './runtime.js';
 import type { SynthesisResult } from './runtime.js';
 import type { SynthesisModServices } from './host.js';
+import { presentSynthesisResult, synthesisRunStatus } from './presentation.js';
+import type { SynthesisDisplay } from './presentation.js';
 
-async function run(raw: Json, context: Parameters<ModServices['engines']['dispatch']>[2], services: SynthesisModServices, showAdvice = false): Promise<CommandResult> {
+async function run(raw: Json, context: Parameters<ModServices['engines']['dispatch']>[2], services: SynthesisModServices, cliOutput = false): Promise<CommandResult> {
   const check = () => { context.signal.throwIfAborted(); context.assertCurrent?.(); };
   check();
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
@@ -35,6 +37,15 @@ async function run(raw: Json, context: Parameters<ModServices['engines']['dispat
   const host = await services.synthesis.open(context);
   const assertCurrent = () => { check(); host.assertCurrent(); };
   assertCurrent();
+  const output = cliOutput ? services.synthesis.cliOutput : undefined;
+  const quiet = input.quiet === true || (output?.isQuiet() ?? false);
+  assertCurrent();
+  const write = (effect: () => void) => { assertCurrent(); effect(); assertCurrent(); };
+  const display: SynthesisDisplay | undefined = output ? {
+    log: text => write(() => output.log(text)), header: text => write(() => output.header(text)),
+    info: text => write(() => output.info(text)), table: (headers, rows) => write(() => output.table(headers, rows)),
+    bold: output.bold, green: output.green, dim: output.dim,
+  } : undefined;
   const handle = await services.runs.start('synthesis', text(input.label) || undefined, context);
   const failures: { engineId: string; phase: string; error: string }[] = [];
   let requested = 0;
@@ -43,7 +54,16 @@ async function run(raw: Json, context: Parameters<ModServices['engines']['dispat
   let outcome: SynthesisResult;
   try {
     assertCurrent();
-    if (showAdvice && input.quiet !== true) host.showRoutingAdvice?.(prompt);
+    if (display) {
+      display.log(quiet ? handle.path : `AGON_RUN: ${handle.path}`);
+      if (!quiet) {
+        display.header(`Synthesis: ${prompt}`);
+        display.info(`Engines: ${engines.join(', ')}`);
+        display.info(`Swap rounds: ${swaps}`);
+        display.log('');
+      }
+    }
+    if (cliOutput && !quiet) host.showRoutingAdvice?.(prompt);
     assertCurrent();
     outcome = await runSynthesisRuntime({
       prompt, engines, swaps, judge: text(input.judge) || undefined, timeout,
@@ -97,20 +117,27 @@ async function run(raw: Json, context: Parameters<ModServices['engines']['dispat
   }
   // The runtime can catch dispatch errors; recheck before publishing anything.
   assertCurrent();
-  const ok = judgeSucceeded && outcome.scores.length > 0;
+  const judged = judgeSucceeded && outcome.scores.length > 0;
   const result = { ...outcome, judge, panelHealth: { requested, failures: failures.length, degraded: failures.length > 0 } };
-  const stdout = input.quiet === true ? `${outcome.winner}: ${outcome.judgeReasoning}\n` : `${JSON.stringify(result, null, 2)}\n`;
+  const stdout = display ? '' : input.quiet === true ? `${outcome.winner}: ${outcome.judgeReasoning}\n` : `${JSON.stringify(result, null, 2)}\n`;
+  const status = synthesisRunStatus(outcome, { engines, label: text(input.label) || undefined,
+    startedAt: handle.startedAt, endedAt: new Date().toISOString() });
+  const ok = judged && status.ok;
   try {
     await services.runs.finish(handle, {
+      ...status,
       mode: 'synthesis', ok, winner: outcome.winner, failures,
-      startedAt: handle.startedAt, endedAt: new Date().toISOString(),
     }, context);
     assertCurrent();
     await services.receipts.record('synthesis', { engines: engines.length, swaps, winner: outcome.winner, failures: failures.length });
     assertCurrent();
+    if (display && output) {
+      if (!quiet) presentSynthesisResult(outcome, handle.path, display);
+      write(() => output.summary({ ...status, ok }));
+    }
     return {
       exitCode: ok ? 0 : 1,
-      ...(!ok ? { stderr: 'Synthesis produced no usable judged result.\n' } : {}),
+      ...(!ok ? { stderr: judged ? 'Synthesis completed with failed drafts.\n' : 'Synthesis produced no usable judged result.\n' } : {}),
       stdout,
       result: result as unknown as Json,
     };

@@ -27,6 +27,7 @@ const fixture = vi.hoisted(() => ({
   captureCli: vi.fn(), captureMcp: vi.fn(), assertCli: vi.fn(), assertCurrent: vi.fn(),
   forge: { open: vi.fn() },
   loadConfig: vi.fn(() => ({})),
+  printRunSummary: vi.fn(),
   engine: { id: 'fixture-engine' },
 }));
 vi.mock('@kernlang/agon-core', async () => ({
@@ -38,6 +39,7 @@ vi.mock('@kernlang/agon-core', async () => ({
     get() { return fixture.engine; }
   },
   loadConfig: fixture.loadConfig,
+  printRunSummary: fixture.printRunSummary,
   createForgeHostServices: () => fixture.forge,
   agonPath: vi.fn(), ensureAgonHome: vi.fn(), worktreeCreate: vi.fn(),
   worktreeRemoveBestEffort: vi.fn(), spawnWithTimeout: vi.fn(),
@@ -269,6 +271,13 @@ describe.each([decorateCliFirstPartyServices, decorateMcpFirstPartyServices])('S
     const load = vi.spyOn(CatalogEngineRegistry.prototype, 'load').mockImplementation(() => {});
     vi.spyOn(CatalogEngineRegistry.prototype, 'get').mockReturnValue(fixture.engine as never);
     const services = await decorate({ id: 'agon.synthesis' } as never, {} as never) as SynthesisModServices;
+    if (decorate === decorateCliFirstPartyServices) {
+      expect(services.synthesis!.cliOutput?.summary).toBe(fixture.printRunSummary);
+      vi.stubEnv('AGON_QUIET', '1');
+      expect(services.synthesis!.cliOutput?.isQuiet()).toBe(true);
+      vi.stubEnv('AGON_QUIET', '0');
+      expect(services.synthesis!.cliOutput?.isQuiet()).toBe(false);
+    } else expect(services.synthesis!.cliOutput).toBeUndefined();
     expect(load).not.toHaveBeenCalled();
     expect(fixture.adapterOpened).not.toHaveBeenCalled();
     const context: InvocationContext = { invocationId: 'synthesis-host', cwd: '/fixture/invocation',

@@ -2,7 +2,8 @@
 // Covers the rating-based critic selection (discipline -> global -> random, with
 // author exclusion) and the pure prompt/verdict/confidence helpers. No paid
 // engine dispatch needed.
-import { describe, it, expect } from 'vitest';
+import { getEventListeners } from 'node:events';
+import { describe, it, expect, vi } from 'vitest';
 import { rankEnginesByRating, pickTopRatedEngine, seedSuccessorRating, seedEnginesFromLineage } from '@kernlang/agon-core';
 import type { GlickoRating, RatingRecord } from '@kernlang/agon-core';
 import { buildNeroPrompt, parseNeroVerdict, parseNeroConfidence, runNero, rankNeroCritics, applyNeroExploration } from '@kernlang/agon-forge';
@@ -248,6 +249,74 @@ describe('runNero — self-healing dispatch (resend + down-pass)', () => {
   // explorationRate is pinned to 0 so these tests assert the deterministic
   // exploit-only cascade order; the ε-greedy branch has its own suite below.
   const baseC = { decision: 'x', timeout: 30, outputDir: '/tmp/nero-test', cwd: '/tmp', retryBackoffMs: 0, registry, explorationRate: 0 };
+
+  it('releases retry listeners after timeout across runs sharing a signal', async () => {
+    const controller = new AbortController();
+    vi.useFakeTimers();
+    try {
+      for (let run = 0; run < 2; run++) {
+        const { adapter, calls } = scripted({ a: [{ stdout: '' }, { stdout: VALID }] });
+        const result = runNero({ ...baseC, engines: ['a'], engine: 'a', adapter,
+          signal: controller.signal, retryBackoffMs: 100 });
+        await vi.advanceTimersByTimeAsync(0);
+        expect(calls.a).toBe(1);
+        expect(getEventListeners(controller.signal, 'abort')).toHaveLength(1);
+        await vi.advanceTimersByTimeAsync(100);
+        expect((await result).ok).toBe(true);
+        expect(calls.a).toBe(2);
+        expect(getEventListeners(controller.signal, 'abort')).toHaveLength(0);
+        expect(vi.getTimerCount()).toBe(0);
+      }
+    } finally {
+      controller.abort();
+      vi.useRealTimers();
+    }
+  });
+
+  it.each(['before sleep', 'during sleep'])('cancels retry %s without retaining resources', async (timing) => {
+    const controller = new AbortController();
+    const { adapter, calls } = scripted({ a: [{ stdout: '' }, { stdout: VALID }] });
+    vi.useFakeTimers();
+    try {
+      const result = runNero({ ...baseC, engines: ['a'], engine: 'a', adapter,
+        signal: controller.signal, retryBackoffMs: 5000,
+        onStatus: () => { if (timing === 'before sleep') controller.abort(); },
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      if (timing === 'during sleep') {
+        expect(getEventListeners(controller.signal, 'abort')).toHaveLength(1);
+        expect(vi.getTimerCount()).toBe(1);
+        controller.abort();
+      }
+      expect(vi.getTimerCount()).toBe(0);
+      expect(getEventListeners(controller.signal, 'abort')).toHaveLength(0);
+      expect((await result).ok).toBe(false);
+      expect(calls.a).toBe(1);
+    } finally {
+      controller.abort();
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([false, true])('preserves immediate success and retry without a signal (retry=%s)', async (retry) => {
+    const { adapter, calls } = scripted({ a: retry
+      ? [{ stdout: '' }, { stdout: VALID }]
+      : [{ stdout: VALID }] });
+    vi.useFakeTimers();
+    try {
+      const result = runNero({ ...baseC, engines: ['a'], engine: 'a', adapter, retryBackoffMs: 100 });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(vi.getTimerCount()).toBe(retry ? 1 : 0);
+      await vi.advanceTimersByTimeAsync(100);
+      expect((await result).verdict).toBe('sound');
+      expect(calls.a).toBe(retry ? 2 : 1);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
+  });
 
   it('resends the SAME critic on a transient empty and accepts the retry', async () => {
     const { adapter, calls } = scripted({ a: [{ stdout: '' }, { stdout: VALID }] });

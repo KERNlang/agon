@@ -2,12 +2,12 @@ import { writeFileSync, mkdirSync } from 'node:fs';
 
 import { join, dirname } from 'node:path';
 
-import { planCostEstimator, resolveWorkingDir, RUNS_DIR, tracker, cesarPlanMarkdownPath, saveCesarPlan, spawnWithTimeout, getCoreWorkflowRegistry, compileWorkflowSpec, verifyWorkflowExecutionPlanFlow, verifyWorkflowRunFlow, throwWorkflowConformance, createWorkflowRun, appendWorkflowPhaseEvent } from '@kernlang/agon-core';
-import { publishPlanProposal, exitPlanSession, createPlanStepExecutors } from '@kernlang/agon-mod-plan';
+import { planCostEstimator, resolveWorkingDir, RUNS_DIR, tracker, spawnWithTimeout, getCoreWorkflowRegistry, compileWorkflowSpec, verifyWorkflowExecutionPlanFlow, verifyWorkflowRunFlow, throwWorkflowConformance, createWorkflowRun, appendWorkflowPhaseEvent } from '@kernlang/agon-core';
+import { publishPlanProposal, exitPlanSession, createPlanStepExecutors, cesarPlanMarkdownPath, saveCesarPlan } from '@kernlang/agon-mod-plan';
 import { readPatchContent, applyPatchToTree } from '@kernlang/agon-support-worktree';
 import { SurfaceGenerationError, currentInvocationOwnerAvailable } from '@kernlang/agon-kernel';
 
-import type { CesarPlan, StepExecutor } from '@kernlang/agon-core';
+import type { CesarPlan, StepExecutor } from '@kernlang/agon-mod-plan';
 
 import { runForge, runDelegate } from '@kernlang/agon-forge';
 import { runCampfireRuntime } from '@kernlang/agon-mod-campfire';

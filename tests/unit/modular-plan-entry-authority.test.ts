@@ -13,8 +13,11 @@ import type { DispatchCallbacks } from '../../packages/cli/src/signals/dispatch.
 const effects = vi.hoisted(() => ({ save: vi.fn(), execute: vi.fn(), executors: vi.fn(() => ({})),
   legacySave: vi.fn(), forge: vi.fn(async () => null) }));
 vi.mock('@kernlang/agon-core', async original => ({
-  ...await original<Record<string, unknown>>(), saveCesarPlan: effects.save, executePlan: effects.execute,
+  ...await original<Record<string, unknown>>(), executePlan: effects.execute,
   savePlan: effects.legacySave,
+}));
+vi.mock('@kernlang/agon-mod-plan', async original => ({
+  ...await original<Record<string, unknown>>(), saveCesarPlan: effects.save,
 }));
 vi.mock('../../packages/cli/src/handlers/plan-mode.js', () => ({ buildStepExecutors: effects.executors }));
 vi.mock('../../packages/cli/src/handlers/forge.js', () => ({ handleForge: effects.forge }));

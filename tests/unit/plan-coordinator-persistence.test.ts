@@ -6,8 +6,11 @@ import type { CesarPlan } from '@kernlang/agon-mod-plan';
 
 const effects = vi.hoisted(() => ({ execute: vi.fn(), save: vi.fn(), changed: vi.fn(), choice: vi.fn() }));
 vi.mock('@kernlang/agon-core', async original => ({
-  ...await original<Record<string, unknown>>(), executePlan: effects.execute, saveCesarPlan: effects.save,
+  ...await original<Record<string, unknown>>(), executePlan: effects.execute,
   resolveWorkingDir: () => '/fixture',
+}));
+vi.mock('@kernlang/agon-mod-plan', async original => ({
+  ...await original<Record<string, unknown>>(), saveCesarPlan: effects.save,
 }));
 vi.mock('@kernlang/agon-support-worktree', async original => ({
   ...await original<Record<string, unknown>>(), inspectWorkingTree: () => ({ ok: true, dirtyTree: (effects.changed() ?? []).length > 0 }),

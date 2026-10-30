@@ -11,7 +11,8 @@ import { buildModeRationale, formatModeRationale } from './mode-rationale.js';
 
 import { planCostEstimator } from '@kernlang/agon-core';
 
-import type { CostEstimate, AgonConfig } from '@kernlang/agon-core';
+import type { AgonConfig } from '@kernlang/agon-core';
+import type { CostEstimate } from '@kernlang/agon-mod-plan';
 
 import { hostStringSet } from '../lib/kern-host.js';
 

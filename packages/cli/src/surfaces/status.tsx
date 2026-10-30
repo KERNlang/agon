@@ -14,7 +14,7 @@ import type { EngineProgress } from '../handlers/types.js';
 
 import type { EngineVitals } from '../cesar/telemetry.js';
 
-import type { CesarPlan } from '@kernlang/agon-core';
+import type { CesarPlan } from '@kernlang/agon-mod-plan';
 
 import { renderScoreboard } from '../cesar/scoreboard.js';
 

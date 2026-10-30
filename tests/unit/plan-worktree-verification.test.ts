@@ -7,9 +7,16 @@ import { tmpdir } from 'node:os';
 const effects = vi.hoisted(() => ({ cwd: '', execute: vi.fn(), save: vi.fn() }));
 vi.mock('@kernlang/agon-core', async original => ({
   ...await original<Record<string, unknown>>(), resolveWorkingDir: () => effects.cwd,
-  executePlan: effects.execute, saveCesarPlan: effects.save,
+  saveCesarPlan: effects.save,
 }));
 vi.mock('../../packages/cli/src/handlers/plan-mode.js', () => ({ buildStepExecutors: () => ({}) }));
+vi.mock('../../packages/cli/src/surface-authority-runtime.js', async original => {
+  const authority = await original<Record<string, unknown>>();
+  const { createPlanRuntime, PlanCostEstimator } = await import('@kernlang/agon-mod-plan');
+  const { estimateCost } = await import('@kernlang/agon-support-engine-catalog');
+  const runtime = createPlanRuntime(new PlanCostEstimator(estimateCost));
+  return { ...authority, processPlanRuntime: () => ({ ...runtime, executePlan: effects.execute }) };
+});
 import { executeApprovedPlan } from '../../packages/cli/src/signals/dispatch/plan-execution.js';
 
 beforeEach(() => {

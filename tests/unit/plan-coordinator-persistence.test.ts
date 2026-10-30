@@ -6,13 +6,20 @@ import type { CesarPlan } from '@kernlang/agon-mod-plan';
 
 const effects = vi.hoisted(() => ({ execute: vi.fn(), save: vi.fn(), changed: vi.fn(), choice: vi.fn() }));
 vi.mock('@kernlang/agon-core', async original => ({
-  ...await original<Record<string, unknown>>(), executePlan: effects.execute, saveCesarPlan: effects.save,
+  ...await original<Record<string, unknown>>(), saveCesarPlan: effects.save,
   resolveWorkingDir: () => '/fixture',
 }));
 vi.mock('@kernlang/agon-support-worktree', async original => ({
   ...await original<Record<string, unknown>>(), inspectWorkingTree: () => ({ ok: true, dirtyTree: (effects.changed() ?? []).length > 0 }),
 }));
 vi.mock('../../packages/cli/src/handlers/plan-mode.js', () => ({ buildStepExecutors: () => ({}) }));
+vi.mock('../../packages/cli/src/surface-authority-runtime.js', async original => {
+  const authority = await original<Record<string, unknown>>();
+  const { createPlanRuntime, PlanCostEstimator } = await import('@kernlang/agon-mod-plan');
+  const { estimateCost } = await import('@kernlang/agon-support-engine-catalog');
+  const runtime = createPlanRuntime(new PlanCostEstimator(estimateCost));
+  return { ...authority, processPlanRuntime: () => ({ ...runtime, executePlan: effects.execute }) };
+});
 vi.mock('../../packages/cli/src/signals/dispatch/plan-queries.js', async original => ({
   ...await original<Record<string, unknown>>(), askChoiceQuestion: effects.choice,
 }));

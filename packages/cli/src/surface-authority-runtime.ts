@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import type { EngineAdapter } from '@kernlang/agon-core';
 import { guardEngineAdapter } from '@kernlang/agon-support-engine-runtime';
 import type { BrainstormWorkflowEvent } from '@kernlang/agon-mod-brainstorm';
+import type { PlanRuntime, PlanRuntimeModServices } from '@kernlang/agon-mod-plan';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -41,6 +42,7 @@ let selector = new SurfaceGenerationSelector(new SurfaceGeneration({
   runtime: compatibilityRuntime,
 }));
 let boot: FirstPartySurfaceBoot | undefined;
+let selectedPlanBinding: { runtime?: PlanRuntime } | undefined;
 const clients = new Map<Surface, SurfaceClient>();
 const pendingLeaseCleanup = new Set<DurableModHost>();
 let leaseCleanupTimer: ReturnType<typeof setTimeout> | undefined;
@@ -91,21 +93,44 @@ export async function initializeProcessSurfaceAuthority(
   const safeMode = process.env.AGON_MOD_SAFE_MODE === '1';
   // Recovery must not import optional feature packages or their host effects.
   const services = safeMode ? undefined : await import('./first-party-services.js');
+  const decorate = decorateFirstPartyServices ?? services?.decorateCliFirstPartyServices;
+  const planBinding: { runtime?: PlanRuntime } = {};
   const candidate = await bootstrapFirstPartySurfaceGeneration({
     hostRoot,
     runtime: compatibilityRuntime,
     safeMode,
-    decorateFirstPartyServices: decorateFirstPartyServices ?? services?.decorateCliFirstPartyServices,
+    decorateFirstPartyServices: safeMode ? undefined : async (manifest, base) => {
+      const decorated = decorate ? await decorate(manifest, base) : base;
+      if (manifest.id !== 'agon.plan') return decorated;
+      const { estimateCost } = await import('@kernlang/agon-support-engine-catalog');
+      return Object.freeze({ ...decorated, planRuntime: {
+        estimateCost,
+        assertAvailable: () => {
+          if (selectedPlanBinding !== planBinding) {
+            throw new SurfaceGenerationError('MOD_GENERATION_MISMATCH', 'Plan runtime belongs to an unselected host; restart the invocation', true);
+          }
+          assertProcessSurfaceAvailable('tui', '/plan');
+        },
+        onEstimationError: (type, error) => console.warn(`[plan] estimation history update failed (${type}):`, error),
+        bind: runtime => {
+          if (planBinding.runtime) throw new Error('Plan runtime is already bound to this generation');
+          planBinding.runtime = runtime;
+          return () => { if (planBinding.runtime === runtime) planBinding.runtime = undefined; };
+        },
+      } } satisfies PlanRuntimeModServices);
+    },
     dispatchEngine: services?.createCliEngineServices().dispatch,
   });
   selector = new SurfaceGenerationSelector(candidate.activated.generation);
   boot = candidate;
+  selectedPlanBinding = planBinding;
   clients.clear();
 }
 
 export async function disposeProcessSurfaceAuthority(): Promise<void> {
   const selected = boot;
   boot = undefined;
+  selectedPlanBinding = undefined;
   clients.clear();
   const outcomes = await Promise.allSettled([
     selected?.activated.dispose(),
@@ -142,6 +167,16 @@ export function processSurfaceClient(surface: Surface): SurfaceClient {
 export function assertProcessSurfaceAvailable(surface: Surface, publicId: string): void {
   assertCanonicalSurfaceSelectionCurrent();
   processSurfaceClient(surface).assertAvailable(publicId);
+}
+
+/** Resolve only the runtime published by the selected, active Plan owner. */
+export function processPlanRuntime(): PlanRuntime {
+  assertProcessSurfaceAvailable('tui', '/plan');
+  const runtime = selectedPlanBinding?.runtime;
+  if (!boot || !runtime) {
+    throw new SurfaceGenerationError('MOD_SURFACE_UNAVAILABLE', 'Plan runtime is not active in this host');
+  }
+  return runtime;
 }
 
 /** Bind captured host effects to this exact host lifetime, not whichever

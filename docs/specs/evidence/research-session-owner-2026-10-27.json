@@ -1,4 +1,34 @@
 {
+  "cleanCommittedReplay20261030": {
+    "subject": "bcadad191f0f7a0a8c25a0db206ee1f7d11ea5f4",
+    "tree": "bcb187cf4fcd9ba6eae77f69427576dbd10478a6",
+    "base": "26c026356a28dfd681aeacbc0e3aa2b4acd7c0d7",
+    "status": "Passed on the exact committed subject; this evidence-only update is not part of that subject",
+    "testsPassed": 12144,
+    "testsSkipped": 7,
+    "installedChecksPassed": 131,
+    "gitCleanBeforeAndAfter": true,
+    "providerLaunches": 0,
+    "receipts": [
+      {
+        "file": "research-clean-build-cached-20261030.receipt.json",
+        "seconds": 300.296,
+        "logSha256": "sha256:78ab4378e7cc2fabcb6c0324eb424063beac91ef0bbf62a2fa969c49c7a99e6c"
+      },
+      {
+        "file": "research-clean-tests-cached-20261030.receipt.json",
+        "seconds": 698.391,
+        "logSha256": "sha256:a22ea2d66c953047cfdc695c8139e8e0c994d40af2aee935eb9bf8d366c83a6b"
+      },
+      {
+        "file": "research-clean-installed-20261030.receipt.json",
+        "seconds": 137.398,
+        "logSha256": "sha256:64842632c2f92f1cc6dbead0f10a9adeae0b0b951778761d447591b97c6fd13e"
+      }
+    ],
+    "retainedFailedRuns": ["research-clean-build-20261030", "research-clean-tests-20261030"],
+    "scope": "Fresh frozen offline install, build, types, lint, re-export/generated checks, release and supply-chain self-tests, full repository suite and installed matrix. Native macOS arm64 Node26.12.1 with fixture providers only. Not aggregate modular release acceptance."
+  },
   "currentMainIntegration20261030": {
     "base": "26c026356a28dfd681aeacbc0e3aa2b4acd7c0d7",
     "status": "Working-tree integration qualified; clean committed replay pending",
@@ -63,7 +93,7 @@
   },
   "scope": "Research interactive session ownership and selected-contribution routing",
   "base": "a4e06dfb8869acd14fe4c90cc16a88abebeb3243",
-  "status": "Current-main working-tree integration and installed checks pass; clean committed qualification remains pending",
+  "status": "Current-main Research integration passes clean committed qualification; full modular release acceptance remains separate",
   "archive": "/Users/ra/dev/modular-agon-remediation",
   "verification": {
     "callerCancellationRepair": {

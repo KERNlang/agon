@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { CommandContribution, ModServices, Registrar } from '@kernlang/agon-mod-api';
+import type { CommandContribution, ModServices, Registrar, ToolContribution } from '@kernlang/agon-mod-api';
 import { createMod } from '../../packages/mod-synthesis/src/implementation.js';
 import { createSynthesisHostServices } from '../../packages/mod-synthesis/src/host.js';
 import { runSynthesisModus as frozen, synthesisRoutingAdvice } from '../fixtures/modular-synthesis-legacy.js';
@@ -64,6 +64,147 @@ describe('generated Synthesis uses the legacy pairing policy', () => {
     } finally { await dispose(); }
   });
 
+  it.each(['cli', 'tui', 'mcp'])('retains the usable result without hiding draft failure on %s', async surface => {
+    const finish = vi.fn();
+    const dispatch = vi.fn(async (request: { mode: string; engine: { id: string } }) => ({
+      stdout: request.mode === 'review' ? 'SCORE_1: 90\nWINNER: alpha\nREASONING: fixture' : 'draft',
+      stderr: '', exitCode: request.mode !== 'review' && request.engine.id === 'beta' ? 1 : 0,
+      timedOut: false,
+    }));
+    const services = {
+      engines: { listActive: async () => ['alpha', 'beta'] },
+      receipts: { record: vi.fn(async () => 'receipt') },
+      runs: { start: async () => ({ id: 'fixture', path: '/fixture/run', startedAt: 'fixture' }), finish },
+      synthesis: { open: () => ({
+        registry: { get: (id: string) => ({ id }), findBinary: () => null },
+        adapter: { dispatch }, assertCurrent: () => {},
+        effects: { resolveWorkingDir: () => '/fixture', health: { loadConfig: () => ({}) }, warn: vi.fn() },
+      }) },
+    } as unknown as ModServices;
+    let command!: CommandContribution;
+    let tool!: ToolContribution;
+    const registrar = new Proxy({}, { get: (_target, method) => (...args: unknown[]) => {
+      if (method === 'command' && args[0] === surface) command = args[1] as CommandContribution;
+      if (method === 'tool' && args[0] === surface) tool = args[1] as ToolContribution;
+      return () => {};
+    } }) as Registrar;
+    const dispose = await (await createMod(services)).activate(registrar);
+    const context = { cwd: '/fixture', invocationId: 'mixed-drafts', platform: 'darwin-arm64' as const,
+      signal: new AbortController().signal, config: {} };
+    const result = { winner: 'alpha', panelHealth: { failures: 1, degraded: true } };
+    try {
+      if (surface === 'mcp') {
+        await expect(tool.run({ prompt: 'fixture', engines: 'alpha,beta', swaps: '0' }, context))
+          .rejects.toMatchObject({ code: 'MOD_COMMAND_FAILED', exitCode: 1, result });
+      } else {
+        const input = surface === 'tui' ? { input: 'fixture', engines: 'alpha,beta', swaps: 0 }
+          : { prompt: 'fixture', engines: 'alpha,beta', swaps: '0' };
+        await expect(command.run(input, context)).resolves.toMatchObject({ exitCode: 1, result });
+      }
+      expect(finish).toHaveBeenCalledExactlyOnceWith(expect.anything(), expect.objectContaining({
+        ok: false, winner: 'alpha', summary: '1/2 drafted; winner=alpha',
+        engines: [expect.objectContaining({ id: 'alpha', status: 'ok' }), expect.objectContaining({ id: 'beta', status: 'error' })],
+      }), context);
+      expect(dispatch).toHaveBeenCalledTimes(3);
+    } finally { await dispose(); }
+  });
+
+  it.each(['normal', 'flag', 'environment', 'tui', 'mcp', 'abort-heading', 'revoke-result'])('preserves presentation boundaries (%s)', async scenario => {
+    const quiet = scenario === 'flag';
+    const controller = new AbortController();
+    let revoked = false;
+    const assertCurrent = () => { if (revoked) throw new Error('revoked'); };
+    const lines: string[] = [];
+    const log = (text: string) => { lines.push(text); };
+    const header = (text: string) => {
+      log(text);
+      if (scenario === 'abort-heading') controller.abort(new Error('cancelled'));
+      if (scenario === 'revoke-result' && text === 'Initial Drafts') revoked = true;
+    };
+    const finish = vi.fn();
+    const dispatch = vi.fn(async (request: { mode: string }) => {
+      if (scenario !== 'tui' && scenario !== 'mcp') {
+        expect(lines[0]).toBe(quiet || scenario === 'environment' ? '/fixture/run' : 'AGON_RUN: /fixture/run');
+        if (!quiet && scenario !== 'environment') expect(lines).toContain('Synthesis: Design fixture');
+      }
+      return {
+        stdout: request.mode === 'review' ? 'SCORE_1: 90\nWINNER: alpha\nREASONING: fixture' : 'draft alpha',
+        stderr: '', exitCode: 0, timedOut: false,
+      };
+    });
+    const services = {
+      engines: { listActive: async () => ['alpha'] },
+      receipts: { record: async () => 'receipt' },
+      runs: { start: async () => ({ id: 'fixture', path: '/fixture/run', startedAt: 'fixture' }), finish },
+      synthesis: { cliOutput: {
+        log, header, info: log, table: (headers: string[], rows: string[][]) => log([headers, ...rows].map(row => row.join(' ')).join('\n')),
+        bold: (text: string) => text, green: (text: string) => text, dim: (text: string) => text,
+        isQuiet: () => scenario === 'environment',
+        summary: (status: Record<string, unknown>) => {
+          expect(finish).toHaveBeenCalledTimes(1);
+          expect(finish.mock.calls[0][1]).toMatchObject(status);
+          expect(status).toMatchObject({ ok: true, engines: [{ id: 'alpha', status: 'ok' }] });
+          log('AGON_SUMMARY: 1/1 succeeded');
+        },
+      }, open: () => ({
+        registry: { get: (id: string) => ({ id }), findBinary: () => null },
+        adapter: { dispatch },
+        assertCurrent,
+        effects: { resolveWorkingDir: () => '/fixture', health: { loadConfig: () => ({}) }, warn: vi.fn() },
+      }) },
+    } as unknown as ModServices;
+    let command!: CommandContribution;
+    let tool!: ToolContribution;
+    const registrar = new Proxy({}, { get: (_target, method) => (...args: unknown[]) => {
+      if (method === 'command' && args[0] === (scenario === 'tui' ? 'tui' : 'cli')) command = args[1] as CommandContribution;
+      if (method === 'tool' && args[0] === 'mcp') tool = args[1] as ToolContribution;
+      return () => {};
+    } }) as Registrar;
+    const dispose = await (await createMod(services)).activate(registrar);
+    try {
+      if (scenario === 'mcp') {
+        const result = await tool.run({ prompt: 'Design fixture', engines: 'alpha', swaps: '0' }, {
+          cwd: '/fixture', invocationId: 'presentation-mcp', platform: 'darwin-arm64',
+          signal: controller.signal, config: {},
+        });
+        expect(result).toMatchObject({ winner: 'alpha', judgeReasoning: 'fixture' });
+        expect(lines).toEqual([]);
+        expect(finish).toHaveBeenCalledTimes(1);
+        return;
+      }
+      const pending = command.run(scenario === 'tui'
+        ? { input: 'Design fixture', engines: 'alpha', swaps: 0 }
+        : { prompt: 'Design fixture', engines: 'alpha', swaps: '0', quiet }, {
+        cwd: '/fixture', invocationId: 'presentation', platform: 'darwin-arm64',
+        signal: controller.signal, config: {},
+      });
+      if (scenario === 'abort-heading' || scenario === 'revoke-result') {
+        await expect(pending).rejects.toThrow(scenario === 'abort-heading' ? 'cancelled' : 'revoked');
+        expect(dispatch).toHaveBeenCalledTimes(scenario === 'abort-heading' ? 0 : 2);
+        expect(lines.at(-1)).toBe(scenario === 'abort-heading' ? 'Synthesis: Design fixture' : 'Initial Drafts');
+        expect(finish).toHaveBeenCalledTimes(1);
+        return;
+      }
+      const result = await pending;
+      expect(result.exitCode).toBe(0);
+      expect(finish).toHaveBeenCalledTimes(1);
+      if (scenario === 'tui') {
+        expect(lines).toEqual([]);
+        expect(JSON.parse(result.stdout!)).toMatchObject({ winner: 'alpha', judgeReasoning: 'fixture' });
+        return;
+      }
+      const stdout = lines.map(line => line + '\n').join('') + (result.stdout ?? '');
+      expect(lines.filter(line => line.startsWith('AGON_SUMMARY:'))).toHaveLength(1);
+      if (quiet || scenario === 'environment') expect(stdout).toBe('/fixture/run\nAGON_SUMMARY: 1/1 succeeded\n');
+      else {
+        expect(stdout).toContain('Initial Drafts');
+        expect(stdout).toContain('Judge Scores');
+        expect(stdout).toContain('Full output saved: /fixture/run');
+        expect(stdout).toContain('AGON_SUMMARY: 1/1 succeeded\n');
+      }
+    } finally { await dispose(); }
+  });
+
   it.each([2, 3, 4])('uses disjoint pairs for %i engines, not a ring', async count => {
     const engines = ['alpha', 'beta', 'gamma', 'delta'].slice(0, count);
     const calls: Array<{ engineId: string; prompt: string }> = [];
@@ -120,7 +261,7 @@ describe('generated Synthesis uses the legacy pairing policy', () => {
     } finally { await dispose(); }
   });
 
-  it.each(['revoked', 'cancelled', 'failed-judge', 'empty-judge', 'missing-host', 'receipt-failure', 'finish-failure', 'failed-drafts', 'timed-out-drafts',
+  it.each(['revoked', 'cancelled', 'failed-judge', 'empty-judge', 'missing-host', 'receipt-failure', 'finish-failure', 'failed-drafts', 'timed-out-drafts', 'mixed-drafts',
     ...['start', 'judge', 'finish', 'receipt'].flatMap(phase => ['revoked', 'cancelled'].map(kind => `${kind}-${phase}`))])(
     'does not publish success for %s', async scenario => {
       const controller = new AbortController();
@@ -130,14 +271,14 @@ describe('generated Synthesis uses the legacy pairing policy', () => {
         if (scenario === `revoked-${phase}`) revoked = true;
         if (scenario === `cancelled-${phase}`) controller.abort(new Error('cancelled'));
       };
-      const dispatch = vi.fn(async (request: { mode: string }) => {
+      const dispatch = vi.fn(async (request: { mode: string; engine: { id: string } }) => {
         if (scenario === 'revoked') revoked = true;
         if (scenario === 'cancelled') controller.abort(new Error('cancelled'));
         const judging = request.mode === 'review';
         if (judging) interrupt('judge');
         return {
           stdout: judging ? (scenario === 'empty-judge' ? '' : 'SCORE_1: 90\nWINNER: alpha\nREASONING: fixture') : 'draft',
-          stderr: '', exitCode: (judging && scenario === 'failed-judge') || (!judging && scenario === 'failed-drafts') ? 1 : 0,
+          stderr: '', exitCode: (judging && scenario === 'failed-judge') || (!judging && (scenario === 'failed-drafts' || (scenario === 'mixed-drafts' && request.engine.id === 'beta'))) ? 1 : 0,
           timedOut: !judging && scenario === 'timed-out-drafts',
         };
       });
@@ -171,7 +312,7 @@ describe('generated Synthesis uses the legacy pairing policy', () => {
       try {
         const failedDrafts = scenario === 'failed-drafts' || scenario === 'timed-out-drafts';
         const result = command.run({ prompt: 'fixture', swaps: failedDrafts ? '1' : '0',
-          engines: failedDrafts ? 'alpha,beta' : 'alpha' }, {
+          engines: failedDrafts || scenario === 'mixed-drafts' ? 'alpha,beta' : 'alpha' }, {
           cwd: '/fixture', invocationId: 'failure', platform: 'darwin-arm64',
           signal: controller.signal, config: {},
         });
@@ -191,6 +332,16 @@ describe('generated Synthesis uses the legacy pairing policy', () => {
           if (scenario === 'finish-failure') expect(record).not.toHaveBeenCalled();
         } else {
           await expect(result).resolves.toMatchObject({ exitCode: 1 });
+          if (scenario === 'mixed-drafts') {
+            await expect(result).resolves.toMatchObject({
+              stderr: 'Synthesis completed with failed drafts.\n',
+              result: { winner: 'alpha', panelHealth: { failures: 1, degraded: true } },
+            });
+            expect(finish).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+              ok: false, summary: '1/2 drafted; winner=alpha',
+              engines: [expect.objectContaining({ id: 'alpha', status: 'ok' }), expect.objectContaining({ id: 'beta', status: 'error' })],
+            }), expect.anything());
+          }
           if (scenario === 'missing-host') expect(dispatch).not.toHaveBeenCalled();
           else expect(finish).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ ok: false }), expect.anything());
           if (failedDrafts) expect(dispatch).toHaveBeenCalledTimes(3); // Two drafts and an empty-entry judge, never a swap.

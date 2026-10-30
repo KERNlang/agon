@@ -54,17 +54,34 @@ export async function verifyPackedSynthesis(prefix, scratch, env) {
     assert.equal(stderr.includes(marker), false, 'Advice moved to stderr');
     const calls = readFileSync(log, 'utf8').trim().split('\n');
     assert.deepEqual(calls, ['draft', 'judge']);
-    if (mode === 'quiet') assert.equal(stdout, 'fixture-synthesis: fixture\n');
+    const report = stdout.replace(/\u001b\[[0-9;]*m/g, '');
+    const lines = report.trimEnd().split('\n');
+    const quiet = mode === 'quiet' || mode === 'env-quiet';
+    const path = quiet ? lines[0] : lines[0].replace(/^AGON_RUN: /, '');
+    assert.ok(path.startsWith(home + '/runs/'), path);
+    assert.equal(lines.filter(line => line === lines[0]).length, 1);
+    assert.equal(lines.filter(line => line.startsWith('AGON_SUMMARY:')).length, 1);
+    assert.equal(lines.at(-1), 'AGON_SUMMARY: 1/1 succeeded');
+    if (quiet) assert.equal(report, `${path}\nAGON_SUMMARY: 1/1 succeeded\n`);
     else {
-      const prefix = mode === 'code' ? `\u001b[33m⚠\u001b[0m ${advice}\n` : '';
-      assert.ok(stdout.startsWith(prefix));
-      const body = stdout.slice(prefix.length);
-      const result = JSON.parse(body);
-      assert.equal(result.winner, 'fixture-synthesis');
-      assert.equal(result.judgeReasoning, 'fixture');
-      assert.equal(stdout, prefix + JSON.stringify(result, null, 2) + '\n');
+      if (mode === 'code') {
+        assert.ok(report.includes(`⚠ ${advice}\n`), 'Routing advice text changed');
+        assert.ok(report.indexOf(marker) < report.indexOf('Initial Drafts'), 'Advice appeared after the result');
+      }
+      let offset = -1;
+      for (const marker of ['Synthesis:', 'Initial Drafts', 'PACKED_SYNTHESIS_DRAFT', 'Judge Scores',
+        'Winner: fixture-synthesis', '\nfixture\n', `Full output saved: ${path}`, 'AGON_SUMMARY:']) {
+        const next = report.indexOf(marker, offset + 1);
+        assert.ok(next > offset, `${mode}: missing or reordered ${marker}`);
+        offset = next;
+      }
     }
+    const status = JSON.parse(readFileSync(join(path, 'status.json'), 'utf8'));
+    assert.equal(status.ok, true);
+    assert.equal(status.winner, 'fixture-synthesis');
+    assert.equal(status.summary, '1/1 drafted; winner=fixture-synthesis');
+    assert.deepEqual(status.engines, [{ id: 'fixture-synthesis', status: 'ok', detail: 'draft, score=90 * winner' }]);
   }
   return { id: 'packed-synthesis-cli-advice', passed: true,
-    detail: 'installed CLI code/prose/flag quiet/environment quiet; exact warning and result formatting; synchronous stdout-before-spawn check; suppressed/delayed warning negative controls; fake engine only' };
+    detail: 'installed CLI code/prose/flag quiet/environment quiet; exact warning, restored human report and persisted result; synchronous stdout-before-spawn check; suppressed/delayed warning negative controls; fake engine only' };
 }

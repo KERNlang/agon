@@ -2,7 +2,7 @@ import { resolveExplicitReviewEngines } from '@kernlang/agon-support-verificatio
 import { resolveCurrentIdentities } from '@kernlang/agon-support-engine-runtime';
 import { cliRunRecordHost } from './run-record-host.js';
 import { patchApplicationHost } from './patch-application-host.js';
-import { EngineRegistry, buildKernContextSpine, createRunDir, eventLogFlush, getRatings, loadConfig, pickTopRatedEngine, setSessionRoot } from '@kernlang/agon-core';
+import { EngineRegistry, buildKernContextSpine, createRunDir, eventLogFlush, getRatings, loadConfig, pickTopRatedEngine, printRunSummary, setSessionRoot } from '@kernlang/agon-core';
 import { createCliAdapter } from '@kernlang/agon-adapter-cli';
 import { createForgeHostServices } from '@kernlang/agon-core';
 import { createSessionWorktree, findSessionWorktree, worktreePathFor, rehydrateSessionWorktree } from '@kernlang/agon-core';
@@ -18,7 +18,7 @@ import { createTribunalHostServices } from '@kernlang/agon-mod-tribunal';
 import { createCampfireHostServices } from '@kernlang/agon-mod-campfire';
 import { createThinkHostServices } from '@kernlang/agon-mod-think';
 import { createCouncilHostServices } from '@kernlang/agon-mod-council';
-import { header, warn, info, bold, dim, red } from './blocks/output-format.js';
+import { header, warn, info, bold, dim, red, green, table } from './blocks/output-format.js';
 import { createTeamBrainstormHostServices } from '@kernlang/agon-mod-team-brainstorm';
 import { createConquerHostServices } from '@kernlang/agon-mod-conquer';
 import type { PrTextInput } from '@kernlang/agon-mod-forge';
@@ -136,7 +136,7 @@ export async function decorateCliFirstPartyServices(manifest: ModManifest, base:
   } : undefined;
   return Object.freeze({ ...base, runs, ...(browser ? { browser } : {}), ...(workspace ? { workspace } : {}),
     ...(brainstorm ? { brainstorm } : {}),
-    ...(manifest.id === 'agon.synthesis' ? { synthesis: createSynthesisHostServices({
+    ...(manifest.id === 'agon.synthesis' ? { synthesis: { ...createSynthesisHostServices({
       routingAdvice: { classifyTask, isQuiet: () => process.env.AGON_QUIET === '1', show: warn },
       openRegistry: () => {
         const registry = new CatalogEngineRegistry();
@@ -147,7 +147,10 @@ export async function decorateCliFirstPartyServices(manifest: ModManifest, base:
         const assertCurrent = captureProcessSurfaceAuthority();
         return () => { assertCurrent(); assertProcessSurfaceAvailable('cli', 'synthesis'); };
       },
-    }) } : {}),
+    }), cliOutput: {
+      log: (text: string) => console.log(text), header, info, table, bold, green, dim,
+      isQuiet: () => process.env.AGON_QUIET === '1', summary: printRunSummary,
+    } } } : {}),
     ...(manifest.id === 'agon.think' ? { think: { ...createThinkHostServices({
       openRegistry: () => {
         const registry = new CatalogEngineRegistry();

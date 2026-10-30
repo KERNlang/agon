@@ -1,0 +1,97 @@
+{
+  "schemaVersion": 1,
+  "status": "Exact committed checkout qualification passed; full modular release acceptance remains open",
+  "scope": "Restore mod-owned Synthesis CLI presentation, preserve routing advice and verify mixed-failure contracts across CLI/TUI/MCP",
+  "baseCommit": "26c026356a28dfd681aeacbc0e3aa2b4acd7c0d7",
+  "qualifiedCommit": "e0daf69c2f2b1160b23dcd6b3250a7a3530025d8",
+  "qualifiedTree": "35d9e3872fa3877bb11cc2f3c9229e7f98682e6c",
+  "qualification": {
+    "cleanBeforeAndAfter": true,
+    "sourceBearingContamination": { "ignored": [], "untracked": [], "unstaged": [] },
+    "metadataRegeneratedInCleanCheckout": false,
+    "testsPassed": 12139,
+    "testsSkipped": 7,
+    "installedChecks": 130,
+    "installedPackages": 15,
+    "cacheDeletionSurvived": true,
+    "idempotent": true,
+    "providerLaunches": 0,
+    "subsequentCommitScope": "Evidence index only; runtime qualification binds qualifiedCommit, not a later evidence-only commit"
+  },
+  "archive": {
+    "id": "modular-agon-remediation",
+    "locator": "Operator-owned durable archive outside Git worktrees",
+    "retention": "Never delete without Raphael's explicit approval",
+    "sourceSnapshot": "synthesis-presentation-source-snapshot-20261030.json"
+  },
+  "receipts": [
+    {
+      "file": "synthesis-presentation-clean-build-20261030.receipt.json",
+      "sha256": "f6a2877eae28f430efbd029767d4d726f7b1ebb4af79bdaf2f52838b62e06195",
+      "passed": true
+    },
+    {
+      "file": "synthesis-presentation-clean-runtime-20261030.receipt.json",
+      "sha256": "33a3776f7078d8fceb81c73e2f45aa1afb9c1480e24f1e4c6b675e42e20feb88",
+      "passed": true
+    },
+    {
+      "file": "synthesis-presentation-recovered-runtime-20261030.receipt.json",
+      "sha256": "558d6b3a3a9f135660dd1d29394720a72f5911ea65d88f980cd025eafb072a98",
+      "passed": true,
+      "testsPassed": 12139,
+      "testsSkipped": 7,
+      "installedChecks": 130,
+      "providerLaunches": 0
+    },
+    {
+      "file": "synthesis-presentation-current-base-20261030.receipt.json",
+      "sha256": "337bae00ef35cd228cb4f1a344a35b3009a895eaabdaa7efaf5600ec85544f01",
+      "passed": true
+    },
+    {
+      "file": "synthesis-presentation-all-surfaces-negative-20261030.receipt.json",
+      "sha256": "c1987b4225f194a79d94ed737fc76da7ec07cc01f9d6810468b365adf91e1fda",
+      "passed": false
+    },
+    {
+      "file": "synthesis-presentation-all-surfaces-restored-20261030.receipt.json",
+      "sha256": "1528e36d66c448e1216525213be6eea5b48989a634f28246e8cde76f9844cf9b",
+      "passed": true
+    },
+    {
+      "file": "synthesis-presentation-recovered-focused-20261030.receipt.json",
+      "sha256": "2174a98b746e53b6cc31b12dac7ca3c200d4fc7111a4d54bba07f8ffe710cc54",
+      "passed": true
+    },
+    {
+      "file": "synthesis-presentation-recovered-build-20261030.receipt.json",
+      "sha256": "18b72c6522f6fa11271945c342098647d1df14938b916d2daf976f10550fb714",
+      "passed": false
+    }
+  ],
+  "sourceSha256": {
+    "packages/mod-synthesis/src/implementation.ts": "792d7db2ac2738ac0f4ff80731f8a4bdc0f5624eaf3ef212aaf0e96d37dea34a",
+    "packages/mod-synthesis/src/host.ts": "ea703283531cf55fe4b7463e91d1522fd45b2f9fc6b8ec6271af1854c0053071",
+    "packages/mod-synthesis/src/presentation.ts": "a8456d1450532c74c5dc3c96584aa12b8aa7b4c3dd3d2f2e853db75163ea5b48",
+    "scripts/spec/verify-packed-synthesis.mjs": "c9ad21c0835346e5498b0f41185bcb76d894b1503c0d795bfaa0a41a864663ec",
+    "scripts/spec/verify-packed-synthesis-presentation.mjs": "3a7abed219691ef58d0551f2db877f41dd0e1e133f588ce7aed056040adc4390",
+    "tests/unit/modular-synthesis-surface-parity.test.ts": "2844c0a4397200710ba7081651af4b23565b2daffd9cb59720a9fe6098adbf3b"
+  },
+  "review": {
+    "engine": "codex",
+    "packet": "synthesis-presentation-current-review-input.txt",
+    "packetSha256": "76d76d60770424df5a1a0888c60efd525df1d5d8fbe2fd01a17b4d7614a0164f",
+    "log": "synthesis-presentation-current-codex-review.log",
+    "logSha256": "068e4902131a34276470914a817f86b06aa791bd67e9756fbcf59fc164c6e670",
+    "result": "No concrete findings; eight complete source sections and artifact hashes verified. Static review only."
+  },
+  "limits": [
+    "Current-base receipt includes regenerated local-toolchain metadata, not clean committed release qualification",
+    "Failed build receipt records omitted cache environment variables after build/types/lint/re-export checks passed; continuation supplies existing cache without downloads",
+    "All-surface negative/restored receipts use preserved old-base worktree; recovered-focused receipt verifies current-main integration",
+    "Direct CLI restores documented human output; default JSON from interim generated command is not preserved. Installed qualification passed 130 checks including JSONL; complete working-tree runtime receipt passed",
+    "macOS arm64 Node26 fixture-provider evidence only; no live-provider or other-platform qualification",
+    "Full modular release acceptance remains open"
+  ]
+}

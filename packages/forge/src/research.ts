@@ -1,4 +1,6 @@
 import type { EngineAdapter, EngineRegistry, RatingRecord, SearchResult, CitationReport, ResearchIntent } from '@kernlang/agon-core';
+import { buildResearchPrompt } from '@kernlang/agon-mod-research/prompt-policy';
+export { buildResearchPrompt } from '@kernlang/agon-mod-research/prompt-policy';
 
 import { resolveWorkingDir, getRatings, loadConfig, pickTopRatedEngine, resolveCurrentIdentities, seedNewEnginesFromRegistry, classifyQuery, buildAuthoritativeRequest, parseAuthoritativeResults, createWebFetchTool, extractCitations, verifyCitations } from '@kernlang/agon-core';
 
@@ -37,64 +39,9 @@ export interface ResearchResult {
 }
 
 /**
- * Build the grounded-research prompt: the question plus each numbered source's URL and fetched content. Instructs the engine to answer ONLY from the sources, cite inline as [n], and end with a Sources: list. Pure — exported for testing.
- */
-export function buildResearchPrompt(question: string, sources: { title:string; url:string; snippet?:string; content?:string }[]): string {
-  const lines: string[] = [];
-  lines.push('You are a careful research assistant. Answer the QUESTION using ONLY the SOURCES below.');
-  lines.push('Do NOT use prior knowledge or invent facts or URLs. If the sources do not answer the question, say so plainly.');
-  lines.push('');
-  lines.push('QUESTION:');
-  lines.push(String(question ?? '').trim());
-  lines.push('');
-  lines.push('SOURCES:');
-  (sources ?? []).forEach((s, i) => {
-    lines.push(`[${i + 1}] ${s.title || s.url}`);
-    lines.push(`    ${s.url}`);
-    const body = String(s.content ?? '').trim() || String(s.snippet ?? '').trim();
-    if (body) lines.push(`    ${body.replace(/\s+/g, ' ').slice(0, 3500)}`);
-    lines.push('');
-  });
-  lines.push('INSTRUCTIONS:');
-  lines.push('1. Answer the question directly and concisely, grounded in the sources.');
-  lines.push('2. Cite every claim inline with the source number in brackets, e.g. [1], [2].');
-  lines.push('3. Do not cite a source you did not use; do not invent sources or URLs.');
-  lines.push('4. End with a "Sources:" section listing each [n] and its URL.');
-  return lines.join('\n');
-}
-
-/**
  * Render a ResearchResult as readable text: the cited answer, the source list, and a citation-verification summary (flagging any unverified citations). Pure — exported for testing.
  */
-export function formatResearchResult(r: ResearchResult): string {
-  if (!r.ok) return r.note ? `Research produced no grounded answer — ${r.note}` : 'Research produced no grounded answer.';
-  const lines: string[] = [];
-  lines.push(r.answer);
-  lines.push('');
-  const blockedNote = r.citations.blocked ? ` · ${r.citations.blocked} blocked` : '';
-  lines.push(`Sources (${r.sources.length}) · citations ${r.citations.verified}/${r.citations.total} verified${blockedNote} · ${r.intent} · engine ${r.engineId}`);
-  r.sources.forEach((s, i) => {
-    lines.push(`  [${i + 1}] ${s.title || s.url}`);
-    lines.push(`      ${s.url}`);
-  });
-  // Genuinely-bad citations (dead/redirected/unreachable/irrelevant) are a trust
-  // problem; `blocked` ones (host refused OUR re-fetch) are merely unconfirmed —
-  // keep them visually distinct so a bot-blocked-but-valid link isn't read as broken.
-  const failed = r.citations.results.filter((c) => c.verdict !== 'verified' && c.verdict !== 'blocked');
-  if (failed.length > 0) {
-    lines.push('');
-    lines.push('⚠ Unverified citations:');
-    failed.forEach((c) => lines.push(`  ✗ [${c.verdict}] ${c.url} — ${c.detail}`));
-  }
-  const blocked = r.citations.results.filter((c) => c.verdict === 'blocked');
-  if (blocked.length > 0) {
-    lines.push('');
-    lines.push('ⓘ Could not verify (host blocked our re-fetch — citation not disproven):');
-    blocked.forEach((c) => lines.push(`  ⚠ [${c.verdict}] ${c.url} — ${c.detail}`));
-  }
-  return lines.join('\n');
-}
-
+export { formatResearchResult } from '@kernlang/agon-mod-research/format-policy';
 /**
  * Run a keyless web-grounded research pass: discover (authoritative router) -> WebFetch sources -> one top-rated engine drafts a cited answer -> Agon verifies the citations. Returns ok:false with guidance when there is no keyless lane (general) or no sources/engine/answer. Never throws.
  */

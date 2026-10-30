@@ -10,7 +10,7 @@ export function requiredCapabilities(source, short) {
   if (/services\.engines\.dispatch\b/.test(source)) required.add('engine.dispatch');
   if (/services\.state\.read\b/.test(source)) required.add('state.read');
   if (/services\.state\.write\b/.test(source)) required.add('state.write');
-  if (['conquer', 'goal', 'pipeline-delivery', 'pipeline-orchestration'].includes(short)) required.add('engine.dispatch');
+  if (['conquer', 'goal', 'pipeline-delivery', 'pipeline-orchestration', 'synthesis'].includes(short)) required.add('engine.dispatch');
   return [...required].sort();
 }
 
@@ -32,6 +32,8 @@ const rows = mods.map(({ id }) => {
 if (process.argv.includes('--self-test')) {
   const control = compareCapabilities("services.engines.dispatch('x', 'y', context)", { permissions: [] }, 'ask');
   if (!control.missing.includes('engine.dispatch')) throw new Error('negative control failed to catch undeclared engine dispatch');
+  const synthesisControl = compareCapabilities('runSynthesisRuntime(options, host.effects)', { permissions: [] }, 'synthesis');
+  if (!synthesisControl.missing.includes('engine.dispatch')) throw new Error('negative control failed to catch undeclared Synthesis host dispatch');
 }
 
 const failures = rows.filter(({ missing }) => missing.length > 0);

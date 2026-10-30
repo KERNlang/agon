@@ -23,6 +23,9 @@ export default defineConfig({
     options.sourcesContent = false;
   },
   clean: true,
+  // Core still uses these pure policies when Research is not installed.
+  // Bundle those policies, but keep the Research runtime and Undici external.
+  noExternal: [/^@kernlang\/agon-mod-research\/(prompt|format|response|discovery|query|citation)-policy$/],
   // @kernlang/agon-core, @kernlang/agon-forge, @kernlang/agon-adapter-cli are INLINED (pure JS) so a bare
   // `npm i -g @kernlang/agon` is self-contained — they are deliberately NOT external.
   // @kernlang/agon-engines + @kernlang/agon-dedup stay external: both are loaded at RUNTIME

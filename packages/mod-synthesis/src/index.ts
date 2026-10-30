@@ -10,6 +10,9 @@ export { createMod } from './implementation.js';
 export { createMod as default } from './implementation.js';
 export { normalizeSynthesisWinner, parseSynthesisJudgeOutput } from './judge-parser.js';
 export type { SynthesisScore } from './judge-parser.js';
+export { synthesisRoutingAdviceForTaskClass } from './routing-policy.js';
+export { createSynthesisHostServices } from './host.js';
+export type { SynthesisHostServices, SynthesisHostSession, SynthesisHostEffects, SynthesisModServices } from './host.js';
 export {
   runSynthesisRuntime,
   buildSynthesisDraftPrompt,
@@ -18,3 +21,5 @@ export {
   shuffleSynthesisEnginesInPlace,
 } from './runtime.js';
 export type { SynthesisDraft, SynthesisSwap, SynthesisResult, SynthesisRuntimeOptions, SynthesisRuntimeEvent, SynthesisRuntimeEffects } from './runtime.js';
+export { runSynthesisSession } from './session-workflow.js';
+export type { SynthesisSessionContext, SynthesisSessionCommandResult, SynthesisSessionEvent, SynthesisSessionHost } from './session-workflow.js';

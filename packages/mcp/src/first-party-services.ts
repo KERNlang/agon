@@ -6,6 +6,7 @@ import { resolveExplicitReviewEngines } from '@kernlang/agon-support-verificatio
 import { createCliAdapter } from '@kernlang/agon-adapter-cli';
 import { createForgeHostServices } from '@kernlang/agon-core';
 import { createBrainstormHostServices } from '@kernlang/agon-mod-brainstorm';
+import { createSynthesisHostServices } from '@kernlang/agon-mod-synthesis';
 import { createTribunalHostServices } from '@kernlang/agon-mod-tribunal';
 import { createCampfireHostServices } from '@kernlang/agon-mod-campfire';
 import { createCouncilHostServices } from '@kernlang/agon-mod-council';
@@ -32,6 +33,14 @@ function orchestrationEngines(ids: readonly string[]): string[] {
 export function decorateMcpFirstPartyServices(manifest: ModManifest, base: ModServices): ModServices {
   return Object.freeze({
     ...base,
+    ...(manifest.id === 'agon.synthesis' ? { synthesis: createSynthesisHostServices({
+      openRegistry: () => {
+        const registry = new CatalogEngineRegistry();
+        registry.load(resolveEngineDefinitionsDir()); return registry;
+      },
+      createAdapter: createCliAdapter, loadConfig, warn: message => console.warn(message),
+      captureAuthority: () => captureMcpSurfaceAuthority('Synthesis'),
+    }) } : {}),
     ...(['agon.council', 'agon.conquer'].includes(manifest.id) ? { council: createCouncilHostServices<CatalogEngineRegistry>({
       openRegistry: () => {
         const registry = new CatalogEngineRegistry();

@@ -1,13 +1,24 @@
 import type { CommandResult } from '@kernlang/agon-mod-api';
-import { formatResearchResult } from './implementation.js';
+import { formatResearchResult } from './format-policy.js';
 
-export interface ResearchSessionContext { cwd: string; signal: AbortSignal }
+export interface ResearchSessionContext {
+  cwd: string;
+  signal: AbortSignal;
+  onStatus?: (message: string) => void;
+  assertCurrent?: () => void;
+}
 type Result = Parameters<typeof formatResearchResult>[0];
+/** Distinguish a completed, ungrounded answer from an execution failure. */
+export class ResearchGroundingError extends Error {}
+export class ResearchInputError extends Error {
+  constructor(message: string, readonly severity: 'warning' | 'error') { super(message); }
+}
 export interface ResearchSessionHost {
   assertCurrent(): void;
   now(): number;
   defaultEngines(): string[];
   resolveEngine(id: string): string | undefined;
+  /** Scope progress cleanup to this invocation, including after authority expires. */
   dispatch(event: { type: 'header'; title: string } | { type: 'info'; message: string }
     | { type: 'engine-block'; engineId: string; content: string }
     | { type: 'progress-clear' }
@@ -42,17 +53,19 @@ export async function runResearchSession(input: Record<string, unknown>, context
   host: ResearchSessionHost,
   execute: (input: Record<string, unknown>, context: ResearchSessionContext) => Promise<CommandResult>,
 ): Promise<void> {
-  const check = () => { context.signal.throwIfAborted(); host.assertCurrent(); };
+  const stale = new AbortController();
+  const signal = AbortSignal.any([context.signal, stale.signal]);
+  const check = () => { signal.throwIfAborted(); host.assertCurrent(); };
   const effect = (run: () => void) => { check(); run(); check(); };
   check();
   const question = typeof input.question === 'string' ? input.question.trim() : '';
-  if (!question) throw new Error('No question provided. Usage: /research <question>');
+  if (!question) throw new ResearchInputError('No question provided. Usage: /research <question>', 'warning');
   const startedAt = host.now();
   const timestamp = () => new Date(host.now()).toISOString();
   let pool = [...new Set(typeof input.engines === 'string' && input.engines.trim()
     ? input.engines.split(',').map(id => id.trim()).filter(Boolean) : host.defaultEngines())];
   check();
-  if (!pool.length) throw new Error('No engines available.');
+  if (!pool.length) throw new ResearchInputError('No engines available.', 'error');
   let engine = '';
   if (typeof input.engine === 'string' && input.engine.trim()) {
     const requested = input.engine.trim();
@@ -68,9 +81,13 @@ export async function runResearchSession(input: Record<string, unknown>, context
   const clear = () => {
     stop();
     if (cleared) return;
-    try { host.assertCurrent(); cleared = true; host.dispatch({ type: 'progress-clear' }); } catch { /* Stale runs cannot clear newer output. */ }
+    cleared = true;
+    try { host.dispatch({ type: 'progress-clear' }); }
+    catch (error) {
+      console.warn(`[agon] Research progress cleanup failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
   };
-  context.signal.addEventListener('abort', clear, { once: true });
+  signal.addEventListener('abort', clear, { once: true });
   try {
     effect(() => host.dispatch({ type: 'header', title: 'Research · keyless web-grounded' }));
     effect(() => host.dispatch({ type: 'info', message: question.length > 120 ? question.slice(0, 120) + '…' : question }));
@@ -79,10 +96,16 @@ export async function runResearchSession(input: Record<string, unknown>, context
         check();
         const elapsed = Math.floor((host.now() - startedAt) / 1000);
         effect(() => host.dispatch({ type: 'progress-update', engines: [{ id: 'research', status: `researching… ${elapsed}s`, elapsed, done: false, failed: false }] }));
-      } catch { clear(); }
+      } catch (error) { stale.abort(error); clear(); }
     }, 250);
     check();
-    const output = await execute({ ...input, question, engines: pool.join(','), engine, json: true, quiet: true }, context);
+    const output = await execute({ ...input, question, engines: pool.join(','), engine, json: true, quiet: true }, {
+      ...context, signal, assertCurrent: check,
+      onStatus: message => {
+        if (signal.aborted) return;
+        effect(() => host.dispatch({ type: 'info', message }));
+      },
+    });
     check();
     clear();
     const structured = output.result;
@@ -92,6 +115,9 @@ export async function runResearchSession(input: Record<string, unknown>, context
     if ((output.exitCode ?? 0) !== 0) {
       effect(() => host.appendMessage({ role: 'user', content: `[research] ${question}`, timestamp: timestamp() }));
       effect(() => host.appendMessage({ role: 'engine', engineId: 'research', content: `Research found no grounded answer. (${failure})`, timestamp: timestamp() }));
+      if (structured && typeof structured === 'object' && !Array.isArray(structured) && structured.ok === false) {
+        throw new ResearchGroundingError(failure);
+      }
       throw new Error(failure);
     }
     const result = readResult(output.result);
@@ -106,7 +132,7 @@ export async function runResearchSession(input: Record<string, unknown>, context
     effect(() => host.recordRun({ mode: 'research', intent: question, winner: result.engineId, success: true,
       durationMs: host.now() - startedAt, engineIds: [result.engineId], completionState: 'completed' }));
   } finally {
-    context.signal.removeEventListener('abort', clear);
+    signal.removeEventListener('abort', clear);
     clear();
   }
 }

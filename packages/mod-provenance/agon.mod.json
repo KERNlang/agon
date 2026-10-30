@@ -106,6 +106,8 @@
       "dist/index.js",
       "dist/index.d.ts",
       "dist/implementation.d.ts",
+      "dist/models.d.ts",
+      "dist/reports.d.ts",
       "ownership.json",
       "schemas/config.schema.json"
     ],

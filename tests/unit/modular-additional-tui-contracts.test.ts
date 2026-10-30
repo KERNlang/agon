@@ -26,7 +26,16 @@ describe('additional TUI composition contracts', () => {
   });
   it('normalizes the legacy synthesis input and numeric swaps for the domain handler', async () => {
     const dispatch = vi.fn(async () => ({ engineId: 'fixture', exitCode: 0, timedOut: false, stdout: 'WINNER: fixture\nREASONING: fixture evidence' }));
-    const command = await tui(synthesis, { engines: { listActive: async () => ['fixture'], dispatch }, receipts: { record: async () => 'fixture' } } as unknown as ModServices);
+    const command = await tui(synthesis, {
+      engines: { listActive: async () => ['fixture'], dispatch },
+      receipts: { record: async () => 'fixture' },
+      runs: { start: async () => ({ id: 'fixture', path: '/fixture/run', startedAt: 'fixture' }), finish: vi.fn() },
+      synthesis: { open: () => ({
+        registry: { get: (id: string) => ({ id }), findBinary: () => null },
+        adapter: { dispatch }, assertCurrent: () => {},
+        effects: { resolveWorkingDir: () => context.cwd, health: { loadConfig: () => ({}) }, warn: vi.fn() },
+      }) },
+    } as unknown as ModServices);
     const input = JSON.parse(JSON.stringify(command.parse!('/synthesis --swaps 2 build a fixture')));
     expect(input).toMatchObject({ input: 'build a fixture', swaps: 2 });
     expect(() => assertContributionInput(command.inputSchema!, input)).not.toThrow();

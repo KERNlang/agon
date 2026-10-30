@@ -14,7 +14,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.agent",
       "version": "1.0.0",
-      "contentHash": "sha256:cd7947290422ce95427b54962c2a9cc230a8726accbaef0d29e751ff985d9d37"
+      "contentHash": "sha256:89b94b1566931e31697b30cdddab63a31eb6564fe83b3339bad60550988d960e"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "Agent",
@@ -152,7 +152,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.agent",
       "version": "1.0.0",
-      "contentHash": "sha256:cd7947290422ce95427b54962c2a9cc230a8726accbaef0d29e751ff985d9d37"
+      "contentHash": "sha256:89b94b1566931e31697b30cdddab63a31eb6564fe83b3339bad60550988d960e"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "Delegate",
@@ -681,7 +681,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.agent",
       "version": "1.0.0",
-      "contentHash": "sha256:cd7947290422ce95427b54962c2a9cc230a8726accbaef0d29e751ff985d9d37"
+      "contentHash": "sha256:89b94b1566931e31697b30cdddab63a31eb6564fe83b3339bad60550988d960e"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "agent",
@@ -704,7 +704,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.agent",
       "version": "1.0.0",
-      "contentHash": "sha256:cd7947290422ce95427b54962c2a9cc230a8726accbaef0d29e751ff985d9d37"
+      "contentHash": "sha256:89b94b1566931e31697b30cdddab63a31eb6564fe83b3339bad60550988d960e"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "agent",
@@ -888,7 +888,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.agent",
       "version": "1.0.0",
-      "contentHash": "sha256:cd7947290422ce95427b54962c2a9cc230a8726accbaef0d29e751ff985d9d37"
+      "contentHash": "sha256:89b94b1566931e31697b30cdddab63a31eb6564fe83b3339bad60550988d960e"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "bug-fix",
@@ -1095,7 +1095,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.agent",
       "version": "1.0.0",
-      "contentHash": "sha256:cd7947290422ce95427b54962c2a9cc230a8726accbaef0d29e751ff985d9d37"
+      "contentHash": "sha256:89b94b1566931e31697b30cdddab63a31eb6564fe83b3339bad60550988d960e"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "delegate",
@@ -1118,7 +1118,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.agent",
       "version": "1.0.0",
-      "contentHash": "sha256:cd7947290422ce95427b54962c2a9cc230a8726accbaef0d29e751ff985d9d37"
+      "contentHash": "sha256:89b94b1566931e31697b30cdddab63a31eb6564fe83b3339bad60550988d960e"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "delegate",
@@ -1141,7 +1141,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.agent",
       "version": "1.0.0",
-      "contentHash": "sha256:cd7947290422ce95427b54962c2a9cc230a8726accbaef0d29e751ff985d9d37"
+      "contentHash": "sha256:89b94b1566931e31697b30cdddab63a31eb6564fe83b3339bad60550988d960e"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "delegate",
@@ -1601,7 +1601,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.agent",
       "version": "1.0.0",
-      "contentHash": "sha256:cd7947290422ce95427b54962c2a9cc230a8726accbaef0d29e751ff985d9d37"
+      "contentHash": "sha256:89b94b1566931e31697b30cdddab63a31eb6564fe83b3339bad60550988d960e"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "quick-fix",
@@ -1624,7 +1624,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.agent",
       "version": "1.0.0",
-      "contentHash": "sha256:cd7947290422ce95427b54962c2a9cc230a8726accbaef0d29e751ff985d9d37"
+      "contentHash": "sha256:89b94b1566931e31697b30cdddab63a31eb6564fe83b3339bad60550988d960e"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "quick-fix",
@@ -2038,7 +2038,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.agent",
       "version": "1.0.0",
-      "contentHash": "sha256:cd7947290422ce95427b54962c2a9cc230a8726accbaef0d29e751ff985d9d37"
+      "contentHash": "sha256:89b94b1566931e31697b30cdddab63a31eb6564fe83b3339bad60550988d960e"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "team-agent",
@@ -2061,7 +2061,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.agent",
       "version": "1.0.0",
-      "contentHash": "sha256:cd7947290422ce95427b54962c2a9cc230a8726accbaef0d29e751ff985d9d37"
+      "contentHash": "sha256:89b94b1566931e31697b30cdddab63a31eb6564fe83b3339bad60550988d960e"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "team-agent",
@@ -3625,7 +3625,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.provenance",
       "version": "1.0.0",
-      "contentHash": "sha256:e65e4ce9ddb904d34a7cbaaa671ebc5f9afde4e47949d843bf266c0985f2416c"
+      "contentHash": "sha256:55a397353c6bc5eb73f699d86d5006535d96c7eabdb7946c26eac3f36c06599d"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "provenance",
@@ -3740,7 +3740,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.research",
       "version": "1.0.0",
-      "contentHash": "sha256:40e7bc6173606583d9eb801bd69451bc1e6dd713cacb5e49177036dd710462e9"
+      "contentHash": "sha256:12d017ed5a2e085e95ee35327cb58670cbd8b6d5234b6f8417731b889dd8dd10"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "research",
@@ -3855,7 +3855,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.synthesis",
       "version": "1.0.0",
-      "contentHash": "sha256:fb5e1a85a3ceb614b813b3fe45b56bcc7ddbe13e3977e60cf8886a3cfea98e42"
+      "contentHash": "sha256:1305cba80b311c25b0d8182588c3d190461ee7e90dc8c2d787f6312e82b97a20"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "synthesis",
@@ -4179,7 +4179,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.agent",
       "version": "1.0.0",
-      "contentHash": "sha256:cd7947290422ce95427b54962c2a9cc230a8726accbaef0d29e751ff985d9d37"
+      "contentHash": "sha256:89b94b1566931e31697b30cdddab63a31eb6564fe83b3339bad60550988d960e"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "Agent",
@@ -4317,7 +4317,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.agent",
       "version": "1.0.0",
-      "contentHash": "sha256:cd7947290422ce95427b54962c2a9cc230a8726accbaef0d29e751ff985d9d37"
+      "contentHash": "sha256:89b94b1566931e31697b30cdddab63a31eb6564fe83b3339bad60550988d960e"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "Delegate",
@@ -4892,7 +4892,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.synthesis",
       "version": "1.0.0",
-      "contentHash": "sha256:fb5e1a85a3ceb614b813b3fe45b56bcc7ddbe13e3977e60cf8886a3cfea98e42"
+      "contentHash": "sha256:1305cba80b311c25b0d8182588c3d190461ee7e90dc8c2d787f6312e82b97a20"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "Synthesis",
@@ -4938,7 +4938,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.agent",
       "version": "1.0.0",
-      "contentHash": "sha256:cd7947290422ce95427b54962c2a9cc230a8726accbaef0d29e751ff985d9d37"
+      "contentHash": "sha256:89b94b1566931e31697b30cdddab63a31eb6564fe83b3339bad60550988d960e"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "agent",
@@ -4961,7 +4961,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.agent",
       "version": "1.0.0",
-      "contentHash": "sha256:cd7947290422ce95427b54962c2a9cc230a8726accbaef0d29e751ff985d9d37"
+      "contentHash": "sha256:89b94b1566931e31697b30cdddab63a31eb6564fe83b3339bad60550988d960e"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "agent-solo",
@@ -5076,7 +5076,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.agent",
       "version": "1.0.0",
-      "contentHash": "sha256:cd7947290422ce95427b54962c2a9cc230a8726accbaef0d29e751ff985d9d37"
+      "contentHash": "sha256:89b94b1566931e31697b30cdddab63a31eb6564fe83b3339bad60550988d960e"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "build",
@@ -6180,7 +6180,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.agent",
       "version": "1.0.0",
-      "contentHash": "sha256:cd7947290422ce95427b54962c2a9cc230a8726accbaef0d29e751ff985d9d37"
+      "contentHash": "sha256:89b94b1566931e31697b30cdddab63a31eb6564fe83b3339bad60550988d960e"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "speculate",
@@ -6272,7 +6272,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.agent",
       "version": "1.0.0",
-      "contentHash": "sha256:cd7947290422ce95427b54962c2a9cc230a8726accbaef0d29e751ff985d9d37"
+      "contentHash": "sha256:89b94b1566931e31697b30cdddab63a31eb6564fe83b3339bad60550988d960e"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "team-agent",
@@ -6502,7 +6502,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.agent",
       "version": "1.0.0",
-      "contentHash": "sha256:cd7947290422ce95427b54962c2a9cc230a8726accbaef0d29e751ff985d9d37"
+      "contentHash": "sha256:89b94b1566931e31697b30cdddab63a31eb6564fe83b3339bad60550988d960e"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "<task>                   — autonomous agent loop (solo/shadow/team auto-routed)",
@@ -6525,7 +6525,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.agent",
       "version": "1.0.0",
-      "contentHash": "sha256:cd7947290422ce95427b54962c2a9cc230a8726accbaef0d29e751ff985d9d37"
+      "contentHash": "sha256:89b94b1566931e31697b30cdddab63a31eb6564fe83b3339bad60550988d960e"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "<task>                   — force solo agent mode, no shadow worker",
@@ -6665,7 +6665,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.agent",
       "version": "1.0.0",
-      "contentHash": "sha256:cd7947290422ce95427b54962c2a9cc230a8726accbaef0d29e751ff985d9d37"
+      "contentHash": "sha256:89b94b1566931e31697b30cdddab63a31eb6564fe83b3339bad60550988d960e"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "<task>                   — agent builds in cwd (reads/edits/tests)",
@@ -7359,7 +7359,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.provenance",
       "version": "1.0.0",
-      "contentHash": "sha256:e65e4ce9ddb904d34a7cbaaa671ebc5f9afde4e47949d843bf266c0985f2416c"
+      "contentHash": "sha256:55a397353c6bc5eb73f699d86d5006535d96c7eabdb7946c26eac3f36c06599d"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "[id] [-f md|json|both] [-o file] — AI-contribution / transparency report",
@@ -7476,7 +7476,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.agent",
       "version": "1.0.0",
-      "contentHash": "sha256:cd7947290422ce95427b54962c2a9cc230a8726accbaef0d29e751ff985d9d37"
+      "contentHash": "sha256:89b94b1566931e31697b30cdddab63a31eb6564fe83b3339bad60550988d960e"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "<task>                   — parallel speculative agents in worktrees",
@@ -7499,7 +7499,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.agent",
       "version": "1.0.0",
-      "contentHash": "sha256:cd7947290422ce95427b54962c2a9cc230a8726accbaef0d29e751ff985d9d37"
+      "contentHash": "sha256:89b94b1566931e31697b30cdddab63a31eb6564fe83b3339bad60550988d960e"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "<task>                   — autonomous team agent loop",
@@ -8722,7 +8722,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.agent",
       "version": "1.0.0",
-      "contentHash": "sha256:cd7947290422ce95427b54962c2a9cc230a8726accbaef0d29e751ff985d9d37"
+      "contentHash": "sha256:89b94b1566931e31697b30cdddab63a31eb6564fe83b3339bad60550988d960e"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "<task>                   — autonomous agent loop (solo or shadow, auto-routed)",
@@ -8745,7 +8745,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.agent",
       "version": "1.0.0",
-      "contentHash": "sha256:cd7947290422ce95427b54962c2a9cc230a8726accbaef0d29e751ff985d9d37"
+      "contentHash": "sha256:89b94b1566931e31697b30cdddab63a31eb6564fe83b3339bad60550988d960e"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "<task>                   — force solo agent mode, no shadow worker",
@@ -8883,7 +8883,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.agent",
       "version": "1.0.0",
-      "contentHash": "sha256:cd7947290422ce95427b54962c2a9cc230a8726accbaef0d29e751ff985d9d37"
+      "contentHash": "sha256:89b94b1566931e31697b30cdddab63a31eb6564fe83b3339bad60550988d960e"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "<task>                   — agent builds in cwd (reads/edits/tests)",
@@ -10020,7 +10020,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.research",
       "version": "1.0.0",
-      "contentHash": "sha256:40e7bc6173606583d9eb801bd69451bc1e6dd713cacb5e49177036dd710462e9"
+      "contentHash": "sha256:12d017ed5a2e085e95ee35327cb58670cbd8b6d5234b6f8417731b889dd8dd10"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "<question> [--count N] [--engine X] — keyless web-grounded cited research (npm/GitHub/MDN/IETF/SO/Wikipedia)",
@@ -10163,7 +10163,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.agent",
       "version": "1.0.0",
-      "contentHash": "sha256:cd7947290422ce95427b54962c2a9cc230a8726accbaef0d29e751ff985d9d37"
+      "contentHash": "sha256:89b94b1566931e31697b30cdddab63a31eb6564fe83b3339bad60550988d960e"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "<task>                   — parallel speculation: N engines race in worktrees, winner applied",
@@ -10211,7 +10211,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.synthesis",
       "version": "1.0.0",
-      "contentHash": "sha256:fb5e1a85a3ceb614b813b3fe45b56bcc7ddbe13e3977e60cf8886a3cfea98e42"
+      "contentHash": "sha256:1305cba80b311c25b0d8182588c3d190461ee7e90dc8c2d787f6312e82b97a20"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "<task> [--swaps 2]       — engines draft, swap, improve; judge picks winner",

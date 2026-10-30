@@ -62,7 +62,7 @@ it.each(['before', 'during', 'ui'])('preserves compatibility-handler cancellatio
   expect(effects.add).not.toHaveBeenCalled();
   expect(effects.record).not.toHaveBeenCalled();
   if (phase === 'before') expect(cb.ctx.setActiveAbort).not.toHaveBeenCalled();
-  else expect(cb.ctx.setActiveAbort).toHaveBeenLastCalledWith(null);
+  else expect(cb.ctx.setActiveAbort).toHaveBeenLastCalledWith(null, expect.any(AbortController));
   if (phase === 'ui') expect(caller.signal.aborted).toBe(false);
 });
 
@@ -74,7 +74,7 @@ it('preserves successful compatibility-handler execution and cleanup', async () 
   expect(effects.append).toHaveBeenCalledTimes(2);
   expect(effects.add).toHaveBeenCalledOnce();
   expect(effects.record).toHaveBeenCalledOnce();
-  expect(cb.ctx.setActiveAbort).toHaveBeenLastCalledWith(null);
+  expect(cb.ctx.setActiveAbort).toHaveBeenLastCalledWith(null, expect.any(AbortController));
 });
 
 it('saves only to the captured chat when the user switches sessions', async () => {
@@ -121,10 +121,19 @@ it.each(['cancelled', 'stale'])('cleans up pending progress without overwriting 
     await vi.advanceTimersByTimeAsync(250);
     const timers = vi.getTimerCount();
     const clears = cb.dispatch.mock.calls.filter(([event]) => event.type === 'progress-clear').length;
+    const runtimeSignal = effects.command.mock.calls[0][1].signal as AbortSignal;
+    const abortedWhilePending = runtimeSignal.aborted;
     finish({ exitCode: 0, result: grounded });
     await rejected;
+    expect(abortedWhilePending).toBe(true);
+    expect(runtimeSignal.reason).toBeInstanceOf(Error);
+    expect(runtimeSignal.reason.message).toBe(state);
+    if (state === 'stale') expect(controller.signal.aborted).toBe(false);
     expect(timers).toBe(0);
-    expect(clears).toBe(state === 'cancelled' ? 1 : 0);
+    expect(clears).toBe(1);
+    const update = cb.dispatch.mock.calls.find(([event]) => event.type === 'progress-update')![0];
+    expect(cb.dispatch).toHaveBeenCalledWith({ type: 'progress-clear', ownerId: update.ownerId });
+    expect(update.ownerId).toEqual(expect.any(String));
     expect(effects.append).not.toHaveBeenCalled();
   } finally { vi.useRealTimers(); }
 });
@@ -183,6 +192,10 @@ it('runs the real parsed contribution through discovery, citation verification a
     '/research npm parser --count 1 --engine alpha', cb as never);
     await cb.runAsJob.mock.calls[0][2](new AbortController().signal);
     expect(fetch).toHaveBeenCalledTimes(3);
+    for (const message of ['discovering sources (package)…', 'reading 1 sources…',
+      'alpha drafting a grounded answer…', 'verifying citations…']) {
+      expect(cb.dispatch).toHaveBeenCalledWith({ type: 'info', message });
+    }
     expect(dispatch.mock.calls[0][0]).toBe('alpha');
     expect(effects.append).toHaveBeenCalledWith(cb.ctx.chatSession, expect.objectContaining({ role: 'engine', content: 'Claim [1].' }));
     expect(effects.add).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ citationsVerified: 1, citationsTotal: 1 }) }));

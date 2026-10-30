@@ -1,0 +1,221 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-26",
+  "scope": "Synthesis generated-surface runtime cutover; not complete modular acceptance",
+  "base": "a4e06dfb8869acd14fe4c90cc16a88abebeb3243",
+  "status": "Working-tree qualification passed; clean committed qualification required before readiness",
+  "owner": "@kernlang/agon-mod-synthesis",
+  "qualifiedFiles": [
+    {
+      "path": "docs/specs/evidence/modular-agon-npx-qualification.json",
+      "sha256": "9f1e5886c5742b6db1e93e7447019796f2f2106c859255c2761062358349919f"
+    },
+    {
+      "path": "docs/specs/evidence/modular-agon-release-set.json",
+      "sha256": "a524b0b8c25421ef8751ac5fc1131c7efee764766fa0474a282cb424c653421a"
+    },
+    {
+      "path": "docs/specs/evidence/modular-agon-sbom.cdx.json",
+      "sha256": "c498f9a9589e0c87f6ab636450eb3dffb8ecd5f95e78979a36516d50271f1663"
+    },
+    {
+      "path": "package-lock.json",
+      "sha256": "14293f73b778613bbbde03caf42a9d18a677cd535f358a1f151776b22df02c19"
+    },
+    {
+      "path": "packages/cli/release-channel.json",
+      "sha256": "8003f68bb2321f9dced146531fd3f98bb89da54570f90e0669799e83e90a5a79"
+    },
+    {
+      "path": "packages/cli/src/first-party-services.ts",
+      "sha256": "9ebe1e1db62c801c7a9617e5902d2e87aef6e34846d581344671afe127c75b8b"
+    },
+    {
+      "path": "packages/mcp/package.json",
+      "sha256": "900e79e16ae2585bb65f6a21b361011fc4908926c6849058481c6bf7e3a354bb"
+    },
+    {
+      "path": "packages/mcp/src/first-party-services.ts",
+      "sha256": "5301af2cf0fc0e484243d78b71d2723241481a797d0d74c46806154decc2494b"
+    },
+    {
+      "path": "packages/mcp/tsconfig.json",
+      "sha256": "0860aa38cb713a724332e4137c93559defc136ac8bdd18669855e69d93299299"
+    },
+    {
+      "path": "packages/mod-kernel/src/generated/first-party-surface-catalog.ts",
+      "sha256": "5a45ffa549368412ae8cddba74662873d0fb93c7154528dbf6397604c51cc1e8"
+    },
+    {
+      "path": "packages/mod-synthesis/agon.mod.json",
+      "sha256": "65fd526764736f2432ff52adce17396c57e972925d68eebabc24c7e155d3b3f4"
+    },
+    {
+      "path": "packages/mod-synthesis/src/host.ts",
+      "sha256": "c83a05c9b75e0e6609ce5aa99cb32e77e6c57b594bef85aa4ce03bf6a51a70a6"
+    },
+    {
+      "path": "packages/mod-synthesis/src/implementation.test.ts",
+      "sha256": "2aeca03758bb769f908f643ab35473e76102554d17b19bb37d0f0f4d087e848c"
+    },
+    {
+      "path": "packages/mod-synthesis/src/implementation.ts",
+      "sha256": "505cd6cbebc5542567fb11daa8d52d81202837022eb518e0893421005e237569"
+    },
+    {
+      "path": "packages/mod-synthesis/src/index.ts",
+      "sha256": "89d8255103520544af83c39c71cb55212aac5a64a1df143892b8049bc4fae718"
+    },
+    {
+      "path": "packages/mod-synthesis/src/runtime.ts",
+      "sha256": "21a7acc33686fc95baad0c44705fea074223ad6fd9e924af5462632b51eab6d8"
+    },
+    {
+      "path": "scripts/spec/generate-modular-first-party-packages.mjs",
+      "sha256": "56de0f60960a62278c5644837007b3ca19565019c3c2321bddcfebf67932aa10"
+    },
+    {
+      "path": "scripts/spec/verify-modular-manifest-capabilities.mjs",
+      "sha256": "04341a4835ecfaa823c906f9427ecea7d88ce0160441c23c41aa15b256a0cfcf"
+    },
+    {
+      "path": "scripts/spec/verify-modular-npx.mjs",
+      "sha256": "6b3629c7230cdb0b548a8d6624028dc2cb187c3ec75bf20958482d1f0f4a6565"
+    },
+    {
+      "path": "tests/unit/modular-additional-tui-contracts.test.ts",
+      "sha256": "89f0d765a1b1cf2d244317615c0e7c7a168043f2bd1e7beca0bb87a8bf2e7249"
+    },
+    {
+      "path": "tests/unit/modular-engine-dispatch-contract.test.ts",
+      "sha256": "caa939346ca3211b1095566531d44b413683d51e2dab21daf19be0a09e12a5a5"
+    },
+    {
+      "path": "tests/unit/modular-synthesis-host.test.ts",
+      "sha256": "127c4ef6027190a99af6f13cc912b366b6a7d94a9dc5e02be0d2d9c8cf6e868a"
+    },
+    {
+      "path": "tests/unit/modular-synthesis-runtime-parity.test.ts",
+      "sha256": "c99beeb8b74001ff31561cf33766af4480c72009eaae1ae71a366eabc97368ed"
+    },
+    {
+      "path": "tests/unit/modular-synthesis-surface-parity.test.ts",
+      "sha256": "e4f2b6df5b7874318e40d550870b546d7f42ad4d95137a3568ad141e8c9feddc"
+    }
+  ],
+  "verification": {
+    "fullSuite": {
+      "passed": 11981,
+      "failed": 0,
+      "skipped": 7,
+      "filesPassed": 708,
+      "filesSkipped": 1
+    },
+    "installedChecks": 94,
+    "installedCoverage": [
+      "Packed runtime and public host factory",
+      "CLI, TUI and MCP invocation",
+      "Generation revocation blocks dispatch and publication",
+      "Contribution cleanup",
+      "Public types reject missing authority and invocation context"
+    ],
+    "performance": "All eight existing release groups passed",
+    "load": {
+      "transportJobs": 30512,
+      "workflowJobs": 712,
+      "workflowRequestP95Ms": 8.320833000005223,
+      "shutdownAndCleanup": true
+    },
+    "platform": "darwin-arm64",
+    "node": "v26.12.1",
+    "providerLaunches": 0,
+    "review": {
+      "codex": "Three confirmed findings repaired and verified with negative controls",
+      "kimi": "No usable answer; not a passing review",
+      "adjudication": "synthesis-surface-review-adjudication-20261026.json"
+    },
+    "cleanCommittedQualification": "pending"
+  },
+  "behavior": {
+    "restored": "Generated surfaces use the legacy health, prompt, disjoint-pairing and healthy-pool judge policies",
+    "corrected": "Failed draft markers cannot enter swaps; frozen legacy fixture records the intentional correction",
+    "authority": "Invocation-bound host capabilities; terminal failure recording on cancellation; publication failure cannot finalize twice"
+  },
+  "limits": [
+    "Interactive progress, history, telemetry and session-result ownership remain in CLI",
+    "Forge compatibility wrapper and routing advice remain",
+    "Known OSV advisories remain; supply-chain consistency is not a vulnerability-free claim",
+    "No native cross-platform, live-provider or publishing qualification claimed",
+    "No global installation or personal-state changes"
+  ],
+  "archive": {
+    "location": "Durable modular-agon-remediation directory outside Git worktrees",
+    "retention": "Never delete without Raphael approval",
+    "artifacts": [
+      {
+        "path": "synthesis-surface-baseline-20261026.receipt.json",
+        "sha256": "d3ffba6da5076039d003acea5a3fd20894710eeae9afb634a149a9fba51c5cd9"
+      },
+      {
+        "path": "synthesis-surface-negative-20261026.receipt.json",
+        "sha256": "064164eeac014709184f45a4e21009c18a9902c09b816bb18df035bb1ef0876d"
+      },
+      {
+        "path": "synthesis-publication-negative-20261026.receipt.json",
+        "sha256": "0a2f5963ed9c03c9e4f424393c544bd1fea7e311170f1e009f277d74acc1ece9"
+      },
+      {
+        "path": "synthesis-publication-repair-20261026.receipt.json",
+        "sha256": "f18f59b0a17e3825741e83d7bf91ae61e2a619c45a9f0e73c0e02b02d31640dc"
+      },
+      {
+        "path": "synthesis-capability-negative-20261026.receipt.json",
+        "sha256": "4e020cf3f859d74a318f8bda4394a064eea0b1c2dcc6b2776abcfcd49d200482"
+      },
+      {
+        "path": "synthesis-capability-repair-20261026.receipt.json",
+        "sha256": "5c86783f502668792cf2442459bfabb0387f85e2040f8522ac05f06b704553b5"
+      },
+      {
+        "path": "synthesis-cancellation-status-negative-20261026.receipt.json",
+        "sha256": "b737e07e0cef81592eefe298039e757e707b4f2250dc1e6009da4ba25effebc6"
+      },
+      {
+        "path": "synthesis-cancellation-status-repair-20261026.receipt.json",
+        "sha256": "2124e7b5a4661634862e1839149b6ca4f0337c0a8ee2b88dcbd6acc14b426eb4"
+      },
+      {
+        "path": "synthesis-failed-drafts-negative-20261026.receipt.json",
+        "sha256": "d7f9b98b5f1b0fafa7333b2140d1c523204820ce5d78ec70140fbb1eb7a893de"
+      },
+      {
+        "path": "synthesis-failed-drafts-repair-20261026.receipt.json",
+        "sha256": "fba1e288beac4c6fbe99b84b08f9a088800e4a7d387ddb1a944ebbb69456b68c"
+      },
+      {
+        "path": "synthesis-full-permitted-20261026.receipt.json",
+        "sha256": "9542a8bfcfa066ce1712f2273e470bd8c555aa15e9776295c0826289ca6f4fce"
+      },
+      {
+        "path": "synthesis-performance-load-20261026.receipt.json",
+        "sha256": "a967e7bd517dc2a52d35001257d85a33f7f49f9ebf98f92fa13e68f7e8228ceb"
+      },
+      {
+        "path": "synthesis-installed-host-20261026.receipt.json",
+        "sha256": "bee01f3558c115df5a206c3037adeb3563d4805949536b31ca8ae0a2bc1e8986"
+      },
+      {
+        "path": "synthesis-surface-runtime-codex-review.receipt.json",
+        "sha256": "7f5a9162cc31dd16ba9cde817b02cdd9b05eaab3f82f53c02d2fc0e9d5d40bda"
+      },
+      {
+        "path": "synthesis-surface-runtime-kimi-review.receipt.json",
+        "sha256": "c9dc8a9530d4e50c6bbc01282ec1b408f9ffa0877bc66c3372cc2d1daa4ae0cf"
+      },
+      {
+        "path": "synthesis-surface-review-adjudication-20261026.json",
+        "sha256": "8afb3ee17190111a92adb89fb9b879b88a95e1f163306090b5db71d7e756311f"
+      }
+    ]
+  }
+}

@@ -12,6 +12,54 @@ import { computeScore } from './scoring.js';
 import { runLint, runStyleCheck } from './quality.js';
 import type { SyntaxCheckResult } from './quality.js';
 
+/**
+ * Outcome of re-running the project's fitness command against the winner's worktree after synthesis edits. passed=true means the refinement did not regress; passed=false means the caller must revert to the pre-synthesis diff. error is populated for unexpected spawn failures separate from normal non-zero exits.
+ */
+export interface PostSynthesisFitnessResult {
+  passed: boolean;
+  exitCode: number;
+  error: string|null;
+  durationMs: number;
+}
+
+/**
+ * Re-run the project's fitness command (e.g. 'npm run typecheck') against the winner's worktree after synthesis edits. Used by runAgentTeam to decide whether to keep the synthesized diff or revert to the pre-synthesis winner diff. Extracted from the caller into a standalone helper so it can be unit-tested against a mocked spawn. Swallows spawn errors into the result rather than throwing — the caller must NOT crash the team run on a fitness tool hiccup.
+ */
+export async function runPostSynthesisFitnessCheck(opts: {worktreePath:string, fitnessCmd:string, timeoutSec?:number, signal?:AbortSignal, executionRefusal?:()=>string|undefined}): Promise<PostSynthesisFitnessResult> {
+  const start = Date.now();
+  const assertExecutionAllowed = (): void => {
+    opts.signal?.throwIfAborted();
+    let reason: string | undefined;
+    try { reason = opts.executionRefusal?.(); }
+    catch { reason = 'Fitness execution authority check failed'; }
+    if (reason !== undefined) throw new Error(reason || 'Fitness execution refused');
+  };
+  try {
+    assertExecutionAllowed();
+    const result = await spawnWithTimeout({
+      command: 'sh',
+      args: ['-c', opts.fitnessCmd],
+      cwd: opts.worktreePath,
+      timeout: (opts.timeoutSec ?? 90) * 1000,
+      signal: opts.signal,
+    });
+    assertExecutionAllowed();
+    return {
+      passed: result.exitCode === 0,
+      exitCode: result.exitCode,
+      error: null,
+      durationMs: Date.now() - start,
+    };
+  } catch (err) {
+    return {
+      passed: false,
+      exitCode: -1,
+      error: err instanceof Error ? err.message : String(err),
+      durationMs: Date.now() - start,
+    };
+  }
+}
+
 export interface ForgeFitnessRuntime {
   worktreeDiff(cwd: string): string;
   diffLineCount(diff: string): number;

@@ -1,7 +1,69 @@
 {
+  "currentMainIntegration20261030": {
+    "base": "26c026356a28dfd681aeacbc0e3aa2b4acd7c0d7",
+    "status": "Working-tree integration qualified; clean committed replay pending",
+    "testsPassed": 12144,
+    "testsSkipped": 7,
+    "installedChecksPassed": 131,
+    "receipts": [
+      {
+        "file": "research-current-main-socket-repair-20261030.receipt.json",
+        "passed": true,
+        "seconds": 281.743,
+        "logSha256": "sha256:47ee346800b88d14324f247c0711dce3d3081e5b64d25757b72b3cf3ebe5e979",
+        "providerLaunches": 0
+      },
+      {
+        "file": "research-current-main-full-permitted-20261030.receipt.json",
+        "passed": true,
+        "seconds": 1035.215,
+        "logSha256": "sha256:8d258c96e67a8409286c587221d497d3397c4107a0d391c47c3da089be5f4974",
+        "providerLaunches": 0
+      },
+      {
+        "file": "research-current-main-installed-cached-20261030.receipt.json",
+        "passed": true,
+        "seconds": 255.71,
+        "logSha256": "sha256:8b313d5ea13adc9f304353065291d26e777d743674ab5bfba279b351f2932ae3",
+        "providerLaunches": 0
+      }
+    ],
+    "sourceSha256": {
+      "packages/cli/src/blocks/research-session.ts": "da334c6f1c0e9692f6f0717cc9fea7d0fd61cc47c76f13190c108ae71c31ffa0",
+      "packages/cli/src/handlers/research.ts": "c79902b42e8f20eee7dba4281835c2d43942d4b1eec7f7862b82f423c6226a8c",
+      "packages/cli/src/signals/output.ts": "e7b4ba71af5c582c1c66c9dcdec26c56e06b412f2bac730042570746c0f61553",
+      "packages/cli/src/signals/dispatch/intent-orchestration.ts": "312ada79c028f80fab13011844eaea8b13ff3e2e0a58649cd42a9a05e766161c",
+      "packages/cli/src/signals/dispatch/intent-router.ts": "4c662fe7f9e0540ae8ab562b6bc63282210a1e1689d4fcb02adc2cf8b06f819b",
+      "packages/cli/src/signals/dispatch/intent-session.ts": "a8ed2a9bd998fbbb94feac3bc03c50c6d7c03f1c7a92e813fe45ab040bcce27b",
+      "packages/cli/tsup.config.ts": "8829c9d61d87d00ab39a3a971b32cd3bca35850417ce83acea89f95604c23d3b",
+      "packages/mod-research/src/session-workflow.ts": "972349aa5ac3ec87581389b08a1165cd0c2ef3e9cfe66f2c1df72b3a01cb8157",
+      "packages/mod-research/src/implementation.ts": "d6048cf65e5f13bcf76d68f6027f156058708674f227b2c6babdaa883c2ab437",
+      "tests/unit/modular-research-session-parity.test.ts": "8aab82f03866bf2512d39924cb886d1c6b0551b7f8a6801be57c71b68e23b379",
+      "tests/unit/research-session-authority.test.ts": "62e49e7214d520fd858d8815fd6eb73cd3e3087df63c161f74b0dc0ed6c1dc92",
+      "tests/unit/output-control-events.test.ts": "53cdd5dc0e199c7d0e48732b0e6f02155cbf317f98f3cf049c8ee9aadd9241c9",
+      "scripts/spec/generate-modular-first-party-packages.mjs": "17d5e6556b7c86ed85dc576467f23d04d460a2d390a2e0e00a13943f9f8789e9",
+      "scripts/spec/verify-modular-npx.mjs": "88f814168a205c5686adc24cd09c84ae91ed04b377e4102d4e3562e0b7330ccc"
+    },
+    "review": {
+      "adjudication": "research-session-integration-review-adjudication-20261028.md",
+      "integrationPacket": "research-session-integration-review-input.txt",
+      "bundlePacket": "research-minimal-policy-bundle-review-input.txt",
+      "scope": "Existing source review findings fixed and regression-tested; merged main changes retained unchanged."
+    },
+    "retainedFailedRuns": [
+      "research-current-main-full-20261030",
+      "research-current-main-installed-20261030"
+    ],
+    "limits": [
+      "Native macOS arm64 on Node26.12.1 only",
+      "Fixture providers, no live-provider evidence",
+      "No aggregate modular release acceptance",
+      "Legacy Research runtime retirement remains separate"
+    ]
+  },
   "scope": "Research interactive session ownership and selected-contribution routing",
   "base": "a4e06dfb8869acd14fe4c90cc16a88abebeb3243",
-  "status": "Caller cancellation repair qualified on PR338; current-main conflict reconciliation and clean committed qualification remain pending",
+  "status": "Current-main working-tree integration and installed checks pass; clean committed qualification remains pending",
   "archive": "/Users/ra/dev/modular-agon-remediation",
   "verification": {
     "callerCancellationRepair": {

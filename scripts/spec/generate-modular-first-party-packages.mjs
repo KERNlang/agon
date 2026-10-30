@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '../..');
 const check = process.argv.includes('--check');
+const researchPolicyEntries = ['prompt-policy', 'format-policy', 'response-policy', 'discovery-policy', 'query-policy', 'citation-policy'];
 const packageMap = JSON.parse(readFileSync(resolve(root, 'docs/specs/evidence/modular-agon-package-map.json'), 'utf8'));
 const ownership = JSON.parse(readFileSync(resolve(root, 'docs/specs/evidence/modular-agon-ownership.json'), 'utf8'));
 const inventory = JSON.parse(readFileSync(resolve(root, 'docs/specs/evidence/modular-agon-current-inventory.json'), 'utf8'));
@@ -177,16 +178,18 @@ function expectedFiles(packageRecord) {
   if (['conquer', 'goal', 'pipeline-delivery', 'pipeline-orchestration'].includes(short)) inferredPermissions.add('engine.dispatch');
   // These workflows dispatch through host services in separate modules.
   // The entrypoint scan cannot see these effects.
-  if (['brainstorm', 'forge', 'team-brainstorm', 'tribunal', 'campfire', 'think'].includes(short)) inferredPermissions.add('engine.dispatch');
+  if (['brainstorm', 'forge', 'team-brainstorm', 'tribunal', 'campfire', 'think', 'synthesis'].includes(short)) inferredPermissions.add('engine.dispatch');
   // Jobs persists scheduler observations through its separate storage adapter.
   if (short === 'jobs') inferredPermissions.add('state.write');
   if (short === 'conquer') inferredPermissions.add('git.write');
-  const physicalPackFiles = ['dist/implementation.d.ts', ...(short === 'rag' ? ['dist/store.d.ts', 'dist/types.d.ts', 'dist/grounding.d.ts']
+  const policyEntries = short === 'research' ? researchPolicyEntries : short === 'naturalize' ? ['lexical-policy'] : [];
+  const physicalPackFiles = ['dist/implementation.d.ts', ...(policyEntries.length ? policyEntries.flatMap((entry) => [`dist/${entry}.js`, `dist/${entry}.d.ts`]) : short === 'rag' ? ['dist/store.d.ts', 'dist/types.d.ts', 'dist/grounding.d.ts']
     : short === 'think' ? ['dist/thinking.d.ts', 'dist/runtime.d.ts', 'dist/host.d.ts', 'dist/presentation.d.ts', 'dist/session-workflow.d.ts']
     : short === 'council' ? ['dist/runtime.d.ts', 'dist/host.d.ts', 'dist/presentation.d.ts', 'dist/command.d.ts', 'dist/session-workflow.d.ts']
     : short === 'review' ? ['dist/consensus.d.ts', 'dist/findings.d.ts']
-    : short === 'synthesis' ? ['dist/judge-parser.d.ts', 'dist/runtime.d.ts']
-    : short === 'agent' ? ['dist/team-refinement.d.ts', 'dist/events.d.ts', 'dist/team-results.d.ts', 'dist/team-scoring.d.ts']
+    : short === 'provenance' ? ['dist/models.d.ts', 'dist/reports.d.ts']
+    : short === 'synthesis' ? ['dist/judge-parser.d.ts', 'dist/runtime.d.ts', 'dist/host.d.ts', 'dist/session-workflow.d.ts', 'dist/routing-policy.d.ts']
+    : short === 'agent' ? ['dist/team-refinement.d.ts', 'dist/events.d.ts', 'dist/team-results.d.ts', 'dist/team-scoring.d.ts', 'dist/team-runtime.d.ts']
     : short === 'conquer' ? ['dist/completion-policy.d.ts', 'dist/workflow.d.ts', 'dist/falsifier.d.ts', 'dist/host.d.ts', 'dist/isolation.d.ts', 'dist/publication.d.ts']
     : short === 'nero' ? ['dist/verdict.d.ts', 'dist/critic-cascade.d.ts']
     : short === 'goal' ? ['dist/host.d.ts', 'dist/journal-types.d.ts', 'dist/policy.d.ts', 'dist/journal.d.ts', 'dist/paths.d.ts', 'dist/oracle.d.ts', 'dist/oracle-probe.d.ts', 'dist/oracle-redteam.d.ts', 'dist/mutation.d.ts']
@@ -233,7 +236,7 @@ function expectedFiles(packageRecord) {
     private: false,
     license: 'MIT',
     type: 'module',
-    exports: { '.': { types: './dist/index.d.ts', import: './dist/index.js' }, ...(short === 'naturalize' ? { './lexical-policy': { types: './dist/lexical-policy.d.ts', import: './dist/lexical-policy.js' } } : {}), './manifest': './agon.mod.json', './ownership': './ownership.json' },
+    exports: { '.': { types: './dist/index.d.ts', import: './dist/index.js' }, ...Object.fromEntries(policyEntries.map((entry) => [`./${entry}`, { types: `./dist/${entry}.d.ts`, import: `./dist/${entry}.js` }])), './manifest': './agon.mod.json', './ownership': './ownership.json' },
     main: './dist/index.js',
     types: './dist/index.d.ts',
     files: short === 'plan'
@@ -315,12 +318,23 @@ export type { EngineRole } from './role-specialization.js';
 export { loadTeamConfidenceFloor } from './team-elo.js';
 export { defaultCompositionRating, defaultRoleRating, loadTeamElo, saveTeamElo, expectedScore, getTeamElo, predictTeamRating, updateTeamElo, computeContributionWeights } from './team-elo.js';
 ` : short === 'provenance' ? `export { runProvenance, buildProvenance, renderMarkdown } from './implementation.js';
+export { buildForgeProvenance, renderProvenanceMarkdown, renderProvenanceJson, sha256OfFile, writeProvenanceReport } from './reports.js';
+export type { ProvenanceContribution, ProvenanceLedger, ProvenanceManifest } from './models.js';
 ` : short === 'rag' ? `export * from './store.js';
 export * from './grounding.js';
 export type * from './types.js';
 export { runRag, buildRagIndex, queryRag, collectCorpusFiles, chunkMarkdown } from './implementation.js';
 ` : short === 'history' ? `export { runHistory } from './implementation.js';
-` : short === 'research' ? `export { runResearch, classifyQuery, validateUrl, formatResearchResult } from './implementation.js';
+` : short === 'research' ? `export { runResearch, validateUrl, formatResearchResult } from './implementation.js';
+export { classifyQuery } from './query-policy.js';
+export type { ResearchIntent } from './query-policy.js';
+export { buildResearchPrompt, buildPrompt } from './prompt-policy.js';
+export { parseAuthoritativeResults } from './response-policy.js';
+export type { ResearchSearchResult } from './response-policy.js';
+export { cleanQuery, buildAuthoritativeRequest } from './discovery-policy.js';
+export type { ResearchRequest } from './discovery-policy.js';
+export { extractCitations, judgeProbe, formatCitationReport } from './citation-policy.js';
+export type { CitationStatus, CitationProbe, CitationVerdict, CitationReport } from './citation-policy.js';
 ` : short === 'mutate' ? `export { runMutate, generateMutants } from './implementation.js';
 ` : short === 'naturalize' ? `export { runNaturalize } from './implementation.js';
 export { tokenizeWords, wordDiffStats } from './lexical-policy.js';
@@ -438,8 +452,8 @@ export { computeScore, tiebreak, DEFAULT_WEIGHTS } from './scoring.js';
 export type { FitnessResult, ScoreWeights, ScoreComponents } from './scoring.js';
 export { runLint, runStyleCheck, runSyntaxCheck, changedFilesIncludingUntracked, MAX_SYNTAX_FILE_BYTES } from './quality.js';
 export type { SyntaxCheckResult, ForgeSyntaxRuntime } from './quality.js';
-export { runFitness, normalizeFitnessCommandForShell } from './fitness.js';
-export type { ForgeFitnessRuntime } from './fitness.js';
+export { runFitness, normalizeFitnessCommandForShell, runPostSynthesisFitnessCheck } from './fitness.js';
+export type { ForgeFitnessRuntime, PostSynthesisFitnessResult } from './fitness.js';
 export { createForgeStages, measureForgeUsage, resolveForgeDispatchTimeout, shouldHarvestFailedDispatch } from './stages.js';
 export type { ForgeStageConfig, ForgeStageRegistry, ForgeStageRuntime } from './stages.js';
 export { buildForgePrompt, buildCritiquePrompt, buildSynthesisPrompt, buildForgePromptWithContext } from './prompts.js';
@@ -514,6 +528,9 @@ export * from './consensus.js';
 export { extractReviewFindings } from './findings.js';
 ` : short === 'synthesis' ? `export { normalizeSynthesisWinner, parseSynthesisJudgeOutput } from './judge-parser.js';
 export type { SynthesisScore } from './judge-parser.js';
+export { synthesisRoutingAdviceForTaskClass } from './routing-policy.js';
+export { createSynthesisHostServices } from './host.js';
+export type { SynthesisHostServices, SynthesisHostSession, SynthesisHostEffects, SynthesisModServices } from './host.js';
 export {
   runSynthesisRuntime,
   buildSynthesisDraftPrompt,
@@ -522,6 +539,8 @@ export {
   shuffleSynthesisEnginesInPlace,
 } from './runtime.js';
 export type { SynthesisDraft, SynthesisSwap, SynthesisResult, SynthesisRuntimeOptions, SynthesisRuntimeEvent, SynthesisRuntimeEffects } from './runtime.js';
+export { runSynthesisSession } from './session-workflow.js';
+export type { SynthesisSessionContext, SynthesisSessionCommandResult, SynthesisSessionEvent, SynthesisSessionHost } from './session-workflow.js';
 ` : short === 'agent' ? `export { runAgentTask } from './implementation.js';
 export * from './team-refinement.js';
 export { makeAssistantChunk, makeToolCall, makeTurnComplete, makeError, normalizeSessionChunk, buildApiTurnEvents, unavailableUsage, estimatedUsage } from './events.js';
@@ -529,6 +548,8 @@ export type { AgentEvent, AgentUsage, RawSessionChunk } from './events.js';
 export { scoreAgentTeamResult } from './team-scoring.js';
 export type { AgentTeamScore, AgentTeamShortstatReader } from './team-scoring.js';
 export type { AgentTeamMemberResult, AgentTeamResult } from './team-results.js';
+export { AgentTeamRuntime, makeAgentTeamError, makeAgentTeamDisposedError } from './team-runtime.js';
+export type { AgentTeamConfig, AgentTeamMemberConfig, AgentTeamBudget, AgentTeamSession, AgentTeamRuntimeEffects } from './team-runtime.js';
 ` : short === 'nero' ? `export { runNero } from './implementation.js';
 export { parseNeroVerdict } from './verdict.js';
 export { rankCriticCascade } from './critic-cascade.js';
@@ -550,7 +571,7 @@ export type { CouncilSessionHost, CouncilSessionContext, CouncilSessionCommandRe
     [resolve(directory, 'src/index.ts'), indexSource],
     [resolve(directory, 'LICENSE'), readFileSync(resolve(root, 'LICENSE'), 'utf8')],
     [resolve(directory, 'tsconfig.json'), json(tsconfig)],
-    [resolve(directory, 'tsup.config.ts'), `import { defineConfig } from 'tsup';\n\nexport default defineConfig({ entry: [${short === 'naturalize' ? "'src/index.ts', 'src/lexical-policy.ts'" : "'src/index.ts'"}], format: ['esm'], dts: false, sourcemap: false, clean: true, target: 'es2022' });\n`],
+    [resolve(directory, 'tsup.config.ts'), `import { defineConfig } from 'tsup';\n\nexport default defineConfig({ entry: [${['src/index.ts', ...policyEntries.map((entry) => `src/${entry}.ts`)].map((entry) => `'${entry}'`).join(', ')}], ${policyEntries.length ? `external: [${policyEntries.map((entry) => `'./${entry}.js'`).join(', ')}], ` : ''}format: ['esm'], dts: false, sourcemap: false, clean: true, target: 'es2022' });\n`],
   ]);
 }
 

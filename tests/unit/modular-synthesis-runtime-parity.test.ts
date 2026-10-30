@@ -134,7 +134,7 @@ describe('Synthesis frozen runtime contract', () => {
     { name: 'timed-out draft', count: 3, rounds: 1 },
     { name: 'out-of-pool judge', count: 3, rounds: 1 },
     { name: 'quarantined engine', count: 3, rounds: 1 },
-  ])('preserves raw requests, results, warnings and events: $name', async scenario => {
+  ])('preserves the raw contract except the verified failed-draft correction: $name', async scenario => {
     const engines = ['alpha', 'beta', 'gamma'].slice(0, scenario.count);
     health.filter.mockImplementation(async ({ engineIds }: { engineIds: string[] }) => ({
       healthy: scenario.name === 'quarantined engine' ? engineIds.filter(id => id !== 'alpha') : engineIds,
@@ -169,9 +169,25 @@ describe('Synthesis frozen runtime contract', () => {
       const expectedWarnings = [...warnings.mock.calls];
       warnings.mockClear();
       const actual = await current({ ...options, adapter: after.adapter, onEvent: event => afterEvents.push(event) });
-      expect(actual).toEqual(expected);
-      expect(after.dispatch.mock.calls).toEqual(before.dispatch.mock.calls);
-      expect(afterEvents).toEqual(beforeEvents);
+      if (scenario.name === 'draft throw') {
+        // The frozen runtime promotes an error marker into a winning draft.
+        expect(expected.swaps).toEqual([{
+          round: 1, fromEngineId: 'beta', toEngineId: 'gamma',
+          originalContent: '[draft failed: fixture draft failure]',
+          improvedContent: 'gamma improved', reasoning: 'fixture improvement',
+        }]);
+        expect(expected.winner).toBe('gamma');
+        expect(actual).toEqual({ ...expected, swaps: [], scores: [], winner: '' });
+        const correctedCalls = before.dispatch.mock.calls
+          .filter(([request]) => !request.prompt.startsWith('## SYNTHESIS SWAP'))
+          .map(([request]) => [{ ...request, prompt: request.prompt.replace('## ENTRY 1 - gamma\n---\ngamma improved\n---', '') }]);
+        expect(after.dispatch.mock.calls).toEqual(correctedCalls);
+        expect(afterEvents).toEqual(beforeEvents.filter(event => (event as { type: string }).type !== 'synthesis:swap'));
+      } else {
+        expect(actual).toEqual(expected);
+        expect(after.dispatch.mock.calls).toEqual(before.dispatch.mock.calls);
+        expect(afterEvents).toEqual(beforeEvents);
+      }
       expect(warnings.mock.calls).toEqual(expectedWarnings);
       if (['two-engine pairs', 'odd engine', 'multiple rounds', 'draft only'].includes(scenario.name)) {
         expect(actual.swaps).toHaveLength(Math.floor(scenario.count / 2) * scenario.rounds);

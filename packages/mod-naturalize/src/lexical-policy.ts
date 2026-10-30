@@ -1,6 +1,6 @@
 /** Count lexical changes, not punctuation or capitalization changes. */
 export function tokenizeWords(text: string): string[] {
-  return text.toLowerCase().split(/[^a-z0-9']+/i).filter((w) => w.length > 0);
+  return text.toLowerCase().split(/[^\p{L}\p{M}\p{N}']+/u).filter((w) => w.length > 0);
 }
 
 /** Compare word counts without treating reordering as a rewrite. */

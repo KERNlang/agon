@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ModServices } from '@kernlang/agon-mod-api';
+import { lookup } from 'node:dns/promises';
 vi.mock('node:dns/promises', () => ({ lookup: vi.fn(async () => [{ address: '93.184.216.34', family: 4 }]) }));
 import { classifyQuery, formatResearchResult, isBlockedAddress, resolvePublicHost, runResearch, validateUrl } from './implementation.js';
 
@@ -13,6 +14,88 @@ function services(answer = 'Supported claim [1].') {
     engines: { listActive: vi.fn(async () => ['writer']), dispatch: vi.fn(async () => ({ exitCode: 0, stdout: answer })) } } as unknown as ModServices;
 }
 describe('physical research mod', () => {
+  it.each([
+    '0.255.255.255', '10.255.255.255', '127.255.255.255',
+    '169.254.255.255', '172.16.0.0', '172.31.255.255', '192.168.255.255',
+    '100.64.0.0', '100.127.255.255', '::', '::1', 'fc00::', 'fdff:ffff::1',
+    'fe80::', 'febf:ffff::1', '::ffff:100.64.0.1', '[::FFFF:7F00:1]',
+  ])('blocks reserved range address %s', (address) => {
+    expect(isBlockedAddress(address)).toBe(true);
+  });
+  it.each([
+    '1.0.0.0', '9.255.255.255', '11.0.0.0', '126.255.255.255', '128.0.0.0',
+    '169.253.255.255', '169.255.0.0', '172.15.255.255', '172.32.0.0',
+    '192.167.255.255', '192.169.0.0', '100.63.255.255', '100.128.0.0',
+    '2606:4700:4700::1111', '::ffff:8.8.8.8', '::ffff:808:808',
+  ])('allows address outside blocked ranges %s', (address) => {
+    expect(isBlockedAddress(address)).toBe(false);
+  });
+  it.each(['', 'not-an-address', '127.0.0.999', '::ffff:xyz'])('fails closed on invalid address %s', (address) => {
+    expect(isBlockedAddress(address)).toBe(true);
+  });
+  it.each(['::ffff:7f00:1', '0:0:0:0:0:ffff:7f00:1', '::ffff:a00:1', '0:0:0:0:0:0:0:1'])('rejects private address spelling %s', async (address) => {
+    expect(isBlockedAddress(address)).toBe(true);
+    await expect(resolvePublicHost('public.example', vi.fn(async () => [
+      { address: '93.184.216.34', family: 4 }, { address, family: 6 },
+    ]) as any)).rejects.toThrow(/blocked address/);
+  });
+  it('never fetches a source resolved to mapped loopback', async () => {
+    vi.mocked(lookup)
+      .mockResolvedValueOnce([{ address: '::ffff:7f00:1', family: 6 }] as any)
+      .mockResolvedValueOnce([{ address: '::ffff:7f00:1', family: 6 }] as any);
+    const discovered = { objects: [{ package: { name: 'pkg', links: { npm: 'https://source.example/pkg' } } }] };
+    globalThis.fetch = vi.fn(async (input) => new Response(
+      String(input).startsWith('https://registry.npmjs.org/') ? JSON.stringify(discovered) : 'Evidence',
+      { status: 200 },
+    ));
+    const out = await runResearch({ question: 'npm package pkg' }, context, services());
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    expect(out.exitCode).toBe(1);
+    expect((out.result as any).citations.verified).toBe(0);
+  });
+  it.each(['null', '{"items":{}}', '{"items":[null]}'])('treats malformed discovery payload %s as no sources', async (payload) => {
+    globalThis.fetch = vi.fn().mockResolvedValue(new Response(payload, { status: 200 }));
+    const s = services();
+    const out = await runResearch({ question: 'github repo parser' }, context, s);
+    expect(out).toEqual({ exitCode: 1, stderr: 'No authoritative sources found.\n' });
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    expect(s.engines.dispatch).not.toHaveBeenCalled();
+    expect(s.runs!.finish).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'run' }),
+      expect.objectContaining({ ok: false, summary: 'no authoritative sources found' }),
+      context,
+    );
+  });
+  it.each([
+    ['RFC 9110', 'https://datatracker.ietf.org/api/v1/doc/document/?format=json&limit=5&name__icontains=rfc9110'],
+    ['RFC 07231', 'https://datatracker.ietf.org/api/v1/doc/document/?format=json&limit=5&name__icontains=rfc7231'],
+    ['npm a charting library', 'https://registry.npmjs.org/-/v1/search?text=charting&size=5'],
+  ])('preserves the authoritative discovery request for %s', async (question, url) => {
+    globalThis.fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ objects: [] }), { status: 200 }));
+    const s = services();
+    const out = await runResearch({ question }, context, s);
+    expect(globalThis.fetch).toHaveBeenCalledExactlyOnceWith(url, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    expect(out.exitCode).toBe(1);
+    expect(out.stderr).toBe('No authoritative sources found.\n');
+    expect(s.engines.dispatch).not.toHaveBeenCalled();
+  });
+  it.each([[0, 5], [99, 10]])('preserves legacy discovery count %s as %s', async (count, expected) => {
+    globalThis.fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ objects: [] }), { status: 200 }));
+    await runResearch({ question: 'npm package yaml', count }, context, services());
+    expect(globalThis.fetch).toHaveBeenCalledExactlyOnceWith(
+      `https://registry.npmjs.org/-/v1/search?text=yaml&size=${expected}`,
+      expect.objectContaining({ headers: { Accept: 'application/json', 'User-Agent': 'agon-research/0.1 (+https://github.com/KERNlang/agon)' } }),
+    );
+  });
+  it('does not fetch npm or dispatch an engine for a Python pip module query', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ objects: [] }), { status: 200 })) as any;
+    const s = services();
+    const out = await runResearch({ question: 'pip module for parsing yaml' }, context, s);
+    expect(out.exitCode).toBe(1);
+    expect(out.stderr).toContain('No keyless authoritative lane for general research');
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    expect(s.engines.dispatch).not.toHaveBeenCalled();
+  });
   it('rejects a hostname if any resolved address enters private space', async () => {
     expect(isBlockedAddress('127.0.0.1')).toBe(true); expect(isBlockedAddress('100.64.0.1')).toBe(true); expect(isBlockedAddress('fe80::1')).toBe(true);
     await expect(resolvePublicHost('public.example', vi.fn(async () => [{ address: '93.184.216.34', family: 4 }, { address: '10.0.0.1', family: 4 }]) as any)).rejects.toThrow(/blocked address/);

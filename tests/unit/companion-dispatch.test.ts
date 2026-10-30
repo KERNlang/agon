@@ -71,7 +71,7 @@ describe('companionDispatch', () => {
   });
 
   it('appends textOnlyArgs only when the dispatch sets textOnly', async () => {
-    const script = "process.stdout.write(JSON.stringify({ type: 'result', result: process.argv.slice(1).join(' ') }) + '\\n'); setInterval(() => {}, 1000);";
+    const script = "process.stdout.write(JSON.stringify({ type: 'result', result: JSON.stringify(process.argv.slice(1)) }) + '\\n'); setInterval(() => {}, 1000);";
     const config = {
       protocol: 'stream-json' as const,
       serverCmd: ['-e', script, '--'],
@@ -80,10 +80,12 @@ describe('companionDispatch', () => {
     const base = { binaryPath: process.execPath, config, prompt: 'hello', cwd: process.cwd(), timeout: 5, mode: 'exec' as const };
 
     const withTextOnly = await companionDispatch({ ...base, textOnly: true });
-    expect(withTextOnly.stdout).toContain('--tools');
+    expect(withTextOnly.exitCode).toBe(0);
+    expect(JSON.parse(withTextOnly.stdout)).toEqual(['--tools', '']);
 
     const withoutTextOnly = await companionDispatch({ ...base });
-    expect(withoutTextOnly.stdout).not.toContain('--tools');
+    expect(withoutTextOnly.exitCode).toBe(0);
+    expect(JSON.parse(withoutTextOnly.stdout)).toEqual([]);
   });
 
   it('returns empty stdout when a stream-json exec turn ends on tool_use, so the adapter falls through to CLI spawn', async () => {

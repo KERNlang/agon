@@ -18,6 +18,12 @@ describe('physical Naturalize lexical-change gate', () => {
     ['punctuation only', 'hello world', 'hello, world!', false],
     ['reordered words', 'one two three', 'three two one', false],
     ['different words', 'alpha beta gamma', 'delta epsilon zeta', true],
+    ['CJK replacement', '你好', '再见', true],
+    ['Cyrillic replacement', 'привет мир', 'добрый вечер', true],
+    ['Arabic replacement', 'مرحبا', 'وداعا', true],
+    ['unchanged CJK', '你好', '你好', false],
+    ['Cyrillic case only', 'привет мир', 'ПРИВЕТ МИР', false],
+    ['Arabic punctuation only', 'مرحبا عالم', 'مرحبا، عالم!', false],
   ])('preserves the legacy gate for %s', async (_label, input, output, accepted) => {
     let calls = 0;
     const services = {
@@ -40,6 +46,31 @@ describe('physical Naturalize lexical-change gate', () => {
       expect(result.failure?.code).toBe('NATURALIZE_GATE_FAILED');
       expect(result.stdout).toBeUndefined();
     }
+  });
+});
+
+describe('physical Naturalize dispatch restrictions', () => {
+  it('requests text-only execution on the first attempt and retry', async () => {
+    const textOnly: Array<boolean | undefined> = [];
+    const services = {
+      engines: {
+        listActive: async () => ['fixture'],
+        dispatch: async (_engine, _prompt, _context, options) => {
+          textOnly.push(options?.textOnly);
+          return textOnly.length === 1
+            ? { exitCode: 1, stdout: '' }
+            : { exitCode: 0, stdout: 'Rewritten plain prose.' };
+        },
+      },
+      receipts: { record: async () => 'fixture-receipt' },
+    } as ModServices;
+    const result = await runPhysicalNaturalize(
+      { text: 'Original plain prose.', engine: 'fixture', maxAttempts: 2 },
+      { invocationId: 'text-only', cwd: process.cwd(), platform: 'darwin-arm64', signal: new AbortController().signal, config: {} },
+      services,
+    );
+    expect(result.exitCode).toBe(0);
+    expect(textOnly).toEqual([true, true]);
   });
 });
 
@@ -79,6 +110,14 @@ describe('naturalize — wordDiffStats', () => {
   it('is case-insensitive and strips punctuation', () => {
     const d = wordDiffStats('Hello, World!', 'hello world');
     expect(d.unchangedRatio).toBe(1);
+  });
+
+  it('keeps combining marks inside words', () => {
+    expect(wordDiffStats('कि', 'कु')).toEqual({ wordsBefore: 1, wordsAfter: 1, changedWords: 1, unchangedRatio: 0 });
+  });
+
+  it('counts repeated non-Latin words independently', () => {
+    expect(wordDiffStats('你好 你好', '你好')).toEqual({ wordsBefore: 2, wordsAfter: 1, changedWords: 1, unchangedRatio: 0.5 });
   });
 });
 

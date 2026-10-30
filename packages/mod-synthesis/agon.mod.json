@@ -127,6 +127,9 @@
       "dist/implementation.d.ts",
       "dist/judge-parser.d.ts",
       "dist/runtime.d.ts",
+      "dist/host.d.ts",
+      "dist/session-workflow.d.ts",
+      "dist/routing-policy.d.ts",
       "ownership.json",
       "schemas/config.schema.json"
     ],

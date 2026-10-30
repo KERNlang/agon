@@ -96,6 +96,7 @@ export async function runNaturalize(
     try {
       response = (await services.engines.dispatch(engine, prompt, context, {
         mode: "exec",
+        textOnly: true,
         timeoutSeconds: Number(x.timeout ?? 120),
         systemPrompt: "Rewrite only. No commentary, tools, commands, or file access.",
       })) as Record<string, Json>;

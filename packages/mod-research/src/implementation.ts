@@ -1,6 +1,13 @@
+import { formatResearchResult } from './format-policy.js';
+export { formatResearchResult } from './format-policy.js';
+import { parseAuthoritativeResults } from './response-policy.js';
 import { lookup } from "node:dns/promises";
-import { isIP } from "node:net";
+import { BlockList, isIP } from "node:net";
 import { Agent } from "undici";
+import { buildPrompt } from './prompt-policy.js';
+import type { Source } from './prompt-policy.js';
+export { buildPrompt } from './prompt-policy.js';
+export type { Source } from './prompt-policy.js';
 import type {
   AgonModFactory,
   CommandResult,
@@ -10,149 +17,17 @@ import type {
   ModServices,
   Registrar,
 } from "@kernlang/agon-mod-api";
-export type Intent =
-  | "package"
-  | "github"
-  | "standard"
-  | "rfc"
-  | "qa"
-  | "fact"
-  | "general";
-export interface Source {
-  title: string;
-  url: string;
-  snippet: string;
-  content?: string;
-  fetched: boolean;
-}
+import { buildAuthoritativeRequest } from "./discovery-policy.js";
+import { classifyQuery } from "./query-policy.js";
+export { classifyQuery } from "./query-policy.js";
+export type { ResearchIntent as Intent } from "./query-policy.js";
 export interface CitationVerdict {
   url: string;
   verdict: "verified" | "blocked" | "dead" | "redirected" | "unreachable";
   httpStatus: number;
   detail: string;
 }
-export function classifyQuery(value: string): Intent {
-  const q = value.toLowerCase();
-  if (/stack\s?overflow|stackexchange/.test(q)) return "qa";
-  if (
-    /github|repositor|\brepos?\b/.test(q) &&
-    !/issues?|pull.?requests?|commits?/.test(q)
-  )
-    return "github";
-  if (
-    /npm|node|yarn|pnpm|packages?|librar|modules?|dependenc/.test(q) &&
-    !/pypi|python|cargo|rust|maven|gradle|nuget/.test(q)
-  )
-    return "package";
-  if (/\brfc\b|ietf/.test(q)) return "rfc";
-  if (/specification|standards?|w3c|whatwg|ecma|mdn/.test(q)) return "standard";
-  if (/^(who|what|when|where|why|how)\b|wikipedia|definition/.test(q))
-    return "fact";
-  return "general";
-}
-const clean = (q: string) =>
-  q
-    .replace(
-      /^(who|what|when|where|why|how)(\s+(is|are|was|were|did|does|do))?\s+/i,
-      "",
-    )
-    .replace(
-      /\b(github|repositor(?:y|ies)|repos?|npm|packages?|librar(?:y|ies)|modules?|dependenc(?:y|ies)|mdn|rfc|ietf|w3c|whatwg|ecma|specification|standards?|stack\s?overflow|stackexchange)\b/gi,
-      " ",
-    )
-    .replace(/\s+/g, " ")
-    .trim() || q.trim();
-export function discoveryRequest(intent: Intent, q: string, count: number) {
-  const e = encodeURIComponent(clean(q)),
-    n = Math.min(10, Math.max(1, count)),
-    h = { accept: "application/json", "user-agent": "agon-research/1.0" };
-  if (intent === "package")
-    return {
-      url: `https://registry.npmjs.org/-/v1/search?text=${e}&size=${n}`,
-      headers: h,
-    };
-  if (intent === "github")
-    return {
-      url: `https://api.github.com/search/repositories?q=${e}&per_page=${n}`,
-      headers: h,
-    };
-  if (intent === "fact")
-    return {
-      url: `https://en.wikipedia.org/w/rest.php/v1/search/page?q=${e}&limit=${n}`,
-      headers: h,
-    };
-  if (intent === "standard")
-    return {
-      url: `https://developer.mozilla.org/api/v1/search?q=${e}`,
-      headers: h,
-    };
-  if (intent === "rfc")
-    return {
-      url: `https://datatracker.ietf.org/api/v1/doc/document/?format=json&limit=${n}&name__icontains=${e}`,
-      headers: h,
-    };
-  if (intent === "qa")
-    return {
-      url: `https://api.stackexchange.com/2.3/search/advanced?order=desc&sort=relevance&site=stackoverflow&pagesize=${n}&q=${e}`,
-      headers: h,
-    };
-  return null;
-}
-function parse(
-  intent: Intent,
-  text: string,
-): Omit<Source, "fetched" | "content">[] {
-  let d: any;
-  try {
-    d = JSON.parse(text);
-  } catch {
-    return [];
-  }
-  const strip = (v: any) =>
-    String(v ?? "")
-      .replace(/<[^>]+>/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
-  if (intent === "package")
-    return (d.objects ?? []).map((x: any) => ({
-      title: String(x.package?.name ?? ""),
-      url: String(x.package?.links?.npm ?? ""),
-      snippet: String(x.package?.description ?? ""),
-    }));
-  if (intent === "github")
-    return (d.items ?? []).map((x: any) => ({
-      title: String(x.full_name ?? ""),
-      url: String(x.html_url ?? ""),
-      snippet: String(x.description ?? ""),
-    }));
-  if (intent === "fact")
-    return (d.pages ?? []).map((x: any) => ({
-      title: String(x.title ?? ""),
-      url: `https://en.wikipedia.org/wiki/${encodeURIComponent(String(x.key ?? ""))}`,
-      snippet: strip(x.excerpt ?? x.description),
-    }));
-  if (intent === "standard")
-    return (d.documents ?? []).map((x: any) => ({
-      title: String(x.title ?? ""),
-      url: String(x.mdn_url ?? "").startsWith("http")
-        ? x.mdn_url
-        : `https://developer.mozilla.org${x.mdn_url ?? ""}`,
-      snippet: strip(x.summary),
-    }));
-  if (intent === "rfc")
-    return (d.objects ?? []).map((x: any) => ({
-      title: String(x.title ?? x.name ?? ""),
-      url: `https://datatracker.ietf.org/doc/${encodeURIComponent(String(x.name ?? ""))}/`,
-      snippet: String(x.abstract ?? ""),
-    }));
-  if (intent === "qa")
-    return (d.items ?? []).map((x: any) => ({
-      title: strip(x.title),
-      url: String(x.link ?? ""),
-      snippet: `score ${Number(x.score ?? 0)}`,
-    }));
-  return [];
-}
+export const discoveryRequest = buildAuthoritativeRequest;
 export function validateUrl(raw: string) {
   let u: URL;
   try {
@@ -180,28 +55,24 @@ export function validateUrl(raw: string) {
   }
   return u;
 }
+const blockedAddresses = new BlockList();
+blockedAddresses.addSubnet("0.0.0.0", 8, "ipv4");
+blockedAddresses.addSubnet("10.0.0.0", 8, "ipv4");
+blockedAddresses.addSubnet("127.0.0.0", 8, "ipv4");
+blockedAddresses.addSubnet("169.254.0.0", 16, "ipv4");
+blockedAddresses.addSubnet("172.16.0.0", 12, "ipv4");
+blockedAddresses.addSubnet("192.168.0.0", 16, "ipv4");
+blockedAddresses.addSubnet("100.64.0.0", 10, "ipv4");
+blockedAddresses.addAddress("::", "ipv6");
+blockedAddresses.addAddress("::1", "ipv6");
+blockedAddresses.addSubnet("fc00::", 7, "ipv6");
+blockedAddresses.addSubnet("fe80::", 10, "ipv6");
+
 export function isBlockedAddress(raw: string) {
   const value = raw.toLowerCase().replace(/^\[|\]$/g, "");
-  if (value === "::" || value === "::1") return true;
-  if (
-    value.startsWith("fc") ||
-    value.startsWith("fd") ||
-    /^fe[89ab]/.test(value)
-  )
-    return true;
-  const mapped = value.match(/^(?:::ffff:)?(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
-  if (!mapped) return false;
-  const a = Number(mapped[1]),
-    b = Number(mapped[2]);
-  return (
-    a === 0 ||
-    a === 10 ||
-    a === 127 ||
-    (a === 169 && b === 254) ||
-    (a === 172 && b >= 16 && b <= 31) ||
-    (a === 192 && b === 168) ||
-    (a === 100 && b >= 64 && b <= 127)
-  );
+  const family = isIP(value);
+  if (!family) return true;
+  return blockedAddresses.check(value, family === 4 ? "ipv4" : "ipv6");
 }
 export async function resolvePublicHost(
   hostname: string,
@@ -296,23 +167,6 @@ async function fetchBounded(url: string, signal: AbortSignal, max = 3500) {
   }
   throw new Error("too many redirects");
 }
-export function buildPrompt(question: string, sources: Source[]) {
-  return `Answer the QUESTION using ONLY the numbered SOURCES. Cite every factual claim inline as [n]. Never invent URLs or facts. If evidence is insufficient, say so.\n\nQUESTION:\n${question}\n\nSOURCES:\n${sources.map((s, i) => `[${i + 1}] ${s.title}\n${s.url}\n${s.content || s.snippet}`).join("\n\n")}`;
-}
-export function formatResearchResult(result: {
-  ok: boolean; answer: string; intent: Intent; engineId: string; sources: Source[];
-  citations: { total: number; verified: number; blocked: number; results: CitationVerdict[] };
-  note?: string;
-}): string {
-  if (!result.ok) return result.note ? `Research produced no grounded answer — ${result.note}` : "Research produced no grounded answer.";
-  const lines = [result.answer, "", `Sources (${result.sources.length}) · citations ${result.citations.verified}/${result.citations.total} verified${result.citations.blocked ? ` · ${result.citations.blocked} blocked` : ""} · ${result.intent} · engine ${result.engineId}`];
-  result.sources.forEach((source, index) => lines.push(`  [${index + 1}] ${source.title || source.url}`, `      ${source.url}`));
-  const failed = result.citations.results.filter((citation) => !["verified", "blocked"].includes(citation.verdict));
-  if (failed.length) lines.push("", "⚠ Unverified citations:", ...failed.map((citation) => `  ✗ [${citation.verdict}] ${citation.url} — ${citation.detail}`));
-  const blocked = result.citations.results.filter((citation) => citation.verdict === "blocked");
-  if (blocked.length) lines.push("", "ⓘ Could not verify (host blocked our re-fetch — citation not disproven):", ...blocked.map((citation) => `  ⚠ [blocked] ${citation.url} — ${citation.detail}`));
-  return lines.join("\n");
-}
 const schema = Object.freeze({
   type: "object",
   additionalProperties: true,
@@ -377,7 +231,7 @@ export async function runResearch(
         stderr: `Discovery failed: HTTP ${discovered.status}.\n`,
       };
     }
-    const found = parse(intent, await discovered.text())
+    const found = parseAuthoritativeResults(intent, await discovered.text())
       .filter((s) => validateUrl(s.url))
       .slice(0, Math.min(10, Math.max(1, Number(x.count ?? 5))));
     if (!found.length) {

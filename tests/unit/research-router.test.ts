@@ -2,6 +2,9 @@
 // intent classification, first-party request construction (npm/GitHub/Wikipedia),
 // and JSON parsing. No network here — the live fetch lives in tool-web-search.
 import { describe, it, expect } from 'vitest';
+import { parseAuthoritativeResults as ownedParser } from '@kernlang/agon-mod-research';
+import { cleanQuery as ownedCleanQuery, buildAuthoritativeRequest as ownedRequest } from '@kernlang/agon-mod-research';
+import { classifyQuery as ownedClassifyQuery } from '@kernlang/agon-mod-research';
 import {
   classifyQuery,
   cleanQuery,
@@ -10,6 +13,13 @@ import {
 } from '../../packages/core/src/tools/research-router.js';
 
 describe('classifyQuery', () => {
+  it('retains the Research-owned discovery functions through Core', () => {
+    expect(cleanQuery).toBe(ownedCleanQuery);
+    expect(buildAuthoritativeRequest).toBe(ownedRequest);
+  });
+  it('uses the public Research-owned classifier', () => {
+    expect(classifyQuery).toBe(ownedClassifyQuery);
+  });
   it('routes npm package/library queries to the package lane', () => {
     expect(classifyQuery('how do I install the express npm package')).toBe('package');
     expect(classifyQuery('best react charting library')).toBe('package');
@@ -153,6 +163,9 @@ describe('buildAuthoritativeRequest', () => {
 });
 
 describe('parseAuthoritativeResults', () => {
+  it('uses the Research-owned parser through the Core compatibility export', () => {
+    expect(parseAuthoritativeResults).toBe(ownedParser);
+  });
   it('normalizes npm registry search JSON', () => {
     const raw = JSON.stringify({
       objects: [

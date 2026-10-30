@@ -290,7 +290,127 @@
       "detail": "exit=0"
     },
     {
+      "id": "packed-nero-receipt-boundary",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "packed-nero-text-only",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "packed-naturalize-text-only",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "packed-research-prompt-pure-import",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "compiled-forge-research-prompt-owner",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "packed-research-prompt-owner",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "packed-research-prompt-types",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "packed-research-format-pure-import",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "compiled-forge-research-format-owner",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "packed-research-format-owner",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "packed-research-address-guard",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
       "id": "packed-agent-team-scoring-owner",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "packed-research-format-types",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "pack:legacy-core",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "legacy-core-frozen-hydration",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "packed-research-response-standalone",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "packed-research-response-owner",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "packed-research-response-public-types",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "packed-research-discovery-owner",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "packed-research-discovery-public-types",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "packed-research-query-owner",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "packed-research-query-public-types",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "packed-research-citation-owner",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "packed-research-citation-public-types",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "packed-agent-team-runtime-owner",
       "passed": true,
       "detail": "exit=0"
     },
@@ -310,7 +430,32 @@
       "detail": "exit=0"
     },
     {
+      "id": "packed-post-synthesis-fitness-owner",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "packed-post-synthesis-fitness-types",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "packed-provenance-report-owner",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "packed-provenance-public-types",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
       "id": "packed-synthesis-runtime",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "packed-synthesis-session",
       "passed": true,
       "detail": "exit=0"
     },
@@ -343,6 +488,11 @@
       "id": "packed-mcp-failure-contract",
       "passed": true,
       "detail": "installed server and Jobs daemon: success, blocked-provider failure, missing job via installed CLI, cyclic plan, unknown tool"
+    },
+    {
+      "id": "packed-synthesis-cli-advice",
+      "passed": true,
+      "detail": "installed CLI code/prose/flag quiet/environment quiet; exact warning and result formatting; synchronous stdout-before-spawn check; suppressed/delayed warning negative controls; fake engine only"
     },
     {
       "id": "packed-brainstorm-cli",
@@ -498,6 +648,31 @@
       "id": "small-profile-reuse-result",
       "passed": true,
       "detail": "already-qualified; 15 packages; 3 selected mods"
+    },
+    {
+      "id": "provenance-profile-install",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "provenance-without-forge-package",
+      "passed": true,
+      "detail": "selected installation includes Provenance; Forge absent from its package record and node_modules"
+    },
+    {
+      "id": "provenance-without-forge-markdown",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "provenance-without-forge-json",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "return-after-provenance-profile",
+      "passed": true,
+      "detail": "exit=0"
     }
   ]
 }

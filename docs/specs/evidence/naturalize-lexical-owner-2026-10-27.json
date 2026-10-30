@@ -1,5 +1,39 @@
 {
   "schemaVersion": 1,
+  "currentMainRepair20261030": {
+    "base": "26c026356a28dfd681aeacbc0e3aa2b4acd7c0d7",
+    "status": "Working-tree repair qualified; clean committed replay pending",
+    "scope": "Restore non-Latin lexical-change detection; align policy exports, build entries and manifest pack contents; preserve merged main changes",
+    "testsPassed": 12125,
+    "testsSkipped": 7,
+    "focusedTestsPassed": 39,
+    "installedChecksPassed": 133,
+    "providerLaunches": 0,
+    "receipts": [
+      { "file": "naturalize-current-main-build-20261030.receipt.json", "seconds": 268.402, "logSha256": "sha256:57173eccfd5d7c8ae334bca0662f116e0ffd8ad3b13b87ab373d80c114c3c214" },
+      { "file": "naturalize-current-main-full-20261030.receipt.json", "seconds": 701.094, "logSha256": "sha256:e59c07322d82d9382bf8f2d5442de8cd5dc079bffde05e17c76893ce055b1abf" },
+      { "file": "naturalize-current-main-installed-20261030.receipt.json", "seconds": 128.677, "logSha256": "sha256:bb6e478c77aff92867a7f271d2346e65eef1063c4fc267d4bb6c042f9eb0f63b" }
+    ],
+    "review": {
+      "engine": "codex",
+      "packet": "naturalize-unicode-pack-review-input.txt",
+      "packetSha256": "8744ae20d8759fb2d29cf789495f5aa3be436a10fa3f801376bd8162022e8ae2",
+      "log": "naturalize-unicode-pack-codex-review.log",
+      "logSha256": "e0c6b8ba05e202248ce35b2757fbf5a8771c993212c261f5a5298fc3a11cd17a",
+      "result": "No concrete source finding; reviewer did not execute qualification. Claims checked against source and literal regression oracles."
+    },
+    "negativeControls": "Four source-executed non-Latin replacement assertions failed before repair; eight passed after. Existing packed tests retain literal expected values and min-change rejection controls.",
+    "localAssessment": "naturalize-pr347-review-verification-20261030.md",
+    "securityScan": {
+      "report": "osv-naturalize-20261030/report.json",
+      "sha256": "77644deec1055a3c14d7fe975ac85d208bdbf6f5e96383221ca0ce69b8aec8ad",
+      "advisories": 23,
+      "affectedPackageVersions": 10,
+      "externalVersionChanges": 0,
+      "status": "Existing main dependencies; unresolved release-security triage, not a clean scan"
+    },
+    "limits": ["Native macOS arm64 Node26.12.1 only", "Fixture providers only", "No full modular release acceptance"]
+  },
   "status": "working-tree qualification passed; exact committed replay pending",
   "scope": "Naturalize lexical policy ownership and formatting-only gate regression; not full runtime extraction",
   "baseCommit": "a4e06dfb8869acd14fe4c90cc16a88abebeb3243",

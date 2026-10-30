@@ -13,6 +13,7 @@ import { getAgonHome } from '@kernlang/agon-core';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { createBrainstormHostServices } from '@kernlang/agon-mod-brainstorm';
+import { createSynthesisHostServices } from '@kernlang/agon-mod-synthesis';
 import { createTribunalHostServices } from '@kernlang/agon-mod-tribunal';
 import { createCampfireHostServices } from '@kernlang/agon-mod-campfire';
 import { createThinkHostServices } from '@kernlang/agon-mod-think';
@@ -135,6 +136,18 @@ export async function decorateCliFirstPartyServices(manifest: ModManifest, base:
   } : undefined;
   return Object.freeze({ ...base, runs, ...(browser ? { browser } : {}), ...(workspace ? { workspace } : {}),
     ...(brainstorm ? { brainstorm } : {}),
+    ...(manifest.id === 'agon.synthesis' ? { synthesis: createSynthesisHostServices({
+      routingAdvice: { classifyTask, isQuiet: () => process.env.AGON_QUIET === '1', show: warn },
+      openRegistry: () => {
+        const registry = new CatalogEngineRegistry();
+        registry.load(resolveBuiltinEnginesDir()); return registry;
+      },
+      createAdapter: createCliAdapter, loadConfig, warn: message => console.warn(message),
+      captureAuthority: () => {
+        const assertCurrent = captureProcessSurfaceAuthority();
+        return () => { assertCurrent(); assertProcessSurfaceAvailable('cli', 'synthesis'); };
+      },
+    }) } : {}),
     ...(manifest.id === 'agon.think' ? { think: { ...createThinkHostServices({
       openRegistry: () => {
         const registry = new CatalogEngineRegistry();

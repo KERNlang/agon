@@ -286,7 +286,7 @@
         "@kernlang/agon-support-engine-runtime"
       ],
       "assignments": 4,
-      "assignmentHash": "sha256:89d3da3d35770f53b6abaa62b3376cdec211b32227c2c5f3e638b312c2bc3535",
+      "assignmentHash": "sha256:c87654d67722c4c4958d64a21be39893143e4141d0e910a91306f84a7e29a1e7",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -5842,7 +5842,7 @@
       "physicalPackage": "packages/mod-research",
       "physicalEntrypoint": "packages/mod-research/src/index.ts",
       "implementationPaths": [
-        "packages/mod-research/src/index.ts"
+        "packages/mod-research/src/citation-policy.ts"
       ],
       "ownershipAsset": "packages/mod-research/ownership.json",
       "compatibilityAdapter": "packages/core/src/tools/research-verifier.ts",

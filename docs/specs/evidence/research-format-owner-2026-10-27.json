@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "scope": "Research formatter ownership, not full modular acceptance",
+  "baseCommit": "a4e06dfb8869acd14fe4c90cc16a88abebeb3243",
+  "archiveRoot": "/Users/ra/dev/modular-agon-remediation",
+  "retention": "Do not delete archived evidence without Raphael's approval",
+  "sourceManifest": "research-format-evidence-draft-20261027.json",
+  "evidence": [
+    {
+      "log": "research-format-baseline-20261027.log",
+      "sha256": "6b47897c3847a218e59b6e20c2239c59e202040de2fd7050ac50abf5f759d517",
+      "result": "Baseline build, types, lint, re-export guard and 11954 tests pass; 7 skipped"
+    },
+    {
+      "log": "research-format-owner-package-negative-20261027.log",
+      "sha256": "e7858e3a5bebe4b91c218d1f10807720670abec543ad5a1c0587106373238dc9",
+      "result": "Before extraction, owner-identity test fails; eight prior tests pass"
+    },
+    {
+      "log": "research-format-review-repair-20261027.log",
+      "sha256": "4a816348f1903429d5953b88bf5f1f6d5bf5cfadb45904379c1093f248dd71d4",
+      "result": "Review repair: build, types, re-export guard and 13 focused tests pass"
+    },
+    {
+      "log": "research-format-full-gates-20261027.log",
+      "receipt": "research-format-full-gates-20261027.receipt.json",
+      "sha256": "422b397a9aaa57daa9f6f8052bf16bfe75801ac1b57f23d15fdb7c376dcb011e",
+      "result": "11955 tests pass, 7 skipped; 98 qualification checks pass; zero provider launches"
+    }
+  ],
+  "review": {
+    "packetSha256": "17b3d2a6b2dc062dda6213784ce8bd40b822f411dd26cad1e76028d3cf3f2e31",
+    "codexLogSha256": "cb42a654aa48cb6f54f6bf5e7b5d962b3cf14e7d0779aa2fbe0a81850e5d34e8",
+    "confirmedFinding": "Narrow formatter parameter rejected previously accepted inline result literals",
+    "resolution": "Constrained generic preserves full literal inputs; installed consumer fixtures cover all three exports and reject nonnumeric citation counts",
+    "verificationImprovements": "Separate pure-import process rejects network imports and proves root import fails that control; exact output assertion replaces fragment-only coverage",
+    "limits": "Codex review predates repair; fixes verified locally. Kimi returned no answer, not a passing review"
+  },
+  "limits": [
+    "Clean committed replay pending; working-tree gates do not qualify a committed subject",
+    "Native darwin-arm64 Node26 only; other platforms and supported Node versions remain unverified",
+    "Forge is bundled, not independently installed: its identity check uses compiled repository output; Research checks use installed tarballs",
+    "OSV found 24 advisory instances across 10 packages, including two critical; no external versions changed; this is not a security pass",
+    "Failed packed precheck retained: it incorrectly expected Forge to be a separately installed artifact; fixture corrected without expanding release contents",
+    "Global Agon and personal state untouched; OpenCode not invoked"
+  ]
+}

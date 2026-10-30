@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "scope": "Research discovery request ownership and legacy URL parity; not full modular acceptance",
+  "baseCommit": "a4e06dfb8869acd14fe4c90cc16a88abebeb3243",
+  "archiveRoot": "/Users/ra/dev/modular-agon-remediation",
+  "archiveRetention": "Do not delete without Raphael's explicit approval",
+  "owner": "@kernlang/agon-mod-research",
+  "implementation": "packages/mod-research/src/discovery-policy.ts",
+  "publicEntry": "@kernlang/agon-mod-research/discovery-policy",
+  "compatibility": {
+    "source": "packages/core/src/tools/research-router.ts",
+    "policy": "Legacy cleanQuery/buildAuthoritativeRequest bodies unchanged except the structural return-type name",
+    "physicalRepair": "RFC normalization, leading-article cleanup and request defaults now use legacy policy",
+    "aliases": "Core exports and physical discoveryRequest share the Research-owned functions",
+    "remainingOwners": "Classifier, response parser, network probing and workflow behavior are outside this slice",
+    "dependency": "Existing internal Core to Research dependency; no external version changes",
+    "isolation": "Pure emitted entry has no runtime imports; Core compatibility install is separate from the launcher fixture"
+  },
+  "evidence": [
+    {
+      "receipt": "research-discovery-focused-baseline-20261027.receipt.json",
+      "result": "passed",
+      "scope": "35 unchanged focused tests on current main",
+      "logSha256": "4ee42f608023c413075e66fd23e8f83426061081866135c679e4c28895ab832d"
+    },
+    {
+      "receipt": "research-discovery-negative-20261027.receipt.json",
+      "result": "expected failure before repair",
+      "scope": "Three exact workflow request assertions fail: RFC 9110, RFC 07231 and npm a charting library",
+      "logSha256": "ed0b780b75a3a627d044cdd8422670ab4bfa2e99f992621cc1965c21efb318f8"
+    },
+    {
+      "receipt": "research-discovery-focused-20261027.receipt.json",
+      "result": "passed",
+      "scope": "41 focused tests including owner identity, count defaults and request headers",
+      "logSha256": "77a37f50e000582e85b1772848dbc6cbe394868c85a7460261647e8911e0e078"
+    },
+    {
+      "receipt": "research-discovery-full-gates-20261027.receipt.json",
+      "result": "passed",
+      "scope": "Cold types before build; generator checks; release/SBOM self-tests; lint; re-export guard; 11960 tests passed, 7 skipped; 98 installed checks",
+      "logSha256": "90c836de1f07178558ac8f98b05f04a922d8caab0897eebce9a762be35be21c9",
+      "providerLaunches": 0
+    }
+  ],
+  "review": {
+    "packet": "research-discovery-owner-review-input.txt",
+    "packetSha256": "aaf215b82d0f0f8e0fc3563f1eb1a356d33fc3593361fe7b380d1e3760290f2e",
+    "codexLogSha256": "01b727e355a135ad9c717506f975aa1425289cccdd9bd120a4d120b5d7ab813e",
+    "codex": "No concrete introduced defects; full verification was pending during review and subsequently passed",
+    "kimi": "Exit 1 with no answer; not a passing review",
+    "kimiLogSha256": "a4eebf5d7d44f5490f265ba973efba6a7b0a1712213a895f830b6440c27cdbff",
+    "adjudications": [
+      "Type-only internal dependency erases at runtime; emitted standalone policy has no imports",
+      "Standalone entry reproduces RFC normalization without loading the Research runtime",
+      "Core runtime dependency closure visited 22 workspace packages with no cycle",
+      "Installed tests preserve Core/root/subpath identity and both directions of public type compatibility"
+    ]
+  },
+  "limits": [
+    "Exact clean committed-checkout qualification pending",
+    "Independent of pending Research session, citation and classifier PRs; shared generator/export changes need merge reconciliation",
+    "OSV findings unchanged from the previous scan; security debt not declared passing",
+    "Network, parser and remaining workflow ownership not completed here",
+    "Native platform, live-provider and publishing acceptance not established"
+  ]
+}

@@ -145,15 +145,21 @@ export async function dispatchOrchestrationIntent(intent: any, input: string, cb
     }
     case 'research': {
       if (!intent.question?.trim()) { cb.dispatch({ type: 'warning', message: 'Usage: /research <question> [--count N] [--engine X]' }); return { handled: true, ranAsJob: false }; }
+      const assertSelected = captureProcessSurfaceAuthority();
+      processSurfaceClient('tui').assertAvailable('/research');
       const _rsCwd = resolveWorkingDir();
       const _rsLabel = intent.question?.slice(0, 40) ?? 'research';
       const continuationEpoch = cb.ctx.inputEpoch ?? 0;
       const continuationUserTurns = countTrackedUserTurns(cb.ctx);
-      cb.runAsJob('research', _rsLabel, withThreadOutcome(_rsCwd, 'research', _rsLabel, async () => {
-        await handleResearch(intent.question, cb.dispatch, cb.ctx, { engine: intent.engineId, count: intent.count });
+      cb.runAsJob('research', _rsLabel, signal => withThreadOutcome(_rsCwd, 'research', _rsLabel, async () => {
+        signal.throwIfAborted();
+        assertSelected();
+        await handleResearch(intent.question, cb.dispatch, cb.ctx, { engine: intent.engineId, count: intent.count, signal });
+        signal.throwIfAborted();
+        assertSelected();
         const chatContext = collectRecentEngineContext(cb.ctx, 12, 2000);
         if (chatContext) await continueCesarAfterResult(`Research (keyless, web-grounded, cited) on: "${(intent.question ?? '').slice(0, 200)}"\n\n${chatContext}\n\nSummarize the findings WITH their citations, flag any unverified ones, then take the next concrete step.`, cb, continuationEpoch, continuationUserTurns);
-      }, cb.ctx));
+      }, cb.ctx)());
       return { handled: true, ranAsJob: true };
     }
     case 'conquer': {
@@ -181,7 +187,7 @@ export async function dispatchOrchestrationIntent(intent: any, input: string, cb
       cb.runAsJob('synthesis', _syLabel, signal => withThreadOutcome(_syCwd, 'synthesis', _syLabel, async () => {
         signal.throwIfAborted();
         assertSelected();
-        await handleSynthesis(intent.input, cb.dispatch, cb.ctx, { swaps: intent.swaps, signal });
+        await handleSynthesis(intent.input, cb.dispatch, cb.ctx, { swaps: intent.swaps, judge: intent.judge, signal });
         signal.throwIfAborted();
         assertSelected();
         const chatContext = collectRecentEngineContext(cb.ctx, 12, 2000);

@@ -50,21 +50,19 @@ export async function verifyPackedSynthesis(prefix, scratch, env) {
       assert.equal(existsSync(log), false, 'Provider started before advice');
       continue;
     }
-    assert.equal(stdout.split(marker).length - 1, mode === 'code' ? 1 : 0, mode);
-    assert.equal(stderr.includes(marker), false, 'Advice moved to stderr');
+    assert.equal(stdout.includes(marker), false, 'Routing advice polluted JSON stdout');
+    assert.equal(stderr.split(marker).length - 1, mode === 'code' ? 1 : 0, mode);
+    if (mode === 'code') assert.ok(stderr.includes(`\u001b[33m⚠\u001b[0m ${advice}\n`));
     const calls = readFileSync(log, 'utf8').trim().split('\n');
     assert.deepEqual(calls, ['draft', 'judge']);
     if (mode === 'quiet') assert.equal(stdout, 'fixture-synthesis: fixture\n');
     else {
-      const prefix = mode === 'code' ? `\u001b[33m⚠\u001b[0m ${advice}\n` : '';
-      assert.ok(stdout.startsWith(prefix));
-      const body = stdout.slice(prefix.length);
-      const result = JSON.parse(body);
+      const result = JSON.parse(stdout);
       assert.equal(result.winner, 'fixture-synthesis');
       assert.equal(result.judgeReasoning, 'fixture');
-      assert.equal(stdout, prefix + JSON.stringify(result, null, 2) + '\n');
+      assert.equal(stdout, JSON.stringify(result, null, 2) + '\n');
     }
   }
   return { id: 'packed-synthesis-cli-advice', passed: true,
-    detail: 'installed CLI code/prose/flag quiet/environment quiet; exact warning and result formatting; synchronous stdout-before-spawn check; suppressed/delayed warning negative controls; fake engine only' };
+    detail: 'installed CLI code/prose/flag quiet/environment quiet; JSON-only stdout and stderr advice; synchronous stderr-before-spawn check; suppressed/delayed warning negative controls; fake engine only' };
 }

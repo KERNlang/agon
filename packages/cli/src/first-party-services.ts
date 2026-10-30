@@ -18,7 +18,8 @@ import { createTribunalHostServices } from '@kernlang/agon-mod-tribunal';
 import { createCampfireHostServices } from '@kernlang/agon-mod-campfire';
 import { createThinkHostServices } from '@kernlang/agon-mod-think';
 import { createCouncilHostServices } from '@kernlang/agon-mod-council';
-import { header, warn, info, bold, dim, red } from './blocks/output-format.js';
+import { header, warn, info, bold, dim, red, yellow } from './blocks/output-format.js';
+import { icons } from './signals/icons.js';
 import { createTeamBrainstormHostServices } from '@kernlang/agon-mod-team-brainstorm';
 import { createConquerHostServices } from '@kernlang/agon-mod-conquer';
 import type { PrTextInput } from '@kernlang/agon-mod-forge';
@@ -137,7 +138,11 @@ export async function decorateCliFirstPartyServices(manifest: ModManifest, base:
   return Object.freeze({ ...base, runs, ...(browser ? { browser } : {}), ...(workspace ? { workspace } : {}),
     ...(brainstorm ? { brainstorm } : {}),
     ...(manifest.id === 'agon.synthesis' ? { synthesis: createSynthesisHostServices({
-      routingAdvice: { classifyTask, isQuiet: () => process.env.AGON_QUIET === '1', show: warn },
+      routingAdvice: {
+        classifyTask,
+        isQuiet: () => process.env.AGON_QUIET === '1',
+        show: message => console.warn(`${yellow(icons().warning)} ${message}`),
+      },
       openRegistry: () => {
         const registry = new CatalogEngineRegistry();
         registry.load(resolveBuiltinEnginesDir()); return registry;

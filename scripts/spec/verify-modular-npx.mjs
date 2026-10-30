@@ -6,7 +6,7 @@ import { verifyPackedMcp } from './verify-packed-mcp.mjs';
 import { verifyPackedBrainstorm } from './verify-packed-brainstorm.mjs';
 import { verifyPackedBrainstormTui } from './verify-packed-brainstorm-tui.mjs';
 import { verifyPackedSynthesis } from './verify-packed-synthesis.mjs';
-import { createFrozenNpmInstall, createNpmReleaseCatalog, DurableModHost, ManagedLifecycleService, hashInstalledPackagePayload } from '../../packages/mod-kernel/dist/index.js';
+import { createFrozenNpmInstall, createNpmReleaseCatalog, DurableModHost, ManagedLifecycleService, WriterFence, hashInstalledPackagePayload } from '../../packages/mod-kernel/dist/index.js';
 
 const root = resolve(import.meta.dirname, '../..');
 const output = join(root, 'docs/specs/evidence/modular-agon-npx-qualification.json');
@@ -1047,6 +1047,38 @@ try {
   if (afterProvenance.status !== 'installed' || afterProvenance.packageCount !== 15) {
     throw new Error('small profile could not be restored after Provenance qualification');
   }
+  const recoveryPointer = await host.readCurrentPointer();
+  if (!recoveryPointer) throw new Error('safe-mode recovery fixture has no selected generation');
+  const recoveryPlan = JSON.parse(requireOk('safe-mode-exact-recovery-preview', run(stable,
+    ['mod', 'recover', String(recoveryPointer.generation)], { cwd: scratch, env: setupEnv })).stdout);
+  const pointerBytes = readFileSync(host.paths.current);
+  try {
+    writeFileSync(host.paths.current, '{invalid pointer');
+    const recovered = JSON.parse(requireOk('stable-safe-mode-corrupt-pointer-recovery', run(stable,
+      ['mod', 'recover', recoveryPlan.planPath, '--approve', recoveryPlan.planHash],
+      { cwd: scratch, env: { ...setupEnv, AGON_MOD_SAFE_MODE: '1' } })).stdout);
+    if (recovered.recoveredGeneration !== recoveryPointer.generation
+      || (await host.readCurrentPointer())?.generation !== recoveryPointer.generation) {
+      throw new Error('safe-mode recovery did not select the approved generation');
+    }
+    requireOk('stable-fresh-launch-after-corrupt-pointer-recovery', run(stable,
+      ['mod', 'list'], { cwd: scratch, env: setupEnv }));
+  } finally {
+    // Restore this owned fixture even when the launcher fails before recovery.
+    writeFileSync(host.paths.current, pointerBytes);
+  }
+  const deadWriter = spawnSync(process.execPath, ['-e', ''], { timeout: 3000 });
+  if (deadWriter.status !== 0) throw new Error('dead-writer fixture could not exit normally');
+  await WriterFence.acquire(host.paths.writerLock, 'qualification.dead-writer', { pid: deadWriter.pid });
+  try {
+    const replayed = JSON.parse(requireOk('stable-safe-mode-dead-writer-recovery', run(stable,
+      ['mod', 'recover', 'transactions'], { cwd: scratch, env: { ...setupEnv, AGON_MOD_SAFE_MODE: '1' } })).stdout);
+    if (replayed.action !== 'transaction-recovery' || existsSync(host.paths.writerLock)
+      || (await host.readCurrentPointer())?.generation !== recoveryPointer.generation) {
+      throw new Error('explicit transaction recovery did not reclaim the dead writer without changing selection');
+    }
+    requireOk('stable-fresh-launch-after-writer-recovery', run(stable, ['mod', 'list'], { cwd: scratch, env: setupEnv }));
+  } finally { rmSync(host.paths.writerLock, { force: true }); }
   if (checks.some(check => !check.passed)) throw new Error(`packed workflow qualification failed: ${checks.filter(check => !check.passed).map(check => check.id).join(', ')}`);
   const result = { schemaVersion: 1, slice: 'S9', passed: checks.every(({ passed }) => passed), platform: `${process.platform}-${process.arch}`, node: process.version,
     profile: 'minimal+think+review', installedPackageCount: firstJson.packageCount, cacheDeletionSurvived: true, idempotent: true, checks };

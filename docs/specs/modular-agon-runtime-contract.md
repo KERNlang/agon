@@ -476,6 +476,20 @@ the durable state. Existing verified-generation selection remains the two-step
 `agon mod recover <generation>` preview and exact `--approve` flow. Transaction
 recovery rejects `--approve` rather than interpreting a generation approval.
 
+The installed stable launcher contains its recovery bootstrap, without external
+runtime imports. Explicit safe mode validates the retained application prefix
+against its setup-qualified identity before loading it. An artifact lease protects
+that prefix between invocations; a process lease protects each admitted reader
+through child exit. Setup publishes the launcher durably before releasing an old
+artifact lease. A superseded wrapper refuses execution and directs the caller to
+the current launcher. Normal invocations continue to follow the selected pointer.
+
+The exact explicit `AGON_MOD_SAFE_MODE=1 agon mod recover transactions` command
+runs the same kernel transaction-recovery owner directly from the standalone
+bootstrap. It does not require reader admission or import retained application
+code, so a dead writer does not block its own recovery. Live and malformed writers
+remain refused. Other commands cannot use this path to bypass generation approval.
+
 Recovery markers use unique `.reclaim.<pid>.<uuid>` paths. A partial marker write
 still identifies its process. Admission and recovery remove only uniquely named
 markers whose PID no longer exists. A live PID, unreadable inventory, or unknown

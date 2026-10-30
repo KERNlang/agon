@@ -1,4 +1,4 @@
-import { defineConfig } from 'tsup';
+import { build, defineConfig } from 'tsup';
 import { copyFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -50,6 +50,10 @@ export default defineConfig({
     js: '#!/usr/bin/env node',
   },
   async onSuccess() {
+    // The persistent launcher must not depend on chunks in an ephemeral prefix.
+    await build({ entry: { 'stable-launcher': 'src/stable-launcher-entry.ts' },
+      format: ['esm'], target: 'node22', splitting: false, clean: false,
+      noExternal: [/.*/], sourcemap: false, dts: false, config: false, outDir: 'dist' });
     copyFileSync(join(process.cwd(), 'release-channel.json'), join(process.cwd(), 'dist', 'release-channel.json'));
   },
 });

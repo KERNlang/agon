@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { chmod, cp, lstat, mkdir, mkdtemp, opendir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { cp, lstat, mkdir, mkdtemp, opendir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
@@ -36,6 +36,7 @@ import {
   type FrozenNpmCatalog,
 } from '@kernlang/agon-kernel';
 import { modularHostRoot } from '../surface-authority-runtime.js';
+import { publishStableLauncher } from '../stable-launcher-publication.js';
 
 const PROFILE_IDS = new Set(['minimal', 'maker', 'reviewer', 'researcher', 'full-compat', 'custom']);
 const VERSION = '1.0.0';
@@ -117,7 +118,9 @@ export async function runManagedSetup(args: ManagedSetupArgs, options: { preserv
       && canonicalJson(configuration.owners.map(owner => owner.ownerId).sort()) === canonicalJson(expectedOwners)
       && await installedPayloadsMatch(hostRoot, existing.prefix, artifacts, launcherIdentity, dependencyPayloads)) {
       await assertSelectionCurrent();
-      const launcher = await writeStableLauncher(hostRoot);
+      const launcher = await publishStableLauncher(host, selectedPointer!, existing.prefix,
+        await readFile(new URL('./stable-launcher.js', import.meta.url), 'utf8'),
+        () => installedPayloadsMatch(hostRoot, existing.prefix, artifacts, launcherIdentity, dependencyPayloads));
       console.log(JSON.stringify({ status: 'already-qualified', profile: selection.profile, generationUnchanged: true, launcher, packageCount: artifacts.length }, null, 2));
       return;
     }
@@ -130,7 +133,9 @@ export async function runManagedSetup(args: ManagedSetupArgs, options: { preserv
   }
   if (args.plan) { console.log(JSON.stringify({ status: 'planned', selection, lifecycle: plan, launcherSpec }, null, 2)); return; }
   const result = await service.apply(plan, new ReleaseSetInstaller(npmInput, typeof args.cache === 'string' ? resolve(args.cache) : undefined), new ReleaseSetVerifier(dependencyPayloads));
-  const launcher = await writeStableLauncher(hostRoot);
+  const launcher = await publishStableLauncher(host, result.pointer, result.installation.prefix,
+    await readFile(new URL('./stable-launcher.js', import.meta.url), 'utf8'),
+    () => installedPayloadsMatch(hostRoot, result.installation.prefix, artifacts, launcherIdentity, dependencyPayloads));
   console.log(JSON.stringify({ status: 'installed', generation: result.pointer.generation, restartRequired: result.restartRequired, profile: selection.profile, packageCount: plan.packages.length, launcher }, null, 2));
 }
 function platform(): 'darwin-arm64' | 'darwin-x64' | 'linux-arm64' | 'linux-x64' {
@@ -423,34 +428,6 @@ async function verifyLocalSpecs(artifacts: readonly { readonly id: string; reado
     if (actual !== artifact.contentHash) throw new TypeError(`local package hash does not match release channel: ${artifact.id}`);
   }
 }
-async function writeStableLauncher(hostRoot: string): Promise<string> {
-  const binRoot = join(dirname(hostRoot), 'bin');
-  const target = join(binRoot, 'agon');
-  const temporary = `${target}.${process.pid}.tmp`;
-  const body = `#!/usr/bin/env node
-import { readFileSync } from 'node:fs';
-import { spawnSync } from 'node:child_process';
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-const home = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const host = join(home, ${JSON.stringify(relative(dirname(hostRoot), hostRoot))});
-const pointer = JSON.parse(readFileSync(join(host, 'current-generation.json'), 'utf8'));
-const generation = join(host, 'generations', String(pointer.generation).padStart(16, '0'));
-const index = JSON.parse(readFileSync(join(generation, 'installed-index.json'), 'utf8'));
-const prefix = resolve(host, index.installationPrefix);
-if (isAbsolute(index.installationPrefix) || relative(host, prefix).startsWith('..')) throw new Error('managed installation prefix escapes host');
-const cli = join(prefix, 'node_modules', '@kernlang', 'agon', 'dist', 'index.js');
-const result = spawnSync(process.execPath, [cli, ...process.argv.slice(2)], { stdio: 'inherit', env: { ...process.env, AGON_MODULAR_HOST_ROOT: host } });
-if (result.error) throw result.error;
-process.exit(result.status ?? 1);
-`;
-  await mkdir(binRoot, { recursive: true, mode: 0o700 });
-  await writeFile(temporary, body, { encoding: 'utf8', mode: 0o700, flag: 'wx' });
-  await chmod(temporary, 0o700);
-  await rename(temporary, target);
-  return target;
-}
-
 export const setupCommand: any = defineCommand({
   meta: { name: 'setup', description: 'Plan or apply a durable Modular Agon installation and profile' },
   args: {

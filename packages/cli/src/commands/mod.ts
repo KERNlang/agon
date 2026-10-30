@@ -15,7 +15,6 @@ import {
   createModManagementView,
   parseDesiredState,
   renderModManagementText,
-  recoverManagedLifecycle,
   ManagedRetentionInspector,
   previewManagedPurge,
   applyManagedPurge,
@@ -40,6 +39,7 @@ import {
   type GrantDecision,
   type TrustPublisher,
 } from '@kernlang/agon-kernel';
+import { recoverModTransactions } from '../mod-transaction-recovery.js';
 import { modularHostRoot } from '../surface-authority-runtime.js';
 
 const PLAN_LIMIT = 256 * 1024;
@@ -327,9 +327,7 @@ const recoverCommand = defineCommand({ meta: { name: 'recover', description: 'Re
     const hostRoot = paths().hostRoot;
     if (args.target === 'transactions') {
       if (args.approve !== undefined) throw new TypeError('transaction recovery does not accept a generation approval');
-      const host = new DurableModHost(hostRoot, { kernelVersion: AGON_RUNTIME_VERSION });
-      const result = await recoverManagedLifecycle(host);
-      console.log(JSON.stringify({ action: 'transaction-recovery', ...result, restartRequired: true }, null, 2));
+      console.log(JSON.stringify(await recoverModTransactions(hostRoot, AGON_RUNTIME_VERSION), null, 2));
       return;
     }
     if (!args.approve) {

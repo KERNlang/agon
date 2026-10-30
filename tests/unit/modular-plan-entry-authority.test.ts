@@ -6,14 +6,14 @@ import { DurableModHost, createFirstPartyModCatalog, createFullCompatDesiredStat
 import { surfaceLockFor } from '../helpers/modular-surface-lock.js';
 import { disposeProcessSurfaceAuthority, initializeProcessSurfaceAuthority } from '../../packages/cli/src/surface-authority-runtime.js';
 import * as authority from '../../packages/cli/src/surface-authority-runtime.js';
-import { createCesarPlan } from '@kernlang/agon-mod-plan';
+import { approveCesarPlan, createCesarPlan } from '@kernlang/agon-mod-plan';
 import { createPlan } from '@kernlang/agon-support-worktree';
 import type { DispatchCallbacks } from '../../packages/cli/src/signals/dispatch.js';
 
 const effects = vi.hoisted(() => ({ save: vi.fn(), execute: vi.fn(), executors: vi.fn(() => ({})),
   legacySave: vi.fn(), forge: vi.fn(async () => null) }));
 vi.mock('@kernlang/agon-core', async original => ({
-  ...await original<Record<string, unknown>>(), saveCesarPlan: effects.save, executePlan: effects.execute,
+  ...await original<Record<string, unknown>>(), saveCesarPlan: effects.save,
   savePlan: effects.legacySave,
 }));
 vi.mock('../../packages/cli/src/handlers/plan-mode.js', () => ({ buildStepExecutors: effects.executors }));
@@ -27,16 +27,21 @@ import { planSessionHost } from '@kernlang/agon-mod-plan';
 import type { IntentContribution, ModServices, Registrar } from '@kernlang/agon-mod-api';
 
 const NOW = '2026-10-09T00:00:00.000Z';
+const realPlanRuntime = authority.processPlanRuntime;
 let root: string;
 let host: DurableModHost;
 beforeEach(async () => {
   vi.clearAllMocks();
+  vi.spyOn(authority, 'processPlanRuntime').mockImplementation(() => ({
+    ...realPlanRuntime(), executePlan: effects.execute,
+  }));
   effects.execute.mockImplementation(async plan => ({ ...plan, state: 'done' }));
   root = await mkdtemp(join(tmpdir(), 'agon-plan-entry-'));
   host = new DurableModHost(root, { kernelVersion: '1.0.0', processIdentity: 'entry-test' });
 });
 afterEach(async () => {
   await disposeProcessSurfaceAuthority();
+  vi.restoreAllMocks();
   const generations = await readdir(join(root, 'generations')).catch(error => {
     if (error.code === 'ENOENT') return [];
     throw error;
@@ -56,6 +61,56 @@ function callbacks(dispatch = vi.fn()): DispatchCallbacks {
 function proposal() {
   return { ...createCesarPlan('fixture', []), state: 'awaiting_approval' as const, selfReview: false, autoApprove: true };
 }
+
+it('binds Plan history to the selected generation and rejects stale captured execution', async () => {
+  expect(() => realPlanRuntime()).toThrow(/not active/);
+  await install(false);
+  await initializeProcessSurfaceAuthority(root);
+  const runtime = realPlanRuntime();
+  expect(realPlanRuntime()).toBe(runtime);
+  runtime.estimator.recordStepCompletion('self', 8, 0.2);
+  runtime.estimator.recordStepCompletion('self', 12, 0.4);
+  expect(realPlanRuntime().sanitizePlanSteps([{ type: 'self' }]).steps[0].estimatedTokens).toBe(10);
+  await install(false);
+  expect(() => realPlanRuntime()).toThrow(/generation changed/);
+  const empty = { ...approveCesarPlan(createCesarPlan('stale handle', [])), selfReview: false };
+  const callbacks = { onStepStart: vi.fn(), onStepDone: vi.fn(), onPlanUpdate: vi.fn(), onBudgetWarning: vi.fn() };
+  await expect(runtime.executePlan(empty, {}, callbacks)).rejects.toThrow(/generation changed/);
+  await disposeProcessSurfaceAuthority();
+  await initializeProcessSurfaceAuthority(root);
+  const replacement = realPlanRuntime();
+  expect(replacement).not.toBe(runtime);
+  expect(replacement.estimator.estimate('self', []).tokens).toBe(2000);
+  await expect(runtime.executePlan(empty, {}, callbacks)).rejects.toThrow(/disposed/);
+});
+
+it('does not expose Plan runtime when Plan is disabled', async () => {
+  await install(true);
+  await initializeProcessSurfaceAuthority(root);
+  expect(() => realPlanRuntime()).toThrow();
+});
+
+it('binds Plan with an injected service decorator, without selecting it during decoration', async () => {
+  await install(false);
+  const decorated: string[] = [];
+  await initializeProcessSurfaceAuthority(root, (manifest, services) => {
+    decorated.push(manifest.id);
+    expect(() => realPlanRuntime()).toThrow(expect.objectContaining({ code: 'MOD_SURFACE_UNAVAILABLE' }));
+    return services;
+  });
+  expect(decorated).toContain('agon.plan');
+  expect(realPlanRuntime().estimator.estimate('self', []).tokens).toBe(2000);
+});
+
+it('keeps Plan unavailable in kernel safe mode without loading host effects', async () => {
+  const decorate = vi.fn((_manifest, services) => services);
+  vi.stubEnv('AGON_MOD_SAFE_MODE', '1');
+  try {
+    await initializeProcessSurfaceAuthority(root, decorate);
+    expect(decorate).not.toHaveBeenCalled();
+    expect(() => realPlanRuntime()).toThrow();
+  } finally { vi.unstubAllEnvs(); }
+});
 
 async function physicalResume(cb: DispatchCallbacks) {
   const intents: IntentContribution[] = [];

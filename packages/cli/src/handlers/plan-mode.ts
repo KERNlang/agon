@@ -2,7 +2,7 @@ import { writeFileSync, mkdirSync } from 'node:fs';
 
 import { join, dirname } from 'node:path';
 
-import { planCostEstimator, resolveWorkingDir, RUNS_DIR, tracker, cesarPlanMarkdownPath, saveCesarPlan, spawnWithTimeout, getCoreWorkflowRegistry, compileWorkflowSpec, verifyWorkflowExecutionPlanFlow, verifyWorkflowRunFlow, throwWorkflowConformance, createWorkflowRun, appendWorkflowPhaseEvent } from '@kernlang/agon-core';
+import { resolveWorkingDir, RUNS_DIR, tracker, cesarPlanMarkdownPath, saveCesarPlan, spawnWithTimeout, getCoreWorkflowRegistry, compileWorkflowSpec, verifyWorkflowExecutionPlanFlow, verifyWorkflowRunFlow, throwWorkflowConformance, createWorkflowRun, appendWorkflowPhaseEvent } from '@kernlang/agon-core';
 import { publishPlanProposal, exitPlanSession, createPlanStepExecutors } from '@kernlang/agon-mod-plan';
 import { readPatchContent, applyPatchToTree } from '@kernlang/agon-support-worktree';
 import { SurfaceGenerationError, currentInvocationOwnerAvailable } from '@kernlang/agon-kernel';
@@ -27,7 +27,7 @@ import { runAgentMode, runAgentTeam } from './agent.js';
 import { handleCesarBrain } from '../cesar/brain.js';
 
 import { isAgenticAutoMode } from '../cesar/task-controller.js';
-import { assertProcessPlanStepAvailable, assertProcessSurfaceAvailable, captureProcessSurfaceAuthority, guardProcessEngineAdapter, withProcessSurfaceAuthority } from '../surface-authority-runtime.js';
+import { assertProcessPlanStepAvailable, assertProcessSurfaceAvailable, captureProcessSurfaceAuthority, guardProcessEngineAdapter, processPlanRuntime, withProcessSurfaceAuthority } from '../surface-authority-runtime.js';
 
 const { runBrainstorm } = createBrainstormRuntime(createBrainstormEngineServices<HandlerContext['registry']>({
   readRatings: glicko.getRatings,
@@ -39,7 +39,7 @@ const { runBrainstorm } = createBrainstormRuntime(createBrainstormEngineServices
 
 export async function handleProposePlan(args: Record<string, unknown>, dispatch: Dispatch, ctx: HandlerContext): Promise<CesarPlan> {
   return publishPlanProposal(args, {
-    estimator: planCostEstimator,
+    estimator: processPlanRuntime().estimator,
     agenticAutoMode: () => isAgenticAutoMode(ctx),
     markdownPath: cesarPlanMarkdownPath,
     writeMarkdown: (path, markdown) => {

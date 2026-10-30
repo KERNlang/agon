@@ -361,6 +361,7 @@ export { dispatchPlanSession, createPlanSessionActions, dispatchPlanNaturalInput
 export type { PlanSessionActions, PlanSessionDispatchResult, PlanSessionEffects, PlanNaturalInputEffects } from './session.js';
 export { PlanCostEstimator } from './cost-estimator.js';
 export { createPlanRuntime } from './runtime.js';
+export type { PlanRuntime, PlanRuntimeHost, PlanRuntimeModServices } from './runtime.js';
 export { planSessionHost, withPlanSession } from './session-scope.js';
 export type { PlanSessionBinding } from './session-scope.js';
 export { selectPendingPlan, selectResumablePlan, shouldApprovePendingCesarPlanInput, isCesarPlanApprovalInput, isStrongCesarPlanApprovalInput, isCesarPlanResumeInput, isCesarPlanStatusInput, formatCesarPlanRuntimeStatus } from './session-selection.js';

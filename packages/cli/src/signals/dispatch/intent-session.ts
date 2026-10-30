@@ -11,6 +11,7 @@ import { runConquerSession } from '../../blocks/conquer-session.js';
 import { runCampfireSession } from '../../blocks/campfire-session.js';
 import { runThinkSession } from '../../blocks/think-session.js';
 import { runCouncilSession } from '../../blocks/council-session.js';
+import { runResearchSession } from '../../blocks/research-session.js';
 import { runSynthesisSession } from '../../blocks/synthesis-session.js';
 import { worktreePlanHost } from '../../blocks/worktree-plan-effects.js';
 
@@ -415,6 +416,16 @@ export async function runPhysicalTuiContribution(
       sessionJobs: { manager: cb.jobManager, dispatch: cb.dispatch },
     } : {}),
   };
+  if (record.owner?.id === 'agon.research' && commandName === 'research') {
+    await runResearchSession(normalized as Record<string, unknown>, cb, invocation, async (prepared, context) => {
+      const output = await contribution.run(prepared as Json, { ...invocation, ...context });
+      if (output && typeof output === 'object' && Symbol.asyncIterator in output) {
+        throw new TypeError('Research returned an unexpected streaming command result.');
+      }
+      return output as CommandResult;
+    });
+    return;
+  }
   if (record.owner?.id === 'agon.synthesis') {
     await runSynthesisSession(normalized as Record<string, unknown>, cb, invocation, async (prepared, context) => {
       const output = await contribution.run(prepared as Json, { ...invocation, ...context });

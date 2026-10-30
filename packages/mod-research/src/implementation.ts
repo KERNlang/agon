@@ -1,4 +1,5 @@
 import { formatResearchResult } from './format-policy.js';
+import type { ResearchSessionContext } from './session-workflow.js';
 export { formatResearchResult } from './format-policy.js';
 import { parseAuthoritativeResults } from './response-policy.js';
 import { lookup } from "node:dns/promises";
@@ -188,7 +189,7 @@ const cli = Object.freeze({
 });
 export async function runResearch(
   raw: Json,
-  context: InvocationContext,
+  context: InvocationContext & Pick<ResearchSessionContext, 'onStatus'>,
   services: ModServices,
 ): Promise<CommandResult> {
   const x = raw as Record<string, Json>,
@@ -220,6 +221,7 @@ export async function runResearch(
     }, context);
   };
   try {
+    context.onStatus?.(`discovering sources (${intent})…`);
     const discovered = await fetch(request.url, {
       headers: request.headers,
       signal: AbortSignal.any([context.signal, AbortSignal.timeout(12000)]),
@@ -238,6 +240,7 @@ export async function runResearch(
       await finish(false, "", "no authoritative sources found");
       return { exitCode: 1, stderr: "No authoritative sources found.\n" };
     }
+    context.onStatus?.(`reading ${found.length} sources…`);
     const sources: Source[] = await Promise.all(
       found.map(async (s) => {
         try {
@@ -258,6 +261,7 @@ export async function runResearch(
     const ranking = !forced && services.engines.rank ? await services.engines.rank(pool, [], context) : [];
     const engine = forced || ranking[0]?.engineId || pool[0];
     if (!engine) { await finish(false, "", "no active drafting engine"); return { exitCode: 1, stderr: "No active drafting engine.\n" }; }
+    context.onStatus?.(`${engine} drafting a grounded answer…`);
     const draft = (await services.engines.dispatch(
       engine,
       buildPrompt(question, sources),
@@ -276,6 +280,7 @@ export async function runResearch(
       await finish(false, engine, "draft engine produced no answer");
       return { exitCode: 1, stderr: "Draft engine produced no answer.\n" };
     }
+    context.onStatus?.('verifying citations…');
     const cited = [
       ...new Set([...answer.matchAll(/\[(\d+)\]/g)].map((m) => Number(m[1]))),
     ];

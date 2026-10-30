@@ -116,6 +116,7 @@
       "dist/index.js",
       "dist/index.d.ts",
       "dist/implementation.d.ts",
+      "dist/session-workflow.d.ts",
       "dist/prompt-policy.js",
       "dist/prompt-policy.d.ts",
       "dist/format-policy.js",

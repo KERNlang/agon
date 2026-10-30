@@ -5,7 +5,7 @@ import { runPhysicalTuiContribution } from './intent-session.js';
 
 import { ENGINE_COLORS } from '../../blocks/output-format.js';
 
-import { handleForge, handleSynthesis, handleNeroChallenge, handleResearch, handleChrome, handleBuild, handleReviewMany, handleSanitize, handleNaturalize, handleMutate, runAgentMode, runAgentTeam } from '../../handlers/index.js';
+import { handleForge, handleSynthesis, handleNeroChallenge, handleChrome, handleBuild, handleReviewMany, handleSanitize, handleNaturalize, handleMutate, runAgentMode, runAgentTeam } from '../../handlers/index.js';
 
 import { handleTeamTribunal } from '../../handlers/team-tribunal.js';
 
@@ -146,7 +146,7 @@ export async function dispatchOrchestrationIntent(intent: any, input: string, cb
     case 'research': {
       if (!intent.question?.trim()) { cb.dispatch({ type: 'warning', message: 'Usage: /research <question> [--count N] [--engine X]' }); return { handled: true, ranAsJob: false }; }
       const assertSelected = captureProcessSurfaceAuthority();
-      processSurfaceClient('tui').assertAvailable('/research');
+      const record = processSurfaceClient('tui').assertAvailable('/research');
       const _rsCwd = resolveWorkingDir();
       const _rsLabel = intent.question?.slice(0, 40) ?? 'research';
       const continuationEpoch = cb.ctx.inputEpoch ?? 0;
@@ -154,7 +154,9 @@ export async function dispatchOrchestrationIntent(intent: any, input: string, cb
       cb.runAsJob('research', _rsLabel, signal => withThreadOutcome(_rsCwd, 'research', _rsLabel, async () => {
         signal.throwIfAborted();
         assertSelected();
-        await handleResearch(intent.question, cb.dispatch, cb.ctx, { engine: intent.engineId, count: intent.count, signal });
+        const { type: _type, _modSurface: _marker, engineId, ...request } = intent;
+        await runPhysicalTuiContribution(record, { ...request, question: intent.question, engine: intent.engine ?? engineId,
+          ...(intent.count !== undefined ? { count: String(intent.count) } : {}) }, 'research', cb, signal, _rsCwd);
         signal.throwIfAborted();
         assertSelected();
         const chatContext = collectRecentEngineContext(cb.ctx, 12, 2000);

@@ -1,0 +1,189 @@
+{
+  "cleanCommittedReplay20261030": {
+    "subject": "bcadad191f0f7a0a8c25a0db206ee1f7d11ea5f4",
+    "tree": "bcb187cf4fcd9ba6eae77f69427576dbd10478a6",
+    "base": "26c026356a28dfd681aeacbc0e3aa2b4acd7c0d7",
+    "status": "Passed on the exact committed subject; this evidence-only update is not part of that subject",
+    "testsPassed": 12144,
+    "testsSkipped": 7,
+    "installedChecksPassed": 131,
+    "gitCleanBeforeAndAfter": true,
+    "providerLaunches": 0,
+    "receipts": [
+      {
+        "file": "research-clean-build-cached-20261030.receipt.json",
+        "seconds": 300.296,
+        "logSha256": "sha256:78ab4378e7cc2fabcb6c0324eb424063beac91ef0bbf62a2fa969c49c7a99e6c"
+      },
+      {
+        "file": "research-clean-tests-cached-20261030.receipt.json",
+        "seconds": 698.391,
+        "logSha256": "sha256:a22ea2d66c953047cfdc695c8139e8e0c994d40af2aee935eb9bf8d366c83a6b"
+      },
+      {
+        "file": "research-clean-installed-20261030.receipt.json",
+        "seconds": 137.398,
+        "logSha256": "sha256:64842632c2f92f1cc6dbead0f10a9adeae0b0b951778761d447591b97c6fd13e"
+      }
+    ],
+    "retainedFailedRuns": ["research-clean-build-20261030", "research-clean-tests-20261030"],
+    "scope": "Fresh frozen offline install, build, types, lint, re-export/generated checks, release and supply-chain self-tests, full repository suite and installed matrix. Native macOS arm64 Node26.12.1 with fixture providers only. Not aggregate modular release acceptance."
+  },
+  "currentMainIntegration20261030": {
+    "base": "26c026356a28dfd681aeacbc0e3aa2b4acd7c0d7",
+    "status": "Working-tree integration qualified; clean committed replay pending",
+    "testsPassed": 12144,
+    "testsSkipped": 7,
+    "installedChecksPassed": 131,
+    "receipts": [
+      {
+        "file": "research-current-main-socket-repair-20261030.receipt.json",
+        "passed": true,
+        "seconds": 281.743,
+        "logSha256": "sha256:47ee346800b88d14324f247c0711dce3d3081e5b64d25757b72b3cf3ebe5e979",
+        "providerLaunches": 0
+      },
+      {
+        "file": "research-current-main-full-permitted-20261030.receipt.json",
+        "passed": true,
+        "seconds": 1035.215,
+        "logSha256": "sha256:8d258c96e67a8409286c587221d497d3397c4107a0d391c47c3da089be5f4974",
+        "providerLaunches": 0
+      },
+      {
+        "file": "research-current-main-installed-cached-20261030.receipt.json",
+        "passed": true,
+        "seconds": 255.71,
+        "logSha256": "sha256:8b313d5ea13adc9f304353065291d26e777d743674ab5bfba279b351f2932ae3",
+        "providerLaunches": 0
+      }
+    ],
+    "sourceSha256": {
+      "packages/cli/src/blocks/research-session.ts": "da334c6f1c0e9692f6f0717cc9fea7d0fd61cc47c76f13190c108ae71c31ffa0",
+      "packages/cli/src/handlers/research.ts": "c79902b42e8f20eee7dba4281835c2d43942d4b1eec7f7862b82f423c6226a8c",
+      "packages/cli/src/signals/output.ts": "e7b4ba71af5c582c1c66c9dcdec26c56e06b412f2bac730042570746c0f61553",
+      "packages/cli/src/signals/dispatch/intent-orchestration.ts": "312ada79c028f80fab13011844eaea8b13ff3e2e0a58649cd42a9a05e766161c",
+      "packages/cli/src/signals/dispatch/intent-router.ts": "4c662fe7f9e0540ae8ab562b6bc63282210a1e1689d4fcb02adc2cf8b06f819b",
+      "packages/cli/src/signals/dispatch/intent-session.ts": "a8ed2a9bd998fbbb94feac3bc03c50c6d7c03f1c7a92e813fe45ab040bcce27b",
+      "packages/cli/tsup.config.ts": "8829c9d61d87d00ab39a3a971b32cd3bca35850417ce83acea89f95604c23d3b",
+      "packages/mod-research/src/session-workflow.ts": "972349aa5ac3ec87581389b08a1165cd0c2ef3e9cfe66f2c1df72b3a01cb8157",
+      "packages/mod-research/src/implementation.ts": "d6048cf65e5f13bcf76d68f6027f156058708674f227b2c6babdaa883c2ab437",
+      "tests/unit/modular-research-session-parity.test.ts": "8aab82f03866bf2512d39924cb886d1c6b0551b7f8a6801be57c71b68e23b379",
+      "tests/unit/research-session-authority.test.ts": "62e49e7214d520fd858d8815fd6eb73cd3e3087df63c161f74b0dc0ed6c1dc92",
+      "tests/unit/output-control-events.test.ts": "53cdd5dc0e199c7d0e48732b0e6f02155cbf317f98f3cf049c8ee9aadd9241c9",
+      "scripts/spec/generate-modular-first-party-packages.mjs": "17d5e6556b7c86ed85dc576467f23d04d460a2d390a2e0e00a13943f9f8789e9",
+      "scripts/spec/verify-modular-npx.mjs": "88f814168a205c5686adc24cd09c84ae91ed04b377e4102d4e3562e0b7330ccc"
+    },
+    "review": {
+      "adjudication": "research-session-integration-review-adjudication-20261028.md",
+      "integrationPacket": "research-session-integration-review-input.txt",
+      "bundlePacket": "research-minimal-policy-bundle-review-input.txt",
+      "scope": "Existing source review findings fixed and regression-tested; merged main changes retained unchanged."
+    },
+    "retainedFailedRuns": [
+      "research-current-main-full-20261030",
+      "research-current-main-installed-20261030"
+    ],
+    "limits": [
+      "Native macOS arm64 on Node26.12.1 only",
+      "Fixture providers, no live-provider evidence",
+      "No aggregate modular release acceptance",
+      "Legacy Research runtime retirement remains separate"
+    ]
+  },
+  "scope": "Research interactive session ownership and selected-contribution routing",
+  "base": "a4e06dfb8869acd14fe4c90cc16a88abebeb3243",
+  "status": "Current-main Research integration passes clean committed qualification; full modular release acceptance remains separate",
+  "archive": "/Users/ra/dev/modular-agon-remediation",
+  "verification": {
+    "callerCancellationRepair": {
+      "base": "bc9e7e076b302801b65e387d23f242394b062776",
+      "scope": "Base plus the two source/test files identified below; this does not qualify a merge with current main. Earlier receipts retain their historical subjects.",
+      "sourceSha256": {
+        "packages/cli/src/handlers/research.ts": "1508801a22f0d50dea86e1dd18894a6de0aa63b7bea502f5649a9158244208a2",
+        "tests/unit/modular-research-session-parity.test.ts": "cb820ccf5ec11c60aef738c11a6412aaaf5227bdd6973cd6b9f52226daf79cd7"
+      },
+      "negativeControl": {
+        "receipt": "research-session-cancel-red-20261028.receipt.json",
+        "logSha256": "8a2e7ade880d286e3fe77d20e5c2d34401de0e4e39242805f3a1f636a6fb249f",
+        "expectedFailures": 2
+      },
+      "fullGates": {
+        "receipt": "research-session-cancel-full-20261028.receipt.json",
+        "logSha256": "50ea3aad43790f21d83dc4a125e7d050c0c0ff5d97e1e4d37582b2a34c789cea",
+        "testsPassed": 11973,
+        "testsSkipped": 7,
+        "seconds": 896.071,
+        "providerLaunches": 0
+      },
+      "installed": {
+        "receipt": "research-session-cancel-installed-20261028.receipt.json",
+        "logSha256": "23a3b55261bc3ad59c31c9ee2f95d0a99e160612a678168af58b09231eae3943",
+        "checksPassed": 96,
+        "seconds": 139.643,
+        "providerLaunches": 0,
+        "scope": "Existing packed runtime matrix; direct-handler cancellation is covered by the source integration regressions."
+      },
+      "review": {
+        "engine": "codex",
+        "receipt": "research-session-cancel-codex-review.receipt.json",
+        "packetSha256": "9e5b78fcc4a4f297c0526894455dab15796569fc618053e887220008b324a3af",
+        "logSha256": "35b8f6ef0922d58e73e674b18725b9bce2a45110c2b8e951cf960760c25ed20f",
+        "findings": 0,
+        "scope": "Bounded source review; reviewer did not independently execute tests."
+      }
+    },
+    "coldRepairFullGates": {
+      "receipt": "research-session-cold-reference-gates-20261027.receipt.json",
+      "log": "research-session-cold-reference-gates-20261027.log",
+      "sha256": "443be436953eb23c217483308479f20439c28cc61ef07fb19c3cf1dd0c63b393",
+      "passed": true,
+      "seconds": 971.858,
+      "testsPassed": 11969,
+      "testsSkipped": 7,
+      "installedChecksPassed": 96,
+      "providerLaunches": 0,
+      "scope": "Cold types before build, lint, reexports, release/supply-chain self-tests, full suite and isolated installed-package checks. Subject is 892e3fc339f1b5fb28e7cfa2dadfffa425aed442 plus the recorded CLI project-reference repair; not aggregate release acceptance."
+    },
+    "coldTypecheckRepair": {
+      "subject": "892e3fc339f1b5fb28e7cfa2dadfffa425aed442 plus CLI Research project reference",
+      "ciJob": "https://github.com/KERNlang/agon/actions/runs/40491783902/job/122147242613",
+      "ciLog": "research-session-pr338-ci-failure-20261027.txt",
+      "ciLogSha256": "3718af8d122c3dcd90f9d8e6b1b6c6fc1659e34536ddb081bda08f3d223fcd71",
+      "localRecord": "research-session-cold-typecheck-20261027.md",
+      "localRecordSha256": "04dbda725a86033e002adcda16345e9113b9a2eeef68495bce896841533184f9",
+      "command": "node node_modules/typescript/bin/tsc -b --clean && node node_modules/typescript/bin/tsc -b",
+      "beforeExit": 2,
+      "afterExit": 0,
+      "qualificationCorrection": "Run cold types before build. Prior build-first qualification masked the missing CLI-to-Research project reference."
+    },
+    "reviewNegative": { "log": "research-session-review-negative-20261027.log", "sha256": "4c3a35281080f050a60d452ced6f3987cc4ec4d100bc1f5e23d9cdd3d2db0791", "expectedFailures": 2 },
+    "focused": { "log": "research-session-review-fixed-20261027.log", "sha256": "08373342c7b003cd25d3c5c3292b9c483f341cc06019ea09426cfedd18f801a4", "testsPassed": 27 },
+    "installed": { "log": "research-session-pack-boundary-20261027.log", "sha256": "4edcbb1877194f43d4eb314b068f3eebae9c50a74d51a346b484f5a3aa0ee103", "passed": true, "checksPassed": 96, "providerLaunches": 0 },
+    "full": { "log": "research-session-final-suite-20261027.log", "sha256": "4369eb485bba411c2d257bbcaf58cfbb4cc23dc4f8c74163e829b03156daf233", "passed": true, "testsPassed": 11969, "testsSkipped": 7, "providerLaunches": 0 },
+    "boundaryNegative": { "log": "research-session-reviewed-full-gates-20261027.log", "sha256": "92637eb633a5cc96af749a6a0bdaff83786104e9e1b7ed78fbf8453230a06347", "passed": false },
+    "retainedFailures": ["research-session-baseline-negative-20261027", "research-session-failure-negative-20261027", "research-session-first-fix-20261027", "research-session-focused-types-20261027", "research-session-alias-negative-20261027", "research-session-full-gates-20261027"],
+    "failureNotes": "Negative controls prove missing session effects, swallowed job failure, dropped command inputs and lost failure diagnostics. Precursors exposed count normalization, alias selection and sandbox socket restrictions. Approved-access installed probes exposed Undici CommonJS bundled into CLI ESM; externalizing the already-declared Research package fixed both unchanged TUI probes. Failed precursors did not run the full suite."
+  },
+  "review": {
+    "packetSha256": "4953b6fc63af3c6be23155942f3d3ffbb43e2c83dfec21cbd2e0b5c4bdce66f5",
+    "codexLogSha256": "404c2843fcadb9e0b2d1ec0075fd639590bdd6b41586cc1205ec66f82eb68d12",
+    "kimi": "Engine exit 1, no usable answer; not counted as passing review",
+    "kimiLogSha256": "a4eebf5d7d44f5490f265ba973efba6a7b0a1712213a895f830b6440c27cdbff",
+    "resolved": ["Preserve selected contribution fields while normalizing engine/count", "Preserve structured grounding failure note when JSON output has no stderr"],
+    "resolutionEvidence": "Both claims source-verified, reproduced by failing assertions and fixed with the same assertions passing."
+  },
+  "sourceSha256": {
+    "packages/cli/tsup.config.ts": "d3c528b5925b0ff34af27ce393b9a015adc459c5086630b3646f777db84a35f4",
+    "packages/mod-research/src/session-workflow.ts": "84af9889e9cebe05eb8799d5bc4a08efb56371d59f55b2b873733723b2af5ab4",
+    "packages/cli/src/blocks/research-session.ts": "39b5b55a5f343b6cbbe0a9a866f196f3dd0b94dfc77469870a8dbbc9adfae467",
+    "packages/cli/src/handlers/research.ts": "18faa6b0a5b17b4f1e69b436b4c33fa160bdd4883e5658093a0bffc899be9aab",
+    "packages/cli/src/signals/dispatch/intent-router.ts": "b2105e79eacce0610b40ba7e70b08a0c5b20f3d3dba1d0ac6c77a0146b85cad8",
+    "packages/cli/src/signals/dispatch/intent-session.ts": "4b0ad4707959efb1eda74d578bf9e4a982a201a6028cac8e6907625527077cff",
+    "packages/cli/src/signals/dispatch/intent-orchestration.ts": "b41de86cb569b9dac1f150b5abc1aedbc911d99d7977824eb38f656ad4ccdb40",
+    "tests/unit/modular-research-session-parity.test.ts": "04323cedf3797ee37d15df4a3f3eec2c128f955adcf86f0d99315e458c60c7c7",
+    "scripts/spec/generate-modular-first-party-packages.mjs": "3393a805f884a855c68afe168d791bf240243b6af4f06f8e50d110e18dd90377",
+    "scripts/spec/verify-modular-npx.mjs": "02aeff92fa28c9f1ac891303e484f1095aad5416126fd6b8ef42f2f13add3810"
+  },
+  "limits": ["Legacy Forge Research runtime and Core citation-verifier ownership remain", "Compatibility handler remains", "Fixture network/provider boundaries, not live-provider evidence", "No aggregate release acceptance", "Clean committed-checkout qualification pending"]
+}

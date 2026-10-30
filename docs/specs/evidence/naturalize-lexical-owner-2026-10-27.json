@@ -1,0 +1,109 @@
+{
+  "schemaVersion": 1,
+  "cleanCommittedReplay20261030": {
+    "status": "Passed bounded Naturalize repair qualification; not full modular release acceptance",
+    "subjectCommit": "495af047ffd43ecd715a27a7f1d9f166a20d3752",
+    "subjectTree": "9a482022a2116485398894ffff25afb226d67396",
+    "baseCommit": "26c026356a28dfd681aeacbc0e3aa2b4acd7c0d7",
+    "checkout": "naturalize-clean-20261030",
+    "testsPassed": 12125,
+    "testsSkipped": 7,
+    "installedChecksPassed": 133,
+    "installedPackages": 15,
+    "cacheDeletionSurvived": true,
+    "idempotent": true,
+    "providerLaunches": 0,
+    "receipts": [
+      { "file": "naturalize-clean-build-20261030.receipt.json", "sha256": "973bbf3fc015cd9de4c35869323d0b304df26af003d7ece16570323d29a24140", "seconds": 251.919, "logSha256": "4e3fed5a6e48e6fd869064a7ffd5426eb109b21d591bf010325d9a1987267e58" },
+      { "file": "naturalize-clean-tests-20261030.receipt.json", "sha256": "219e55335d369607b23e792d4b0b74ac941e228728918f55cda09856363d1a31", "seconds": 670.691, "logSha256": "714f2abf1c660ebd07e0d791d353d13927969576df5c7fa30c8762101c215fd2" },
+      { "file": "naturalize-clean-installed-20261030.receipt.json", "sha256": "6c71edd305772fc136148064255429f1a914d441bc59e5fae933327bd8493926", "seconds": 127.675, "logSha256": "bb6e478c77aff92867a7f271d2346e65eef1063c4fc267d4bb6c042f9eb0f63b" }
+    ],
+    "checks": ["Frozen offline install with lifecycle scripts disabled", "Build, typecheck, lint and re-export guard", "Generated artifact drift checks", "Release-set and supply-chain self-tests", "Full repository suite", "Installed CLI and package matrix", "Clean Git status before and after every phase"],
+    "sourceContamination": {
+      "ignored": [], "untracked": [], "unstaged": [],
+      "method": "Committed collectSubjectContamination and isSourceBearingPath, no extra exclusions; repeated after installed replay",
+      "limits": "Existing classifier excludes dependency/build outputs, tsbuildinfo and orig files; not an arbitrary generated-byte reproducibility claim"
+    },
+    "evidenceCommitPolicy": "This index update is evidence-only. Runtime receipts bind subjectCommit, not the later index commit.",
+    "limits": ["Native macOS arm64 Node26.12.1 only", "Fixture providers only", "Existing OSV findings remain unresolved", "Full runtime extraction and aggregate release acceptance remain separate"]
+  },
+  "currentMainRepair20261030": {
+    "base": "26c026356a28dfd681aeacbc0e3aa2b4acd7c0d7",
+    "status": "Working-tree repair qualified; superseded by cleanCommittedReplay20261030",
+    "scope": "Restore non-Latin lexical-change detection; align policy exports, build entries and manifest pack contents; preserve merged main changes",
+    "testsPassed": 12125,
+    "testsSkipped": 7,
+    "focusedTestsPassed": 39,
+    "installedChecksPassed": 133,
+    "providerLaunches": 0,
+    "receipts": [
+      { "file": "naturalize-current-main-build-20261030.receipt.json", "seconds": 268.402, "logSha256": "sha256:57173eccfd5d7c8ae334bca0662f116e0ffd8ad3b13b87ab373d80c114c3c214" },
+      { "file": "naturalize-current-main-full-20261030.receipt.json", "seconds": 701.094, "logSha256": "sha256:e59c07322d82d9382bf8f2d5442de8cd5dc079bffde05e17c76893ce055b1abf" },
+      { "file": "naturalize-current-main-installed-20261030.receipt.json", "seconds": 128.677, "logSha256": "sha256:bb6e478c77aff92867a7f271d2346e65eef1063c4fc267d4bb6c042f9eb0f63b" }
+    ],
+    "review": {
+      "engine": "codex",
+      "packet": "naturalize-unicode-pack-review-input.txt",
+      "packetSha256": "8744ae20d8759fb2d29cf789495f5aa3be436a10fa3f801376bd8162022e8ae2",
+      "log": "naturalize-unicode-pack-codex-review.log",
+      "logSha256": "e0c6b8ba05e202248ce35b2757fbf5a8771c993212c261f5a5298fc3a11cd17a",
+      "result": "No concrete source finding; reviewer did not execute qualification. Claims checked against source and literal regression oracles."
+    },
+    "negativeControls": "Four source-executed non-Latin replacement assertions failed before repair; eight passed after. Existing packed tests retain literal expected values and min-change rejection controls.",
+    "localAssessment": "naturalize-pr347-review-verification-20261030.md",
+    "securityScan": {
+      "report": "osv-naturalize-20261030/report.json",
+      "sha256": "77644deec1055a3c14d7fe975ac85d208bdbf6f5e96383221ca0ce69b8aec8ad",
+      "advisories": 23,
+      "affectedPackageVersions": 10,
+      "externalVersionChanges": 0,
+      "status": "Existing main dependencies; unresolved release-security triage, not a clean scan"
+    },
+    "limits": ["Native macOS arm64 Node26.12.1 only", "Fixture providers only", "No full modular release acceptance"]
+  },
+  "status": "Bounded repair passed clean committed replay; prior evidence retained below",
+  "scope": "Naturalize lexical policy ownership and formatting-only gate regression; not full runtime extraction",
+  "baseCommit": "a4e06dfb8869acd14fe4c90cc16a88abebeb3243",
+  "archiveRoot": "/Users/ra/dev/modular-agon-remediation",
+  "retention": "Do not delete archived evidence without Raphael's approval",
+  "sourceManifest": "naturalize-lexical-source-manifest-v2-20261027.json",
+  "evidence": [
+    {
+      "log": "naturalize-lexical-negative-20261027.log",
+      "sha256": "6b17ef996e02f43f3d09ca9c972616fc3b0ca5191ace81236ca167f31c76a76a",
+      "result": "Before repair: two expected case/punctuation failures,27 passes"
+    },
+    {
+      "log": "naturalize-lexical-owner-boundary-20261027.log",
+      "sha256": "d4fa31def40425e92c956c6a8b9063af487561684a0e89030740b7d1d6d42159",
+      "result": "Naturalize and Forge build/types,re-export guard and generated checks pass"
+    },
+    {
+      "log": "naturalize-lexical-first-green-20261027.log",
+      "sha256": "ad7354360bc26c0af2a2acaf09c549c702e2761ffae6a062b0759d2cff2c1f07",
+      "result": "Thirty focused tests pass,including formatting/reordering rejection and real-rewrite acceptance"
+    },
+    {
+      "log": "naturalize-lexical-full-gates-20261027.log",
+      "receipt": "naturalize-lexical-full-gates-20261027.receipt.json",
+      "sha256": "434219290f9ea6893a86dee801bf89eeabd6e31f596e06b93216d7084248803a",
+      "result": "Build,types,lint,re-export/generated/release/supply-chain gates pass;11959 tests pass,7 skipped;98 npm/npx checks;zero provider launches"
+    }
+  ],
+  "review": {
+    "packet": "naturalize-lexical-owner-review-input.txt",
+    "packetSha256": "381c0c6a986ddb79d8c6b1213f6ef6aa43ce51371b9ac1cb76e7feb269916f8d",
+    "codexLog": "naturalize-lexical-owner-codex-review.log",
+    "codexLogSha256": "60476072079805e21bf66c850dc0fb60e42b132117b5fe85beef74716ebb1604",
+    "result": "No concrete regression found; moved function bodies compared with main",
+    "limits": "Kimi returned no answer,not a pass. Subsequent local fixture correction rejects both fs and node:fs after compiled negative control exposed normalization. All installed fixtures then passed in the full gate."
+  },
+  "limits": [
+    "Historical working-tree receipts below do not replace the exact clean committed replay above",
+    "Installed Naturalize fixtures and compiled-workspace Forge identity prove different boundaries",
+    "Other native platform and Node-version cells remain open",
+    "Historical OSV count was 24; current-main scan above reports 23 advisories across ten package versions; no external versions changed",
+    "Source contamination passed the existing classifier; aggregate acceptance remains separate",
+    "No OpenCode invocation or active/global Agon change"
+  ]
+}

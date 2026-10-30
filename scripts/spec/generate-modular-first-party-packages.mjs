@@ -182,7 +182,8 @@ function expectedFiles(packageRecord) {
   // Jobs persists scheduler observations through its separate storage adapter.
   if (short === 'jobs') inferredPermissions.add('state.write');
   if (short === 'conquer') inferredPermissions.add('git.write');
-  const physicalPackFiles = ['dist/implementation.d.ts', ...(short === 'research' ? researchPolicyEntries.flatMap((entry) => [`dist/${entry}.js`, `dist/${entry}.d.ts`]) : short === 'rag' ? ['dist/store.d.ts', 'dist/types.d.ts', 'dist/grounding.d.ts']
+  const policyEntries = short === 'research' ? researchPolicyEntries : short === 'naturalize' ? ['lexical-policy'] : [];
+  const physicalPackFiles = ['dist/implementation.d.ts', ...(policyEntries.length ? policyEntries.flatMap((entry) => [`dist/${entry}.js`, `dist/${entry}.d.ts`]) : short === 'rag' ? ['dist/store.d.ts', 'dist/types.d.ts', 'dist/grounding.d.ts']
     : short === 'think' ? ['dist/thinking.d.ts', 'dist/runtime.d.ts', 'dist/host.d.ts', 'dist/presentation.d.ts', 'dist/session-workflow.d.ts']
     : short === 'council' ? ['dist/runtime.d.ts', 'dist/host.d.ts', 'dist/presentation.d.ts', 'dist/command.d.ts', 'dist/session-workflow.d.ts']
     : short === 'review' ? ['dist/consensus.d.ts', 'dist/findings.d.ts']
@@ -235,7 +236,7 @@ function expectedFiles(packageRecord) {
     private: false,
     license: 'MIT',
     type: 'module',
-    exports: { '.': { types: './dist/index.d.ts', import: './dist/index.js' }, ...(short === 'research' ? Object.fromEntries(researchPolicyEntries.map((entry) => [`./${entry}`, { types: `./dist/${entry}.d.ts`, import: `./dist/${entry}.js` }])) : {}), './manifest': './agon.mod.json', './ownership': './ownership.json' },
+    exports: { '.': { types: './dist/index.d.ts', import: './dist/index.js' }, ...Object.fromEntries(policyEntries.map((entry) => [`./${entry}`, { types: `./dist/${entry}.d.ts`, import: `./dist/${entry}.js` }])), './manifest': './agon.mod.json', './ownership': './ownership.json' },
     main: './dist/index.js',
     types: './dist/index.d.ts',
     files: short === 'plan'
@@ -336,6 +337,7 @@ export { extractCitations, judgeProbe, formatCitationReport } from './citation-p
 export type { CitationStatus, CitationProbe, CitationVerdict, CitationReport } from './citation-policy.js';
 ` : short === 'mutate' ? `export { runMutate, generateMutants } from './implementation.js';
 ` : short === 'naturalize' ? `export { runNaturalize } from './implementation.js';
+export { tokenizeWords, wordDiffStats } from './lexical-policy.js';
 ` : short === 'sanitize' ? `export { runSanitize, scanText, cleanText } from './implementation.js';
 ` : short === 'goal' ? `export { runGoal } from './implementation.js';
 export { summarizeGoal, createGoalResult } from './artifacts.js';
@@ -569,7 +571,7 @@ export type { CouncilSessionHost, CouncilSessionContext, CouncilSessionCommandRe
     [resolve(directory, 'src/index.ts'), indexSource],
     [resolve(directory, 'LICENSE'), readFileSync(resolve(root, 'LICENSE'), 'utf8')],
     [resolve(directory, 'tsconfig.json'), json(tsconfig)],
-    [resolve(directory, 'tsup.config.ts'), `import { defineConfig } from 'tsup';\n\nexport default defineConfig({ entry: [${['src/index.ts', ...(short === 'research' ? researchPolicyEntries.map((entry) => `src/${entry}.ts`) : [])].map((entry) => `'${entry}'`).join(', ')}], ${short === 'research' ? `external: [${researchPolicyEntries.map((entry) => `'./${entry}.js'`).join(', ')}], ` : ''}format: ['esm'], dts: false, sourcemap: false, clean: true, target: 'es2022' });\n`],
+    [resolve(directory, 'tsup.config.ts'), `import { defineConfig } from 'tsup';\n\nexport default defineConfig({ entry: [${['src/index.ts', ...policyEntries.map((entry) => `src/${entry}.ts`)].map((entry) => `'${entry}'`).join(', ')}], ${policyEntries.length ? `external: [${policyEntries.map((entry) => `'./${entry}.js'`).join(', ')}], ` : ''}format: ['esm'], dts: false, sourcemap: false, clean: true, target: 'es2022' });\n`],
   ]);
 }
 

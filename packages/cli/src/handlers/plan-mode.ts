@@ -38,6 +38,7 @@ const { runBrainstorm } = createBrainstormRuntime(createBrainstormEngineServices
 }));
 
 export async function handleProposePlan(args: Record<string, unknown>, dispatch: Dispatch, ctx: HandlerContext): Promise<CesarPlan> {
+  assertProcessSurfaceAvailable('tui', '/plan');
   return publishPlanProposal(args, {
     estimator: planCostEstimator,
     agenticAutoMode: () => isAgenticAutoMode(ctx),

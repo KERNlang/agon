@@ -1,0 +1,115 @@
+{
+  "schemaVersion": 1,
+  "status": "Exact committed checkout qualification passed; full modular release acceptance remains open",
+  "scope": "Reject disabled or stale CLI Plan proposal publication before persistence and events",
+  "baseCommit": "26c026356a28dfd681aeacbc0e3aa2b4acd7c0d7",
+  "qualifiedCommit": "59daf82791b8c55133a5571add99a8c024c32334",
+  "archive": {
+    "id": "modular-agon-remediation",
+    "locator": "Operator-owned durable archive outside Git worktrees",
+    "retention": "Never delete without Raphael's explicit approval",
+    "sourceSnapshot": "plan-publication-authority-review-input.txt"
+  },
+  "review": {
+    "engine": "codex",
+    "packet": "plan-publication-authority-review-input.txt",
+    "packetSha256": "4f552c6e76f9ee0e9d720f81d11d417f5974fb58da0634817680bf143f80e825",
+    "log": "plan-publication-authority-codex-review.log",
+    "logSha256": "c6336511936818dc601125ee6846dbfbd836e0b0d305aaa527ea5f1c769d1368",
+    "result": "No findings; static source review, no independent test execution"
+  },
+  "verifiedRuns": {
+    "negativeControl": "plan-publication-authority-red-valid-20261030.receipt.json",
+    "negativeControlResult": "Four disabled/stale cases failed; two enabled controls passed",
+    "focused": "plan-publication-authority-focused-20261030.receipt.json",
+    "focusedResult": "47 tests, typecheck, lint and diff check passed; zero provider launches"
+  },
+  "sourceSha256": {
+    "packages/cli/src/handlers/plan-mode.ts": "0c401bcc510efe9eb4924412e0383af6fc4625aac1ab67e30e3b6c611b9f661d",
+    "packages/mod-plan/src/proposal-workflow.ts": "d12df010e23a3d2ee9c87be04913bafa6c79fbbdea3e308d45cb5790d3a352d0",
+    "packages/cli/src/cesar/plan-control-signals.ts": "eb263ed05290053dc0edae5f8ce7485b2c49944ac2f6539b49abb9ddf9a335e7",
+    "packages/cli/src/surface-authority-runtime.ts": "2f99e1457e3b8f88806ab6994754a38ac611c579537a73989aa864f9301088f3",
+    "tests/unit/modular-plan-publication-authority.test.ts": "ebc7987f5490f176fde6196efd65f415ed1bba5b8b697216c467caa0e9d26b74",
+    "tests/unit/modular-plan-proposal-publication-parity.test.ts": "a5d17dae00f0b7534603e306e913af142057572621cc6576117fee7c3bf5ba87"
+  },
+  "limits": [
+    "Companion route source-traced, not exercised through a live provider",
+    "Core Plan runtime ownership and original aggregate acceptance remain open",
+    "macOS arm64 Node26 evidence only; no other native platform qualification"
+  ],
+  "receipts": [
+    {
+      "file": "plan-publication-authority-red-valid-20261030.receipt.json",
+      "sha256": "f146366c824fdfbd9a9946848d9ee9a1050d63bfee6a7624ea97d9e87aab029d",
+      "passed": false,
+      "logSha256": "sha256:6465cc40b105cdea5e29b17b94a7d2653fe5ead83c72bbda040a470646fa3dc4",
+      "providerLaunches": 0,
+      "expectedFailure": "Four disabled/stale cases fail without guard; two enabled cases pass"
+    },
+    {
+      "file": "plan-publication-authority-focused-20261030.receipt.json",
+      "sha256": "995260cf8df94c79b7e1b424cfcd3a4c09d099fae770440d804ea66710695239",
+      "passed": true,
+      "logSha256": "sha256:a28f898e3a00f464cee77982e152fc840a70ee5fc5614ddde8c68661361288de",
+      "providerLaunches": 0
+    },
+    {
+      "file": "plan-publication-authority-full-20261030.receipt.json",
+      "sha256": "1c6c2f16ee9a83df7402476cbcf26b990d210ed4b62eb2083a2d5af2f757c02a",
+      "passed": false,
+      "logSha256": "sha256:1d0a03b1d2f075ab69eb877cbbfcbc129f49e2f685736e78606d0364be0cc2ce",
+      "providerLaunches": 0,
+      "failure": "Migration ledger source hash stale; regenerated hashes only and verified in subsequent run"
+    },
+    {
+      "file": "plan-publication-ledger-focused-20261030.receipt.json",
+      "sha256": "8ee46c8f873632a5f2ac06e1094b77c417b9dd741faa9d6df117a9835bfbfc75",
+      "passed": true,
+      "logSha256": "sha256:a9d088f0d1319bad0aca1cce1f9e3584fb4c5f22c50a4560c35e3cea5d63be03",
+      "providerLaunches": 0
+    },
+    {
+      "file": "plan-publication-authority-full-fixed-20261030.receipt.json",
+      "sha256": "7da2ed7f0f9563f9746c936dfaad9f4f3ec2299d46ff9173680ed34152fd685e",
+      "passed": true,
+      "logSha256": "sha256:35f753d03902166dbda4d3605166cc411f38c2474d5605c19f1b481a0a14eb8f",
+      "providerLaunches": 0
+    },
+    {
+      "file": "plan-publication-clean-build-20261030.receipt.json",
+      "sha256": "720b11f5e73d957bf23d159deaa4a09dc5d7ac4186307b23a0f88c396a50c222",
+      "passed": true,
+      "logSha256": "sha256:afd37d412ca4b1087014af1bab391865bab6b550dc0964fa47b6f5a1ffb813b3",
+      "providerLaunches": 0
+    },
+    {
+      "file": "plan-publication-clean-runtime-20261030.receipt.json",
+      "sha256": "390084256f4b609bdc39816c80ce5cc14b7d9737317942f02fb9b045204f7387",
+      "passed": true,
+      "logSha256": "sha256:d94c7c071a3d5ecc635e50bbe70fce630ca83390d7fd03bf0064c71d8210a073",
+      "providerLaunches": 0
+    }
+  ],
+  "archivedInstalledReceipt": {
+    "file": "plan-publication-working-npx-qualification-20261030.json",
+    "sha256": "64fe182274028b8147371f334e4eba74cb1e24e1bfb0544256b05e87a1e8312a"
+  },
+  "qualifiedTree": "6a1a02635539870739ec8511608ccad38dc4a7b7",
+  "qualification": {
+    "cleanBeforeAndAfter": true,
+    "sourceBearingContamination": {
+      "ignored": [],
+      "untracked": [],
+      "unstaged": []
+    },
+    "metadataRegeneratedInCleanCheckout": false,
+    "testsPassed": 12118,
+    "testsSkipped": 7,
+    "installedChecks": 129,
+    "installedPackages": 15,
+    "cacheDeletionSurvived": true,
+    "idempotent": true,
+    "providerLaunches": 0,
+    "subsequentCommitScope": "Evidence index only; runtime qualification binds qualifiedCommit"
+  }
+}

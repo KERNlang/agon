@@ -12,7 +12,7 @@ import {
   RUN_KEEP_AGE_MS,
   RUN_PROTECT_MIN_AGE_MS,
   PRUNE_STAMP_NAME,
-} from '../../packages/cli/src/signals/runs-store.js';
+} from '@kernlang/agon-support-persistence';
 
 const DAY = 24 * 60 * 60 * 1000;
 

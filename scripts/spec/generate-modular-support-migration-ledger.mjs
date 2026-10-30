@@ -1,10 +1,12 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { collectSupportSourceRelocations } from './modular-support-source-relocations.mjs';
 
 const root = resolve(import.meta.dirname, '../..');
 const evidence = join(root, 'docs/specs/evidence');
 const roadmap = JSON.parse(readFileSync(join(evidence, 'modular-agon-implementation-roadmap.json'), 'utf8'));
 const supportPackages = roadmap.packages.filter((entry) => entry.class === 'hidden-shared-support-package');
+const sourceRelocations = collectSupportSourceRelocations(root, supportPackages);
 const destinations = {
   '@kernlang/agon-support-engine-runtime': ['src/types.ts', 'src/engine-discover.ts', 'src/engine-health.ts', 'src/engine-memory.ts', 'src/auth-store.ts', 'src/isolation.ts', 'src/process.ts', 'src/semaphore.ts', 'engines/', 'python/', 'patches/'],
   '@kernlang/agon-support-engine-catalog': ['src/engine-registry.ts', 'src/cli-models-registry.ts', 'src/api-models-registry.ts'],
@@ -34,6 +36,13 @@ for (const pkg of supportPackages) {
   for (const source of pkg.extractionSources) {
     const file = sourceFile(source);
     const absolute = join(root, file);
+    const relocation = sourceRelocations.find(row => row.package === pkg.id && row.source === source);
+    if (relocation) {
+      entries.push({ owner: pkg.id, source, disposition: 'retired-adapter',
+        destination: relocation.implementationPaths.map(path => path.slice(packageDir.length + 1)),
+        removalCondition: null, evidence: [relocation.removalEvidence], ...relocation });
+      continue;
+    }
     if (!existsSync(absolute)) throw new Error(`${pkg.id}: extraction source disappeared without a ledger disposition: ${source}`);
     const text = /\.(?:ts|tsx|js|mjs|cjs)$/.test(file) ? readFileSync(absolute, 'utf8') : '';
     let disposition = 'compatibility-consumer';
@@ -64,6 +73,7 @@ const ledger = {
   packages: supportPackages.length,
   sourceOccurrences: entries.length,
   counts,
+  sourceRelocations,
   entries,
 };
 const outputPath = join(evidence, "modular-agon-slice4-migration-ledger.json");

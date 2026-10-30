@@ -5,7 +5,10 @@ import { tmpdir, hostname } from 'node:os';
 import { TelemetryLedger, type RunRecord } from '../../packages/cli/src/telemetry/index.js';
 import { createBrainstormSessionRecord } from '../../packages/mod-brainstorm/src/session-record.js';
 
-vi.mock('../../packages/cli/src/signals/runs-store.js', () => ({ runsStore: { scheduleRefresh: vi.fn() } }));
+vi.mock('@kernlang/agon-support-persistence', async original => ({
+  ...await original<typeof import('@kernlang/agon-support-persistence')>(),
+  runsStore: { scheduleRefresh: vi.fn() },
+}));
 
 const fault = vi.hoisted(() => ({ phase: '', target: '' }));
 vi.mock('node:fs', async original => {

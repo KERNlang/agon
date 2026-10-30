@@ -16,7 +16,7 @@ import type { EngineAdapter } from '@kernlang/agon-core';
 
 import { SLASH_COMMANDS } from '../signals/intent.js';
 
-import { runsStore } from '../signals/runs-store.js';
+import { runsStore } from '@kernlang/agon-support-persistence';
 
 import { CommandRegistry, registerBuiltinCommands, EventBus, bridgeShellHooks } from '@kernlang/agon-core';
 

@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { collectPlanSourceRelocations } from './modular-plan-source-relocations.mjs';
+import { collectSupportSourceRelocations } from './modular-support-source-relocations.mjs';
 
 const root = new URL('../..', import.meta.url).pathname.replace(/\/$/, '');
 const json = (path) => JSON.parse(readFileSync(`${root}/${path}`, 'utf8'));
@@ -7,12 +8,15 @@ const roadmap = json('docs/specs/evidence/modular-agon-implementation-roadmap.js
 const packageMap = json('docs/specs/evidence/modular-agon-package-map.json');
 const ownership = json('docs/specs/evidence/modular-agon-ownership.json');
 const migrationLedger = json('docs/specs/evidence/modular-agon-slice5-migration-ledger.json');
+const supportLedger = json('docs/specs/evidence/modular-agon-slice4-migration-ledger.json');
+const supportRelocations = collectSupportSourceRelocations(root, roadmap.packages);
 // Declaration relocation permits tracing a deleted source. It is not a runtime
 // cutover receipt. Recompute it from source, including evidence content hashes.
 const sourceRelocations = collectPlanSourceRelocations(root, ownership.assignments);
 const errors = [];
 const check = (condition, message) => { if (!condition) errors.push(message); };
 check(JSON.stringify(migrationLedger.sourceRelocations) === JSON.stringify(sourceRelocations), 'source relocation evidence is stale');
+check(JSON.stringify(supportLedger.sourceRelocations) === JSON.stringify(supportRelocations), 'support relocation evidence is stale');
 const ids = new Set(packageMap.packages.map(({ id }) => id));
 const byId = new Map(roadmap.packages.map((pkg) => [pkg.id, pkg]));
 const migratedAssignment = new Map(migrationLedger.assignments.map((entry) => [`${entry.package}\0${entry.source}`, entry]));
@@ -47,6 +51,7 @@ for (const pkg of roadmap.packages) {
     // case the source-level migration record is authoritative.
     const migration = migratedAssignment.get(`${pkg.id}\0${source}`) ?? migratedSource.get(source)
       ?? sourceRelocations.find(row => row.package === pkg.id && row.source === source)
+      ?? supportRelocations.find(row => row.package === pkg.id && row.source === source)
       ?? kernelRelocations.find(row => row.package === pkg.id && row.source === source);
     const removedWithEvidence = migration?.legacyPresent === false
       && Boolean(migration.removalEvidence)

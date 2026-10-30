@@ -4,6 +4,8 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { DurableModHost } from '../../packages/mod-kernel/src/durable-host.js';
 import { ManagedLifecycleService, createManagedLifecyclePlan } from '../../packages/mod-kernel/src/managed-lifecycle.js';
+import { nodeHostIo } from '../../packages/mod-kernel/src/host-io.js';
+import { rollbackGeneration } from '../../packages/mod-kernel/src/host-rollback.js';
 import { artifact, installer, request, verifier } from '../helpers/modular-lifecycle.js';
 
 async function fixture(): Promise<{ root: string; host: DurableModHost; service: ManagedLifecycleService }> {
@@ -13,6 +15,30 @@ async function fixture(): Promise<{ root: string; host: DurableModHost; service:
 }
 
 describe('managed installer', () => {
+  it('reads generation metadata through host IO, not the prefix IO override', async () => {
+    const { host, service } = await fixture();
+    const installed = await service.apply(await createManagedLifecyclePlan(host, request([artifact('@test/app')])), installer, verifier);
+    const reader = new ManagedLifecycleService(host, { io: { ...nodeHostIo, readFile: async path => {
+      if (path.startsWith(host.paths.generations)) throw new Error('prefix IO cannot read generation metadata');
+      return nodeHostIo.readFile(path);
+    } } });
+    expect((await reader.readSelectedInstallation())?.installationId).toBe(installed.installation.installationId);
+  });
+
+  it('does not treat a managed record with an incomplete index as a generic generation', async () => {
+    const { host, service } = await fixture();
+    const input = request([artifact('@test/app')]);
+    const installed = await service.apply(await createManagedLifecyclePlan(host, input), installer, verifier);
+    const files = await host.readGenerationArtifacts(installed.pointer, ['installation.json']);
+    await host.commitGeneration({ operation: 'update', lock: input.lock, desiredState: input.desiredState,
+      installedIndex: { packages: [] }, files });
+    await host.commitGeneration({ operation: 'update', lock: input.lock, desiredState: input.desiredState,
+      installedIndex: { packages: [] } });
+    const before = await nodeHostIo.readFile(host.paths.current);
+    await expect(rollbackGeneration(host, 2)).rejects.toMatchObject({ code: 'MOD_GENERATION_CORRUPT' });
+    expect(await nodeHostIo.readFile(host.paths.current)).toEqual(before);
+  });
+
   it('builds a deterministic, dependency-ordered, exact-lock plan before mutation', async () => {
     const { root, host } = await fixture();
     const base = artifact('@test/base');

@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -1013,6 +1013,7 @@ try {
     ['setup', '--profile', 'minimal', '--with', 'provenance', '--offline', '--cache', npmCache, '--json'],
     { cwd: scratch, env: setupEnv })).stdout);
   if (provenanceSetup.status !== 'installed') throw new Error('Provenance profile was not selected');
+  const provenanceGeneration = await host.readCurrentPointer();
   const provenanceInstallation = await lifecycle.readSelectedInstallation();
   if (!provenanceInstallation) throw new Error('Provenance installation is missing');
   const provenancePrefix = join(host.root, provenanceInstallation.prefix);
@@ -1048,6 +1049,34 @@ try {
     throw new Error('small profile could not be restored after Provenance qualification');
   }
   if (checks.some(check => !check.passed)) throw new Error(`packed workflow qualification failed: ${checks.filter(check => !check.passed).map(check => check.id).join(', ')}`);
+  const recoveryPlan = JSON.parse(requireOk('unavailable-recovery-preview', run(stable,
+    ['mod', 'recover', String(provenanceGeneration.generation)], { cwd: scratch, env: setupEnv })).stdout);
+  const beforeRecovery = readFileSync(host.paths.current);
+  const prefixMode = lstatSync(provenancePrefix).mode & 0o777;
+  const heldPrefix = `${provenancePrefix}.recovery-probe`;
+  try {
+    chmodSync(provenancePrefix, prefixMode | 0o200);
+    renameSync(provenancePrefix, heldPrefix);
+    const refused = run(stable, ['mod', 'recover', recoveryPlan.planPath, '--approve', recoveryPlan.planHash],
+      { cwd: scratch, env: setupEnv });
+    if (refused.error || refused.signal || refused.status === 0
+      || !refused.stderr.includes('managed installation is unavailable or corrupt')
+      || !readFileSync(host.paths.current).equals(beforeRecovery)) {
+      throw new Error('recovery selected an unavailable prefix or failed for an unrelated reason');
+    }
+    checks.push({ id: 'unavailable-recovery-refused', passed: true, detail: 'exact approval refused; pointer unchanged' });
+    requireOk('launcher-survives-recovery-refusal', run(stable, ['--version'], { cwd: scratch, env: setupEnv }));
+  } finally {
+    if (existsSync(heldPrefix)) renameSync(heldPrefix, provenancePrefix);
+    chmodSync(provenancePrefix, prefixMode);
+  }
+  requireOk('restored-recovery-approved', run(stable,
+    ['mod', 'recover', recoveryPlan.planPath, '--approve', recoveryPlan.planHash], { cwd: scratch, env: setupEnv }));
+  if ((await host.readCurrentPointer()).generation !== provenanceGeneration.generation) throw new Error('restored recovery did not select its exact target');
+  requireOk('restored-recovery-dispatch', run(stable,
+    ['provenance', '--id', 'historical-forge', '--format', 'json'], { cwd: scratch, env: setupEnv }));
+  await lifecycle.rollback(JSON.parse(beforeRecovery.toString('utf8')).generation);
+  requireOk('launcher-after-recovery-reentry', run(stable, ['--version'], { cwd: scratch, env: setupEnv }));
   const result = { schemaVersion: 1, slice: 'S9', passed: checks.every(({ passed }) => passed), platform: `${process.platform}-${process.arch}`, node: process.version,
     profile: 'minimal+think+review', installedPackageCount: firstJson.packageCount, cacheDeletionSurvived: true, idempotent: true, checks };
   // Scratch cleanup is part of successful qualification. Retry transient

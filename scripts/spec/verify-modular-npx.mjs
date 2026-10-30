@@ -2,6 +2,7 @@ import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync,
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { verifyPackedMcp } from './verify-packed-mcp.mjs';
 import { verifyPackedBrainstorm } from './verify-packed-brainstorm.mjs';
 import { verifyPackedBrainstormTui } from './verify-packed-brainstorm-tui.mjs';
@@ -1041,11 +1042,92 @@ try {
   if (provenanceJson.winner !== 'a' || provenanceJson.contributions[0]?.costUsd !== 0) {
     throw new Error('historical Forge ledger changed without Forge installed');
   }
+  const retainedProvenancePointer = await host.readCurrentPointer();
+  const historicalBytes = readFileSync(join(home, 'runs', 'historical-forge.json'));
+  const historicalHash = `sha256:${createHash('sha256').update(historicalBytes).digest('hex')}`;
+  if (provenanceJson.sourceHashes?.['manifest.json'] !== historicalHash) {
+    throw new Error('historical Provenance baseline did not hash the actual source bytes');
+  }
   const afterProvenance = JSON.parse(requireOk('return-after-provenance-profile', run(stable,
     ['setup', '--profile', 'minimal', '--with', 'think,review', '--offline', '--cache', npmCache, '--json'],
     { cwd: scratch, env: setupEnv })).stdout);
   if (afterProvenance.status !== 'installed' || afterProvenance.packageCount !== 15) {
     throw new Error('small profile could not be restored after Provenance qualification');
+  }
+  const retainedMinimalPointer = await host.readCurrentPointer();
+  const retainedMinimalInstallation = await lifecycle.readSelectedInstallation();
+  if (!retainedProvenancePointer || !retainedMinimalPointer || !retainedMinimalInstallation) {
+    throw new Error('rollback qualification requires both retained installations');
+  }
+  for (const [label, target, installation] of [
+    ['provenance', retainedProvenancePointer, provenanceInstallation],
+    ['minimal-reentry', retainedMinimalPointer, retainedMinimalInstallation],
+  ]) {
+    const before = await host.readCurrentPointer();
+    const desiredBefore = await host.readGenerationDesiredState(target);
+    const preview = JSON.parse(requireOk(`rollback-${label}-preview`, run(stable,
+      ['mod', 'recover', String(target.generation)], { cwd: scratch, env: setupEnv })).stdout);
+    if (preview.targetGeneration !== target.generation
+      || JSON.stringify(await host.readCurrentPointer()) !== JSON.stringify(before)) {
+      throw new Error(`rollback-${label}: preview changed selection or chose the wrong target`);
+    }
+    const refused = run(stable, ['mod', 'recover', preview.planPath, '--approve', 'wrong-approval'],
+      { cwd: scratch, env: setupEnv });
+    if (refused.status === 0 || refused.status === null || refused.error || refused.signal
+      || !`${refused.stdout}${refused.stderr}`.includes('generation recovery approval does not match the exact plan')
+      || JSON.stringify(await host.readCurrentPointer()) !== JSON.stringify(before)) {
+      throw new Error(`rollback-${label}: wrong approval did not safely refuse recovery`);
+    }
+    checks.push({ id: `rollback-${label}-wrong-approval`, passed: true, detail: 'exact refusal; selected pointer unchanged' });
+    const applied = JSON.parse(requireOk(`rollback-${label}-apply`, run(stable,
+      ['mod', 'recover', preview.planPath, '--approve', preview.planHash], { cwd: scratch, env: setupEnv })).stdout);
+    const selected = await host.readCurrentPointer();
+    if (applied.recoveredGeneration !== target.generation || selected?.generation !== target.generation
+      || JSON.stringify(await lifecycle.readSelectedInstallation()) !== JSON.stringify(installation)
+      || JSON.stringify(await host.readGenerationDesiredState(selected)) !== JSON.stringify(desiredBefore)) {
+      throw new Error(`rollback-${label}: exact retained installation or desired state was not restored`);
+    }
+    requireOk(`rollback-${label}-fresh-launcher`, run(stable, ['mod', 'list'], { cwd: scratch, env: setupEnv }));
+    if (label === 'provenance') {
+      const reportStartedAt = Date.now();
+      const restored = JSON.parse(requireOk('rollback-historical-provenance', run(stable,
+        ['provenance', '--id', 'historical-forge', '--format', 'json'], { cwd: scratch, env: setupEnv })).stdout);
+      // Report time is fresh; all historical fields and source hashes must match.
+      const { generatedAt, ...restoredHistory } = restored;
+      const { generatedAt: originalReportTime, ...originalHistory } = provenanceJson;
+      const reportTime = Date.parse(generatedAt);
+      if (!Number.isFinite(Date.parse(originalReportTime)) || !Number.isFinite(reportTime)
+        || reportTime < reportStartedAt || reportTime > Date.now()
+        || JSON.stringify(restoredHistory) !== JSON.stringify(originalHistory)
+        || existsSync(join(provenancePrefix, 'node_modules/@kernlang/agon-mod-forge'))) {
+        throw new Error('rollback changed historical output or installed Forge unexpectedly');
+      }
+    } else {
+      const think = run(stable, ['think'], { cwd: scratch, env: setupEnv });
+      const thinkReached = think.status === 1 && !think.error && !think.signal
+        && (think.stderr + think.stdout).includes('Provide a problem. Usage: agon think');
+      checks.push({ id: 'rollback-reentry-think-handler', passed: thinkReached,
+        detail: String(think.stderr + think.stdout).slice(0, 1200) });
+      if (!thinkReached) throw new Error('minimal re-entry did not reach the Think handler');
+      const absent = run(stable, ['provenance'], { cwd: scratch, env: setupEnv });
+      const passed = absent.status === 1 && !absent.error && !absent.signal
+        && /unknown command|unavailable/i.test(absent.stderr + absent.stdout);
+      checks.push({ id: 'rollback-reentry-provenance-unreachable', passed,
+        detail: String(absent.stderr + absent.stdout).slice(0, 1200) });
+      if (!passed) throw new Error('minimal re-entry retained Provenance or failed for an unrelated reason');
+    }
+    if (!readFileSync(join(home, 'runs', 'historical-forge.json')).equals(historicalBytes)) {
+      throw new Error(`rollback-${label}: historical record bytes changed`);
+    }
+    checks.push({ id: `rollback-${label}-identity`, passed: true,
+      detail: `generation=${target.generation}; prefix=${installation.prefix}; desired state and historical bytes unchanged` });
+  }
+  const reentryReuse = JSON.parse(requireOk('rollback-reentry-setup-reuse', run(stable,
+    ['setup', '--profile', 'minimal', '--with', 'think,review', '--offline', '--cache', npmCache, '--json'],
+    { cwd: scratch, env: setupEnv })).stdout);
+  if (reentryReuse.status !== 'already-qualified' || reentryReuse.generationUnchanged !== true
+    || (await host.readCurrentPointer())?.generation !== retainedMinimalPointer.generation) {
+    throw new Error('rollback re-entry did not retain a reusable qualified installation');
   }
   if (checks.some(check => !check.passed)) throw new Error(`packed workflow qualification failed: ${checks.filter(check => !check.passed).map(check => check.id).join(', ')}`);
   const result = { schemaVersion: 1, slice: 'S9', passed: checks.every(({ passed }) => passed), platform: `${process.platform}-${process.arch}`, node: process.version,

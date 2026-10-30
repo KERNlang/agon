@@ -5,6 +5,7 @@ import { runInNewContext } from 'node:vm';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { FIRST_PARTY_PACKAGE_GRAPH } from '../../packages/mod-kernel/src/generated/first-party-package-graph.js';
+import { collectSupportSourceRelocations } from '../../scripts/spec/modular-support-source-relocations.mjs';
 
 describe('frozen first-party package graph', () => {
   it.each(['valid', 'duplicate', 'missing-schema', 'other-owner', 'invalid-enum', 'reserved'] as const)(
@@ -124,7 +125,7 @@ describe('frozen first-party package graph', () => {
     expect(conquer.extractionSources).toContain('packages/forge/src/conquer.ts:146');
   });
 
-  it.each(['checked-in', 'valid', 'permuted', 'missing', 'extra', 'swapped', 'duplicate', 'wrong-order'] as const)(
+  it.each(['checked-in', 'valid', 'permuted', 'missing', 'extra', 'swapped', 'duplicate', 'wrong-order', 'support-drift', 'support-implementation-hash', 'support-evidence-hash'] as const)(
     'roadmap verification checks exact dependencies and migration order: %s', variant => {
       const script = new URL('../../scripts/spec/verify-modular-agon-roadmap.mjs', import.meta.url);
       const roadmap = JSON.parse(readFileSync(new URL('../../docs/specs/evidence/modular-agon-implementation-roadmap.json', import.meta.url), 'utf8'));
@@ -153,17 +154,28 @@ describe('frozen first-party package graph', () => {
         .replace('import.meta.url', JSON.stringify(script.href));
       const run = () => runInNewContext(source, {
         URL, existsSync,
-        readFileSync: (path: string, encoding: BufferEncoding) => path.endsWith('/modular-agon-implementation-roadmap.json')
-          ? JSON.stringify(roadmap) : readFileSync(path, encoding),
+        readFileSync: (path: string, encoding: BufferEncoding) => {
+          if (path.endsWith('/modular-agon-implementation-roadmap.json')) return JSON.stringify(roadmap);
+          if (variant.startsWith('support-') && path.endsWith('/modular-agon-slice4-migration-ledger.json')) {
+            const support = JSON.parse(readFileSync(path, encoding));
+            if (variant === 'support-drift') support.sourceRelocations = [];
+            else support.sourceRelocations[0][variant === 'support-implementation-hash'
+              ? 'implementationHash' : 'removalEvidenceHash'] = `sha256:${'0'.repeat(64)}`;
+            return JSON.stringify(support);
+          }
+          return readFileSync(path, encoding);
+        },
         // Relocation verification is independent of this dependency-drift control.
         collectPlanSourceRelocations: () => migration.sourceRelocations,
+        collectSupportSourceRelocations,
         console: { log: () => undefined, error: (message: string) => errors.push(message) },
         process: { exit: (code: number) => { throw new Error(`exit ${code}`); } },
       });
       if (variant === 'checked-in' || variant === 'valid' || variant === 'permuted') expect(run).not.toThrow();
       else {
         expect(run).toThrow('exit 1');
-        expect(errors.join('\n')).toContain('@kernlang/agon-mod-plan');
+        expect(errors.join('\n')).toContain(variant.startsWith('support-')
+          ? 'support relocation evidence is stale' : '@kernlang/agon-mod-plan');
         if (variant === 'duplicate') {
           expect(errors.join('\n')).toContain('@kernlang/agon-mod-plan has duplicate dependencies');
           expect(errors.join('\n')).toContain('duplicate global edge @kernlang/agon-mod-plan->');

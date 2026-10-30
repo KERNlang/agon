@@ -7,9 +7,8 @@ import { readFileSync, writeFileSync, mkdirSync, statSync, openSync, closeSync, 
 import { randomUUID } from 'node:crypto';
 import { join, resolve } from 'node:path';
 import { homedir } from 'node:os';
-import { withFileLock } from '@kernlang/agon-support-persistence';
+import { runsStore, withFileLock } from '@kernlang/agon-support-persistence';
 import { tracker, resolveWorkingDir } from '@kernlang/agon-core';
-import { runsStore } from '../signals/runs-store.js';
 import { summarizeIntentForEpisode } from '../cesar/experience.js';
 
 // ── Types ──────────────────────────────────────────────────────────────

@@ -16,6 +16,7 @@ import type { CommandContribution } from '../../packages/mod-api/src/index.js';
 import { runManagedSetup, ReleaseSetVerifier } from '../../packages/cli/src/commands/setup.js';
 import { artifact, installer, request, verifier } from '../helpers/modular-lifecycle.js';
 import { manifest } from '../helpers/modular-agon.js';
+import { buildStableLauncherForTest } from '../helpers/stable-launcher.js';
 
 let releaseChannelOverride: string | undefined;
 
@@ -23,6 +24,9 @@ let releaseChannelOverride: string | undefined;
 vi.mock('node:fs/promises', async importOriginal => {
   const actual = await importOriginal<typeof import('node:fs/promises')>();
   return { ...actual, readFile: (path: Parameters<typeof actual.readFile>[0], options?: Parameters<typeof actual.readFile>[1]) => {
+    if (path instanceof URL && path.pathname.endsWith('/cli/src/commands/stable-launcher.js')) {
+      return buildStableLauncherForTest();
+    }
     if (releaseChannelOverride !== undefined && path instanceof URL && path.pathname.endsWith('/cli/src/release-channel.json')) {
       return Promise.resolve(releaseChannelOverride);
     }

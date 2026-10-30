@@ -1,8 +1,13 @@
 {
   "schemaVersion": 1,
-  "status": "Current-main working qualification passed; clean committed qualification pending",
+  "status": "Working and exact clean committed qualification passed for this bounded repair",
   "scope": "Physical Research drafting supplies the existing textOnly dispatch option",
   "baseCommit": "26c026356a28dfd681aeacbc0e3aa2b4acd7c0d7",
+  "qualifiedSubject": {
+    "commit": "06e66ee745feb845f3381d6fc886db78d852f0f1",
+    "tree": "410f065668484e27fe229d02784d27f0473e6fff",
+    "scope": "Exact committed source used by cold-checkout qualification; subsequent evidence-index edits are not part of this tested subject"
+  },
   "archive": {
     "id": "modular-agon-remediation",
     "locator": "Operator-owned durable archive outside Git worktrees; paths below resolve within it",
@@ -25,6 +30,8 @@
     "limit": "Historical tests and 127 installed checks do not qualify the new base"
   },
   "receipts": [
+    { "file": "research-text-only-clean-runtime-20261030.receipt.json", "sha256": "7f7849b97186f801cdaa0d184d101712ad50a607f606cea0b74546e387e5b9e4", "passed": true, "scope": "Exact committed checkout; release/SBOM self-tests; 12112 full-suite passes, 7 skips; 129 installed checks, 15 packages, cache deletion and idempotence; clean before and after; zero provider launches" },
+    { "file": "research-text-only-clean-build-20261030.receipt.json", "sha256": "6de74ac4956fb1c543bbf6d6527d43513860ef22dd2ec01977a920fdd940a79e", "passed": true, "scope": "Exact clean committed checkout; offline frozen install, build, types, lint and re-export guard; clean before and after; zero provider launches" },
     { "file": "research-text-only-current-build-20261030.receipt.json", "sha256": "464faa1c3da2135cb714d0424d9a5d74ea19e9b358652d76eba75be79f897817", "passed": true, "scope": "Offline locked install, build, types, lint, re-export guard, release/SBOM generation" },
     { "file": "research-text-only-current-runtime-20261030.receipt.json", "sha256": "3846db83e195d2aeba092d459414fbfffac52d24d2dc86d7d5f978ab7dfa77ad", "passed": true, "scope": "68 focused tests; release/SBOM self-tests; 12112 full-suite passes, 7 skips; 129 installed checks, 15 packages, cache deletion and idempotence; zero provider launches" }
   ],
@@ -41,7 +48,7 @@
     "Configured text-only transport is not a universal provider sandbox",
     "Legacy Forge Research runtime and full ownership migration remain separate",
     "macOS arm64 Node26.12.1 and fixture providers only",
-    "Working-tree receipts do not prove clean committed reproducibility; committed replay remains pending",
+    "Cold qualification binds qualifiedSubject, not the later evidence-index-only commit",
     "Full modular release acceptance remains open"
   ]
 }

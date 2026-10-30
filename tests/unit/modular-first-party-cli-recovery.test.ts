@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, readdir, realpath, rename, stat, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, readdir, realpath, rename, stat, writeFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -30,6 +30,44 @@ async function previewAndApprove(command: any, target: string) {
 }
 
 describe('first-party safe-mode CLI recovery', () => {
+  it.each([
+    ['missing-prefix', false], ['changed-record', false], ['none', false],
+    ['missing-prefix', true], ['changed-record', true], ['none', true],
+  ] as const)('validates managed recovery with %s (invalid current=%s)', async (fault, invalidCurrent) => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-recover-installation-'));
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
+    const service = new ManagedLifecycleService(host);
+    const first = await service.apply(await createManagedLifecyclePlan(host, request([artifact('@test/app')])), installer, verifier);
+    const artifacts = await host.readGenerationArtifacts(first.pointer, ['installation.json']);
+    await host.commitGeneration({ operation: 'update', lock: request([artifact('@test/app')]).lock,
+      desiredState: { schemaVersion: 1, enabled: ['@test/app'] },
+      installedIndex: JSON.parse(await readFile(host.paths.installedIndex, 'utf8')), files: artifacts });
+    process.env.AGON_MODULAR_HOST_ROOT = root;
+    const output: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation(value => output.push(String(value)));
+    await modCommand.subCommands.recover.run({ args: { target: '1' } });
+    const plan = JSON.parse(output.at(-1)!);
+    if (invalidCurrent) await writeFile(host.paths.current, '{malformed');
+    const before = await readFile(host.paths.current);
+    const prefix = join(root, first.installation.prefix);
+    await chmod(prefix, 0o700);
+    if (fault === 'missing-prefix') await rename(prefix, `${prefix}.held`);
+    else if (fault === 'changed-record') {
+      const record = join(prefix, 'agon-installation.json');
+      await chmod(record, 0o600);
+      await writeFile(record, JSON.stringify({ ...first.installation, installationId: 'different' }));
+    }
+    const recovery = modCommand.subCommands.recover.run({ args: { target: plan.planPath, approve: plan.planHash } });
+    if (fault === 'none') {
+      await recovery;
+      expect((await host.readCurrentPointer())?.generation).toBe(1);
+      expect((await service.readSelectedInstallation())?.installationId).toBe(first.installation.installationId);
+    } else {
+      await expect(recovery).rejects.toMatchObject({ code: 'MOD_GENERATION_CORRUPT' });
+      expect(await readFile(host.paths.current)).toEqual(before);
+    }
+  });
+
   it.each(['--help', '-h'])('shows only kernel commands in pristine safe-mode %s', async flag => {
     const root = await mkdtemp(join(tmpdir(), 'agon-safe-pristine-help-'));
     const cli = fileURLToPath(new URL('../../packages/cli/dist/index.js', import.meta.url));

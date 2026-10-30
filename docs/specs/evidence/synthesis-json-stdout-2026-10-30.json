@@ -1,6 +1,29 @@
 {
   "schemaVersion": 1,
-  "status": "Working-tree qualification passed; clean committed replay pending",
+  "status": "Bounded repair passed clean committed qualification; not full modular release acceptance",
+  "cleanCommittedReplay": {
+    "subjectCommit": "cc24167e0cd689c9e3bcdd182e2fcb0a59c0dd0f",
+    "subjectTree": "4f50fc4af6ba975d5932f3e99ca8add5babac580",
+    "checkout": "synthesis-json-clean-20261030",
+    "receipts": [
+      { "file": "synthesis-json-clean-build-20261030.receipt.json", "sha256": "054f10b516201ae0ee4fa8f15edfca7e3a900ef37d6408f7938d7806e7ff686f", "seconds": 228.727, "logSha256": "5133ac37816392cee33cff11997f63f0c92d5b3c03846345cb9fa7a5e5eaa6a4" },
+      { "file": "synthesis-json-clean-runtime-20261030.receipt.json", "sha256": "d445bcb0114d709483924b68ad830658254bdca088f79f54049add33dcb977a2", "seconds": 749.634, "logSha256": "c13994fdbec48bbc52ff8ef0f6367ff3797b90419d3e38f5b3a3da365dad04cb" }
+    ],
+    "testsPassed": 12112,
+    "testsSkipped": 7,
+    "installedChecksPassed": 129,
+    "installedPackages": 15,
+    "cacheDeletionSurvived": true,
+    "idempotent": true,
+    "providerLaunches": 0,
+    "checks": ["Frozen offline install with lifecycle scripts disabled", "Build, typecheck, lint, re-export and generated checks", "Release-set and supply-chain self-tests", "Full repository suite", "Installed CLI matrix", "Exact committed HEAD and clean Git before and after"],
+    "sourceContamination": {
+      "ignored": [], "untracked": [], "unstaged": [],
+      "method": "Committed collectSubjectContamination and isSourceBearingPath after installed replay; no additional exclusions",
+      "limits": "Classifier excludes dependency/build outputs, tsbuildinfo and orig files; not arbitrary generated-byte reproducibility"
+    },
+    "evidenceCommitPolicy": "Receipts bind subjectCommit. Later index-only commit is not represented as runtime-tested."
+  },
   "baseCommit": "26c026356a28dfd681aeacbc0e3aa2b4acd7c0d7",
   "scope": "Keep current generated Synthesis stdout parseable as JSON; send routing advice to stderr",
   "reviewComment": "https://github.com/KERNlang/agon/pull/352#issuecomment-6509150608",
@@ -38,7 +61,7 @@
   },
   "generatedMetadata": "All 49 modular packages and the dedup compatibility artifact retain payload hashes, manifest hashes, versions and dependencies versus base. Archive hashes regenerated; CLI source changed. No lockfile change.",
   "limits": [
-    "Working-tree evidence is not a clean committed receipt",
+    "Historical working-tree receipts below do not replace the exact clean committed replay above",
     "Native macOS arm64 Node26.12.1 only; fixture providers only",
     "Legacy human-report presentation remains a separate slice",
     "Existing security findings, external platform/provider/publishing cells and full modular release acceptance remain open"

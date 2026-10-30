@@ -264,6 +264,7 @@ export async function runResearch(
       context,
       {
         mode: "exec",
+        textOnly: true,
         timeoutSeconds,
         systemPrompt:
           "Use only supplied sources. Cite [n]. Do not use tools or prior knowledge.",

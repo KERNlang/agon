@@ -1,4 +1,5 @@
-import type { EngineRegistry, EngineAdapter, Plan, CesarPlan, AgonConfig, ChatSession, PersistentSession, CesarMemory, EventBus, ToolRegistry, DiscoveredGate } from '@kernlang/agon-core';
+import type { EngineRegistry, EngineAdapter, Plan, AgonConfig, ChatSession, PersistentSession, CesarMemory, EventBus, ToolRegistry, DiscoveredGate } from '@kernlang/agon-core';
+import type { CesarPlan } from '@kernlang/agon-mod-plan';
 
 import type { EngineVitals } from '../cesar/telemetry.js';
 

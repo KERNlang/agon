@@ -10,7 +10,7 @@ import { buildPlanPhaseGauge, normalizeUiMotion } from './status-helpers.js';
 
 import type { EngineProgress } from '../handlers/types.js';
 
-import type { CesarPlan } from '@kernlang/agon-core';
+import type { CesarPlan } from '@kernlang/agon-mod-plan';
 
 import type { EngineVitals } from '../cesar/telemetry.js';
 

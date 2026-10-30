@@ -1,6 +1,8 @@
-import { appendMessage, loadCesarPlan, cesarPlanJsonPath, configSet } from '@kernlang/agon-core';
+import { appendMessage, configSet } from '@kernlang/agon-core';
+import { loadCesarPlan, cesarPlanJsonPath } from '@kernlang/agon-mod-plan';
 
-import type { ChatSession, PersistentSession, CesarPlan, EngineRegistry, EventBus } from '@kernlang/agon-core';
+import type { ChatSession, PersistentSession, EngineRegistry, EventBus } from '@kernlang/agon-core';
+import type { CesarPlan } from '@kernlang/agon-mod-plan';
 
 import { checkForUpdate, loadDismissedVersion, isLinkedDevInstall } from '../services/update-check.js';
 

@@ -1,4 +1,4 @@
-import { saveCesarPlan, cancelCesarPlan } from '@kernlang/agon-core';
+import { saveCesarPlan, cancelCesarPlan } from '@kernlang/agon-mod-plan';
 import { revokePlanFallback } from '../signals/plan-fallback.js';
 import type { QueuedInput } from '../signals/queued-input.js';
 

@@ -3,7 +3,7 @@ export { formatResearchResult } from './format-policy.js';
 import { parseAuthoritativeResults } from './response-policy.js';
 import { lookup } from "node:dns/promises";
 import { BlockList, isIP } from "node:net";
-import { Agent } from "undici";
+import { Agent, fetch as fetchPinned } from "undici";
 import { buildPrompt } from './prompt-policy.js';
 import type { Source } from './prompt-policy.js';
 export { buildPrompt } from './prompt-policy.js';
@@ -63,22 +63,61 @@ blockedAddresses.addSubnet("169.254.0.0", 16, "ipv4");
 blockedAddresses.addSubnet("172.16.0.0", 12, "ipv4");
 blockedAddresses.addSubnet("192.168.0.0", 16, "ipv4");
 blockedAddresses.addSubnet("100.64.0.0", 10, "ipv4");
+blockedAddresses.addSubnet("192.0.0.0", 24, "ipv4");
+blockedAddresses.addSubnet("192.0.2.0", 24, "ipv4");
+blockedAddresses.addSubnet("198.51.100.0", 24, "ipv4");
+blockedAddresses.addSubnet("203.0.113.0", 24, "ipv4");
+blockedAddresses.addSubnet("198.18.0.0", 15, "ipv4");
+blockedAddresses.addSubnet("224.0.0.0", 4, "ipv4");
+blockedAddresses.addSubnet("240.0.0.0", 4, "ipv4");
 blockedAddresses.addAddress("::", "ipv6");
 blockedAddresses.addAddress("::1", "ipv6");
+blockedAddresses.addSubnet("::", 96, "ipv6");
+blockedAddresses.addSubnet("64:ff9b:1::", 48, "ipv6");
+blockedAddresses.addSubnet("2001:db8::", 32, "ipv6");
+blockedAddresses.addSubnet("3fff::", 20, "ipv6");
 blockedAddresses.addSubnet("fc00::", 7, "ipv6");
 blockedAddresses.addSubnet("fe80::", 10, "ipv6");
+blockedAddresses.addSubnet("fec0::", 10, "ipv6");
+blockedAddresses.addSubnet("ff00::", 8, "ipv6");
 
-export function isBlockedAddress(raw: string) {
+export function isBlockedAddress(raw: string): boolean {
   const value = raw.toLowerCase().replace(/^\[|\]$/g, "");
   const family = isIP(value);
-  if (!family) return true;
-  return blockedAddresses.check(value, family === 4 ? "ipv4" : "ipv6");
+  if (!family || value.includes('%')) return true;
+  if (family === 4) {
+    // IANA assigns these two public anycast exceptions within 192.0.0.0/24.
+    if (value === '192.0.0.9' || value === '192.0.0.10') return false;
+    return blockedAddresses.check(value, 'ipv4');
+  }
+  // URL normalization converts dotted IPv4 tails before expanding IPv6 words.
+  const canonical = new URL(`http://[${value}]/`).hostname.slice(1, -1);
+  const [left, right] = canonical.split('::');
+  const head = left ? left.split(':') : [];
+  const tail = right ? right.split(':') : [];
+  const words = (right === undefined ? head : [...head, ...Array<string>(8 - head.length - tail.length).fill('0'), ...tail])
+    .map(word => Number.parseInt(word, 16));
+  const mapped = words.slice(0, 5).every(word => word === 0) && words[5] === 0xffff;
+  const translated = words[0] === 0x64 && words[1] === 0xff9b && words.slice(2, 6).every(word => word === 0);
+  const sixToFour = words[0] === 0x2002;
+  if (mapped || translated || sixToFour) {
+    // RFC6052/3056 embed IPv4; apply the same destination policy to that address.
+    const offset = sixToFour ? 1 : 6;
+    const high = words[offset]!;
+    const low = words[offset + 1]!;
+    return isBlockedAddress(`${high >>> 8}.${high & 255}.${low >>> 8}.${low & 255}`);
+  }
+  return blockedAddresses.check(value, 'ipv6');
 }
 export async function resolvePublicHost(
   hostname: string,
   resolver: typeof lookup = lookup,
 ) {
-  const records = await resolver(hostname, { all: true, verbatim: true });
+  const address = hostname.replace(/^\[|\]$/g, "");
+  const family = isIP(address);
+  const records = family
+    ? [{ address, family }]
+    : await resolver(hostname, { all: true, verbatim: true });
   if (!records.length) throw new Error("hostname resolved to no addresses");
   for (const record of records)
     if (isBlockedAddress(record.address))
@@ -95,14 +134,15 @@ async function fetchBounded(url: string, signal: AbortSignal, max = 3500) {
     const pinned = await resolvePublicHost(current.hostname);
     const dispatcher = new Agent({
       connect: {
-        lookup(_hostname, _options, callback) {
-          callback(null, pinned.address, pinned.family);
+        lookup(_hostname, options, callback) {
+          if (options.all) callback(null, [pinned]);
+          else callback(null, pinned.address, pinned.family);
         },
       },
     });
-    let res: Response;
+    let res: Awaited<ReturnType<typeof fetchPinned>>;
     try {
-      res = await fetch(current, {
+      res = await fetchPinned(current, {
         redirect: "manual",
         signal: bounded,
         headers: {
@@ -110,7 +150,7 @@ async function fetchBounded(url: string, signal: AbortSignal, max = 3500) {
           accept: "text/html,text/plain,application/json",
         },
         dispatcher,
-      } as RequestInit);
+      });
     } catch (error) {
       await dispatcher.close();
       throw error;

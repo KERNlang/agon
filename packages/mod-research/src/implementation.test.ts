@@ -1,6 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ModServices } from '@kernlang/agon-mod-api';
 import { lookup } from 'node:dns/promises';
+import net from 'node:net';
+import { createServer } from 'node:http';
+import { once } from 'node:events';
+import { fetch as fetchPinned } from 'undici';
+vi.mock('undici', async (importOriginal) => ({
+  ...await importOriginal<typeof import('undici')>(),
+  fetch: vi.fn((input, init) => globalThis.fetch(input, init)),
+}));
 vi.mock('node:dns/promises', () => ({ lookup: vi.fn(async () => [{ address: '93.184.216.34', family: 4 }]) }));
 import { classifyQuery, formatResearchResult, isBlockedAddress, resolvePublicHost, runResearch, validateUrl } from './implementation.js';
 
@@ -14,6 +22,72 @@ function services(answer = 'Supported claim [1].') {
     engines: { listActive: vi.fn(async () => ['writer']), dispatch: vi.fn(async () => ({ exitCode: 0, stdout: answer })) } } as unknown as ModServices;
 }
 describe('physical research mod', () => {
+  it.each([
+    '198.18.0.0', '198.19.255.255', '192.0.0.1', '192.0.0.170',
+    '224.0.0.1', '239.255.255.255', '240.0.0.1', '255.255.255.255',
+    'ff02::1', 'fec0::1', 'feff:ffff::1', '::7f00:1',
+    '64:ff9b:1::808:808', '64:ff9b::7f00:1', '64:ff9b::a00:1',
+    '2002:7f00:1::', '2002:c0a8:101::', '::ffff:198.18.0.1',
+    '0064:ff9b:0000:0000:0000:0000:7f00:0001',
+    '2002:7f00:0001:1234:5678:abcd:0000:0001', 'fe80::1%eth0',
+    '192.0.2.1', '198.51.100.1', '203.0.113.1', '2001:db8::1', '3fff::1',
+    '::ffff:192.0.2.1', '64:ff9b::c633:6401', '2002:cb00:7101::1',
+  ])('rejects non-public research destinations %s', async (address) => {
+    expect(isBlockedAddress(address)).toBe(true);
+    await expect(resolvePublicHost('source.example', vi.fn(async () => [
+      { address: '93.184.216.34', family: 4 },
+      { address, family: address.includes(':') ? 6 : 4 },
+    ]) as any)).rejects.toThrow(/blocked address/);
+  });
+  it.each([
+    '192.0.0.9', '192.0.0.10', '198.17.255.255', '198.20.0.0',
+    '64:ff9b::808:808', '64:ff9b::8.8.8.8', '2002:808:808::1',
+    '::ffff:192.0.0.9', '2606:4700:4700::1111',
+  ])('preserves public research destinations %s', (address) => {
+    expect(isBlockedAddress(address)).toBe(false);
+  });
+  it('refuses a translated private destination before fetching source content', async () => {
+    vi.mocked(lookup).mockResolvedValue([{ address: '64:ff9b::7f00:1', family: 6 }] as any);
+    const discovered = { objects: [{ package: { name: 'pkg', links: { npm: 'https://source.example/pkg' } } }] };
+    globalThis.fetch = vi.fn(async (input) => new Response(
+      String(input).startsWith('https://registry.npmjs.org/') ? JSON.stringify(discovered) : 'Evidence',
+      { status: 200 },
+    ));
+    const out = await runResearch({ question: 'npm package pkg' }, context, services());
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    expect(out.exitCode).toBe(1);
+    expect((out.result as any).citations.verified).toBe(0);
+  });
+  it('rechecks a public source redirect before contacting a reserved destination', async () => {
+    vi.mocked(lookup).mockImplementation(async (hostname) => [{
+      address: hostname === 'source.example' ? '93.184.216.34' : '198.18.0.1', family: 4,
+    }] as any);
+    const discovered = { objects: [{ package: { name: 'pkg', links: { npm: 'https://source.example/pkg' } } }] };
+    globalThis.fetch = vi.fn(async (input) => String(input).startsWith('https://registry.npmjs.org/')
+      ? new Response(JSON.stringify(discovered), { status: 200 })
+      : new Response(null, { status: 302, headers: { location: 'https://reserved.example/private' } }));
+    const out = await runResearch({ question: 'npm package pkg' }, context, services());
+    expect(vi.mocked(globalThis.fetch).mock.calls.some(([input]) => String(input).includes('reserved.example'))).toBe(false);
+    expect(vi.mocked(lookup).mock.calls.some(([hostname]) => hostname === 'reserved.example')).toBe(true);
+    expect(out.exitCode).toBe(1);
+    expect((out.result as any).citations.verified).toBe(0);
+  });
+  it('starts with an isolated public DNS fixture', async () => {
+    expect(vi.mocked(lookup).mock.calls).toHaveLength(0);
+    await expect(resolvePublicHost('reserved.example')).resolves.toEqual({ address: '93.184.216.34', family: 4 });
+  });
+  it.each(['8.8.8.8', '[2606:4700:4700::1111]'])('validates literal %s without DNS', async (hostname) => {
+    const resolver = vi.fn(async () => { throw new Error('literal reached DNS'); });
+    await expect(resolvePublicHost(hostname, resolver as any)).resolves.toEqual({
+      address: hostname.replace(/^\[|\]$/g, ''), family: hostname.includes(':') ? 6 : 4,
+    });
+    expect(resolver).not.toHaveBeenCalled();
+  });
+  it.each(['127.0.0.1', '[64:ff9b::7f00:1]', '[2001:db8::1]'])('blocks literal %s without DNS', async (hostname) => {
+    const resolver = vi.fn(async () => [{ address: '8.8.8.8', family: 4 }]);
+    await expect(resolvePublicHost(hostname, resolver as any)).rejects.toThrow(/blocked address/);
+    expect(resolver).not.toHaveBeenCalled();
+  });
   it.each([
     '0.255.255.255', '10.255.255.255', '127.255.255.255',
     '169.254.255.255', '172.16.0.0', '172.31.255.255', '192.168.255.255',
@@ -109,6 +183,55 @@ describe('physical research mod', () => {
     const out = await runResearch({ question: 'npm package pkg' }, context, s);
     expect(out.exitCode).toBe(0); expect((out.result as any).citations.verified).toBe(1); expect(globalThis.fetch).toHaveBeenCalledTimes(3);
     expect(s.runs!.finish).toHaveBeenCalledWith(expect.objectContaining({ id: 'run' }), expect.objectContaining({ ok: true, mode: 'research' }), context);
+  });
+  it('connects using the checked DNS answer for source and citation reads', async () => {
+    const transport = await vi.importActual<typeof import('undici')>('undici');
+    let requests = 0;
+    const server = createServer((_request, response) => { requests++; response.end('Evidence'); });
+    server.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    const port = (server.address() as net.AddressInfo).port;
+    const connect = net.connect;
+    const pinned: string[] = [];
+    const transportErrors: string[] = [];
+    vi.mocked(fetchPinned).mockImplementation((...args) => transport.fetch(...args).catch(error => {
+      transportErrors.push(String(error.cause ?? error));
+      throw error;
+    }));
+    // Inspect the real connector, then route its verified address to the local fixture.
+    vi.spyOn(net, 'connect').mockImplementation(((options: net.NetConnectOpts) => {
+      const target = options as net.TcpNetConnectOpts;
+      expect(target.host).toBe('source.example');
+      expect(Number(target.port)).toBe(port);
+      expect(target.lookup).toBeTypeOf('function');
+      const checkedLookup = target.lookup!;
+      return connect({ ...target, lookup: (hostname, lookupOptions, callback) => {
+        checkedLookup(hostname, lookupOptions, (error, address, family) => {
+          const records = lookupOptions.all ? address as unknown as Array<{ address: string; family: number }> : [{ address, family }];
+          expect(error).toBeNull();
+          expect(records).toEqual([{ address: '93.184.216.34', family: 4 }]);
+          pinned.push(records[0]!.address);
+          if (lookupOptions.all) (callback as any)(null, [{ address: '127.0.0.1', family: 4 }]);
+          else callback(null, '127.0.0.1', 4);
+        });
+      } });
+    }) as typeof net.connect);
+    globalThis.fetch = vi.fn(async (input, init) => String(input).startsWith('https://registry.npmjs.org/')
+      ? new Response(JSON.stringify({ objects: [{ package: { name: 'pkg', links: { npm: `http://source.example:${port}/pkg` } } }] }))
+      : original(input, init).catch(error => {
+        transportErrors.push(String(error.cause ?? error));
+        throw error;
+      }));
+    try {
+      const out = await runResearch({ question: 'npm package pkg' }, context, services());
+      expect(out.exitCode, JSON.stringify({ out, pinned, requests, transportErrors })).toBe(0);
+      expect(pinned).toEqual(['93.184.216.34', '93.184.216.34']);
+      expect(requests).toBe(2);
+      expect(lookup).toHaveBeenCalledTimes(2);
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+    }
   });
   it('rejects unsafe URLs, unsupported lanes, and fabricated source numbers', async () => {
     expect(validateUrl('http://127.0.0.1/x')).toBeNull(); expect(classifyQuery('invent a poem')).toBe('general');

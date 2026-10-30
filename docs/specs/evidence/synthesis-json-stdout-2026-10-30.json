@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "status": "Working-tree qualification passed; clean committed replay pending",
+  "baseCommit": "26c026356a28dfd681aeacbc0e3aa2b4acd7c0d7",
+  "scope": "Keep current generated Synthesis stdout parseable as JSON; send routing advice to stderr",
+  "reviewComment": "https://github.com/KERNlang/agon/pull/352#issuecomment-6509150608",
+  "archive": {
+    "id": "modular-agon-remediation",
+    "locator": "Operator-owned durable local archive outside Git worktrees; relative receipt paths below resolve within it",
+    "retention": "Never delete without Raphael's explicit approval"
+  },
+  "sourceSha256": {
+    "packages/cli/src/first-party-services.ts": "a4519139368960a1c68f10be898bf548aa3a212b201857752847c20cda596ada",
+    "scripts/spec/fixtures/synthesis-engine.mjs": "03b4c0b61055b1f2e0ed3d7890e6132df3ec1e877f065d258a1f9343e2696e8d",
+    "scripts/spec/verify-packed-synthesis.mjs": "c5bfd6c003bea5b9ea745c9ab24baa3df0a123ee45f32a48357c61600b160455"
+  },
+  "receipts": [
+    { "file": "synthesis-json-build-20261030.receipt.json", "sha256": "2bfbf8575809b914fc7f5380653db137aba7586314343298807451135cfde082", "seconds": 243.277, "logSha256": "fef2bc4c8f83eadaa036a3d06a8437da52a11f27dbf408648e8e735d3be43d05" },
+    { "file": "synthesis-json-installed-20261030.receipt.json", "sha256": "805628ac1f8fe72bc28c413902ee922a08bce12d7dfb97a25ec4c4c1e653c9e5", "seconds": 160.64, "logSha256": "cee6d1e721965a5e84c840f2ce454d31717d0245b4c7af6935a9411188de5e2d" },
+    { "file": "synthesis-json-full-20261030.receipt.json", "sha256": "d30a03e8ddc4044af84906652b2cbb03f7be924013810ec23ae1b17aba54940d", "seconds": 615.618, "logSha256": "551d3a98377301bc18ca7121c696b477837b4a0c71346b86c79aafd8a3b99e03" }
+  ],
+  "testsPassed": 12112,
+  "testsSkipped": 7,
+  "installedChecksPassed": 129,
+  "providerLaunches": 0,
+  "negativeControls": [
+    "Before repair, the existing verifier against the compiled CLI failed: Routing advice polluted JSON stdout; retained scratch synthesis-stdout-red-DpbKRW",
+    "Installed hidden and delayed advice fixtures must fail before provider dispatch",
+    "Verifier parses the entire stdout stream; it no longer strips a warning prefix"
+  ],
+  "review": {
+    "engine": "codex",
+    "packet": "synthesis-json-stdout-review-input.txt",
+    "packetSha256": "85cc2baf65c1d69f5082be15d62f408f5ed6964a714e6d847369369d6cd8278a",
+    "log": "synthesis-json-stdout-codex-review.log",
+    "logSha256": "62f373b51246d5472753a2b4292419be4603fe3777132efbbc7c433e73fb61cf",
+    "result": "No concrete finding; reviewed source hashes match. Source-only review, not runtime certification."
+  },
+  "generatedMetadata": "All 49 modular packages and the dedup compatibility artifact retain payload hashes, manifest hashes, versions and dependencies versus base. Archive hashes regenerated; CLI source changed. No lockfile change.",
+  "limits": [
+    "Working-tree evidence is not a clean committed receipt",
+    "Native macOS arm64 Node26.12.1 only; fixture providers only",
+    "Legacy human-report presentation remains a separate slice",
+    "Existing security findings, external platform/provider/publishing cells and full modular release acceptance remain open"
+  ]
+}

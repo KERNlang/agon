@@ -18,8 +18,8 @@ if (process.argv[1] === fixture) {
   const spawn = cp.spawn;
   const block = () => { throw new Error('PACKED_SYNTHESIS_EFFECT_BLOCKED'); };
   let adviceWritten = false;
-  const write = process.stdout.write.bind(process.stdout);
-  process.stdout.write = (chunk, encoding, callback) => {
+  const write = process.stderr.write.bind(process.stderr);
+  process.stderr.write = (chunk, encoding, callback) => {
     if (String(chunk).includes('Heads up: `agon synthesis`')) {
       if (process.env.AGON_FIXTURE_HIDE_ADVICE === '1') {
         const done = typeof encoding === 'function' ? encoding : callback;

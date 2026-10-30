@@ -5,7 +5,7 @@ import {
 import type { ForgeHostServices, ForgeWorkflowEffects } from '@kernlang/agon-mod-forge';
 import type { EngineAdapter } from '@kernlang/agon-support-engine-runtime';
 import { createSidechainLogger } from '@kernlang/agon-kernel';
-import { writeVersionedResultEnvelope } from '@kernlang/agon-support-persistence';
+import { withFileLock, writeVersionedResultEnvelope } from '@kernlang/agon-support-persistence';
 import type { EngineRegistry } from '../signals/engine-registry.js';
 import { loadConfig, RUNS_DIR, CORPUS_PATH } from '../signals/config.js';
 import { seedNewEnginesFromRegistry, updateGlickoRanked } from '../signals/glicko.js';
@@ -13,7 +13,6 @@ import { tracker, estimateTokens, estimateCost, estimateCostCacheAware } from '.
 import { classifyTask } from './task-classifier.js';
 import { assignForgeRoles, buildSpecializedPrompt } from './role-specialization.js';
 import { buildKernContextSpine } from './context-scanner.js';
-import { withFileLock } from './file-lock.js';
 import { validateSyntax, detectLanguageFromPath } from './syntax-validator-bridge.js';
 import {
   repoRoot, stashSnapshot, worktreeCreate, worktreeRemoveBestEffort,

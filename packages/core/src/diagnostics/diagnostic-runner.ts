@@ -6,7 +6,7 @@ import type { DispatchResult } from '../models/types.js';
 
 import { spawnWithTimeout } from '../blocks/process.js';
 
-import { saveToolResultToDisk } from '../signals/session-store.js';
+import { saveToolResultToDisk } from '@kernlang/agon-support-persistence';
 
 /**
  * Minimal spawn signature the runner needs — exactly spawnWithTimeout's. Injected so unit tests pass a fake (no real tsc) and drive it with fake timers.

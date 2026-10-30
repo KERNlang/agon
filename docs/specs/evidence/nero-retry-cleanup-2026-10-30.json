@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "status": "Working-tree gates passed; clean committed qualification pending; not full modular acceptance",
+  "scope": "Dispose Nero retry timers and abort listeners; preserve dispatch and verdict behavior",
+  "baseCommit": "26c026356a28dfd681aeacbc0e3aa2b4acd7c0d7",
+  "archive": {
+    "id": "modular-agon-remediation",
+    "locator": "Operator-owned durable archive outside Git worktrees; receipt paths resolve within it",
+    "retention": "Never delete without Raphael's explicit approval"
+  },
+  "sourceSha256": {
+    "packages/forge/src/nero.ts": "3f86f9685a0c0f87b090d99501fc3d905a81d38d784403c8815dd64d58dc4080",
+    "tests/unit/nero.test.ts": "44a42363233433542647996e365c7c1b26de9afc40ad3062f4e0fd531d0ae99a"
+  },
+  "receipts": [
+    { "file": "nero-current-main-baseline-20261030.receipt.json", "sha256": "7167c53d9ad3de89c918e12e948f9677ca5c33ee0a20a9eb0450b06a688827d2", "passed": true },
+    { "file": "nero-retry-red-20261030.receipt.json", "sha256": "0765fa78d47e49f25134c6d01ef46de8ad46ae8bc741a033400d981a6e288a11", "passed": false, "purpose": "Fail-first regressions: retained listener after timeout and timer after cancellation before sleep" },
+    { "file": "nero-retry-green-20261030.receipt.json", "sha256": "ed8ab467f1739a418180ef872bcf014c3d0188b749466bef5d74fca653454a9e", "passed": true, "scope": "61 focused tests plus build/types/lint/guard, before two additional control tests" },
+    { "file": "nero-retry-full-20261030.receipt.json", "sha256": "e36297d43bad97158bb5a06141d5713ebf4d0f5393e21e817859d15640112d9b", "passed": false, "cause": "38 setup failures: launcher inventory referenced 16 removed hashed build files; retained as failed evidence" },
+    { "file": "nero-retry-installed-20261030.receipt.json", "sha256": "a63d9306affd9f542931298fccabce1b65f9036b0db618b08a20df698f6b63b6", "passed": true, "scope": "Regenerated inventory, 143 focused tests, six live scenarios, release/SBOM self-tests and 129 installed checks" },
+    { "file": "nero-retry-full-refreshed-20261030.receipt.json", "sha256": "171acdbed9ca9d1797563c126688408a461f17e27d5e7de9b94537b8c219de54", "passed": true, "scope": "Full suite after inventory refresh: 12117 passed, 7 skipped; zero provider launches" }
+  ],
+  "liveProbe": {
+    "file": "nero-retry-live-20261030.mjs",
+    "sha256": "98fff327ad6c05219935622ac6441d1f1c7b3b296ab6672f22f3ddedcd09a391",
+    "runtime": "Built Forge public runNero with fixture dispatch and real timers",
+    "scenarios": ["immediate success", "successful retry", "second retry sharing signal", "retry without signal", "abort before sleep", "abort during sleep"],
+    "passed": 6,
+    "providerLaunches": 0
+  },
+  "review": {
+    "engine": "codex",
+    "packet": "nero-retry-cleanup-review-input.txt",
+    "packetSha256": "7f6ae836c9c4e6c5f02fa4a809b122f5f9c7618a89f5e226a0eb391aaa2bc6b2",
+    "log": "nero-retry-cleanup-codex-review.log",
+    "logSha256": "4c275bef0b1be28ed49b27a772ac60968e5809d596ee4dc89df264c2515b7597",
+    "result": "No concrete findings; reviewed source matches. Source-only review, not runtime certification."
+  },
+  "generatedMetadata": "49 modular package payloads and one compatibility artifact payload unchanged versus base. Launcher rebuilt; release inventory and archive hashes regenerated.",
+  "limits": [
+    "Working-tree receipts do not prove clean committed reproducibility",
+    "macOS arm64 Node26.12.1 only; no live provider evidence",
+    "Nero ownership extraction and full modular release acceptance remain open"
+  ]
+}

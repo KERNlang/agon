@@ -181,8 +181,17 @@ export async function runNero(opts: NeroOptions): Promise<NeroResult> {
   // Abortable backoff: resolves early if the run is cancelled, so Ctrl+C / a
   // stale-epoch abort isn't stuck waiting out the full sleep (codex/claude review).
   const sleep = (ms: number) => new Promise<void>((resolve) => {
-    const t = setTimeout(resolve, ms);
-    if (opts.signal) opts.signal.addEventListener('abort', () => { clearTimeout(t); resolve(); }, { once: true });
+    if (opts.signal?.aborted) {
+      resolve();
+      return;
+    }
+    const finish = () => {
+      clearTimeout(timer);
+      opts.signal?.removeEventListener('abort', finish);
+      resolve();
+    };
+    const timer = setTimeout(finish, ms);
+    opts.signal?.addEventListener('abort', finish, { once: true });
   });
 
   for (let ci = 0; ci < ranked.length; ci++) {

@@ -1,6 +1,6 @@
 import type { ToolResult, ToolContext, ToolHandler, ToolDefinition, PermissionDecision } from '../models/tool-types.js';
 
-import { loadToolResultFromDisk } from '../signals/session-store.js';
+import { loadToolResultFromDisk } from '@kernlang/agon-support-persistence';
 
 /**
  * Factory for the RetrieveResult tool — retrieves cached tool outputs from disk.

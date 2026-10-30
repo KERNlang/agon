@@ -1,6 +1,6 @@
-import { appendDurable, replay } from './event-log.js';
+import { appendDurable, replay } from '@kernlang/agon-support-persistence';
 
-import type { DurableAppendResult } from './event-log.js';
+import type { DurableAppendResult } from '@kernlang/agon-support-persistence';
 
 export interface ControlPlaneRecovery {
   nextLeaseEpoch: number;

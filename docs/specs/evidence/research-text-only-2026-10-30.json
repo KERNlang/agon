@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "status": "Current-main working qualification passed; clean committed qualification pending",
+  "scope": "Physical Research drafting supplies the existing textOnly dispatch option",
+  "baseCommit": "26c026356a28dfd681aeacbc0e3aa2b4acd7c0d7",
+  "archive": {
+    "id": "modular-agon-remediation",
+    "locator": "Operator-owned durable archive outside Git worktrees; paths below resolve within it",
+    "retention": "Never delete without Raphael's explicit approval"
+  },
+  "sourceSha256": {
+    "packages/mod-research/src/implementation.ts": "152baf5da775c6120f570c689b3fba3018b0456889edd771a6bb87f5c259e10c",
+    "packages/mod-research/src/implementation.test.ts": "d9e1d721e620960fa4e6ca9a5fb01b19ef93d42262a5a84976d1227f5b7d20a5",
+    "scripts/spec/verify-modular-npx.mjs": "667e78e52aa3b1c2fdb3b36b09c979abd9da99376d342c26862bec857045d5b9"
+  },
+  "historicalEvidence": {
+    "baseCommit": "cd7137279d2806c722bacc31e7732023361244f3",
+    "applicability": "Research implementation and test unchanged between historical and current bases. Recovered files equal reviewed bytes. Packed probe change is identical; surrounding current-main checks retained.",
+    "receipts": [
+      { "file": "research-text-only-red-20261028.receipt.json", "sha256": "a8df102c544e921bdb196206fa9c53ada974db6059992466ea013827a3ee4eb3", "passed": false, "purpose": "Fail-first regression catches missing textOnly flag" },
+      { "file": "research-text-only-green-20261028.receipt.json", "sha256": "eef7724e654460f6332487352dc704db145e9afdf8ce1325ad8d6009c229dfd8", "passed": true },
+      { "file": "research-text-only-build-20261028.receipt.json", "sha256": "1a9c836c5b68c757c7814da659908849624eb470ec38d5c99a16d7219f4d5378", "passed": true },
+      { "file": "research-text-only-installed-20261028.receipt.json", "sha256": "9628207646162f03a60a2c9ab19f112c840649f2800a7664d2e82265ec86a09a", "passed": true }
+    ],
+    "limit": "Historical tests and 127 installed checks do not qualify the new base"
+  },
+  "receipts": [
+    { "file": "research-text-only-current-build-20261030.receipt.json", "sha256": "464faa1c3da2135cb714d0424d9a5d74ea19e9b358652d76eba75be79f897817", "passed": true, "scope": "Offline locked install, build, types, lint, re-export guard, release/SBOM generation" },
+    { "file": "research-text-only-current-runtime-20261030.receipt.json", "sha256": "3846db83e195d2aeba092d459414fbfffac52d24d2dc86d7d5f978ab7dfa77ad", "passed": true, "scope": "68 focused tests; release/SBOM self-tests; 12112 full-suite passes, 7 skips; 129 installed checks, 15 packages, cache deletion and idempotence; zero provider launches" }
+  ],
+  "review": {
+    "engine": "codex",
+    "packet": "research-text-only-review-input.txt",
+    "packetSha256": "61636798822799f2c6685164e2e3725ce0b832ec85098ee0dcdd1d912f4d9a1b",
+    "log": "research-text-only-codex-review.log",
+    "logSha256": "ac4152eaf4ac53bfa1f8063a75e44a65dbbf6da3a87c79706ad062fea5cb828c",
+    "adjudication": "research-text-only-review-adjudication-20261028.md",
+    "result": "No concrete findings; all three complete reviewed FILE sections match current source bytes. Source-only review, not runtime certification."
+  },
+  "limits": [
+    "Configured text-only transport is not a universal provider sandbox",
+    "Legacy Forge Research runtime and full ownership migration remain separate",
+    "macOS arm64 Node26.12.1 and fixture providers only",
+    "Working-tree receipts do not prove clean committed reproducibility; committed replay remains pending",
+    "Full modular release acceptance remains open"
+  ]
+}

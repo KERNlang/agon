@@ -1,6 +1,30 @@
 {
   "schemaVersion": 1,
-  "status": "Working-tree gates passed; clean committed qualification pending; not full modular acceptance",
+  "status": "Bounded fix passed clean committed qualification; not full modular acceptance",
+  "cleanCommittedReplay": {
+    "subjectCommit": "beacab982290c5f3b05b9ad74b71ed0da75a88d8",
+    "subjectTree": "47891912711a35ec158854ce108b9ea347b077c6",
+    "checkout": "nero-retry-clean-20261030",
+    "receipts": [
+      { "file": "nero-retry-clean-build-20261030.receipt.json", "sha256": "4446712e2c62777ff56df388c9ce069d7185d357b6d9902e4b80ed5a8bb22a3f", "logSha256": "72454d83c57ed7e81e92f654ea82afbe3875798adc77fc63691fced860135331", "seconds": 226.58 },
+      { "file": "nero-retry-clean-runtime-20261030.receipt.json", "sha256": "d6dfbdd08649c6c421a7eebc92676f30a0a6b1847dbb8181f8a515e8fd321aa0", "logSha256": "5749e69b58543c37311356b4d65f534fbad7ddf02d602789e7a75c69ad670015", "seconds": 749.162 }
+    ],
+    "testsPassed": 12117,
+    "testsSkipped": 7,
+    "installedChecksPassed": 129,
+    "installedPackages": 15,
+    "liveRetryScenariosPassed": 6,
+    "providerLaunches": 0,
+    "cacheDeletionSurvived": true,
+    "idempotent": true,
+    "gitCleanBeforeAndAfter": true,
+    "sourceContamination": {
+      "ignored": [], "untracked": [], "unstaged": [],
+      "method": "Committed collectSubjectContamination and isSourceBearingPath after runtime replay; no added exclusions",
+      "limits": "Existing classifier excludes dependency/build outputs, tsbuildinfo and orig files"
+    },
+    "evidenceCommitPolicy": "Later index-only commit is not represented as runtime-tested; receipts bind subjectCommit"
+  },
   "scope": "Dispose Nero retry timers and abort listeners; preserve dispatch and verdict behavior",
   "baseCommit": "26c026356a28dfd681aeacbc0e3aa2b4acd7c0d7",
   "archive": {
@@ -38,7 +62,7 @@
   },
   "generatedMetadata": "49 modular package payloads and one compatibility artifact payload unchanged versus base. Launcher rebuilt; release inventory and archive hashes regenerated.",
   "limits": [
-    "Working-tree receipts do not prove clean committed reproducibility",
+    "Working-tree receipts remain historical; exact clean committed replay above supplies reproducibility evidence",
     "macOS arm64 Node26.12.1 only; no live provider evidence",
     "Nero ownership extraction and full modular release acceptance remain open"
   ]

@@ -238,6 +238,9 @@ try {
     import { syncBuiltinESMExports } from 'node:module';
     import { pathToFileURL } from 'node:url';
     let address = '::ffff:7f00:1';
+    const { createRequire } = await import('node:module');
+    const undici = createRequire(import.meta.url)('undici');
+    undici.fetch = (...args) => globalThis.fetch(...args);
     dns.lookup = async () => [{ address, family: 6 }];
     syncBuiltinESMExports();
     const { runResearch } = await import('@kernlang/agon-mod-research');
@@ -246,7 +249,10 @@ try {
     const services = { permissions: { check: async () => 'allow' }, receipts: { record: async () => 'fixture-receipt' }, engines: {
       listActive: async () => ['fixture'], dispatch: async () => ({ exitCode: 0, stdout: 'Supported claim [1].' })
     } };
-    for (const candidate of ['::ffff:7f00:1', '0:0:0:0:0:ffff:7f00:1', '::ffff:a00:1', '0:0:0:0:0:0:0:1', '::ffff:808:808']) {
+    const publicCandidates = ['::ffff:808:808', '64:ff9b::808:808', '2002:808:808::1', '::ffff:192.0.0.9'];
+    for (const candidate of ['::ffff:7f00:1', '0:0:0:0:0:ffff:7f00:1', '::ffff:a00:1', '0:0:0:0:0:0:0:1',
+      '64:ff9b::7f00:1', '64:ff9b:1::808:808', '2002:c0a8:101::', '::7f00:1',
+      '::ffff:198.18.0.1', 'ff02::1', 'fec0::1', ...publicCandidates]) {
       address = candidate;
       let calls = 0;
       globalThis.fetch = async (input) => {
@@ -256,7 +262,7 @@ try {
           : 'Evidence', { status: 200 });
       };
       const result = await runResearch({ question: 'npm package pkg' }, context, services);
-      const allowed = candidate === '::ffff:808:808';
+      const allowed = publicCandidates.includes(candidate);
       assert.equal(calls, allowed ? 3 : 1, candidate);
       assert.equal(result.exitCode, allowed ? 0 : 1, candidate);
       assert.equal(result.result.citations.verified, allowed ? 1 : 0, candidate);

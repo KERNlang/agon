@@ -1,8 +1,35 @@
 {
   "schemaVersion": 1,
+  "cleanCommittedReplay20261030": {
+    "status": "Passed bounded Naturalize repair qualification; not full modular release acceptance",
+    "subjectCommit": "495af047ffd43ecd715a27a7f1d9f166a20d3752",
+    "subjectTree": "9a482022a2116485398894ffff25afb226d67396",
+    "baseCommit": "26c026356a28dfd681aeacbc0e3aa2b4acd7c0d7",
+    "checkout": "naturalize-clean-20261030",
+    "testsPassed": 12125,
+    "testsSkipped": 7,
+    "installedChecksPassed": 133,
+    "installedPackages": 15,
+    "cacheDeletionSurvived": true,
+    "idempotent": true,
+    "providerLaunches": 0,
+    "receipts": [
+      { "file": "naturalize-clean-build-20261030.receipt.json", "sha256": "973bbf3fc015cd9de4c35869323d0b304df26af003d7ece16570323d29a24140", "seconds": 251.919, "logSha256": "4e3fed5a6e48e6fd869064a7ffd5426eb109b21d591bf010325d9a1987267e58" },
+      { "file": "naturalize-clean-tests-20261030.receipt.json", "sha256": "219e55335d369607b23e792d4b0b74ac941e228728918f55cda09856363d1a31", "seconds": 670.691, "logSha256": "714f2abf1c660ebd07e0d791d353d13927969576df5c7fa30c8762101c215fd2" },
+      { "file": "naturalize-clean-installed-20261030.receipt.json", "sha256": "6c71edd305772fc136148064255429f1a914d441bc59e5fae933327bd8493926", "seconds": 127.675, "logSha256": "bb6e478c77aff92867a7f271d2346e65eef1063c4fc267d4bb6c042f9eb0f63b" }
+    ],
+    "checks": ["Frozen offline install with lifecycle scripts disabled", "Build, typecheck, lint and re-export guard", "Generated artifact drift checks", "Release-set and supply-chain self-tests", "Full repository suite", "Installed CLI and package matrix", "Clean Git status before and after every phase"],
+    "sourceContamination": {
+      "ignored": [], "untracked": [], "unstaged": [],
+      "method": "Committed collectSubjectContamination and isSourceBearingPath, no extra exclusions; repeated after installed replay",
+      "limits": "Existing classifier excludes dependency/build outputs, tsbuildinfo and orig files; not an arbitrary generated-byte reproducibility claim"
+    },
+    "evidenceCommitPolicy": "This index update is evidence-only. Runtime receipts bind subjectCommit, not the later index commit.",
+    "limits": ["Native macOS arm64 Node26.12.1 only", "Fixture providers only", "Existing OSV findings remain unresolved", "Full runtime extraction and aggregate release acceptance remain separate"]
+  },
   "currentMainRepair20261030": {
     "base": "26c026356a28dfd681aeacbc0e3aa2b4acd7c0d7",
-    "status": "Working-tree repair qualified; clean committed replay pending",
+    "status": "Working-tree repair qualified; superseded by cleanCommittedReplay20261030",
     "scope": "Restore non-Latin lexical-change detection; align policy exports, build entries and manifest pack contents; preserve merged main changes",
     "testsPassed": 12125,
     "testsSkipped": 7,
@@ -34,7 +61,7 @@
     },
     "limits": ["Native macOS arm64 Node26.12.1 only", "Fixture providers only", "No full modular release acceptance"]
   },
-  "status": "working-tree qualification passed; exact committed replay pending",
+  "status": "Bounded repair passed clean committed replay; prior evidence retained below",
   "scope": "Naturalize lexical policy ownership and formatting-only gate regression; not full runtime extraction",
   "baseCommit": "a4e06dfb8869acd14fe4c90cc16a88abebeb3243",
   "archiveRoot": "/Users/ra/dev/modular-agon-remediation",
@@ -72,11 +99,11 @@
     "limits": "Kimi returned no answer,not a pass. Subsequent local fixture correction rejects both fs and node:fs after compiled negative control exposed normalization. All installed fixtures then passed in the full gate."
   },
   "limits": [
-    "Exact clean committed replay pending; working-tree qualification is not a committed-subject receipt",
+    "Historical working-tree receipts below do not replace the exact clean committed replay above",
     "Installed Naturalize fixtures and compiled-workspace Forge identity prove different boundaries",
     "Other native platform and Node-version cells remain open",
-    "Existing OSV debt:24 advisories across ten packages,two critical;no external versions changed",
-    "Strict ignored-file contamination and aggregate acceptance remain separate requirements",
+    "Historical OSV count was 24; current-main scan above reports 23 advisories across ten package versions; no external versions changed",
+    "Source contamination passed the existing classifier; aggregate acceptance remains separate",
     "No OpenCode invocation or active/global Agon change"
   ]
 }

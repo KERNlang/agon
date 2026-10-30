@@ -210,8 +210,10 @@ export async function runResearch(
     return { exitCode: 1, stderr: "Network permission denied.\n" };
   const timeoutSeconds = Math.max(1, Number(x.timeout ?? 120) || 120);
   const run = services.runs ? await services.runs.start("research", typeof x.label === "string" ? x.label : undefined, context) : undefined;
+  let outcomeSubmitted = false;
   const finish = async (ok: boolean, engineId: string, detail: string): Promise<void> => {
     if (!run) return;
+    outcomeSubmitted = true;
     await services.runs!.finish(run, {
       mode: "research", label: typeof x.label === "string" ? x.label : null,
       startedAt: run.startedAt, endedAt: new Date().toISOString(),
@@ -356,6 +358,7 @@ export async function runResearch(
       result: withReceipt as unknown as Json,
     };
   } catch (error) {
+    if (outcomeSubmitted) throw error;
     await finish(false, "", `research failed: ${error instanceof Error ? error.message : String(error)}`);
     return {
       exitCode: 1,

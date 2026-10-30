@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ModServices } from '@kernlang/agon-mod-api';
 import { lookup } from 'node:dns/promises';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, rmdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { cliRunRecordHost } from '../../cli/src/run-record-host.js';
 vi.mock('node:dns/promises', () => ({ lookup: vi.fn(async () => [{ address: '93.184.216.34', family: 4 }]) }));
 import { classifyQuery, formatResearchResult, isBlockedAddress, resolvePublicHost, runResearch, validateUrl } from './implementation.js';
 
@@ -14,6 +18,68 @@ function services(answer = 'Supported claim [1].') {
     engines: { listActive: vi.fn(async () => ['writer']), dispatch: vi.fn(async () => ({ exitCode: 0, stdout: answer })) } } as unknown as ModServices;
 }
 describe('physical research mod', () => {
+  it('still submits an ordinary discovery failure once', async () => {
+    const failure = new Error('discovery unavailable');
+    globalThis.fetch = vi.fn(async () => { throw failure; });
+    const s = services();
+    const out = await runResearch({ question: 'npm package pkg' }, context, s);
+    expect(out.exitCode).toBe(1);
+    expect(out.stderr).toContain(failure.message);
+    expect(s.runs!.finish).toHaveBeenCalledTimes(1);
+    expect(s.runs!.finish).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ ok: false }), context);
+    expect(s.engines.dispatch).not.toHaveBeenCalled();
+  });
+  it.each([
+    { success: true, stage: 'before' }, { success: false, stage: 'before' },
+    { success: true, stage: 'after' }, { success: false, stage: 'after' },
+  ])('retains the original outcome when status persistence fails ($success/$stage)', async ({ success, stage }) => {
+    const home = mkdtempSync(join(tmpdir(), 'research-status-'));
+    const previousHome = process.env.AGON_HOME;
+    const before = new Set(process.listeners('exit'));
+    process.env.AGON_HOME = home;
+    let handle: Awaited<ReturnType<typeof cliRunRecordHost.start>> | undefined;
+    const submitted: unknown[] = [];
+    const persistenceError = new Error('status persistence failed after publication');
+    const warning = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      globalThis.fetch = vi.fn(async input => new Response(String(input).startsWith('https://registry.npmjs.org/')
+        ? JSON.stringify({ objects: [{ package: { name: 'pkg', links: { npm: 'https://source.example/pkg' } } }] }) : 'Evidence'));
+      const s = services(success ? 'Evidence [1].' : '');
+      s.runs = {
+        ...cliRunRecordHost,
+        start: async (...args) => {
+          handle = await cliRunRecordHost.start(...args);
+          if (stage === 'before') mkdirSync(join(handle.path, '.status.json.tmp'));
+          return handle;
+        },
+        finish: async (...args) => {
+          submitted.push(structuredClone(args[1]));
+          await cliRunRecordHost.finish(...args);
+          if (stage === 'after') throw persistenceError;
+        },
+      };
+      const pending = runResearch({ question: 'npm package pkg' }, context, s);
+      if (stage === 'after') await expect(pending).rejects.toBe(persistenceError);
+      else await expect(pending).rejects.toThrow(/status.*persist/i);
+      const publishedBytes = stage === 'after' ? readFileSync(join(handle!.path, 'status.json'), 'utf8') : undefined;
+      if (stage === 'before') rmdirSync(join(handle!.path, '.status.json.tmp'));
+      const added = process.listeners('exit').filter(listener => !before.has(listener));
+      expect(added).toHaveLength(stage === 'before' ? 1 : 0);
+      for (const listener of added) listener(0);
+      const saved = JSON.parse(readFileSync(join(handle!.path, 'status.json'), 'utf8'));
+      if (publishedBytes !== undefined) expect(readFileSync(join(handle!.path, 'status.json'), 'utf8')).toBe(publishedBytes);
+      expect(submitted).toHaveLength(1);
+      expect(saved).toEqual(submitted[0]);
+      expect(saved.ok).toBe(success);
+      expect(warning).toHaveBeenCalledTimes(stage === 'before' ? 1 : 0);
+    } finally {
+      for (const listener of process.listeners('exit').filter(listener => !before.has(listener))) listener(0);
+      if (previousHome === undefined) delete process.env.AGON_HOME;
+      else process.env.AGON_HOME = previousHome;
+      warning.mockRestore();
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
   it.each([
     '0.255.255.255', '10.255.255.255', '127.255.255.255',
     '169.254.255.255', '172.16.0.0', '172.31.255.255', '192.168.255.255',

@@ -4,7 +4,7 @@ import {
   createRunDir, writeRunStatus, printRunSummary,
 } from '@kernlang/agon-core';
 import { resolveBuiltinEnginesDir } from '../lib/engines-dir.js';
-import type { BrainstormBid, BrainstormResult } from '@kernlang/agon-core';
+import type { BrainstormBid, BrainstormResult } from '@kernlang/agon-mod-brainstorm';
 import { createCliAdapter } from '@kernlang/agon-adapter-cli';
 import { runBrainstorm } from '@kernlang/agon-forge';
 import { header, info, warn, table, bold, green } from '../blocks/output-format.js';

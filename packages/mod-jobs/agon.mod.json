@@ -202,6 +202,7 @@
       "dist/cli-client.d.ts",
       "dist/cli-contract.d.ts",
       "dist/daemon-contract.d.ts",
+      "dist/daemon-protocol.d.ts",
       "dist/daemon-job-router.d.ts",
       "dist/daemon-workflow.d.ts",
       "dist/job-service.d.ts",

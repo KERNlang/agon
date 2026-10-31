@@ -195,7 +195,7 @@ function expectedFiles(packageRecord) {
     : short === 'forge' ? ['dist/result-policy.d.ts', 'dist/apply.d.ts', ...['competition', 'corpus', 'errors', 'fitness', 'gauntlet', 'host', 'manifest', 'pr-text', 'prompts', 'quality', 'scoring', 'stage-context', 'stages', 'synth-plan', 'synthesis', 'types', 'workflow'].map(name => `dist/${name}.d.ts`)]
     : short === 'plan' ? ['dist/agent-review-step-execution.d.ts', 'dist/forge-step-execution.d.ts', 'dist/pipeline-step-execution.d.ts', 'dist/self-step-execution.d.ts', 'dist/step-executors.d.ts', 'dist/approval-policy.d.ts', 'dist/cost-estimator.d.ts', 'dist/execution-callbacks.d.ts', 'dist/execution-coordinator.d.ts', 'dist/execution-model.d.ts', 'dist/execution-state.d.ts', 'dist/execution-store.d.ts', 'dist/executor.d.ts', 'dist/formatter.d.ts', 'dist/panel-step-execution.d.ts', 'dist/proposal-workflow.d.ts', 'dist/resume-policy.d.ts', 'dist/resume-workflow.d.ts', 'dist/runtime.d.ts', 'dist/session-scope.d.ts', 'dist/session-selection.d.ts', 'dist/session-workflow.d.ts', 'dist/session.d.ts', 'dist/step-validation.d.ts', 'dist/worktree-workflow.d.ts']
     : short === 'brainstorm' ? ['dist/collector.d.ts', 'dist/host.d.ts', 'dist/policy.d.ts', 'dist/presentation.d.ts', 'dist/result.d.ts', 'dist/runtime.d.ts', 'dist/scout.d.ts', 'dist/session-record.d.ts', 'dist/session-workflow.d.ts', 'dist/workflow.d.ts']
-    : short === 'jobs' ? ['dist/daemon-controller.d.ts', 'dist/cli-projection.d.ts', 'dist/cli-invocation.d.ts', 'dist/cli-client.d.ts', 'dist/cli-contract.d.ts', 'dist/daemon-contract.d.ts', 'dist/daemon-job-router.d.ts', 'dist/daemon-workflow.d.ts', 'dist/job-service.d.ts', 'dist/mcp-contract.d.ts', 'dist/persisted-job-service.d.ts', 'dist/session-jobs.d.ts', 'dist/workflow-process.d.ts', 'dist/workflow-handshake.d.ts']
+    : short === 'jobs' ? ['dist/daemon-controller.d.ts', 'dist/cli-projection.d.ts', 'dist/cli-invocation.d.ts', 'dist/cli-client.d.ts', 'dist/cli-contract.d.ts', 'dist/daemon-contract.d.ts', 'dist/daemon-protocol.d.ts', 'dist/daemon-job-router.d.ts', 'dist/daemon-workflow.d.ts', 'dist/job-service.d.ts', 'dist/mcp-contract.d.ts', 'dist/persisted-job-service.d.ts', 'dist/session-jobs.d.ts', 'dist/workflow-process.d.ts', 'dist/workflow-handshake.d.ts']
     : short === 'ratings' ? ['dist/maintenance.d.ts', 'dist/reset.d.ts', 'dist/identity.d.ts', 'dist/ballot-prompt.d.ts', 'dist/judge-pool.d.ts', 'dist/rating-judge.d.ts', 'dist/glicko.d.ts', 'dist/types.d.ts', 'dist/storage.d.ts', 'dist/role-specialization.d.ts']
     : short === 'routing-docs' ? ['dist/guide-content.d.ts']
     : short === 'worktrees' ? ['dist/runtime.d.ts', 'dist/workspaces.d.ts']
@@ -426,6 +426,8 @@ export type { DaemonWorkflowHost, DaemonWorkflowKind, DaemonWorkflowPlan, Daemon
 export { handleDaemonJobRequest, isDaemonJobRequest } from './daemon-job-router.js';
 export type { DaemonJobResolver, ResolvedJob } from './daemon-job-router.js';
 export type { DaemonJobRequest, DaemonJobResponse } from './daemon-contract.js';
+export { encodeDaemonRequest, encodeDaemonResponse, parseDaemonRequest, parseDaemonResponse, splitFrames } from './daemon-protocol.js';
+export type { DaemonRequest, DaemonResponse } from './daemon-protocol.js';
 export type { JobState, TerminalJobState, JobSnapshot, JobEvent, JobEventPage, JobOutcome, JobObservation, JobTaskContext, JobExecutor, JobServiceOptions } from './job-service.js';
 ` : short === 'git-actions' ? `export { runGitAction } from './implementation.js';
 ` : short === 'forge' ? `export { runForgeCompetition } from './implementation.js';

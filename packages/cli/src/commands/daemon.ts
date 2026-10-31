@@ -13,9 +13,9 @@ import { spawn } from 'node:child_process';
 
 import { ensureAgonHome, loadConfig, agonPath, EngineRegistry, JobService, eventLogAppend, eventLogFlush, eventLogLatestSeq } from '@kernlang/agon-core';
 
-import { encodeDaemonRequest, encodeDaemonResponse, parseDaemonRequest, parseDaemonResponse, splitFrames } from '@kernlang/agon-core';
+import { encodeDaemonRequest, encodeDaemonResponse, parseDaemonRequest, parseDaemonResponse, splitFrames } from '@kernlang/agon-mod-jobs';
 
-import type { DaemonRequest, DaemonResponse } from '@kernlang/agon-core';
+import type { DaemonRequest, DaemonResponse } from '@kernlang/agon-mod-jobs';
 
 import { resolveBuiltinEnginesDir } from '../lib/engines-dir.js';
 

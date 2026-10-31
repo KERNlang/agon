@@ -62,6 +62,50 @@ try {
   writeFileSync(join(ephemeral, 'package-lock.json'), lockBytes);
   requireOk('ephemeral-npx-hydration', run('npm', ['ci', '--ignore-scripts', '--no-audit', '--no-fund', '--omit=optional', '--offline'], { cwd: ephemeral }));
   if (readFileSync(join(ephemeral, 'package-lock.json'), 'utf8') !== lockBytes) throw new Error('packed hydration changed the frozen dependency lock');
+  requireOk('packed-daemon-protocol-owner', run(process.execPath, ['--input-type=module', '-e', `
+    import assert from 'node:assert/strict';
+    import { pathToFileURL } from 'node:url';
+    import * as jobs from '@kernlang/agon-mod-jobs';
+    const core = await import(pathToFileURL(${JSON.stringify(join(root, 'packages/core/dist/index.js'))}).href);
+    assert.ok(import.meta.resolve('@kernlang/agon-mod-jobs').startsWith(pathToFileURL(process.cwd() + '/node_modules/').href));
+    const request = { type: 'job-events', jobId: 'fixture', afterSeq: 2, limit: 3 };
+    const response = { type: 'pong', sessionId: 'fixture', uptime: 42, capabilities: ['jobs-v1'] };
+    for (const api of [jobs, core]) {
+      assert.equal(api.encodeDaemonRequest(request), JSON.stringify(request) + '\\n');
+      assert.equal(api.encodeDaemonResponse(response), JSON.stringify(response) + '\\n');
+      assert.deepEqual(api.parseDaemonRequest(api.encodeDaemonRequest(request)), request);
+      assert.deepEqual(api.parseDaemonResponse(api.encodeDaemonResponse(response)), response);
+      assert.deepEqual(api.splitFrames(api.encodeDaemonRequest(request) + 'partial'), { lines: [JSON.stringify(request)], rest: 'partial' });
+      assert.deepEqual(api.parseDaemonRequest('{'), { type: 'error', message: 'malformed JSON' });
+      assert.equal(api.parseDaemonResponse(' '), null);
+    }
+  `], { cwd: ephemeral }));
+  for (const [id, specifier] of [
+    ['packed-jobs-daemon-types', '@kernlang/agon-mod-jobs'],
+    ['compiled-core-daemon-types', join(root, 'packages/core/dist/index.js')],
+  ]) {
+    const consumer = join(ephemeral, id + '.mts');
+    writeFileSync(consumer, `import { encodeDaemonRequest, encodeDaemonResponse, parseDaemonRequest, parseDaemonResponse, splitFrames, type DaemonRequest, type DaemonResponse } from ${JSON.stringify(specifier)};
+      const request: DaemonRequest = { type: 'job-get', jobId: 'fixture' };
+      const response: DaemonResponse = { type: 'ack', seq: 4 };
+      const requestLine: string = encodeDaemonRequest(request);
+      const responseLine: string = encodeDaemonResponse(response);
+      const parsedRequest: DaemonRequest | null = parseDaemonRequest(requestLine);
+      const parsedResponse: DaemonResponse | null = parseDaemonResponse(responseLine);
+      const frames: { lines: string[]; rest: string } = splitFrames(requestLine);
+      void parsedRequest; void parsedResponse; void frames;
+      // @ts-expect-error A job lookup requires its identifier.
+      encodeDaemonRequest({ type: 'job-get' });
+      // @ts-expect-error Acknowledgement sequences remain numeric.
+      encodeDaemonResponse({ type: 'ack', seq: 'four' });
+      // @ts-expect-error Unknown request types remain invalid.
+      const invalid: DaemonRequest = { type: 'invented' };
+      void invalid;
+    `);
+    requireOk(id, run(process.execPath, [join(root, 'node_modules/typescript/bin/tsc'),
+      '--noEmit', '--strict', '--skipLibCheck', '--module', 'NodeNext', '--moduleResolution', 'NodeNext',
+      '--target', 'ES2022', consumer], { cwd: ephemeral }));
+  }
   requireOk('packed-nero-receipt-boundary', run(process.execPath, ['--input-type=module', '-e', `
     import assert from 'node:assert/strict';
     import { pathToFileURL } from 'node:url';

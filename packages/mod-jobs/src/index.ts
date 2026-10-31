@@ -31,4 +31,6 @@ export type { DaemonWorkflowHost, DaemonWorkflowKind, DaemonWorkflowPlan, Daemon
 export { handleDaemonJobRequest, isDaemonJobRequest } from './daemon-job-router.js';
 export type { DaemonJobResolver, ResolvedJob } from './daemon-job-router.js';
 export type { DaemonJobRequest, DaemonJobResponse } from './daemon-contract.js';
+export { encodeDaemonRequest, encodeDaemonResponse, parseDaemonRequest, parseDaemonResponse, splitFrames } from './daemon-protocol.js';
+export type { DaemonRequest, DaemonResponse } from './daemon-protocol.js';
 export type { JobState, TerminalJobState, JobSnapshot, JobEvent, JobEventPage, JobOutcome, JobObservation, JobTaskContext, JobExecutor, JobServiceOptions } from './job-service.js';

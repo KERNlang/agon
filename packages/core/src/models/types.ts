@@ -5,7 +5,7 @@ export type {
   EngineCliModelConfig, EngineDefinition, EngineEffortConfig, EngineEnvVar, EngineMode, EngineModeConfig,
   EngineModelConfig, ImageAttachment, SessionBudget, TaskClass,
 } from '@kernlang/agon-support-engine-runtime';
-export type { BrainstormResult } from '@kernlang/agon-mod-brainstorm';
+export type { BrainstormResult, BrainstormBid } from '@kernlang/agon-mod-brainstorm';
 export type { BrainstormGroup, BrainstormDedupStatus } from '@kernlang/agon-support-dedup';
 
 
@@ -46,14 +46,6 @@ export type {
   ConvergenceEntry, ForgeJudgment, ForgeEventType, ForgeEvent, ForgeEventMap,
   ForgeEventCallback, BreakerArtifact, GauntletResult, CorpusEntry, GapPattern,
 } from '@kernlang/agon-mod-forge';
-
-export interface BrainstormBid {
-  engineId: string;
-  confidence: number;
-  reasoning: string;
-  approach: string;
-  score?: number;
-}
 
 export interface BrainstormSynthesisStatus {
   status: 'completed' | 'fallback';

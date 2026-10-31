@@ -203,8 +203,8 @@ export {
 } from './sessions/event-log.js';
 export type { LoggedEvent, SessionMeta as EventLogSessionMeta, AppendOptions as EventLogAppendOptions } from './sessions/event-log.js';
 // ── SessionHost — read-side seam over the EventLog ledger (client/server split M2) ──
-export { InProcessSessionHost, inProcessSessionHost, getSessionHost, SUBSCRIBE_POLL_MS } from './sessions/session-host.js';
-export type { SessionHost, SessionDescriptor, SubscribeOptions } from './sessions/session-host.js';
+export { InProcessSessionHost, inProcessSessionHost, getSessionHost, SUBSCRIBE_POLL_MS } from '@kernlang/agon-support-persistence';
+export type { SessionHost, SessionDescriptor, SubscribeOptions } from '@kernlang/agon-support-persistence';
 // ── Daemon wire protocol — newline-JSON frames agond speaks (client/server split M3) ──
 export {
   encodeDaemonRequest, encodeDaemonResponse,

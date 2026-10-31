@@ -3,6 +3,7 @@ export * from './paths.js';
 export * from './project-memory.js';
 export * from './file-history.js';
 export * from './event-log.js';
+export * from './control-plane-ledger.js';
 export * from './delegate-ledger.js';
 export * from './paste-store.js';
 export * from './chat-store.js';

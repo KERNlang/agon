@@ -1,8 +1,52 @@
 import { describe, expect, it } from 'vitest';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import { companionDispatch } from '../../packages/core/src/sessions/companion-dispatch.js';
 
 describe('companionDispatch', () => {
+  it.each([undefined, 'uncommittedChanges'] as const)('sends the correct JSON-RPC review request for %s', async (reviewTarget) => {
+    const folder = mkdtempSync(join(tmpdir(), 'agon-companion-wire-'));
+    const binaryPath = join(folder, 'fixture.cjs');
+    writeFileSync(binaryPath, `#!/usr/bin/env node
+if (process.argv.includes('--help')) process.exit(0);
+const readline = require('node:readline');
+const lines = readline.createInterface({ input: process.stdin });
+const messages = [];
+const send = message => process.stdout.write(JSON.stringify(message) + '\\n');
+lines.on('line', line => {
+  const message = JSON.parse(line);
+  messages.push(message);
+  if (message.method === 'initialize') send({ jsonrpc: '2.0', id: message.id, result: {} });
+  if (message.method === 'thread/start') send({ jsonrpc: '2.0', id: message.id, result: { thread: { id: 'fixture-thread' } } });
+  if (message.method === 'turn/start' || message.method === 'review/start') {
+    send({ jsonrpc: '2.0', id: message.id, result: {} });
+    send({ jsonrpc: '2.0', method: 'item/completed', params: { item: { type: 'agentMessage', text: JSON.stringify(messages) } } });
+    send({ jsonrpc: '2.0', method: 'turn/completed', params: {} });
+  }
+});
+`, { mode: 0o700 });
+    try {
+      const result = await companionDispatch({ binaryPath,
+        config: { protocol: 'jsonrpc', serverCmd: ['app-server'] },
+        prompt: 'REVIEW_SUBJECT_FIXTURE', systemPrompt: 'READ_ONLY_FIXTURE',
+        cwd: folder, timeout: 5, mode: 'review', reviewTarget,
+      });
+      expect(result.exitCode, result.stderr).toBe(0);
+      const messages = JSON.parse(result.stdout) as Array<{ method: string; params?: Record<string, unknown> }>;
+      expect(messages.map(message => message.method)).toEqual([
+        'initialize', 'initialized', 'thread/start', reviewTarget ? 'review/start' : 'turn/start',
+      ]);
+      expect(messages[2].params).toMatchObject({ cwd: folder, sandbox: 'read-only', ephemeral: true, instructions: 'READ_ONLY_FIXTURE' });
+      expect(messages[3].params).toEqual(reviewTarget
+        ? { threadId: 'fixture-thread', target: { type: 'uncommittedChanges' } }
+        : { threadId: 'fixture-thread', input: [{ type: 'text', text: 'REVIEW_SUBJECT_FIXTURE', text_elements: [] }] });
+    } finally {
+      rmSync(folder, { recursive: true, force: true });
+    }
+  });
+
   it('returns an error result instead of crashing when companion stdin closes early', async () => {
     const result = await companionDispatch({
       binaryPath: process.execPath,

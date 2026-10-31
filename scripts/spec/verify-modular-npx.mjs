@@ -62,6 +62,51 @@ try {
   writeFileSync(join(ephemeral, 'package-lock.json'), lockBytes);
   requireOk('ephemeral-npx-hydration', run('npm', ['ci', '--ignore-scripts', '--no-audit', '--no-fund', '--omit=optional', '--offline'], { cwd: ephemeral }));
   if (readFileSync(join(ephemeral, 'package-lock.json'), 'utf8') !== lockBytes) throw new Error('packed hydration changed the frozen dependency lock');
+  requireOk('packed-companion-dispatch-owner', run(process.execPath, ['--input-type=module', '-e', `
+    import assert from 'node:assert/strict';
+    import { pathToFileURL } from 'node:url';
+    import * as owner from '@kernlang/agon-support-engine-runtime';
+    const core = await import(pathToFileURL(${JSON.stringify(join(root, 'packages/core/dist/index.js'))}).href);
+    assert.ok(import.meta.resolve('@kernlang/agon-support-engine-runtime').startsWith(pathToFileURL(process.cwd() + '/node_modules/').href));
+    for (const api of [owner, core]) {
+      assert.equal(api.companionUsesNativeReview('review'), false);
+      assert.equal(api.companionUsesNativeReview('review', 'uncommittedChanges'), true);
+      const result = await api.companionDispatch({ binaryPath: process.execPath,
+        config: { protocol: 'stream-json', serverCmd: ['-e',
+          "process.stdout.write(JSON.stringify({type:'result',result:'PACKED_COMPANION'})+'\\\\n');setInterval(()=>{},1000);"] },
+        prompt: 'fixture', cwd: process.cwd(), timeout: 5, mode: 'exec' });
+      assert.equal(result.exitCode, 0, result.stderr);
+      assert.equal(result.stdout, 'PACKED_COMPANION');
+    }
+  `], { cwd: ephemeral }));
+  for (const [id, specifier] of [
+    ['packed-companion-public-types', '@kernlang/agon-support-engine-runtime'],
+    ['compiled-core-companion-types', join(root, 'packages/core/dist/index.js')],
+  ]) {
+    const consumer = join(ephemeral, id + '.mts');
+    writeFileSync(consumer, `import { companionDispatch, companionUsesNativeReview, type CompanionResult, type DispatchResult } from ${JSON.stringify(specifier)};
+      const output: CompanionResult = { text: 'ok', threadId: null, fileChanges: [], commands: [] };
+      const result: Promise<DispatchResult> = companionDispatch({
+        binaryPath: 'fixture', config: { protocol: 'jsonrpc', serverCmd: [] },
+        prompt: 'fixture', cwd: '.', timeout: 1, mode: 'review', reviewTarget: 'uncommittedChanges' });
+      const required: { exitCode: number; stdout: string; stderr: string; durationMs: number; timedOut: boolean } = await result;
+      const native: boolean = companionUsesNativeReview('review', 'uncommittedChanges');
+      void output; void required; void native;
+      // @ts-expect-error Unknown dispatch modes are not accepted.
+      companionUsesNativeReview('invented');
+      // @ts-expect-error Public results retain their command list.
+      const incomplete: CompanionResult = { text: 'ok', threadId: null, fileChanges: [] };
+      void incomplete;
+      ${id === 'packed-companion-public-types' ? `import type { JsonRpcMessage } from ${JSON.stringify(specifier)};
+      const message: JsonRpcMessage = { jsonrpc: '2.0', id: 1, method: 'initialize', params: {}, result: {}, error: { code: 1, message: 'fixture' } };
+      // @ts-expect-error RPC identifiers remain numeric.
+      const invalid: JsonRpcMessage = { id: 'invalid' };
+      void message; void invalid;` : ''}
+    `);
+    requireOk(id, run(process.execPath, [join(root, 'node_modules/typescript/bin/tsc'),
+      '--noEmit', '--strict', '--skipLibCheck', '--module', 'NodeNext', '--moduleResolution', 'NodeNext',
+      '--target', 'ES2022', consumer], { cwd: ephemeral }));
+  }
   requireOk('packed-nero-receipt-boundary', run(process.execPath, ['--input-type=module', '-e', `
     import assert from 'node:assert/strict';
     import { pathToFileURL } from 'node:url';

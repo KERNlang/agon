@@ -6,7 +6,7 @@ const evidence = join(root, 'docs/specs/evidence');
 const roadmap = JSON.parse(readFileSync(join(evidence, 'modular-agon-implementation-roadmap.json'), 'utf8'));
 const supportPackages = roadmap.packages.filter((entry) => entry.class === 'hidden-shared-support-package');
 const destinations = {
-  '@kernlang/agon-support-engine-runtime': ['src/types.ts', 'src/engine-discover.ts', 'src/engine-health.ts', 'src/engine-memory.ts', 'src/auth-store.ts', 'src/isolation.ts', 'src/process.ts', 'src/semaphore.ts', 'engines/', 'python/', 'patches/'],
+  '@kernlang/agon-support-engine-runtime': ['src/types.ts', 'src/engine-discover.ts', 'src/engine-health.ts', 'src/engine-memory.ts', 'src/auth-store.ts', 'src/isolation.ts', 'src/process.ts', 'src/semaphore.ts', 'src/companion-dispatch.ts', 'engines/', 'python/', 'patches/'],
   '@kernlang/agon-support-engine-catalog': ['src/engine-registry.ts', 'src/cli-models-registry.ts', 'src/api-models-registry.ts'],
   '@kernlang/agon-support-persistence': ['src/paths.ts', 'src/file-history.ts', 'src/event-log.ts', 'src/session-store.ts', 'src/session-pty.ts', 'src/brain-client.ts', 'src/session-result-types.ts', 'src/flow.ts', 'src/run-dir.ts', 'src/team-elo-types.ts', 'python/history-search.py'],
   '@kernlang/agon-support-verification': ['src/guard-types.ts', 'src/guard-telemetry.ts', 'src/guard-telemetry-store.ts', 'src/checker-discovery.ts', 'src/information-gain.ts', 'src/pipeline-types.ts', 'python/'],

@@ -33,3 +33,5 @@ export { DEFAULT_AGON_CONFIG, DEFAULT_CONFIG } from './agon-config-settings.js';
 export type { AgonConfig } from './agon-config-settings.js';
 export { DEFAULT_FIRST_PARTY_SETTINGS, LEGACY_MOD_SETTING_OWNERS } from './first-party-settings.generated.js';
 export type { FirstPartyLegacySettings } from './first-party-settings.generated.js';
+
+export type { ControlPlaneEnvelopeV1, PersistentSession, SessionChunk, SessionSendOptions } from './session-contracts.js';

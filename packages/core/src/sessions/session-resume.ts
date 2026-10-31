@@ -58,7 +58,7 @@ import { canonicalStepSignature, classifyToolEffect, primaryStepInput, stepEarns
 
 import type { ToolStepEffectEntry } from './step-effect.js';
 
-import { decideFirstChunkRetry } from './first-chunk-retry-policy.js';
+import { decideFirstChunkRetry } from '@kernlang/agon-support-engine-runtime';
 
 /**
  * Fallback: spawn per turn with --resume/--continue. Works for any CLI engine.

@@ -1,4 +1,5 @@
 import { ensureAgonHome, appendMessage, resolveWorkingDir } from '@kernlang/agon-core';
+import { readBrowserResponseError } from '@kernlang/agon-support-browser-bridge';
 
 import { randomUUID } from 'node:crypto';
 
@@ -154,7 +155,11 @@ export async function handleChrome(task: string, dispatch: Dispatch, ctx: Handle
     let failed = false;
     try {
       const res = await fetch(`${base}/send`, { method: 'POST', headers: jsonHeaders, body: JSON.stringify({ input: task, clientId }), signal: ctrl.signal });
-      if (!res.ok) { dispatch({ type: 'error', message: `the turn failed (${res.status}).` }); failed = true; }
+      if (!res.ok) {
+        const guidance = await readBrowserResponseError(res, ctrl.signal);
+        dispatch({ type: 'error', message: `the turn failed (${res.status})${guidance ? `: ${guidance}` : '.'}` });
+        failed = true;
+      }
       else { endedReason = ((await res.json() as { result?: { reason?: string } }).result?.reason) ?? ''; }
     } catch (err) {
       if (!ctrl.signal.aborted) dispatch({ type: 'error', message: `the turn failed: ${err instanceof Error ? err.message : String(err)}` });

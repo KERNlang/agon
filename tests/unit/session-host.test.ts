@@ -8,11 +8,9 @@ import {
   flush,
   replay as logReplay,
   resetEventLogState,
-} from '../../packages/core/src/sessions/event-log.js';
-import {
   InProcessSessionHost,
   type LoggedEvent,
-} from '../../packages/core/src/sessions/session-host.js';
+} from '@kernlang/agon-support-persistence';
 
 let home: string;
 let host: InProcessSessionHost;

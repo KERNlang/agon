@@ -5,7 +5,7 @@ import {
   sortSessionsByRecency,
   renderLoggedEvent,
 } from '../../packages/cli/src/commands/attach.js';
-import type { SessionDescriptor, LoggedEvent } from '../../packages/core/src/sessions/session-host.js';
+import type { SessionDescriptor, LoggedEvent } from '@kernlang/agon-support-persistence';
 
 // Strip ANSI so assertions read on the visible text, not the color codes.
 const plain = (s: string | null): string | null =>

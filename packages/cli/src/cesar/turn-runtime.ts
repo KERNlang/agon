@@ -2,7 +2,7 @@ import { isCurrentControlPlaneEnvelope, isCurrentCesarResponse, isTerminalTurnSt
 
 import type { ControlPlaneEnvelopeV1, TurnLifecycleState, TurnLifecycleTransition } from '../../../core/src/sessions/turn-protocol.js';
 
-import { appendControlPlaneEvent, recoverControlPlane } from '../../../core/src/sessions/control-plane-ledger.js';
+import { appendControlPlaneEvent, recoverControlPlane } from '@kernlang/agon-support-persistence';
 
 import type { CesarState } from '../handlers/types.js';
 

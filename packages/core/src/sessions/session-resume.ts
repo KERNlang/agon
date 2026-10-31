@@ -50,7 +50,8 @@ import { DiagnosticRunner } from '../diagnostics/diagnostic-runner.js';
 
 import type { CompactionSummaryPart, ToolCacheEntry } from '../models/context-parts.js';
 
-import type { PersistentSessionConfig, PersistentSession, SessionChunk, SessionSendOptions } from './persistent-session.js';
+import type { PersistentSessionConfig } from './persistent-session.js';
+import type { PersistentSession, SessionChunk, SessionSendOptions } from '@kernlang/agon-support-persistence';
 
 import { scheduleToolBatch } from './tool-scheduler.js';
 

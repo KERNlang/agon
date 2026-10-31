@@ -4,7 +4,8 @@ import type { ChildProcess } from 'node:child_process';
 
 import { createInterface } from 'node:readline';
 
-import type { PersistentSessionConfig, PersistentSession, SessionChunk, SessionSendOptions } from './persistent-session.js';
+import type { PersistentSessionConfig } from './persistent-session.js';
+import type { PersistentSession, SessionChunk, SessionSendOptions } from '@kernlang/agon-support-persistence';
 
 /**
  * Persistent bidirectional NDJSON session for Claude Code. One process, multi-turn via stdin.

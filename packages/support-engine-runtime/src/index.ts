@@ -1,4 +1,6 @@
 export { SUPPORT_PACKAGE } from './package-metadata.js';
+export { companionDispatch, companionUsesNativeReview } from './companion-dispatch.js';
+export type { CompanionResult, JsonRpcMessage } from './companion-dispatch.js';
 export * from './types.js';
 export { guardEngineAdapter } from './adapter-guard.js';
 export { tapDispatchIdentities, resolveCurrentIdentities } from './dispatch-identity.js';

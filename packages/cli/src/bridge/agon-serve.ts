@@ -304,20 +304,24 @@ export class AgonServe {
     this.turnTail = new Promise<void>((r) => { release = r; });
     try {
       await prev;
-      eventLogAppend(this.sessionId, { kind: 'provenance', clientId, origin, turnId }, { kind: 'bridge' });
-      const gen = this.brain.runTurn({ sessionId: this.sessionId, turnId, clientId, input, images, engineId });
-      let r = await gen.next();
-      while (!r.done) {
-        eventLogAppend(this.sessionId, r.value, { kind: 'bridge' });
-        // A capability/approval request must reach the client NOW — the turn is about
-        // to block awaiting the reply, so flush past the ~50ms coalesce window instead
-        // of letting the round-trip stall on the timer.
-        const k = (r.value as { kind?: string }).kind;
-        if (k === 'capability-request' || k === 'approval-request' || k === 'question-request') eventLogFlush(this.sessionId);
-        r = await gen.next();
-      }
-      eventLogFlush(this.sessionId);
-      this.sendJson(res, 200, { turnId, result: r.value }, origin);
+      const result = await withProcessSurfaceAuthority(undefined, () => this.assertHostCurrent(), async () => {
+        // Brain cancellation uses the control routes. Keep its generation leased until it drains.
+        eventLogAppend(this.sessionId, { kind: 'provenance', clientId, origin, turnId }, { kind: 'bridge' });
+        const gen = this.brain.runTurn({ sessionId: this.sessionId, turnId, clientId, input, images, engineId });
+        let r = await gen.next();
+        while (!r.done) {
+          eventLogAppend(this.sessionId, r.value, { kind: 'bridge' });
+          // A capability/approval request must reach the client NOW — the turn is about
+          // to block awaiting the reply, so flush past the ~50ms coalesce window instead
+          // of letting the round-trip stall on the timer.
+          const k = (r.value as { kind?: string }).kind;
+          if (k === 'capability-request' || k === 'approval-request' || k === 'question-request') eventLogFlush(this.sessionId);
+          r = await gen.next();
+        }
+        eventLogFlush(this.sessionId);
+        return r.value;
+      });
+      this.sendJson(res, 200, { turnId, result }, origin);
     } finally {
       release();
     }

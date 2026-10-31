@@ -277,6 +277,9 @@ export function buildPairDeps(cliEntry: string, installedOrigins: string[], serv
  * The Chrome native-messaging host. Reads 4-byte-LE-length-prefixed JSON frames from stdin; on a valid `pair` frame drives runPair (reuse-or-spawn) and writes exactly ONE response frame; on an unknown cmd replies {ok:false}; on a MALFORMED frame (bad JSON) or an oversized length-prefix it closes (unrecoverable). Responses are serialized in arrival order. Lives until stdin closes (Chrome disconnects when the panel closes); the spawned serve is detached and OUTLIVES this host by design.
  */
 export async function runBrowserHostLauncher(): Promise<void> {
+  const authority = await import('../surface-authority-runtime.js');
+  await authority.initializeProcessSurfaceAuthority();
+  const assertAvailable = () => authority.assertProcessSurfaceAvailable('cli', 'browser-host');
   ensureAgonHome();
   const launcherEntry = process.argv[1] || '';
   const cliEntry = resolveCliEntry(launcherEntry);
@@ -292,14 +295,33 @@ export async function runBrowserHostLauncher(): Promise<void> {
     try { process.stderr.write(`browser-host: ignoring malformed extension id/origin "${bad}" (AGON_EXTENSION_IDS / config browserExtensionIds)\n`); } catch { /* best-effort */ }
   }
   const installedOrigins = resolved.origins;
-  const deps = buildPairDeps(cliEntry, installedOrigins, state?.cwd ?? '', state?.path ?? '');
+  const pairDeps = buildPairDeps(cliEntry, installedOrigins, state?.cwd ?? '', state?.path ?? '');
+  const deps: PairDeps = {
+    ...pairDeps,
+    spawnServe: origin => {
+      // The synchronous pair-lock wait can outlive the selected generation.
+      assertAvailable();
+      return pairDeps.spawnServe(origin);
+    },
+  };
   
   const writeFrame = (obj: unknown): void => { try { process.stdout.write(encodeFrame(obj)); } catch { /* channel gone */ } };
-  const shutdown = (): void => { process.exit(0); };
-  
   let inbuf: Buffer = Buffer.alloc(0);
   let chain: Promise<void> = Promise.resolve();
   let closing = false;
+  let shuttingDown = false;
+  const shutdown = (): void => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    closing = true;
+    void chain.finally(() => authority.disposeProcessSurfaceAuthority()).then(
+      () => process.exit(0),
+      error => {
+        process.stderr.write(`browser-host: shutdown failed: ${error instanceof Error ? error.message : String(error)}\n`);
+        process.exit(1);
+      },
+    );
+  };
   
   process.stdin.on('data', (chunk: Buffer) => {
     if (closing) return;
@@ -316,11 +338,20 @@ export async function runBrowserHostLauncher(): Promise<void> {
         return;
       }
       chain = chain.then(async () => {
+        if (closing) return;
         try {
-          const resp: PairResponse = await runPair(msg, deps);
-          writeFrame(resp);
+          const response = await authority.withProcessSurfaceAuthority(undefined, assertAvailable, async () => {
+            const generation = authority.processSurfaceClient('cli').generation;
+            const resp: PairResponse = await runPair(msg, deps);
+            // Pairing can wait for a server. Do not release its token after a state change.
+            assertAvailable();
+            return { ...resp, generation };
+          });
+          assertAvailable();
+          writeFrame(response);
         } catch (err) {
-          writeFrame({ ok: false, error: err instanceof Error ? err.message : String(err), protocol: PROTOCOL });
+          const code = err && typeof err === 'object' && 'code' in err && typeof err.code === 'string' ? err.code : undefined;
+          writeFrame({ ok: false, error: err instanceof Error ? err.message : String(err), code, protocol: PROTOCOL });
         }
       });
     }

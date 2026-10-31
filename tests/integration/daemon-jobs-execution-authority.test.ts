@@ -352,6 +352,25 @@ it.each(['disable', 'replace', 'cancel', 'return-after-revoke'] as const)('enfor
     // Let the real scheduler drain before shutdown can cancel queued work itself.
     expect(await jobs.waitForIdle(2000)).toBe(true);
     expect(jobs.list().map(job => job.state)).toEqual(change === 'cancel' ? ['cancelled'] : ['failed', 'failed']);
+    if (change !== 'cancel') {
+      const jobId = (accepted.job as { id: string }).id;
+      const before = jobs.list();
+      const submissions = submit.mock.calls.length;
+      for (const body of [
+        { type: 'job-submit', kind: 'must-not-start', payload: {} },
+        { type: 'job-list' },
+        { type: 'job-get', jobId },
+        { type: 'job-events', jobId },
+        { type: 'job-result', jobId },
+        { type: 'job-cancel', jobId },
+      ]) {
+        expect(await request(body), body.type).toMatchObject({
+          type: 'error', message: expect.stringMatching(/generation.*changed.*restart|disposed or replaced/i),
+        });
+      }
+      expect(submit).toHaveBeenCalledTimes(submissions);
+      expect(jobs.list()).toEqual(before);
+    }
     expect(await request({ type: 'ping' })).toMatchObject({ type: 'pong' });
     expect(effects.execute).toHaveBeenCalledOnce();
   } finally { finishCleanup(); submit.mockRestore(); }

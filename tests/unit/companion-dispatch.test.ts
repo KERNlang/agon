@@ -3,6 +3,23 @@ import { describe, expect, it } from 'vitest';
 import { companionDispatch } from '../../packages/core/src/sessions/companion-dispatch.js';
 
 describe('companionDispatch', () => {
+  it('drains diagnostic stderr so a companion can finish its protocol response', async () => {
+    const script = [
+      "process.stderr.write(Buffer.alloc(2 * 1024 * 1024, 'x'), () => {",
+      "process.stdout.write(JSON.stringify({ type: 'result', result: 'AFTER_DIAGNOSTICS' }) + '\\n');",
+      '});',
+      'setInterval(() => {}, 1000);',
+    ].join('');
+    const result = await companionDispatch({
+      binaryPath: process.execPath,
+      config: { protocol: 'stream-json', serverCmd: ['-e', script] },
+      prompt: 'fixture', cwd: process.cwd(), timeout: 2, mode: 'exec',
+    });
+    expect(result.exitCode, result.stderr).toBe(0);
+    expect(result.stdout).toBe('AFTER_DIAGNOSTICS');
+    expect(result.stderr).toBe('');
+  });
+
   it('returns an error result instead of crashing when companion stdin closes early', async () => {
     const result = await companionDispatch({
       binaryPath: process.execPath,

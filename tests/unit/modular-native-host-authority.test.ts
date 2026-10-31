@@ -83,6 +83,7 @@ async function pair(root: string, options: {
   let buffer: Buffer = Buffer.alloc(0);
   let received = 0;
   let overflow = false;
+  let primaryError: unknown;
   child.stderr.on('data', chunk => { stderr += String(chunk); });
   const closed = once(child, 'close');
   // Attach immediately so spawn errors cannot become unhandled rejections.
@@ -117,6 +118,9 @@ async function pair(root: string, options: {
         () => encodeFrame({ cmd: 'pair', origin, protocol: 1 }))));
       if (options.afterSend) void options.afterSend(child).catch(fail);
     });
+  } catch (error) {
+    primaryError = error;
+    throw error;
   } finally {
     if (options.exitCode === 1) child.stdin.end();
     else child.kill('SIGTERM');
@@ -130,6 +134,9 @@ async function pair(root: string, options: {
       expect(overflow).toBe(false);
       expect(buffer.length).toBe(0);
       expect(received).toBe(options.afterFirst ? 2 : 1);
+    } catch (error) {
+      if (primaryError) throw new AggregateError([primaryError, error], 'native host request and teardown failed');
+      throw error;
     } finally { clearTimeout(killTimer); }
   }
 }
@@ -174,16 +181,26 @@ describe('native Browser Host durable authority', () => {
     const lock = join(root, 'browser-host', 'pair.lock');
     await writeFile(lock, JSON.stringify({ pid: process.pid, ts: Date.now() }));
     const marker = join(root, 'spawned');
+    const waiting = join(root, 'waiting-for-pair-lock');
     const preload = join(root, 'observe-spawn.cjs');
-    await writeFile(preload, `require('node:child_process').spawn = () => {
+    await writeFile(preload, `const fs = require('node:fs');
+    const originalOpen = fs.openSync;
+    fs.openSync = (path, ...args) => {
+      if (path === ${JSON.stringify(lock)}) fs.writeFileSync(${JSON.stringify(waiting)}, 'pair lock entered');
+      return originalOpen(path, ...args);
+    };
+    require('node:child_process').spawn = () => {
       require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'unexpected spawn');
       throw new Error('fixture blocks detached spawn');
     }; require('node:module').syncBuiltinESMExports();`);
     const host = new DurableModHost(join(root, 'modular-host'), { kernelVersion: '1.0.0' });
     const response = await pair(root, { preload, afterSend: async () => {
-      await vi.waitFor(async () => expect(await host.activeGenerationLeases()).toHaveLength(1), { timeout: 4_000 });
-      await selectGeneration(root, true);
-      await unlink(lock);
+      // Lease publication precedes writer release. Observe the later pair-lock entry.
+      try {
+        await vi.waitFor(() => expect(existsSync(waiting)).toBe(true), { timeout: 4_000 });
+        expect(await host.activeGenerationLeases()).toHaveLength(1);
+        await selectGeneration(root, true);
+      } finally { await unlink(lock); }
     } });
     expect(existsSync(marker)).toBe(false);
     expect(response).toMatchObject({ ok: false, code: 'MOD_GENERATION_MISMATCH' });

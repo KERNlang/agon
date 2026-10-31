@@ -46,7 +46,7 @@ export class AgonServe {
   private readonly assertHostCurrent: () => void;
 
   constructor(opts: { brain: BrainClient, sessionId: string, allowedOrigins?: string[], engines?: string[], engineId?: string, jobService?: JobService, jobShutdownTimeoutMs?: number, resolveJob?: AgonServeJobResolver }) {
-    // Keep non-Jobs routes available when this host is already stale.
+    // Keep cleanup routes available when this host is already stale.
     try { this.assertHostCurrent = captureProcessSurfaceAuthority(); }
     catch (error) { this.assertHostCurrent = () => { throw error; }; }
     this.brain = opts.brain;
@@ -152,14 +152,8 @@ export class AgonServe {
       if (method === 'POST' && path === '/send') { await this.handleSend(req, res, origin); return; }
       if (method === 'POST' && path === '/cancel') { await this.handleCancel(req, res, origin); return; }
       if (path === '/v1/jobs' || path.startsWith('/v1/jobs/')) {
-        try {
-          await this.handleJobs(req, res, method, path, url, origin);
-        } catch (error) {
-          if (!(error instanceof SurfaceGenerationError)) throw error;
-          this.sendJson(res, error.restartRequired ? 409 : 403, {
-            error: error.message, code: error.code, restartRequired: error.restartRequired,
-          }, origin);
-        }
+        try { await this.handleJobs(req, res, method, path, url, origin); }
+        catch (error) { this.sendAuthorityFailure(error, res, origin); }
         return;
       }
       // Agent tool-loop control plane — these call the brain DIRECTLY (never chained
@@ -179,6 +173,13 @@ export class AgonServe {
       const status = msg.includes('too large') ? 413 : msg.includes('invalid JSON') ? 400 : 500;
       this.sendJson(res, status, { error: msg }, origin);
     }
+  }
+
+  private sendAuthorityFailure(error: unknown, res: ServerResponse, origin: string): void {
+    if (!(error instanceof SurfaceGenerationError)) throw error;
+    this.sendJson(res, error.restartRequired ? 409 : 403, {
+      error: error.message, code: error.code, restartRequired: error.restartRequired,
+    }, origin);
   }
 
   private assertJobsAvailable(): void {
@@ -304,6 +305,14 @@ export class AgonServe {
     this.turnTail = new Promise<void>((r) => { release = r; });
     try {
       await prev;
+      // A queued turn can outlive the selected generation.
+      try {
+        this.assertHostCurrent();
+        assertProcessSurfaceAvailable('cli', 'serve');
+      } catch (error) {
+        this.sendAuthorityFailure(error, res, origin);
+        return;
+      }
       eventLogAppend(this.sessionId, { kind: 'provenance', clientId, origin, turnId }, { kind: 'bridge' });
       const gen = this.brain.runTurn({ sessionId: this.sessionId, turnId, clientId, input, images, engineId });
       let r = await gen.next();

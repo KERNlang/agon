@@ -1,6 +1,8 @@
-import type { SessionBudget, PersistentSession, ChatSession } from '@kernlang/agon-core';
+import type { PersistentSession, ChatSession } from '@kernlang/agon-core';
+import type { SessionBudget } from '@kernlang/agon-support-engine-runtime';
 
-import { estimateSessionTokens, checkSessionBudget, budgetRatioPct, updateChatSummary } from '@kernlang/agon-core';
+import { updateChatSummary } from '@kernlang/agon-core';
+import { estimateSessionTokens, checkSessionBudget, budgetRatioPct } from '@kernlang/agon-support-engine-runtime';
 
 import type { Dispatch, HandlerContext } from '../handlers/types.js';
 

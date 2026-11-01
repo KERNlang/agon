@@ -1,5 +1,7 @@
 export { SUPPORT_PACKAGE } from './package-metadata.js';
 export * from './types.js';
+export * from './token-estimator.js';
+export * from './session-budget.js';
 export { guardEngineAdapter } from './adapter-guard.js';
 export { tapDispatchIdentities, resolveCurrentIdentities } from './dispatch-identity.js';
 export type { EngineIdentities } from './dispatch-identity.js';

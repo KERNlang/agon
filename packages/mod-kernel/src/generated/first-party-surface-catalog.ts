@@ -2659,7 +2659,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.jobs",
       "version": "1.0.0",
-      "contentHash": "sha256:26994b42a971505204d8e0c7760b87d5f38a299fad8c2a2ba0c93289b776e4d2"
+      "contentHash": "sha256:21348585d696dcf541f52a2ee1c237815174f3c56b1f2e5384f3865edf8f1d9b"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "daemon",
@@ -2912,7 +2912,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.jobs",
       "version": "1.0.0",
-      "contentHash": "sha256:26994b42a971505204d8e0c7760b87d5f38a299fad8c2a2ba0c93289b776e4d2"
+      "contentHash": "sha256:21348585d696dcf541f52a2ee1c237815174f3c56b1f2e5384f3865edf8f1d9b"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "job",
@@ -2935,7 +2935,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.jobs",
       "version": "1.0.0",
-      "contentHash": "sha256:26994b42a971505204d8e0c7760b87d5f38a299fad8c2a2ba0c93289b776e4d2"
+      "contentHash": "sha256:21348585d696dcf541f52a2ee1c237815174f3c56b1f2e5384f3865edf8f1d9b"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "job cancel",
@@ -2958,7 +2958,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.jobs",
       "version": "1.0.0",
-      "contentHash": "sha256:26994b42a971505204d8e0c7760b87d5f38a299fad8c2a2ba0c93289b776e4d2"
+      "contentHash": "sha256:21348585d696dcf541f52a2ee1c237815174f3c56b1f2e5384f3865edf8f1d9b"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "job events",
@@ -2981,7 +2981,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.jobs",
       "version": "1.0.0",
-      "contentHash": "sha256:26994b42a971505204d8e0c7760b87d5f38a299fad8c2a2ba0c93289b776e4d2"
+      "contentHash": "sha256:21348585d696dcf541f52a2ee1c237815174f3c56b1f2e5384f3865edf8f1d9b"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "job list",
@@ -3004,7 +3004,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.jobs",
       "version": "1.0.0",
-      "contentHash": "sha256:26994b42a971505204d8e0c7760b87d5f38a299fad8c2a2ba0c93289b776e4d2"
+      "contentHash": "sha256:21348585d696dcf541f52a2ee1c237815174f3c56b1f2e5384f3865edf8f1d9b"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "job result",
@@ -3027,7 +3027,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.jobs",
       "version": "1.0.0",
-      "contentHash": "sha256:26994b42a971505204d8e0c7760b87d5f38a299fad8c2a2ba0c93289b776e4d2"
+      "contentHash": "sha256:21348585d696dcf541f52a2ee1c237815174f3c56b1f2e5384f3865edf8f1d9b"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "job status",
@@ -3050,7 +3050,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.jobs",
       "version": "1.0.0",
-      "contentHash": "sha256:26994b42a971505204d8e0c7760b87d5f38a299fad8c2a2ba0c93289b776e4d2"
+      "contentHash": "sha256:21348585d696dcf541f52a2ee1c237815174f3c56b1f2e5384f3865edf8f1d9b"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "job submit",
@@ -4409,7 +4409,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.jobs",
       "version": "1.0.0",
-      "contentHash": "sha256:26994b42a971505204d8e0c7760b87d5f38a299fad8c2a2ba0c93289b776e4d2"
+      "contentHash": "sha256:21348585d696dcf541f52a2ee1c237815174f3c56b1f2e5384f3865edf8f1d9b"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "JobCancel",
@@ -4432,7 +4432,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.jobs",
       "version": "1.0.0",
-      "contentHash": "sha256:26994b42a971505204d8e0c7760b87d5f38a299fad8c2a2ba0c93289b776e4d2"
+      "contentHash": "sha256:21348585d696dcf541f52a2ee1c237815174f3c56b1f2e5384f3865edf8f1d9b"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "JobEvents",
@@ -4455,7 +4455,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.jobs",
       "version": "1.0.0",
-      "contentHash": "sha256:26994b42a971505204d8e0c7760b87d5f38a299fad8c2a2ba0c93289b776e4d2"
+      "contentHash": "sha256:21348585d696dcf541f52a2ee1c237815174f3c56b1f2e5384f3865edf8f1d9b"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "JobList",
@@ -4478,7 +4478,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.jobs",
       "version": "1.0.0",
-      "contentHash": "sha256:26994b42a971505204d8e0c7760b87d5f38a299fad8c2a2ba0c93289b776e4d2"
+      "contentHash": "sha256:21348585d696dcf541f52a2ee1c237815174f3c56b1f2e5384f3865edf8f1d9b"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "JobResult",
@@ -4501,7 +4501,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.jobs",
       "version": "1.0.0",
-      "contentHash": "sha256:26994b42a971505204d8e0c7760b87d5f38a299fad8c2a2ba0c93289b776e4d2"
+      "contentHash": "sha256:21348585d696dcf541f52a2ee1c237815174f3c56b1f2e5384f3865edf8f1d9b"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "JobStatus",
@@ -4524,7 +4524,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.jobs",
       "version": "1.0.0",
-      "contentHash": "sha256:26994b42a971505204d8e0c7760b87d5f38a299fad8c2a2ba0c93289b776e4d2"
+      "contentHash": "sha256:21348585d696dcf541f52a2ee1c237815174f3c56b1f2e5384f3865edf8f1d9b"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "JobSubmit",
@@ -5651,7 +5651,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.jobs",
       "version": "1.0.0",
-      "contentHash": "sha256:26994b42a971505204d8e0c7760b87d5f38a299fad8c2a2ba0c93289b776e4d2"
+      "contentHash": "sha256:21348585d696dcf541f52a2ee1c237815174f3c56b1f2e5384f3865edf8f1d9b"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "focus",
@@ -5812,7 +5812,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.jobs",
       "version": "1.0.0",
-      "contentHash": "sha256:26994b42a971505204d8e0c7760b87d5f38a299fad8c2a2ba0c93289b776e4d2"
+      "contentHash": "sha256:21348585d696dcf541f52a2ee1c237815174f3c56b1f2e5384f3865edf8f1d9b"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "jobs",
@@ -7058,7 +7058,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.jobs",
       "version": "1.0.0",
-      "contentHash": "sha256:26994b42a971505204d8e0c7760b87d5f38a299fad8c2a2ba0c93289b776e4d2"
+      "contentHash": "sha256:21348585d696dcf541f52a2ee1c237815174f3c56b1f2e5384f3865edf8f1d9b"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "<id>                    — switch to background job output",
@@ -7175,7 +7175,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.jobs",
       "version": "1.0.0",
-      "contentHash": "sha256:26994b42a971505204d8e0c7760b87d5f38a299fad8c2a2ba0c93289b776e4d2"
+      "contentHash": "sha256:21348585d696dcf541f52a2ee1c237815174f3c56b1f2e5384f3865edf8f1d9b"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "                        — list running/completed jobs",
@@ -9473,7 +9473,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.jobs",
       "version": "1.0.0",
-      "contentHash": "sha256:26994b42a971505204d8e0c7760b87d5f38a299fad8c2a2ba0c93289b776e4d2"
+      "contentHash": "sha256:21348585d696dcf541f52a2ee1c237815174f3c56b1f2e5384f3865edf8f1d9b"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "<id>                    — switch to background job output",
@@ -9662,7 +9662,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.jobs",
       "version": "1.0.0",
-      "contentHash": "sha256:26994b42a971505204d8e0c7760b87d5f38a299fad8c2a2ba0c93289b776e4d2"
+      "contentHash": "sha256:21348585d696dcf541f52a2ee1c237815174f3c56b1f2e5384f3865edf8f1d9b"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "                        — list running/completed jobs",

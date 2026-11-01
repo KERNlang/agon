@@ -1,6 +1,36 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { expect, it } from 'vitest';
+import ts from 'typescript';
+
+it.each([
+  ['blocks/plan-execution-effects.ts', ['saveCesarPlan', 'formatCesarPlanMarkdown']],
+  ['blocks/plan-view.tsx', ['CesarPlan']],
+  ['cesar/routing.ts', ['CostEstimate']],
+  ['cesar/session.ts', ['listCesarPlans']],
+  ['handlers/plan-mode.ts', ['cesarPlanMarkdownPath', 'saveCesarPlan', 'CesarPlan', 'StepExecutor']],
+  ['models/handler-types.ts', ['CesarPlan']],
+  ['signals/dispatch/cesar-router.ts', ['CesarPlan']],
+  ['surfaces/app-interrupt.ts', ['saveCesarPlan', 'cancelCesarPlan']],
+  ['surfaces/app-lifecycle.ts', ['loadCesarPlan', 'cesarPlanJsonPath', 'CesarPlan']],
+  ['surfaces/app-views.tsx', ['CesarPlan']],
+  ['surfaces/app.tsx', ['listCesarPlans', 'CesarPlan']],
+  ['surfaces/status.tsx', ['CesarPlan']],
+] as const)('imports Plan data and types from their public owner: %s', (file, symbols) => {
+  const source = readFileSync(new URL('../../packages/cli/src/' + file, import.meta.url), 'utf8');
+  const parsed = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
+  const imports = new Map<string, string[]>();
+  for (const statement of parsed.statements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) continue;
+    const bindings = statement.importClause?.namedBindings;
+    if (!bindings || !ts.isNamedImports(bindings)) continue;
+    for (const binding of bindings.elements) {
+      const name = (binding.propertyName ?? binding.name).text;
+      imports.set(name, [...(imports.get(name) ?? []), statement.moduleSpecifier.text]);
+    }
+  }
+  for (const symbol of symbols) expect(imports.get(symbol), symbol).toEqual(['@kernlang/agon-mod-plan']);
+});
 
 it('physically owns Plan costing, validation and formatting without a core dependency', () => {
   for (const file of ['cost-estimator', 'step-validation', 'formatter']) {

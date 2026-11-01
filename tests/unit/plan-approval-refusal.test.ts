@@ -17,8 +17,10 @@ vi.mock('@kernlang/agon-core', async importOriginal => ({
   ...await importOriginal<Record<string, unknown>>(),
   approvePlan: effects.approve, cancelPlan: effects.cancel, savePlan: effects.save,
   loadPlan: effects.load,
-  saveCesarPlan: effects.saveCesar,
   loadConfig: () => ({}), resolveWorkingDir: () => '/fixture', gitChangedFiles: () => [],
+}));
+vi.mock('@kernlang/agon-mod-plan', async importOriginal => ({
+  ...await importOriginal<Record<string, unknown>>(), saveCesarPlan: effects.saveCesar,
 }));
 vi.mock('../../packages/cli/src/handlers/plan-mode.js', () => ({ buildStepExecutors: () => ({}) }));
 vi.mock('../../packages/cli/src/surface-authority-runtime.js', async original => {

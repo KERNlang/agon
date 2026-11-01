@@ -1,7 +1,7 @@
 import { writeFileSync } from 'node:fs';
-import { resolveWorkingDir, saveCesarPlan, formatCesarPlanMarkdown, appendMessage } from '@kernlang/agon-core';
+import { resolveWorkingDir, appendMessage } from '@kernlang/agon-core';
 import { inspectWorkingTree } from '@kernlang/agon-support-worktree';
-import { createPlanExecutionSession as createSession, listCesarPlans } from '@kernlang/agon-mod-plan';
+import { createPlanExecutionSession as createSession, listCesarPlans, saveCesarPlan, formatCesarPlanMarkdown } from '@kernlang/agon-mod-plan';
 import { buildStepExecutors } from '../handlers/plan-mode.js';
 import { isAgenticAutoMode } from '../cesar/task-controller.js';
 import { evaluateTaskAction } from '../cesar/task-execution-lease.js';

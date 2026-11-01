@@ -7,7 +7,9 @@ import { tmpdir } from 'node:os';
 const effects = vi.hoisted(() => ({ cwd: '', execute: vi.fn(), save: vi.fn() }));
 vi.mock('@kernlang/agon-core', async original => ({
   ...await original<Record<string, unknown>>(), resolveWorkingDir: () => effects.cwd,
-  saveCesarPlan: effects.save,
+}));
+vi.mock('@kernlang/agon-mod-plan', async original => ({
+  ...await original<Record<string, unknown>>(), saveCesarPlan: effects.save,
 }));
 vi.mock('../../packages/cli/src/handlers/plan-mode.js', () => ({ buildStepExecutors: () => ({}) }));
 vi.mock('../../packages/cli/src/surface-authority-runtime.js', async original => {

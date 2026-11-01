@@ -89,6 +89,8 @@ export async function companionDispatch(opts: {config:CompanionConfig, binaryPat
     env: opts.env ? { ...process.env, ...opts.env } : process.env,
     detached: true,
   });
+  // Drain unused diagnostics so a full pipe cannot block protocol responses.
+  proc.stderr?.resume();
   let procClosed = false;
   const procClosedPromise = new Promise<void>((resolve) => {
     proc.once('close', () => {

@@ -1,16 +1,7 @@
-export type TurnLifecycleState = 'created' | 'running' | 'cancelling' | 'cancelled' | 'completed' | 'failed' | 'timed_out' | 'superseded';
+import type { ControlPlaneEnvelopeV1 } from '@kernlang/agon-support-persistence';
+export type { ControlPlaneEnvelopeV1 } from '@kernlang/agon-support-persistence';
 
-export interface ControlPlaneEnvelopeV1 {
-  schemaVersion: 1;
-  sessionId: string;
-  turnId: string;
-  leaseEpoch: number;
-  attempt: number;
-  producerId: string;
-  responseSeq?: number;
-  stepId?: string;
-  toolCallId?: string;
-}
+export type TurnLifecycleState = 'created' | 'running' | 'cancelling' | 'cancelled' | 'completed' | 'failed' | 'timed_out' | 'superseded';
 
 export interface ControlPlaneEnvelopeValidation {
   ok: boolean;

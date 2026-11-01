@@ -108,7 +108,7 @@ type PendingPlan =
 async function writePlan(document: PendingPlan, hash: string): Promise<string> {
   const { plansRoot } = paths();
   await mkdir(plansRoot, { recursive: true, mode: 0o700 });
-  const path = join(plansRoot, `${hash.slice('sha256:'.length)}.json`);
+  const path = join(plansRoot, `${hash.slice('sha256:'.length)}-${randomUUID()}.json`);
   await writeFile(path, JSON.stringify(document, null, 2) + '\n', { encoding: 'utf8', mode: 0o600, flag: 'wx' });
   return path;
 }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ModServices } from '@kernlang/agon-mod-api';
 import { runNaturalize as runPhysicalNaturalize } from '../../packages/mod-naturalize/src/implementation.js';
+import { wordDiffStats as ownedWordDiffStats } from '@kernlang/agon-mod-naturalize/lexical-policy';
 
 import {
   runNaturalize,
@@ -10,6 +11,43 @@ import {
 } from '../../packages/forge/src/naturalize.js';
 
 // ── wordDiffStats ────────────────────────────────────────────────────────────
+
+describe('physical Naturalize lexical-change gate', () => {
+  it.each([
+    ['case only', 'hello world', 'HELLO WORLD', false],
+    ['punctuation only', 'hello world', 'hello, world!', false],
+    ['reordered words', 'one two three', 'three two one', false],
+    ['different words', 'alpha beta gamma', 'delta epsilon zeta', true],
+    ['CJK replacement', '你好', '再见', true],
+    ['Cyrillic replacement', 'привет мир', 'добрый вечер', true],
+    ['Arabic replacement', 'مرحبا', 'وداعا', true],
+    ['unchanged CJK', '你好', '你好', false],
+    ['Cyrillic case only', 'привет мир', 'ПРИВЕТ МИР', false],
+    ['Arabic punctuation only', 'مرحبا عالم', 'مرحبا، عالم!', false],
+  ])('preserves the legacy gate for %s', async (_label, input, output, accepted) => {
+    let calls = 0;
+    const services = {
+      engines: {
+        listActive: async () => ['fixture-rewriter'],
+        dispatch: async () => { calls++; return { exitCode: 0, stdout: output }; },
+      },
+      receipts: { record: async () => 'fixture-receipt' },
+    } as unknown as ModServices;
+    const result = await runPhysicalNaturalize(
+      { text: input, engine: 'fixture-rewriter', minChange: 50, maxAttempts: 1 },
+      { invocationId: 'lexical-test', cwd: process.cwd(), platform: 'darwin-arm64', signal: new AbortController().signal, config: {} },
+      services,
+    );
+    expect(calls).toBe(1);
+    expect(result.exitCode === 0).toBe(accepted);
+    if (accepted) {
+      expect(result.result).toMatchObject({ ...wordDiffStats(input, output), minChangeMet: true });
+    } else {
+      expect(result.failure?.code).toBe('NATURALIZE_GATE_FAILED');
+      expect(result.stdout).toBeUndefined();
+    }
+  });
+});
 
 describe('physical Naturalize dispatch restrictions', () => {
   it('requests text-only execution on the first attempt and retry', async () => {
@@ -37,6 +75,9 @@ describe('physical Naturalize dispatch restrictions', () => {
 });
 
 describe('naturalize — wordDiffStats', () => {
+  it('uses the physical Naturalize policy through the legacy API', () => {
+    expect(wordDiffStats).toBe(ownedWordDiffStats);
+  });
   it('identical text → unchangedRatio 1, zero changed words', () => {
     const d = wordDiffStats('the quick brown fox', 'the quick brown fox');
     expect(d).toEqual({ wordsBefore: 4, wordsAfter: 4, changedWords: 0, unchangedRatio: 1 });
@@ -69,6 +110,14 @@ describe('naturalize — wordDiffStats', () => {
   it('is case-insensitive and strips punctuation', () => {
     const d = wordDiffStats('Hello, World!', 'hello world');
     expect(d.unchangedRatio).toBe(1);
+  });
+
+  it('keeps combining marks inside words', () => {
+    expect(wordDiffStats('कि', 'कु')).toEqual({ wordsBefore: 1, wordsAfter: 1, changedWords: 1, unchangedRatio: 0 });
+  });
+
+  it('counts repeated non-Latin words independently', () => {
+    expect(wordDiffStats('你好 你好', '你好')).toEqual({ wordsBefore: 2, wordsAfter: 1, changedWords: 1, unchangedRatio: 0.5 });
   });
 });
 

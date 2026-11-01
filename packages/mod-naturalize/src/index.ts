@@ -9,3 +9,4 @@ export const IMPLEMENTATION_KIND = 'physical' as const;
 export { createMod } from './implementation.js';
 export { createMod as default } from './implementation.js';
 export { runNaturalize } from './implementation.js';
+export { tokenizeWords, wordDiffStats } from './lexical-policy.js';

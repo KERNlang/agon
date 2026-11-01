@@ -270,6 +270,26 @@
       "detail": "exit=0"
     },
     {
+      "id": "packed-naturalize-lexical-pure-import",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "compiled-naturalize-lexical-owner",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "packed-naturalize-lexical-gate",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
+      "id": "packed-naturalize-lexical-types",
+      "passed": true,
+      "detail": "exit=0"
+    },
+    {
       "id": "packed-nero-receipt-boundary",
       "passed": true,
       "detail": "exit=0"

@@ -921,6 +921,7 @@ describe('cesar MCP session config', () => {
     process.env.AGON_HOME = home;
     const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {
+      await initializeProcessSurfaceAuthority(makeTempDir('proposal-failure-host'));
       if (phase === 'storage') writeFileSync(join(home, 'plans'), 'retain this file');
       const dispatch = vi.fn(() => { if (phase === 'display') throw new Error('fixture display failure'); });
       const setActivePlan = vi.fn(() => { if (phase === 'state') throw 'fixture state failure'; });

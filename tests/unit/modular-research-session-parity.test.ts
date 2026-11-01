@@ -2,6 +2,10 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import type { IntentContribution, Registrar } from '@kernlang/agon-mod-api';
 
 vi.mock('node:dns/promises', () => ({ lookup: vi.fn(async () => [{ address: '93.184.216.34', family: 4 }]) }));
+vi.mock('undici', async (importOriginal) => ({
+  ...await importOriginal<typeof import('undici')>(),
+  fetch: vi.fn((input, init) => globalThis.fetch(input, init)),
+}));
 
 const effects = vi.hoisted(() => ({ append: vi.fn(), track: vi.fn(), add: vi.fn(), record: vi.fn(), command: vi.fn(), current: vi.fn() }));
 vi.mock('../../packages/cli/src/surface-authority-runtime.js', async original => {

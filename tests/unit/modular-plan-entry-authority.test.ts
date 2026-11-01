@@ -26,7 +26,6 @@ import { dispatchSessionInfoIntent, runPhysicalTuiContribution } from '../../pac
 import { createPlanExecutionSession } from '../../packages/cli/src/blocks/plan-execution-effects.js';
 import { createTaskExecutionLease } from '../../packages/cli/src/cesar/task-execution-lease.js';
 import * as taskLease from '../../packages/cli/src/cesar/task-execution-lease.js';
-import { planCostEstimator } from '@kernlang/agon-core';
 import { createMod } from '../../packages/mod-plan/src/implementation.js';
 import { planSessionHost } from '@kernlang/agon-mod-plan';
 import type { IntentContribution, ModServices, Registrar } from '@kernlang/agon-mod-api';
@@ -190,7 +189,7 @@ it.each([false, true].flatMap(agentic => [19, 20, null].map(ceiling => ({ agenti
       steps: [{ id: 'step', type: 'self' as const, description: 'change', estimatedTokens: 1,
         estimatedCostUsd: 14, state: 'pending' as const, fitnessCmd: 'npm test', verifyCmd: 'npm run lint' }] };
     const action = vi.spyOn(taskLease, 'evaluateTaskAction');
-    const estimate = vi.spyOn(planCostEstimator, 'estimate').mockReturnValue({ tokens: 42, costUsd: 3 });
+    const estimate = vi.spyOn(realPlanRuntime().estimator, 'estimate').mockReturnValue({ tokens: 42, costUsd: 3 });
     try {
       await createPlanExecutionSession(cb).propose(plan);
       if (ceiling === null) {

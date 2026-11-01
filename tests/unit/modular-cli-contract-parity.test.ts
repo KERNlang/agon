@@ -127,6 +127,10 @@ describe('physical CLI contract parity', () => {
       expected.args.commit = { type: 'boolean', required: false, aliases: [], default: true };
       expected.args.supervisorRunId = { type: 'string', required: false, aliases: [] };
     }
+    if (name === 'review') {
+      expect(expected.args).not.toHaveProperty('deadline');
+      expected.args.deadline = { type: 'string', required: false, aliases: [] };
+    }
     expect(contractDiff(actual, expected)).toEqual([]);
   });
 

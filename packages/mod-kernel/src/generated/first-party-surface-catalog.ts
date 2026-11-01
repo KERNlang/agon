@@ -3809,7 +3809,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.sanitize",
       "version": "1.0.0",
-      "contentHash": "sha256:7cf82afb27cfa40daf34ba73570729cb720294c076881d2ae6922134a4847ac5"
+      "contentHash": "sha256:b62c976ab88e5566ba88b87cf627be905d18e8ad8ec066ce96cf15dbbf7c74d4"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "sanitize",
@@ -10140,7 +10140,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.sanitize",
       "version": "1.0.0",
-      "contentHash": "sha256:7cf82afb27cfa40daf34ba73570729cb720294c076881d2ae6922134a4847ac5"
+      "contentHash": "sha256:b62c976ab88e5566ba88b87cf627be905d18e8ad8ec066ce96cf15dbbf7c74d4"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "<file> [--detect] [--metadata] [--strip] [--out f] — invisible-watermark forensics, deterministic",

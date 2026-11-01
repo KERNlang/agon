@@ -9,14 +9,9 @@ import type {
   Registrar,
 } from "@kernlang/agon-mod-api";
 
-export type Finding = {
-  offset: number;
-  codepoint: string;
-  hex: string;
-  channel: string;
-  action: string;
-  detail: string;
-};
+import { scanText, cleanText } from "./text-forensics.js";
+export { scanText, cleanText };
+export type { TextFinding as Finding } from "./text-forensics.js";
 export type MetadataFinding = {
   offset: number;
   length: number;
@@ -24,76 +19,10 @@ export type MetadataFinding = {
   action: "strip";
   detail: string;
 };
-const textNA = [
-  "keyed statistical watermarks — not assessable without the generator key",
-];
 const imageNA = [
   "pixel/frequency-domain image watermarks — not assessable without a detector",
   "absence of provenance metadata is not proof of human origin",
 ];
-const channel = (n: number) =>
-  n === 0x200b || n === 0x200c || n === 0x2060 || n === 0xfeff || n === 0x00ad
-    ? "zero-width"
-    : n === 0x061c ||
-        (n >= 0x202a && n <= 0x202e) ||
-        (n >= 0x2066 && n <= 0x2069)
-      ? "bidi-control"
-      : n >= 0xe0020 && n <= 0xe007f
-        ? "tag-stego"
-        : n >= 0xff01 && n <= 0xff5e
-          ? "homoglyph"
-          : "";
-
-export function scanText(text: string) {
-  const findings: Finding[] = [];
-  let offset = 0;
-  for (const ch of text) {
-    const n = ch.codePointAt(0)!;
-    const kind = channel(n);
-    if (kind)
-      findings.push({
-        offset,
-        codepoint: ch,
-        hex: `U+${n.toString(16).toUpperCase().padStart(4, "0")}`,
-        channel: kind,
-        action: kind === "homoglyph" ? "normalized" : "stripped",
-        detail: kind === "homoglyph" ? "fullwidth ASCII form" : "",
-      });
-    offset += ch.length;
-  }
-  for (const match of text.matchAll(/ {2,}|[^\S\n]+\n/g))
-    findings.push({
-      offset: match.index,
-      codepoint: JSON.stringify(match[0]),
-      hex: "",
-      channel: "whitespace-pattern",
-      action: "normalized",
-      detail: "possible whitespace payload",
-    });
-  findings.sort((a, b) => a.offset - b.offset);
-  return {
-    findings,
-    byChannel: counts(findings),
-    clean: findings.length === 0,
-    notAssessable: textNA,
-  };
-}
-
-export function cleanText(text: string) {
-  let output = "";
-  for (const ch of text) {
-    const n = ch.codePointAt(0)!;
-    const kind = channel(n);
-    if (kind && kind !== "homoglyph") continue;
-    output += kind === "homoglyph" ? String.fromCodePoint(n - 0xfee0) : ch;
-  }
-  output = output
-    .normalize("NFC")
-    .replace(/[^\S\n]+/g, " ")
-    .replace(/ +\n/g, "\n");
-  return { output, report: scanText(text) };
-}
-
 const counts = (findings: readonly { channel: string }[]) =>
   Object.fromEntries(
     [...new Set(findings.map((x) => x.channel))].map((key) => [
@@ -412,12 +341,15 @@ export async function runSanitize(
     "sanitize",
     result as unknown as Json,
   );
+  const reportedOnly = report.findings.filter((finding) => finding.action === "reported").length;
+  const addressed = report.findings.length - reportedOnly;
+  const preserved = reportedOnly ? `; ${reportedOnly} reported-only finding(s) preserved` : "";
   return {
     exitCode: 0,
     stdout: jsonl
       ? `${JSON.stringify({ type: "sanitize.report", source, detect: false, ...report })}\n${JSON.stringify({ type: "sanitize.cleaned", source, output: cleaned.output, findings: report.findings.length, receiptId })}\n`
       : out
-        ? `Cleaned output written to ${out} (${report.findings.length} finding(s) addressed; verified by re-scan).\n`
+        ? `Cleaned output written to ${out} (${addressed} finding(s) addressed${preserved}; verified by re-scan).\n`
         : cleaned.output,
     result: { ...result, receiptId } as unknown as Json,
   };

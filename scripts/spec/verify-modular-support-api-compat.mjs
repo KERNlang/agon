@@ -45,6 +45,9 @@ try {
       moduleResolution: 'NodeNext',
       noEmit: true,
       skipLibCheck: false,
+      // The external Node consumer needs the already-locked platform types.
+      types: ['node'],
+      typeRoots: [join(root, 'node_modules/@types')],
     },
     include: ['revision-*.ts'],
   }));

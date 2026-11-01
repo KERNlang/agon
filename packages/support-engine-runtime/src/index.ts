@@ -26,3 +26,4 @@ export function resolveEngineDefinitionsDir(): string {
   return join(dirname(fileURLToPath(import.meta.url)), '..', 'engines');
 }
 export { WRITE_GRANTING_ARGS, seatGrantsWriteAccess } from './write-permissions.js';
+export * from './first-chunk-retry-policy.js';

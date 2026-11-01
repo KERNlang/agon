@@ -54,6 +54,45 @@ describe('mod-review fuzzy clustering', () => {
     expect(report.blockers).toHaveLength(0);
   });
 
+  it('does not merge short findings that share only generic words', () => {
+    const report = buildConsensus([
+      seat('a', at('src/x.ts', '5', 'missing return value check')),
+      seat('b', at('src/x.ts', '5', 'missing bounds check')),
+    ]);
+    expect(report.findings).toHaveLength(2);
+    expect(report.blockers).toHaveLength(0);
+  });
+
+  it('reads line:column as one line, not a range', () => {
+    const report = buildConsensus([
+      seat('a', at('src/x.ts', '40:3', SQLI[0])),
+      seat('b', at('src/x.ts', '10', SQLI[1])),
+    ]);
+    expect(report.findings).toHaveLength(2);
+  });
+
+  it('does not let a chain of nearby findings drag the window to far lines', () => {
+    const report = buildConsensus([
+      seat('a', at('src/x.ts', '10', SQLI[0])),
+      seat('b', at('src/x.ts', '12', SQLI[1])),
+      seat('c', at('src/x.ts', '14', SQLI[2])),
+    ]);
+    expect(report.findings.map((f) => f.engines)).toEqual([['a', 'b'], ['c']]);
+  });
+
+  it('keeps two nearby findings from the same engine apart', () => {
+    const report = buildConsensus([seat('a', at('src/users.ts', '5', SQLI[0]), at('src/users.ts', '6', SQLI[1]))]);
+    expect(report.findings).toHaveLength(2);
+  });
+
+  it('matches inflected forms of the same word', () => {
+    const report = buildConsensus([
+      seat('a', at('src/store.ts', '4', 'saveAll writes the file but resolves early, losing promises')),
+      seat('b', at('src/store.ts', '4', 'saveAll should write the file before it can resolve; the promise is lost')),
+    ]);
+    expect(report.findings).toHaveLength(1);
+  });
+
   it('keeps exact-key clustering for findings without line numbers', () => {
     const report = buildConsensus([
       seat('a', at('src/a.ts', '', 'missing input validation on the request body')),

@@ -1,23 +1,24 @@
 import type { RawFinding } from './consensus.js';
 
-export const MERGE_SIMILARITY = 0.3;
+export const MERGE_SIMILARITY = 0.2;
+
+export const MIN_SHARED_TOKENS = 3;
 
 export const LINE_SLACK = 2;
 
 const STOP_WORDS = new Set((
-  'the a an and or of to in on for is are be by with without this that it its as at from into not no can when whenever '
-  + 'which while so than then but if any all only also has have was were will would should could may might does do did same '
-  + 'instead before after because there their them they user users code value values line lines function call calls '
-  + 'returned return returns'
+  'the a an and or of to in on for is are be by with this that it its as at from into can when whenever which while so '
+  + 'than then but if any all only also has have was were will would should could may might does do did same instead '
+  + 'before after because there their them they'
 ).split(' '));
 
 const SUFFIXES = ['ing', 'ed', 'es', 's', 'ly'];
 
 function stem(word: string): string {
-  for (const suffix of SUFFIXES) {
-    if (word.length > suffix.length + 3 && word.endsWith(suffix)) return word.slice(0, -suffix.length);
-  }
-  return word;
+  let w = word;
+  const suffix = SUFFIXES.find((s) => w.length > s.length + 3 && w.endsWith(s));
+  if (suffix) w = w.slice(0, -suffix.length);
+  return w.length > 4 && w.endsWith('e') ? w.slice(0, -1) : w;
 }
 
 export function problemTokens(text: string | undefined): Set<string> {
@@ -26,45 +27,67 @@ export function problemTokens(text: string | undefined): Set<string> {
 }
 
 export function lineSpan(lines: string | undefined): [number, number] | undefined {
-  const nums = (String(lines ?? '').match(/\d+/g) || []).slice(0, 2).map(Number);
-  if (nums.length === 0) return undefined;
-  return [Math.min(...nums), Math.max(...nums)];
+  const m = String(lines ?? '').match(/(\d+)(?:\s*[-–]\s*L?(\d+))?/);
+  if (!m) return undefined;
+  const a = Number(m[1]);
+  const b = m[2] === undefined ? a : Number(m[2]);
+  return [Math.min(a, b), Math.max(a, b)];
 }
 
-function overlap(a: Set<string>, b: Set<string>): number {
-  if (a.size === 0 || b.size === 0) return 0;
+export function wordingSimilarity(a: Set<string>, b: Set<string>): number {
   let shared = 0;
   for (const t of a) if (b.has(t)) shared += 1;
-  return shared / Math.min(a.size, b.size);
+  if (shared < MIN_SHARED_TOKENS) return 0;
+  return shared / (a.size + b.size - shared);
+}
+
+interface Member {
+  tokens: Set<string>;
+  span: [number, number];
 }
 
 interface Group {
   key: string;
   file: string;
-  span: [number, number];
-  members: Set<string>[];
+  engines: Set<string>;
+  members: Member[];
 }
 
 export interface Clusterer {
   keyFor(finding: RawFinding, exactKey: string): string;
 }
 
+function touches(a: [number, number], b: [number, number]): boolean {
+  return a[0] - LINE_SLACK <= b[1] && b[0] - LINE_SLACK <= a[1];
+}
+
 export function createClusterer(): Clusterer {
   const groups: Group[] = [];
-  const byExactKey = new Map<string, string>();
+  const groupByKey = new Map<string, Group>();
+  const keyByExact = new Map<string, string>();
+
+  function join(group: Group, finding: RawFinding, member: Member | undefined): void {
+    group.engines.add(finding.engine);
+    if (member) group.members.push(member);
+  }
+
   return {
     keyFor(finding, exactKey) {
-      const known = byExactKey.get(exactKey);
-      if (known) return known;
       const file = (finding.file || '').trim().toLowerCase();
       const span = lineSpan(finding.lines);
-      const tokens = problemTokens(finding.problem);
+      const member = file && span ? { tokens: problemTokens(finding.problem), span } : undefined;
+      const known = keyByExact.get(exactKey);
+      if (known) {
+        const group = groupByKey.get(known);
+        if (group) join(group, finding, member);
+        return known;
+      }
       let best: Group | undefined;
       let bestScore = 0;
-      if (file && span) {
+      if (member) {
         for (const g of groups) {
-          if (g.file !== file || span[0] - LINE_SLACK > g.span[1] || g.span[0] - LINE_SLACK > span[1]) continue;
-          const score = g.members.reduce((sum, m) => sum + overlap(tokens, m), 0) / g.members.length;
+          if (g.file !== file || g.engines.has(finding.engine) || !g.members.every((m) => touches(m.span, member.span))) continue;
+          const score = g.members.reduce((sum, m) => sum + wordingSimilarity(member.tokens, m.tokens), 0) / g.members.length;
           if (score >= MERGE_SIMILARITY && score > bestScore) {
             best = g;
             bestScore = score;
@@ -72,13 +95,16 @@ export function createClusterer(): Clusterer {
         }
       }
       if (best) {
-        best.members.push(tokens);
-        best.span = [Math.min(best.span[0], span![0]), Math.max(best.span[1], span![1])];
-        byExactKey.set(exactKey, best.key);
+        join(best, finding, member);
+        keyByExact.set(exactKey, best.key);
         return best.key;
       }
-      if (file && span) groups.push({ key: exactKey, file, span, members: [tokens] });
-      byExactKey.set(exactKey, exactKey);
+      if (member) {
+        const group = { key: exactKey, file, engines: new Set([finding.engine]), members: [member] };
+        groups.push(group);
+        groupByKey.set(exactKey, group);
+      }
+      keyByExact.set(exactKey, exactKey);
       return exactKey;
     },
   };

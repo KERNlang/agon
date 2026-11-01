@@ -101,6 +101,37 @@ describe.each([true, false])('Apply host authority with disabled=%s', disabled =
     } finally { await writeFile(pointer, original); }
   });
 
+  if (!disabled) it.each([false, true])('binds registered Apply approval to its host lifetime (restart=%s)', async restart => {
+    const patch = join(root, 'lifetime.patch');
+    await writeFile(patch, 'diff --git a/file.txt b/file.txt\n--- a/file.txt\n+++ b/file.txt\n@@ -1 +1 @@\n-before\n+after\n');
+    let job: Promise<void> | undefined;
+    let answer!: (value: string) => void;
+    let prompted!: () => void;
+    const question = new Promise<void>(resolve => { prompted = resolve; });
+    const dispatch = vi.fn(event => {
+      if (event.type === 'question') { answer = event.resolve; prompted(); }
+    });
+    const cb = { dispatch, ctx: { config: {} },
+      runAsJob: (_kind: string, _label: string, run: (signal: AbortSignal) => Promise<void>) => {
+        job = run(new AbortController().signal);
+      },
+    } as unknown as DispatchCallbacks;
+    await dispatchSessionInfoIntent({ type: 'apply', patchPath: patch }, '/apply', cb);
+    expect(job).toBeDefined();
+    await question;
+    if (restart) {
+      await disposeProcessSurfaceAuthority();
+      await initializeProcessSurfaceAuthority(root);
+    }
+    answer('yes');
+    await job;
+    expect(await readFile(join(workspace.cwd, 'file.txt'), 'utf8')).toBe(restart ? 'before\n' : 'after\n');
+    if (restart) expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'error', message: expect.stringMatching(/replaced|restart|disposed/),
+    }));
+    else expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'success' }));
+  });
+
   if (!disabled) it('does not write after a valid new generation disables Forge during approval', async () => {
     const patch = join(root, 'change.patch');
     await writeFile(patch, 'diff --git a/file.txt b/file.txt\n--- a/file.txt\n+++ b/file.txt\n@@ -1 +1 @@\n-before\n+after\n');

@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { Awaitable, InvocationContext, PatchApplicationHostServices, PatchApplicationInteraction } from '@kernlang/agon-mod-api';
 import type { Dispatch, HandlerContext } from './handlers/types.js';
-import { assertProcessSurfaceAvailable } from './surface-authority-runtime.js';
+import { assertProcessSurfaceAvailable, captureProcessSurfaceAuthority } from './surface-authority-runtime.js';
 import { escapeLiteralText } from './blocks/literal-text.js';
 
 type PatchUi = Omit<PatchApplicationInteraction, 'assertActive' | 'confirm'> & {
@@ -28,9 +28,11 @@ export const patchApplicationHost: PatchApplicationHostServices = Object.freeze(
     if (!session?.active || session.invocationId !== context.invocationId) {
       return undefined;
     }
+    const assertCurrent = captureProcessSurfaceAuthority();
     const assertActive = () => {
       context.signal.throwIfAborted();
       if (!session.active || scope.getStore() !== session) throw new Error('Patch approval session expired.');
+      assertCurrent();
       assertProcessSurfaceAvailable('tui', '/apply');
     };
     assertActive();

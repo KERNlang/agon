@@ -6,15 +6,18 @@ import { DurableModHost, createFirstPartyModCatalog, createFullCompatDesiredStat
 import { surfaceLockFor } from '../helpers/modular-surface-lock.js';
 import { disposeProcessSurfaceAuthority, initializeProcessSurfaceAuthority } from '../../packages/cli/src/surface-authority-runtime.js';
 import * as authority from '../../packages/cli/src/surface-authority-runtime.js';
-import { createCesarPlan } from '@kernlang/agon-mod-plan';
+import { approveCesarPlan, createCesarPlan } from '@kernlang/agon-mod-plan';
 import { createPlan } from '@kernlang/agon-support-worktree';
 import type { DispatchCallbacks } from '../../packages/cli/src/signals/dispatch.js';
 
 const effects = vi.hoisted(() => ({ save: vi.fn(), execute: vi.fn(), executors: vi.fn(() => ({})),
   legacySave: vi.fn(), forge: vi.fn(async () => null) }));
 vi.mock('@kernlang/agon-core', async original => ({
-  ...await original<Record<string, unknown>>(), saveCesarPlan: effects.save, executePlan: effects.execute,
+  ...await original<Record<string, unknown>>(),
   savePlan: effects.legacySave,
+}));
+vi.mock('@kernlang/agon-mod-plan', async original => ({
+  ...await original<Record<string, unknown>>(), saveCesarPlan: effects.save,
 }));
 vi.mock('../../packages/cli/src/handlers/plan-mode.js', () => ({ buildStepExecutors: effects.executors }));
 vi.mock('../../packages/cli/src/handlers/forge.js', () => ({ handleForge: effects.forge }));
@@ -22,21 +25,27 @@ import { executeApprovedPlan, resumeCesarPlan, handleProposedCesarPlan, approveP
 import { dispatchSessionInfoIntent, runPhysicalTuiContribution } from '../../packages/cli/src/signals/dispatch/intent-session.js';
 import { createPlanExecutionSession } from '../../packages/cli/src/blocks/plan-execution-effects.js';
 import { createTaskExecutionLease } from '../../packages/cli/src/cesar/task-execution-lease.js';
+import * as taskLease from '../../packages/cli/src/cesar/task-execution-lease.js';
 import { createMod } from '../../packages/mod-plan/src/implementation.js';
 import { planSessionHost } from '@kernlang/agon-mod-plan';
 import type { IntentContribution, ModServices, Registrar } from '@kernlang/agon-mod-api';
 
 const NOW = '2026-10-09T00:00:00.000Z';
+const realPlanRuntime = authority.processPlanRuntime;
 let root: string;
 let host: DurableModHost;
 beforeEach(async () => {
   vi.clearAllMocks();
+  vi.spyOn(authority, 'processPlanRuntime').mockImplementation(() => ({
+    ...realPlanRuntime(), executePlan: effects.execute,
+  }));
   effects.execute.mockImplementation(async plan => ({ ...plan, state: 'done' }));
   root = await mkdtemp(join(tmpdir(), 'agon-plan-entry-'));
   host = new DurableModHost(root, { kernelVersion: '1.0.0', processIdentity: 'entry-test' });
 });
 afterEach(async () => {
   await disposeProcessSurfaceAuthority();
+  vi.restoreAllMocks();
   const generations = await readdir(join(root, 'generations')).catch(error => {
     if (error.code === 'ENOENT') return [];
     throw error;
@@ -56,6 +65,56 @@ function callbacks(dispatch = vi.fn()): DispatchCallbacks {
 function proposal() {
   return { ...createCesarPlan('fixture', []), state: 'awaiting_approval' as const, selfReview: false, autoApprove: true };
 }
+
+it('binds Plan history to the selected generation and rejects stale captured execution', async () => {
+  expect(() => realPlanRuntime()).toThrow(/not active/);
+  await install(false);
+  await initializeProcessSurfaceAuthority(root);
+  const runtime = realPlanRuntime();
+  expect(realPlanRuntime()).toBe(runtime);
+  runtime.estimator.recordStepCompletion('self', 8, 0.2);
+  runtime.estimator.recordStepCompletion('self', 12, 0.4);
+  expect(realPlanRuntime().sanitizePlanSteps([{ type: 'self' }]).steps[0].estimatedTokens).toBe(10);
+  await install(false);
+  expect(() => realPlanRuntime()).toThrow(/generation changed/);
+  const empty = { ...approveCesarPlan(createCesarPlan('stale handle', [])), selfReview: false };
+  const callbacks = { onStepStart: vi.fn(), onStepDone: vi.fn(), onPlanUpdate: vi.fn(), onBudgetWarning: vi.fn() };
+  await expect(runtime.executePlan(empty, {}, callbacks)).rejects.toThrow(/generation changed/);
+  await disposeProcessSurfaceAuthority();
+  await initializeProcessSurfaceAuthority(root);
+  const replacement = realPlanRuntime();
+  expect(replacement).not.toBe(runtime);
+  expect(replacement.estimator.estimate('self', []).tokens).toBe(2000);
+  await expect(runtime.executePlan(empty, {}, callbacks)).rejects.toThrow(/disposed/);
+});
+
+it('does not expose Plan runtime when Plan is disabled', async () => {
+  await install(true);
+  await initializeProcessSurfaceAuthority(root);
+  expect(() => realPlanRuntime()).toThrow();
+});
+
+it('binds Plan with an injected service decorator, without selecting it during decoration', async () => {
+  await install(false);
+  const decorated: string[] = [];
+  await initializeProcessSurfaceAuthority(root, (manifest, services) => {
+    decorated.push(manifest.id);
+    expect(() => realPlanRuntime()).toThrow(expect.objectContaining({ code: 'MOD_SURFACE_UNAVAILABLE' }));
+    return services;
+  });
+  expect(decorated).toContain('agon.plan');
+  expect(realPlanRuntime().estimator.estimate('self', []).tokens).toBe(2000);
+});
+
+it('keeps Plan unavailable in kernel safe mode without loading host effects', async () => {
+  const decorate = vi.fn((_manifest, services) => services);
+  vi.stubEnv('AGON_MOD_SAFE_MODE', '1');
+  try {
+    await initializeProcessSurfaceAuthority(root, decorate);
+    expect(decorate).not.toHaveBeenCalled();
+    expect(() => realPlanRuntime()).toThrow();
+  } finally { vi.unstubAllEnvs(); }
+});
 
 async function physicalResume(cb: DispatchCallbacks) {
   const intents: IntentContribution[] = [];
@@ -114,6 +173,53 @@ it('reads current approval config, AUTO mode and lease on every proposal', async
   expect(effects.execute).toHaveBeenCalledOnce();
   expect(cb.dispatch).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('task lease unavailable') }));
 });
+
+it.each([false, true].flatMap(agentic => [19, 20, null].map(ceiling => ({ agentic, ceiling }))))(
+  'binds live approval grants and pricing (agentic=$agentic, ceiling=$ceiling)', async ({ agentic, ceiling }) => {
+    await install(false);
+    await initializeProcessSurfaceAuthority(root);
+    const cb = callbacks();
+    cb.ctx.autoModeQueued = agentic;
+    cb.ctx.config = { ...cb.ctx.config,
+      cesarAutoApproveMode: ceiling === null ? 'off' : agentic ? 'cost-bounded' : 'always',
+      cesarAutoApproveMaxCostUsd: ceiling };
+    const lease = createTaskExecutionLease('implement and test the local parser', true, root, undefined, 'agentic');
+    cb.ctx.cesar!.taskExecutionLease = lease;
+    const plan = { ...proposal(), selfReview: true, totalEstimatedCostUsd: 14,
+      steps: [{ id: 'step', type: 'self' as const, description: 'change', estimatedTokens: 1,
+        estimatedCostUsd: 14, state: 'pending' as const, fitnessCmd: 'npm test', verifyCmd: 'npm run lint' }] };
+    const action = vi.spyOn(taskLease, 'evaluateTaskAction');
+    const estimate = vi.spyOn(realPlanRuntime().estimator, 'estimate').mockReturnValue({ tokens: 42, costUsd: 3 });
+    try {
+      await createPlanExecutionSession(cb).propose(plan);
+      if (ceiling === null) {
+        expect(action).not.toHaveBeenCalled();
+        expect(estimate).not.toHaveBeenCalled();
+        expect(effects.execute).not.toHaveBeenCalled();
+        expect(cb.dispatch).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('cesarAutoApproveMode=off') }));
+        return;
+      }
+      expect(estimate).toHaveBeenCalledExactlyOnceWith('review', []);
+      if (agentic) {
+        expect(action.mock.calls).toEqual([
+          [lease, 'self', 'change\nnpm test\nnpm run lint'],
+          [lease, 'Bash', 'npm test\nnpm run lint'],
+        ]);
+        expect(estimate.mock.invocationCallOrder[0]).toBeGreaterThan(action.mock.invocationCallOrder[1]);
+      } else expect(action).not.toHaveBeenCalled();
+      if (ceiling === 19) {
+        expect(effects.execute).not.toHaveBeenCalled();
+        expect(cb.setActivePlan).toHaveBeenCalledWith(plan);
+        expect(cb.dispatch).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('estimated cost $20.00 exceeds ceiling $19.00') }));
+      } else {
+        expect(effects.execute).toHaveBeenCalledOnce();
+        expect(cb.dispatch).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('always policy passed (cost $20.0000)') }));
+      }
+    } finally {
+      action.mockRestore();
+      estimate.mockRestore();
+    }
+  });
 
 it.each(['1', '2'])('blocks physical resume choice %s after generation changes during its prompt', async choice => {
   await install(false);

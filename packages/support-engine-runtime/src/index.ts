@@ -1,5 +1,10 @@
 export { SUPPORT_PACKAGE } from './package-metadata.js';
+export * from './turn-protocol.js';
+export { companionDispatch, companionUsesNativeReview } from './companion-dispatch.js';
+export type { CompanionResult, JsonRpcMessage } from './companion-dispatch.js';
 export * from './types.js';
+export * from './token-estimator.js';
+export * from './session-budget.js';
 export { guardEngineAdapter } from './adapter-guard.js';
 export { tapDispatchIdentities, resolveCurrentIdentities } from './dispatch-identity.js';
 export type { EngineIdentities } from './dispatch-identity.js';
@@ -24,3 +29,4 @@ export function resolveEngineDefinitionsDir(): string {
   return join(dirname(fileURLToPath(import.meta.url)), '..', 'engines');
 }
 export { WRITE_GRANTING_ARGS, seatGrantsWriteAccess } from './write-permissions.js';
+export * from './first-chunk-retry-policy.js';

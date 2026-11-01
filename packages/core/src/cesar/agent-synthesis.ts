@@ -8,7 +8,7 @@ import {
   type AgentSynthesisRuntime,
 } from '@kernlang/agon-mod-agent';
 import { runApiAgentLoop } from '../api/agent-loop.js';
-import { recordApiLoopDispatch } from '../signals/delegate-ledger.js';
+import { recordApiLoopDispatch } from '@kernlang/agon-support-persistence';
 import { worktreeChangedDiff } from '../blocks/git.js';
 export { runPostSynthesisFitnessCheck } from '@kernlang/agon-mod-forge';
 export type { PostSynthesisFitnessResult } from '@kernlang/agon-mod-forge';

@@ -60,6 +60,55 @@ function emptyState(): OutputState {
 }
 
 describe('handleOutputEvent — control-plane events never render', () => {
+  it('rejects stale progress cleanup before flushing another job’s thinking', () => {
+    const actions = createMockActions();
+    handleOutputEvent({ type: 'progress-update', ownerId: 'newer', engines: [] }, emptyState(), actions, 'chat', 0);
+    handleOutputEvent({ type: 'thinking-chunk', engineId: 'newer', chunk: 'Pending thought' }, emptyState(), actions, 'chat', 0);
+    vi.mocked(actions.addBlock).mockClear();
+    handleOutputEvent({ type: 'progress-clear', ownerId: 'older' }, emptyState(), actions, 'chat', 0);
+    const staleCalls = [...vi.mocked(actions.addBlock).mock.calls];
+    handleOutputEvent({ type: 'progress-clear', ownerId: 'newer' }, emptyState(), actions, 'chat', 0);
+    expect(staleCalls).toEqual([]);
+    expect(actions.addBlock).toHaveBeenCalledExactlyOnceWith({ type: 'thinking-chunk', engineId: 'newer', chunk: 'Pending thought' });
+  });
+  it.each(['newer', undefined])('does not clear replacement progress owned by %s', ownerId => {
+    const actions = createMockActions();
+    const older = { type: 'progress-update' as const, ownerId: 'older', engines: [] };
+    const newer = { type: 'progress-update' as const, ownerId, engines: [] };
+    const cleanup = { type: 'progress-clear' as const, ownerId: 'older' };
+    handleOutputEvent(older, emptyState(), actions, 'chat', 0);
+    handleOutputEvent(newer, emptyState(), { ...actions }, 'chat', 0);
+    vi.mocked(actions.setLiveProgress).mockClear();
+    handleOutputEvent(cleanup, emptyState(), actions, 'chat', 0);
+    expect(actions.setLiveProgress).not.toHaveBeenCalled();
+    expect(actions.setLiveScoreboard).not.toHaveBeenCalled();
+    expect(actions.setLiveRationale).not.toHaveBeenCalled();
+  });
+  it('clears matching progress once without affecting another output sink', () => {
+    const actions = createMockActions();
+    const other = createMockActions();
+    const update = { type: 'progress-update' as const, ownerId: 'owned', engines: [] };
+    const cleanup = { type: 'progress-clear' as const, ownerId: 'owned' };
+    handleOutputEvent(update, emptyState(), actions, 'chat', 0);
+    handleOutputEvent(update, emptyState(), other, 'chat', 0);
+    vi.mocked(actions.setLiveProgress).mockClear();
+    vi.mocked(other.setLiveProgress).mockClear();
+    handleOutputEvent(cleanup, emptyState(), actions, 'chat', 0);
+    handleOutputEvent(cleanup, emptyState(), actions, 'chat', 0);
+    expect(actions.setLiveProgress).toHaveBeenCalledExactlyOnceWith(null);
+    expect(other.setLiveProgress).not.toHaveBeenCalled();
+    handleOutputEvent(cleanup, emptyState(), other, 'chat', 0);
+    expect(other.setLiveProgress).toHaveBeenCalledExactlyOnceWith(null);
+  });
+  it('preserves unscoped progress cleanup', () => {
+    const actions = createMockActions();
+    const update = { type: 'progress-update' as const, ownerId: 'owned', engines: [] };
+    handleOutputEvent(update, emptyState(), actions, 'chat', 0);
+    vi.mocked(actions.setLiveProgress).mockClear();
+    handleOutputEvent({ type: 'progress-clear' }, emptyState(), actions, 'chat', 0);
+    expect(actions.setLiveProgress).toHaveBeenCalledExactlyOnceWith(null);
+    expect(actions.setLiveScoreboard).toHaveBeenCalledExactlyOnceWith(null);
+  });
   it('never cleans, folds, or parses a literal patch preview', () => {
     vi.mocked(cleanEngineOutput).mockClear();
     vi.mocked(parseMarkdownBlocks).mockClear();

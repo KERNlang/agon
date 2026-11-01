@@ -1,9 +1,10 @@
 import { defineCommand } from 'citty';
 import { escapeLiteralText } from '../blocks/literal-text.js';
 
-import { ensureAgonHome, getSessionHost } from '@kernlang/agon-core';
+import { ensureAgonHome } from '@kernlang/agon-core';
+import { getSessionHost } from '@kernlang/agon-support-persistence';
 
-import type { SessionDescriptor, LoggedEvent } from '@kernlang/agon-core';
+import type { SessionDescriptor, LoggedEvent } from '@kernlang/agon-support-persistence';
 
 import { header, info, table, bold, dim, green, cyan, yellow, red } from '../blocks/output-format.js';
 
@@ -116,7 +117,9 @@ function printSessionList(): void {
 }
 
 /**
- * Replay the whole ledger for a session as a flat transcript, print a divider, then FOLLOW live via host.subscribe until Ctrl+C. The follow cursor starts at the highest replayed seq so we never double-print history, and a SIGINT handler unsubscribes + resolves cleanly. This is the M2 proof path: while a second agon REPL appends events, they stream in here. \n\nWe resume() stdin while following: the SessionHost poll timer is unref'd (a library must never wedge the host process alive), and a bare SIGINT handler does NOT hold the event loop open — so without a ref'd handle Node would drain and exit before the first poll. A resumed stdin is the standard 'keep a CLI alive until Ctrl+C' ref, and it's paused again on detach so we leave the tty as we found it.
+ * Replay the ledger, then follow events after its last sequence number.
+ * Resume stdin to keep the command alive while the subscription timer is unref'd.
+ * On SIGINT, stop the subscription and release the command's stdin hold.
  */
 async function attachToSession(sessionId: string): Promise<void> {
   const host = getSessionHost();
@@ -138,7 +141,6 @@ async function attachToSession(sessionId: string): Promise<void> {
     if (line !== null) console.log(line);
     if (typeof entry.seq === 'number' && entry.seq > lastSeq) lastSeq = entry.seq;
   }
-  console.log(dim('─'.repeat(48) + ' following live (Ctrl+C to detach) '));
   
   await new Promise<void>((resolve) => {
     const unsubscribe = host.subscribe(sessionId, lastSeq, (entry: LoggedEvent) => {
@@ -147,17 +149,18 @@ async function attachToSession(sessionId: string): Promise<void> {
     });
     // Hold the event loop open until Ctrl+C. The poll timer is unref'd, so we
     // need our OWN ref'd handle; a resumed stdin both keeps Node alive and is
-    // the idiomatic interactive-CLI hold. Restore (pause) it on detach.
-    const wasPaused = process.stdin.isPaused();
+    // the idiomatic interactive-CLI hold. Release it on detach. A new pipe can
+    // report isPaused() as false before resume(), so that flag cannot track ownership.
     try { process.stdin.resume(); } catch { /* non-tty / closed stdin */ }
     const onSigint = (): void => {
       try { unsubscribe(); } catch { /* best-effort */ }
       process.removeListener('SIGINT', onSigint);
-      try { if (wasPaused) process.stdin.pause(); } catch { /* best-effort */ }
+      try { process.stdin.pause(); } catch { /* best-effort */ }
       console.log(dim('\n— detached —'));
       resolve();
     };
     process.on('SIGINT', onSigint);
+    console.log(dim('─'.repeat(48) + ' following live (Ctrl+C to detach) '));
   });
 }
 

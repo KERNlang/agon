@@ -1,7 +1,12 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { mkdtempSync, readFileSync, statSync, existsSync, mkdirSync, writeFileSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+
+// The command must load without the legacy forwarding module.
+vi.mock('../../packages/cli/src/bridge/browser-host.js', () => {
+  throw new Error('Legacy Browser Host adapter must not load');
+});
 
 // Throwaway AGON_HOME before anything resolves a path (agonPath resolves at call time).
 process.env.AGON_HOME = mkdtempSync(join(tmpdir(), 'agon-browser-host-test-'));
@@ -21,8 +26,8 @@ import {
   originCovered,
   findReusableServe,
   runPair,
-} from '../../packages/cli/src/bridge/browser-host.js';
-import type { PairDeps, ServeConnRecord } from '../../packages/cli/src/bridge/browser-host.js';
+} from '@kernlang/agon-support-browser-bridge';
+import type { PairDeps, ServeConnRecord } from '@kernlang/agon-support-browser-bridge';
 
 import {
   resolveInstallBrowsers,

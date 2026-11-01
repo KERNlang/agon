@@ -9,9 +9,10 @@ import { readCesarToolReliability, formatCesarReliabilityLine, shouldDowngradeCe
 
 import { buildModeRationale, formatModeRationale } from './mode-rationale.js';
 
-import { planCostEstimator } from '@kernlang/agon-core';
+import { processPlanRuntime } from '../surface-authority-runtime.js';
 
-import type { CostEstimate, AgonConfig } from '@kernlang/agon-core';
+import type { AgonConfig } from '@kernlang/agon-core';
+import type { CostEstimate } from '@kernlang/agon-mod-plan';
 
 import { hostStringSet } from '../lib/kern-host.js';
 
@@ -241,7 +242,7 @@ export function deriveRoutingHints(input: string, ctx: Pick<HandlerContext, 'act
   try {
     const stepType = recommendedBreadth === 'team' ? 'team-agent' : (escalationHint === 'forge' ? 'forge' : 'agent');
     const engines = activeEngines.length > 0 ? activeEngines : ['claude'];
-    estimatedStepCost = planCostEstimator.estimate(stepType, engines);
+    estimatedStepCost = processPlanRuntime().estimator.estimate(stepType, engines);
   } catch { /* cost estimation is advisory */ }
   try {
     if (currentInvocationOwnerAvailable('agon.ratings') !== false) {

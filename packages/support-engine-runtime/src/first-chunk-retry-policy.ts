@@ -1,0 +1,31 @@
+export interface FirstChunkRetryInput {
+  error: string;
+  retriesUsed: number;
+  maxRetries: number;
+  hadSideEffects: boolean;
+  aborted: boolean;
+}
+
+export interface FirstChunkRetryDecision {
+  retry: boolean;
+  reason: 'clean_first_chunk_timeout'|'not_first_chunk_timeout'|'side_effect_already_started'|'retry_budget_exhausted'|'aborted';
+}
+
+/**
+ * Allow a bounded dispatch retry only when the provider produced no usable first chunk and the current user turn has initiated no side effect.
+ */
+export function decideFirstChunkRetry(input: FirstChunkRetryInput): FirstChunkRetryDecision {
+  if (input.aborted) return { retry: false, reason: 'aborted' };
+  // Matches both the canonical dispatch message ("API stream first-chunk idle
+  // timeout after Ns …") and the legacy hint-flavored variant ("API
+  // first-chunk timeout (Ns). tip: …") — the latter used to slip past this
+  // gate and dead-stop the turn instead of retrying.
+  if (!/API (?:stream )?first-chunk (?:idle )?timeout/i.test(input.error)) {
+    return { retry: false, reason: 'not_first_chunk_timeout' };
+  }
+  if (input.hadSideEffects) return { retry: false, reason: 'side_effect_already_started' };
+  if (!Number.isSafeInteger(input.maxRetries) || input.maxRetries <= input.retriesUsed) {
+    return { retry: false, reason: 'retry_budget_exhausted' };
+  }
+  return { retry: true, reason: 'clean_first_chunk_timeout' };
+}

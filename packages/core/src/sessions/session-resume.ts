@@ -16,7 +16,7 @@ import type { WorkingSetInput } from './compaction.js';
 
 import { encodeImagesForDispatch } from '../blocks/image.js';
 
-import { saveSessionState, loadSessionState, saveToolResultToDisk, loadToolResultFromDisk, pruneToolCache, loadConversation } from '../signals/session-store.js';
+import { saveSessionState, loadSessionState, saveToolResultToDisk, loadToolResultFromDisk, pruneToolCache, loadConversation } from '@kernlang/agon-support-persistence';
 
 import { lookupCatalogContextWindow } from '../signals/models-registry.js';
 
@@ -50,7 +50,8 @@ import { DiagnosticRunner } from '../diagnostics/diagnostic-runner.js';
 
 import type { CompactionSummaryPart, ToolCacheEntry } from '../models/context-parts.js';
 
-import type { PersistentSessionConfig, PersistentSession, SessionChunk, SessionSendOptions } from './persistent-session.js';
+import type { PersistentSessionConfig } from './persistent-session.js';
+import type { PersistentSession, SessionChunk, SessionSendOptions } from '@kernlang/agon-support-persistence';
 
 import { scheduleToolBatch } from './tool-scheduler.js';
 
@@ -58,7 +59,7 @@ import { canonicalStepSignature, classifyToolEffect, primaryStepInput, stepEarns
 
 import type { ToolStepEffectEntry } from './step-effect.js';
 
-import { decideFirstChunkRetry } from './first-chunk-retry-policy.js';
+import { decideFirstChunkRetry } from '@kernlang/agon-support-engine-runtime';
 
 /**
  * Fallback: spawn per turn with --resume/--continue. Works for any CLI engine.

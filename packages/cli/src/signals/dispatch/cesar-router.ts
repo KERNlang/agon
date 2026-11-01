@@ -12,7 +12,7 @@ import { resolveWorkingDir, configSet, RUNS_DIR } from '@kernlang/agon-core';
 
 import type { ImageAttachment } from '@kernlang/agon-core';
 
-import type { CesarPlan } from '@kernlang/agon-core';
+import type { CesarPlan } from '@kernlang/agon-mod-plan';
 
 import type { HandlerContext } from '../../handlers/types.js';
 

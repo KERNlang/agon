@@ -1,4 +1,4 @@
-import { defineConfig } from 'tsup';
+import { build, defineConfig } from 'tsup';
 import { copyFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -23,6 +23,9 @@ export default defineConfig({
     options.sourcesContent = false;
   },
   clean: true,
+  // Core still uses these pure policies when Research is not installed.
+  // Bundle those policies, but keep the Research runtime and Undici external.
+  noExternal: [/^@kernlang\/agon-mod-research\/(prompt|format|response|discovery|query|citation)-policy$/],
   // @kernlang/agon-core, @kernlang/agon-forge, @kernlang/agon-adapter-cli are INLINED (pure JS) so a bare
   // `npm i -g @kernlang/agon` is self-contained — they are deliberately NOT external.
   // @kernlang/agon-engines + @kernlang/agon-dedup stay external: both are loaded at RUNTIME
@@ -31,6 +34,8 @@ export default defineConfig({
   external: [
     '@kernlang/agon-engines', '@kernlang/agon-dedup', '@kernlang/agon-mod-api',
     '@kernlang/agon-kernel',
+    // Research owns Undici; keep its CommonJS dependency outside the ESM bundle.
+    '@kernlang/agon-mod-research',
     '@kernlang/agon-support-agent-runtime', '@kernlang/agon-support-browser-bridge',
     '@kernlang/agon-support-dedup', '@kernlang/agon-support-engine-catalog',
     '@kernlang/agon-support-engine-runtime', '@kernlang/agon-support-judge',
@@ -50,6 +55,10 @@ export default defineConfig({
     js: '#!/usr/bin/env node',
   },
   async onSuccess() {
+    // The persistent launcher must not depend on chunks in an ephemeral prefix.
+    await build({ entry: { 'stable-launcher': 'src/stable-launcher-entry.ts' },
+      format: ['esm'], target: 'node22', splitting: false, clean: false,
+      noExternal: [/.*/], sourcemap: false, dts: false, config: false, outDir: 'dist' });
     copyFileSync(join(process.cwd(), 'release-channel.json'), join(process.cwd(), 'dist', 'release-channel.json'));
   },
 });

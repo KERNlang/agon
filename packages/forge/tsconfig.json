@@ -17,6 +17,7 @@
     { "path": "../mod-tribunal" },
     { "path": "../mod-think" },
     { "path": "../mod-synthesis" },
+    { "path": "../mod-naturalize" },
     { "path": "../mod-research" },
     { "path": "../core" },
     { "path": "../support-persistence" },

@@ -4,9 +4,11 @@ import { Box, Static, render } from 'ink';
 // ── Core ───────────────────────────────────────────────
 import { ScrollBox, AlternateScreen } from '../vendor/terminal/index.js';
 
-import { EngineRegistry, loadConfig, ensureAgonHome, setSessionRoot, startChatSession, seedChatSessionFromThread, loadOrCreateActiveThread, resolveWorkingDir, currentBranch, configSet, createCesarMemory, modelEntryToEngineDef, getAuthKey, setAuthKey, getAgonHome, tracker, listCesarPlans, visionSupportNote } from '@kernlang/agon-core';
+import { EngineRegistry, loadConfig, ensureAgonHome, setSessionRoot, startChatSession, seedChatSessionFromThread, loadOrCreateActiveThread, resolveWorkingDir, currentBranch, configSet, createCesarMemory, modelEntryToEngineDef, getAuthKey, setAuthKey, getAgonHome, tracker, visionSupportNote } from '@kernlang/agon-core';
+import { listCesarPlans } from '@kernlang/agon-mod-plan';
 
-import type { Plan, CesarPlan, ChatSession, Skill, PersistentSession, ImageAttachment } from '@kernlang/agon-core';
+import type { Plan, ChatSession, Skill, PersistentSession, ImageAttachment } from '@kernlang/agon-core';
+import type { CesarPlan } from '@kernlang/agon-mod-plan';
 
 import type { EngineProgress } from '../handlers/types.js';
 
@@ -16,7 +18,7 @@ import type { EngineAdapter } from '@kernlang/agon-core';
 
 import { SLASH_COMMANDS } from '../signals/intent.js';
 
-import { runsStore } from '../signals/runs-store.js';
+import { runsStore } from '@kernlang/agon-support-persistence';
 
 import { CommandRegistry, registerBuiltinCommands, EventBus, bridgeShellHooks } from '@kernlang/agon-core';
 

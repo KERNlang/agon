@@ -3,6 +3,8 @@ export * from './paths.js';
 export * from './project-memory.js';
 export * from './file-history.js';
 export * from './event-log.js';
+export * from './session-host.js';
+export * from './control-plane-ledger.js';
 export * from './delegate-ledger.js';
 export * from './paste-store.js';
 export * from './chat-store.js';
@@ -35,3 +37,5 @@ export type { OptionalConfigKey, ParsedConfigValue } from './config-value.js';
 export type { AgonConfig } from './agon-config-settings.js';
 export { DEFAULT_FIRST_PARTY_SETTINGS, LEGACY_MOD_SETTING_OWNERS } from './first-party-settings.generated.js';
 export type { FirstPartyLegacySettings } from './first-party-settings.generated.js';
+
+export type { ControlPlaneEnvelopeV1, PersistentSession, SessionChunk, SessionSendOptions } from './session-contracts.js';

@@ -1,9 +1,11 @@
 import { formatResearchResult } from './format-policy.js';
+import type { ResearchSessionContext } from './session-workflow.js';
 export { formatResearchResult } from './format-policy.js';
 import { parseAuthoritativeResults } from './response-policy.js';
 import { lookup } from "node:dns/promises";
+import type { LookupAddress } from "node:dns";
 import { BlockList, isIP } from "node:net";
-import { Agent } from "undici";
+import { Agent, fetch as fetchPinned } from "undici";
 import { buildPrompt } from './prompt-policy.js';
 import type { Source } from './prompt-policy.js';
 export { buildPrompt } from './prompt-policy.js';
@@ -63,22 +65,77 @@ blockedAddresses.addSubnet("169.254.0.0", 16, "ipv4");
 blockedAddresses.addSubnet("172.16.0.0", 12, "ipv4");
 blockedAddresses.addSubnet("192.168.0.0", 16, "ipv4");
 blockedAddresses.addSubnet("100.64.0.0", 10, "ipv4");
+blockedAddresses.addSubnet("192.0.0.0", 24, "ipv4");
+blockedAddresses.addSubnet("192.0.2.0", 24, "ipv4");
+blockedAddresses.addSubnet("198.51.100.0", 24, "ipv4");
+blockedAddresses.addSubnet("203.0.113.0", 24, "ipv4");
+blockedAddresses.addSubnet("198.18.0.0", 15, "ipv4");
+blockedAddresses.addSubnet("224.0.0.0", 4, "ipv4");
+blockedAddresses.addSubnet("240.0.0.0", 4, "ipv4");
 blockedAddresses.addAddress("::", "ipv6");
 blockedAddresses.addAddress("::1", "ipv6");
+blockedAddresses.addSubnet("::", 96, "ipv6");
+blockedAddresses.addSubnet("64:ff9b:1::", 48, "ipv6");
+blockedAddresses.addSubnet("2001:db8::", 32, "ipv6");
+blockedAddresses.addSubnet("3fff::", 20, "ipv6");
 blockedAddresses.addSubnet("fc00::", 7, "ipv6");
 blockedAddresses.addSubnet("fe80::", 10, "ipv6");
+blockedAddresses.addSubnet("fec0::", 10, "ipv6");
+blockedAddresses.addSubnet("ff00::", 8, "ipv6");
 
-export function isBlockedAddress(raw: string) {
+export function isBlockedAddress(raw: string): boolean {
   const value = raw.toLowerCase().replace(/^\[|\]$/g, "");
   const family = isIP(value);
-  if (!family) return true;
-  return blockedAddresses.check(value, family === 4 ? "ipv4" : "ipv6");
+  if (!family || value.includes('%')) return true;
+  if (family === 4) {
+    // IANA assigns these two public anycast exceptions within 192.0.0.0/24.
+    if (value === '192.0.0.9' || value === '192.0.0.10') return false;
+    return blockedAddresses.check(value, 'ipv4');
+  }
+  // URL normalization converts dotted IPv4 tails before expanding IPv6 words.
+  const canonical = new URL(`http://[${value}]/`).hostname.slice(1, -1);
+  const [left, right] = canonical.split('::');
+  const head = left ? left.split(':') : [];
+  const tail = right ? right.split(':') : [];
+  const words = (right === undefined ? head : [...head, ...Array<string>(8 - head.length - tail.length).fill('0'), ...tail])
+    .map(word => Number.parseInt(word, 16));
+  const mapped = words.slice(0, 5).every(word => word === 0) && words[5] === 0xffff;
+  const translated = words[0] === 0x64 && words[1] === 0xff9b && words.slice(2, 6).every(word => word === 0);
+  const sixToFour = words[0] === 0x2002;
+  if (mapped || translated || sixToFour) {
+    // RFC6052/3056 embed IPv4; apply the same destination policy to that address.
+    const offset = sixToFour ? 1 : 6;
+    const high = words[offset]!;
+    const low = words[offset + 1]!;
+    return isBlockedAddress(`${high >>> 8}.${high & 255}.${low >>> 8}.${low & 255}`);
+  }
+  return blockedAddresses.check(value, 'ipv6');
 }
 export async function resolvePublicHost(
   hostname: string,
   resolver: typeof lookup = lookup,
+  signal?: AbortSignal,
 ) {
-  const records = await resolver(hostname, { all: true, verbatim: true });
+  signal?.throwIfAborted();
+  const address = hostname.replace(/^\[|\]$/g, "");
+  const family = isIP(address);
+  let onAbort: (() => void) | undefined;
+  let records: LookupAddress[];
+  try {
+    records = family
+      ? [{ address, family }]
+      : await new Promise<LookupAddress[]>((resolve, reject) => {
+          onAbort = () => reject(signal!.reason);
+          signal?.addEventListener('abort', onAbort, { once: true });
+          Promise.resolve().then(() => {
+            signal?.throwIfAborted();
+            return resolver(hostname, { all: true, verbatim: true });
+          }).then(resolve, reject);
+        });
+    signal?.throwIfAborted();
+  } finally {
+    if (onAbort) signal?.removeEventListener('abort', onAbort);
+  }
   if (!records.length) throw new Error("hostname resolved to no addresses");
   for (const record of records)
     if (isBlockedAddress(record.address))
@@ -92,17 +149,18 @@ async function fetchBounded(url: string, signal: AbortSignal, max = 3500) {
   if (!current) throw new Error("unsafe URL");
   const bounded = AbortSignal.any([signal, AbortSignal.timeout(15000)]);
   for (let hop = 0; hop <= 5; hop++) {
-    const pinned = await resolvePublicHost(current.hostname);
+    const pinned = await resolvePublicHost(current.hostname, lookup, bounded);
     const dispatcher = new Agent({
       connect: {
-        lookup(_hostname, _options, callback) {
-          callback(null, pinned.address, pinned.family);
+        lookup(_hostname, options, callback) {
+          if (options.all) callback(null, [pinned]);
+          else callback(null, pinned.address, pinned.family);
         },
       },
     });
-    let res: Response;
+    let res: Awaited<ReturnType<typeof fetchPinned>>;
     try {
-      res = await fetch(current, {
+      res = await fetchPinned(current, {
         redirect: "manual",
         signal: bounded,
         headers: {
@@ -110,7 +168,7 @@ async function fetchBounded(url: string, signal: AbortSignal, max = 3500) {
           accept: "text/html,text/plain,application/json",
         },
         dispatcher,
-      } as RequestInit);
+      });
     } catch (error) {
       await dispatcher.close();
       throw error;
@@ -188,7 +246,7 @@ const cli = Object.freeze({
 });
 export async function runResearch(
   raw: Json,
-  context: InvocationContext,
+  context: InvocationContext & Pick<ResearchSessionContext, 'onStatus'>,
   services: ModServices,
 ): Promise<CommandResult> {
   const x = raw as Record<string, Json>,
@@ -210,8 +268,10 @@ export async function runResearch(
     return { exitCode: 1, stderr: "Network permission denied.\n" };
   const timeoutSeconds = Math.max(1, Number(x.timeout ?? 120) || 120);
   const run = services.runs ? await services.runs.start("research", typeof x.label === "string" ? x.label : undefined, context) : undefined;
+  let outcomeSubmitted = false;
   const finish = async (ok: boolean, engineId: string, detail: string): Promise<void> => {
     if (!run) return;
+    outcomeSubmitted = true;
     await services.runs!.finish(run, {
       mode: "research", label: typeof x.label === "string" ? x.label : null,
       startedAt: run.startedAt, endedAt: new Date().toISOString(),
@@ -220,6 +280,8 @@ export async function runResearch(
     }, context);
   };
   try {
+    context.signal.throwIfAborted();
+    context.onStatus?.(`discovering sources (${intent})…`);
     const discovered = await fetch(request.url, {
       headers: request.headers,
       signal: AbortSignal.any([context.signal, AbortSignal.timeout(12000)]),
@@ -238,6 +300,7 @@ export async function runResearch(
       await finish(false, "", "no authoritative sources found");
       return { exitCode: 1, stderr: "No authoritative sources found.\n" };
     }
+    context.onStatus?.(`reading ${found.length} sources…`);
     const sources: Source[] = await Promise.all(
       found.map(async (s) => {
         try {
@@ -248,7 +311,9 @@ export async function runResearch(
         }
       }),
     );
+    context.signal.throwIfAborted();
     const active = [...((await services.engines.listActive?.(context)) ?? [])];
+    context.signal.throwIfAborted();
     const requested = String(x.engines ?? "").split(",").map((value) => value.trim()).filter(Boolean);
     const unknown = requested.filter((engineId) => active.length > 0 && !active.includes(engineId));
     if (unknown.length) { await finish(false, "", `unknown engines: ${unknown.join(", ")}`); return { exitCode: 1, stderr: `Unknown or inactive research engines: ${unknown.join(", ")}.\n` }; }
@@ -258,17 +323,21 @@ export async function runResearch(
     const ranking = !forced && services.engines.rank ? await services.engines.rank(pool, [], context) : [];
     const engine = forced || ranking[0]?.engineId || pool[0];
     if (!engine) { await finish(false, "", "no active drafting engine"); return { exitCode: 1, stderr: "No active drafting engine.\n" }; }
+    context.signal.throwIfAborted();
+    context.onStatus?.(`${engine} drafting a grounded answer…`);
     const draft = (await services.engines.dispatch(
       engine,
       buildPrompt(question, sources),
       context,
       {
         mode: "exec",
+        textOnly: true,
         timeoutSeconds,
         systemPrompt:
           "Use only supplied sources. Cite [n]. Do not use tools or prior knowledge.",
       },
     )) as Record<string, Json>;
+    context.signal.throwIfAborted();
     const answer = String(draft.stdout ?? "")
       .replace(/<think>[\s\S]*?<\/think>/gi, "")
       .trim();
@@ -276,6 +345,7 @@ export async function runResearch(
       await finish(false, engine, "draft engine produced no answer");
       return { exitCode: 1, stderr: "Draft engine produced no answer.\n" };
     }
+    context.onStatus?.('verifying citations…');
     const cited = [
       ...new Set([...answer.matchAll(/\[(\d+)\]/g)].map((m) => Number(m[1]))),
     ];
@@ -310,6 +380,7 @@ export async function runResearch(
         }
       }),
     );
+    context.signal.throwIfAborted();
     const verified = results.filter((r) => r.verdict === "verified").length,
       blocked = results.filter((r) => r.verdict === "blocked").length,
       rejected = results.length - verified - blocked + invalid.length;
@@ -356,6 +427,7 @@ export async function runResearch(
       result: withReceipt as unknown as Json,
     };
   } catch (error) {
+    if (outcomeSubmitted) throw error;
     await finish(false, "", `research failed: ${error instanceof Error ? error.message : String(error)}`);
     return {
       exitCode: 1,

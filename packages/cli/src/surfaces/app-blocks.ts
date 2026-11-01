@@ -6,7 +6,7 @@ import { cleanEngineOutput } from '../blocks/markdown.js';
 
 import { appendBlockWithCap } from '../signals/block-archive.js';
 
-import { runsStore } from '../signals/runs-store.js';
+import { runsStore } from '@kernlang/agon-support-persistence';
 
 import { hostNowMs, hostRandom } from '../lib/kern-host.js';
 

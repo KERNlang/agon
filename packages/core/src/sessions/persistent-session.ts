@@ -10,7 +10,7 @@ import { createStreamJsonSession } from './session-streamjson.js';
 
 import { createResumeSession } from './session-resume.js';
 
-import { createPtySession } from './session-pty.js';
+import { createPtySession } from '@kernlang/agon-support-persistence';
 
 import { claudeBrainUsesPty } from './claude-backend.js';
 

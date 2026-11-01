@@ -224,6 +224,7 @@ describe('physical research mod', () => {
     const resolver = vi.fn(async () => [{ address: '8.8.8.8', family: 4 }]);
     await expect(resolvePublicHost(hostname, resolver as any)).rejects.toThrow(/blocked address/);
     expect(resolver).not.toHaveBeenCalled();
+  });
   it('still submits an ordinary discovery failure once', async () => {
     const failure = new Error('discovery unavailable');
     globalThis.fetch = vi.fn(async () => { throw failure; });

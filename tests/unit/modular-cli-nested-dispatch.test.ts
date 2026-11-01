@@ -28,9 +28,33 @@ vi.mock('../../packages/cli/src/surface-authority-runtime.js', () => {
     } }),
   };
 });
-import { createGeneratedLazySubCommands, normalizeCliArguments } from '../../packages/cli/src/lazy-commands.js';
+import { createGeneratedLazySubCommands, normalizeCliArguments, parseGeneratedCommandLine } from '../../packages/cli/src/lazy-commands.js';
 
 beforeEach(() => { state.calls = []; state.inputs = []; state.flagProjection = false; state.requiredIntent = false; state.disabled.clear(); state.failure = false; state.generation = 0; state.result = { exitCode: 0 }; state.goalProjection = undefined; });
+
+it.each(['constructor', 'toString'])('does not inherit a repeat policy for %s', async name => {
+  for (const repeatedOptions of [undefined, { other: 'last' as const }]) {
+    state.goalProjection = { id: 'fixture', cli: { repeatedOptions },
+      inputSchema: { type: 'object', properties: { [name]: { type: 'string' }, other: { type: 'string' } } },
+      run: () => ({ exitCode: 0 }) };
+    const command = createGeneratedLazySubCommands().ratings as CommandDef & { run(context: unknown): Promise<void> };
+    await expect(command.run({ args: { [name]: ['first', 'second'] } })).rejects.toThrow(/expected string/);
+    await expect(parseGeneratedCommandLine('ratings', `--${name} first --${name} second`)).rejects.toThrow(/expected string/);
+    expect(state.calls).toEqual([]);
+  }
+});
+
+it.each([
+  { _: 'last' }, { intent: 'last' }, { missing: 'last' }, { enabled: 'last' }, { text: 'invalid' },
+])('rejects invalid repeat policy %j before dispatch', async repeatedOptions => {
+  state.goalProjection = { id: 'fixture', cli: { positionals: ['intent'], repeatedOptions } as CommandContribution['cli'],
+    inputSchema: { type: 'object', properties: { _: { type: 'array' }, intent: { type: 'string' }, enabled: { type: 'boolean' }, text: { type: 'string' } } },
+    run: () => ({ exitCode: 0 }) };
+  const command = createGeneratedLazySubCommands().ratings as CommandDef & { run(context: unknown): Promise<void> };
+  await expect(command.run({ args: {} })).rejects.toThrow(/Invalid repeated string option policy/);
+  await expect(parseGeneratedCommandLine('ratings', '')).rejects.toThrow(/Invalid repeated string option policy/);
+  expect(state.calls).toEqual([]);
+});
 
 it.each([undefined, '', 'Already formatted\n'])('preserves explicit stdout %j without duplicating the structured result', async stdout => {
   state.result = { exitCode: 2, stdout, stderr: 'Diagnostic\n', result: { answer: 42 } };

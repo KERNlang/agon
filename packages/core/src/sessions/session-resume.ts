@@ -16,7 +16,7 @@ import type { WorkingSetInput } from './compaction.js';
 
 import { encodeImagesForDispatch } from '../blocks/image.js';
 
-import { saveSessionState, loadSessionState, saveToolResultToDisk, loadToolResultFromDisk, pruneToolCache, loadConversation } from '../signals/session-store.js';
+import { saveSessionState, loadSessionState, saveToolResultToDisk, loadToolResultFromDisk, pruneToolCache, loadConversation } from '@kernlang/agon-support-persistence';
 
 import { lookupCatalogContextWindow } from '../signals/models-registry.js';
 

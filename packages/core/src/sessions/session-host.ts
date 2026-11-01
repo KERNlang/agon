@@ -1,6 +1,6 @@
-import { replay as logReplay, latestSeq as logLatestSeq, listSessions as logListSessions, readMeta as logReadMeta } from './event-log.js';
+import { replay as logReplay, latestSeq as logLatestSeq, listSessions as logListSessions, readMeta as logReadMeta } from '@kernlang/agon-support-persistence';
 
-import type { LoggedEvent } from './event-log.js';
+import type { LoggedEvent } from '@kernlang/agon-support-persistence';
 
 /**
  * A one-line summary of a session, cheap to compute for a `agon attach` picker. `id` is the on-disk (sanitized) session id. `createdAt` is the ISO string from meta.json (or '' if meta is missing). `kind` distinguishes a live REPL session ('repl') from a future replay/daemon kind. `lastSeq` is the highest seq known (0 = empty session). `active` is best-effort liveness — UNKNOWN to a pure-disk host (always false here), reserved for M3 when the daemon tracks live attachments; an in-process reader can't tell a crashed session from an idle one without a heartbeat.

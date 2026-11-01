@@ -7,6 +7,8 @@ export interface RawFinding {
   lines?: string;
   problem?: string;
   minimalFix?: string;
+  existingCode?: string;
+  existingCodeMatch?: boolean;
 }
 
 export interface EngineOutcome {
@@ -41,6 +43,8 @@ export interface ConsensusFinding {
   minimalFix?: string;
   file?: string;
   lines?: string;
+  existingCode?: string;
+  existingCodeMatch?: boolean;
 }
 
 /**
@@ -162,6 +166,8 @@ export function buildConsensus(outcomes: EngineOutcome[], minVerified?: number, 
     minimalFix?: string;
     file?: string;
     lines?: string;
+    existingCode?: string;
+    existingCodeMatch?: boolean;
   };
   const sevRank = (s: string): number => (s === 'blocking' ? 2 : s === 'important' ? 1 : 0);
   const clusters = new Map<string, Work>();
@@ -207,6 +213,10 @@ export function buildConsensus(outcomes: EngineOutcome[], minVerified?: number, 
       if (!c.minimalFix && f.minimalFix) c.minimalFix = f.minimalFix;
       if (!c.file && f.file) c.file = f.file;
       if (!c.lines && f.lines) c.lines = f.lines;
+      if (f.existingCode && (!c.existingCode || (f.existingCodeMatch === true && c.existingCodeMatch !== true))) {
+        c.existingCode = f.existingCode;
+        c.existingCodeMatch = f.existingCodeMatch;
+      }
     }
   }
   
@@ -275,6 +285,8 @@ export function buildConsensus(outcomes: EngineOutcome[], minVerified?: number, 
       minimalFix: c.minimalFix,
       file: c.file,
       lines: c.lines,
+      ...(c.existingCode ? { existingCode: c.existingCode } : {}),
+      ...(c.existingCodeMatch !== undefined ? { existingCodeMatch: c.existingCodeMatch } : {}),
     });
   }
   

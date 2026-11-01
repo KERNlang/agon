@@ -41,11 +41,14 @@ export function assignSeatRoles(engines: readonly string[], rolesInput: Json | u
   return new Map([...assignReviewRoles([...engines], roleIds)].map(([engineId, role]) => [engineId, role.id]));
 }
 
+const REDACTION_MARKER = '[REDACTED-SECRET]';
+const REDACTION_NOTE = `NOTE: Agon replaced credential-looking values with ${REDACTION_MARKER} before this review. The real code contains the original value; do not report the marker itself as a bug.`;
+
 export function buildSeatPrompt(
   input: { label: string; diff: string; roleId?: string; mutationEvidence?: string },
   grounding: ReviewPromptContext,
 ): string {
-  return buildReviewPrompt({
+  const prompt = buildReviewPrompt({
     label: input.label,
     diff: input.diff,
     fileContext: grounding.fileContext,
@@ -53,4 +56,5 @@ export function buildSeatPrompt(
     ...(input.roleId ? { roleId: input.roleId } : {}),
     ...(input.mutationEvidence ? { mutationEvidence: input.mutationEvidence } : {}),
   });
+  return prompt.includes(REDACTION_MARKER) ? `${REDACTION_NOTE}\n\n${prompt}` : prompt;
 }

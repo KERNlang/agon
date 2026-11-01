@@ -130,6 +130,8 @@ describe('physical CLI contract parity', () => {
     if (name === 'review') {
       expect(expected.args).not.toHaveProperty('deadline');
       expected.args.deadline = { type: 'string', required: false, aliases: [] };
+      expect(expected.args).not.toHaveProperty('format');
+      expected.args.format = { type: 'string', required: false, aliases: [], default: 'json' };
     }
     expect(contractDiff(actual, expected)).toEqual([]);
   });

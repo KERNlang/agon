@@ -186,16 +186,6 @@ it('keeps enabled successful Research output and session records', async () => {
   expect(cb.ctx.setActiveAbort).toHaveBeenLastCalledWith(null, expect.any(AbortController));
 });
 
-it('reports a routed no-grounded-answer as a notice instead of failing the job', async () => {
-  const cb = callbacks();
-  mocks.run.mockResolvedValue({ exitCode: 1, result: { ...result().result, ok: false, note: 'no sources' } });
-  await dispatchIntent({ type: 'research', question: 'Question' }, '/research Question', cb as never);
-  await expect(cb.runAsJob.mock.calls[0][2](new AbortController().signal)).resolves.toBeUndefined();
-  expect(cb.dispatch).toHaveBeenCalledWith({ type: 'error', message: 'No grounded answer: no sources' });
-  expect(mocks.add).not.toHaveBeenCalled();
-  expect(mocks.record).not.toHaveBeenCalled();
-});
-
 it('rejects a direct disabled handler before starting Research', async () => {
   const cb = callbacks();
   mocks.available.mockImplementation(() => { throw new Error('Research disabled'); });

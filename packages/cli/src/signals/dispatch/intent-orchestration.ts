@@ -2,7 +2,6 @@
 import { resolveWorkingDir } from '@kernlang/agon-core';
 import { captureProcessSurfaceAuthority, processSurfaceClient } from '../../surface-authority-runtime.js';
 import { runPhysicalTuiContribution } from './intent-session.js';
-import { ResearchGroundingError, ResearchInputError } from '@kernlang/agon-mod-research';
 
 import { ENGINE_COLORS } from '../../blocks/output-format.js';
 
@@ -156,18 +155,8 @@ export async function dispatchOrchestrationIntent(intent: any, input: string, cb
         signal.throwIfAborted();
         assertSelected();
         const { type: _type, _modSurface: _marker, engineId, ...request } = intent;
-        try {
-          await runPhysicalTuiContribution(record, { ...request, question: intent.question, engine: intent.engine ?? engineId,
-            ...(intent.count !== undefined ? { count: String(intent.count) } : {}) }, 'research', cb, signal, _rsCwd);
-        } catch (error) {
-          if (!(error instanceof ResearchGroundingError) && !(error instanceof ResearchInputError)) throw error;
-          signal.throwIfAborted();
-          assertSelected();
-          cb.dispatch(error instanceof ResearchInputError
-            ? { type: error.severity, message: error.message }
-            : { type: 'error', message: `No grounded answer: ${error.message}` });
-          return;
-        }
+        await runPhysicalTuiContribution(record, { ...request, question: intent.question, engine: intent.engine ?? engineId,
+          ...(intent.count !== undefined ? { count: String(intent.count) } : {}) }, 'research', cb, signal, _rsCwd);
         signal.throwIfAborted();
         assertSelected();
         const chatContext = collectRecentEngineContext(cb.ctx, 12, 2000);

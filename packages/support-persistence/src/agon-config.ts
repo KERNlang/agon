@@ -15,6 +15,7 @@ import type { AgonConfig } from './agon-config-settings.js';
 
 import { DEFAULT_AGON_CONFIG } from './agon-config-settings.js';
 import { LEGACY_MOD_SETTING_OWNERS } from './first-party-settings.generated.js';
+import { OPTIONAL_CONFIG_KEYS, type OptionalConfigKey } from './config-value.js';
 
 import { ConfigError } from '@kernlang/agon-kernel';
 
@@ -120,11 +121,13 @@ export function configGet(key: keyof AgonConfig, cwd?: string): Required<AgonCon
   return loadConfig(cwd)[key];
 }
 
-export function configSet(key: keyof AgonConfig, value: AgonConfig[keyof AgonConfig]): void {
-  if (!(key in DEFAULT_AGON_CONFIG)) {
+export function configSet<K extends keyof AgonConfig>(key: K, value: AgonConfig[K]): void;
+export function configSet(key: OptionalConfigKey, value: unknown): void;
+export function configSet(key: keyof AgonConfig | OptionalConfigKey, value: unknown): void {
+  if (!Object.hasOwn(DEFAULT_AGON_CONFIG, key) && !Object.hasOwn(OPTIONAL_CONFIG_KEYS, key)) {
     throw new ConfigError(`Unknown config key: ${String(key)}`);
   }
-  configStore.set(key, value);
+  configStore.set(key as keyof AgonConfig, value as AgonConfig[keyof AgonConfig]);
 }
 
 /**

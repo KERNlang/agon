@@ -30,12 +30,14 @@ const fixture = vi.hoisted(() => ({
   engine: { id: 'fixture-engine' },
 }));
 vi.mock('@kernlang/agon-core', async () => ({
+  ...await import('../../packages/core/src/blocks/mod-dispatch-output.js'),
   tracker: (await import('../../packages/core/src/signals/token-tracker.js')).tracker,
   EngineRegistry: class {
     load() {}
     activeIds() { return ['fixture-engine']; }
     listIds() { return ['fixture-engine', 'disabled-engine', 'filtered-engine']; }
     get() { return fixture.engine; }
+    findBinary(engine: { id: string }) { return engine.id === 'fixture-cli-engine' ? '/usr/bin/fixture' : null; }
   },
   loadConfig: fixture.loadConfig,
   createForgeHostServices: () => fixture.forge,
@@ -85,7 +87,7 @@ import { createMcpEngineServices, decorateMcpFirstPartyServices } from '../../pa
 const result = { exitCode: 0, stdout: 'fixture answer', stderr: '', durationMs: 4, timedOut: false };
 beforeEach(() => {
   tracker.reset();
-  fixture.engine.id = 'fixture-engine';
+  fixture.engine = { id: 'fixture-engine' };
   vi.clearAllMocks(); fixture.dispatch.mockResolvedValue(result);
   fixture.realHost = false;
   fixture.captureCli.mockReturnValue(fixture.assertCurrent);
@@ -507,10 +509,56 @@ describe.each([
     expect(fixture.dispatch).toHaveBeenCalledExactlyOnceWith({
       engine: fixture.engine, prompt: 'fixture prompt', cwd: context.cwd,
       outputDir: '/fixture/output', timeout: 37, systemPrompt: 'fixture system',
-      mode: 'review', signal: context.signal, textOnly,
+      mode: 'review', signal: context.signal, textOnly, maxTokens: 8192,
     });
     expect(fixture.loadConfig).toHaveBeenCalledWith(context.cwd);
-    expect(actual).toEqual({ ...result, engineId: 'fixture-engine', outputDir: '/fixture/output' });
+    expect(actual).toEqual({ ...result, engineId: 'fixture-engine', outputDir: '/fixture/output', cleanedText: 'fixture answer', appliedMaxTokens: 8192, appliedTimeoutSeconds: 37 });
+  });
+
+  it('applies the configured review timeout when a review dispatch names none, and reports it', async () => {
+    fixture.loadConfig.mockReturnValueOnce({ reviewTimeout: 900, agentTimeout: 300 });
+    const actual = await createServices().dispatch('fixture-engine', 'fixture prompt', context, { mode: 'review' });
+    expect(fixture.dispatch).toHaveBeenCalledWith(expect.objectContaining({ timeout: 900, mode: 'review' }));
+    expect(actual).toMatchObject({ appliedTimeoutSeconds: 900 });
+  });
+
+  it('gives an API engine review dispatch the configured wall-clock ceiling, and reports it', async () => {
+    fixture.engine = { id: 'fixture-api-engine', api: { baseUrl: 'https://fixture.test/v1' } } as never;
+    fixture.loadConfig.mockReturnValueOnce({ reviewTimeout: 420, reviewMaxWallSeconds: 2400 });
+    fixture.dispatch.mockResolvedValueOnce({ ...result, exitCode: 124, timedOut: true, stdout: 'partial', timeoutKind: 'ceiling', extendedSeconds: 1980 });
+    const actual = await createServices().dispatch('fixture-api-engine', 'fixture prompt', context, { mode: 'review' });
+    expect(fixture.dispatch).toHaveBeenCalledWith(expect.objectContaining({ timeout: 420, maxWallSeconds: 2400, mode: 'review' }));
+    expect(actual).toMatchObject({ appliedTimeoutSeconds: 420, appliedCeilingSeconds: 2400, timeoutKind: 'ceiling', extendedSeconds: 1980, engineFault: 'timeout' });
+  });
+
+  it('caps the API review ceiling at a caller-requested maximum', async () => {
+    fixture.engine = { id: 'fixture-api-engine', api: { baseUrl: 'https://fixture.test/v1' } } as never;
+    await createServices().dispatch('fixture-api-engine', 'fixture prompt', context, { mode: 'review', timeoutSeconds: 300, maxWallSeconds: 600 });
+    expect(fixture.dispatch).toHaveBeenCalledWith(expect.objectContaining({ timeout: 300, maxWallSeconds: 600 }));
+  });
+
+  it.each([
+    ['a CLI-spawned engine in review mode', { id: 'fixture-cli-engine', binary: 'fixture', api: { baseUrl: 'https://fixture.test/v1' } }, 'review'],
+    ['an API engine outside review mode', { id: 'fixture-api-engine', api: { baseUrl: 'https://fixture.test/v1' } }, 'exec'],
+  ] as const)('gives no ceiling to %s', async (_label, engine, mode) => {
+    fixture.engine = engine as never;
+    const actual = await createServices().dispatch(engine.id, 'fixture prompt', context, { mode });
+    expect(fixture.dispatch).toHaveBeenCalledWith(expect.not.objectContaining({ maxWallSeconds: expect.anything() }));
+    expect(actual).not.toHaveProperty('appliedCeilingSeconds');
+  });
+
+  it('forwards an explicit output budget and surfaces a truncated seat as a length fault', async () => {
+    fixture.dispatch.mockResolvedValueOnce({ ...result, stdout: '<think>planning</think>', finishReason: 'length' });
+    const actual = await createServices().dispatch('fixture-engine', 'fixture prompt', context, { mode: 'review', maxTokens: 32000 });
+    expect(fixture.dispatch).toHaveBeenCalledWith(expect.objectContaining({ maxTokens: 32000, mode: 'review' }));
+    expect(actual).toMatchObject({ stdout: '<think>planning</think>', cleanedText: '', finishReason: 'length', engineFault: 'length' });
+  });
+
+  it('labels a timed-out seat as a timeout fault and never as ok', async () => {
+    fixture.dispatch.mockResolvedValueOnce({ ...result, exitCode: 124, stdout: '', stderr: 'Request timed out', timedOut: true });
+    const actual = await createServices().dispatch('fixture-engine', 'fixture prompt', context, { mode: 'exec' });
+    expect(fixture.dispatch).toHaveBeenCalledWith(expect.not.objectContaining({ maxTokens: expect.anything() }));
+    expect(actual).toMatchObject({ exitCode: 124, timedOut: true, engineFault: 'timeout' });
   });
 
   it('preserves default selection, execution mode and timeout', async () => {

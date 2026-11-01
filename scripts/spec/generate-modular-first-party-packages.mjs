@@ -178,7 +178,7 @@ function expectedFiles(packageRecord) {
   if (['conquer', 'goal', 'pipeline-delivery', 'pipeline-orchestration'].includes(short)) inferredPermissions.add('engine.dispatch');
   // These workflows dispatch through host services in separate modules.
   // The entrypoint scan cannot see these effects.
-  if (['brainstorm', 'forge', 'team-brainstorm', 'tribunal', 'campfire', 'think', 'synthesis'].includes(short)) inferredPermissions.add('engine.dispatch');
+  if (['brainstorm', 'forge', 'team-brainstorm', 'tribunal', 'campfire', 'think', 'synthesis', 'review'].includes(short)) inferredPermissions.add('engine.dispatch');
   // Jobs persists scheduler observations through its separate storage adapter.
   if (short === 'jobs') inferredPermissions.add('state.write');
   if (short === 'conquer') inferredPermissions.add('git.write');

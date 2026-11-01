@@ -108,15 +108,16 @@ export function normalizeDispatchOptions(options: DispatchOptions): DispatchOpti
 }
 
 /**
- * Clone the complete API definition, then apply only per-dispatch model/token overrides.
+ * Clone the complete API definition, then apply only per-dispatch model/token/wall-clock-ceiling overrides.
  */
-export function buildApiDispatchConfig(engine: EngineDefinition, resolvedModel: string|null, maxTokens: number|undefined): ApiConfig {
+export function buildApiDispatchConfig(engine: EngineDefinition, resolvedModel: string|null, maxTokens: number|undefined, maxWallSeconds?: number): ApiConfig {
   if (!engine.api) {
     throw new Error(`Engine "${engine.id}" has no API configuration`);
   }
   const modelOverride = resolvedModel ? { model: resolvedModel } : {};
   const tokenOverride = (maxTokens && maxTokens > 0) ? { maxTokens: maxTokens } : {};
-  return { ...engine.api, ...modelOverride, ...tokenOverride };
+  const wallOverride = (maxWallSeconds && maxWallSeconds > 0) ? { extendWhileActiveMaxSeconds: maxWallSeconds } : {};
+  return { ...engine.api, ...modelOverride, ...tokenOverride, ...wallOverride };
 }
 
 /**
@@ -179,7 +180,7 @@ export function planEngineExecution(options: DispatchOptions, binaryPath: string
     return { options: normalized, backend: 'cli', binaryPath: binaryPath };
   }
   if (normalized.engine.api && apiKeyAvailable) {
-    const apiConfig = buildApiDispatchConfig(normalized.engine, resolvedModel, normalized.maxTokens);
+    const apiConfig = buildApiDispatchConfig(normalized.engine, resolvedModel, normalized.maxTokens, normalized.maxWallSeconds);
     return { options: normalized, backend: 'api', binaryPath: null, apiConfig: apiConfig };
   }
   return { options: normalized, backend: 'missing', binaryPath: null };

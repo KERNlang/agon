@@ -158,6 +158,16 @@ export interface EngineDispatchOptions {
   /** Forward the adapter's text-only control. This is not a process sandbox. */
   readonly textOnly?: boolean;
   readonly mode?: 'exec' | 'review' | 'agent';
+  readonly maxTokens?: number;
+  /** Review mode on API engines: cap the host's extend-while-streaming wall-clock ceiling. Never raises it. */
+  readonly maxWallSeconds?: number;
+}
+
+export interface EngineDescription {
+  readonly id: string;
+  readonly binary?: string;
+  readonly apiBaseUrl?: string;
+  readonly backend: 'cli' | 'api';
 }
 
 /** Host-owned browser runtime. The browser mod owns the command surface while
@@ -271,6 +281,11 @@ export interface ModServices {
     /** Resolve explicit IDs and aliases. Reject removed or unavailable engines. */
     resolveRequested?(engineIds: readonly string[], context: InvocationContext): Awaitable<readonly string[]>;
     rank?(engineIds: readonly string[], scopes: readonly EngineRatingScope[], context: InvocationContext): Awaitable<readonly RankedEngine[]>;
+    describe?(engineIds: readonly string[], context: InvocationContext): Awaitable<readonly EngineDescription[]>;
+  };
+  /** Host-scanned project context, already formatted as a `## PROJECT CONTEXT` prompt block; empty when none. */
+  readonly context?: {
+    projectContext(cwd: string, context: InvocationContext): Awaitable<string>;
   };
   /** Present only for trusted bundled browser integration. Folder mods never receive it. */
   readonly browser?: BrowserHostServices;

@@ -30,7 +30,8 @@ export function parseFindings(output: string): { valid: boolean; findings: Findi
         minimalFix: text(v.minimalFix),
       }))
       .filter((v) => v.file && v.problem);
-  return { valid: raw.length === 0 || findings.length > 0, findings };
+  const hasFindingShape = raw.some((v: any) => v && typeof v === 'object' && text(v.problem));
+  return { valid: raw.length === 0 || hasFindingShape, findings };
 }
 
 export function buildRepairPrompt(priorReview: string): string {

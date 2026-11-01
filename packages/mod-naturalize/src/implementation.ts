@@ -47,6 +47,23 @@ async function readStdin(): Promise<string> {
     chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
   return Buffer.concat(chunks).toString("utf8");
 }
+function parseTuiInput(value: string): Record<string, Json> {
+  let rest = value.replace(/^\/naturalize\s*/i, '').trim();
+  const input: Record<string, Json> = {};
+  const flags = [
+    ['out', /(?:^|\s)(?:--out|-o)\s+(\S+)/],
+    ['engine', /(?:^|\s)--engine\s+(\S+)/],
+    ['author', /(?:^|\s)--author\s+(\S+)/],
+    ['minChange', /(?:^|\s)--min-change\s+(\S+)/],
+    ['maxAttempts', /(?:^|\s)--max-attempts\s+(\S+)/],
+  ] as const;
+  for (const [name, pattern] of flags) {
+    const match = rest.match(pattern);
+    if (match) { input[name] = match[1]; rest = rest.replace(match[0], ' '); }
+  }
+  // TUI input has no stdin stream. An empty filename must fail immediately.
+  return rest.trim() ? { ...input, file: rest.trim() } : { ...input, text: '' };
+}
 export async function runNaturalize(
   raw: Json,
   context: InvocationContext,
@@ -188,9 +205,7 @@ export const createMod: AgonModFactory = (services) =>
         registrar.command("tui", {
           id: "tuiSlashCommands:0046",
           ...command,
-          parse: (value: string) => ({
-            text: value.replace(/^\/naturalize\s*/i, ""),
-          }),
+          parse: parseTuiInput,
         }),
       ];
       for (const id of ['resultAndEnvelopeTypes:0085']) d.push(registrar.resultType({ id, schema: { type: 'object', additionalProperties: true }, readableVersions: '>=0.2.0', render: async (payload) => ({ text: JSON.stringify(payload, null, 2) }) }));

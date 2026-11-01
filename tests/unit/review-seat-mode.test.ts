@@ -443,6 +443,7 @@ describe('prompt-borne review vs native working-tree review', () => {
     expect(companionUsesNativeReview('review', 'uncommittedChanges')).toBe(true);
     // The target is meaningless outside review mode.
     expect(companionUsesNativeReview('exec', 'uncommittedChanges')).toBe(false);
+    expect(companionUsesNativeReview('agent', 'uncommittedChanges')).toBe(false);
   });
 });
 

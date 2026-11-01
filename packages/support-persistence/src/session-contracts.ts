@@ -1,14 +1,5 @@
-export interface ControlPlaneEnvelopeV1 {
-  schemaVersion: 1;
-  sessionId: string;
-  turnId: string;
-  leaseEpoch: number;
-  attempt: number;
-  producerId: string;
-  responseSeq?: number;
-  stepId?: string;
-  toolCallId?: string;
-}
+import type { ControlPlaneEnvelopeV1 } from '@kernlang/agon-support-engine-runtime';
+export type { ControlPlaneEnvelopeV1 } from '@kernlang/agon-support-engine-runtime';
 
 /**
  * A streamed unit from a PersistentSession.send() turn. 'text' is the authoritative answer; 'preview' is a SPECULATIVE, best-effort live draft (currently emitted only by the PTY brain while it waits for the DeliverAnswer channel). A 'preview' chunk may ONLY update the live/dynamic streaming pane — it must NEVER be committed to the transcript or accumulated into the final answer. Every consumer that does not understand 'preview' must ignore it (all current consumers accumulate only 'text' and break on 'done'/'error', so a new 'preview' falls through harmlessly).

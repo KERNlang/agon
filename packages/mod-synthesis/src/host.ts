@@ -4,6 +4,7 @@ import type { EngineAdapter } from '@kernlang/agon-support-engine-runtime';
 import type { PanelEngineRegistry, PanelHealthRuntime } from '@kernlang/agon-support-panel';
 import type { SynthesisRuntimeEffects } from './runtime.js';
 import { synthesisRoutingAdviceForTaskClass } from './routing-policy.js';
+import type { SynthesisDisplay, synthesisRunStatus } from './presentation.js';
 
 export interface SynthesisHostSession {
   readonly registry: PanelEngineRegistry;
@@ -16,6 +17,10 @@ export interface SynthesisHostSession {
 /** Bundled host effects only. The Synthesis mod owns the workflow. */
 export interface SynthesisHostServices {
   open(context: InvocationContext): Awaitable<SynthesisHostSession>;
+  readonly cliOutput?: SynthesisDisplay & {
+    isQuiet(): boolean;
+    summary(status: ReturnType<typeof synthesisRunStatus>): void;
+  };
 }
 
 export interface SynthesisModServices extends ModServices {

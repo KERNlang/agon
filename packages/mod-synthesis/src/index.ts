@@ -23,3 +23,5 @@ export {
 export type { SynthesisDraft, SynthesisSwap, SynthesisResult, SynthesisRuntimeOptions, SynthesisRuntimeEvent, SynthesisRuntimeEffects } from './runtime.js';
 export { runSynthesisSession } from './session-workflow.js';
 export type { SynthesisSessionContext, SynthesisSessionCommandResult, SynthesisSessionEvent, SynthesisSessionHost } from './session-workflow.js';
+export { presentSynthesisResult, synthesisRunStatus } from './presentation.js';
+export type { SynthesisDisplay } from './presentation.js';

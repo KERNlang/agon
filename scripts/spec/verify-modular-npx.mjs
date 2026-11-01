@@ -243,8 +243,14 @@ try {
     const { runResearch } = await import('@kernlang/agon-mod-research');
     assert.ok(import.meta.resolve('@kernlang/agon-mod-research').startsWith(pathToFileURL(process.cwd() + '/node_modules/').href));
     const context = { invocationId: 'packed-research', cwd: process.cwd(), platform: 'darwin-arm64', signal: new AbortController().signal, config: {} };
+    const draftCalls = [];
     const services = { permissions: { check: async () => 'allow' }, receipts: { record: async () => 'fixture-receipt' }, engines: {
-      listActive: async () => ['fixture'], dispatch: async () => ({ exitCode: 0, stdout: 'Supported claim [1].' })
+      listActive: async () => ['fixture'], dispatch: async (engine, prompt, invocation, options) => {
+        draftCalls.push({ engine, textOnly: options?.textOnly });
+        assert.equal(invocation, context);
+        assert.match(prompt, /SOURCES:/);
+        return { exitCode: 0, stdout: 'Supported claim [1].' };
+      }
     } };
     for (const candidate of ['::ffff:7f00:1', '0:0:0:0:0:ffff:7f00:1', '::ffff:a00:1', '0:0:0:0:0:0:0:1', '::ffff:808:808']) {
       address = candidate;
@@ -261,6 +267,8 @@ try {
       assert.equal(result.exitCode, allowed ? 0 : 1, candidate);
       assert.equal(result.result.citations.verified, allowed ? 1 : 0, candidate);
     }
+    assert.equal(draftCalls.length, 5);
+    assert.deepEqual(draftCalls, Array.from({ length: 5 }, () => ({ engine: 'fixture', textOnly: true })));
   `], { cwd: ephemeral }));
   requireOk('packed-agent-team-scoring-owner', run(process.execPath, ['--input-type=module', '-e', `
     import assert from 'node:assert/strict';

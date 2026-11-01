@@ -108,6 +108,8 @@ describe('physical research mod', () => {
     const s = services();
     const out = await runResearch({ question: 'npm package pkg' }, context, s);
     expect(out.exitCode).toBe(0); expect((out.result as any).citations.verified).toBe(1); expect(globalThis.fetch).toHaveBeenCalledTimes(3);
+    expect(s.engines.dispatch).toHaveBeenCalledExactlyOnceWith('writer', expect.stringContaining('Evidence'), context,
+      expect.objectContaining({ mode: 'exec', textOnly: true, timeoutSeconds: 120 }));
     expect(s.runs!.finish).toHaveBeenCalledWith(expect.objectContaining({ id: 'run' }), expect.objectContaining({ ok: true, mode: 'research' }), context);
   });
   it('rejects unsafe URLs, unsupported lanes, and fabricated source numbers', async () => {

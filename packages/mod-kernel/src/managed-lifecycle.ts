@@ -8,6 +8,7 @@ import { DurableModHost, type GenerationPointer } from './durable-host.js';
 import { DurableHostError } from './host-errors.js';
 import { atomicWrite, nodeHostIo, pathExists, readJson, writeNewImmutableFile, type HostIo } from './host-io.js';
 import { rollbackGeneration } from './host-rollback.js';
+import { readVerifiedManagedInstallation } from './managed-installation.js';
 import { referencedInstallations } from './lifecycle-recovery.js';
 import { makeTreeRemovable } from './removable-tree.js';
 import { releaseLifecycleWriters, WriterFence, type WriterLockOptions } from './writer-lock.js';
@@ -721,27 +722,15 @@ export class ManagedLifecycleService {
   async readSelectedInstallation(): Promise<ManagedInstallationRecord | null> {
     const pointer = await this.host.readCurrentPointer();
     if (!pointer) return null;
-    const files = await this.host.readGenerationArtifacts(pointer, ['installation.json']);
-    const bytes = files['installation.json'];
-    if (!bytes) throw new DurableHostError('MOD_GENERATION_CORRUPT', 'selected installation record is missing');
-    const record = JSON.parse(new TextDecoder().decode(bytes)) as ManagedInstallationRecord;
-    const prefix = resolve(this.host.root, record.prefix);
-    if (relative(this.host.root, prefix).startsWith('..') || !await pathExists(this.#io, prefix)) {
-      throw new DurableHostError('MOD_GENERATION_CORRUPT', 'selected installation prefix is missing or escapes the managed host');
-    }
-    const onDisk = await readJson<ManagedInstallationRecord>(this.#io, join(prefix, 'agon-installation.json'));
-    if (canonicalJson(onDisk) !== canonicalJson(record)) throw new DurableHostError('MOD_GENERATION_CORRUPT', 'selected installation record does not match its immutable prefix');
+    const record = await readVerifiedManagedInstallation(this.host, pointer, true, this.#io);
+    if (!record) throw new DurableHostError('MOD_GENERATION_CORRUPT', 'selected installation record is missing');
     return freeze(record);
   }
 
   async rollback(targetGeneration: number): Promise<{ readonly pointer: GenerationPointer; readonly installation: ManagedInstallationRecord }> {
-    const targetRecord = await readJson<ManagedInstallationRecord>(this.#io, join(this.host.generationPath(targetGeneration), 'installation.json'));
-    const prefix = resolve(this.host.root, targetRecord.prefix);
-    if (relative(this.host.root, prefix).startsWith('..') || !await pathExists(this.#io, prefix)) {
-      throw new DurableHostError('MOD_GENERATION_CORRUPT', 'rollback installation prefix is unavailable');
-    }
-    const qualified = await readJson<ManagedInstallationRecord>(this.#io, join(prefix, 'agon-installation.json'));
-    if (canonicalJson(qualified) !== canonicalJson(targetRecord)) throw new DurableHostError('MOD_GENERATION_CORRUPT', 'rollback installation record is corrupt');
+    const manifest = await this.host.validateGeneration(targetGeneration);
+    const targetRecord = await readVerifiedManagedInstallation(this.host, manifest, true, this.#io);
+    if (!targetRecord) throw new DurableHostError('MOD_GENERATION_CORRUPT', 'rollback installation record is missing');
     const result = await rollbackGeneration(this.host, targetGeneration, { ownerId: this.#options.ownerId ?? 'agon.kernel.lifecycle.rollback' });
     return freeze({ pointer: result.pointer, installation: targetRecord });
   }

@@ -34,6 +34,19 @@ describe('gatherReviewFileContext (repo grounding)', () => {
     expect(out).toContain('export function foo() { return 42; }');
   });
 
+  it('never reads a changed symlink that resolves outside the repo', () => {
+    const d = setup();
+    writeFileSync(`${d}-outside`, 'SECRET_OUTSIDE_REPO\n');
+    symlinkSync(`${d}-outside`, join(d, 'src', 'link.ts'));
+    expect(gatherReviewFileContext(diffFor('src/link.ts'), d)).toBe('');
+  });
+
+  it('never reads a known secret file', () => {
+    const d = setup();
+    writeFileSync(join(d, '.env'), 'API_KEY=hunter2\n');
+    expect(gatherReviewFileContext(diffFor('.env'), d)).toBe('');
+  });
+
   it('skips generated/ files (derived noise)', () => {
     const d = setup();
     const out = gatherReviewFileContext(diffFor('src/generated/foo.ts'), d);

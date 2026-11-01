@@ -1,5 +1,7 @@
-import { readFileSync, statSync } from 'node:fs';
-import { resolve, sep } from 'node:path';
+import { readFileSync, realpathSync, statSync } from 'node:fs';
+import { relative, resolve, sep } from 'node:path';
+
+import { isSecretPath } from './secret-redaction.js';
 
 /**
  * Repo grounding: read the CURRENT full content of each source file the diff touches and format it as a context block. A diff shows only the changed hunks, so reviewers raise false alarms that reading the whole file would kill instantly ('X is unhandled' when the wrapper handles it three lines down; 'unimported' when it's imported at the top). Bounded hard (per-file + total caps) to protect prompt size / TTFT, and skips generated/dist/min files (derived noise that would blow the budget). Best-effort: deleted/binary/unreadable files are skipped — the diff still covers them.
@@ -8,6 +10,7 @@ export function gatherReviewFileContext(diff: string, cwd: string): string {
   const PER_FILE_MAX = 20_000;
   const TOTAL_MAX = 60_000;
   const root = resolve(cwd);
+  let realRoot: string | undefined;
   const paths: string[] = [];
   const seen = new Set<string>();
   for (const m of diff.matchAll(/^diff --git a\/.+? b\/(.+)$/gm)) {
@@ -24,9 +27,13 @@ export function gatherReviewFileContext(diff: string, cwd: string): string {
     try {
       // Path containment: a diff is DATA (it can come from branch:/commit:
       // targets or be crafted), so a path that escapes the repo root via ../
-      // must never cause us to read arbitrary files into the prompt.
-      const full = resolve(cwd, p);
-      if (full !== root && !full.startsWith(root + sep)) continue;
+      // or a symlink must never cause us to read arbitrary files into the prompt.
+      if (isSecretPath(p)) continue;
+      const lexical = resolve(cwd, p);
+      if (!lexical.startsWith(root + sep)) continue;
+      realRoot ??= realpathSync(root);
+      const full = realpathSync(lexical);
+      if (!full.startsWith(realRoot + sep) || isSecretPath(relative(realRoot, full))) continue;
       const stat = statSync(full);
       if (!stat.isFile()) continue;
       let content = readFileSync(full, 'utf-8');

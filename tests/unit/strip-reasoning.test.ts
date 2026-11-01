@@ -101,6 +101,10 @@ describe('stripTuiChrome', () => {
     expect(stripTuiChrome('✴Cogitating…42Review: clear')).toBe('Review: clear');
   });
 
+  it('treats a middle dot directly before a spinner label as TUI chrome', () => {
+    expect(stripTuiChrome('·Cogitating…42Review: clear')).toBe('Review: clear');
+  });
+
   it('does NOT touch API-engine output (no glyphs → no label/counter stripping)', () => {
     // gemini/kimi/zai never emit spinner glyphs; a finding that legitimately
     // ends a phrase in … or starts with a number must survive intact.

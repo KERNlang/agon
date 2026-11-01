@@ -91,6 +91,7 @@ export const ApiConfigSchema = z.object({
   format: z.enum(['openai', 'anthropic']).optional(),
   firstChunkTimeoutMs: z.number().int().positive().optional(),
   idleTimeoutMs: z.number().int().positive().optional(),
+  activityWindowMs: z.number().int().positive().optional(),
   firstChunkRetryCount: z.number().int().nonnegative().optional(),
   firstChunkRetryBackoffMs: z.number().int().nonnegative().optional(),
   emptyResponseRetryCount: z.number().int().nonnegative().optional(),

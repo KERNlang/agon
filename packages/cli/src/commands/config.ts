@@ -1,6 +1,6 @@
 import { defineCommand } from 'citty';
 import type { AgonConfig } from '@kernlang/agon-core';
-import { loadConfig, configSet, DEFAULT_CONFIG, ensureAgonHome } from '@kernlang/agon-core';
+import { loadConfig, configSet, DEFAULT_CONFIG, ensureAgonHome, OPTIONAL_CONFIG_KEYS, parseConfigSetValue } from '@kernlang/agon-core';
 import { header, info, table, bold, success, fail } from '../blocks/output-format.js';
 
 export const configCommand = defineCommand({
@@ -50,9 +50,9 @@ export const configCommand = defineCommand({
         }
         const config = loadConfig();
         const key = args.key as keyof AgonConfig;
-        if (key in config) {
+        if (key in config || Object.hasOwn(OPTIONAL_CONFIG_KEYS, key)) {
           const value = config[key as keyof typeof config];
-          console.log(Array.isArray(value) ? value.join(',') : String(value));
+          console.log(value === undefined ? '' : Array.isArray(value) ? value.join(',') : String(value));
         } else {
           fail(`Unknown key: ${args.key}`);
           process.exit(1);
@@ -66,33 +66,13 @@ export const configCommand = defineCommand({
           process.exit(1);
         }
 
-        const key = args.key as keyof AgonConfig;
-        if (!(key in DEFAULT_CONFIG)) {
-          fail(`Unknown key: ${args.key}`);
+        const parsed = parseConfigSetValue(args.key, args.value);
+        if (!parsed.ok) {
+          fail(parsed.error);
           process.exit(1);
         }
 
-        // Parse value based on type
-        const defaultVal = DEFAULT_CONFIG[key];
-        let parsed: unknown;
-
-        if (typeof defaultVal === 'boolean') {
-          parsed = args.value === 'true';
-        } else if (typeof defaultVal === 'number') {
-          // Number(), not parseInt: float keys (neroExplorationRate 0.2,
-          // speculativeThresholdUsd 0.50) must not be silently truncated to 0.
-          parsed = Number(args.value);
-          if (isNaN(parsed as number)) {
-            fail(`Invalid number: ${args.value}`);
-            process.exit(1);
-          }
-        } else if (Array.isArray(defaultVal)) {
-          parsed = args.value.split(',').map((s) => s.trim());
-        } else {
-          parsed = args.value;
-        }
-
-        configSet(key, parsed as AgonConfig[typeof key]);
+        configSet(args.key as keyof AgonConfig, parsed.value as never);
         success(`Set ${bold(args.key)} = ${args.value}`);
         break;
       }

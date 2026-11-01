@@ -2,7 +2,7 @@ import { readdirSync, readFileSync, existsSync, rmSync } from 'node:fs';
 
 import { join } from 'node:path';
 
-import { ensureAgonHome, RUNS_DIR, getAgonHome, getRatings, tracker, isFlatRateEngine, loadConfig, configSet, DEFAULT_CONFIG, discoverEngines, addWorkspace, removeWorkspace, switchWorkspace, listWorkspaces, getActiveWorkspace, listChatSessions, loadChatSession, resolveWorkingDir, setSessionRoot } from '@kernlang/agon-core';
+import { ensureAgonHome, RUNS_DIR, getAgonHome, getRatings, tracker, isFlatRateEngine, loadConfig, configSet, DEFAULT_CONFIG, parseConfigSetValue, discoverEngines, addWorkspace, removeWorkspace, switchWorkspace, listWorkspaces, getActiveWorkspace, listChatSessions, loadChatSession, resolveWorkingDir, setSessionRoot } from '@kernlang/agon-core';
 
 import type { AgonConfig, ForgeManifest } from '@kernlang/agon-core';
 
@@ -525,19 +525,12 @@ export function handleConfig(intent: Intent&{type:'config'}, dispatch: Dispatch,
         return;
       }
       const key = (intent as any).key as keyof AgonConfig;
-      if (!(key in DEFAULT_CONFIG)) {
-        dispatch({ type: 'error', message: `Unknown key: ${(intent as any).key}` });
+      const parsed = parseConfigSetValue(String(key), String((intent as any).value));
+      if (!parsed.ok) {
+        dispatch({ type: 'error', message: parsed.error });
         return;
       }
-      const defaultVal = (DEFAULT_CONFIG as any)[key];
-      let parsed: unknown;
-      if (typeof defaultVal === 'boolean') parsed = (intent as any).value === 'true';
-      else if (typeof defaultVal === 'number') {
-        parsed = Number((intent as any).value);
-        if (isNaN(parsed as number)) { dispatch({ type: 'error', message: `Invalid number: ${(intent as any).value}` }); return; }
-      } else if (Array.isArray(defaultVal)) parsed = (intent as any).value.split(',').map((s: string) => s.trim());
-      else parsed = (intent as any).value;
-      configSet(key, parsed as any);
+      configSet(key, parsed.value as never);
       if (ctx && ['cesarEngine', 'cesarBackend', 'cesarMcpEnabled', 'cesarMcpConfigPath'].includes(String(key))) {
         if (ctx.cesarSession) {
           ctx.cesarSession.close();
@@ -688,7 +681,7 @@ export function handleCesar(engineId: string, dispatch: Dispatch, ctx: HandlerCo
   
   // Backend-only switch: "/cesar cli" or "/cesar api" or "/cesar auto"
   if (['cli', 'api', 'auto'].includes(id)) {
-    configSet('cesarBackend', id);
+    configSet('cesarBackend', id as AgonConfig['cesarBackend']);
     // Kill session to force reboot with new backend
     if (ctx.cesarSession) {
       ctx.cesarSession.close();
@@ -727,7 +720,7 @@ export function handleCesar(engineId: string, dispatch: Dispatch, ctx: HandlerCo
   
   // Only change Cesar brain — do NOT touch sessionEngines, forgeEnabledEngines, or forgeFixedStarter
   configSet('cesarEngine', id);
-  if (backendArg) configSet('cesarBackend', backendArg);
+  if (backendArg) configSet('cesarBackend', backendArg as AgonConfig['cesarBackend']);
   
   // Kill old persistent session so next message boots fresh with new engine
   if (ctx.cesarSession) {

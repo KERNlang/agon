@@ -1,0 +1,262 @@
+import { createHash } from 'node:crypto';
+
+export interface ReviewRouterEngineDefinition {
+  id: string;
+  binary?: string;
+  api?: { baseUrl?: string };
+  capabilities?: readonly string[];
+}
+
+type EngineDefinition = ReviewRouterEngineDefinition;
+
+export const REVIEW_ROUTER_VERSION: string = "review-router-v1";
+
+/**
+ * The one high-risk path family agon recognises: auth/session/token, permissions, persistence/migrations, shared protocol/contract surfaces, and release/deploy plumbing. Owned here because review's risk router is where it earns its keep; exported so Cesar's mutate reflex steers its `--lens` off the SAME evidence instead of growing a second, drifting list.
+ */
+export const REVIEW_SENSITIVE_PATH_RE: RegExp = /(^|\/)(auth|authentication|sessions?|tokens?|oauth|oidc|passwords?|passkeys?|permissions?|rbac|acl|migrations?|schemas?|database|db|prisma|drizzle|protocols?|contracts?|deploy|deployment|releases?|publishing)(\/|[._-]|$)/i;
+
+export type ReviewRiskLevel = 'low' | 'medium' | 'high';
+
+export type ReviewRiskRequest = 'auto' | 'low' | 'medium' | 'high';
+
+export type ReviewExecutionBackend = 'cli' | 'api';
+
+export interface ReviewRoutingEngine {
+  engine: EngineDefinition;
+  backend: ReviewExecutionBackend;
+}
+
+export interface ReviewAdapterIdentity {
+  key: string;
+  source: 'api-origin'|'cli-binary'|'engine-id-fallback';
+  confidence: 'high'|'low';
+}
+
+export interface ReviewRoutingCandidate {
+  engineId: string;
+  identityKey: string;
+  identitySource: ReviewAdapterIdentity['source'];
+  identityConfidence: ReviewAdapterIdentity['confidence'];
+  backend: ReviewExecutionBackend;
+  selectionKey: string;
+  capabilities: string[];
+}
+
+export interface ReviewRiskDecision {
+  requested: ReviewRiskRequest;
+  inferred: ReviewRiskLevel;
+  final: ReviewRiskLevel;
+  triggers: string[];
+}
+
+export interface ReviewRoutingExclusion {
+  engineId: string;
+  reason: string;
+}
+
+export interface ReviewRoutingShortfall {
+  required: number;
+  available: number;
+  reason: string;
+}
+
+export interface ReviewRoutingManifest {
+  routerVersion: string;
+  mode: 'automatic';
+  diffHash: string;
+  risk: ReviewRiskDecision;
+  primary: {engineId:string,identityKey:string,identitySource:ReviewAdapterIdentity['source'],backend:ReviewExecutionBackend} | null;
+  candidates: ReviewRoutingCandidate[];
+  selected: ReviewRoutingCandidate[];
+  excluded: ReviewRoutingExclusion[];
+  shortfall: ReviewRoutingShortfall | null;
+}
+
+function reviewRiskRank(risk: ReviewRiskLevel): number {
+  if (risk === 'high') return 3;
+  if (risk === 'medium') return 2;
+  return 1;
+}
+
+function maxReviewRisk(left: ReviewRiskLevel, right: ReviewRiskLevel): ReviewRiskLevel {
+  return reviewRiskRank(left) >= reviewRiskRank(right) ? left : right;
+}
+
+export function reviewDiffPaths(diff: string): string[] {
+  const paths: string[] = [];
+  const pattern = /^diff --git a\/(.+?) b\/(.+)$/gm;
+  for (const match of diff.matchAll(pattern)) {
+    const path = String(match[2] ?? '').trim();
+    if (path && !paths.includes(path)) paths.push(path);
+  }
+  return paths.sort((a, b) => a.localeCompare(b));
+}
+
+export function inferReviewRisk(diff: string, requested: ReviewRiskRequest): ReviewRiskDecision {
+  const paths = reviewDiffPaths(diff);
+  const triggers: string[] = [];
+
+  const addTrigger = (value: string) => {
+    if (!triggers.includes(value)) triggers.push(value);
+  };
+
+  const reviewOnlyPath = (path: string) =>
+    /(^|\/)(docs?|tests?|__tests__)(\/|$)/i.test(path)
+    || /(^|\/)(README|CHANGELOG|CONTRIBUTING|SECURITY)(?:\.[^/]*)?$/i.test(path)
+    || /\.(?:md|mdx|txt|test\.[^.]+|spec\.[^.]+)$/i.test(path);
+  const sensitivePath = REVIEW_SENSITIVE_PATH_RE;
+  const sharedSurface = /(^|\/)(package\.json|exports?\.(?:ts|js|json)|openapi[^/]*|.*\.proto|.*\.sql|.*\.graphql)$/i;
+  const packageEntrySurface = /(^|\/)(?:src|lib)\/index\.(?:ts|js)$/i;
+  const destructiveContent = /\b(DROP\s+(?:TABLE|DATABASE)\b|TRUNCATE\s+(?:TABLE\s+)?["`\[]?[A-Za-z_]|rm\s+-rf\s+(?:\/|~\/|\.{1,2}\/)|reset\s+--hard\b)/i;
+
+  for (const path of paths) {
+    if (sensitivePath.test(path)) addTrigger(`sensitive-path:${path}`);
+    if (sharedSurface.test(path) || packageEntrySurface.test(path)) addTrigger(`shared-surface:${path}`);
+  }
+  let currentPath = '';
+  for (const line of diff.split('\n')) {
+    const header = /^diff --git a\/(.+?) b\/(.+)$/.exec(line);
+    if (header) {
+      currentPath = String(header[2] ?? '').trim();
+      continue;
+    }
+    if (line.startsWith('+') && !line.startsWith('+++') && !reviewOnlyPath(currentPath) && destructiveContent.test(line.slice(1))) {
+      addTrigger('destructive-change');
+    }
+  }
+  if (paths.length === 0) addTrigger('missing-changed-path-evidence');
+
+  const onlyDocsOrTests = paths.length > 0 && paths.every(reviewOnlyPath);
+
+  let inferred: ReviewRiskLevel = onlyDocsOrTests ? 'low' : 'medium';
+  if (triggers.length > 0) inferred = 'high';
+
+  const declared: ReviewRiskLevel = requested === 'auto' ? inferred : requested;
+  const final = maxReviewRisk(declared, inferred);
+  return { requested, inferred, final, triggers: triggers.sort((a, b) => a.localeCompare(b)) };
+}
+
+export function reviewAdapterIdentity(engine: EngineDefinition, backend: ReviewExecutionBackend): ReviewAdapterIdentity {
+  if (backend === 'cli') {
+    const binary = String(engine.binary ?? '').trim().toLowerCase();
+    if (binary) return { key: `cli:${binary}`, source: 'cli-binary', confidence: 'high' };
+  }
+
+  if (backend === 'api' && engine.api?.baseUrl) {
+    try {
+      const origin = new URL(engine.api.baseUrl).origin.toLowerCase();
+      if (origin) return { key: `api:${origin}`, source: 'api-origin', confidence: 'high' };
+    } catch { /* fall through to the unverified identity */ }
+  }
+
+  return {
+    key: `engine:${String(engine.id ?? '').trim().toLowerCase()}`,
+    source: 'engine-id-fallback',
+    confidence: 'low',
+  };
+}
+
+export function routeReviewers(diff: string, requestedRisk: ReviewRiskRequest, primaryInput: ReviewRoutingEngine|undefined, inputs: ReviewRoutingEngine[]): ReviewRoutingManifest {
+  const diffHash = createHash('sha256').update(diff).digest('hex');
+  const risk = inferReviewRisk(diff, requestedRisk);
+  const primaryEngine = primaryInput?.engine;
+  const primaryIdentity = primaryInput ? reviewAdapterIdentity(primaryInput.engine, primaryInput.backend) : undefined;
+  const primaryVerified = primaryIdentity?.confidence === 'high';
+  const seenIds = new Set<string>();
+
+  const candidates: ReviewRoutingCandidate[] = [];
+  for (const input of inputs) {
+    const engine = input.engine;
+    const engineId = String(engine.id ?? '').trim();
+    if (!engineId || seenIds.has(engineId)) continue;
+    seenIds.add(engineId);
+    const identity = reviewAdapterIdentity(engine, input.backend);
+    candidates.push({
+      engineId,
+      identityKey: identity.key,
+      identitySource: identity.source,
+      identityConfidence: identity.confidence,
+      backend: input.backend,
+      selectionKey: createHash('sha256')
+        .update(`${REVIEW_ROUTER_VERSION}\u0000${diffHash}\u0000${engineId}`)
+        .digest('hex'),
+      capabilities: [...(engine.capabilities ?? [])].map(String).sort((a, b) => a.localeCompare(b)),
+    });
+  }
+  candidates.sort((a, b) => a.selectionKey.localeCompare(b.selectionKey) || a.engineId.localeCompare(b.engineId));
+
+  if (!primaryVerified) {
+    if (risk.final !== 'high') risk.final = 'high';
+    const trigger = primaryEngine ? 'primary-implementer-identity-unverified' : 'primary-implementer-unknown';
+    if (!risk.triggers.includes(trigger)) risk.triggers.push(trigger);
+    risk.triggers.sort((a, b) => a.localeCompare(b));
+  }
+
+  const excluded: ReviewRoutingExclusion[] = [];
+  let selected: ReviewRoutingCandidate[];
+  let shortfall: ReviewRoutingShortfall | null = null;
+  if (risk.final === 'high') {
+    selected = candidates.slice();
+    const independentIdentityCount = primaryVerified && primaryIdentity
+      ? new Set(candidates.filter((c) => c.identityKey !== primaryIdentity.key && c.identityConfidence === 'high').map((c) => c.identityKey)).size
+      : new Set(candidates.filter((c) => c.identityConfidence === 'high').map((c) => c.identityKey)).size;
+    const required = primaryVerified ? 1 : 2;
+    if (independentIdentityCount < required) {
+      shortfall = {
+        required,
+        available: independentIdentityCount,
+        reason: primaryVerified ? 'no-independent-reviewer' : 'primary-unknown-needs-two-adapter-identities',
+      };
+    }
+  } else {
+    const independent: ReviewRoutingCandidate[] = [];
+    const usedIdentity = new Set<string>();
+    for (const candidate of candidates) {
+      if (primaryIdentity && candidate.identityKey === primaryIdentity.key) {
+        excluded.push({ engineId: candidate.engineId, reason: 'primary-implementer-identity' });
+        continue;
+      }
+      if (candidate.identityConfidence === 'low') {
+        excluded.push({ engineId: candidate.engineId, reason: 'unverified-adapter-identity' });
+        continue;
+      }
+      if (usedIdentity.has(candidate.identityKey)) {
+        excluded.push({ engineId: candidate.engineId, reason: 'duplicate-adapter-identity' });
+        continue;
+      }
+      usedIdentity.add(candidate.identityKey);
+      independent.push(candidate);
+    }
+    const required = risk.final === 'low' ? 1 : 2;
+    selected = independent.slice(0, required);
+    if (selected.length < required) {
+      shortfall = { required, available: selected.length, reason: 'insufficient-independent-adapter-identities' };
+    }
+    const selectedIds = new Set(selected.map((candidate) => candidate.engineId));
+    for (const candidate of independent) {
+      if (!selectedIds.has(candidate.engineId)) {
+        excluded.push({ engineId: candidate.engineId, reason: 'not-selected-by-deterministic-breadth' });
+      }
+    }
+  }
+
+  excluded.sort((a, b) => a.engineId.localeCompare(b.engineId) || a.reason.localeCompare(b.reason));
+  return {
+    routerVersion: REVIEW_ROUTER_VERSION,
+    mode: 'automatic',
+    diffHash,
+    risk,
+    primary: primaryInput && primaryIdentity
+      ? { engineId: primaryInput.engine.id, identityKey: primaryIdentity.key, identitySource: primaryIdentity.source, backend: primaryInput.backend }
+      : null,
+    candidates,
+    selected,
+    excluded,
+    shortfall,
+  };
+}
+
+export function serializeReviewRoutingManifest(manifest: ReviewRoutingManifest): string {
+  return JSON.stringify(manifest, null, 2) + '\n';
+}

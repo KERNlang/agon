@@ -1460,7 +1460,7 @@ describe('physical goal mod', () => {
     expect(adjudications).toHaveLength(1);
     expect(adjudications[0]).toContain('mutationEvidence');
     expect(adjudications[0]).toContain('bool:true→false@L1');
-    const prompts = h.dispatch.mock.calls.map(call => call[1]).filter(prompt => prompt.includes('REVIEW TARGET:'));
+    const prompts = h.dispatch.mock.calls.map(call => call[1]).filter(prompt => prompt.includes('## REVIEW REQUEST'));
     expect(prompts).toHaveLength(2);
     expect(prompts[0]).toContain('MUTATION EVIDENCE');
     expect(prompts[1]).not.toContain('MUTATION EVIDENCE');

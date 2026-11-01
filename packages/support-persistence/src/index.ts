@@ -32,6 +32,8 @@ export {
   invalidateConfigCache, loadConfig, configGet, configSet, pruneRuns, ensureAgonHome,
 } from './agon-config.js';
 export { DEFAULT_AGON_CONFIG, DEFAULT_CONFIG } from './agon-config-settings.js';
+export { OPTIONAL_CONFIG_KEYS, configValueKind, parseConfigSetValue } from './config-value.js';
+export type { OptionalConfigKey, ParsedConfigValue } from './config-value.js';
 export type { AgonConfig } from './agon-config-settings.js';
 export { DEFAULT_FIRST_PARTY_SETTINGS, LEGACY_MOD_SETTING_OWNERS } from './first-party-settings.generated.js';
 export type { FirstPartyLegacySettings } from './first-party-settings.generated.js';

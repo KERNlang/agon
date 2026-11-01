@@ -1,13 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { convertMessagesForSdk, convertToolsForSdk, buildModel, isIgnorableAnthropicEmptyDeltaError } from '../../packages/core/src/api/dispatch.js';
 
-// --- Usage capture tests (mocked generateText) ---
-
 vi.mock('ai', async (importOriginal) => {
   const actual = await importOriginal<typeof import('ai')>();
   return {
     ...actual,
-    generateText: vi.fn(),
     streamText: vi.fn(),
   };
 });
@@ -374,13 +371,15 @@ describe('api-dispatch — provider creation', () => {
   });
 });
 
-// --- Usage capture from generateText ---
-
-import { generateText, streamText } from 'ai';
+import { streamText } from 'ai';
 import { apiDispatch, apiStreamDispatchWithHistory } from '../../packages/core/src/api/dispatch.js';
 
-const mockGenerateText = vi.mocked(generateText);
 const mockStreamText = vi.mocked(streamText);
+
+function streamOf(parts: unknown[], usage?: unknown) {
+  async function* fullStream() { for (const part of parts) yield part; }
+  return { fullStream: fullStream(), usage: Promise.resolve(usage) } as unknown as ReturnType<typeof streamText>;
+}
 
 async function collectApiStream(gen: AsyncGenerator<string, any, void>) {
   const chunks: string[] = [];
@@ -403,10 +402,7 @@ describe('apiDispatch usage capture', () => {
   });
 
   it('includes usage in result when SDK provides it', async () => {
-    mockGenerateText.mockResolvedValueOnce({
-      text: 'Hello world',
-      usage: { inputTokens: 100, outputTokens: 50 },
-    } as any);
+    mockStreamText.mockReturnValueOnce(streamOf([{ type: 'text-delta', text: 'Hello world' }], { inputTokens: 100, outputTokens: 50 }));
 
     const result = await apiDispatch(
       { baseUrl: 'http://test', apiKeyEnv: 'TEST_API_KEY', model: 'test-model' },
@@ -426,9 +422,7 @@ describe('apiDispatch usage capture', () => {
   });
 
   it('returns undefined usage when SDK does not provide it', async () => {
-    mockGenerateText.mockResolvedValueOnce({
-      text: 'Hello world',
-    } as any);
+    mockStreamText.mockReturnValueOnce(streamOf([{ type: 'text-delta', text: 'Hello world' }]));
 
     const result = await apiDispatch(
       { baseUrl: 'http://test', apiKeyEnv: 'TEST_API_KEY', model: 'test-model' },
@@ -441,10 +435,7 @@ describe('apiDispatch usage capture', () => {
   });
 
   it('handles partial usage (only inputTokens)', async () => {
-    mockGenerateText.mockResolvedValueOnce({
-      text: 'response',
-      usage: { inputTokens: 200, outputTokens: undefined },
-    } as any);
+    mockStreamText.mockReturnValueOnce(streamOf([{ type: 'text-delta', text: 'response' }], { inputTokens: 200, outputTokens: undefined }));
 
     const result = await apiDispatch(
       { baseUrl: 'http://test', apiKeyEnv: 'TEST_API_KEY', model: 'test-model' },
@@ -461,11 +452,8 @@ describe('apiDispatch usage capture', () => {
     });
   });
 
-  it('does not expose generateText reasoningText as visible output', async () => {
-    mockGenerateText.mockResolvedValueOnce({
-      text: '',
-      reasoningText: 'The user has not asked a new question.',
-    } as any);
+  it('does not expose reasoning deltas as visible output', async () => {
+    mockStreamText.mockReturnValueOnce(streamOf([{ type: 'reasoning-delta', delta: 'The user has not asked a new question.' }]));
 
     const result = await apiDispatch(
       { baseUrl: 'http://test', apiKeyEnv: 'TEST_API_KEY', model: 'test-model' },

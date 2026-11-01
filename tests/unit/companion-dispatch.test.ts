@@ -61,6 +61,32 @@ describe('companionDispatch', () => {
     if (reply === 'error') expect(result.stderr).toContain('remote service timed out');
   });
 
+  it('classifies an abort during a pending ACP request as aborted, not as its RPC deadline', async () => {
+    const script = [
+      "const rl = require('node:readline').createInterface({ input: process.stdin });",
+      "const w = o => process.stdout.write(JSON.stringify(o) + '\\n');",
+      "rl.on('line', line => {",
+      'const msg = JSON.parse(line);',
+      "if (msg.method === 'initialize') w({id:msg.id,result:{protocolVersion:1}});",
+      "if (msg.method === 'session/new') w({id:msg.id,result:{sessionId:'fixture'}});",
+      "if (msg.method === 'session/prompt') w({method:'session/update',params:{update:{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'partial'}}}});",
+      '});',
+    ].join('');
+    const controller = new AbortController();
+    const started = Date.now();
+    const pending = companionDispatch({
+      binaryPath: process.execPath,
+      config: { protocol: 'acp', serverCmd: ['-e', script] },
+      prompt: 'fixture', cwd: process.cwd(), timeout: 5, mode: 'exec', signal: controller.signal,
+    });
+    setTimeout(() => controller.abort(), 500);
+    const result = await pending;
+    expect(result.exitCode, result.stderr).toBe(130);
+    expect(result.timedOut).toBe(false);
+    expect(result.stderr).toBe('Aborted');
+    expect(Date.now() - started).toBeLessThan(4000);
+  });
+
   it('drains diagnostic stderr so a companion can finish its protocol response', async () => {
     const script = [
       "process.stderr.write(Buffer.alloc(2 * 1024 * 1024, 'x'), () => {",

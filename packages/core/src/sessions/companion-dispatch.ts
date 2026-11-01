@@ -355,7 +355,14 @@ export async function companionDispatch(opts: {config:CompanionConfig, binaryPat
     }
   }
 
-  const onAbort = () => killProc();
+  const onAbort = () => {
+    killProc();
+    for (const [id, pendingReq] of pending) {
+      pending.delete(id);
+      clearTimeout(pendingReq.timer);
+      pendingReq.reject(new Error('Aborted'));
+    }
+  };
 
   // Forward abort signal
   if (opts.signal) {

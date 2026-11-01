@@ -3,13 +3,60 @@
   "slice": "S4",
   "semantics": "Roadmap extractionSources are ownership occurrences. Whole modules move when they are support implementation; UI/mod consumers remain narrow compatibility consumers until S5/S6.",
   "packages": 11,
-  "sourceOccurrences": 262,
+  "sourceOccurrences": 261,
   "counts": {
     "byte-verified-compatibility-mirror": 24,
-    "compatibility-adapter": 107,
-    "compatibility-consumer": 41,
-    "physical-owner": 90
+    "compatibility-adapter": 100,
+    "compatibility-consumer": 43,
+    "physical-owner": 90,
+    "retired-adapter": 4
   },
+  "sourceRelocations": [
+    {
+      "package": "@kernlang/agon-support-persistence",
+      "source": "packages/cli/src/signals/runs-store.ts",
+      "legacyPresent": false,
+      "implementationPaths": [
+        "packages/support-persistence/src/runs-store.ts"
+      ],
+      "implementationHash": "sha256:d49d899ad874152f8215f1c387752a9e238e9e7eed86f3166691bb3ef2106685",
+      "removalEvidence": "tests/unit/modular-runs-store-owner.test.ts",
+      "removalEvidenceHash": "sha256:dbd106a72babb5f5adb5bb426e10cf878cc05713f1d80504732cfc9dc4b589e7"
+    },
+    {
+      "package": "@kernlang/agon-support-persistence",
+      "source": "packages/cli/src/signals/runs-store.ts:44",
+      "legacyPresent": false,
+      "implementationPaths": [
+        "packages/support-persistence/src/runs-store.ts"
+      ],
+      "implementationHash": "sha256:d49d899ad874152f8215f1c387752a9e238e9e7eed86f3166691bb3ef2106685",
+      "removalEvidence": "tests/unit/modular-runs-store-owner.test.ts",
+      "removalEvidenceHash": "sha256:dbd106a72babb5f5adb5bb426e10cf878cc05713f1d80504732cfc9dc4b589e7"
+    },
+    {
+      "package": "@kernlang/agon-support-persistence",
+      "source": "packages/cli/src/signals/runs-store.ts:49",
+      "legacyPresent": false,
+      "implementationPaths": [
+        "packages/support-persistence/src/runs-store.ts"
+      ],
+      "implementationHash": "sha256:d49d899ad874152f8215f1c387752a9e238e9e7eed86f3166691bb3ef2106685",
+      "removalEvidence": "tests/unit/modular-runs-store-owner.test.ts",
+      "removalEvidenceHash": "sha256:dbd106a72babb5f5adb5bb426e10cf878cc05713f1d80504732cfc9dc4b589e7"
+    },
+    {
+      "package": "@kernlang/agon-support-persistence",
+      "source": "packages/cli/src/signals/runs-store.ts:61",
+      "legacyPresent": false,
+      "implementationPaths": [
+        "packages/support-persistence/src/runs-store.ts"
+      ],
+      "implementationHash": "sha256:d49d899ad874152f8215f1c387752a9e238e9e7eed86f3166691bb3ef2106685",
+      "removalEvidence": "tests/unit/modular-runs-store-owner.test.ts",
+      "removalEvidenceHash": "sha256:dbd106a72babb5f5adb5bb426e10cf878cc05713f1d80504732cfc9dc4b589e7"
+    }
+  ],
   "entries": [
     {
       "owner": "@kernlang/agon-support-browser-bridge",
@@ -42,7 +89,7 @@
     {
       "owner": "@kernlang/agon-support-browser-bridge",
       "source": "packages/core/src/models/types.ts:184",
-      "disposition": "compatibility-adapter",
+      "disposition": "compatibility-consumer",
       "destination": [
         "src/syntax-validator-bridge.ts",
         "src/browser-host.ts"
@@ -56,7 +103,7 @@
     {
       "owner": "@kernlang/agon-support-browser-bridge",
       "source": "packages/core/src/models/types.ts:350",
-      "disposition": "compatibility-adapter",
+      "disposition": "compatibility-consumer",
       "destination": [
         "src/syntax-validator-bridge.ts",
         "src/browser-host.ts"
@@ -1112,29 +1159,6 @@
     },
     {
       "owner": "@kernlang/agon-support-engine-runtime",
-      "source": "packages/core/src/models/types.ts:147",
-      "disposition": "compatibility-adapter",
-      "destination": [
-        "src/types.ts",
-        "src/engine-discover.ts",
-        "src/engine-health.ts",
-        "src/engine-memory.ts",
-        "src/auth-store.ts",
-        "src/isolation.ts",
-        "src/process.ts",
-        "src/semaphore.ts",
-        "engines/",
-        "python/",
-        "patches/"
-      ],
-      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
-      "evidence": [
-        "S4-BOUNDARY",
-        "S4-PARITY"
-      ]
-    },
-    {
-      "owner": "@kernlang/agon-support-engine-runtime",
       "source": "packages/core/src/models/types.ts:165",
       "disposition": "compatibility-adapter",
       "destination": [
@@ -2077,6 +2101,224 @@
       ]
     },
     {
+      "owner": "@kernlang/agon-support-saas-api",
+      "source": "packages/saas-api/src/__init__.py",
+      "disposition": "byte-verified-compatibility-mirror",
+      "destination": [
+        "python/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-ASSET-PARITY",
+        "S4-PACK"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-saas-api",
+      "source": "packages/saas-api/src/health.py",
+      "disposition": "byte-verified-compatibility-mirror",
+      "destination": [
+        "python/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-ASSET-PARITY",
+        "S4-PACK"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-saas-api",
+      "source": "packages/saas-api/src/routes/__init__.py",
+      "disposition": "byte-verified-compatibility-mirror",
+      "destination": [
+        "python/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-ASSET-PARITY",
+        "S4-PACK"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-saas-api",
+      "source": "packages/saas-api/src/routes/get_health.py",
+      "disposition": "byte-verified-compatibility-mirror",
+      "destination": [
+        "python/"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-ASSET-PARITY",
+        "S4-PACK"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-saas-api",
+      "source": "packages/support-saas-api/python/__init__.py",
+      "disposition": "physical-owner",
+      "destination": [
+        "python/"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-saas-api",
+      "source": "packages/support-saas-api/python/health.py",
+      "disposition": "physical-owner",
+      "destination": [
+        "python/"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-saas-api",
+      "source": "packages/support-saas-api/python/routes/__init__.py",
+      "disposition": "physical-owner",
+      "destination": [
+        "python/"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-saas-api",
+      "source": "packages/support-saas-api/python/routes/get_health.py",
+      "disposition": "physical-owner",
+      "destination": [
+        "python/"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-catalog",
+      "source": "packages/core/src/cli-models-registry.ts",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/engine-registry.ts",
+        "src/cli-models-registry.ts",
+        "src/api-models-registry.ts"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-engine-catalog",
+      "source": "packages/core/src/signals/engine-registry.ts",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/engine-registry.ts",
+        "src/cli-models-registry.ts",
+        "src/api-models-registry.ts"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-panel",
+      "source": "packages/forge/src/health-check.ts",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/health-check.ts",
+        "src/seat-dispatch.ts"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-panel",
+      "source": "packages/forge/src/seat-dispatch.ts",
+      "disposition": "compatibility-adapter",
+      "destination": [
+        "src/health-check.ts",
+        "src/seat-dispatch.ts"
+      ],
+      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-panel",
+      "source": "packages/support-panel/src/health-check.ts:201",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/health-check.ts",
+        "src/seat-dispatch.ts"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-panel",
+      "source": "packages/support-panel/src/health-check.ts:207",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/health-check.ts",
+        "src/seat-dispatch.ts"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-panel",
+      "source": "packages/support-panel/src/health-check.ts:24",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/health-check.ts",
+        "src/seat-dispatch.ts"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
+      "owner": "@kernlang/agon-support-panel",
+      "source": "packages/support-panel/src/health-check.ts:30",
+      "disposition": "physical-owner",
+      "destination": [
+        "src/health-check.ts",
+        "src/seat-dispatch.ts"
+      ],
+      "removalCondition": null,
+      "evidence": [
+        "S4-BOUNDARY",
+        "S4-PARITY"
+      ]
+    },
+    {
       "owner": "@kernlang/agon-support-persistence",
       "source": "packages/cli/src/bridge/browser-host.ts:145",
       "disposition": "compatibility-consumer",
@@ -2332,94 +2574,82 @@
     {
       "owner": "@kernlang/agon-support-persistence",
       "source": "packages/cli/src/signals/runs-store.ts",
-      "disposition": "compatibility-adapter",
+      "disposition": "retired-adapter",
       "destination": [
-        "src/paths.ts",
-        "src/file-history.ts",
-        "src/event-log.ts",
-        "src/session-store.ts",
-        "src/session-pty.ts",
-        "src/brain-client.ts",
-        "src/session-result-types.ts",
-        "src/flow.ts",
-        "src/run-dir.ts",
-        "src/team-elo-types.ts",
-        "python/history-search.py"
+        "src/runs-store.ts"
       ],
-      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "removalCondition": null,
       "evidence": [
-        "S4-BOUNDARY",
-        "S4-PARITY"
-      ]
+        "tests/unit/modular-runs-store-owner.test.ts"
+      ],
+      "package": "@kernlang/agon-support-persistence",
+      "legacyPresent": false,
+      "implementationPaths": [
+        "packages/support-persistence/src/runs-store.ts"
+      ],
+      "implementationHash": "sha256:d49d899ad874152f8215f1c387752a9e238e9e7eed86f3166691bb3ef2106685",
+      "removalEvidence": "tests/unit/modular-runs-store-owner.test.ts",
+      "removalEvidenceHash": "sha256:dbd106a72babb5f5adb5bb426e10cf878cc05713f1d80504732cfc9dc4b589e7"
     },
     {
       "owner": "@kernlang/agon-support-persistence",
       "source": "packages/cli/src/signals/runs-store.ts:44",
-      "disposition": "compatibility-adapter",
+      "disposition": "retired-adapter",
       "destination": [
-        "src/paths.ts",
-        "src/file-history.ts",
-        "src/event-log.ts",
-        "src/session-store.ts",
-        "src/session-pty.ts",
-        "src/brain-client.ts",
-        "src/session-result-types.ts",
-        "src/flow.ts",
-        "src/run-dir.ts",
-        "src/team-elo-types.ts",
-        "python/history-search.py"
+        "src/runs-store.ts"
       ],
-      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "removalCondition": null,
       "evidence": [
-        "S4-BOUNDARY",
-        "S4-PARITY"
-      ]
+        "tests/unit/modular-runs-store-owner.test.ts"
+      ],
+      "package": "@kernlang/agon-support-persistence",
+      "legacyPresent": false,
+      "implementationPaths": [
+        "packages/support-persistence/src/runs-store.ts"
+      ],
+      "implementationHash": "sha256:d49d899ad874152f8215f1c387752a9e238e9e7eed86f3166691bb3ef2106685",
+      "removalEvidence": "tests/unit/modular-runs-store-owner.test.ts",
+      "removalEvidenceHash": "sha256:dbd106a72babb5f5adb5bb426e10cf878cc05713f1d80504732cfc9dc4b589e7"
     },
     {
       "owner": "@kernlang/agon-support-persistence",
       "source": "packages/cli/src/signals/runs-store.ts:49",
-      "disposition": "compatibility-adapter",
+      "disposition": "retired-adapter",
       "destination": [
-        "src/paths.ts",
-        "src/file-history.ts",
-        "src/event-log.ts",
-        "src/session-store.ts",
-        "src/session-pty.ts",
-        "src/brain-client.ts",
-        "src/session-result-types.ts",
-        "src/flow.ts",
-        "src/run-dir.ts",
-        "src/team-elo-types.ts",
-        "python/history-search.py"
+        "src/runs-store.ts"
       ],
-      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "removalCondition": null,
       "evidence": [
-        "S4-BOUNDARY",
-        "S4-PARITY"
-      ]
+        "tests/unit/modular-runs-store-owner.test.ts"
+      ],
+      "package": "@kernlang/agon-support-persistence",
+      "legacyPresent": false,
+      "implementationPaths": [
+        "packages/support-persistence/src/runs-store.ts"
+      ],
+      "implementationHash": "sha256:d49d899ad874152f8215f1c387752a9e238e9e7eed86f3166691bb3ef2106685",
+      "removalEvidence": "tests/unit/modular-runs-store-owner.test.ts",
+      "removalEvidenceHash": "sha256:dbd106a72babb5f5adb5bb426e10cf878cc05713f1d80504732cfc9dc4b589e7"
     },
     {
       "owner": "@kernlang/agon-support-persistence",
       "source": "packages/cli/src/signals/runs-store.ts:61",
-      "disposition": "compatibility-adapter",
+      "disposition": "retired-adapter",
       "destination": [
-        "src/paths.ts",
-        "src/file-history.ts",
-        "src/event-log.ts",
-        "src/session-store.ts",
-        "src/session-pty.ts",
-        "src/brain-client.ts",
-        "src/session-result-types.ts",
-        "src/flow.ts",
-        "src/run-dir.ts",
-        "src/team-elo-types.ts",
-        "python/history-search.py"
+        "src/runs-store.ts"
       ],
-      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
+      "removalCondition": null,
       "evidence": [
-        "S4-BOUNDARY",
-        "S4-PARITY"
-      ]
+        "tests/unit/modular-runs-store-owner.test.ts"
+      ],
+      "package": "@kernlang/agon-support-persistence",
+      "legacyPresent": false,
+      "implementationPaths": [
+        "packages/support-persistence/src/runs-store.ts"
+      ],
+      "implementationHash": "sha256:d49d899ad874152f8215f1c387752a9e238e9e7eed86f3166691bb3ef2106685",
+      "removalEvidence": "tests/unit/modular-runs-store-owner.test.ts",
+      "removalEvidenceHash": "sha256:dbd106a72babb5f5adb5bb426e10cf878cc05713f1d80504732cfc9dc4b589e7"
     },
     {
       "owner": "@kernlang/agon-support-persistence",
@@ -4300,224 +4530,6 @@
         "src/run-dir.ts",
         "src/team-elo-types.ts",
         "python/history-search.py"
-      ],
-      "removalCondition": null,
-      "evidence": [
-        "S4-BOUNDARY",
-        "S4-PARITY"
-      ]
-    },
-    {
-      "owner": "@kernlang/agon-support-saas-api",
-      "source": "packages/saas-api/src/__init__.py",
-      "disposition": "byte-verified-compatibility-mirror",
-      "destination": [
-        "python/"
-      ],
-      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
-      "evidence": [
-        "S4-ASSET-PARITY",
-        "S4-PACK"
-      ]
-    },
-    {
-      "owner": "@kernlang/agon-support-saas-api",
-      "source": "packages/saas-api/src/health.py",
-      "disposition": "byte-verified-compatibility-mirror",
-      "destination": [
-        "python/"
-      ],
-      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
-      "evidence": [
-        "S4-ASSET-PARITY",
-        "S4-PACK"
-      ]
-    },
-    {
-      "owner": "@kernlang/agon-support-saas-api",
-      "source": "packages/saas-api/src/routes/__init__.py",
-      "disposition": "byte-verified-compatibility-mirror",
-      "destination": [
-        "python/"
-      ],
-      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
-      "evidence": [
-        "S4-ASSET-PARITY",
-        "S4-PACK"
-      ]
-    },
-    {
-      "owner": "@kernlang/agon-support-saas-api",
-      "source": "packages/saas-api/src/routes/get_health.py",
-      "disposition": "byte-verified-compatibility-mirror",
-      "destination": [
-        "python/"
-      ],
-      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
-      "evidence": [
-        "S4-ASSET-PARITY",
-        "S4-PACK"
-      ]
-    },
-    {
-      "owner": "@kernlang/agon-support-saas-api",
-      "source": "packages/support-saas-api/python/__init__.py",
-      "disposition": "physical-owner",
-      "destination": [
-        "python/"
-      ],
-      "removalCondition": null,
-      "evidence": [
-        "S4-BOUNDARY",
-        "S4-PARITY"
-      ]
-    },
-    {
-      "owner": "@kernlang/agon-support-saas-api",
-      "source": "packages/support-saas-api/python/health.py",
-      "disposition": "physical-owner",
-      "destination": [
-        "python/"
-      ],
-      "removalCondition": null,
-      "evidence": [
-        "S4-BOUNDARY",
-        "S4-PARITY"
-      ]
-    },
-    {
-      "owner": "@kernlang/agon-support-saas-api",
-      "source": "packages/support-saas-api/python/routes/__init__.py",
-      "disposition": "physical-owner",
-      "destination": [
-        "python/"
-      ],
-      "removalCondition": null,
-      "evidence": [
-        "S4-BOUNDARY",
-        "S4-PARITY"
-      ]
-    },
-    {
-      "owner": "@kernlang/agon-support-saas-api",
-      "source": "packages/support-saas-api/python/routes/get_health.py",
-      "disposition": "physical-owner",
-      "destination": [
-        "python/"
-      ],
-      "removalCondition": null,
-      "evidence": [
-        "S4-BOUNDARY",
-        "S4-PARITY"
-      ]
-    },
-    {
-      "owner": "@kernlang/agon-support-engine-catalog",
-      "source": "packages/core/src/cli-models-registry.ts",
-      "disposition": "compatibility-adapter",
-      "destination": [
-        "src/engine-registry.ts",
-        "src/cli-models-registry.ts",
-        "src/api-models-registry.ts"
-      ],
-      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
-      "evidence": [
-        "S4-BOUNDARY",
-        "S4-PARITY"
-      ]
-    },
-    {
-      "owner": "@kernlang/agon-support-engine-catalog",
-      "source": "packages/core/src/signals/engine-registry.ts",
-      "disposition": "compatibility-adapter",
-      "destination": [
-        "src/engine-registry.ts",
-        "src/cli-models-registry.ts",
-        "src/api-models-registry.ts"
-      ],
-      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
-      "evidence": [
-        "S4-BOUNDARY",
-        "S4-PARITY"
-      ]
-    },
-    {
-      "owner": "@kernlang/agon-support-panel",
-      "source": "packages/forge/src/health-check.ts",
-      "disposition": "compatibility-adapter",
-      "destination": [
-        "src/health-check.ts",
-        "src/seat-dispatch.ts"
-      ],
-      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
-      "evidence": [
-        "S4-BOUNDARY",
-        "S4-PARITY"
-      ]
-    },
-    {
-      "owner": "@kernlang/agon-support-panel",
-      "source": "packages/forge/src/seat-dispatch.ts",
-      "disposition": "compatibility-adapter",
-      "destination": [
-        "src/health-check.ts",
-        "src/seat-dispatch.ts"
-      ],
-      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
-      "evidence": [
-        "S4-BOUNDARY",
-        "S4-PARITY"
-      ]
-    },
-    {
-      "owner": "@kernlang/agon-support-panel",
-      "source": "packages/support-panel/src/health-check.ts:201",
-      "disposition": "physical-owner",
-      "destination": [
-        "src/health-check.ts",
-        "src/seat-dispatch.ts"
-      ],
-      "removalCondition": null,
-      "evidence": [
-        "S4-BOUNDARY",
-        "S4-PARITY"
-      ]
-    },
-    {
-      "owner": "@kernlang/agon-support-panel",
-      "source": "packages/support-panel/src/health-check.ts:207",
-      "disposition": "physical-owner",
-      "destination": [
-        "src/health-check.ts",
-        "src/seat-dispatch.ts"
-      ],
-      "removalCondition": null,
-      "evidence": [
-        "S4-BOUNDARY",
-        "S4-PARITY"
-      ]
-    },
-    {
-      "owner": "@kernlang/agon-support-panel",
-      "source": "packages/support-panel/src/health-check.ts:24",
-      "disposition": "physical-owner",
-      "destination": [
-        "src/health-check.ts",
-        "src/seat-dispatch.ts"
-      ],
-      "removalCondition": null,
-      "evidence": [
-        "S4-BOUNDARY",
-        "S4-PARITY"
-      ]
-    },
-    {
-      "owner": "@kernlang/agon-support-panel",
-      "source": "packages/support-panel/src/health-check.ts:30",
-      "disposition": "physical-owner",
-      "destination": [
-        "src/health-check.ts",
-        "src/seat-dispatch.ts"
       ],
       "removalCondition": null,
       "evidence": [

@@ -27,10 +27,13 @@ export type ParsedConfigValue = { readonly ok: true; readonly value: unknown } |
 export function parseConfigSetValue(key: string, raw: string): ParsedConfigValue {
   const kind = configValueKind(key);
   if (kind === undefined) return { ok: false, error: `Unknown key: ${key}` };
-  if (kind === 'boolean') return { ok: true, value: raw === 'true' };
+  if (kind === 'boolean') {
+    const flag = raw.trim().toLowerCase();
+    return flag === 'true' || flag === 'false' ? { ok: true, value: flag === 'true' } : { ok: false, error: `Invalid boolean: ${raw} (use true or false)` };
+  }
   if (kind === 'array') return { ok: true, value: raw.split(',').map((s) => s.trim()) };
   if (kind === 'string') return { ok: true, value: raw };
   // Number(), not parseInt: float keys (neroExplorationRate 0.2) must not truncate to 0.
   const value = Number(raw);
-  return Number.isNaN(value) ? { ok: false, error: `Invalid number: ${raw}` } : { ok: true, value };
+  return !raw.trim() || !Number.isFinite(value) ? { ok: false, error: `Invalid number: ${raw}` } : { ok: true, value };
 }

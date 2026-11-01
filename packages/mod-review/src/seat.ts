@@ -3,6 +3,7 @@ import {
   canStartRepair,
   dispatchCost,
   dispatchText,
+  followUpBudget,
   parseFindings,
   REVIEW_SENTINEL,
   reportSeatCeiling,
@@ -149,7 +150,8 @@ export async function runSeat(request: SeatRequest, context: InvocationContext, 
   const retryTokens = budgetRetryTokens(out);
   if (fault === 'length' && !dispatchText(out) && retryTokens !== undefined
     && canStartRepair(request.deadline, seatTimeout, context.signal)) {
-    const retried = await dispatchSeat({ ...request, timeoutSeconds: appliedTimeout }, context, services, retryTokens);
+    const budget = followUpBudget(request.deadline, appliedTimeout);
+    const retried = await dispatchSeat({ engineId: request.engineId, prompt: request.prompt, deadline: request.deadline, ...(request.role ? { role: request.role } : {}), ...budget }, context, services, retryTokens);
     if (retried instanceof Error) return seat(request, 'error', { ...fields, costUsd, error: `budget retry failed: ${retried.message}` });
     out = retried;
     costUsd += dispatchCost(out);
@@ -176,7 +178,8 @@ export async function runSeat(request: SeatRequest, context: InvocationContext, 
   if (!canStartRepair(request.deadline, seatTimeout, context.signal)) {
     return seat(request, unrepaired, { ...unrepairedFields, error: `${reason}; repair skipped: aggregate review deadline too close` });
   }
-  const repair = await runRepair(request.engineId, output, appliedTimeout, context, services, request.maxWallSeconds);
+  const repairBudget = followUpBudget(request.deadline, appliedTimeout);
+  const repair = await runRepair(request.engineId, output, repairBudget.timeoutSeconds, context, services, repairBudget.maxWallSeconds);
   costUsd += repair.costUsd;
   if (repair.block && repair.findings) {
     return seat(request, 'ok', { ...fields, costUsd, output: `${output}\n\n${repair.block}`, findings: repair.findings, repaired: true });

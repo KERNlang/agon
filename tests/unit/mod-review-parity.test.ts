@@ -343,7 +343,29 @@ describe('mod-review parity with the legacy review pipeline', () => {
     const h = host({ dispatch: () => reply('A prose review without any machine-readable block at all.') });
     await review(repo(), { engine: 'alpha', timeout: '60', deadline: '900' }, h);
     expect(h.dispatch).toHaveBeenCalledTimes(2);
-    expect(h.dispatch.mock.calls[1][3]).toMatchObject({ maxWallSeconds: 900 });
+    expect(h.dispatch.mock.calls[1][3].maxWallSeconds).toBeGreaterThan(890);
+    expect(h.dispatch.mock.calls[1][3].maxWallSeconds).toBeLessThanOrEqual(900);
+  });
+
+  it('clamps the repair dispatch to the time left before an explicit --deadline', async () => {
+    let calls = 0;
+    const h = host({
+      dispatch: async () => {
+        if (calls++ === 0) await new Promise(resolve => setTimeout(resolve, 2100));
+        return reply('A prose review without any machine-readable block at all.');
+      },
+    });
+    await review(repo(), { engine: 'alpha', timeout: '60', deadline: '900' }, h);
+    expect(h.dispatch).toHaveBeenCalledTimes(2);
+    expect(h.dispatch.mock.calls[1][3].maxWallSeconds).toBeLessThanOrEqual(898);
+    expect(h.dispatch.mock.calls[1][3].timeoutSeconds).toBe(60);
+  });
+
+  it('repairs a seat whose findings array has entries but none match the schema', async () => {
+    const h = host({ dispatch: () => reply(block([{ path: 'src/a.ts', msg: 'wrong keys' }])) });
+    const { result } = await review(repo(), { engine: 'alpha' }, h);
+    expect(h.dispatch).toHaveBeenCalledTimes(2);
+    expect(result.reviews[0]).toMatchObject({ status: 'failed', ok: false });
   });
 
   it('keeps a truncated seat labelled length and partial when its block parses but the repair fails', async () => {

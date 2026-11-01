@@ -44,7 +44,12 @@ export async function resolveExplicitPanel(
     if (services.engines.resolveRequested) {
       return [...await services.engines.resolveRequested(requested, context)];
     }
-    const active = services.engines.listActive ? [...await services.engines.listActive(context)] : [];
+    let active: string[] = [];
+  try {
+    active = services.engines.listActive ? [...await services.engines.listActive(context)] : [];
+  } catch (error) {
+    return { error: `Could not list active engines: ${error instanceof Error ? error.message : String(error)}` };
+  }
     const unknown = requested.filter(id => !active.includes(id));
     if (unknown.length) return { error: `Unknown or inactive review engines: ${unknown.join(', ')}` };
     return [...new Set(requested)];

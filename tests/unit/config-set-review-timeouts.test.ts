@@ -61,3 +61,18 @@ describe('agon config set for review timeouts', () => {
     expect(() => configSet('toString' as never, 'x' as never)).toThrow('Unknown config key');
   });
 });
+
+describe('config set value parsing', () => {
+  it('accepts only true/false for boolean keys, case-insensitively', async () => {
+    const { parseConfigSetValue } = await import('../../packages/support-persistence/src/config-value.js');
+    expect(parseConfigSetValue('debug', 'True')).toEqual({ ok: true, value: true });
+    expect(parseConfigSetValue('debug', 'false')).toEqual({ ok: true, value: false });
+    for (const raw of ['yes', '1', 'ture', '']) expect(parseConfigSetValue('debug', raw).ok).toBe(false);
+  });
+
+  it('rejects blank and non-finite numbers', async () => {
+    const { parseConfigSetValue } = await import('../../packages/support-persistence/src/config-value.js');
+    for (const raw of ['', '  ', 'Infinity', 'abc']) expect(parseConfigSetValue('reviewTimeout', raw).ok).toBe(false);
+    expect(parseConfigSetValue('reviewTimeout', '0.5')).toEqual({ ok: true, value: 0.5 });
+  });
+});

@@ -111,4 +111,9 @@ describe('stripTuiChrome', () => {
   it('is a no-op for clean text', () => {
     expect(stripTuiChrome('No blocking issues found.')).toBe('No blocking issues found.');
   });
+
+  it('keeps indentation, middle dots and labels in output without spinner frames', () => {
+    const apiReview = '1. Missing null check… see below\n    const total = a · b;\n\tif (x)  return;';
+    expect(stripTuiChrome(apiReview)).toBe(apiReview);
+  });
 });

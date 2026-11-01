@@ -18,9 +18,7 @@ const text = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
 export function parseFindings(output: string): { valid: boolean; findings: Finding[] } {
   const raw = extractReviewFindings(output);
   if (raw === null) return { valid: false, findings: [] };
-  return {
-    valid: true,
-    findings: raw
+  const findings = raw
       .filter((v) => v && typeof v === 'object' && !Array.isArray(v))
       .map((v: any) => ({
         file: text(v.file),
@@ -31,8 +29,8 @@ export function parseFindings(output: string): { valid: boolean; findings: Findi
         problem: text(v.problem),
         minimalFix: text(v.minimalFix),
       }))
-      .filter((v) => v.file && v.problem),
-  };
+      .filter((v) => v.file && v.problem);
+  return { valid: raw.length === 0 || findings.length > 0, findings };
 }
 
 export function buildRepairPrompt(priorReview: string): string {
@@ -58,6 +56,12 @@ export function reportSeatCeiling(deadline: ReviewDeadline, ceilingSeconds: numb
 
 function aggregateDeadlineSeconds(deadline: ReviewDeadline, seatTimeoutSeconds: number): number {
   return deadline.seconds ?? Math.max(seatTimeoutSeconds, ...(deadline.seatCeilingsSeconds ?? [])) * 2;
+}
+
+export function followUpBudget(deadline: ReviewDeadline, timeoutSeconds: number | undefined): { timeoutSeconds?: number; maxWallSeconds?: number } {
+  if (deadline.seconds === undefined) return timeoutSeconds !== undefined ? { timeoutSeconds } : {};
+  const remaining = Math.max(1, Math.floor((deadline.startedAtMs + deadline.seconds * 1000 - deadline.now()) / 1000));
+  return { timeoutSeconds: Math.min(timeoutSeconds ?? remaining, remaining), maxWallSeconds: remaining };
 }
 
 export function canStartRepair(deadline: ReviewDeadline, seatTimeoutSeconds: number, signal: AbortSignal): boolean {

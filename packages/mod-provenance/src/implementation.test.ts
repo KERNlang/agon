@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -9,6 +9,20 @@ afterEach(() => { if (old === undefined) delete process.env.AGON_HOME; else proc
 const context = {} as any;
 function services(allow='allow') { return {receipts:{record:vi.fn(async()=> 'p')},permissions:{check:vi.fn(async()=>allow)}} as unknown as ModServices; }
 describe('physical provenance mod', () => {
+  it.each([null, false, 42, 'invalid', [], {}])('refuses malformed manifest root %j without throwing or writing', async (manifest) => {
+    const home = mkdtempSync(join(tmpdir(), 'provenance-invalid-root-'));
+    process.env.AGON_HOME = home;
+    mkdirSync(join(home, 'runs'));
+    writeFileSync(join(home, 'runs', 'invalid.json'), JSON.stringify(manifest));
+    const host = services();
+    const result = await runProvenance({ id: 'invalid', out: join(home, 'report.md') }, context, host);
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain('not a valid forge manifest');
+    expect(existsSync(join(home, 'report.md'))).toBe(false);
+    expect(host.permissions.check).not.toHaveBeenCalled();
+    expect(host.receipts.record).not.toHaveBeenCalled();
+  });
+
   it.each([
     { fitnessCmd: 42, reason: 'rejected', expectedGate: '42', expectedReason: 'rejected' },
     { fitnessCmd: 'npm test', reason: 42, expectedGate: 'npm test', expectedReason: '42' },

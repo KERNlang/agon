@@ -35,7 +35,7 @@ export async function runProvenance(raw:Json, _context:InvocationContext, servic
   const selected = pick(id); if ('error' in selected) return {exitCode:1,stderr:selected.error+'\n'};
   const manifestPath = join(runs(),selected.file); let manifest:any;
   try { manifest = JSON.parse(readFileSync(manifestPath,'utf8')); } catch (error) { return {exitCode:1,stderr:`Could not read run: ${String(error)}\n`}; }
-  if (typeof manifest.forgeId !== 'string' || typeof manifest.task !== 'string') return {exitCode:1,stderr:'Run is not a valid forge manifest.\n'};
+  if (typeof manifest?.forgeId !== 'string' || typeof manifest?.task !== 'string') return {exitCode:1,stderr:'Run is not a valid forge manifest.\n'};
   const ledger = buildProvenance(manifest,manifestPath), markdown = renderMarkdown(ledger), json = JSON.stringify(ledger,null,2);
   const payload = format === 'json' ? json : format === 'both' ? `${markdown}\n\n--- JSON LEDGER ---\n\n${json}\n` : markdown;
   const out = typeof input.out === 'string' ? resolve(input.out) : '';

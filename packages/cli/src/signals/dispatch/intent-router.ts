@@ -60,10 +60,12 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
       return { handled: true, ranAsJob: false };
     }
     if (record.owner.id === 'agon.think' || record.owner.id === 'agon.synthesis'
-      || (record.owner.id === 'agon.council' && marker.publicId === 'council')) {
+      || (record.owner.id === 'agon.council' && marker.publicId === 'council')
+      || (record.owner.id === 'agon.research' && marker.publicId === 'research')) {
       // Generated and legacy-shaped intents share their workflow job boundary.
       const type = record.owner.id === 'agon.think' ? 'think'
-        : record.owner.id === 'agon.synthesis' ? 'synthesis' : 'council';
+        : record.owner.id === 'agon.synthesis' ? 'synthesis'
+          : record.owner.id === 'agon.research' ? 'research' : 'council';
       const result = await dispatchOrchestrationIntent({ ...(marker.value as object), type }, input, cb);
       emitPostDispatch(intent, input, cb);
       return result!;

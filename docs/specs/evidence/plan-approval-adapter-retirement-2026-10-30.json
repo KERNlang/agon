@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 1,
+  "status": "Exact committed checkout qualification passed; full modular release acceptance remains open",
+  "scope": "Remove unused CLI approval adapter; preserve policy cases and verify live CLI approval binding",
+  "baseCommit": "26c026356a28dfd681aeacbc0e3aa2b4acd7c0d7",
+  "qualifiedCommit": "3de598277fffc2a7e4936cc0c74a5881503fb6ca",
+  "archive": {
+    "id": "modular-agon-remediation",
+    "locator": "Operator-owned durable archive outside Git worktrees",
+    "retention": "Never delete without Raphael's explicit approval",
+    "sourceSnapshot": "plan-approval-retirement-source-snapshot-20261030.json"
+  },
+  "receipts": [
+    {
+      "file": "plan-approval-retirement-baseline-20261030.receipt.json",
+      "sha256": "b145757db1a88a7f6ee8b02fe38356259304a811ee1a4619c052cc37d248d15f",
+      "passed": true
+    },
+    {
+      "file": "plan-approval-retirement-red-20261030.receipt.json",
+      "sha256": "af9902954bab6de0ce133714e6f7c6177f871f4228d696a585ebc830b5808035",
+      "passed": false,
+      "expectedFailure": "Retirement guard detects existing facade"
+    },
+    {
+      "file": "plan-approval-retirement-focused-20261030.receipt.json",
+      "sha256": "e43497939d0b401e40b5d5305d696fb65fa8bb4170a3ff85e79360948a5f22c5",
+      "passed": true
+    },
+    {
+      "file": "plan-approval-retirement-pricing-mutant-20261030.receipt.json",
+      "sha256": "8250ca5d286fca9e642ffc3ee28f096c99f4602ea5fd7c65ce677918bd4b3c54",
+      "passed": false,
+      "expectedFailure": "Four live-session cases reject omitted review pricing"
+    },
+    {
+      "file": "plan-approval-retirement-restored-20261030.receipt.json",
+      "sha256": "2ae3ba304810db9e5ce14aa02dfb6bfb19d92d54ec3c238753648c4eeca4333c",
+      "passed": true
+    },
+    {
+      "file": "plan-approval-retirement-full-20261030.receipt.json",
+      "sha256": "b601dff73519268672a77fe59a234bed27aeab92ff9e8d8732bb87916df51f91",
+      "passed": true
+    },
+    {
+      "file": "plan-approval-clean-build-20261030.receipt.json",
+      "sha256": "9082a97f82d5984023ea059e6c128d06251fe7d6a1d0f62cce833cf1c0d885fc",
+      "passed": true
+    },
+    {
+      "file": "plan-approval-clean-runtime-20261030.receipt.json",
+      "sha256": "bf828bdb6943d214a0fac06e69b2548df279e71801e67e2df9c5a452369200c6",
+      "passed": true
+    }
+  ],
+  "review": {
+    "engine": "codex",
+    "packet": "plan-approval-retirement-review-input.txt",
+    "packetSha256": "4004c8c6581a3f40bbe3935d06f7d3341ebd10df966c7f5d48260de3399432b5",
+    "log": "plan-approval-retirement-codex-review.log",
+    "logSha256": "cc44d485fd5b8615dad8b2e7154101282fc473dac481d4230474a683c0b7d613",
+    "result": "No findings; static packet review, not release certification"
+  },
+  "limits": [
+    "Working checkout contained old ignored .kern-gaps artifacts; exact committed replay proves independence with empty contamination lists",
+    "Core Plan estimator/runtime binding and A20 retirement remain open",
+    "macOS arm64 Node26 fixture-provider evidence only",
+    "No live-provider or other-platform qualification",
+    "Full modular release acceptance remains open"
+  ],
+  "sourceSha256": {
+    "tests/unit/auto-approve-policy.test.ts": "b428528198b4e0a5937b5f6f377f4f54556183f305f708b278c928cc594d1a28",
+    "tests/unit/modular-plan-approval-owner.test.ts": "0a826a4c98525a53996f4dfe878064b9d13ff6f6f916b94bb8904c6139ebdc27",
+    "tests/unit/modular-plan-entry-authority.test.ts": "e0be381460ee865809bacfcc6e08c675c2df4ae055c521052d804d91f19009a8",
+    "packages/mod-plan/src/approval-policy.ts": "9caf796674f35f630fec308a4936d0ec3d1e227785eca07dbd83afacf17ca060",
+    "packages/mod-plan/src/execution-session.ts": "864239eb542ca236fca988d6d346d1f5fac1aba6db4861d79d1b6c0b19bd1975",
+    "packages/cli/src/blocks/plan-execution-effects.ts": "d998d9235ffbf9285f1ddbc9f87913b4e422f0b7830cd7f0dc40e6785880efce"
+  },
+  "qualifiedTree": "51e81722bd6bf99034a6fe6516e87615164cb1c4",
+  "qualification": {
+    "cleanBeforeAndAfter": true,
+    "sourceBearingContamination": {
+      "ignored": [],
+      "untracked": [],
+      "unstaged": []
+    },
+    "metadataRegeneratedInCleanCheckout": false,
+    "testsPassed": 12117,
+    "testsSkipped": 7,
+    "installedChecks": 129,
+    "installedPackages": 15,
+    "cacheDeletionSurvived": true,
+    "idempotent": true,
+    "providerLaunches": 0,
+    "subsequentCommitScope": "Evidence index only; runtime qualification binds qualifiedCommit, not a later evidence-only commit"
+  }
+}

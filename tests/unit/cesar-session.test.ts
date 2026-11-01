@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -9,10 +9,12 @@ import { applyInvariantsRule1, _resetInvariantsRule1DriftWarning, CESAR_RULE_1_S
 import { CESAR_AGENTIC_SYSTEM_PROMPT } from '../../packages/cli/src/cesar/session.js';
 import { createTaskExecutionLease } from '../../packages/cli/src/cesar/task-execution-lease.js';
 import { beginCesarTurn, createCesarTurnRuntimeHost, transitionCesarTurn } from '../../packages/cli/src/cesar/turn-runtime.js';
+import { initializeProcessSurfaceAuthority, disposeProcessSurfaceAuthority } from '../../packages/cli/src/surface-authority-runtime.js';
 
 const testDirs: string[] = [];
 
-afterEach(() => {
+afterEach(async () => {
+  await disposeProcessSurfaceAuthority();
   for (const dir of testDirs.splice(0)) {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -139,6 +141,7 @@ it.each(['ProposePlan', 'ExitPlanMode'].flatMap(tool => ['healthy', 'disabled', 
     const previousHome = process.env.AGON_HOME;
     process.env.AGON_HOME = home;
     try {
+      await initializeProcessSurfaceAuthority(makeTempDir('plan-tool-host'));
       const host = createCesarTurnRuntimeHost('plan-tool-owner');
       const controller = new AbortController();
       let disabled = false;
@@ -181,6 +184,7 @@ it('does not publish an active plan after proposal display replaces its owning t
   const previousHome = process.env.AGON_HOME;
   process.env.AGON_HOME = home;
   try {
+    await initializeProcessSurfaceAuthority(makeTempDir('plan-publication-host'));
     const host = createCesarTurnRuntimeHost('plan-publication-owner');
     beginCesarTurn(host, 'first', 'fixture');
     const successor = { id: 'successor' };
@@ -875,6 +879,7 @@ describe('cesar MCP session config', () => {
     const previousHome = process.env.AGON_HOME;
     process.env.AGON_HOME = home;
     try {
+      await initializeProcessSurfaceAuthority(makeTempDir('propose-plan-host'));
       const events: any[] = [];
       let activePlan: any = null;
       const cesar: any = {
@@ -905,6 +910,43 @@ describe('cesar MCP session config', () => {
       expect(activePlan?.id).toBe(cesar.proposedPlan.id);
       expect(events.some((event) => event.type === 'plan-proposal')).toBe(true);
     } finally {
+      if (previousHome === undefined) delete process.env.AGON_HOME;
+      else process.env.AGON_HOME = previousHome;
+    }
+  });
+
+  it.each(['storage', 'display', 'state'] as const)('reports ProposePlan failure without claiming success: %s', async phase => {
+    const home = makeTempDir('proposal-failure');
+    const previousHome = process.env.AGON_HOME;
+    process.env.AGON_HOME = home;
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await initializeProcessSurfaceAuthority(makeTempDir('proposal-failure-host'));
+      if (phase === 'storage') writeFileSync(join(home, 'plans'), 'retain this file');
+      const dispatch = vi.fn(() => { if (phase === 'display') throw new Error('fixture display failure'); });
+      const setActivePlan = vi.fn(() => { if (phase === 'state') throw 'fixture state failure'; });
+      const cesar: any = { planDispatch: dispatch };
+      const onToolCall = buildOnToolCall({ cesar, config: {}, setActivePlan,
+        registry: { availableIds: () => [] },
+      } as any, new ToolRegistry(), {})!;
+      const result = await onToolCall('ProposePlan', {
+        intent: 'fixture proposal', steps: [{ id: 'step', type: 'self', description: 'fixture step' }],
+      }, 'failure-call');
+      expect(result).toContain('[PLAN_ERROR]');
+      expect(result).toContain('[DELEGATION_BREAK]');
+      expect(result).not.toContain('[PLAN_PROPOSED]');
+      expect(cesar.proposedPlan).toBeUndefined();
+      expect(warning).toHaveBeenCalledWith(expect.stringContaining('ProposePlan handling failed:'));
+      expect(dispatch).toHaveBeenCalledTimes(phase === 'storage' ? 0 : 1);
+      expect(setActivePlan).toHaveBeenCalledTimes(phase === 'state' ? 1 : 0);
+      if (phase === 'storage') expect(readFileSync(join(home, 'plans'), 'utf8')).toBe('retain this file');
+      else {
+        const records = readdirSync(join(home, 'plans')).filter(file => file.endsWith('.json'));
+        expect(records).toHaveLength(1);
+        expect(readFileSync(join(home, 'plans', records[0]), 'utf8')).toContain('fixture proposal');
+      }
+    } finally {
+      warning.mockRestore();
       if (previousHome === undefined) delete process.env.AGON_HOME;
       else process.env.AGON_HOME = previousHome;
     }

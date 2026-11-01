@@ -5,6 +5,7 @@ import type { CesarPlan, CesarStepResult } from '../../packages/mod-plan/src/exe
 import type { DispatchCallbacks } from '../../packages/cli/src/signals/dispatch.js';
 const effects = vi.hoisted(() => ({ save: vi.fn(), write: vi.fn() }));
 vi.mock('@kernlang/agon-core', async original => ({ ...await original<Record<string, unknown>>(), saveCesarPlan: effects.save }));
+vi.mock('@kernlang/agon-mod-plan', async original => ({ ...await original<Record<string, unknown>>(), saveCesarPlan: effects.save }));
 vi.mock('node:fs', async original => ({ ...await original<Record<string, unknown>>(), writeFileSync: effects.write }));
 import { buildPlanCallbacks } from '../../packages/cli/src/signals/dispatch/plan-execution.js';
 import { buildLegacyPlanCallbacks } from '../fixtures/modular-plan-callbacks-legacy.js';
@@ -16,7 +17,7 @@ it('keeps callback policy in the physical Plan owner', () => {
   const owner = readFileSync(new URL('../../packages/mod-plan/src/execution-session.ts', import.meta.url), 'utf8');
   const effects = readFileSync(new URL('../../packages/cli/src/blocks/plan-execution-effects.ts', import.meta.url), 'utf8');
   expect(cli).toContain('return createPlanExecutionSession(cb).callbacks(initialPlan)');
-  expect(effects).toContain("createPlanExecutionSession as createSession, listCesarPlans } from '@kernlang/agon-mod-plan'");
+  expect(effects).toMatch(/import \{[^}]*createPlanExecutionSession as createSession, listCesarPlans[^}]*\} from '@kernlang\/agon-mod-plan'/);
   expect(owner).toContain('createPlanCallbacks(plan, host.callbacks)');
   expect(effects).not.toContain('const DEBOUNCE_MS');
   expect(effects).not.toContain('const markStepRunning');

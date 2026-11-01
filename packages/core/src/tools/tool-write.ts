@@ -4,7 +4,7 @@ import { resolve, dirname, relative } from 'node:path';
 
 import type { ToolResult, ToolContext, ToolHandler, ToolDefinition, PermissionDecision } from '../models/tool-types.js';
 
-import { takeSnapshot } from '../blocks/file-history.js';
+import { takeSnapshot } from '@kernlang/agon-support-persistence';
 
 import { evaluateFilePathRules, resolveRulePath } from './tool-permissions.js';
 

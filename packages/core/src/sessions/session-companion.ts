@@ -14,7 +14,8 @@ import { engineSupportsVision } from '../signals/models-registry.js';
 
 import { isImagePath, mimeFromExt, MAX_DISPATCH_IMAGES, DISPATCH_VISION_MIME } from '../blocks/image.js';
 
-import type { PersistentSessionConfig, PersistentSession, SessionChunk, SessionSendOptions } from './persistent-session.js';
+import type { PersistentSessionConfig } from './persistent-session.js';
+import type { PersistentSession, SessionChunk, SessionSendOptions } from '@kernlang/agon-support-persistence';
 
 /**
  * Persistent JSONRPC session for Codex app-server. Process stays alive across turns.

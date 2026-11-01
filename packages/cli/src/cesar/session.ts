@@ -12,7 +12,8 @@ import { createRequire } from 'node:module';
 
 import type { PersistentSession, PersistentSessionConfig } from '@kernlang/agon-core';
 
-import { ensureAgonHome, getAgonHome, resolveWorkingDir, scanProjectContext, buildGlobalInstructionsBlock, buildCodebaseMap, buildKernContextSpine, buildProjectMemoryBlock, createPersistentSession, ToolRegistry, getProjectFileStateCache, buildToolSystemPrompt, toolsToOpenAIFormat, executeToolCall, RUNS_DIR, tracker, discoverMcpServers, mcpDiscoveryFingerprint, mcpServersToWireFormat, listCesarPlans, saveConversation, formatChatContextForPrompt, isReadOnlyCommand, AGON_MODE_NAMES, parsePermissionRuleSet, parseToolHooks, PERMISSION_DENIED_MESSAGE, claudeBrainUsesPty } from '@kernlang/agon-core';
+import { ensureAgonHome, getAgonHome, resolveWorkingDir, scanProjectContext, buildGlobalInstructionsBlock, buildCodebaseMap, buildKernContextSpine, buildProjectMemoryBlock, createPersistentSession, ToolRegistry, getProjectFileStateCache, buildToolSystemPrompt, toolsToOpenAIFormat, executeToolCall, RUNS_DIR, tracker, discoverMcpServers, mcpDiscoveryFingerprint, mcpServersToWireFormat, saveConversation, formatChatContextForPrompt, isReadOnlyCommand, AGON_MODE_NAMES, parsePermissionRuleSet, parseToolHooks, PERMISSION_DENIED_MESSAGE, claudeBrainUsesPty } from '@kernlang/agon-core';
+import { listCesarPlans } from '@kernlang/agon-mod-plan';
 
 import type { ToolContext } from '@kernlang/agon-core';
 
@@ -893,6 +894,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
         ctx.cesar!.proposedPlan = plan;
       } catch (err) {
         console.warn(`[agon] ProposePlan handling failed: ${err instanceof Error ? err.message : String(err)}`);
+        return '[DELEGATION_BREAK] [PLAN_ERROR] Plan proposal did not finish. Check existing plans and logs before retrying.';
       }
       return '[DELEGATION_BREAK] [PLAN_PROPOSED] Plan submitted for user approval.';
     }

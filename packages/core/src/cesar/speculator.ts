@@ -4,7 +4,7 @@ import { runApiAgentLoop } from '../api/agent-loop.js';
 
 import type { ApiAgentResult } from '../api/agent-loop.js';
 
-import { recordApiLoopDispatch } from '../signals/delegate-ledger.js';
+import { recordApiLoopDispatch } from '@kernlang/agon-support-persistence';
 
 import type { ApiConfig } from '../api/dispatch.js';
 

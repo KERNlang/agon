@@ -4,6 +4,8 @@ import { createInterface } from 'node:readline';
 
 import type { DispatchResult, CompanionConfig } from '../models/types.js';
 
+class CompanionTimeoutError extends Error {}
+
 export interface JsonRpcMessage {
   jsonrpc?: string;
   id?: number;
@@ -89,6 +91,8 @@ export async function companionDispatch(opts: {config:CompanionConfig, binaryPat
     env: opts.env ? { ...process.env, ...opts.env } : process.env,
     detached: true,
   });
+  // Drain unused diagnostics so a full pipe cannot block protocol responses.
+  proc.stderr?.resume();
   let procClosed = false;
   const procClosedPromise = new Promise<void>((resolve) => {
     proc.once('close', () => {
@@ -313,7 +317,7 @@ export async function companionDispatch(opts: {config:CompanionConfig, binaryPat
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         pending.delete(id);
-        reject(new Error(`Timeout waiting for ${method}`));
+        reject(new CompanionTimeoutError(`Timeout waiting for ${method}`));
       }, timeoutMs);
       pending.set(id, { resolve, reject, timer });
       void writeStdin(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n').catch((err) => {
@@ -351,7 +355,14 @@ export async function companionDispatch(opts: {config:CompanionConfig, binaryPat
     }
   }
 
-  const onAbort = () => killProc();
+  const onAbort = () => {
+    killProc();
+    for (const [id, pendingReq] of pending) {
+      pending.delete(id);
+      clearTimeout(pendingReq.timer);
+      pendingReq.reject(new Error('Aborted'));
+    }
+  };
 
   // Forward abort signal
   if (opts.signal) {
@@ -365,7 +376,7 @@ export async function companionDispatch(opts: {config:CompanionConfig, binaryPat
       const check = () => {
         if (turnCompleted) { resolve(); return; }
         if (turnError) { reject(new Error(`Turn error: ${JSON.stringify(turnError)}`)); return; }
-        if (Date.now() > deadline) { reject(new Error('Turn timed out')); return; }
+        if (Date.now() > deadline) { reject(new CompanionTimeoutError('Turn timed out')); return; }
         if (opts.signal?.aborted) { reject(new Error('Aborted')); return; }
         setTimeout(check, 100);
       };
@@ -483,7 +494,7 @@ export async function companionDispatch(opts: {config:CompanionConfig, binaryPat
     };
   } catch (err) {
     const durationMs = Date.now() - startTime;
-    const isTimeout = err instanceof Error && err.message.includes('timed out');
+    const isTimeout = err instanceof CompanionTimeoutError;
     const isAborted = err instanceof Error && err.message === 'Aborted';
     return {
       exitCode: isAborted ? 130 : isTimeout ? 124 : 2,

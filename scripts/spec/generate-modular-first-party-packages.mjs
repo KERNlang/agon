@@ -182,7 +182,8 @@ function expectedFiles(packageRecord) {
   // Jobs persists scheduler observations through its separate storage adapter.
   if (short === 'jobs') inferredPermissions.add('state.write');
   if (short === 'conquer') inferredPermissions.add('git.write');
-  const physicalPackFiles = ['dist/implementation.d.ts', ...(short === 'research' ? researchPolicyEntries.flatMap((entry) => [`dist/${entry}.js`, `dist/${entry}.d.ts`]) : short === 'rag' ? ['dist/store.d.ts', 'dist/types.d.ts', 'dist/grounding.d.ts']
+  const policyEntries = short === 'research' ? researchPolicyEntries : short === 'naturalize' ? ['lexical-policy'] : [];
+  const physicalPackFiles = ['dist/implementation.d.ts', ...(policyEntries.length ? [...(short === 'research' ? ['dist/session-workflow.d.ts'] : []), ...policyEntries.flatMap((entry) => [`dist/${entry}.js`, `dist/${entry}.d.ts`])] : short === 'rag' ? ['dist/store.d.ts', 'dist/types.d.ts', 'dist/grounding.d.ts']
     : short === 'think' ? ['dist/thinking.d.ts', 'dist/runtime.d.ts', 'dist/host.d.ts', 'dist/presentation.d.ts', 'dist/session-workflow.d.ts']
     : short === 'council' ? ['dist/runtime.d.ts', 'dist/host.d.ts', 'dist/presentation.d.ts', 'dist/command.d.ts', 'dist/session-workflow.d.ts']
     : short === 'review' ? ['dist/consensus.d.ts', 'dist/findings.d.ts']
@@ -195,7 +196,7 @@ function expectedFiles(packageRecord) {
     : short === 'forge' ? ['dist/result-policy.d.ts', 'dist/apply.d.ts', ...['competition', 'corpus', 'errors', 'fitness', 'gauntlet', 'host', 'manifest', 'pr-text', 'prompts', 'quality', 'scoring', 'stage-context', 'stages', 'synth-plan', 'synthesis', 'types', 'workflow'].map(name => `dist/${name}.d.ts`)]
     : short === 'plan' ? ['dist/agent-review-step-execution.d.ts', 'dist/forge-step-execution.d.ts', 'dist/pipeline-step-execution.d.ts', 'dist/self-step-execution.d.ts', 'dist/step-executors.d.ts', 'dist/approval-policy.d.ts', 'dist/cost-estimator.d.ts', 'dist/execution-callbacks.d.ts', 'dist/execution-coordinator.d.ts', 'dist/execution-model.d.ts', 'dist/execution-state.d.ts', 'dist/execution-store.d.ts', 'dist/executor.d.ts', 'dist/formatter.d.ts', 'dist/panel-step-execution.d.ts', 'dist/proposal-workflow.d.ts', 'dist/resume-policy.d.ts', 'dist/resume-workflow.d.ts', 'dist/runtime.d.ts', 'dist/session-scope.d.ts', 'dist/session-selection.d.ts', 'dist/session-workflow.d.ts', 'dist/session.d.ts', 'dist/step-validation.d.ts', 'dist/worktree-workflow.d.ts']
     : short === 'brainstorm' ? ['dist/collector.d.ts', 'dist/host.d.ts', 'dist/policy.d.ts', 'dist/presentation.d.ts', 'dist/result.d.ts', 'dist/runtime.d.ts', 'dist/scout.d.ts', 'dist/session-record.d.ts', 'dist/session-workflow.d.ts', 'dist/workflow.d.ts']
-    : short === 'jobs' ? ['dist/daemon-controller.d.ts', 'dist/cli-projection.d.ts', 'dist/cli-invocation.d.ts', 'dist/cli-client.d.ts', 'dist/cli-contract.d.ts', 'dist/daemon-contract.d.ts', 'dist/daemon-job-router.d.ts', 'dist/daemon-workflow.d.ts', 'dist/job-service.d.ts', 'dist/mcp-contract.d.ts', 'dist/persisted-job-service.d.ts', 'dist/session-jobs.d.ts', 'dist/workflow-process.d.ts', 'dist/workflow-handshake.d.ts']
+    : short === 'jobs' ? ['dist/daemon-controller.d.ts', 'dist/cli-projection.d.ts', 'dist/cli-invocation.d.ts', 'dist/cli-client.d.ts', 'dist/cli-contract.d.ts', 'dist/daemon-contract.d.ts', 'dist/daemon-protocol.d.ts', 'dist/daemon-job-router.d.ts', 'dist/daemon-workflow.d.ts', 'dist/job-service.d.ts', 'dist/mcp-contract.d.ts', 'dist/persisted-job-service.d.ts', 'dist/session-jobs.d.ts', 'dist/workflow-process.d.ts', 'dist/workflow-handshake.d.ts']
     : short === 'ratings' ? ['dist/maintenance.d.ts', 'dist/reset.d.ts', 'dist/identity.d.ts', 'dist/ballot-prompt.d.ts', 'dist/judge-pool.d.ts', 'dist/rating-judge.d.ts', 'dist/glicko.d.ts', 'dist/types.d.ts', 'dist/storage.d.ts', 'dist/role-specialization.d.ts']
     : short === 'routing-docs' ? ['dist/guide-content.d.ts']
     : short === 'worktrees' ? ['dist/runtime.d.ts', 'dist/workspaces.d.ts']
@@ -235,7 +236,7 @@ function expectedFiles(packageRecord) {
     private: false,
     license: 'MIT',
     type: 'module',
-    exports: { '.': { types: './dist/index.d.ts', import: './dist/index.js' }, ...(short === 'research' ? Object.fromEntries(researchPolicyEntries.map((entry) => [`./${entry}`, { types: `./dist/${entry}.d.ts`, import: `./dist/${entry}.js` }])) : {}), './manifest': './agon.mod.json', './ownership': './ownership.json' },
+    exports: { '.': { types: './dist/index.d.ts', import: './dist/index.js' }, ...Object.fromEntries(policyEntries.map((entry) => [`./${entry}`, { types: `./dist/${entry}.d.ts`, import: `./dist/${entry}.js` }])), './manifest': './agon.mod.json', './ownership': './ownership.json' },
     main: './dist/index.js',
     types: './dist/index.d.ts',
     files: short === 'plan'
@@ -325,6 +326,8 @@ export type * from './types.js';
 export { runRag, buildRagIndex, queryRag, collectCorpusFiles, chunkMarkdown } from './implementation.js';
 ` : short === 'history' ? `export { runHistory } from './implementation.js';
 ` : short === 'research' ? `export { runResearch, validateUrl, formatResearchResult } from './implementation.js';
+export { runResearchSession, ResearchGroundingError, ResearchInputError } from './session-workflow.js';
+export type { ResearchSessionContext, ResearchSessionHost } from './session-workflow.js';
 export { classifyQuery } from './query-policy.js';
 export type { ResearchIntent } from './query-policy.js';
 export { buildResearchPrompt, buildPrompt } from './prompt-policy.js';
@@ -336,6 +339,7 @@ export { extractCitations, judgeProbe, formatCitationReport } from './citation-p
 export type { CitationStatus, CitationProbe, CitationVerdict, CitationReport } from './citation-policy.js';
 ` : short === 'mutate' ? `export { runMutate, generateMutants } from './implementation.js';
 ` : short === 'naturalize' ? `export { runNaturalize } from './implementation.js';
+export { tokenizeWords, wordDiffStats } from './lexical-policy.js';
 ` : short === 'sanitize' ? `export { runSanitize, scanText, cleanText } from './implementation.js';
 ` : short === 'goal' ? `export { runGoal } from './implementation.js';
 export { summarizeGoal, createGoalResult } from './artifacts.js';
@@ -361,6 +365,7 @@ export { dispatchPlanSession, createPlanSessionActions, dispatchPlanNaturalInput
 export type { PlanSessionActions, PlanSessionDispatchResult, PlanSessionEffects, PlanNaturalInputEffects } from './session.js';
 export { PlanCostEstimator } from './cost-estimator.js';
 export { createPlanRuntime } from './runtime.js';
+export type { PlanRuntime, PlanRuntimeHost, PlanRuntimeModServices } from './runtime.js';
 export { planSessionHost, withPlanSession } from './session-scope.js';
 export type { PlanSessionBinding } from './session-scope.js';
 export { selectPendingPlan, selectResumablePlan, shouldApprovePendingCesarPlanInput, isCesarPlanApprovalInput, isStrongCesarPlanApprovalInput, isCesarPlanResumeInput, isCesarPlanStatusInput, formatCesarPlanRuntimeStatus } from './session-selection.js';
@@ -426,6 +431,8 @@ export type { DaemonWorkflowHost, DaemonWorkflowKind, DaemonWorkflowPlan, Daemon
 export { handleDaemonJobRequest, isDaemonJobRequest } from './daemon-job-router.js';
 export type { DaemonJobResolver, ResolvedJob } from './daemon-job-router.js';
 export type { DaemonJobRequest, DaemonJobResponse } from './daemon-contract.js';
+export { encodeDaemonRequest, encodeDaemonResponse, parseDaemonRequest, parseDaemonResponse, splitFrames } from './daemon-protocol.js';
+export type { DaemonRequest, DaemonResponse } from './daemon-protocol.js';
 export type { JobState, TerminalJobState, JobSnapshot, JobEvent, JobEventPage, JobOutcome, JobObservation, JobTaskContext, JobExecutor, JobServiceOptions } from './job-service.js';
 ` : short === 'git-actions' ? `export { runGitAction } from './implementation.js';
 ` : short === 'forge' ? `export { runForgeCompetition } from './implementation.js';
@@ -569,7 +576,7 @@ export type { CouncilSessionHost, CouncilSessionContext, CouncilSessionCommandRe
     [resolve(directory, 'src/index.ts'), indexSource],
     [resolve(directory, 'LICENSE'), readFileSync(resolve(root, 'LICENSE'), 'utf8')],
     [resolve(directory, 'tsconfig.json'), json(tsconfig)],
-    [resolve(directory, 'tsup.config.ts'), `import { defineConfig } from 'tsup';\n\nexport default defineConfig({ entry: [${['src/index.ts', ...(short === 'research' ? researchPolicyEntries.map((entry) => `src/${entry}.ts`) : [])].map((entry) => `'${entry}'`).join(', ')}], ${short === 'research' ? `external: [${researchPolicyEntries.map((entry) => `'./${entry}.js'`).join(', ')}], ` : ''}format: ['esm'], dts: false, sourcemap: false, clean: true, target: 'es2022' });\n`],
+    [resolve(directory, 'tsup.config.ts'), `import { defineConfig } from 'tsup';\n\nexport default defineConfig({ entry: [${['src/index.ts', ...policyEntries.map((entry) => `src/${entry}.ts`)].map((entry) => `'${entry}'`).join(', ')}], ${policyEntries.length ? `external: [${policyEntries.map((entry) => `'./${entry}.js'`).join(', ')}], ` : ''}format: ['esm'], dts: false, sourcemap: false, clean: true, target: 'es2022' });\n`],
   ]);
 }
 

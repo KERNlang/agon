@@ -1,5 +1,7 @@
 import { commandResultToToolResult } from '@kernlang/agon-mod-api';
 import { runPlanSession } from './session.js';
+import { bindPlanRuntime } from './runtime.js';
+import type { PlanRuntimeModServices } from './runtime.js';
 import type { InvocationContext } from '@kernlang/agon-mod-api';
 import type { AgonModFactory, CommandResult, Dispose, Json, ModServices, Registrar } from '@kernlang/agon-mod-api';
 import { listCesarPlans, loadCesarPlan, saveCesarPlan } from './execution-store.js';
@@ -85,7 +87,15 @@ export const createMod: AgonModFactory = (services) => Object.freeze({ apiVersio
     if (id.startsWith('cesarRoutes:')) disposers.push(registrar.planStep({ id, inputSchema, resultSchema: inputSchema, risk: action === 'plan' ? 'read' : 'workspace-write', run: (input) => control(action, input, services) }));
     else disposers.push(registrar.tool('cesar', { id, description: `${action} an execution plan`, inputSchema, effect: action === 'plans' || action === 'plan' ? 'read' : 'write', run: (input) => toolResult(control(action, input, services)) }));
   }
-  return async () => { for (const dispose of [...disposers].reverse()) await dispose(); };
+  const runtimeHost = (services as PlanRuntimeModServices).planRuntime;
+  if (runtimeHost) disposers.push(bindPlanRuntime(runtimeHost));
+  return async () => {
+    const errors: unknown[] = [];
+    for (const dispose of [...disposers].reverse()) {
+      try { await dispose(); } catch (error) { errors.push(error); }
+    }
+    if (errors.length) throw new AggregateError(errors, 'Plan activation cleanup failed');
+  };
 } });
 
 export default createMod;

@@ -1,12 +1,13 @@
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { verifyPackedMcp } from './verify-packed-mcp.mjs';
 import { verifyPackedBrainstorm } from './verify-packed-brainstorm.mjs';
 import { verifyPackedBrainstormTui } from './verify-packed-brainstorm-tui.mjs';
 import { verifyPackedSynthesis } from './verify-packed-synthesis.mjs';
-import { createFrozenNpmInstall, createNpmReleaseCatalog, DurableModHost, ManagedLifecycleService, hashInstalledPackagePayload } from '../../packages/mod-kernel/dist/index.js';
+import { createFrozenNpmInstall, createNpmReleaseCatalog, DurableModHost, ManagedLifecycleService, WriterFence, hashInstalledPackagePayload } from '../../packages/mod-kernel/dist/index.js';
 
 const root = resolve(import.meta.dirname, '../..');
 const output = join(root, 'docs/specs/evidence/modular-agon-npx-qualification.json');
@@ -62,6 +63,191 @@ try {
   writeFileSync(join(ephemeral, 'package-lock.json'), lockBytes);
   requireOk('ephemeral-npx-hydration', run('npm', ['ci', '--ignore-scripts', '--no-audit', '--no-fund', '--omit=optional', '--offline'], { cwd: ephemeral }));
   if (readFileSync(join(ephemeral, 'package-lock.json'), 'utf8') !== lockBytes) throw new Error('packed hydration changed the frozen dependency lock');
+  requireOk('packed-plan-runtime-lifetime', run(process.execPath, ['--input-type=module', '-e', `
+    import assert from 'node:assert/strict';
+    import { pathToFileURL } from 'node:url';
+    import { createMod, createCesarPlan, approveCesarPlan } from '@kernlang/agon-mod-plan';
+    assert.ok(import.meta.resolve('@kernlang/agon-mod-plan').startsWith(pathToFileURL(process.cwd() + '/node_modules/').href));
+    const callbacks = { onStepStart() {}, onStepDone() {}, onPlanUpdate() {}, onBudgetWarning() {} };
+    const plan = { ...approveCesarPlan(createCesarPlan('packed history', ['a', 'b'].map(id => ({
+      id, type: 'self', description: id, estimatedTokens: 20, estimatedCostUsd: 1,
+      ...(id === 'b' ? { dependsOn: ['a'] } : {}),
+    })))), selfReview: false };
+    let runtime;
+    let registrations = 0, removals = 0, unbound = 0;
+    const mod = await createMod({ planRuntime: { estimateCost: () => 0.5, bind: value => {
+      runtime = value;
+      return async () => {
+        unbound++;
+        await assert.rejects(runtime.executePlan(plan, {}, callbacks), /disposed/);
+      };
+    } } });
+    const registrar = new Proxy({}, { get: () => () => { registrations++; return () => { removals++; }; } });
+    assert.equal(runtime, undefined);
+    const dispose = await mod.activate(registrar);
+    assert.equal(typeof dispose, 'function');
+    assert.ok(registrations > 0);
+    assert.deepEqual(runtime.estimator.estimate('self', []), { tokens: 2000, costUsd: 0.5 });
+    const completed = await runtime.executePlan(plan, { self: { execute: async step => ({ result: {
+      status: 'success', actualTokens: step.id === 'a' ? 12 : 16,
+      actualCostUsd: 0.3, durationMs: 1, output: step.id,
+    } }) } }, callbacks);
+    assert.equal(completed.state, 'done');
+    assert.equal(runtime.sanitizePlanSteps([{ type: 'self' }]).steps[0].estimatedTokens, 14);
+    let release, entered;
+    const pending = new Promise(resolve => { release = resolve; });
+    const started = new Promise(resolve => { entered = resolve; });
+    const calls = [];
+    const checkpoints = [];
+    const execution = runtime.executePlan(plan, { self: { execute: async step => {
+      calls.push(step.id); entered(); await pending;
+      return { result: { status: 'success', actualTokens: 7, actualCostUsd: 0.1, durationMs: 1, output: 'retained' } };
+    } } }, { ...callbacks, onCheckpoint: value => checkpoints.push(value) });
+    await started;
+    await dispose();
+    release();
+    const drained = await execution;
+    assert.deepEqual(calls, ['a']);
+    assert.notEqual(drained.state, 'done');
+    assert.equal(drained.steps[0].result.output, 'retained');
+    assert.ok(checkpoints.some(value => value.steps[0].result?.output === 'retained'));
+    assert.equal(unbound, 1);
+    assert.equal(removals, registrations);
+    await assert.rejects(runtime.executePlan(plan, {}, callbacks), /disposed/);
+  `], { cwd: ephemeral, timeout: 30_000 }));
+  const planRuntimeTypes = join(ephemeral, 'plan-runtime-types.mts');
+  writeFileSync(planRuntimeTypes, `import { createMod, type PlanRuntime, type PlanRuntimeHost, type PlanRuntimeModServices } from '@kernlang/agon-mod-plan';
+    import type { ModServices } from '@kernlang/agon-mod-api';
+    declare const services: ModServices;
+    declare const runtime: PlanRuntime;
+    const host: PlanRuntimeHost = { estimateCost: (_engine, tokens) => tokens / 1000,
+      assertAvailable: () => {}, bind: value => {
+        const sameRuntime: PlanRuntime = value;
+        // @ts-expect-error The bound runtime must retain its public shape.
+        value.notAPlanRuntimeMethod();
+        void sameRuntime;
+        return () => {};
+      } };
+    const extended: PlanRuntimeModServices = { ...services, planRuntime: host };
+    void createMod(extended);
+    // @ts-expect-error Binding must return cleanup, not an unrelated value.
+    const invalidHost: PlanRuntimeHost = { ...host, bind: () => 42 };
+    // @ts-expect-error Pricing remains numeric.
+    const invalidPricing: PlanRuntimeHost = { ...host, estimateCost: () => 'free' };
+    const tokens: number = runtime.estimator.estimate('self', []).tokens;
+    // @ts-expect-error Estimates must not become untyped.
+    const invalidTokens: string = runtime.estimator.estimate('self', []).tokens;
+    void [invalidHost, invalidPricing, tokens, invalidTokens];
+  `);
+  requireOk('packed-plan-runtime-public-types', run(process.execPath, [join(root, 'node_modules/typescript/bin/tsc'),
+    '--noEmit', '--strict', '--skipLibCheck', '--module', 'NodeNext', '--moduleResolution', 'NodeNext',
+    '--target', 'ES2022', planRuntimeTypes], { cwd: ephemeral }));
+  requireOk('packed-naturalize-lexical-pure-import', run(process.execPath, ['--input-type=module', '-e', `
+    import assert from 'node:assert/strict';
+    import { register } from 'node:module';
+    register('data:text/javascript,' + encodeURIComponent(
+      "export async function resolve(id, context, next) { if (id === 'node:fs' || id === 'fs') throw new Error('blocked filesystem import'); return next(id, context); }"
+    ));
+    const { wordDiffStats } = await import('@kernlang/agon-mod-naturalize/lexical-policy');
+    assert.equal(wordDiffStats('Hello, World!', 'hello world').changedWords, 0);
+    await assert.rejects(import('@kernlang/agon-mod-naturalize'), /blocked filesystem import/);
+  `], { cwd: ephemeral }));
+  requireOk('compiled-naturalize-lexical-owner', run(process.execPath, ['--input-type=module', '-e', `
+    import assert from 'node:assert/strict';
+    import { wordDiffStats as legacy } from ${JSON.stringify(join(root, 'packages/forge/dist/naturalize.js'))};
+    import { wordDiffStats as owner } from '@kernlang/agon-mod-naturalize/lexical-policy';
+    assert.equal(legacy, owner);
+  `]));
+  requireOk('packed-naturalize-lexical-gate', run(process.execPath, ['--input-type=module', '-e', `
+    import assert from 'node:assert/strict';
+    import { pathToFileURL } from 'node:url';
+    import { runNaturalize, wordDiffStats as rootStats } from '@kernlang/agon-mod-naturalize';
+    import { wordDiffStats, tokenizeWords } from '@kernlang/agon-mod-naturalize/lexical-policy';
+    assert.ok(import.meta.resolve('@kernlang/agon-mod-naturalize/lexical-policy').startsWith(pathToFileURL(process.cwd() + '/node_modules/').href));
+    assert.equal(rootStats, wordDiffStats);
+    assert.deepEqual(tokenizeWords('Hello, WORLD!'), ['hello', 'world']);
+    for (const [input, output, accepted, changedWords] of [
+      ['hello world', 'HELLO WORLD', false, 0],
+      ['hello world', 'hello, world!', false, 0],
+      ['one two three', 'three two one', false, 0],
+      ['alpha beta gamma', 'delta epsilon zeta', true, 3],
+      ['你好', '再见', true, 1],
+      ['привет мир', 'добрый вечер', true, 2],
+      ['مرحبا', 'وداعا', true, 1],
+      ['कि', 'कु', true, 1],
+      ['你好', '你好', false, 0],
+      ['привет мир', 'ПРИВЕТ МИР', false, 0],
+      ['مرحبا عالم', 'مرحبا، عالم!', false, 0],
+    ]) {
+      let dispatches = 0;
+      const services = { engines: { listActive: async () => ['fixture'], dispatch: async () => { dispatches++; return { exitCode: 0, stdout: output }; } }, receipts: { record: async () => 'receipt' } };
+      const context = { invocationId: 'lexical', cwd: process.cwd(), platform: 'darwin-arm64', signal: new AbortController().signal, config: {} };
+      const result = await runNaturalize({ text: input, engine: 'fixture', minChange: 50, maxAttempts: 1 }, context, services);
+      assert.equal(dispatches, 1);
+      assert.equal(result.exitCode === 0, accepted);
+      if (accepted) assert.equal(result.result.changedWords, changedWords);
+      else { assert.equal(result.failure.code, 'NATURALIZE_GATE_FAILED'); assert.equal(result.stdout, undefined); }
+    }
+  `], { cwd: ephemeral }));
+  const naturalizeTypes = join(ephemeral, 'naturalize-lexical-types.mts');
+  writeFileSync(naturalizeTypes, `import { wordDiffStats, tokenizeWords } from '@kernlang/agon-mod-naturalize/lexical-policy';
+    import { wordDiffStats as rootStats } from '@kernlang/agon-mod-naturalize';
+    for (const stats of [wordDiffStats, rootStats]) {
+      const result: { wordsBefore: number; wordsAfter: number; changedWords: number; unchangedRatio: number } = stats('before', 'after');
+      void result;
+      // @ts-expect-error Inputs must remain strings.
+      stats(1, 'after');
+    }
+    const tokens: string[] = tokenizeWords('words');
+    void tokens;
+  `);
+  requireOk('packed-naturalize-lexical-types', run(process.execPath, [join(root, 'node_modules/typescript/bin/tsc'),
+    '--noEmit', '--strict', '--skipLibCheck', '--module', 'NodeNext', '--moduleResolution', 'NodeNext',
+    '--target', 'ES2022', naturalizeTypes], { cwd: ephemeral }));
+  requireOk('packed-daemon-protocol-owner', run(process.execPath, ['--input-type=module', '-e', `
+    import assert from 'node:assert/strict';
+    import { pathToFileURL } from 'node:url';
+    import * as jobs from '@kernlang/agon-mod-jobs';
+    const core = await import(pathToFileURL(${JSON.stringify(join(root, 'packages/core/dist/index.js'))}).href);
+    assert.ok(import.meta.resolve('@kernlang/agon-mod-jobs').startsWith(pathToFileURL(process.cwd() + '/node_modules/').href));
+    const request = { type: 'job-events', jobId: 'fixture', afterSeq: 2, limit: 3 };
+    const response = { type: 'pong', sessionId: 'fixture', uptime: 42, capabilities: ['jobs-v1'] };
+    for (const api of [jobs, core]) {
+      assert.equal(api.encodeDaemonRequest(request), JSON.stringify(request) + '\\n');
+      assert.equal(api.encodeDaemonResponse(response), JSON.stringify(response) + '\\n');
+      assert.deepEqual(api.parseDaemonRequest(api.encodeDaemonRequest(request)), request);
+      assert.deepEqual(api.parseDaemonResponse(api.encodeDaemonResponse(response)), response);
+      assert.deepEqual(api.splitFrames(api.encodeDaemonRequest(request) + 'partial'), { lines: [JSON.stringify(request)], rest: 'partial' });
+      assert.deepEqual(api.parseDaemonRequest('{'), { type: 'error', message: 'malformed JSON' });
+      assert.equal(api.parseDaemonResponse(' '), null);
+    }
+  `], { cwd: ephemeral }));
+  for (const [id, specifier] of [
+    ['packed-jobs-daemon-types', '@kernlang/agon-mod-jobs'],
+    ['compiled-core-daemon-types', join(root, 'packages/core/dist/index.js')],
+  ]) {
+    const consumer = join(ephemeral, id + '.mts');
+    writeFileSync(consumer, `import { encodeDaemonRequest, encodeDaemonResponse, parseDaemonRequest, parseDaemonResponse, splitFrames, type DaemonRequest, type DaemonResponse } from ${JSON.stringify(specifier)};
+      const request: DaemonRequest = { type: 'job-get', jobId: 'fixture' };
+      const response: DaemonResponse = { type: 'ack', seq: 4 };
+      const requestLine: string = encodeDaemonRequest(request);
+      const responseLine: string = encodeDaemonResponse(response);
+      const parsedRequest: DaemonRequest | null = parseDaemonRequest(requestLine);
+      const parsedResponse: DaemonResponse | null = parseDaemonResponse(responseLine);
+      const frames: { lines: string[]; rest: string } = splitFrames(requestLine);
+      void parsedRequest; void parsedResponse; void frames;
+      // @ts-expect-error A job lookup requires its identifier.
+      encodeDaemonRequest({ type: 'job-get' });
+      // @ts-expect-error Acknowledgement sequences remain numeric.
+      encodeDaemonResponse({ type: 'ack', seq: 'four' });
+      // @ts-expect-error Unknown request types remain invalid.
+      const invalid: DaemonRequest = { type: 'invented' };
+      void invalid;
+    `);
+    requireOk(id, run(process.execPath, [join(root, 'node_modules/typescript/bin/tsc'),
+      '--noEmit', '--strict', '--skipLibCheck', '--module', 'NodeNext', '--moduleResolution', 'NodeNext',
+      '--target', 'ES2022', consumer], { cwd: ephemeral }));
+  }
   requireOk('packed-nero-receipt-boundary', run(process.execPath, ['--input-type=module', '-e', `
     import assert from 'node:assert/strict';
     import { pathToFileURL } from 'node:url';
@@ -238,15 +424,27 @@ try {
     import { syncBuiltinESMExports } from 'node:module';
     import { pathToFileURL } from 'node:url';
     let address = '::ffff:7f00:1';
+    const { createRequire } = await import('node:module');
+    const undici = createRequire(import.meta.url)('undici');
+    undici.fetch = (...args) => globalThis.fetch(...args);
     dns.lookup = async () => [{ address, family: 6 }];
     syncBuiltinESMExports();
     const { runResearch } = await import('@kernlang/agon-mod-research');
     assert.ok(import.meta.resolve('@kernlang/agon-mod-research').startsWith(pathToFileURL(process.cwd() + '/node_modules/').href));
     const context = { invocationId: 'packed-research', cwd: process.cwd(), platform: 'darwin-arm64', signal: new AbortController().signal, config: {} };
+    const draftCalls = [];
     const services = { permissions: { check: async () => 'allow' }, receipts: { record: async () => 'fixture-receipt' }, engines: {
-      listActive: async () => ['fixture'], dispatch: async () => ({ exitCode: 0, stdout: 'Supported claim [1].' })
+      listActive: async () => ['fixture'], dispatch: async (engine, prompt, invocation, options) => {
+        draftCalls.push({ engine, textOnly: options?.textOnly });
+        assert.equal(invocation, context);
+        assert.match(prompt, /SOURCES:/);
+        return { exitCode: 0, stdout: 'Supported claim [1].' };
+      }
     } };
-    for (const candidate of ['::ffff:7f00:1', '0:0:0:0:0:ffff:7f00:1', '::ffff:a00:1', '0:0:0:0:0:0:0:1', '::ffff:808:808']) {
+    const publicCandidates = ['::ffff:808:808', '64:ff9b::808:808', '2002:808:808::1', '::ffff:192.0.0.9'];
+    for (const candidate of ['::ffff:7f00:1', '0:0:0:0:0:ffff:7f00:1', '::ffff:a00:1', '0:0:0:0:0:0:0:1',
+      '64:ff9b::7f00:1', '64:ff9b:1::808:808', '2002:c0a8:101::', '::7f00:1',
+      '::ffff:198.18.0.1', 'ff02::1', 'fec0::1', ...publicCandidates]) {
       address = candidate;
       let calls = 0;
       globalThis.fetch = async (input) => {
@@ -256,11 +454,13 @@ try {
           : 'Evidence', { status: 200 });
       };
       const result = await runResearch({ question: 'npm package pkg' }, context, services);
-      const allowed = candidate === '::ffff:808:808';
+      const allowed = publicCandidates.includes(candidate);
       assert.equal(calls, allowed ? 3 : 1, candidate);
       assert.equal(result.exitCode, allowed ? 0 : 1, candidate);
       assert.equal(result.result.citations.verified, allowed ? 1 : 0, candidate);
     }
+    assert.equal(draftCalls.length, 5);
+    assert.deepEqual(draftCalls, Array.from({ length: 5 }, () => ({ engine: 'fixture', textOnly: true })));
   `], { cwd: ephemeral }));
   requireOk('packed-agent-team-scoring-owner', run(process.execPath, ['--input-type=module', '-e', `
     import assert from 'node:assert/strict';
@@ -275,6 +475,26 @@ try {
     const result = scoreAgentTeamResult(team, 'edit', new Map([['worker', true]]), read).get('worker');
     assert.equal(result.pass, true); assert.equal(result.score, 100); assert.equal(result.durationSec, 2);
     assert.equal(scoreAgentTeamResult(team, 'investigate', undefined, () => { throw new Error('unexpected Git read'); }).get('worker').pass, true);
+  `], { cwd: ephemeral }));
+  const researchTypes = join(ephemeral, 'research-session-types.mts');
+  writeFileSync(researchTypes, `import { runResearchSession, type ResearchSessionContext, type ResearchSessionHost } from '@kernlang/agon-mod-research';
+    const context: ResearchSessionContext = { cwd: '/fixture', signal: new AbortController().signal };
+    declare const host: ResearchSessionHost;
+    void runResearchSession({ question: 'npm parser' }, context, host, async () => ({ exitCode: 1, stderr: 'fixture' }));
+    // @ts-expect-error Session cancellation must retain its public type.
+    const invalid: ResearchSessionContext = { cwd: '/fixture', signal: 'cancel' };
+    void invalid;
+  `);
+  requireOk('packed-research-session-public-types', run(process.execPath, [join(root, 'node_modules/typescript/bin/tsc'),
+    '--noEmit', '--strict', '--skipLibCheck', '--module', 'NodeNext', '--moduleResolution', 'NodeNext',
+    '--target', 'ES2022', researchTypes], { cwd: ephemeral }));
+  requireOk('packed-research-session-cancellation', run(process.execPath, ['--input-type=module', '-e', `
+    import assert from 'node:assert/strict';
+    import { runResearchSession } from '@kernlang/agon-mod-research';
+    const controller = new AbortController(); controller.abort(new Error('cancelled'));
+    await assert.rejects(runResearchSession({ question: 'npm parser' }, { cwd: '/fixture', signal: controller.signal },
+      new Proxy({}, { get() { throw new Error('unexpected host effect'); } }),
+      async () => { throw new Error('unexpected execution'); }), /cancelled/);
   `], { cwd: ephemeral }));
   const researchFormatTypes = join(ephemeral, 'research-format-types.mts');
   writeFileSync(researchFormatTypes, `import { formatResearchResult, type ResearchFormatInput } from '@kernlang/agon-mod-research/format-policy';
@@ -1013,6 +1233,7 @@ try {
     ['setup', '--profile', 'minimal', '--with', 'provenance', '--offline', '--cache', npmCache, '--json'],
     { cwd: scratch, env: setupEnv })).stdout);
   if (provenanceSetup.status !== 'installed') throw new Error('Provenance profile was not selected');
+  const provenanceGeneration = await host.readCurrentPointer();
   const provenanceInstallation = await lifecycle.readSelectedInstallation();
   if (!provenanceInstallation) throw new Error('Provenance installation is missing');
   const provenancePrefix = join(host.root, provenanceInstallation.prefix);
@@ -1041,13 +1262,154 @@ try {
   if (provenanceJson.winner !== 'a' || provenanceJson.contributions[0]?.costUsd !== 0) {
     throw new Error('historical Forge ledger changed without Forge installed');
   }
+  const retainedProvenancePointer = await host.readCurrentPointer();
+  const historicalBytes = readFileSync(join(home, 'runs', 'historical-forge.json'));
+  const historicalHash = `sha256:${createHash('sha256').update(historicalBytes).digest('hex')}`;
+  if (provenanceJson.sourceHashes?.['manifest.json'] !== historicalHash) {
+    throw new Error('historical Provenance baseline did not hash the actual source bytes');
+  }
   const afterProvenance = JSON.parse(requireOk('return-after-provenance-profile', run(stable,
     ['setup', '--profile', 'minimal', '--with', 'think,review', '--offline', '--cache', npmCache, '--json'],
     { cwd: scratch, env: setupEnv })).stdout);
   if (afterProvenance.status !== 'installed' || afterProvenance.packageCount !== 15) {
     throw new Error('small profile could not be restored after Provenance qualification');
   }
+  const retainedMinimalPointer = await host.readCurrentPointer();
+  const retainedMinimalInstallation = await lifecycle.readSelectedInstallation();
+  if (!retainedProvenancePointer || !retainedMinimalPointer || !retainedMinimalInstallation) {
+    throw new Error('rollback qualification requires both retained installations');
+  }
+  for (const [label, target, installation] of [
+    ['provenance', retainedProvenancePointer, provenanceInstallation],
+    ['minimal-reentry', retainedMinimalPointer, retainedMinimalInstallation],
+  ]) {
+    const before = await host.readCurrentPointer();
+    const desiredBefore = await host.readGenerationDesiredState(target);
+    const preview = JSON.parse(requireOk(`rollback-${label}-preview`, run(stable,
+      ['mod', 'recover', String(target.generation)], { cwd: scratch, env: setupEnv })).stdout);
+    if (preview.targetGeneration !== target.generation
+      || JSON.stringify(await host.readCurrentPointer()) !== JSON.stringify(before)) {
+      throw new Error(`rollback-${label}: preview changed selection or chose the wrong target`);
+    }
+    const refused = run(stable, ['mod', 'recover', preview.planPath, '--approve', 'wrong-approval'],
+      { cwd: scratch, env: setupEnv });
+    if (refused.status === 0 || refused.status === null || refused.error || refused.signal
+      || !`${refused.stdout}${refused.stderr}`.includes('generation recovery approval does not match the exact plan')
+      || JSON.stringify(await host.readCurrentPointer()) !== JSON.stringify(before)) {
+      throw new Error(`rollback-${label}: wrong approval did not safely refuse recovery`);
+    }
+    checks.push({ id: `rollback-${label}-wrong-approval`, passed: true, detail: 'exact refusal; selected pointer unchanged' });
+    const applied = JSON.parse(requireOk(`rollback-${label}-apply`, run(stable,
+      ['mod', 'recover', preview.planPath, '--approve', preview.planHash], { cwd: scratch, env: setupEnv })).stdout);
+    const selected = await host.readCurrentPointer();
+    if (applied.recoveredGeneration !== target.generation || selected?.generation !== target.generation
+      || JSON.stringify(await lifecycle.readSelectedInstallation()) !== JSON.stringify(installation)
+      || JSON.stringify(await host.readGenerationDesiredState(selected)) !== JSON.stringify(desiredBefore)) {
+      throw new Error(`rollback-${label}: exact retained installation or desired state was not restored`);
+    }
+    requireOk(`rollback-${label}-fresh-launcher`, run(stable, ['mod', 'list'], { cwd: scratch, env: setupEnv }));
+    if (label === 'provenance') {
+      const reportStartedAt = Date.now();
+      const restored = JSON.parse(requireOk('rollback-historical-provenance', run(stable,
+        ['provenance', '--id', 'historical-forge', '--format', 'json'], { cwd: scratch, env: setupEnv })).stdout);
+      // Report time is fresh; all historical fields and source hashes must match.
+      const { generatedAt, ...restoredHistory } = restored;
+      const { generatedAt: originalReportTime, ...originalHistory } = provenanceJson;
+      const reportTime = Date.parse(generatedAt);
+      if (!Number.isFinite(Date.parse(originalReportTime)) || !Number.isFinite(reportTime)
+        || reportTime < reportStartedAt || reportTime > Date.now()
+        || JSON.stringify(restoredHistory) !== JSON.stringify(originalHistory)
+        || existsSync(join(provenancePrefix, 'node_modules/@kernlang/agon-mod-forge'))) {
+        throw new Error('rollback changed historical output or installed Forge unexpectedly');
+      }
+    } else {
+      const think = run(stable, ['think'], { cwd: scratch, env: setupEnv });
+      const thinkReached = think.status === 1 && !think.error && !think.signal
+        && (think.stderr + think.stdout).includes('Provide a problem. Usage: agon think');
+      checks.push({ id: 'rollback-reentry-think-handler', passed: thinkReached,
+        detail: String(think.stderr + think.stdout).slice(0, 1200) });
+      if (!thinkReached) throw new Error('minimal re-entry did not reach the Think handler');
+      const absent = run(stable, ['provenance'], { cwd: scratch, env: setupEnv });
+      const passed = absent.status === 1 && !absent.error && !absent.signal
+        && /unknown command|unavailable/i.test(absent.stderr + absent.stdout);
+      checks.push({ id: 'rollback-reentry-provenance-unreachable', passed,
+        detail: String(absent.stderr + absent.stdout).slice(0, 1200) });
+      if (!passed) throw new Error('minimal re-entry retained Provenance or failed for an unrelated reason');
+    }
+    if (!readFileSync(join(home, 'runs', 'historical-forge.json')).equals(historicalBytes)) {
+      throw new Error(`rollback-${label}: historical record bytes changed`);
+    }
+    checks.push({ id: `rollback-${label}-identity`, passed: true,
+      detail: `generation=${target.generation}; prefix=${installation.prefix}; desired state and historical bytes unchanged` });
+  }
+  const reentryReuse = JSON.parse(requireOk('rollback-reentry-setup-reuse', run(stable,
+    ['setup', '--profile', 'minimal', '--with', 'think,review', '--offline', '--cache', npmCache, '--json'],
+    { cwd: scratch, env: setupEnv })).stdout);
+  if (reentryReuse.status !== 'already-qualified' || reentryReuse.generationUnchanged !== true
+    || (await host.readCurrentPointer())?.generation !== retainedMinimalPointer.generation) {
+    throw new Error('rollback re-entry did not retain a reusable qualified installation');
+  }
+  const recoveryPointer = await host.readCurrentPointer();
+  if (!recoveryPointer) throw new Error('safe-mode recovery fixture has no selected generation');
+  const safeModeRecoveryPlan = JSON.parse(requireOk('safe-mode-exact-recovery-preview', run(stable,
+    ['mod', 'recover', String(recoveryPointer.generation)], { cwd: scratch, env: setupEnv })).stdout);
+  const pointerBytes = readFileSync(host.paths.current);
+  try {
+    writeFileSync(host.paths.current, '{invalid pointer');
+    const recovered = JSON.parse(requireOk('stable-safe-mode-corrupt-pointer-recovery', run(stable,
+      ['mod', 'recover', safeModeRecoveryPlan.planPath, '--approve', safeModeRecoveryPlan.planHash],
+      { cwd: scratch, env: { ...setupEnv, AGON_MOD_SAFE_MODE: '1' } })).stdout);
+    if (recovered.recoveredGeneration !== recoveryPointer.generation
+      || (await host.readCurrentPointer())?.generation !== recoveryPointer.generation) {
+      throw new Error('safe-mode recovery did not select the approved generation');
+    }
+    requireOk('stable-fresh-launch-after-corrupt-pointer-recovery', run(stable,
+      ['mod', 'list'], { cwd: scratch, env: setupEnv }));
+  } finally {
+    // Restore this owned fixture even when the launcher fails before recovery.
+    writeFileSync(host.paths.current, pointerBytes);
+  }
+  const deadWriter = spawnSync(process.execPath, ['-e', ''], { timeout: 3000 });
+  if (deadWriter.status !== 0) throw new Error('dead-writer fixture could not exit normally');
+  await WriterFence.acquire(host.paths.writerLock, 'qualification.dead-writer', { pid: deadWriter.pid });
+  try {
+    const replayed = JSON.parse(requireOk('stable-safe-mode-dead-writer-recovery', run(stable,
+      ['mod', 'recover', 'transactions'], { cwd: scratch, env: { ...setupEnv, AGON_MOD_SAFE_MODE: '1' } })).stdout);
+    if (replayed.action !== 'transaction-recovery' || existsSync(host.paths.writerLock)
+      || (await host.readCurrentPointer())?.generation !== recoveryPointer.generation) {
+      throw new Error('explicit transaction recovery did not reclaim the dead writer without changing selection');
+    }
+    requireOk('stable-fresh-launch-after-writer-recovery', run(stable, ['mod', 'list'], { cwd: scratch, env: setupEnv }));
+  } finally { rmSync(host.paths.writerLock, { force: true }); }
   if (checks.some(check => !check.passed)) throw new Error(`packed workflow qualification failed: ${checks.filter(check => !check.passed).map(check => check.id).join(', ')}`);
+  const recoveryPlan = JSON.parse(requireOk('unavailable-recovery-preview', run(stable,
+    ['mod', 'recover', String(provenanceGeneration.generation)], { cwd: scratch, env: setupEnv })).stdout);
+  const beforeRecovery = readFileSync(host.paths.current);
+  const prefixMode = lstatSync(provenancePrefix).mode & 0o777;
+  const heldPrefix = `${provenancePrefix}.recovery-probe`;
+  try {
+    chmodSync(provenancePrefix, prefixMode | 0o200);
+    renameSync(provenancePrefix, heldPrefix);
+    const refused = run(stable, ['mod', 'recover', recoveryPlan.planPath, '--approve', recoveryPlan.planHash],
+      { cwd: scratch, env: setupEnv });
+    if (refused.error || refused.signal || refused.status === 0
+      || !refused.stderr.includes('managed installation is unavailable or corrupt')
+      || !readFileSync(host.paths.current).equals(beforeRecovery)) {
+      throw new Error('recovery selected an unavailable prefix or failed for an unrelated reason');
+    }
+    checks.push({ id: 'unavailable-recovery-refused', passed: true, detail: 'exact approval refused; pointer unchanged' });
+    requireOk('launcher-survives-recovery-refusal', run(stable, ['--version'], { cwd: scratch, env: setupEnv }));
+  } finally {
+    if (existsSync(heldPrefix)) renameSync(heldPrefix, provenancePrefix);
+    chmodSync(provenancePrefix, prefixMode);
+  }
+  requireOk('restored-recovery-approved', run(stable,
+    ['mod', 'recover', recoveryPlan.planPath, '--approve', recoveryPlan.planHash], { cwd: scratch, env: setupEnv }));
+  if ((await host.readCurrentPointer()).generation !== provenanceGeneration.generation) throw new Error('restored recovery did not select its exact target');
+  requireOk('restored-recovery-dispatch', run(stable,
+    ['provenance', '--id', 'historical-forge', '--format', 'json'], { cwd: scratch, env: setupEnv }));
+  await lifecycle.rollback(JSON.parse(beforeRecovery.toString('utf8')).generation);
+  requireOk('launcher-after-recovery-reentry', run(stable, ['--version'], { cwd: scratch, env: setupEnv }));
   const result = { schemaVersion: 1, slice: 'S9', passed: checks.every(({ passed }) => passed), platform: `${process.platform}-${process.arch}`, node: process.version,
     profile: 'minimal+think+review', installedPackageCount: firstJson.packageCount, cacheDeletionSurvived: true, idempotent: true, checks };
   // Scratch cleanup is part of successful qualification. Retry transient

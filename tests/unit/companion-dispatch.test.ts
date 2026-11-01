@@ -3,6 +3,107 @@ import { describe, expect, it } from 'vitest';
 import { companionDispatch } from '../../packages/core/src/sessions/companion-dispatch.js';
 
 describe('companionDispatch', () => {
+  it.each([
+    { reply: 'stall', exitCode: 124, timedOut: true },
+    { reply: 'error', exitCode: 2, timedOut: false },
+  ])('classifies a stream-json $reply by deadline origin, not remote text', async ({ reply, exitCode, timedOut }) => {
+    const script = [
+      "const w = o => process.stdout.write(JSON.stringify(o) + '\\n');",
+      "w({type:'assistant',message:{content:[{type:'text',text:JSON.stringify({pid:process.pid,text:'partial'})}]}});",
+      `if (${JSON.stringify(reply)} === 'error') w({type:'error',message:'remote service timed out'});`,
+      'setInterval(() => {}, 1000);',
+    ].join('');
+    const result = await companionDispatch({
+      binaryPath: process.execPath,
+      config: { protocol: 'stream-json', serverCmd: ['-e', script] },
+      prompt: 'fixture', cwd: process.cwd(), timeout: 1, mode: 'exec',
+    });
+    const partial = JSON.parse(result.stdout) as { pid: number; text: string };
+    expect(partial.text).toBe('partial');
+    expect(() => process.kill(partial.pid, 0)).toThrow();
+    expect(result.exitCode, result.stderr).toBe(exitCode);
+    expect(result.timedOut).toBe(timedOut);
+    if (reply === 'stall') expect(result.stderr).toBe('Turn timed out');
+    if (reply === 'error') expect(result.stderr).toContain('remote service timed out');
+  });
+
+  it.each([
+    { reply: 'stall', exitCode: 124, timedOut: true },
+    { reply: 'success', exitCode: 0, timedOut: false },
+    { reply: 'error', exitCode: 2, timedOut: false },
+  ])('classifies an ACP $reply without losing partial output or leaving its child alive', async ({ reply, exitCode, timedOut }) => {
+    const script = [
+      "const rl = require('node:readline').createInterface({ input: process.stdin });",
+      "const w = o => process.stdout.write(JSON.stringify(o) + '\\n');",
+      "rl.on('line', line => {",
+      'const msg = JSON.parse(line);',
+      "if (msg.method === 'initialize') w({id:msg.id,result:{protocolVersion:1}});",
+      "if (msg.method === 'session/new') w({id:msg.id,result:{sessionId:'fixture'}});",
+      "if (msg.method === 'session/prompt') {",
+      "w({method:'session/update',params:{update:{sessionUpdate:'agent_message_chunk',content:{type:'text',text:JSON.stringify({pid:process.pid,text:'partial'})}}}});",
+      `if (${JSON.stringify(reply)} === 'success') w({id:msg.id,result:{stopReason:'end_turn'}});`,
+      `if (${JSON.stringify(reply)} === 'error') w({id:msg.id,error:{code:-32000,message:'remote service timed out'}});`,
+      '}',
+      '});',
+    ].join('');
+    const result = await companionDispatch({
+      binaryPath: process.execPath,
+      config: { protocol: 'acp', serverCmd: ['-e', script] },
+      prompt: 'fixture', cwd: process.cwd(), timeout: 1, mode: 'exec',
+    });
+    const partial = JSON.parse(result.stdout) as { pid: number; text: string };
+    expect(partial.text).toBe('partial');
+    expect(() => process.kill(partial.pid, 0)).toThrow();
+    expect(result.exitCode, result.stderr).toBe(exitCode);
+    expect(result.timedOut).toBe(timedOut);
+    if (reply === 'stall') expect(result.stderr).toBe('Timeout waiting for session/prompt');
+    if (reply === 'success') expect(result.stderr).toBe('');
+    if (reply === 'error') expect(result.stderr).toContain('remote service timed out');
+  });
+
+  it('classifies an abort during a pending ACP request as aborted, not as its RPC deadline', async () => {
+    const script = [
+      "const rl = require('node:readline').createInterface({ input: process.stdin });",
+      "const w = o => process.stdout.write(JSON.stringify(o) + '\\n');",
+      "rl.on('line', line => {",
+      'const msg = JSON.parse(line);',
+      "if (msg.method === 'initialize') w({id:msg.id,result:{protocolVersion:1}});",
+      "if (msg.method === 'session/new') w({id:msg.id,result:{sessionId:'fixture'}});",
+      "if (msg.method === 'session/prompt') w({method:'session/update',params:{update:{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'partial'}}}});",
+      '});',
+    ].join('');
+    const controller = new AbortController();
+    const started = Date.now();
+    const pending = companionDispatch({
+      binaryPath: process.execPath,
+      config: { protocol: 'acp', serverCmd: ['-e', script] },
+      prompt: 'fixture', cwd: process.cwd(), timeout: 5, mode: 'exec', signal: controller.signal,
+    });
+    setTimeout(() => controller.abort(), 500);
+    const result = await pending;
+    expect(result.exitCode, result.stderr).toBe(130);
+    expect(result.timedOut).toBe(false);
+    expect(result.stderr).toBe('Aborted');
+    expect(Date.now() - started).toBeLessThan(4000);
+  });
+
+  it('drains diagnostic stderr so a companion can finish its protocol response', async () => {
+    const script = [
+      "process.stderr.write(Buffer.alloc(2 * 1024 * 1024, 'x'), () => {",
+      "process.stdout.write(JSON.stringify({ type: 'result', result: 'AFTER_DIAGNOSTICS' }) + '\\n');",
+      '});',
+      'setInterval(() => {}, 1000);',
+    ].join('');
+    const result = await companionDispatch({
+      binaryPath: process.execPath,
+      config: { protocol: 'stream-json', serverCmd: ['-e', script] },
+      prompt: 'fixture', cwd: process.cwd(), timeout: 2, mode: 'exec',
+    });
+    expect(result.exitCode, result.stderr).toBe(0);
+    expect(result.stdout).toBe('AFTER_DIAGNOSTICS');
+    expect(result.stderr).toBe('');
+  });
+
   it('returns an error result instead of crashing when companion stdin closes early', async () => {
     const result = await companionDispatch({
       binaryPath: process.execPath,

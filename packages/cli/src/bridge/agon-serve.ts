@@ -2,7 +2,8 @@ import type { BrainClient, CapabilitySpec } from '@kernlang/agon-core';
 
 import type { JobExecutor } from '@kernlang/agon-core';
 
-import { getSessionHost, eventLogAppend, eventLogFlush, MAX_DISPATCH_IMAGES, MAX_DISPATCH_IMAGE_BYTES, JobService, DEFAULT_AGON_CONFIG } from '@kernlang/agon-core';
+import { eventLogAppend, eventLogFlush, MAX_DISPATCH_IMAGES, MAX_DISPATCH_IMAGE_BYTES, JobService, DEFAULT_AGON_CONFIG } from '@kernlang/agon-core';
+import { getSessionHost } from '@kernlang/agon-support-persistence';
 
 import { createServer } from 'node:http';
 
@@ -46,7 +47,7 @@ export class AgonServe {
   private readonly assertHostCurrent: () => void;
 
   constructor(opts: { brain: BrainClient, sessionId: string, allowedOrigins?: string[], engines?: string[], engineId?: string, jobService?: JobService, jobShutdownTimeoutMs?: number, resolveJob?: AgonServeJobResolver }) {
-    // Keep non-Jobs routes available when this host is already stale.
+    // Keep cleanup routes available when this host is already stale.
     try { this.assertHostCurrent = captureProcessSurfaceAuthority(); }
     catch (error) { this.assertHostCurrent = () => { throw error; }; }
     this.brain = opts.brain;
@@ -152,14 +153,8 @@ export class AgonServe {
       if (method === 'POST' && path === '/send') { await this.handleSend(req, res, origin); return; }
       if (method === 'POST' && path === '/cancel') { await this.handleCancel(req, res, origin); return; }
       if (path === '/v1/jobs' || path.startsWith('/v1/jobs/')) {
-        try {
-          await this.handleJobs(req, res, method, path, url, origin);
-        } catch (error) {
-          if (!(error instanceof SurfaceGenerationError)) throw error;
-          this.sendJson(res, error.restartRequired ? 409 : 403, {
-            error: error.message, code: error.code, restartRequired: error.restartRequired,
-          }, origin);
-        }
+        try { await this.handleJobs(req, res, method, path, url, origin); }
+        catch (error) { this.sendAuthorityFailure(error, res, origin); }
         return;
       }
       // Agent tool-loop control plane — these call the brain DIRECTLY (never chained
@@ -179,6 +174,13 @@ export class AgonServe {
       const status = msg.includes('too large') ? 413 : msg.includes('invalid JSON') ? 400 : 500;
       this.sendJson(res, status, { error: msg }, origin);
     }
+  }
+
+  private sendAuthorityFailure(error: unknown, res: ServerResponse, origin: string): void {
+    if (!(error instanceof SurfaceGenerationError)) throw error;
+    this.sendJson(res, error.restartRequired ? 409 : 403, {
+      error: error.message, code: error.code, restartRequired: error.restartRequired,
+    }, origin);
   }
 
   private assertJobsAvailable(): void {
@@ -304,20 +306,37 @@ export class AgonServe {
     this.turnTail = new Promise<void>((r) => { release = r; });
     try {
       await prev;
-      eventLogAppend(this.sessionId, { kind: 'provenance', clientId, origin, turnId }, { kind: 'bridge' });
-      const gen = this.brain.runTurn({ sessionId: this.sessionId, turnId, clientId, input, images, engineId });
-      let r = await gen.next();
-      while (!r.done) {
-        eventLogAppend(this.sessionId, r.value, { kind: 'bridge' });
-        // A capability/approval request must reach the client NOW — the turn is about
-        // to block awaiting the reply, so flush past the ~50ms coalesce window instead
-        // of letting the round-trip stall on the timer.
-        const k = (r.value as { kind?: string }).kind;
-        if (k === 'capability-request' || k === 'approval-request' || k === 'question-request') eventLogFlush(this.sessionId);
-        r = await gen.next();
+      // A queued turn can outlive the selected generation.
+      let result: unknown;
+      let admitted = false;
+      try {
+        result = await withProcessSurfaceAuthority(undefined, () => {
+          this.assertHostCurrent();
+          assertProcessSurfaceAvailable('cli', 'serve');
+        }, async () => {
+          admitted = true;
+          // Brain cancellation uses the control routes. Keep its generation leased until it drains.
+          eventLogAppend(this.sessionId, { kind: 'provenance', clientId, origin, turnId }, { kind: 'bridge' });
+          const gen = this.brain.runTurn({ sessionId: this.sessionId, turnId, clientId, input, images, engineId });
+          let r = await gen.next();
+          while (!r.done) {
+            eventLogAppend(this.sessionId, r.value, { kind: 'bridge' });
+            // A capability/approval request must reach the client NOW — the turn is about
+            // to block awaiting the reply, so flush past the ~50ms coalesce window instead
+            // of letting the round-trip stall on the timer.
+            const k = (r.value as { kind?: string }).kind;
+            if (k === 'capability-request' || k === 'approval-request' || k === 'question-request') eventLogFlush(this.sessionId);
+            r = await gen.next();
+          }
+          eventLogFlush(this.sessionId);
+          return r.value;
+        });
+      } catch (error) {
+        if (admitted) throw error;
+        this.sendAuthorityFailure(error, res, origin);
+        return;
       }
-      eventLogFlush(this.sessionId);
-      this.sendJson(res, 200, { turnId, result: r.value }, origin);
+      this.sendJson(res, 200, { turnId, result }, origin);
     } finally {
       release();
     }

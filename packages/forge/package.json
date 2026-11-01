@@ -28,6 +28,7 @@
     "@kernlang/agon-mod-tribunal": "1.0.0",
     "@kernlang/agon-mod-think": "1.0.0",
     "@kernlang/agon-mod-synthesis": "1.0.0",
+    "@kernlang/agon-mod-naturalize": "1.0.0",
     "@kernlang/agon-mod-research": "1.0.0",
     "@kernlang/agon-core": "*",
     "@kernlang/agon-support-panel": "1.0.0",

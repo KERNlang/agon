@@ -4,6 +4,7 @@ import { DurableModHost, type GenerationPointer, type HostTransactionJournal } f
 import { DurableHostError } from './host-errors.js';
 import { atomicWrite, writeNewImmutableFile } from './host-io.js';
 import { canonicalJson } from './lock.js';
+import { readVerifiedManagedInstallation } from './managed-installation.js';
 import { WriterFence, releaseLifecycleWriters } from './writer-lock.js';
 
 export interface RollbackGenerationOptions {
@@ -33,6 +34,7 @@ export async function rollbackGeneration(
   let proposedPointer: GenerationPointer | null = null;
   try {
     const manifest = await host.validateGeneration(targetGeneration);
+    await readVerifiedManagedInstallation(host, manifest);
     let current: GenerationPointer | null = null;
     try { current = await host.readCurrentPointer(); }
     catch (error) { if (!options.allowInvalidCurrent) throw error; }

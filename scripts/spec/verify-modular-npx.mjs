@@ -492,6 +492,7 @@ try {
       '64:ff9b::7f00:1', '64:ff9b:1::808:808', '2002:c0a8:101::', '::7f00:1',
       '::ffff:198.18.0.1', 'ff02::1', 'fec0::1', ...publicCandidates]) {
       address = candidate;
+      draftCalls.length = 0;
       let calls = 0;
       globalThis.fetch = async (input) => {
         calls++;
@@ -504,9 +505,8 @@ try {
       assert.equal(calls, allowed ? 3 : 1, candidate);
       assert.equal(result.exitCode, allowed ? 0 : 1, candidate);
       assert.equal(result.result.citations.verified, allowed ? 1 : 0, candidate);
+      assert.deepEqual(draftCalls, [{ engine: 'fixture', textOnly: true }], candidate);
     }
-    assert.equal(draftCalls.length, 5);
-    assert.deepEqual(draftCalls, Array.from({ length: 5 }, () => ({ engine: 'fixture', textOnly: true })));
   `], { cwd: ephemeral }));
   requireOk('packed-agent-team-scoring-owner', run(process.execPath, ['--input-type=module', '-e', `
     import assert from 'node:assert/strict';

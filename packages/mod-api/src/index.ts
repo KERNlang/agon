@@ -84,6 +84,8 @@ export interface CommandContribution {
     readonly positionals?: readonly string[];
     readonly descriptions?: Readonly<Record<string, string>>;
     readonly aliases?: Readonly<Record<string, string>>;
+    /** Normalize repeated string flags before schema validation. Unlisted flags stay unchanged. */
+    readonly repeatedOptions?: Readonly<Record<string, 'last' | 'comma-separated'>>;
   };
   parse?(input: string): Awaitable<Json | Readonly<Record<string, Json | undefined>> | undefined>;
   run(input: Json, context: InvocationContext): InvocationOutput;

@@ -45,6 +45,22 @@ Current build facts remain labeled **VERIFIED**.
 
 ## Public author surface
 
+### CLI repeat policy (additive compatibility correction, 2026-11-01)
+
+`CommandContribution.cli.repeatedOptions` may declare `last` or
+`comma-separated` for named string options. The CLI adapter applies these rules
+to nonempty arrays of string values from its parser, then validates the result
+against the unchanged contribution input schema. Unlisted options are unchanged.
+Empty or non-string arrays remain invalid scalar inputs. Positional arguments,
+including `_`, cannot declare repeat policies. Unknown policies are rejected.
+
+Both generated CLI execution and command-text parsing use the same projection.
+Mixed long/short aliases keep the parser's existing precedence; this extension
+does not reinterpret argument order. Provenance declares `last` for `id`,
+`format`, and `out`; Ratings declares `comma-separated` for purge `keep`.
+Direct JSON invocation retains its original schema and does not gain coercion.
+Older mods omit the optional metadata and retain their current behavior.
+
 Mods import only `@kernlang/agon-mod-api`. They must not import the CLI, Core,
 Forge, Adapter CLI, MCP, another mod's implementation, or an `internal`/deep path.
 

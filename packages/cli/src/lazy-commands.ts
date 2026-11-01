@@ -129,6 +129,29 @@ function lazyCommand(
   return def;
 }
 
+function projectParsedArguments(
+  parsed: Record<string, Json | undefined>,
+  properties: Record<string, { type?: string }>,
+  projection: CommandContribution['cli'],
+): Record<string, Json> {
+  const repeated = projection?.repeatedOptions ?? {};
+  for (const [name, policy] of Object.entries(repeated)) {
+    if (name === '_' || projection?.positionals?.includes(name) || properties[name]?.type !== 'string'
+      || !['last', 'comma-separated'].includes(policy)) {
+      throw new TypeError(`Invalid repeated string option policy: ${name}`);
+    }
+  }
+  return Object.fromEntries(Object.entries(parsed)
+    .filter(([name, value]) => name in properties && value !== undefined)
+    .map(([name, value]) => {
+      const policy = Object.hasOwn(repeated, name) ? repeated[name] : undefined;
+      if ((policy === 'last' || policy === 'comma-separated') && Array.isArray(value) && value.length && value.every(item => typeof item === 'string')) {
+        return [name, policy === 'last' ? value[value.length - 1] : value.join(',')];
+      }
+      return [name, value];
+    })) as Record<string, Json>;
+}
+
 function schemaGeneratedCommand(publicId: string, description: string, displayName = publicId): CommandDef {
   const record = processSurfaceClient('cli').assertAvailable(publicId);
   const assertSelected = captureProcessSurfaceAuthority();
@@ -159,8 +182,7 @@ function schemaGeneratedCommand(publicId: string, description: string, displayNa
         // Normalize before parsing: defaults can hide Citty's alternate-spelling lookup.
         const rawArgs = ctx.rawArgs && normalizeOptionSpellings(ctx.rawArgs, Object.keys(properties));
         const parsed = rawArgs ? parseArgs(rawArgs, projectedArgs as ArgsDef) : ctx.args;
-        input = Object.fromEntries(Object.entries(parsed as Record<string, Json | undefined>)
-          .filter(([name, value]) => name in properties && value !== undefined)) as Json;
+        input = projectParsedArguments(parsed as Record<string, Json | undefined>, properties, projection);
       }
       else {
         input = {};
@@ -236,8 +258,8 @@ export async function parseGeneratedCommandLine(publicId: string, text: string, 
   if (quote) throw new Error('Unclosed quote in command.');
   if (started) tokens.push(word);
   const parsed = parseArgs(normalizeOptionSpellings(tokens, Object.keys(args)), args);
-  const properties = (contribution.inputSchema as { properties?: Record<string, unknown> })?.properties ?? {};
-  const input = Object.fromEntries(Object.entries(parsed).filter(([name, value]) => name in properties && value !== undefined)) as Record<string, Json>;
+  const properties = (contribution.inputSchema as { properties?: Record<string, { type?: string }> })?.properties ?? {};
+  const input = projectParsedArguments(parsed as Record<string, Json | undefined>, properties, contribution.cli);
   assertContributionInput(contribution.inputSchema ?? {}, input);
   assertSelected();
   return input;

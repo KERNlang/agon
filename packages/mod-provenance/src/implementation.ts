@@ -48,7 +48,7 @@ export async function runProvenance(raw:Json, _context:InvocationContext, servic
   return {exitCode:0,stdout:out?`Provenance report written to ${out}\n`:`${payload}\n`,result};
 }
 const schema = Object.freeze({type:'object',additionalProperties:false,properties:{id:{type:'string'},format:{type:'string',default:'md'},out:{type:'string'},_:{type:'array',items:{type:'string'}}}}) as Readonly<Record<string,Json>>;
-const cli = Object.freeze({aliases:{format:'f',out:'o'}});
+const cli = Object.freeze({aliases:{format:'f',out:'o'},repeatedOptions:{id:'last',format:'last',out:'last'} as const});
 export const createMod:AgonModFactory = (services) => Object.freeze({apiVersion:'1' as const,async activate(registrar:Registrar):Promise<Dispose>{
   const disposers:Dispose[] = [], contribution = {id:'cliCommands:0057',description:'AI-contribution / transparency report for a forge run',inputSchema:schema,cli,run:(input:Json,context:InvocationContext)=>runProvenance(input,context,services)};
   disposers.push(registrar.command('cli',contribution)); disposers.push(registrar.command('tui',{...contribution,id:'builtinCommandMetadata:0037'}));

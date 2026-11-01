@@ -2,7 +2,8 @@ import type { BrainClient, CapabilitySpec } from '@kernlang/agon-core';
 
 import type { JobExecutor } from '@kernlang/agon-core';
 
-import { getSessionHost, eventLogAppend, eventLogFlush, MAX_DISPATCH_IMAGES, MAX_DISPATCH_IMAGE_BYTES, JobService, DEFAULT_AGON_CONFIG } from '@kernlang/agon-core';
+import { eventLogAppend, eventLogFlush, MAX_DISPATCH_IMAGES, MAX_DISPATCH_IMAGE_BYTES, JobService, DEFAULT_AGON_CONFIG } from '@kernlang/agon-core';
+import { getSessionHost } from '@kernlang/agon-support-persistence';
 
 import { createServer } from 'node:http';
 

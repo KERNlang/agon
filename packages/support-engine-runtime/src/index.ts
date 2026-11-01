@@ -1,5 +1,7 @@
 export { SUPPORT_PACKAGE } from './package-metadata.js';
 export * from './turn-protocol.js';
+export { companionDispatch, companionUsesNativeReview } from './companion-dispatch.js';
+export type { CompanionResult, JsonRpcMessage } from './companion-dispatch.js';
 export * from './types.js';
 export * from './token-estimator.js';
 export * from './session-budget.js';

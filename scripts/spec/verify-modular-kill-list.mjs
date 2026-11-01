@@ -99,7 +99,10 @@ if (process.argv.includes('--self-test')) {
     ['KL-003', 'packages/cli/src/signals/intent.ts', "switch (cmd) { case 'forge': return parseForgeInput(rest); }"],
     ['KL-004', 'packages/cli/src/cesar/tools.ts', 'const CESAR_SURFACE_IDS = []; register(createBrainstormTool());'],
     ['KL-005', 'packages/mcp/src/agon-orchestration.ts', 'export const ORCHESTRATION_TOOLS = []; export function handleToolCall() {}'],
+    ['KL-006', 'packages/core/src/blocks/extension-loader.ts', 'export const legacyExtensions = [];'],
+    ['KL-007', 'packages/cli/tsup.config.ts', files['packages/cli/tsup.config.ts'] + '\nconst legacyChunk = "chunks/forge";'],
     ['KL-008', 'package.json', JSON.stringify({ ...JSON.parse(files['package.json']), scripts: { postinstall: 'node scripts/postinstall.mjs' } })],
+    ['KL-009', 'packages/cli/src/commands/update.ts', files['packages/cli/src/commands/update.ts'] + '\nconst legacyUpdate = "npm install -g";'],
     ['KL-010', 'packages/mod-kernel/src/desired-state.ts', 'repository activation is allowed'],
     ['KL-011', 'packages/mod-kernel/src/first-party-surface-bootstrap.ts', files['packages/mod-kernel/src/first-party-surface-bootstrap.ts'] + '\nconst firstPartyCompatibility = {};'],
     ['KL-011', 'scripts/spec/generate-modular-first-party-packages.mjs', files['scripts/spec/generate-modular-first-party-packages.mjs'] + '\nfunction createFirstPartyCompatibilityMod() {}'],
@@ -121,6 +124,9 @@ if (process.argv.includes('--self-test')) {
     ['KL-014', 'packages/mod-kernel/src/first-party-surface-bootstrap.ts', 'unsafe bootstrap'],
     ['KL-015', 'packages/mod-routing-docs/src/guide-content.ts', 'export const handwrittenDocs = [];'],
   ];
+  const covered = new Set(controls.map(([id]) => id));
+  const uncovered = rows.filter(({ id }) => !covered.has(id)).map(({ id }) => id);
+  if (uncovered.length) throw new Error(`Missing negative controls: ${uncovered.join(', ')}`);
   for (const [id, path, value] of controls) {
     const fake = Object.fromEntries(Object.entries(files).map(([key, source]) => [key, source]));
     fake[path] = value;

@@ -44,7 +44,7 @@ function cleanSteps(subject) {
     ['state-migrations', 'npm', ['run', 'test:modular-state-migrations', '--', '--no-write']],
     ['physical-cutover', 'npm', ['run', 'test:modular-physical-cutover', '--', '--no-write']],
     ['manifest-capabilities', 'npm', ['run', 'test:modular-manifest-capabilities']],
-    ['legacy-kill-list', 'node', ['scripts/spec/verify-modular-kill-list.mjs']],
+    ['legacy-kill-list', 'node', ['scripts/spec/verify-modular-kill-list.mjs', '--self-test']],
     ['slice8-regression', 'npm', ['run', 'test:modular-slice8']],
     ['representative-workflows', 'npm', ['run', 'test:representative-workflows']],
     ['typecheck', 'npm', ['run', 'typecheck']],

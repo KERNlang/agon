@@ -7,7 +7,7 @@ function looseEq(a: unknown, b: unknown): boolean {
 
 import { readFileSync, writeFileSync, mkdirSync, renameSync, existsSync, readdirSync, unlinkSync, statSync, chmodSync, openSync, fsyncSync, closeSync, appendFileSync } from 'node:fs';
 
-import { join, resolve, basename } from 'node:path';
+import { join, resolve } from 'node:path';
 
 import { randomUUID, createHash } from 'node:crypto';
 
@@ -15,7 +15,11 @@ import { homedir } from 'node:os';
 
 import { ensureAgonHome } from '../signals/config.js';
 
-import { hostCreateSet, hostNowMs, hostObjectValues, hostPrettyJson, hostRegexReplace } from '../blocks/host-runtime.js';
+import { isSecretPath, redactSecrets } from '@kernlang/agon-support-verification';
+
+export { SECRET_PATH_BLOCKLIST, SECRET_PATTERNS, isSecretPath, redactSecrets } from '@kernlang/agon-support-verification';
+
+import { hostCreateSet, hostNowMs, hostObjectValues, hostPrettyJson } from '../blocks/host-runtime.js';
 
 function threadsDir(): string {
   const override = process.env.AGON_HOME?.trim();
@@ -206,58 +210,6 @@ export const TOKEN_BUDGET_SAFETY_FACTOR: number = 0.85;
 
 export const MAX_THREAD_FILE_BYTES: number = 100 * 1024 * 1024;
 
-export const SECRET_PATTERNS: RegExp[] = [
-  // AWS access keys
-  /\b(AKIA|ASIA)[0-9A-Z]{16}\b/g,
-  // AWS secret keys (40-char base64)
-  /\b(?:aws_secret_access_key|aws_secret|AWS_SECRET_ACCESS_KEY)[\s:=]+['"]?([A-Za-z0-9/+=]{40})['"]?/g,
-  // GitHub / ghp tokens
-  /\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9_]{30,}\b/g,
-  // GitHub fine-grained PATs
-  /\bgithub_pat_[A-Za-z0-9_]{60,}\b/g,
-  // OpenAI API keys
-  /\bsk-(?:proj-)?[A-Za-z0-9_\-]{30,}\b/g,
-  // Anthropic API keys
-  /\bsk-ant-(?:api|admin)[0-9]{2}-[A-Za-z0-9_\-]{80,}\b/g,
-  // Google API keys
-  /\bAIza[0-9A-Za-z_\-]{35}\b/g,
-  // Slack tokens
-  /\bxox[baprs]-[0-9A-Za-z\-]{10,}\b/g,
-  // Generic bearer tokens in env-like lines
-  /\b([A-Z][A-Z0-9_]{2,}(?:TOKEN|SECRET|PASSWORD|API_KEY|PRIVATE_KEY))[\s:=]+['"]?([^\s'"]{12,})['"]?/g,
-  // Private key headers
-  /-----BEGIN [A-Z ]+PRIVATE KEY-----[\s\S]+?-----END [A-Z ]+PRIVATE KEY-----/g,
-] as RegExp[];
-
-export const SECRET_PATH_BLOCKLIST: string[] = ['.env', '.env.local', '.env.production', '.env.staging', '.env.development', 'credentials.json', 'secrets.json', 'auth.json', '.ssh/id_rsa', '.ssh/id_ed25519', '.ssh/id_ecdsa', '.aws/credentials', '.docker/config.json', '.netrc', '.pgpass', '.my.cnf'] as string[];
-
-/**
- * Check if a file path is known to contain secrets. Used by redactSecrets to replace tool-output of forbidden files with a stub before it ever lands in the thread.
- */
-export function isSecretPath(path: string): boolean {
-  const lower = path.toLowerCase();
-  const name = basename(lower);
-  for (const needle of SECRET_PATH_BLOCKLIST) {
-    if (name === needle || lower.endsWith('/' + needle) || lower.endsWith('\\' + needle)) {
-      return true;
-    }
-  }
-  return false;
-}
-
-/**
- * Apply the secret-pattern regex set to content, replacing any matches with a '[REDACTED-SECRET]' marker. O(n) per pattern; cheap relative to an LLM call.
- */
-export function redactSecrets(content: string): string {
-  if (!content) {
-    return content;
-  }
-  let out = content;
-  for (const re of SECRET_PATTERNS) {
-    out = hostRegexReplace(out, re, '[REDACTED-SECRET]');
-  }
-  return out;
-}
 
 /**
  * Redact-in-place pass for a ThreadMessage before it's appended to the thread. Handles content, toolOutput, and path-blocklist short-circuit for Read tool results.

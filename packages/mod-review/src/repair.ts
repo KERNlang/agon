@@ -11,7 +11,13 @@ export type Finding = {
   confidence: number;
   problem: string;
   minimalFix: string;
+  existingCode?: string;
+  existingCodeMatch?: boolean;
 };
+
+const MAX_EXISTING_CODE_CHARS = 2000;
+
+const snippet = (v: unknown) => (typeof v === 'string' && v.trim() ? v.slice(0, MAX_EXISTING_CODE_CHARS) : undefined);
 
 const text = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
 
@@ -28,6 +34,7 @@ export function parseFindings(output: string): { valid: boolean; findings: Findi
         confidence: Math.max(0, Math.min(1, Number(v.confidence) || 0)),
         problem: text(v.problem),
         minimalFix: text(v.minimalFix),
+        ...(snippet(v.existingCode) ? { existingCode: snippet(v.existingCode) } : {}),
       }))
       .filter((v) => v.file && v.problem);
   return { valid: raw.length === 0 || findings.length > 0, findings };
@@ -37,7 +44,7 @@ export function buildRepairPrompt(priorReview: string): string {
   return [
     'You previously produced this code review:',
     priorReview,
-    `Now convert the findings above into a JSON array — output ONLY the array, nothing else. Your entire response must be valid JSON: start with [ and end with ]. No prose, no explanation, no markdown, no code fence. Include every verified blocking finding, then at most the 8 highest-priority, best-verified non-blocking findings; omit duplicates and weak speculation.\n\nEach element: {"file":"path","lines":"10-12","severity":"blocking|important|nit","blocking":true,"confidence":0.0,"problem":"what is wrong","minimalFix":"smallest fix"}\n\nconfidence is your 0.00-1.00 certainty the issue is real and correctly diagnosed (1.0 = you verified it in the code; lower it when you are guessing).\n\nExample of a valid response:\n[{"file":"src/auth.ts","lines":"42","severity":"important","blocking":false,"confidence":0.7,"problem":"missing null check","minimalFix":"guard before deref"}]\n\nIf the review found no issues, your entire response must be exactly: []\nDerive the findings from the review above — do not re-analyze.`,
+    `Now convert the findings above into a JSON array — output ONLY the array, nothing else. Your entire response must be valid JSON: start with [ and end with ]. No prose, no explanation, no markdown, no code fence. Include every verified blocking finding, then at most the 8 highest-priority, best-verified non-blocking findings; omit duplicates and weak speculation.\n\nEach element: {"file":"path","lines":"10-12","severity":"blocking|important|nit","blocking":true,"confidence":0.0,"problem":"what is wrong","minimalFix":"smallest fix","existingCode":"the exact current line(s), verbatim, if the review quoted them"}\n\nconfidence is your 0.00-1.00 certainty the issue is real and correctly diagnosed (1.0 = you verified it in the code; lower it when you are guessing).\n\nExample of a valid response:\n[{"file":"src/auth.ts","lines":"42","severity":"important","blocking":false,"confidence":0.7,"problem":"missing null check","minimalFix":"guard before deref"}]\n\nIf the review found no issues, your entire response must be exactly: []\nDerive the findings from the review above — do not re-analyze.`,
   ].join('\n\n');
 }
 

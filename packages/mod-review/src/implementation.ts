@@ -13,9 +13,11 @@ import type {
   Registrar,
 } from "@kernlang/agon-mod-api";
 import { join } from "node:path";
-import { resolveReviewTarget } from "@kernlang/agon-support-verification";
+import { redactSecretsDeep, redactSecretsPreservingLines, resolveReviewTarget } from "@kernlang/agon-support-verification";
 import { runMutationAssessment } from "@kernlang/agon-support-worktree";
 import { buildConsensus } from "./consensus.js";
+import { annotateExistingCode, existingCodeReader } from "./existing-code.js";
+import { formatReport, parseReviewFormat, type ReviewReport } from "./report.js";
 import {
   isExplicitPanel, persistRoutingManifest, resolveExplicitPanel, routeReviewPanel,
   routingShortfallMessage, routingSummary, type RoutedPanel,
@@ -37,6 +39,7 @@ const schema = Object.freeze({
     quiet: { type: "boolean" },
     timeout: { type: "string" },
     deadline: { type: "string" },
+    format: { type: "string", default: "json" },
     maxParallel: { type: "string" },
     mutate: { type: "boolean" },
     "mutate-semantic": { type: "boolean" },
@@ -76,6 +79,8 @@ export async function runReview(
   evidence: { readonly mutationEvidence?: string } = {},
 ): Promise<CommandResult> {
   const input = raw as Record<string, Json>;
+  const format = parseReviewFormat(input.format);
+  if (!format) return { exitCode: 1, stderr: 'Unknown review format. Use json, text, or sarif.\n' };
   let target;
   try {
     target = resolveReviewTarget(
@@ -96,12 +101,14 @@ export async function runReview(
     if (!Array.isArray(resolved)) return { exitCode: 1, stderr: `${resolved.error}\n` };
     engines = resolved;
   }
-  if (!target.diff.trim())
+  if (!target.diff.trim()) {
+    const empty = { target: target.label, reviews: [], findings: [] };
     return {
       exitCode: 0,
-      stdout: `No diff found for ${target.label}.\n`,
-      result: { target: target.label, reviews: [], findings: [] } as Json,
+      stdout: format === 'sarif' || (format === 'json' && text(input.format)) ? formatReport(empty, format) : `No diff found for ${target.label}.\n`,
+      result: empty as Json,
     };
+  }
   let routed: RoutedPanel | undefined;
   if (!explicit) {
     const panel = await routeReviewPanel(input, target.diff, context, services);
@@ -135,24 +142,27 @@ export async function runReview(
       result: { target: target.label, routing: routingSummary(routed, manifestPath), reviews: [], findings: [] } as Json,
     };
   }
-  const mutationEvidence = evidence.mutationEvidence?.trim();
+  const mutationEvidence = redactSecretsPreservingLines(evidence.mutationEvidence?.trim() ?? "");
   if (run && mutationEvidence) {
     await services.runs!.writeArtifact(run, 'mutation-evidence.txt', mutationEvidence, context);
   }
   const roles = assignSeatRoles(engines, input.roles);
-  const grounding = await gatherReviewPromptContext(target.diff, context, services);
+  const grounding = redactSecretsDeep(await gatherReviewPromptContext(target.diff, context, services));
+  const diff = redactSecretsPreservingLines(target.diff);
   const seatTimeout = timeoutSeconds !== undefined && deadlineSeconds !== undefined
     ? Math.min(timeoutSeconds, deadlineSeconds) : timeoutSeconds;
-  const reviews = await Promise.all(
+  const seats = await Promise.all(
     engines.map((engineId) => runSeat({
       engineId,
       ...(roles.has(engineId) ? { role: roles.get(engineId) } : {}),
-      prompt: buildSeatPrompt({ label: target.label, diff: target.diff, roleId: roles.get(engineId), mutationEvidence }, grounding),
+      prompt: buildSeatPrompt({ label: target.label, diff, roleId: roles.get(engineId), mutationEvidence }, grounding),
       ...(seatTimeout !== undefined ? { timeoutSeconds: seatTimeout } : {}),
       ...(deadlineSeconds !== undefined ? { maxWallSeconds: deadlineSeconds } : {}),
       deadline,
     }, context, services)),
   );
+  const quoteSource = existingCodeReader((text(input.target) || "uncommitted") === "uncommitted" ? { cwd: context.cwd } : { diff });
+  const reviews = seats.map((seat) => seat.ok ? { ...seat, findings: annotateExistingCode(seat.findings, quoteSource) } : seat);
   const usable = reviews.filter((r) => r.ok);
   if (run)
     await Promise.all(
@@ -160,7 +170,7 @@ export async function runReview(
         services.runs!.writeArtifact(
           run,
           `${review.engineId}-output.txt`,
-          review.output || `No review output.\nReason: ${review.status}: ${review.error}\n`,
+          redactSecretsPreservingLines(review.output || `No review output.\nReason: ${review.status}: ${review.error}\n`),
           context,
         ),
       ),
@@ -253,6 +263,11 @@ export async function runReview(
     blocking: consensus.blockers.length,
   });
   const exitCode = usable.length ? (consensus.blockers.length ? 2 : 0) : 1;
+  const report = redactSecretsDeep(result);
+  if (run) {
+    await services.runs!.writeArtifact(run, 'diff.patch', diff, context);
+    await services.runs!.writeArtifact(run, 'report.json', `${JSON.stringify(report, null, 2)}\n`, context);
+  }
   if (run)
     await services.runs?.finish(
       run,
@@ -274,8 +289,8 @@ export async function runReview(
     );
   return {
     exitCode,
-    stdout: `${JSON.stringify(result, null, 2)}\n`,
-    result: result as unknown as Json,
+    stdout: formatReport(report as unknown as ReviewReport, format),
+    result: report as unknown as Json,
   };
 }
 function parseReviewIntent(input: string) {

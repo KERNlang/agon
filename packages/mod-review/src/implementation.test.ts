@@ -86,7 +86,9 @@ describe('physical review mod', () => {
     expect(result.consensus.blockers).toHaveLength(1);
     expect(result.consensus.blockers[0].engines).toHaveLength(2);
     expect(h.record).toHaveBeenCalled();
-    expect(h.writeArtifact).toHaveBeenCalledTimes(3);
+    expect(h.writeArtifact).toHaveBeenCalledTimes(5);
+    expect(h.writeArtifact).toHaveBeenCalledWith(expect.anything(), 'diff.patch', expect.any(String), h.context);
+    expect(h.writeArtifact).toHaveBeenCalledWith(expect.anything(), 'report.json', expect.any(String), h.context);
     expect(h.writeArtifact).toHaveBeenCalledWith(expect.anything(), 'review-routing.json', expect.stringContaining('"routerVersion"'), h.context);
     expect(h.finish).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ ok: false, mode: 'review' }), h.context);
   });

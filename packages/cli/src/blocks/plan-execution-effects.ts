@@ -1,5 +1,5 @@
 import { writeFileSync } from 'node:fs';
-import { resolveWorkingDir, saveCesarPlan, executePlan, formatCesarPlanMarkdown, planCostEstimator, appendMessage } from '@kernlang/agon-core';
+import { resolveWorkingDir, saveCesarPlan, formatCesarPlanMarkdown, appendMessage } from '@kernlang/agon-core';
 import { inspectWorkingTree } from '@kernlang/agon-support-worktree';
 import { createPlanExecutionSession as createSession, listCesarPlans } from '@kernlang/agon-mod-plan';
 import { buildStepExecutors } from '../handlers/plan-mode.js';
@@ -10,7 +10,7 @@ import type { DispatchCallbacks } from '../signals/dispatch.js';
 import { askChoiceQuestion } from '../signals/dispatch/plan-queries.js';
 import { hostConsoleWarn } from '../lib/kern-host.js';
 import { takePlanFallback } from '../signals/plan-fallback.js';
-import { assertProcessSurfaceAvailable, captureProcessSurfaceAuthority } from '../surface-authority-runtime.js';
+import { assertProcessSurfaceAvailable, captureProcessSurfaceAuthority, processPlanRuntime } from '../surface-authority-runtime.js';
 
 /** Bind raw CLI state and effects; the physical Plan owner selects workflows. */
 export function createPlanExecutionSession(cb: DispatchCallbacks) {
@@ -25,7 +25,7 @@ export function createPlanExecutionSession(cb: DispatchCallbacks) {
       return { config: cb.ctx.config, agentic,
         evaluateAction: lease ? (action, text) => evaluateTaskAction(lease, action, text) : undefined };
     },
-    approvalEffects: { estimateReviewCostUsd: () => planCostEstimator.estimate('review', []).costUsd },
+    approvalEffects: { estimateReviewCostUsd: () => processPlanRuntime().estimator.estimate('review', []).costUsd },
     choose: (prompt, choices, defaultKey) => askChoiceQuestion(cb, prompt, choices, defaultKey),
     callbacks: {
       dispatch: event => cb.dispatch(event),
@@ -50,7 +50,8 @@ export function createPlanExecutionSession(cb: DispatchCallbacks) {
       warn: hostConsoleWarn,
     },
     coordinator: {
-      createExecutors: () => buildStepExecutors(cb.ctx, cb.dispatch), executePlan,
+      createExecutors: () => buildStepExecutors(cb.ctx, cb.dispatch),
+      executePlan: (...args) => processPlanRuntime().executePlan(...args),
       setActivePlan: plan => cb.setActivePlan(plan),
       reportVerifiedPlan: plan => {
         cb.dispatch({ type: 'plan-execution', plan });
@@ -71,7 +72,7 @@ export function createPlanExecutionSession(cb: DispatchCallbacks) {
         if (!state.ok) throw new Error(state.error);
         return state.dirtyTree;
       },
-      estimateReview: () => planCostEstimator.estimate('review', []), takeFallback: takePlanFallback,
+      estimateReview: () => processPlanRuntime().estimator.estimate('review', []), takeFallback: takePlanFallback,
       notify: (type, message) => cb.dispatch({ type, message }),
       warn: (message, error) => hostConsoleWarn(`${message} ${error instanceof Error ? error.message : String(error)}`),
     },

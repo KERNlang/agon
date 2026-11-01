@@ -62,6 +62,85 @@ try {
   writeFileSync(join(ephemeral, 'package-lock.json'), lockBytes);
   requireOk('ephemeral-npx-hydration', run('npm', ['ci', '--ignore-scripts', '--no-audit', '--no-fund', '--omit=optional', '--offline'], { cwd: ephemeral }));
   if (readFileSync(join(ephemeral, 'package-lock.json'), 'utf8') !== lockBytes) throw new Error('packed hydration changed the frozen dependency lock');
+  requireOk('packed-plan-runtime-lifetime', run(process.execPath, ['--input-type=module', '-e', `
+    import assert from 'node:assert/strict';
+    import { pathToFileURL } from 'node:url';
+    import { createMod, createCesarPlan, approveCesarPlan } from '@kernlang/agon-mod-plan';
+    assert.ok(import.meta.resolve('@kernlang/agon-mod-plan').startsWith(pathToFileURL(process.cwd() + '/node_modules/').href));
+    const callbacks = { onStepStart() {}, onStepDone() {}, onPlanUpdate() {}, onBudgetWarning() {} };
+    const plan = { ...approveCesarPlan(createCesarPlan('packed history', ['a', 'b'].map(id => ({
+      id, type: 'self', description: id, estimatedTokens: 20, estimatedCostUsd: 1,
+      ...(id === 'b' ? { dependsOn: ['a'] } : {}),
+    })))), selfReview: false };
+    let runtime;
+    let registrations = 0, removals = 0, unbound = 0;
+    const mod = await createMod({ planRuntime: { estimateCost: () => 0.5, bind: value => {
+      runtime = value;
+      return async () => {
+        unbound++;
+        await assert.rejects(runtime.executePlan(plan, {}, callbacks), /disposed/);
+      };
+    } } });
+    const registrar = new Proxy({}, { get: () => () => { registrations++; return () => { removals++; }; } });
+    assert.equal(runtime, undefined);
+    const dispose = await mod.activate(registrar);
+    assert.equal(typeof dispose, 'function');
+    assert.ok(registrations > 0);
+    assert.deepEqual(runtime.estimator.estimate('self', []), { tokens: 2000, costUsd: 0.5 });
+    const completed = await runtime.executePlan(plan, { self: { execute: async step => ({ result: {
+      status: 'success', actualTokens: step.id === 'a' ? 12 : 16,
+      actualCostUsd: 0.3, durationMs: 1, output: step.id,
+    } }) } }, callbacks);
+    assert.equal(completed.state, 'done');
+    assert.equal(runtime.sanitizePlanSteps([{ type: 'self' }]).steps[0].estimatedTokens, 14);
+    let release, entered;
+    const pending = new Promise(resolve => { release = resolve; });
+    const started = new Promise(resolve => { entered = resolve; });
+    const calls = [];
+    const checkpoints = [];
+    const execution = runtime.executePlan(plan, { self: { execute: async step => {
+      calls.push(step.id); entered(); await pending;
+      return { result: { status: 'success', actualTokens: 7, actualCostUsd: 0.1, durationMs: 1, output: 'retained' } };
+    } } }, { ...callbacks, onCheckpoint: value => checkpoints.push(value) });
+    await started;
+    await dispose();
+    release();
+    const drained = await execution;
+    assert.deepEqual(calls, ['a']);
+    assert.notEqual(drained.state, 'done');
+    assert.equal(drained.steps[0].result.output, 'retained');
+    assert.ok(checkpoints.some(value => value.steps[0].result?.output === 'retained'));
+    assert.equal(unbound, 1);
+    assert.equal(removals, registrations);
+    await assert.rejects(runtime.executePlan(plan, {}, callbacks), /disposed/);
+  `], { cwd: ephemeral, timeout: 30_000 }));
+  const planRuntimeTypes = join(ephemeral, 'plan-runtime-types.mts');
+  writeFileSync(planRuntimeTypes, `import { createMod, type PlanRuntime, type PlanRuntimeHost, type PlanRuntimeModServices } from '@kernlang/agon-mod-plan';
+    import type { ModServices } from '@kernlang/agon-mod-api';
+    declare const services: ModServices;
+    declare const runtime: PlanRuntime;
+    const host: PlanRuntimeHost = { estimateCost: (_engine, tokens) => tokens / 1000,
+      assertAvailable: () => {}, bind: value => {
+        const sameRuntime: PlanRuntime = value;
+        // @ts-expect-error The bound runtime must retain its public shape.
+        value.notAPlanRuntimeMethod();
+        void sameRuntime;
+        return () => {};
+      } };
+    const extended: PlanRuntimeModServices = { ...services, planRuntime: host };
+    void createMod(extended);
+    // @ts-expect-error Binding must return cleanup, not an unrelated value.
+    const invalidHost: PlanRuntimeHost = { ...host, bind: () => 42 };
+    // @ts-expect-error Pricing remains numeric.
+    const invalidPricing: PlanRuntimeHost = { ...host, estimateCost: () => 'free' };
+    const tokens: number = runtime.estimator.estimate('self', []).tokens;
+    // @ts-expect-error Estimates must not become untyped.
+    const invalidTokens: string = runtime.estimator.estimate('self', []).tokens;
+    void [invalidHost, invalidPricing, tokens, invalidTokens];
+  `);
+  requireOk('packed-plan-runtime-public-types', run(process.execPath, [join(root, 'node_modules/typescript/bin/tsc'),
+    '--noEmit', '--strict', '--skipLibCheck', '--module', 'NodeNext', '--moduleResolution', 'NodeNext',
+    '--target', 'ES2022', planRuntimeTypes], { cwd: ephemeral }));
   requireOk('packed-nero-receipt-boundary', run(process.execPath, ['--input-type=module', '-e', `
     import assert from 'node:assert/strict';
     import { pathToFileURL } from 'node:url';

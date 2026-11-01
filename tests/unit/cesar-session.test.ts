@@ -9,10 +9,12 @@ import { applyInvariantsRule1, _resetInvariantsRule1DriftWarning, CESAR_RULE_1_S
 import { CESAR_AGENTIC_SYSTEM_PROMPT } from '../../packages/cli/src/cesar/session.js';
 import { createTaskExecutionLease } from '../../packages/cli/src/cesar/task-execution-lease.js';
 import { beginCesarTurn, createCesarTurnRuntimeHost, transitionCesarTurn } from '../../packages/cli/src/cesar/turn-runtime.js';
+import { initializeProcessSurfaceAuthority, disposeProcessSurfaceAuthority } from '../../packages/cli/src/surface-authority-runtime.js';
 
 const testDirs: string[] = [];
 
-afterEach(() => {
+afterEach(async () => {
+  await disposeProcessSurfaceAuthority();
   for (const dir of testDirs.splice(0)) {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -139,6 +141,7 @@ it.each(['ProposePlan', 'ExitPlanMode'].flatMap(tool => ['healthy', 'disabled', 
     const previousHome = process.env.AGON_HOME;
     process.env.AGON_HOME = home;
     try {
+      await initializeProcessSurfaceAuthority(makeTempDir('plan-tool-host'));
       const host = createCesarTurnRuntimeHost('plan-tool-owner');
       const controller = new AbortController();
       let disabled = false;
@@ -181,6 +184,7 @@ it('does not publish an active plan after proposal display replaces its owning t
   const previousHome = process.env.AGON_HOME;
   process.env.AGON_HOME = home;
   try {
+    await initializeProcessSurfaceAuthority(makeTempDir('plan-publication-host'));
     const host = createCesarTurnRuntimeHost('plan-publication-owner');
     beginCesarTurn(host, 'first', 'fixture');
     const successor = { id: 'successor' };
@@ -875,6 +879,7 @@ describe('cesar MCP session config', () => {
     const previousHome = process.env.AGON_HOME;
     process.env.AGON_HOME = home;
     try {
+      await initializeProcessSurfaceAuthority(makeTempDir('propose-plan-host'));
       const events: any[] = [];
       let activePlan: any = null;
       const cesar: any = {

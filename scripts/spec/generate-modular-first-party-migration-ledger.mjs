@@ -41,7 +41,16 @@ const assignments = ownership.assignments
     for (const path of [physicalEntrypoint, ownershipAsset, `${packageRoot}/agon.mod.json`]) {
       if (!existsSync(resolve(root, path))) throw new Error(`${assignment.package}: missing physical destination ${path}`);
     }
-    const implementationPaths = short === 'agent' && legacyPath === 'packages/core/src/cesar/agent-team.ts'
+    const implementationPaths = short === 'forge' && legacyPath === 'packages/core/src/models/types.ts'
+      && assignment.category === 'configKeys'
+      ? [`${packageRoot}/schemas/config.schema.json`]
+      : short === 'forge' && legacyPath === 'packages/core/src/models/types.ts'
+        && assignment.category === 'resultAndEnvelopeTypes' && assignment.id === 'FitnessResult'
+      ? [`${packageRoot}/src/scoring.ts`]
+      : short === 'forge' && legacyPath === 'packages/core/src/models/types.ts'
+        && assignment.category === 'resultAndEnvelopeTypes' && ['ForgeEvent', 'GauntletResult'].includes(assignment.id)
+      ? [`${packageRoot}/src/types.ts`]
+      : short === 'agent' && legacyPath === 'packages/core/src/cesar/agent-team.ts'
       && assignment.category === 'resultAndEnvelopeTypes'
       && ['AgentTeamMemberResult', 'AgentTeamResult'].includes(assignment.id)
       ? [`${packageRoot}/src/team-results.ts`]

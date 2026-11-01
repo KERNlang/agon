@@ -1,6 +1,33 @@
 import { expect, it } from 'vitest';
 import ts from 'typescript';
 import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
+
+it('records precise Forge declaration destinations without rewriting historical authority', () => {
+  const read = (path: string) => readFileSync(new URL(`../../${path}`, import.meta.url), 'utf8');
+  const ledger = JSON.parse(read('docs/specs/evidence/modular-agon-slice5-migration-ledger.json'));
+  const schemaPath = 'packages/mod-forge/schemas/config.schema.json';
+  const schema = JSON.parse(read(schemaPath));
+  const rows = ledger.assignments.filter((row: { package: string; legacyPath: string }) =>
+    row.package === '@kernlang/agon-mod-forge' && row.legacyPath === 'packages/core/src/models/types.ts');
+  expect(rows).toHaveLength(11);
+  for (const row of rows) {
+    const expected = row.category === 'configKeys' ? schemaPath
+      : row.id === 'FitnessResult' ? 'packages/mod-forge/src/scoring.ts' : 'packages/mod-forge/src/types.ts';
+    expect(row.implementationPaths, row.id).toEqual([expected]);
+    expect(row.compatibilityAdapter).toBe('packages/core/src/models/types.ts');
+    expect(row.authority).toBe('legacy-runtime-until-s6');
+    if (row.category === 'configKeys') {
+      expect(Object.hasOwn(schema.properties, row.id), row.id).toBe(true);
+      expect(schema['x-agon-config'].legacyAliases).toContain(row.id);
+    } else {
+      const source = ts.createSourceFile(expected, read(expected), ts.ScriptTarget.Latest, true);
+      const declarations = source.statements.filter(statement =>
+        ts.isInterfaceDeclaration(statement) || ts.isTypeAliasDeclaration(statement));
+      expect(declarations.some(declaration => declaration.name.text === row.id), row.id).toBe(true);
+    }
+  }
+});
 
 const names = [
   'ForgeOptions', 'EngineResult', 'SkippedEngine', 'DispatchMetric', 'ForgeManifest',

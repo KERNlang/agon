@@ -123,7 +123,7 @@
         "@kernlang/agon-support-verification"
       ],
       "assignments": 36,
-      "assignmentHash": "sha256:d32c6443a40b9489b0181bc0d8566cde1e1e3b6a445d1b891e11bd7815717b17",
+      "assignmentHash": "sha256:739ce3ab56787befba49261add4ad513b97228c1f1168ed6bdf31a417214669a",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -2723,7 +2723,7 @@
       "physicalPackage": "packages/mod-forge",
       "physicalEntrypoint": "packages/mod-forge/src/index.ts",
       "implementationPaths": [
-        "packages/mod-forge/src/index.ts"
+        "packages/mod-forge/schemas/config.schema.json"
       ],
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/core/src/models/types.ts",
@@ -2743,7 +2743,7 @@
       "physicalPackage": "packages/mod-forge",
       "physicalEntrypoint": "packages/mod-forge/src/index.ts",
       "implementationPaths": [
-        "packages/mod-forge/src/index.ts"
+        "packages/mod-forge/schemas/config.schema.json"
       ],
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/core/src/models/types.ts",
@@ -2763,7 +2763,7 @@
       "physicalPackage": "packages/mod-forge",
       "physicalEntrypoint": "packages/mod-forge/src/index.ts",
       "implementationPaths": [
-        "packages/mod-forge/src/index.ts"
+        "packages/mod-forge/schemas/config.schema.json"
       ],
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/core/src/models/types.ts",
@@ -2783,7 +2783,7 @@
       "physicalPackage": "packages/mod-forge",
       "physicalEntrypoint": "packages/mod-forge/src/index.ts",
       "implementationPaths": [
-        "packages/mod-forge/src/index.ts"
+        "packages/mod-forge/schemas/config.schema.json"
       ],
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/core/src/models/types.ts",
@@ -2803,7 +2803,7 @@
       "physicalPackage": "packages/mod-forge",
       "physicalEntrypoint": "packages/mod-forge/src/index.ts",
       "implementationPaths": [
-        "packages/mod-forge/src/index.ts"
+        "packages/mod-forge/schemas/config.schema.json"
       ],
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/core/src/models/types.ts",
@@ -2823,7 +2823,7 @@
       "physicalPackage": "packages/mod-forge",
       "physicalEntrypoint": "packages/mod-forge/src/index.ts",
       "implementationPaths": [
-        "packages/mod-forge/src/index.ts"
+        "packages/mod-forge/schemas/config.schema.json"
       ],
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/core/src/models/types.ts",
@@ -2843,7 +2843,7 @@
       "physicalPackage": "packages/mod-forge",
       "physicalEntrypoint": "packages/mod-forge/src/index.ts",
       "implementationPaths": [
-        "packages/mod-forge/src/index.ts"
+        "packages/mod-forge/schemas/config.schema.json"
       ],
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/core/src/models/types.ts",
@@ -2863,7 +2863,7 @@
       "physicalPackage": "packages/mod-forge",
       "physicalEntrypoint": "packages/mod-forge/src/index.ts",
       "implementationPaths": [
-        "packages/mod-forge/src/index.ts"
+        "packages/mod-forge/schemas/config.schema.json"
       ],
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/core/src/models/types.ts",
@@ -3023,7 +3023,7 @@
       "physicalPackage": "packages/mod-forge",
       "physicalEntrypoint": "packages/mod-forge/src/index.ts",
       "implementationPaths": [
-        "packages/mod-forge/src/index.ts"
+        "packages/mod-forge/src/scoring.ts"
       ],
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/core/src/models/types.ts",
@@ -3043,7 +3043,7 @@
       "physicalPackage": "packages/mod-forge",
       "physicalEntrypoint": "packages/mod-forge/src/index.ts",
       "implementationPaths": [
-        "packages/mod-forge/src/index.ts"
+        "packages/mod-forge/src/types.ts"
       ],
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/core/src/models/types.ts",
@@ -3063,7 +3063,7 @@
       "physicalPackage": "packages/mod-forge",
       "physicalEntrypoint": "packages/mod-forge/src/index.ts",
       "implementationPaths": [
-        "packages/mod-forge/src/index.ts"
+        "packages/mod-forge/src/types.ts"
       ],
       "ownershipAsset": "packages/mod-forge/ownership.json",
       "compatibilityAdapter": "packages/core/src/models/types.ts",

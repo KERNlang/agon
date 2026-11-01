@@ -3579,7 +3579,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.naturalize",
       "version": "1.0.0",
-      "contentHash": "sha256:0b86ea5c46203c6cec65fe36c70950d42cc0782f135afffd7f8c56d7bd7e1c08"
+      "contentHash": "sha256:f75f46384adff10fbbbe22aeec5558b09e44580812317e47d72031cf8c84e026"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "naturalize",
@@ -9804,7 +9804,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.naturalize",
       "version": "1.0.0",
-      "contentHash": "sha256:0b86ea5c46203c6cec65fe36c70950d42cc0782f135afffd7f8c56d7bd7e1c08"
+      "contentHash": "sha256:f75f46384adff10fbbbe22aeec5558b09e44580812317e47d72031cf8c84e026"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "<file> [--author X] [--engine Y] [--min-change N] — sanitize → non-author rewrite → re-scan",

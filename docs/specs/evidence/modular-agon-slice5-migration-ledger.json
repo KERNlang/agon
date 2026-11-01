@@ -327,7 +327,7 @@
         "@kernlang/agon-mod-sanitize"
       ],
       "assignments": 3,
-      "assignmentHash": "sha256:55439cf8d608639fff7d34750f79c8f8901927e06a000c05fd514c21e6e9f1f1",
+      "assignmentHash": "sha256:5a80168ce68de2a5ec02f762cb9d2eb466adac0e33571d74b85ee56e526c41f9",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -4487,7 +4487,7 @@
       "physicalPackage": "packages/mod-naturalize",
       "physicalEntrypoint": "packages/mod-naturalize/src/index.ts",
       "implementationPaths": [
-        "packages/mod-naturalize/src/index.ts"
+        "packages/mod-naturalize/src/workflow.ts"
       ],
       "ownershipAsset": "packages/mod-naturalize/ownership.json",
       "compatibilityAdapter": "packages/forge/src/naturalize.ts",

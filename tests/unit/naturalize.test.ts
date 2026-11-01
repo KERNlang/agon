@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import ts from 'typescript';
 import type { ModServices } from '@kernlang/agon-mod-api';
 import { runNaturalize as runPhysicalNaturalize } from '../../packages/mod-naturalize/src/implementation.js';
 import { wordDiffStats as ownedWordDiffStats } from '@kernlang/agon-mod-naturalize/lexical-policy';
@@ -11,6 +14,76 @@ import {
 } from '../../packages/forge/src/naturalize.js';
 
 // ── wordDiffStats ────────────────────────────────────────────────────────────
+
+describe('Naturalize workflow ownership', () => {
+  it('preserves the full legacy registry type and the owned result contract', () => {
+    const path = fileURLToPath(new URL('../naturalize-compile-only.ts', import.meta.url));
+    const source = `
+      import { runNaturalize, type NaturalizeOptions } from '@kernlang/agon-forge';
+      import type { NaturalizeWorkflowOptions, NaturalizeResult } from '@kernlang/agon-mod-naturalize/workflow';
+      declare const legacy: NaturalizeOptions;
+      legacy.registry.load('fixture');
+      legacy.registry.register(legacy.registry.get('fixture'));
+      legacy.registry.list();
+      const owned: NaturalizeWorkflowOptions = legacy;
+      const run: (input: NaturalizeOptions) => Promise<NaturalizeResult> = runNaturalize;
+      // @ts-expect-error The legacy registry keeps its full public API.
+      const incomplete: NaturalizeOptions['registry'] = { get: legacy.registry.get };
+      // @ts-expect-error The result retains its required fields.
+      const invalid: NaturalizeResult = { ok: true };
+    `;
+    const options: ts.CompilerOptions = {
+      strict: true, noEmit: true, skipLibCheck: true,
+      target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.NodeNext,
+      moduleResolution: ts.ModuleResolutionKind.NodeNext, types: [],
+    };
+    const host = ts.createCompilerHost(options);
+    const original = host.getSourceFile.bind(host);
+    host.getSourceFile = (name, version, onError, fresh) => name === path
+      ? ts.createSourceFile(name, source, version, true)
+      : original(name, version, onError, fresh);
+    const program = ts.createProgram([path], options, host);
+    expect(ts.getPreEmitDiagnostics(program).map(diagnostic =>
+      ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n'))).toEqual([]);
+  });
+
+  it('keeps the prompt and legacy workflow in the physical owner', async () => {
+    const owner = await import('@kernlang/agon-mod-naturalize/workflow');
+    expect(buildNaturalizePrompt).toBe(owner.buildNaturalizePrompt);
+    const legacy = readFileSync(new URL('../../packages/forge/src/naturalize.ts', import.meta.url), 'utf8');
+    expect(legacy).toContain('@kernlang/agon-mod-naturalize/workflow');
+    expect(legacy).not.toContain('for (let attempt');
+    expect(legacy).not.toContain('opts.adapter.dispatch(');
+    const ledger = JSON.parse(readFileSync(new URL('../../docs/specs/evidence/modular-agon-slice5-migration-ledger.json', import.meta.url), 'utf8'));
+    const row = ledger.assignments.find((entry: { id: string; category: string }) =>
+      entry.id === 'NaturalizeResult' && entry.category === 'resultAndEnvelopeTypes');
+    expect(row).toMatchObject({
+      implementationPaths: ['packages/mod-naturalize/src/workflow.ts'],
+      compatibilityAdapter: 'packages/forge/src/naturalize.ts',
+      authority: 'legacy-runtime-until-s6',
+    });
+  });
+
+  it('preserves legacy sanitization and report values across the owner boundary', async () => {
+    const opts = makeOpts({ input: 'alpha\u180ebeta\u2000gamma\ufe00' });
+    let prompt = '';
+    opts.adapter = {
+      dispatch: async (request: { prompt: string }) => {
+        prompt = request.prompt;
+        return { exitCode: 0, timedOut: false, stdout: 'Different clean prose.', stderr: '' };
+      },
+    } as unknown as NaturalizeOptions['adapter'];
+    const result = await runNaturalize(opts);
+    expect(result.ok).toBe(true);
+    expect(prompt).toContain('alphabetagamma\ufe00');
+    expect(prompt).not.toContain('\u180e');
+    expect(prompt).not.toContain('\u2000');
+    expect(result.initialFindings).toBe(3);
+    expect(result.residualNotAssessable).toEqual([
+      'keyed statistical watermarks (green-list token bias) — undetectable without the generator key',
+    ]);
+  });
+});
 
 describe('physical Naturalize lexical-change gate', () => {
   it.each([

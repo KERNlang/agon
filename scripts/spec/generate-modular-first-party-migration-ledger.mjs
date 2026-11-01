@@ -45,6 +45,9 @@ const assignments = ownership.assignments
       && assignment.category === 'resultAndEnvelopeTypes'
       && ['AgentTeamMemberResult', 'AgentTeamResult'].includes(assignment.id)
       ? [`${packageRoot}/src/team-results.ts`]
+      : short === 'naturalize' && legacyPath === 'packages/forge/src/naturalize.ts'
+        && assignment.category === 'resultAndEnvelopeTypes' && assignment.id === 'NaturalizeResult'
+      ? [`${packageRoot}/src/workflow.ts`]
       : short === 'research' && legacyPath === 'packages/core/src/tools/research-verifier.ts'
         && assignment.category === 'resultAndEnvelopeTypes' && assignment.id === 'CitationVerdict'
       ? [`${packageRoot}/src/citation-policy.ts`]

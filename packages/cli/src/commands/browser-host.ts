@@ -10,9 +10,9 @@ import { homedir } from 'node:os';
 
 import { spawn } from 'node:child_process';
 
-import { PROTOCOL, isExtensionOrigin, nativeHostDir, manifestPath, buildHostManifest, parseConnRecord, decodeFrames, encodeFrame, runPair, findReusableServe } from '../bridge/browser-host.js';
+import { PROTOCOL, isExtensionOrigin, nativeHostDir, manifestPath, buildHostManifest, parseConnRecord, decodeFrames, encodeFrame, runPair, findReusableServe } from '@kernlang/agon-support-browser-bridge';
 
-import type { ServeConnRecord, PairDeps, PairResponse } from '../bridge/browser-host.js';
+import type { ServeConnRecord, PairDeps, PairResponse } from '@kernlang/agon-support-browser-bridge';
 
 import { header, info, success, warn, bold, dim, cyan, green, yellow } from '../blocks/output-format.js';
 

@@ -1,6 +1,6 @@
-import { isCurrentControlPlaneEnvelope, isCurrentCesarResponse, isTerminalTurnState, reduceTurnLifecycle } from '../../../core/src/sessions/turn-protocol.js';
+import { isCurrentControlPlaneEnvelope, isCurrentCesarResponse, isTerminalTurnState, reduceTurnLifecycle } from '@kernlang/agon-support-engine-runtime';
 
-import type { ControlPlaneEnvelopeV1, TurnLifecycleState, TurnLifecycleTransition } from '../../../core/src/sessions/turn-protocol.js';
+import type { ControlPlaneEnvelopeV1, TurnLifecycleState, TurnLifecycleTransition } from '@kernlang/agon-support-engine-runtime';
 
 import { appendControlPlaneEvent, recoverControlPlane } from '@kernlang/agon-support-persistence';
 

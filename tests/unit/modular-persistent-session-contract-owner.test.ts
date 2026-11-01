@@ -6,6 +6,7 @@ import ts from 'typescript';
 const names = ['ControlPlaneEnvelopeV1', 'SessionChunk', 'SessionSendOptions', 'PersistentSession'];
 const fixtureUrl = new URL('../fixtures/modular-persistent-session-contract-legacy.ts', import.meta.url);
 const ownerUrl = new URL('../../packages/support-persistence/src/session-contracts.ts', import.meta.url);
+const envelopeOwnerUrl = new URL('../../packages/support-engine-runtime/src/turn-protocol.ts', import.meta.url);
 
 function declarations(text: string): Map<string, string> {
   const source = ts.createSourceFile('contract.ts', text, ts.ScriptTarget.Latest, true);
@@ -14,11 +15,13 @@ function declarations(text: string): Map<string, string> {
     .map(node => [node.name.text, printer.printNode(ts.EmitHint.Unspecified, node, source)]));
 }
 
-it('keeps the exact legacy contract under one physical Persistence owner', () => {
+it('keeps the exact legacy contract under one physical owner per declaration', () => {
   const frozen = declarations(readFileSync(fixtureUrl, 'utf8'));
   const owned = declarations(readFileSync(ownerUrl, 'utf8'));
+  const envelopeOwned = declarations(readFileSync(envelopeOwnerUrl, 'utf8'));
   expect([...frozen.keys()]).toEqual(names);
-  expect(owned).toEqual(frozen);
+  expect(envelopeOwned.get(names[0])).toBe(frozen.get(names[0]));
+  expect(owned).toEqual(new Map(names.slice(1).map(name => [name, frozen.get(name)])));
   for (const path of ['persistent-session.ts', 'turn-protocol.ts']) {
     const text = readFileSync(new URL(`../../packages/core/src/sessions/${path}`, import.meta.url), 'utf8');
     const legacy = declarations(text);
@@ -29,7 +32,7 @@ it('keeps the exact legacy contract under one physical Persistence owner', () =>
       && statement.moduleSpecifier.text === '@kernlang/agon-support-persistence'
       && statement.exportClause && ts.isNamedExports(statement.exportClause)
         ? statement.exportClause.elements.map(element => element.name.text) : []);
-    expect(forwarded.sort()).toEqual((path === 'turn-protocol.ts' ? names.slice(0, 1) : names.slice(1)).sort());
+    expect(forwarded.sort()).toEqual(path === 'turn-protocol.ts' ? [] : names.slice(1).sort());
   }
 });
 
@@ -125,6 +128,8 @@ it('compiles public consumers and resolves compatibility exports to the owned de
     expect(imported.get(`Old${name}`), name).toBe(owned);
     if (name !== 'ControlPlaneEnvelopeV1') expect(imported.get(`LegacyFile${name}`), name).toBe(owned);
     expect(owned.declarations?.map(declaration => declaration.getSourceFile().fileName), name)
-      .toEqual([expect.stringMatching(/packages\/support-persistence\/dist\/session-contracts\.d\.ts$/)]);
+      .toEqual([name === 'ControlPlaneEnvelopeV1'
+        ? expect.stringMatching(/packages\/support-engine-runtime\/dist\/turn-protocol\.d\.ts$/)
+        : expect.stringMatching(/packages\/support-persistence\/dist\/session-contracts\.d\.ts$/)]);
   }
 });

@@ -6,8 +6,8 @@
   "sourceOccurrences": 261,
   "counts": {
     "byte-verified-compatibility-mirror": 24,
-    "compatibility-adapter": 100,
-    "compatibility-consumer": 43,
+    "compatibility-adapter": 101,
+    "compatibility-consumer": 42,
     "physical-owner": 90,
     "retired-adapter": 4
   },
@@ -2326,6 +2326,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -2333,7 +2334,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
       "evidence": [
@@ -2349,6 +2351,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -2356,7 +2359,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
       "evidence": [
@@ -2372,6 +2376,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -2379,7 +2384,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
       "evidence": [
@@ -2395,6 +2401,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -2402,7 +2409,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
       "evidence": [
@@ -2418,6 +2426,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -2425,7 +2434,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
       "evidence": [
@@ -2441,6 +2451,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -2448,7 +2459,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
       "evidence": [
@@ -2464,6 +2476,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -2471,7 +2484,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
       "evidence": [
@@ -2487,6 +2501,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -2494,7 +2509,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
       "evidence": [
@@ -2510,6 +2526,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -2517,7 +2534,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
       "evidence": [
@@ -2533,6 +2551,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -2540,7 +2559,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
       "evidence": [
@@ -2556,6 +2576,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -2563,7 +2584,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
       "evidence": [
@@ -2659,6 +2681,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -2666,7 +2689,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
       "evidence": [
@@ -2682,6 +2706,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -2689,7 +2714,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
       "evidence": [
@@ -2705,6 +2731,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -2712,7 +2739,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
       "evidence": [
@@ -2728,6 +2756,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -2735,7 +2764,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
       "evidence": [
@@ -2751,6 +2781,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -2758,7 +2789,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
       "evidence": [
@@ -2774,6 +2806,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -2781,7 +2814,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
       "evidence": [
@@ -2797,6 +2831,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -2804,7 +2839,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
       "evidence": [
@@ -2820,6 +2856,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -2827,7 +2864,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
       "evidence": [
@@ -2843,6 +2881,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -2850,7 +2889,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
       "evidence": [
@@ -2866,6 +2906,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -2873,7 +2914,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
       "evidence": [
@@ -2889,6 +2931,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -2896,7 +2939,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
       "evidence": [
@@ -2912,6 +2956,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -2919,7 +2964,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
       "evidence": [
@@ -2935,6 +2981,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -2942,7 +2989,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
       "evidence": [
@@ -2958,6 +3006,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -2965,7 +3014,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
       "evidence": [
@@ -2981,6 +3031,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -2988,7 +3039,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
       "evidence": [
@@ -3004,6 +3056,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -3011,7 +3064,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
       "evidence": [
@@ -3027,6 +3081,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -3034,7 +3089,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
       "evidence": [
@@ -3050,6 +3106,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -3057,7 +3114,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
       "evidence": [
@@ -3073,6 +3131,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -3080,7 +3139,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
       "evidence": [
@@ -3096,6 +3156,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -3103,7 +3164,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
       "evidence": [
@@ -3119,6 +3181,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -3126,7 +3189,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
       "evidence": [
@@ -3142,6 +3206,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -3149,7 +3214,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
       "evidence": [
@@ -3165,6 +3231,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -3172,7 +3239,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
       "evidence": [
@@ -3188,6 +3256,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -3195,7 +3264,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
       "evidence": [
@@ -3206,11 +3276,12 @@
     {
       "owner": "@kernlang/agon-support-persistence",
       "source": "packages/core/src/sessions/persistent-session.ts:58",
-      "disposition": "compatibility-consumer",
+      "disposition": "compatibility-adapter",
       "destination": [
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -3218,7 +3289,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
       "evidence": [
@@ -3234,6 +3306,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -3241,7 +3314,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
       "evidence": [
@@ -3257,6 +3331,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -3264,7 +3339,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
       "evidence": [
@@ -3280,6 +3356,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -3287,7 +3364,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
       "evidence": [
@@ -3303,6 +3381,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -3310,7 +3389,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
       "evidence": [
@@ -3326,6 +3406,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -3333,7 +3414,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
       "evidence": [
@@ -3349,6 +3431,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -3356,7 +3439,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
       "evidence": [
@@ -3372,6 +3456,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -3379,7 +3464,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
       "evidence": [
@@ -3395,6 +3481,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -3402,7 +3489,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
       "evidence": [
@@ -3418,6 +3506,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -3425,7 +3514,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
       "evidence": [
@@ -3441,6 +3531,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -3448,7 +3539,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
       "evidence": [
@@ -3464,6 +3556,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -3471,7 +3564,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
       "evidence": [
@@ -3487,6 +3581,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -3494,7 +3589,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
       "evidence": [
@@ -3510,6 +3606,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -3517,7 +3614,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
       "evidence": [
@@ -3533,6 +3631,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -3540,7 +3639,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
       "evidence": [
@@ -3556,6 +3656,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -3563,7 +3664,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
       "evidence": [
@@ -3579,6 +3681,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -3586,7 +3689,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
       "evidence": [
@@ -3602,6 +3706,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -3609,7 +3714,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
       "evidence": [
@@ -3625,6 +3731,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -3632,7 +3739,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
       "evidence": [
@@ -3648,6 +3756,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -3655,7 +3764,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
       "evidence": [
@@ -3671,6 +3781,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -3678,7 +3789,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
       "evidence": [
@@ -3694,6 +3806,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -3701,7 +3814,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
       "evidence": [
@@ -3717,6 +3831,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -3724,7 +3839,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": null,
       "evidence": [
@@ -3740,6 +3856,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -3747,7 +3864,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": null,
       "evidence": [
@@ -3763,6 +3881,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -3770,7 +3889,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": null,
       "evidence": [
@@ -3786,6 +3906,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -3793,7 +3914,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": null,
       "evidence": [
@@ -3809,6 +3931,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -3816,7 +3939,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": null,
       "evidence": [
@@ -3832,6 +3956,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -3839,7 +3964,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": null,
       "evidence": [
@@ -3855,6 +3981,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -3862,7 +3989,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": null,
       "evidence": [
@@ -3878,6 +4006,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -3885,7 +4014,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": null,
       "evidence": [
@@ -3901,6 +4031,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -3908,7 +4039,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": null,
       "evidence": [
@@ -3924,6 +4056,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -3931,7 +4064,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": null,
       "evidence": [
@@ -3947,6 +4081,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -3954,7 +4089,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": null,
       "evidence": [
@@ -3970,6 +4106,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -3977,7 +4114,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": null,
       "evidence": [
@@ -3993,6 +4131,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -4000,7 +4139,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": null,
       "evidence": [
@@ -4016,6 +4156,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -4023,7 +4164,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": null,
       "evidence": [
@@ -4039,6 +4181,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -4046,7 +4189,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": null,
       "evidence": [
@@ -4062,6 +4206,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -4069,7 +4214,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": null,
       "evidence": [
@@ -4085,6 +4231,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -4092,7 +4239,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": null,
       "evidence": [
@@ -4108,6 +4256,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -4115,7 +4264,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": null,
       "evidence": [
@@ -4131,6 +4281,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -4138,7 +4289,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": null,
       "evidence": [
@@ -4154,6 +4306,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -4161,7 +4314,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": null,
       "evidence": [
@@ -4177,6 +4331,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -4184,7 +4339,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": null,
       "evidence": [
@@ -4200,6 +4356,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -4207,7 +4364,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": null,
       "evidence": [
@@ -4223,6 +4381,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -4230,7 +4389,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": null,
       "evidence": [
@@ -4246,6 +4406,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -4253,7 +4414,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": null,
       "evidence": [
@@ -4269,6 +4431,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -4276,7 +4439,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": null,
       "evidence": [
@@ -4292,6 +4456,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -4299,7 +4464,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": null,
       "evidence": [
@@ -4315,6 +4481,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -4322,7 +4489,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": null,
       "evidence": [
@@ -4338,6 +4506,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -4345,7 +4514,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": null,
       "evidence": [
@@ -4361,6 +4531,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -4368,7 +4539,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": null,
       "evidence": [
@@ -4384,6 +4556,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -4391,7 +4564,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": null,
       "evidence": [
@@ -4407,6 +4581,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -4414,7 +4589,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": null,
       "evidence": [
@@ -4430,6 +4606,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -4437,7 +4614,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": null,
       "evidence": [
@@ -4453,6 +4631,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -4460,7 +4639,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": null,
       "evidence": [
@@ -4476,6 +4656,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -4483,7 +4664,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": null,
       "evidence": [
@@ -4499,6 +4681,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -4506,7 +4689,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": null,
       "evidence": [
@@ -4522,6 +4706,7 @@
         "src/paths.ts",
         "src/file-history.ts",
         "src/event-log.ts",
+        "src/session-host.ts",
         "src/session-store.ts",
         "src/session-pty.ts",
         "src/brain-client.ts",
@@ -4529,7 +4714,8 @@
         "src/flow.ts",
         "src/run-dir.ts",
         "src/team-elo-types.ts",
-        "python/history-search.py"
+        "python/history-search.py",
+        "src/session-contracts.ts"
       ],
       "removalCondition": null,
       "evidence": [

@@ -9,6 +9,8 @@ export const IMPLEMENTATION_KIND = 'physical' as const;
 export { createMod } from './implementation.js';
 export { createMod as default } from './implementation.js';
 export { runResearch, validateUrl, formatResearchResult } from './implementation.js';
+export { runResearchSession, ResearchGroundingError, ResearchInputError } from './session-workflow.js';
+export type { ResearchSessionContext, ResearchSessionHost } from './session-workflow.js';
 export { classifyQuery } from './query-policy.js';
 export type { ResearchIntent } from './query-policy.js';
 export { buildResearchPrompt, buildPrompt } from './prompt-policy.js';

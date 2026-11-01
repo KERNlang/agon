@@ -24,8 +24,8 @@ export type OutputEvent =
   | { type: 'spinner-start'; message: string; color?: number }
   | { type: 'spinner-stop'; message?: string }
   | { type: 'spinner-update'; message: string }
-  | { type: 'progress-update'; engines: EngineProgress[] }
-  | { type: 'progress-clear' }
+  | { type: 'progress-update'; engines: EngineProgress[]; ownerId?: string }
+  | { type: 'progress-clear'; ownerId?: string }
   | { type: 'separator' }
   | { type: 'header'; title: string }
   | { type: 'success'; message: string }

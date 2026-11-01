@@ -182,7 +182,7 @@ function expectedFiles(packageRecord) {
   // Jobs persists scheduler observations through its separate storage adapter.
   if (short === 'jobs') inferredPermissions.add('state.write');
   if (short === 'conquer') inferredPermissions.add('git.write');
-  const physicalPackFiles = ['dist/implementation.d.ts', ...(short === 'research' ? researchPolicyEntries.flatMap((entry) => [`dist/${entry}.js`, `dist/${entry}.d.ts`]) : short === 'rag' ? ['dist/store.d.ts', 'dist/types.d.ts', 'dist/grounding.d.ts']
+  const physicalPackFiles = ['dist/implementation.d.ts', ...(short === 'research' ? ['dist/session-workflow.d.ts', ...researchPolicyEntries.flatMap((entry) => [`dist/${entry}.js`, `dist/${entry}.d.ts`])] : short === 'rag' ? ['dist/store.d.ts', 'dist/types.d.ts', 'dist/grounding.d.ts']
     : short === 'think' ? ['dist/thinking.d.ts', 'dist/runtime.d.ts', 'dist/host.d.ts', 'dist/presentation.d.ts', 'dist/session-workflow.d.ts']
     : short === 'council' ? ['dist/runtime.d.ts', 'dist/host.d.ts', 'dist/presentation.d.ts', 'dist/command.d.ts', 'dist/session-workflow.d.ts']
     : short === 'review' ? ['dist/consensus.d.ts', 'dist/findings.d.ts']
@@ -325,6 +325,8 @@ export type * from './types.js';
 export { runRag, buildRagIndex, queryRag, collectCorpusFiles, chunkMarkdown } from './implementation.js';
 ` : short === 'history' ? `export { runHistory } from './implementation.js';
 ` : short === 'research' ? `export { runResearch, validateUrl, formatResearchResult } from './implementation.js';
+export { runResearchSession, ResearchGroundingError, ResearchInputError } from './session-workflow.js';
+export type { ResearchSessionContext, ResearchSessionHost } from './session-workflow.js';
 export { classifyQuery } from './query-policy.js';
 export type { ResearchIntent } from './query-policy.js';
 export { buildResearchPrompt, buildPrompt } from './prompt-policy.js';

@@ -3,6 +3,7 @@ import type { ResearchSessionContext } from './session-workflow.js';
 export { formatResearchResult } from './format-policy.js';
 import { parseAuthoritativeResults } from './response-policy.js';
 import { lookup } from "node:dns/promises";
+import type { LookupAddress } from "node:dns";
 import { BlockList, isIP } from "node:net";
 import { Agent, fetch as fetchPinned } from "undici";
 import { buildPrompt } from './prompt-policy.js';
@@ -113,12 +114,28 @@ export function isBlockedAddress(raw: string): boolean {
 export async function resolvePublicHost(
   hostname: string,
   resolver: typeof lookup = lookup,
+  signal?: AbortSignal,
 ) {
+  signal?.throwIfAborted();
   const address = hostname.replace(/^\[|\]$/g, "");
   const family = isIP(address);
-  const records = family
-    ? [{ address, family }]
-    : await resolver(hostname, { all: true, verbatim: true });
+  let onAbort: (() => void) | undefined;
+  let records: LookupAddress[];
+  try {
+    records = family
+      ? [{ address, family }]
+      : await new Promise<LookupAddress[]>((resolve, reject) => {
+          onAbort = () => reject(signal!.reason);
+          signal?.addEventListener('abort', onAbort, { once: true });
+          Promise.resolve().then(() => {
+            signal?.throwIfAborted();
+            return resolver(hostname, { all: true, verbatim: true });
+          }).then(resolve, reject);
+        });
+    signal?.throwIfAborted();
+  } finally {
+    if (onAbort) signal?.removeEventListener('abort', onAbort);
+  }
   if (!records.length) throw new Error("hostname resolved to no addresses");
   for (const record of records)
     if (isBlockedAddress(record.address))
@@ -132,7 +149,7 @@ async function fetchBounded(url: string, signal: AbortSignal, max = 3500) {
   if (!current) throw new Error("unsafe URL");
   const bounded = AbortSignal.any([signal, AbortSignal.timeout(15000)]);
   for (let hop = 0; hop <= 5; hop++) {
-    const pinned = await resolvePublicHost(current.hostname);
+    const pinned = await resolvePublicHost(current.hostname, lookup, bounded);
     const dispatcher = new Agent({
       connect: {
         lookup(_hostname, options, callback) {
@@ -261,6 +278,7 @@ export async function runResearch(
     }, context);
   };
   try {
+    context.signal.throwIfAborted();
     context.onStatus?.(`discovering sources (${intent})…`);
     const discovered = await fetch(request.url, {
       headers: request.headers,
@@ -291,7 +309,9 @@ export async function runResearch(
         }
       }),
     );
+    context.signal.throwIfAborted();
     const active = [...((await services.engines.listActive?.(context)) ?? [])];
+    context.signal.throwIfAborted();
     const requested = String(x.engines ?? "").split(",").map((value) => value.trim()).filter(Boolean);
     const unknown = requested.filter((engineId) => active.length > 0 && !active.includes(engineId));
     if (unknown.length) { await finish(false, "", `unknown engines: ${unknown.join(", ")}`); return { exitCode: 1, stderr: `Unknown or inactive research engines: ${unknown.join(", ")}.\n` }; }
@@ -301,6 +321,7 @@ export async function runResearch(
     const ranking = !forced && services.engines.rank ? await services.engines.rank(pool, [], context) : [];
     const engine = forced || ranking[0]?.engineId || pool[0];
     if (!engine) { await finish(false, "", "no active drafting engine"); return { exitCode: 1, stderr: "No active drafting engine.\n" }; }
+    context.signal.throwIfAborted();
     context.onStatus?.(`${engine} drafting a grounded answer…`);
     const draft = (await services.engines.dispatch(
       engine,
@@ -314,6 +335,7 @@ export async function runResearch(
           "Use only supplied sources. Cite [n]. Do not use tools or prior knowledge.",
       },
     )) as Record<string, Json>;
+    context.signal.throwIfAborted();
     const answer = String(draft.stdout ?? "")
       .replace(/<think>[\s\S]*?<\/think>/gi, "")
       .trim();
@@ -356,6 +378,7 @@ export async function runResearch(
         }
       }),
     );
+    context.signal.throwIfAborted();
     const verified = results.filter((r) => r.verdict === "verified").length,
       blocked = results.filter((r) => r.verdict === "blocked").length,
       rejected = results.length - verified - blocked + invalid.length;

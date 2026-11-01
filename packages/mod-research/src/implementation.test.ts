@@ -3,7 +3,7 @@ import type { ModServices } from '@kernlang/agon-mod-api';
 import { lookup } from 'node:dns/promises';
 import net from 'node:net';
 import { createServer } from 'node:http';
-import { once } from 'node:events';
+import { getEventListeners, once } from 'node:events';
 import { fetch as fetchPinned } from 'undici';
 vi.mock('undici', async (importOriginal) => ({
   ...await importOriginal<typeof import('undici')>(),
@@ -22,6 +22,139 @@ function services(answer = 'Supported claim [1].') {
     engines: { listActive: vi.fn(async () => ['writer']), dispatch: vi.fn(async () => ({ exitCode: 0, stdout: answer })) } } as unknown as ModServices;
 }
 describe('physical research mod', () => {
+  it('preserves a synchronous DNS failure and removes its listener', async () => {
+    const controller = new AbortController();
+    const failure = new Error('resolver failed synchronously');
+    const resolver = vi.fn(() => { throw failure; });
+    await expect(resolvePublicHost('source.example', resolver as any, controller.signal)).rejects.toBe(failure);
+    expect(getEventListeners(controller.signal, 'abort')).toHaveLength(0);
+  });
+  it('does not start DNS when cancelled before the resolver microtask', async () => {
+    const controller = new AbortController();
+    const resolver = vi.fn();
+    const pending = resolvePublicHost('source.example', resolver as any, controller.signal);
+    const failure = new Error('cancel before DNS');
+    controller.abort(failure);
+    await expect(pending).rejects.toBe(failure);
+    expect(resolver).not.toHaveBeenCalled();
+    expect(getEventListeners(controller.signal, 'abort')).toHaveLength(0);
+  });
+  it('rejects DNS resolution followed by abort before continuation', async () => {
+    const controller = new AbortController();
+    let resolveDns!: (records: Array<{ address: string; family: number }>) => void;
+    const resolver = vi.fn(() => new Promise<Array<{ address: string; family: number }>>(resolve => { resolveDns = resolve; }));
+    const pending = resolvePublicHost('source.example', resolver as any, controller.signal);
+    await Promise.resolve();
+    resolveDns([{ address: '93.184.216.34', family: 4 }]);
+    const failure = new Error('cancel after DNS');
+    controller.abort(failure);
+    await expect(pending).rejects.toBe(failure);
+    expect(getEventListeners(controller.signal, 'abort')).toHaveLength(0);
+  });
+  it.each(['resolve', 'reject', 'abort'] as const)('removes the DNS abort listener after %s', async outcome => {
+    const controller = new AbortController();
+    let resolveDns!: (records: Array<{ address: string; family: number }>) => void;
+    let rejectDns!: (error: Error) => void;
+    const resolver = vi.fn(() => new Promise<Array<{ address: string; family: number }>>((resolve, reject) => {
+      resolveDns = resolve; rejectDns = reject;
+    }));
+    const pending = resolvePublicHost('source.example', resolver as any, controller.signal);
+    const observed = pending.then(value => value, error => error);
+    await Promise.resolve();
+    expect(getEventListeners(controller.signal, 'abort')).toHaveLength(1);
+    const failure = new Error('fixture stop');
+    if (outcome === 'resolve') resolveDns([{ address: '93.184.216.34', family: 4 }]);
+    else if (outcome === 'reject') rejectDns(failure);
+    else controller.abort(failure);
+    expect(await observed).toEqual(outcome === 'resolve' ? { address: '93.184.216.34', family: 4 } : failure);
+    expect(getEventListeners(controller.signal, 'abort')).toHaveLength(0);
+    if (outcome === 'abort') rejectDns(new Error('late DNS failure'));
+    await new Promise(resolve => setImmediate(resolve));
+  });
+  it.each(['selection', 'ranking', 'draft', 'citation'] as const)('stops after cancellation during %s', async stage => {
+    const controller = new AbortController();
+    const abort = () => controller.abort(new Error('fixture cancellation'));
+    const s = services();
+    s.engines.listActive = vi.fn(async () => { if (stage === 'selection') abort(); return ['writer']; });
+    s.engines.rank = vi.fn(async () => { if (stage === 'ranking') abort(); return [{ engineId: 'writer', reason: 'fixture', scope: 'global' }]; });
+    s.engines.dispatch = vi.fn(async () => { if (stage === 'draft') abort(); return { exitCode: 0, stdout: 'Evidence [1].' }; });
+    let fetches = 0;
+    globalThis.fetch = vi.fn(async () => {
+      fetches++;
+      if (stage === 'citation' && fetches === 3) abort();
+      return new Response(fetches === 1
+        ? JSON.stringify({ objects: [{ package: { name: 'pkg', links: { npm: 'https://source.example/pkg' } } }] })
+        : 'Evidence');
+    });
+    const out = await runResearch({ question: 'npm package pkg' }, { ...context, signal: controller.signal }, s);
+    expect(out.exitCode).toBe(1);
+    expect(s.engines.dispatch).toHaveBeenCalledTimes(stage === 'selection' || stage === 'ranking' ? 0 : 1);
+    if (stage === 'selection') expect(s.engines.rank).not.toHaveBeenCalled();
+    expect(s.receipts.record).not.toHaveBeenCalled();
+    expect(s.runs!.finish).toHaveBeenCalledTimes(1);
+  });
+  it('bounds DNS with the request deadline without disabling ordinary source fallback', async () => {
+    const deadline = new AbortController();
+    const timeout = AbortSignal.timeout;
+    vi.spyOn(AbortSignal, 'timeout').mockImplementation(ms => ms === 15000 ? deadline.signal : timeout(ms));
+    let enterDns!: () => void;
+    let releaseDns!: (records: Array<{ address: string; family: number }>) => void;
+    const entered = new Promise<void>(resolve => { enterDns = resolve; });
+    vi.mocked(lookup).mockImplementationOnce(() => { enterDns(); return new Promise(resolve => { releaseDns = resolve; }); });
+    globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({ objects: [{ package: { name: 'pkg', links: { npm: 'https://source.example/pkg' } } }] })));
+    const s = services('');
+    let settled = false;
+    const running = runResearch({ question: 'npm package pkg' }, context, s).finally(() => { settled = true; });
+    await entered;
+    deadline.abort(new DOMException('request expired', 'TimeoutError'));
+    await new Promise(resolve => setImmediate(resolve));
+    const settledBeforeDns = settled;
+    releaseDns([{ address: '93.184.216.34', family: 4 }]);
+    expect((await running).exitCode).toBe(1);
+    expect(settledBeforeDns).toBe(true);
+    expect(AbortSignal.timeout).toHaveBeenCalledWith(15000);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    expect(s.engines.dispatch).toHaveBeenCalledTimes(1);
+  });
+  it('does not start discovery for an already cancelled invocation', async () => {
+    const controller = new AbortController();
+    controller.abort(new Error('fixture cancellation'));
+    globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({ objects: [] })));
+    const s = services();
+    const out = await runResearch({ question: 'npm package pkg' }, { ...context, signal: controller.signal }, s);
+    expect(out.exitCode).toBe(1);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    expect(lookup).not.toHaveBeenCalled();
+    expect(s.engines.dispatch).not.toHaveBeenCalled();
+  });
+  it('settles cancellation during DNS without waiting for the answer or dispatching a draft', async () => {
+    const controller = new AbortController();
+    let enterDns!: () => void;
+    let releaseDns!: (records: Array<{ address: string; family: number }>) => void;
+    const entered = new Promise<void>(resolve => { enterDns = resolve; });
+    vi.mocked(lookup).mockImplementationOnce(() => {
+      enterDns();
+      return new Promise(resolve => { releaseDns = resolve; });
+    });
+    globalThis.fetch = vi.fn(async input => new Response(String(input).startsWith('https://registry.npmjs.org/')
+      ? JSON.stringify({ objects: [{ package: { name: 'pkg', links: { npm: 'https://source.example/pkg' } } }] })
+      : 'Evidence'));
+    const s = services();
+    let settled = false;
+    const running = runResearch({ question: 'npm package pkg' }, { ...context, signal: controller.signal }, s)
+      .finally(() => { settled = true; });
+    await entered;
+    controller.abort(new Error('fixture cancellation'));
+    await new Promise(resolve => setImmediate(resolve));
+    const settledBeforeDns = settled;
+    releaseDns([{ address: '93.184.216.34', family: 4 }]);
+    const out = await running;
+    await new Promise(resolve => setImmediate(resolve));
+    expect(settledBeforeDns).toBe(true);
+    expect(out.exitCode).toBe(1);
+    expect(s.engines.dispatch).not.toHaveBeenCalled();
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+  });
   it.each([
     '198.18.0.0', '198.19.255.255', '192.0.0.1', '192.0.0.170',
     '224.0.0.1', '239.255.255.255', '240.0.0.1', '255.255.255.255',

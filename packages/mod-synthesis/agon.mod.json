@@ -130,6 +130,7 @@
       "dist/host.d.ts",
       "dist/session-workflow.d.ts",
       "dist/routing-policy.d.ts",
+      "dist/presentation.d.ts",
       "ownership.json",
       "schemas/config.schema.json"
     ],

@@ -4,7 +4,7 @@ import { EngineRegistry, ensureAgonHome, loadConfig, createRunDir, writeRunStatu
 
 import { resolveBuiltinEnginesDir } from '../lib/engines-dir.js';
 
-import type { RunStatusEngine } from '@kernlang/agon-core';
+import { presentSynthesisResult, synthesisRunStatus } from '@kernlang/agon-mod-synthesis';
 
 import { createCliAdapter } from '@kernlang/agon-adapter-cli';
 
@@ -100,28 +100,9 @@ export const synthesisCommand: any = defineCommand({
       outputDir,
     });
 
-    const engineStatuses: RunStatusEngine[] = available.map((id: string) => {
-      const draft = result.drafts.find((d: any) => d.engineId === id);
-      const swapCount = result.swaps.filter((s: any) => s.toEngineId === id).length;
-      const score = result.scores.find((s: any) => s.engineId === id);
-      const isWinner = result.winner === id;
-      const detail = `${draft ? 'draft' : 'no-draft'}${swapCount > 0 ? `, ${swapCount} swap(s)` : ''}${score ? `, score=${score.score}` : ''}`;
-      return {
-        id,
-        status: draft && !draft.content.startsWith('[draft failed') ? 'ok' : 'error',
-        detail: isWinner ? `${detail} * winner` : detail,
-      };
+    const status = synthesisRunStatus(result, {
+      engines: available, label: args.label, startedAt, endedAt: new Date().toISOString(),
     });
-    const okCount = engineStatuses.filter((e: any) => e.status === 'ok').length;
-    const status = {
-      mode: 'synthesis',
-      label: args.label,
-      startedAt,
-      endedAt: new Date().toISOString(),
-      engines: engineStatuses,
-      summary: `${okCount}/${available.length} drafted; winner=${result.winner}`,
-      ok: okCount === available.length,
-    };
     writeRunStatus(outputDir, status);
 
     if (quiet) {
@@ -129,44 +110,7 @@ export const synthesisCommand: any = defineCommand({
       return;
     }
 
-    console.log('');
-    header('Initial Drafts');
-    for (const draft of result.drafts) {
-      const isWinner = result.winner === draft.engineId;
-      console.log(`${isWinner ? green('* ') : ''}${bold(draft.engineId)}`);
-      console.log(draft.content.slice(0, 400) + (draft.content.length > 400 ? '...' : ''));
-      console.log('');
-    }
-
-    if (result.swaps.length > 0) {
-      header('Swap History');
-      const rows = result.swaps.map((s: any) => [
-        `R${s.round}`,
-        s.fromEngineId,
-        s.toEngineId,
-        s.reasoning.slice(0, 60),
-      ]);
-      table(['Round', 'From', 'To', 'Reasoning'], rows);
-    }
-
-    if (result.scores.length > 0) {
-      console.log('');
-      header('Judge Scores');
-      const rows = result.scores.map((s: any) => [
-        s.engineId === result.winner ? green(`${s.engineId} *`) : s.engineId,
-        String(s.score),
-        typeof s.confidence === 'number' ? s.confidence.toFixed(2) : '—',
-        s.unhandled ? s.unhandled.slice(0, 48) : '—',
-      ]);
-      table(['Engine', 'Score', 'Conf', 'Unhandled (judge)'], rows);
-    }
-
-    console.log('');
-    header(`Winner: ${bold(result.winner)}`);
-    console.log(result.judgeReasoning);
-
-    console.log('');
-    info(dim(`Full output saved: ${outputDir}`));
+    presentSynthesisResult(result, outputDir, { log: text => console.log(text), header, info, table, bold, green, dim });
     printRunSummary(status);
   },
 });

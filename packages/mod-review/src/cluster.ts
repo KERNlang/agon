@@ -42,6 +42,7 @@ export function wordingSimilarity(a: Set<string>, b: Set<string>): number {
 }
 
 interface Member {
+  exactKey: string;
   tokens: Set<string>;
   span: [number, number];
 }
@@ -75,11 +76,11 @@ export function createClusterer(): Clusterer {
     keyFor(finding, exactKey) {
       const file = (finding.file || '').trim().toLowerCase();
       const span = lineSpan(finding.lines);
-      const member = file && span ? { tokens: problemTokens(finding.problem), span } : undefined;
+      const member = file && span ? { exactKey, tokens: problemTokens(finding.problem), span } : undefined;
       const known = keyByExact.get(exactKey);
-      if (known) {
-        const group = groupByKey.get(known);
-        if (group) join(group, finding, member);
+      const knownGroup = known ? groupByKey.get(known) : undefined;
+      if (known && (!knownGroup || !member || knownGroup.members.every((m) => m.exactKey === exactKey || touches(m.span, member.span)))) {
+        if (knownGroup) join(knownGroup, finding, member);
         return known;
       }
       let best: Group | undefined;
@@ -96,16 +97,17 @@ export function createClusterer(): Clusterer {
       }
       if (best) {
         join(best, finding, member);
-        keyByExact.set(exactKey, best.key);
+        if (!known) keyByExact.set(exactKey, best.key);
         return best.key;
       }
+      const key = groupByKey.has(exactKey) ? `${exactKey}#${groups.length}` : exactKey;
       if (member) {
-        const group = { key: exactKey, file, engines: new Set([finding.engine]), members: [member] };
+        const group = { key, file, engines: new Set([finding.engine]), members: [member] };
         groups.push(group);
-        groupByKey.set(exactKey, group);
+        groupByKey.set(key, group);
       }
-      keyByExact.set(exactKey, exactKey);
-      return exactKey;
+      if (!known) keyByExact.set(exactKey, key);
+      return key;
     },
   };
 }

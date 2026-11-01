@@ -101,4 +101,14 @@ describe('mod-review fuzzy clustering', () => {
     ]);
     expect(report.findings.map((f) => f.engines)).toEqual([['a', 'b'], ['c']]);
   });
+
+  it('does not let an exact-key match bypass the line limit after a fuzzy merge', () => {
+    const problem = 'SQL injection user controlled name enters SQL statement';
+    const report = buildConsensus([
+      seat('a', at('src/q.ts', '8', problem)),
+      seat('b', at('src/q.ts', '10', problem)),
+      seat('c', at('src/q.ts', '18', problem)),
+    ]);
+    expect(report.findings.map((f) => f.engines)).toEqual([['a', 'b'], ['c']]);
+  });
 });

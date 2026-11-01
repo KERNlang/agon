@@ -33,6 +33,7 @@ the log bytes. Raw logs remain outside shipping packages.
 | `recovery-preview-repeat-metadata-20261101` | Regenerated inventory; 118 setup/recovery tests, release/SBOM checks, lint and guard pass | `4f0902691ee1ab24830a0be32d5933b80d2ec8f8b7e4cc346d868fd58322e920` |
 | `recovery-preview-repeat-full-qualified-20261101` | Build, types, exact release/SBOM checks, 12,453 tests, lint, guard and diff check pass; seven tests skipped | `550a45062237a860dad4ffe58052efea8381f2526e5e14e95ba799f68ede314e` |
 | `recovery-preview-installed-diagnostic-20261101` | All 169 installed checks pass, including rollback, safe-mode recovery and cache deletion | `e2d42514a27e6e1f3cc41fbbe0fc74a86144d85eb1d92c28f10c0f629b06c6e7` |
+| `recovery-preview-clean-qualified-20261101` | Exact commit `84319c159df1401c268df853c4956118d1b3467f`; offline locked install, build, types, release/SBOM, 12,453 tests/seven skipped, lint, guard and final clean-worktree check pass | `f00ac6a41b6dfa3a5e7d0af9d5c413b836fe687675515a304766ff4ef7bc37d7` |
 
 All runs recorded zero provider launches. No global installation or personal
 state was modified. The first full run's stale chunk filenames were corrected
@@ -52,6 +53,7 @@ Installed evidence is a diagnostic combination: PR393's verifier correction
 at `9c5d1a6338a70237b90076fc1700c85f9238e7d6`, plus this exact production fix
 and regenerated metadata. This independent branch does not include PR393 or
 assume its merge. That run is not a clean committed release acceptance receipt.
-Fresh integrated clean-checkout qualification remains required after merging.
+Standalone clean-checkout qualification passed as recorded above. Fresh
+integrated clean-checkout qualification remains required after merging.
 Native platform coverage, npm provenance and full modular acceptance remain
 separate requirements. Nothing was installed or promoted globally.

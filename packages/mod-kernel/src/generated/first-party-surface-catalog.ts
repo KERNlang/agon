@@ -3671,7 +3671,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.rag",
       "version": "1.0.0",
-      "contentHash": "sha256:18e40cd365d7de30be66fbcb1e3d8454add1f1f93eb09b03c97a12d422e5c3a3"
+      "contentHash": "sha256:fc32c0375d9499c43d9fb870e4b15fe749b4d387d5de3c15506ae5d5371eb716"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "rag",
@@ -4570,7 +4570,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.rag",
       "version": "1.0.0",
-      "contentHash": "sha256:18e40cd365d7de30be66fbcb1e3d8454add1f1f93eb09b03c97a12d422e5c3a3"
+      "contentHash": "sha256:fc32c0375d9499c43d9fb870e4b15fe749b4d387d5de3c15506ae5d5371eb716"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "ProjectContext",

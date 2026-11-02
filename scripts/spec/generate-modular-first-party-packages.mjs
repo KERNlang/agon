@@ -183,7 +183,7 @@ function expectedFiles(packageRecord) {
   if (short === 'jobs') inferredPermissions.add('state.write');
   if (short === 'conquer') inferredPermissions.add('git.write');
   const policyEntries = short === 'research' ? researchPolicyEntries : short === 'naturalize' ? ['lexical-policy'] : [];
-  const physicalPackFiles = ['dist/implementation.d.ts', ...(policyEntries.length ? [...(short === 'research' ? ['dist/session-workflow.d.ts'] : []), ...policyEntries.flatMap((entry) => [`dist/${entry}.js`, `dist/${entry}.d.ts`])] : short === 'rag' ? ['dist/store.d.ts', 'dist/types.d.ts', 'dist/grounding.d.ts']
+  const physicalPackFiles = ['dist/implementation.d.ts', ...(policyEntries.length ? [...(short === 'research' ? ['dist/session-workflow.d.ts'] : []), ...policyEntries.flatMap((entry) => [`dist/${entry}.js`, `dist/${entry}.d.ts`])] : short === 'rag' ? ['dist/store.d.ts', 'dist/types.d.ts', 'dist/grounding.d.ts', 'dist/embedding.d.ts']
     : short === 'think' ? ['dist/thinking.d.ts', 'dist/runtime.d.ts', 'dist/host.d.ts', 'dist/presentation.d.ts', 'dist/session-workflow.d.ts']
     : short === 'council' ? ['dist/runtime.d.ts', 'dist/host.d.ts', 'dist/presentation.d.ts', 'dist/command.d.ts', 'dist/session-workflow.d.ts']
     : short === 'review' ? ['dist/consensus.d.ts', 'dist/findings.d.ts']
@@ -322,6 +322,7 @@ export { buildForgeProvenance, renderProvenanceMarkdown, renderProvenanceJson, s
 export type { ProvenanceContribution, ProvenanceLedger, ProvenanceManifest } from './models.js';
 ` : short === 'rag' ? `export * from './store.js';
 export * from './grounding.js';
+export * from './embedding.js';
 export type * from './types.js';
 export { runRag, buildRagIndex, queryRag, collectCorpusFiles, chunkMarkdown } from './implementation.js';
 ` : short === 'history' ? `export { runHistory } from './implementation.js';

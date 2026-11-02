@@ -1,21 +1,16 @@
-import type { EngineRegistry, EngineAdapter, DispatchResult } from '@kernlang/agon-core';
+import type { EngineRegistry, EngineAdapter } from '@kernlang/agon-core';
+import { runDelegate as runOwnedDelegate } from '@kernlang/agon-mod-forge';
+import type { DelegateResult } from '@kernlang/agon-mod-forge';
+export type { DelegateResult } from '@kernlang/agon-mod-forge';
 
 import { resolveWorkingDir } from '@kernlang/agon-core';
 
-export interface DelegateResult {
-  engineId: string;
-  response: string;
-  usage?: DispatchResult['usage'];
-}
-
 export async function runDelegate(opts: {engineId:string,task:string,mode?:string,cwd?:string,registry:EngineRegistry,adapter:EngineAdapter,timeout:number,outputDir:string,signal?:AbortSignal}): Promise<DelegateResult> {
   const engine = opts.registry.get(opts.engineId);
-  // cwd pins the dispatch directory. Callers inside a goal worktree (judge adjudication, route escalation) MUST pass opts.cwd=<worktree> so the engine never runs in — or writes to — the parent repo; defaults to resolveWorkingDir() for top-level callers.
-  const result = await opts.adapter.dispatch({ engine: engine, prompt: opts.task, cwd: opts.cwd ?? resolveWorkingDir(), mode: (opts.mode ?? 'exec') as any, timeout: opts.timeout, outputDir: opts.outputDir, signal: opts.signal });
-  if (!result.stdout.trim()) {
-    return { engineId: opts.engineId, response: '', usage: result.usage };
-  }
-  // Strip <think> blocks
-  const cleaned = result.stdout.trim().replace(/<think>[ \t\n\r\f\v\S]*?<\/think>[ \t\n\r\f\v]*/gi, '').trim();
-  return { engineId: opts.engineId, response: cleaned, usage: result.usage };
+  // Explicit cwd keeps Goal dispatch inside its selected worktree.
+  return runOwnedDelegate({
+    engineId: opts.engineId, task: opts.task, mode: opts.mode,
+    cwd: opts.cwd ?? resolveWorkingDir(), timeout: opts.timeout,
+    outputDir: opts.outputDir, signal: opts.signal,
+  }, request => opts.adapter.dispatch({ engine, ...request }));
 }

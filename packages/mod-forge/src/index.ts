@@ -18,6 +18,8 @@ export type {
 export { createForgeWorkflow } from './workflow.js';
 export { buildPrTextPrompt, parsePrText, runPrText } from './pr-text.js';
 export type { PrTextInput, PrTextEffects, PrTextResult } from './pr-text.js';
+export { runDelegate } from './delegate.js';
+export type { DelegateInput, DelegateResult } from './delegate.js';
 export type { ForgeWorkflowConfig, ForgeWorkflowRegistry, ForgeWorkflowEffects } from './workflow.js';
 export type { ForgeHostServices, ForgeModServices, ForgeInvocationContext } from './host.js';
 export { createForgeHostServices } from './host.js';

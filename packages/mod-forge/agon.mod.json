@@ -262,6 +262,7 @@
       "dist/apply.d.ts",
       "dist/competition.d.ts",
       "dist/corpus.d.ts",
+      "dist/delegate.d.ts",
       "dist/errors.d.ts",
       "dist/fitness.d.ts",
       "dist/gauntlet.d.ts",

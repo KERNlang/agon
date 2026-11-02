@@ -4,12 +4,12 @@ import { expect, it } from 'vitest';
 import * as owner from '@kernlang/agon-support-engine-runtime';
 import * as legacy from '../../packages/core/src/sessions/companion-dispatch.js';
 
-it('keeps the companion implementation unchanged at its physical owner', () => {
+it('pins the reviewed companion implementation at its physical owner', () => {
   const text = readFileSync(new URL('../../packages/support-engine-runtime/src/companion-dispatch.ts', import.meta.url), 'utf8');
   const declaration = "import type { DispatchResult, CompanionConfig } from './types.js';";
   expect(text).toContain(declaration);
   expect(createHash('sha256').update(text.replace(declaration, '')).digest('hex'))
-    .toBe('edbceda2212ce7a9244a3b1408b5be64fbafa5338946b616b0e1e6c951205abc');
+    .toBe('b7b8ee58a5ce57ee4ee8e498261eb3744044e6b739b1a80df3cb0ba69fa4ba82');
 });
 
 it('keeps Core compatibility functions identical to the public owner', () => {

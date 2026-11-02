@@ -2,7 +2,7 @@ import { resolveExplicitReviewEngines } from '@kernlang/agon-support-verificatio
 import { resolveCurrentIdentities } from '@kernlang/agon-support-engine-runtime';
 import { cliRunRecordHost } from './run-record-host.js';
 import { patchApplicationHost } from './patch-application-host.js';
-import { EngineRegistry, buildKernContextSpine, createRunDir, eventLogFlush, getRatings, loadConfig, pickTopRatedEngine, printRunSummary, setSessionRoot } from '@kernlang/agon-core';
+import { EngineRegistry, buildKernContextSpine, createRunDir, describeModEngines, eventLogFlush, getRatings, loadConfig, modDispatchCeilingSeconds, modDispatchFields, modDispatchMaxTokens, modDispatchTimeoutSeconds, modEngineBackend, pickTopRatedEngine, printRunSummary, scanProjectContext, setSessionRoot } from '@kernlang/agon-core';
 import { createCliAdapter } from '@kernlang/agon-adapter-cli';
 import { createForgeHostServices } from '@kernlang/agon-core';
 import { createSessionWorktree, findSessionWorktree, worktreePathFor, rehydrateSessionWorktree } from '@kernlang/agon-core';
@@ -343,7 +343,15 @@ export async function decorateCliFirstPartyServices(manifest: ModManifest, base:
         return () => { assertCurrent(); assertProcessSurfaceAvailable('cli', 'forge'); };
       }),
     } : {}),
-    ...(manifest.id === 'agon.plan' ? { planSession: (await import('@kernlang/agon-mod-plan')).planSessionHost } : {}), engines: createCliEngineServices() });
+    ...(manifest.id === 'agon.plan' ? { planSession: (await import('@kernlang/agon-mod-plan')).planSessionHost } : {}), engines: createCliEngineServices(),
+    context: Object.freeze({
+      projectContext(cwd: string, context: Parameters<ModServices['engines']['dispatch']>[2]): string {
+        context.signal.throwIfAborted();
+        const config = loadConfig(cwd);
+        const projectCtx = scanProjectContext(cwd, config.projectContext || undefined, config.contextFormat as never);
+        return projectCtx ? `## PROJECT CONTEXT\n${projectCtx}` : '';
+      },
+    }) });
 }
 
 export function createCliEngineServices(): ModServices['engines'] {
@@ -371,11 +379,20 @@ export function createCliEngineServices(): ModServices['engines'] {
       const selected = engineId.trim() || active[0];
       if (!selected) throw Object.assign(new Error('No active engines. Run agon engine list or agon engine add <id>.'), { code: 'NO_ACTIVE_ENGINE' });
       const engine = registry.get(selected); const outputDir = createRunDir({ mode: 'mod-dispatch', announce: false }).path;
-      const result = await createCliAdapter(registry).dispatch({ engine, prompt, cwd: context.cwd, mode: options?.mode ?? 'exec', timeout: Math.max(1, options?.timeoutSeconds ?? 120), outputDir, systemPrompt: options?.systemPrompt, textOnly: options?.textOnly, signal: context.signal });
+      const mode = options?.mode ?? 'exec';
+      const maxTokens = modDispatchMaxTokens(mode, options?.maxTokens, config, engine);
+      const timeoutSeconds = Math.max(1, modDispatchTimeoutSeconds(mode, options?.timeoutSeconds, config, options?.maxWallSeconds) ?? 120);
+      const ceilingSeconds = modDispatchCeilingSeconds(mode, modEngineBackend(registry, engine), Math.max(timeoutSeconds, Number(engine.timeout) || 0), config, options?.maxWallSeconds);
+      const result = await createCliAdapter(registry).dispatch({ engine, prompt, cwd: context.cwd, mode, timeout: timeoutSeconds, outputDir, systemPrompt: options?.systemPrompt, textOnly: options?.textOnly, signal: context.signal, ...(maxTokens !== undefined ? { maxTokens } : {}), ...(ceilingSeconds !== undefined ? { maxWallSeconds: ceilingSeconds } : {}) });
       const accounting = result.usage ? tracker.record(engine.id, { usage: result.usage }) : undefined;
       return { engineId: engine.id, exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr, durationMs: result.durationMs, timedOut: result.timedOut, outputDir,
         ...(accounting ? { costUsd: accounting.costUsd, costSource: accounting.source } : {}),
-        ...(result.usage ? { usage: result.usage } : {}) } as Json;
+        ...(result.usage ? { usage: result.usage } : {}), ...modDispatchFields(result, maxTokens, timeoutSeconds, ceilingSeconds) } as Json;
+    },
+    async describe(engineIds: readonly string[], context: Parameters<ModServices['engines']['dispatch']>[2]) {
+      context.signal.throwIfAborted();
+      const registry = new EngineRegistry(); registry.load(resolveBuiltinEnginesDir());
+      return describeModEngines(registry, engineIds);
     },
   });
 }

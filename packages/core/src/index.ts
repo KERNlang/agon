@@ -1,6 +1,6 @@
 export * from './models/types.js';
 export * from './models/errors.js';
-export { loadConfig, configGet, configSet, invalidateConfigCache, ensureAgonHome, getAgonHome, agonPath, AGON_HOME, RATINGS_PATH, TEAM_ELO_PATH, CORPUS_PATH, SKILLS_DIR, RUNS_DIR } from './signals/config.js';
+export { loadConfig, configGet, configSet, OPTIONAL_CONFIG_KEYS, configValueKind, parseConfigSetValue, invalidateConfigCache, ensureAgonHome, getAgonHome, agonPath, AGON_HOME, RATINGS_PATH, TEAM_ELO_PATH, CORPUS_PATH, SKILLS_DIR, RUNS_DIR } from './signals/config.js';
 export { computeScore, tiebreak, DEFAULT_WEIGHTS } from './signals/scoring.js';
 export { updateGlicko, updateGlickoRanked, getRatings, getEngineGlickoRating, advisorScore, effectivePhi, rankEnginesByRating, pickTopRatedEngine, seedSuccessorRating, seedEnginesFromLineage, lineageFromRegistry, seedNewEnginesFromRegistry } from './signals/glicko.js';
 export type { RatingRankOptions } from './signals/glicko.js';
@@ -67,6 +67,10 @@ export type { Logger } from './signals/logger.js';
 export { EngineRegistry } from './signals/engine-registry.js';
 export { scanProjectContext, isKernProject, hasProjectBrief, buildKernContextSpine, discoverGate, bashRanGate, isGateSkipSignal } from './blocks/context-scanner.js';
 export type { DiscoveredGate } from './blocks/context-scanner.js';
+export { stripReasoning, stripTuiChrome, resolveReviewMaxTokens, cleanEngineText, classifyModEngineFault, modDispatchMaxTokens, modDispatchTimeoutSeconds, resolveReviewTimeoutSeconds, modDispatchFields, describeModEngines, resolveReviewMaxWallSeconds, DEFAULT_REVIEW_MAX_WALL_SECONDS, modDispatchCeilingSeconds, modEngineBackend } from './blocks/mod-dispatch-output.js';
+export type { ModEngineFault, ModEngineDescription } from './blocks/mod-dispatch-output.js';
+export { classifyApiFailure } from './api/failure-classify.js';
+export type { ApiFailure, ApiFailureKind } from './api/failure-classify.js';
 export { buildGlobalInstructionsBlock, GLOBAL_INSTRUCTIONS_FILE, MAX_GLOBAL_INSTRUCTIONS_CHARS } from './blocks/global-instructions.js';
 export { buildCodebaseMap, collectSourceFiles, extractSymbols, clearCodebaseMapCache } from './blocks/codebase-map.js';
 export {

@@ -312,6 +312,7 @@ export async function companionDispatch(opts: {config:CompanionConfig, binaryPat
   });
 
   function send(method: string, params: Record<string, unknown>): Promise<any> {
+    if (opts.signal?.aborted) return Promise.reject(new Error('Aborted'));
     const id = nextId++;
     const timeoutMs = method === 'initialize' ? 8000 : opts.timeout * 1000;
     return new Promise((resolve, reject) => {

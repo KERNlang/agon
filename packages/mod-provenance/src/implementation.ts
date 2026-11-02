@@ -35,7 +35,7 @@ export async function runProvenance(raw:Json, _context:InvocationContext, servic
   const selected = pick(id); if ('error' in selected) return {exitCode:1,stderr:selected.error+'\n'};
   const manifestPath = join(runs(),selected.file); let manifest:any;
   try { manifest = JSON.parse(readFileSync(manifestPath,'utf8')); } catch (error) { return {exitCode:1,stderr:`Could not read run: ${String(error)}\n`}; }
-  if (typeof manifest.forgeId !== 'string' || typeof manifest.task !== 'string') return {exitCode:1,stderr:'Run is not a valid forge manifest.\n'};
+  if (typeof manifest?.forgeId !== 'string' || typeof manifest?.task !== 'string') return {exitCode:1,stderr:'Run is not a valid forge manifest.\n'};
   const ledger = buildProvenance(manifest,manifestPath), markdown = renderMarkdown(ledger), json = JSON.stringify(ledger,null,2);
   const payload = format === 'json' ? json : format === 'both' ? `${markdown}\n\n--- JSON LEDGER ---\n\n${json}\n` : markdown;
   const out = typeof input.out === 'string' ? resolve(input.out) : '';
@@ -48,7 +48,7 @@ export async function runProvenance(raw:Json, _context:InvocationContext, servic
   return {exitCode:0,stdout:out?`Provenance report written to ${out}\n`:`${payload}\n`,result};
 }
 const schema = Object.freeze({type:'object',additionalProperties:false,properties:{id:{type:'string'},format:{type:'string',default:'md'},out:{type:'string'},_:{type:'array',items:{type:'string'}}}}) as Readonly<Record<string,Json>>;
-const cli = Object.freeze({aliases:{format:'f',out:'o'}});
+const cli = Object.freeze({aliases:{format:'f',out:'o'},repeatedOptions:{id:'last',format:'last',out:'last'} as const});
 export const createMod:AgonModFactory = (services) => Object.freeze({apiVersion:'1' as const,async activate(registrar:Registrar):Promise<Dispose>{
   const disposers:Dispose[] = [], contribution = {id:'cliCommands:0057',description:'AI-contribution / transparency report for a forge run',inputSchema:schema,cli,run:(input:Json,context:InvocationContext)=>runProvenance(input,context,services)};
   disposers.push(registrar.command('cli',contribution)); disposers.push(registrar.command('tui',{...contribution,id:'builtinCommandMetadata:0037'}));

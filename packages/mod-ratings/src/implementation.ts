@@ -126,7 +126,7 @@ export const createMod:AgonModFactory = (services) => Object.freeze({apiVersion:
   disposers.push(registrar.command('cli',{id:'physicalCliCommands:ratings-reset',description:'Preview or reset per-discipline ratings with a backup',inputSchema:resetSchema,cli,run:(i,c)=>runRatings({...i as object,action:'reset'},c,services)}));
   disposers.push(registrar.command('cli',{id:'cliCommands:0034',description:'Show engine leaderboard (Glicko-2 ratings)',inputSchema:leaderboardSchema,cli:leaderboardCli,run:(i,c)=>runRatings(i,c,services,true)}));
   disposers.push(registrar.command('cli',{id:'cliCommands:0060',description:'Maintain ratings',inputSchema:parentSchema,cli,run:(i,c)=>runRatings(i,c,services)}));
-  disposers.push(registrar.command('cli',{id:'cliCommands:0061',description:'Preview or apply purge of unknown engines',inputSchema:purgeSchema,cli,run:(i,c)=>runRatings({...i as object,action:'purge-unknown'},c,services)}));
+  disposers.push(registrar.command('cli',{id:'cliCommands:0061',description:'Preview or apply purge of unknown engines',inputSchema:purgeSchema,cli:{repeatedOptions:{keep:'comma-separated'}},run:(i,c)=>runRatings({...i as object,action:'purge-unknown'},c,services)}));
   for (const id of ['intentVariants:0039','builtinCommandMetadata:0030','tuiSlashCommands:0041']) {
     const contribution = {id,description:'Show engine leaderboard',inputSchema:leaderboardSchema,run:(i:Json,c:InvocationContext)=>runRatings(i,c,services,true)};
     if (id.startsWith('intent')) disposers.push(registrar.intent({...contribution,parse: (value) => /^\/(?:leaderboard|elo)(?:\s|$)/i.test(value) ? {} : undefined}));

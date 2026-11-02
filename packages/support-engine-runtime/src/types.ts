@@ -56,7 +56,7 @@ export interface EngineDefinition {
   nonAgenticFraming?: 'all' | 'review';
   api?: {
     baseUrl: string; apiKeyEnv: string; model: string; maxTokens?: number; contextWindow?: number;
-    format?: 'openai' | 'anthropic'; firstChunkTimeoutMs?: number; idleTimeoutMs?: number;
+    format?: 'openai' | 'anthropic'; firstChunkTimeoutMs?: number; idleTimeoutMs?: number; activityWindowMs?: number;
     firstChunkRetryCount?: number; firstChunkRetryBackoffMs?: number; emptyResponseRetryCount?: number;
   };
   companion?: CompanionConfig;
@@ -91,7 +91,10 @@ export interface DispatchOptions {
   onSpawn?: (pid: number) => void;
   onTodos?: (todos: Array<{ id: string; text: string; state: string; kind?: string; note?: string }>) => void;
   isolation?: 'workspace-pure' | 'inherit';
+  /** API engines only: keep the request alive past `timeout` while it still streams, up to this many seconds in total. */
+  maxWallSeconds?: number;
 }
+export type DispatchTimeoutKind = 'base' | 'ceiling' | 'idle';
 export interface DispatchResult {
   exitCode: number;
   stdout: string;
@@ -103,6 +106,8 @@ export interface DispatchResult {
   usage?: { promptTokens: number; completionTokens: number; totalTokens: number; cachedInputTokens?: number; source: 'sdk' | 'cli-reported' | 'estimated' };
   parts?: Array<{ kind: 'text'; text: string } | { kind: 'reasoning'; text: string } | { kind: 'tool_call'; toolName: string; toolCallId: string; args: Record<string, unknown> }>;
   finishReason?: string;
+  extendedSeconds?: number;
+  timeoutKind?: DispatchTimeoutKind;
 }
 export interface AgentDispatchResult extends DispatchResult { diff: string; diffLines: number; filesChanged: number }
 export interface EngineAdapter {

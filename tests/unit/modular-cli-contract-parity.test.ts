@@ -1,9 +1,9 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
-import { createGeneratedLazySubCommands } from '../../packages/cli/src/lazy-commands.js';
+import { createGeneratedLazySubCommands, parseGeneratedCommandLine } from '../../packages/cli/src/lazy-commands.js';
 import { disposeProcessSurfaceAuthority, initializeProcessSurfaceAuthority } from '../../packages/cli/src/surface-authority-runtime.js';
 import frozenWorktree from '../fixtures/modular-worktree-command-contract.json';
 import frozenTribunal from '../fixtures/modular-tribunal-command-contract.json';
@@ -84,6 +84,77 @@ function legacyTop(name: string): CommandDef | undefined {
 }
 
 describe('physical CLI contract parity', () => {
+  it('preserves last-value selection for repeated Provenance options and aliases', async () => {
+    expect(await parseGeneratedCommandLine('provenance', '--id first --id second --format md --format json --out first.md --out second.json'))
+      .toMatchObject({ id: 'second', format: 'json', out: 'second.json' });
+    expect(await parseGeneratedCommandLine('provenance', '-f md -f json -o first.md -o second.json'))
+      .toMatchObject({ format: 'json', out: 'second.json' });
+    expect(await parseGeneratedCommandLine('provenance', '--format md -f json --out first.md -o second.json'))
+      .toMatchObject({ format: 'md', out: 'first.md' });
+  });
+
+  it('combines repeated Ratings keep lists instead of discarding earlier values', async () => {
+    expect(await parseGeneratedCommandLine('ratings purge-unknown', '--keep first,second --keep third --dry-run'))
+      .toMatchObject({ keep: 'first,second,third', 'dry-run': true });
+  });
+
+  it('protects both repeated keep values during an actual generated Ratings preview', async () => {
+    const home = join(root, 'ratings-repeat-dispatch');
+    mkdirSync(home, { recursive: true });
+    const path = join(home, 'ratings.json');
+    const fixture = JSON.stringify({ global: { 'repeat-first': {}, 'repeat-second': {}, 'repeat-unkept': {} } });
+    writeFileSync(path, fixture);
+    vi.stubEnv('AGON_HOME', home);
+    const write = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    try {
+      const children = await resolveMap((createGeneratedLazySubCommands().ratings as CommandDef).subCommands);
+      const command = children['purge-unknown'] as CommandDef & { run(context: unknown): Promise<void> };
+      await command.run({ args: {}, rawArgs: ['--keep', 'repeat-first', '--keep', 'repeat-second', '--dry-run'] });
+      const report = JSON.parse(write.mock.calls.map(([text]) => String(text)).join(''));
+      expect(report.dryRun).toBe(true);
+      expect(report.ratingsUnknown).toEqual(['repeat-unkept']);
+      expect(readFileSync(path, 'utf8')).toBe(fixture);
+    } finally {
+      write.mockRestore();
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('preserves positional arrays and rejects repetition without an explicit policy', async () => {
+    expect(await parseGeneratedCommandLine('provenance', 'first second --format json'))
+      .toMatchObject({ _: ['first', 'second'], format: 'json' });
+    await expect(parseGeneratedCommandLine('install-agent-prompts', '--cli codex --cli claude'))
+      .rejects.toThrow(/expected string/);
+  });
+
+  it('executes the generated CLI with repeated options before validating its owner input', async () => {
+    const home = join(root, 'repeat-dispatch');
+    mkdirSync(join(home, 'runs'), { recursive: true });
+    writeFileSync(join(home, 'runs', 'selected.json'), JSON.stringify({ forgeId: 'selected', task: 'repeat fixture', timestamp: '2026' }));
+    vi.stubEnv('AGON_HOME', home);
+    const write = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    try {
+      const command = createGeneratedLazySubCommands().provenance as CommandDef & { run(context: unknown): Promise<void> };
+      await command.run({ args: {}, rawArgs: ['--id', 'missing', '--id', 'selected', '--format', 'md', '--format', 'json'] });
+      const output = write.mock.calls.map(([text]) => String(text)).join('');
+      expect(JSON.parse(output).runId).toBe('selected');
+    } finally {
+      write.mockRestore();
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it.each([[], [null, 'json'], [42, 'json'], [{ hidden: true }, 'json']].map(format => ({ format })))('does not coerce malformed repeated values $format', async ({ format }) => {
+    const command = createGeneratedLazySubCommands().provenance as CommandDef & { run(context: unknown): Promise<void> };
+    const write = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    try {
+      await expect(command.run({ args: { format } })).rejects.toThrow(/expected string/);
+      expect(write).not.toHaveBeenCalled();
+    } finally {
+      write.mockRestore();
+    }
+  });
+
   it('preserves frozen Council command and option help text', async () => {
     const current = createGeneratedLazySubCommands().council as CommandDef;
     expect(current.meta).toEqual(frozenCouncil.command.meta);
@@ -126,6 +197,12 @@ describe('physical CLI contract parity', () => {
       expected.args.tasks = { type: 'string', required: false, aliases: [] };
       expected.args.commit = { type: 'boolean', required: false, aliases: [], default: true };
       expected.args.supervisorRunId = { type: 'string', required: false, aliases: [] };
+    }
+    if (name === 'review') {
+      expect(expected.args).not.toHaveProperty('deadline');
+      expected.args.deadline = { type: 'string', required: false, aliases: [] };
+      expect(expected.args).not.toHaveProperty('format');
+      expected.args.format = { type: 'string', required: false, aliases: [], default: 'json' };
     }
     expect(contractDiff(actual, expected)).toEqual([]);
   });

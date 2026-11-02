@@ -1,3 +1,5 @@
+import { createClusterer } from './cluster.js';
+
 export interface RawFinding {
   engine: string;
   severity?: string;
@@ -7,6 +9,8 @@ export interface RawFinding {
   lines?: string;
   problem?: string;
   minimalFix?: string;
+  existingCode?: string;
+  existingCodeMatch?: boolean;
 }
 
 export interface EngineOutcome {
@@ -41,6 +45,8 @@ export interface ConsensusFinding {
   minimalFix?: string;
   file?: string;
   lines?: string;
+  existingCode?: string;
+  existingCodeMatch?: boolean;
 }
 
 /**
@@ -114,7 +120,7 @@ export function normSeverity(f: RawFinding): string {
 }
 
 /**
- * Cluster key so the same issue from different engines collapses into one finding: lowercased file + a 10-line bucket of the first line number + the first 8 normalized words of the problem. Best-effort — when engines word a bug differently it stays split, which is the SAFE direction (no accidental auto-block from a phantom pair).
+ * Exact cluster key: lowercased file + a 10-line bucket of the first line number + the first 8 normalized words of the problem. buildConsensus additionally merges differently worded findings on the same file whose line spans touch (see cluster.ts); findings without a file and line only ever merge on this exact key.
  */
 export function clusterKey(f: RawFinding): string {
   const file = (f.file || '').trim().toLowerCase();
@@ -162,13 +168,16 @@ export function buildConsensus(outcomes: EngineOutcome[], minVerified?: number, 
     minimalFix?: string;
     file?: string;
     lines?: string;
+    existingCode?: string;
+    existingCodeMatch?: boolean;
   };
   const sevRank = (s: string): number => (s === 'blocking' ? 2 : s === 'important' ? 1 : 0);
   const clusters = new Map<string, Work>();
-  
+  const clusterer = createClusterer();
+
   for (const o of ok) {
     for (const f of (o.findings || [])) {
-      const key = clusterKey(f);
+      const key = clusterer.keyFor(f, clusterKey(f));
       const conf = inferConfidence(f);
       const sev = normSeverity(f);
       let c = clusters.get(key);
@@ -207,6 +216,10 @@ export function buildConsensus(outcomes: EngineOutcome[], minVerified?: number, 
       if (!c.minimalFix && f.minimalFix) c.minimalFix = f.minimalFix;
       if (!c.file && f.file) c.file = f.file;
       if (!c.lines && f.lines) c.lines = f.lines;
+      if (f.existingCode && (!c.existingCode || (f.existingCodeMatch === true && c.existingCodeMatch !== true))) {
+        c.existingCode = f.existingCode;
+        c.existingCodeMatch = f.existingCodeMatch;
+      }
     }
   }
   
@@ -275,6 +288,8 @@ export function buildConsensus(outcomes: EngineOutcome[], minVerified?: number, 
       minimalFix: c.minimalFix,
       file: c.file,
       lines: c.lines,
+      ...(c.existingCode ? { existingCode: c.existingCode } : {}),
+      ...(c.existingCodeMatch !== undefined ? { existingCodeMatch: c.existingCodeMatch } : {}),
     });
   }
   

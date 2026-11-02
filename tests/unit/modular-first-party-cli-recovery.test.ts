@@ -30,6 +30,34 @@ async function previewAndApprove(command: any, target: string) {
 }
 
 describe('first-party safe-mode CLI recovery', () => {
+  it.each(['sequential', 'concurrent'])('preserves approvals across %s repeated recovery previews', async mode => {
+    const root = await mkdtemp(join(tmpdir(), 'agon-repeat-recovery-'));
+    const host = new DurableModHost(root, { kernelVersion: '1.0.0' });
+    const service = new ManagedLifecycleService(host);
+    const installed = await service.apply(await createManagedLifecyclePlan(host, request([artifact('@test/app')])), installer, verifier);
+    process.env.AGON_MODULAR_HOST_ROOT = root;
+    const output: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation(value => output.push(String(value)));
+    const preview = () => modCommand.subCommands.recover.run({ args: { target: '1' } });
+    await preview();
+    const first = JSON.parse(output.at(-1)!);
+    const original = await readFile(first.planPath, 'utf8');
+    const pointer = await readFile(host.paths.current, 'utf8');
+    if (mode === 'concurrent') await Promise.all([preview(), preview()]);
+    else { await preview(); await preview(); }
+    expect(output).toHaveLength(3);
+    expect(await readFile(first.planPath, 'utf8')).toBe(original);
+    expect(await readFile(host.paths.current, 'utf8')).toBe(pointer);
+    for (const value of output.slice()) {
+      const plan = JSON.parse(value);
+      expect(plan.planHash).toBe(first.planHash);
+      expect(await readFile(plan.planPath, 'utf8')).toBe(original);
+      await writeFile(host.paths.current, '{malformed');
+      await modCommand.subCommands.recover.run({ args: { target: plan.planPath, approve: plan.planHash } });
+      expect((await service.readSelectedInstallation())?.installationId).toBe(installed.installation.installationId);
+    }
+  });
+
   it.each([
     ['missing-prefix', false], ['changed-record', false], ['none', false],
     ['missing-prefix', true], ['changed-record', true], ['none', true],

@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import type { ModServices } from '@kernlang/agon-mod-api';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import type { CommandContribution, Json, ModServices } from '@kernlang/agon-mod-api';
+import { ModRegistry } from '../../packages/mod-kernel/src/registry.js';
+import { assertContributionInput } from '../../packages/mod-kernel/src/index.js';
+import { createMod, MANIFEST } from '../../packages/mod-naturalize/src/index.js';
 import { runNaturalize as runPhysicalNaturalize } from '../../packages/mod-naturalize/src/implementation.js';
 import { wordDiffStats as ownedWordDiffStats } from '@kernlang/agon-mod-naturalize/lexical-policy';
 
@@ -11,6 +17,82 @@ import {
 } from '../../packages/forge/src/naturalize.js';
 
 // ── wordDiffStats ────────────────────────────────────────────────────────────
+
+describe('registered Naturalize TUI input', () => {
+  it.each(['--out', '-o'])('reads the selected file and honors rewriter, author, threshold and %s', async outFlag => {
+    const root = mkdtempSync(join(tmpdir(), 'naturalize-tui-'));
+    const input = join(root, 'article draft.txt');
+    const out = join(root, 'rewritten.txt');
+    const original = 'Alpha beta gamma delta.';
+    const rewritten = 'Fresh wording retains all facts.';
+    const calls: Array<{ engine: string; prompt: string }> = [];
+    const registry = new ModRegistry({ generation: 'naturalize-tui', activeOwners: [
+      { id: MANIFEST.id, version: MANIFEST.version, contentHash: `sha256:${'a'.repeat(64)}` },
+    ] });
+    try {
+      writeFileSync(input, original);
+      const mod = await createMod({
+        engines: { listActive: async () => ['writer', 'other', 'rewriter'],
+          dispatch: async (engine: string, prompt: string) => {
+            calls.push({ engine, prompt });
+            return { exitCode: 0, stdout: calls.length < 3 ? original : rewritten };
+          } },
+        permissions: { check: async () => 'allow' },
+        receipts: { record: async () => 'fixture-receipt' },
+      } as unknown as ModServices);
+      const session = registry.beginRegistration(MANIFEST);
+      const dispose = await mod.activate(session.registrar);
+      session.commit();
+      try {
+        const command = registry.project('tui').entries[0]!.payload as CommandContribution;
+        const parsed = await command.parse!(`/naturalize ${input} --author writer --engine rewriter --min-change 50 --max-attempts 3 ${outFlag} ${out}`);
+        assertContributionInput(command.inputSchema!, parsed as Json);
+        const result = await command.run(parsed as Json, {
+          invocationId: 'tui-file', cwd: root, platform: 'darwin-arm64',
+          signal: new AbortController().signal, config: {},
+        });
+        expect(result.exitCode).toBe(0);
+        expect(calls.map(call => call.engine)).toEqual(['rewriter', 'rewriter', 'rewriter']);
+        expect(calls.every(call => call.prompt.includes(original))).toBe(true);
+        expect(calls.every(call => !call.prompt.includes(input))).toBe(true);
+        expect(readFileSync(input, 'utf8')).toBe(original);
+        expect(readFileSync(out, 'utf8')).toBe(rewritten);
+        expect(result.result).toMatchObject({ author: 'writer', attempts: 3, minChangeMet: true });
+      } finally { await dispose(); }
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+  it.each(['empty', 'same-author', 'invalid-threshold'])('rejects %s input without provider dispatch', async scenario => {
+    const root = mkdtempSync(join(tmpdir(), 'naturalize-tui-refusal-'));
+    const file = join(root, 'input.txt');
+    let calls = 0;
+    const owner = { id: MANIFEST.id, version: MANIFEST.version, contentHash: `sha256:${'a'.repeat(64)}` as const };
+    const registry = new ModRegistry({ generation: 'naturalize-refusal', activeOwners: [owner] });
+    try {
+      writeFileSync(file, 'Original prose.');
+      const mod = await createMod({
+        engines: { listActive: async () => ['writer'], dispatch: async () => { calls++; return { exitCode: 0, stdout: 'Unexpected rewrite.' }; } },
+        receipts: { record: async () => 'fixture' },
+      } as unknown as ModServices);
+      const session = registry.beginRegistration(MANIFEST);
+      const dispose = await mod.activate(session.registrar);
+      session.commit();
+      try {
+        const command = registry.project('tui').entries[0]!.payload as CommandContribution;
+        const input = scenario === 'empty' ? '/naturalize'
+          : scenario === 'same-author' ? `/naturalize ${file} --author writer --engine writer`
+            : `/naturalize ${file} --min-change 101`;
+        const parsed = await command.parse!(input);
+        if (scenario === 'empty') expect(parsed).toEqual({ text: '' });
+        assertContributionInput(command.inputSchema!, parsed as Json);
+        const result = await command.run(parsed as Json, { invocationId: scenario, cwd: root, platform: 'darwin-arm64',
+          signal: new AbortController().signal, config: {} });
+        expect(result.exitCode).toBe(1);
+        expect(calls).toBe(0);
+        expect(readFileSync(file, 'utf8')).toBe('Original prose.');
+      } finally { await dispose(); }
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+});
 
 describe('physical Naturalize lexical-change gate', () => {
   it.each([

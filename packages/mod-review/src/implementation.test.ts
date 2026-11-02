@@ -20,7 +20,7 @@ function repo(): string {
 
 async function setup(cwd: string, valid = true) {
   const dispatch = vi.fn(async (engineId: string) => ({
-    engineId, exitCode: 0,
+    engineId, exitCode: 0, finishReason: 'stop',
     stdout: valid ? 'Finding\n<!--AGON_REVIEW_FINDINGS_v1-->\n```json\n[{"file":"a.ts","lines":"1","severity":"blocking","blocking":true,"confidence":0.9,"problem":"unsafe assertion","minimalFix":"guard it"}]\n```' : 'unstructured',
     stderr: '', timedOut: false, costUsd: undefined as number | undefined,
   }));
@@ -39,7 +39,11 @@ async function setup(cwd: string, valid = true) {
       start: vi.fn(async () => ({ id: 'run', path: runPath, mode: 'review', startedAt: '2026-01-01T00:00:00Z' })),
       finish, writeArtifact,
     },
-    engines: { listActive: vi.fn(async () => ['alpha', 'beta', 'gamma']), dispatch },
+    engines: {
+      listActive: vi.fn(async () => ['alpha', 'beta', 'gamma']),
+      describe: vi.fn(async (ids: readonly string[]) => ids.map(id => ({ id, binary: `${id}-cli`, backend: 'cli' }))),
+      dispatch,
+    },
   } as unknown as ModServices;
   let command: CommandContribution | undefined;
   const registrar = {
@@ -65,20 +69,27 @@ describe('physical review mod', () => {
       costUsd: engineId === 'alpha' ? 0.2 : 0.3,
     }));
     const out = await h.command.run({ engines: 'alpha,beta' }, h.context) as CommandResult;
-    expect(out.exitCode).toBe(valid ? 0 : 1);
-    expect((out.result as any).reviews.map((review: any) => review.costUsd)).toEqual([0.2, 0.3]);
-    expect((out.result as any).reviews.map((review: any) => review.ok)).toEqual([valid, valid]);
+    const usable = valid || mode === 'timeout';
+    expect(out.exitCode).toBe(usable ? 0 : 1);
+    const repaired = mode === 'malformed' ? 2 : 1;
+    expect((out.result as any).reviews.map((review: any) => review.costUsd)).toEqual([0.2 * repaired, 0.3 * repaired]);
+    expect((out.result as any).reviews.map((review: any) => review.ok)).toEqual([usable, usable]);
   });
 
-  it('resolves the diff, runs a risk-sized panel, parses evidence, and blocks on verified findings', async () => {
+  it('resolves the diff, routes a risk-sized panel, parses evidence, and blocks on verified findings', async () => {
     const h = await setup(repo());
     const out = await h.command.run({ target: 'uncommitted', risk: 'medium', 'primary-engine': 'builder' }, h.context);
     const result = JSON.parse((out as { stdout: string }).stdout);
     expect(out).toMatchObject({ exitCode: 2 });
     expect(result).toMatchObject({ panelHealth: { requested: 2, responded: 2, degraded: false }, runDir: h.runPath });
-    expect(result.consensus.blocking).toHaveLength(2);
+    expect(result.routing).toMatchObject({ risk: { final: 'medium' }, primary: 'builder', shortfall: null });
+    expect(result.consensus.blockers).toHaveLength(1);
+    expect(result.consensus.blockers[0].engines).toHaveLength(2);
     expect(h.record).toHaveBeenCalled();
-    expect(h.writeArtifact).toHaveBeenCalledTimes(2);
+    expect(h.writeArtifact).toHaveBeenCalledTimes(5);
+    expect(h.writeArtifact).toHaveBeenCalledWith(expect.anything(), 'diff.patch', expect.any(String), h.context);
+    expect(h.writeArtifact).toHaveBeenCalledWith(expect.anything(), 'report.json', expect.any(String), h.context);
+    expect(h.writeArtifact).toHaveBeenCalledWith(expect.anything(), 'review-routing.json', expect.stringContaining('"routerVersion"'), h.context);
     expect(h.finish).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ ok: false, mode: 'review' }), h.context);
   });
 

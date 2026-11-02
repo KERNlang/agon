@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { describe, expect, it, vi } from 'vitest';
+import { mkdtempSync, writeFileSync, rmSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -64,30 +64,57 @@ describe('companionDispatch', () => {
     if (reply === 'error') expect(result.stderr).toContain('remote service timed out');
   });
 
-  it('classifies an abort during a pending ACP request as aborted, not as its RPC deadline', async () => {
+  it.each([
+    ['initialize', false], ['session/prompt', false], ['session/prompt', true],
+  ] as const)('cancels pending ACP %s and reaps its child (resists SIGTERM: %s)', async (method, resistsTermination) => {
+    const directory = mkdtempSync(join(tmpdir(), 'agon-companion-cancel-'));
+    const ready = join(directory, 'ready');
     const script = [
+      resistsTermination ? "process.on('SIGTERM', () => {});" : '',
       "const rl = require('node:readline').createInterface({ input: process.stdin });",
       "const w = o => process.stdout.write(JSON.stringify(o) + '\\n');",
       "rl.on('line', line => {",
       'const msg = JSON.parse(line);',
-      "if (msg.method === 'initialize') w({id:msg.id,result:{protocolVersion:1}});",
-      "if (msg.method === 'session/new') w({id:msg.id,result:{sessionId:'fixture'}});",
-      "if (msg.method === 'session/prompt') w({method:'session/update',params:{update:{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'partial'}}}});",
+      `if (msg.id === 999 && !msg.method) { if (msg.result?.optionId === 'reject') require('node:fs').writeFileSync(${JSON.stringify(ready)}, String(process.pid)); return; }`,
+      `if (msg.method !== ${JSON.stringify(method)}) { w({id:msg.id,result:{}}); return; }`,
+      "w({method:'session/update',params:{update:{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'partial'}}}});",
+      // The reply proves the parent parsed the preceding output before abort.
+      "w({id:999,method:'session/request_permission',params:{options:[{kind:'reject_once',optionId:'reject'}]}});",
       '});',
+      'setInterval(() => {}, 1000);',
     ].join('');
     const controller = new AbortController();
-    const started = Date.now();
     const pending = companionDispatch({
       binaryPath: process.execPath,
       config: { protocol: 'acp', serverCmd: ['-e', script] },
-      prompt: 'fixture', cwd: process.cwd(), timeout: 5, mode: 'exec', signal: controller.signal,
+      prompt: 'fixture', cwd: directory, timeout: 5, mode: 'exec', signal: controller.signal,
     });
-    setTimeout(() => controller.abort(), 500);
-    const result = await pending;
-    expect(result.exitCode, result.stderr).toBe(130);
-    expect(result.timedOut).toBe(false);
-    expect(result.stderr).toBe('Aborted');
-    expect(Date.now() - started).toBeLessThan(4000);
+    try {
+      await vi.waitFor(() => expect(existsSync(ready)).toBe(true), { timeout: 3000 });
+      const pid = Number(readFileSync(ready, 'utf8'));
+      const abortedAt = performance.now();
+      controller.abort();
+      const result = await pending;
+      expect(performance.now() - abortedAt).toBeLessThan(2000);
+      expect(() => process.kill(pid, 0)).toThrow();
+      expect(result.stdout).toBe('partial');
+      expect(result).toMatchObject({ exitCode: 130, timedOut: false, stderr: 'Aborted' });
+    } finally {
+      controller.abort();
+      await pending;
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('reports cancellation during the startup wait before sending an RPC', async () => {
+    const controller = new AbortController();
+    const pending = companionDispatch({
+      binaryPath: process.execPath,
+      config: { protocol: 'acp', serverCmd: ['-e', 'setInterval(() => {}, 1000)'] },
+      prompt: 'fixture', cwd: process.cwd(), timeout: 2, mode: 'exec', signal: controller.signal,
+    });
+    controller.abort();
+    expect(await pending).toMatchObject({ exitCode: 130, timedOut: false, stderr: 'Aborted' });
   });
 
   it('drains diagnostic stderr so a companion can finish its protocol response', async () => {

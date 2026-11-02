@@ -14,7 +14,7 @@ import { glicko, ratingJudgingMode, chairRankInstruction, scrubRankLines, stripR
 import { EngineRegistry as CatalogEngineRegistry, tracker } from '@kernlang/agon-support-engine-catalog';
 import { classifyTask } from '@kernlang/agon-support-dedup';
 import { buildKernDraftPrompt, parseKernDraft } from '@kernlang/protocol';
-import { EngineRegistry, createRunDir, getRatings, loadConfig, pickTopRatedEngine, writeRunStatus } from '@kernlang/agon-core';
+import { EngineRegistry, createRunDir, describeModEngines, getRatings, loadConfig, modDispatchCeilingSeconds, modDispatchFields, modDispatchMaxTokens, modDispatchTimeoutSeconds, modEngineBackend, pickTopRatedEngine, scanProjectContext, writeRunStatus } from '@kernlang/agon-core';
 import type { Json, ModManifest, ModServices } from '@kernlang/agon-mod-api';
 import { handleJobToolCall } from './job-tools.js';
 import { captureMcpSurfaceAuthority } from './surface-authority.js';
@@ -147,6 +147,14 @@ export function decorateMcpFirstPartyServices(manifest: ModManifest, base: ModSe
       },
     }),
     engines: createMcpEngineServices(),
+    context: Object.freeze({
+      projectContext(cwd: string, context: Parameters<ModServices['engines']['dispatch']>[2]): string {
+        context.signal.throwIfAborted();
+        const config = loadConfig(cwd);
+        const projectCtx = scanProjectContext(cwd, config.projectContext || undefined, config.contextFormat as never);
+        return projectCtx ? `## PROJECT CONTEXT\n${projectCtx}` : '';
+      },
+    }),
   });
 }
 
@@ -183,12 +191,18 @@ export function createMcpEngineServices(): ModServices['engines'] {
         if (!selected) throw Object.assign(new Error('No active engines. Run agon engine list or agon engine add <id>.'), { code: 'NO_ACTIVE_ENGINE' });
         const engine = registry.get(selected);
         const outputDir = createRunDir({ mode: 'mod-mcp-dispatch', announce: false }).path;
+        const mode = options?.mode ?? 'exec';
+        const maxTokens = modDispatchMaxTokens(mode, options?.maxTokens, config, engine);
+        const timeoutSeconds = Math.max(1, modDispatchTimeoutSeconds(mode, options?.timeoutSeconds, config, options?.maxWallSeconds) ?? 120);
+        const ceilingSeconds = modDispatchCeilingSeconds(mode, modEngineBackend(registry, engine), Math.max(timeoutSeconds, Number(engine.timeout) || 0), config, options?.maxWallSeconds);
         const result = await createCliAdapter(registry).dispatch({
           engine,
           prompt,
           cwd: context.cwd,
-          mode: options?.mode ?? 'exec',
-          timeout: Math.max(1, options?.timeoutSeconds ?? 120),
+          mode,
+          ...(maxTokens !== undefined ? { maxTokens } : {}),
+          timeout: timeoutSeconds,
+          ...(ceilingSeconds !== undefined ? { maxWallSeconds: ceilingSeconds } : {}),
           outputDir,
           systemPrompt: options?.systemPrompt,
           textOnly: options?.textOnly,
@@ -197,7 +211,11 @@ export function createMcpEngineServices(): ModServices['engines'] {
         const accounting = result.usage ? tracker.record(engine.id, { usage: result.usage }) : undefined;
         return { engineId: engine.id, exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr, durationMs: result.durationMs, timedOut: result.timedOut, outputDir,
           ...(accounting ? { costUsd: accounting.costUsd, costSource: accounting.source } : {}),
-          ...(result.usage ? { usage: result.usage } : {}) } as Json;
+          ...(result.usage ? { usage: result.usage } : {}), ...modDispatchFields(result, maxTokens, timeoutSeconds, ceilingSeconds) } as Json;
+      },
+      async describe(engineIds: readonly string[], context: Parameters<ModServices['engines']['dispatch']>[2]) {
+        context.signal.throwIfAborted();
+        return describeModEngines(registryFor(context.cwd).registry, engineIds);
       },
   });
 }

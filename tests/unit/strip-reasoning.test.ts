@@ -101,6 +101,10 @@ describe('stripTuiChrome', () => {
     expect(stripTuiChrome('✴Cogitating…42Review: clear')).toBe('Review: clear');
   });
 
+  it('treats a middle dot directly before a spinner label as TUI chrome', () => {
+    expect(stripTuiChrome('·Cogitating…42Review: clear')).toBe('Review: clear');
+  });
+
   it('does NOT touch API-engine output (no glyphs → no label/counter stripping)', () => {
     // gemini/kimi/zai never emit spinner glyphs; a finding that legitimately
     // ends a phrase in … or starts with a number must survive intact.
@@ -110,5 +114,10 @@ describe('stripTuiChrome', () => {
 
   it('is a no-op for clean text', () => {
     expect(stripTuiChrome('No blocking issues found.')).toBe('No blocking issues found.');
+  });
+
+  it('keeps indentation, middle dots and labels in output without spinner frames', () => {
+    const apiReview = '1. Missing null check… see below\n    const total = a · b;\n\tif (x)  return;';
+    expect(stripTuiChrome(apiReview)).toBe(apiReview);
   });
 });

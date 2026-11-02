@@ -1,6 +1,8 @@
 
 import { resolveWorkingDir } from '@kernlang/agon-core';
-import { captureProcessSurfaceAuthority, processSurfaceClient } from '../../surface-authority-runtime.js';
+import { assertProcessSurfaceAvailable, captureProcessSurfaceAuthority, processSurfaceClient, withProcessSurfaceAuthority } from '../../surface-authority-runtime.js';
+import type { AgentContinuationResult } from '../../handlers/agent.js';
+import { runInJobAbortScope } from '../job-abort-scope.js';
 import { runPhysicalTuiContribution } from './intent-session.js';
 
 import { ENGINE_COLORS } from '../../blocks/output-format.js';
@@ -32,6 +34,30 @@ import { absorbReviewResultIntoCesar, continueCesarAfterResult, runAgentJobWithA
 import { emitPostDispatch } from './utils.js';
 
 import { mutateCesarPrompt } from '../../blocks/mutate-render.js';
+
+function createAgentJobRunner(input: string, cb: DispatchCallbacks) {
+  // Solo, shadow and team execution share the Agent owner.
+  assertProcessSurfaceAvailable('tui', '/agent');
+  const assertSelected = captureProcessSurfaceAuthority();
+  const assertAvailable = (signal?: AbortSignal) => {
+    signal?.throwIfAborted();
+    assertSelected();
+    assertProcessSurfaceAvailable('tui', '/agent');
+  };
+  return (parentSignal: AbortSignal, run: (options: {
+    parentSignal: AbortSignal | undefined;
+    executionRefusal: () => string | undefined;
+  }) => Promise<AgentContinuationResult | null>) => withProcessSurfaceAuthority(parentSignal, assertAvailable, async signal => {
+    assertAvailable(signal);
+    const executionRefusal = () => {
+      try { assertAvailable(signal); return undefined; }
+      catch (error) { return error instanceof Error ? error.message : String(error); }
+    };
+    await runInJobAbortScope(signal ?? parentSignal, () =>
+      runAgentJobWithAutoResume(input, cb, () => run({ parentSignal: signal, executionRefusal }), () => assertAvailable(signal)));
+    assertAvailable(signal);
+  });
+}
 
 export async function dispatchOrchestrationIntent(intent: any, input: string, cb: DispatchCallbacks): Promise<DispatchResult | null> {
   switch (intent.type) {
@@ -294,6 +320,7 @@ export async function dispatchOrchestrationIntent(intent: any, input: string, cb
       // typed agent-routing + engine-switch events so the UI shows the
       // routing decision and transitions rather than a plain info message.
       const input = intent.input;
+      const runAgentJob = createAgentJobRunner(input, cb);
       const useTeam = shouldUseAgentTeam(input, cb.ctx);
       if (useTeam) {
         const teamEngines = cb.ctx.activeEngines().filter(id => {
@@ -305,9 +332,9 @@ export async function dispatchOrchestrationIntent(intent: any, input: string, cb
           engines: teamEngines,
           reason: 'complexity hint: multi-step-fanout — task pattern suggests cross-module work',
         });
-        cb.runAsJob('team-agent', input?.slice(0, 40) ?? 'team-agent', (signal) => runAgentJobWithAutoResume(input, cb, () => runAgentTeam(input, cb.dispatch, cb.ctx, {
+        cb.runAsJob('team-agent', input?.slice(0, 40) ?? 'team-agent', (signal) => runAgentJob(signal, options => runAgentTeam(input, cb.dispatch, cb.ctx, {
+          ...options,
           taskKind: 'edit',
-          parentSignal: signal,
         })));
       } else {
         // Phase D: check for a second API engine to run as a silent shadow.
@@ -331,12 +358,12 @@ export async function dispatchOrchestrationIntent(intent: any, input: string, cb
             foregroundEngineId: firstEngine,
             shadowEngineId: apiEngines[1],
           });
-          cb.runAsJob('agent', input?.slice(0, 40) ?? 'agent', (signal) => runAgentJobWithAutoResume(input, cb, () => runAgentTeam(input, cb.dispatch, cb.ctx, {
+          cb.runAsJob('agent', input?.slice(0, 40) ?? 'agent', (signal) => runAgentJob(signal, options => runAgentTeam(input, cb.dispatch, cb.ctx, {
+            ...options,
             engines: apiEngines.slice(0, 2),
             shadowMode: true,
             foregroundEngineId: firstEngine,
             taskKind: 'edit',
-            parentSignal: signal,
           })));
         } else {
           cb.dispatch({
@@ -345,7 +372,7 @@ export async function dispatchOrchestrationIntent(intent: any, input: string, cb
             engines: [firstEngine],
             reason: 'single engine — no shadow available',
           });
-          cb.runAsJob('agent', input?.slice(0, 40) ?? 'agent', (signal) => runAgentJobWithAutoResume(input, cb, () => runAgentMode(input, cb.dispatch, cb.ctx, { parentSignal: signal })));
+          cb.runAsJob('agent', input?.slice(0, 40) ?? 'agent', (signal) => runAgentJob(signal, options => runAgentMode(input, cb.dispatch, cb.ctx, options)));
         }
       }
       return { handled: true, ranAsJob: true };
@@ -353,18 +380,21 @@ export async function dispatchOrchestrationIntent(intent: any, input: string, cb
     case 'agent-solo': {
       // Explicit opt-out of shadow workers — always runs pure solo.
       const soloInput = intent.input;
+      const runAgentJob = createAgentJobRunner(soloInput, cb);
       cb.dispatch({ type: 'agent-routing', mode: 'solo', engines: [cb.ctx.activeEngines()[0] ?? 'default'], reason: 'explicit /agent-solo — shadow mode disabled' });
-      cb.runAsJob('agent', soloInput?.slice(0, 40) ?? 'agent', (signal) => runAgentJobWithAutoResume(soloInput, cb, () => runAgentMode(soloInput, cb.dispatch, cb.ctx, { maxTurns: intent.maxTurns, parentSignal: signal })));
+      cb.runAsJob('agent', soloInput?.slice(0, 40) ?? 'agent', (signal) => runAgentJob(signal, options => runAgentMode(soloInput, cb.dispatch, cb.ctx, { ...options, maxTurns: intent.maxTurns })));
       return { handled: true, ranAsJob: true };
     }
-    case 'team-agent':
-      cb.runAsJob('team-agent', intent.input?.slice(0, 40) ?? 'team-agent', (signal) => runAgentJobWithAutoResume(intent.input, cb, () => runAgentTeam(intent.input, cb.dispatch, cb.ctx, {
+    case 'team-agent': {
+      const runAgentJob = createAgentJobRunner(intent.input, cb);
+      cb.runAsJob('team-agent', intent.input?.slice(0, 40) ?? 'team-agent', (signal) => runAgentJob(signal, options => runAgentTeam(intent.input, cb.dispatch, cb.ctx, {
+        ...options,
         engines: intent.engines,
         taskKind: intent.taskKind,
         maxTurns: intent.maxTurns,
-        parentSignal: signal,
       })));
       return { handled: true, ranAsJob: true };
+    }
     case 'speculate': {
       const specInput = intent.input;
       const specLabel = specInput?.slice(0, 40) ?? 'speculate';

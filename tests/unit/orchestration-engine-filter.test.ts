@@ -20,6 +20,7 @@ describe('orchestration engine filter', () => {
       'claude',
       'codex',
       'gemini',
+      'ollama',
       'kimi-code',
       'kimi-for-coding-k2p6',
       'minimax-coding-plan-minimax-m2.7-highspeed',
@@ -28,7 +29,9 @@ describe('orchestration engine filter', () => {
   });
 
   it('matches prefix-excluded engine ids case-insensitively', () => {
-    expect(isDefaultOrchestrationEngineAllowed('Ollama')).toBe(false);
+    expect(isDefaultOrchestrationEngineAllowed('Ollama')).toBe(true);
+    expect(isDefaultOrchestrationEngineAllowed('ollama-llama3')).toBe(true);
+    expect(isDefaultOrchestrationEngineAllowed('Qwen')).toBe(false);
     expect(isDefaultOrchestrationEngineAllowed('OPENCODE-experimental')).toBe(false);
     expect(isDefaultOrchestrationEngineAllowed('codex')).toBe(true);
   });

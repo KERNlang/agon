@@ -21,7 +21,7 @@ import { captureMcpSurfaceAuthority } from './surface-authority.js';
 import { currentInvocationOwnerAvailable } from '@kernlang/agon-kernel';
 
 const excludedExact = new Set(['kimi', 'minimax', 'mistral']);
-const excludedPrefixes = ['qwen', 'ollama', 'opencode', 'open-code'];
+const excludedPrefixes = ['qwen', 'opencode', 'open-code'];
 
 function orchestrationEngines(ids: readonly string[]): string[] {
   return [...new Set(ids)].filter((raw) => {

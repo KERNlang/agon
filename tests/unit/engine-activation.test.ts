@@ -94,6 +94,18 @@ describe('engine activation', () => {
     expect(registry.resolveId('nonexistent')).toBe('nonexistent');
   });
 
+  it('activates local engines only when explicitly selected', () => {
+    process.env[envKey] = 'test';
+    const registry = new EngineRegistry();
+    registry.register(makeEngine('claude'));
+    registry.register({ ...makeEngine('ollama'), isLocal: true });
+
+    expect(registry.activeIds()).toEqual(['claude']);
+    expect(registry.activeIds(makeConfig({}))).toEqual(['claude']);
+    expect(registry.activeIds(makeConfig({ engineActivationMode: 'explicit', forgeEnabledEngines: ['claude'] }))).toEqual(['claude']);
+    expect(registry.activeIds(makeConfig({ engineActivationMode: 'explicit', forgeEnabledEngines: ['claude', 'ollama'] }))).toEqual(['claude', 'ollama']);
+  });
+
   it('keeps auto mode broad and explicit mode limited to selected engines', () => {
     process.env[envKey] = 'test';
     const registry = new EngineRegistry();

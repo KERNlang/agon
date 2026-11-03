@@ -1,7 +1,7 @@
 /**
  * Engine ID prefixes that are excluded from default orchestration. Matches the literal id or id starting with `${prefix}-`. Do NOT add families here that have a usable subvariant (e.g. minimax has minimax-coding-plan-* and kimi has kimi-for-coding-*) — use the exact-match list below for those.
  */
-export const DEFAULT_EXCLUDED_ORCHESTRATION_ENGINE_PREFIXES: string[] = ['qwen', 'ollama', 'opencode', 'open-code'];
+export const DEFAULT_EXCLUDED_ORCHESTRATION_ENGINE_PREFIXES: string[] = ['qwen', 'opencode', 'open-code'];
 
 /**
  * Engine IDs that are excluded from default orchestration ONLY when matched exactly. Vanilla 'kimi' and 'minimax' have OAuth/key issues and are superseded by 'kimi-for-coding-k2p6' and 'minimax-coding-plan-minimax-m2.7-highspeed' which must stay enabled.

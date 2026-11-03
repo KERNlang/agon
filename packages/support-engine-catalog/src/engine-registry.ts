@@ -449,7 +449,8 @@ export class EngineRegistry {
     }
     const available = this.availableEngines().filter((e: EngineDefinition) => !excluded.has(e.id));
     if (!config || config.engineActivationMode !== 'explicit') {
-      return available;
+      // Local engines need a running daemon and a pulled model, and `ollama run` downloads a missing one, so they stay opt-in.
+      return available.filter((e: EngineDefinition) => !e.isLocal);
     }
     const availableIds = available.map((e: EngineDefinition) => e.id);
     const byId = new Map(available.map((e: EngineDefinition) => [e.id, e]));

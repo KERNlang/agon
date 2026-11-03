@@ -14,7 +14,7 @@ vi.mock('@kernlang/agon-core', async importOriginal => {
     EngineRegistry: class extends core.EngineRegistry {
       override load() {
         for (const id of ['codex', 'kimi', 'ollama-coder', 'unavailable']) this.register({
-          schemaVersion: 3, id, displayName: id, tier: 'user', isLocal: true,
+          schemaVersion: 3, id, displayName: id, tier: 'user', isLocal: id === 'ollama-coder',
           binary: id === 'unavailable' ? '/nonexistent/fixture-engine' : process.execPath,
           timeout: 10, exec: { args: [] },
         });

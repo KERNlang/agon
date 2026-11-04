@@ -1,7 +1,7 @@
 name: Release
 
 # Tag-driven lockstep release: a tag vX.Y.Z stamps one version into every workspace
-# package, then publishes every non-private workspace package (49 modular packages,
+# package, then publishes every non-private workspace package (48 modular packages,
 # the @kernlang/agon-dedup sidecars, and @kernlang/agon last).
 #
 # @kernlang/agon-core, -forge, -adapter-cli and -mcp are private: tsup inlines them
@@ -12,13 +12,12 @@ name: Release
 # Node built-ins from scripts/release. A re-run resumes a half-failed publish, because
 # publish-if-new skips versions already on npm with identical bytes.
 #
-# Who may release is enforced by required reviewers on the npm-release environment, which
-# the repository owner must configure: a tagged commit can edit this workflow, so no check
-# inside it can restrict who releases.
+# No approval gate: the npm-release environment has no required reviewers, so any pushed
+# v* tag publishes immediately. Tag rights are the only control over who releases.
 #
-# Requires an NPM_TOKEN secret on the npm-release environment, with rights to create
-# and publish @kernlang/* packages. Set the NPM_PROVENANCE variable to false to publish
-# without provenance attestations.
+# NPM_TOKEN is a repository-level secret, not scoped to the npm-release environment, with
+# rights to create and publish @kernlang/* packages. Set the NPM_PROVENANCE variable to
+# false to publish without provenance attestations.
 on:
   push:
     tags:

@@ -24,8 +24,7 @@
     "stdin": true
   },
   "agent": {
-    "args": ["exec", "--dangerously-bypass-approvals-and-sandbox", "--skip-git-repo-check", "{prompt}"],
-    "stdin": true
+    "args": ["exec", "--dangerously-bypass-approvals-and-sandbox", "--skip-git-repo-check", "{prompt}"]
   },
 
   "model": {

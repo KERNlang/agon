@@ -4090,10 +4090,10 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
       "contentHash": "sha256:97c8f4972e5a72a006e55706bf448cb4b7c034051cde5dba809af863668b8e22"
     },
     "ownerClass": "user-toggleable-mod-package",
-    "description": "Agon Flow — author and run node graphs where every AI step is a node. `agon flow validate <file>` type-checks a flow (subflows, ports, exclusive routes) before a single engine is dispatched.",
+    "description": "Agon Flow — node graphs where every AI step is a node. `agon flow validate <file>` type-checks a flow (subflows, ports, exclusive routes) before a single engine is dispatched.",
     "accessibility": {
-      "label": "Agon Flow — author and run node graphs where every AI step is a node. `agon flow validate <file>` type-checks a flow (subflows, ports, exclusive routes) before a single engine is dispatched.",
-      "fallbackText": "Agon Flow — author and run node graphs where every AI step is a node. `agon flow validate <file>` type-checks a flow (subflows, ports, exclusive routes) before a single engine is dispatched.",
+      "label": "Agon Flow — node graphs where every AI step is a node. `agon flow validate <file>` type-checks a flow (subflows, ports, exclusive routes) before a single engine is dispatched.",
+      "fallbackText": "Agon Flow — node graphs where every AI step is a node. `agon flow validate <file>` type-checks a flow (subflows, ports, exclusive routes) before a single engine is dispatched.",
       "keyboardAccessible": true,
       "colorIndependent": true
     }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 
 import {
   APPROVAL, CHAT_INPUT, CHAT_OUTPUT, EXTRACT_STRUCTURED, IF_COMPARE, MOVE_FILE,
@@ -112,13 +112,18 @@ describe('flow core stays engine-free (zero dispatches by construction)', () => 
     expect(files.length).toBeGreaterThan(5);
   });
 
-  it('fails when an Agon package, engine or process module is imported under core', () => {
+  it('fails when the validate path can reach an Agon package, engine or process module at runtime', () => {
     const allowed = new Set(['zod', 'node:fs', 'node:path']);
+    const typeOnlyImport = /^\s*import\s+type\s[^;]*;/gm;
     const importSpecifier = /^\s*(?:import|export)\s[^'";]*?from\s*['"]([^'"]+)['"]|^\s*import\s*['"]([^'"]+)['"]|\b(?:import|require)\(\s*['"]([^'"]+)['"]/gm;
-    for (const file of files) {
-      for (const [, staticFrom, bare, dynamic] of readFileSync(file, 'utf-8').matchAll(importSpecifier)) {
+    for (const file of [...files, join(FLOW_CORE_SRC, '..', 'validate-command.ts')]) {
+      const runtimeSource = readFileSync(file, 'utf-8').replace(typeOnlyImport, '');
+      for (const [, staticFrom, bare, dynamic] of runtimeSource.matchAll(importSpecifier)) {
         const specifier = staticFrom ?? bare ?? dynamic;
-        expect(specifier.startsWith('.') || allowed.has(specifier), `${file} imports ${specifier}`).toBe(true);
+        const permitted = specifier.startsWith('.')
+          ? resolve(dirname(file), specifier).startsWith(FLOW_CORE_SRC + sep)
+          : allowed.has(specifier);
+        expect(permitted, `${file} imports ${specifier}`).toBe(true);
       }
     }
   });

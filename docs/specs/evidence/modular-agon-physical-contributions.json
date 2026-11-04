@@ -23,7 +23,7 @@
       "category": "physicalCliCommands",
       "package": "@kernlang/agon-mod-flow",
       "ownerClass": "user-toggleable-mod-package",
-      "description": "Agon Flow — author and run node graphs where every AI step is a node. `agon flow validate <file>` type-checks a flow (subflows, ports, exclusive routes) before a single engine is dispatched.",
+      "description": "Agon Flow — node graphs where every AI step is a node. `agon flow validate <file>` type-checks a flow (subflows, ports, exclusive routes) before a single engine is dispatched.",
       "source": "packages/mod-flow/src/implementation.ts"
     },
     {

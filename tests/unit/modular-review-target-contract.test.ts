@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { execFile, execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -82,11 +82,23 @@ describe('shared Review target contract', () => {
 
   it('refuses a diff over the limit and names the file reviewers would miss, instead of cutting it', () => {
     writeFileSync(join(root, 'base.txt'), 'long changed line\n'.repeat(10000));
-    expect(() => resolveReviewTarget('uncommitted', root)).toThrow(/over the 100,000 limit.*base\.txt.*--max-diff-chars/);
+    expect(() => resolveReviewTarget('uncommitted', root)).toThrow(/over the 100,000 limit.*base\.txt/);
+    expect(() => resolveReviewTarget('uncommitted', root)).not.toThrow(/--max-diff-chars/);
+    expect(() => resolveReviewTarget('uncommitted', root, undefined, 1000, '--max-diff-chars')).toThrow(/--max-diff-chars/);
     const { diff, maxDiffChars } = resolveReviewTarget('uncommitted', root, undefined, 500_000);
     expect(diff).toContain('long changed line');
     expect(diff).not.toContain('[truncated');
     expect(maxDiffChars).toBe(500_000);
+  });
+
+  it('names only the files past the limit, so a refusal does not send users after files reviewers would see', () => {
+    writeFileSync(join(root, 'base.txt'), 'small change\n');
+    mkdirSync(join(root, 'big b'));
+    writeFileSync(join(root, 'big b', 'x.txt'), 'long changed line\n'.repeat(1000));
+    let message = '';
+    try { resolveReviewTarget('uncommitted', root, undefined, 1000); } catch (error) { message = (error as Error).message; }
+    expect(message).toContain('see: big b/x.txt.');
+    expect(message).not.toContain('base.txt');
   });
 
   it.each(['main..feature..other', 'main...feature...other'])('rejects extra range endpoints in %s', range => {

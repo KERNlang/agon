@@ -25,9 +25,9 @@ import { stripReasoning, stripTuiChrome } from '../blocks/engine-helpers.js';
 import { hostNowMs } from '../lib/kern-host.js';
 
 import { resolveReviewTarget, reviewMaxDiffChars, resolveExplicitReviewEngines, gatherReviewFileContext, buildReviewPrompt, REVIEW_ROLES, REVIEW_ROLE_OUTSIDE_TAIL, resolveReviewRole, assignReviewRoles, buildRoleInstructions } from '@kernlang/agon-support-verification';
-export { gatherReviewFileContext, REVIEW_ROLES, REVIEW_ROLE_OUTSIDE_TAIL, resolveReviewRole, assignReviewRoles, buildRoleInstructions };
+export { resolveReviewTarget, reviewMaxDiffChars, gatherReviewFileContext, REVIEW_ROLES, REVIEW_ROLE_OUTSIDE_TAIL, resolveReviewRole, assignReviewRoles, buildRoleInstructions };
 export type { ReviewRole } from '@kernlang/agon-support-verification';
-export { resolveReviewTarget, resolveAutoReviewBase, reviewMaxDiffChars } from '@kernlang/agon-support-verification';
+export { resolveAutoReviewBase } from '@kernlang/agon-support-verification';
 
 // ── Module: ReviewEngineSelection ──
 

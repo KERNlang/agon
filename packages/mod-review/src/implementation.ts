@@ -112,6 +112,7 @@ export async function runReview(
       context.cwd,
       text(input.base) || undefined,
       maxDiffChars ?? reviewMaxDiffChars(context.config),
+      "--max-diff-chars",
     );
   } catch (error) {
     return {

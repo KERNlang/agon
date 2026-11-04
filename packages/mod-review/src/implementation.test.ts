@@ -68,6 +68,7 @@ describe('physical review mod', () => {
     expect(h.dispatch).not.toHaveBeenCalled();
     const fromConfig = await h.command.run({ engines: 'alpha' }, { ...h.context, config: { reviewMaxDiffChars: 10 } }) as CommandResult;
     expect(fromConfig.exitCode).toBe(1);
+    expect(fromConfig.stderr).toContain('over the 10 limit');
     expect(h.dispatch).not.toHaveBeenCalled();
     const allowed = await h.command.run({ engines: 'alpha', 'max-diff-chars': '100000', format: 'text' }, { ...h.context, config: { reviewMaxDiffChars: 10 } }) as CommandResult;
     expect(h.dispatch).toHaveBeenCalledTimes(1);

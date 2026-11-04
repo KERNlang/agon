@@ -131,7 +131,7 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
     agentReview: {
       assertAvailable: assertStepAvailable,
       snapshot: snapshotTokens,
-      reviewTarget: () => resolveReviewTarget('uncommitted', cwd, undefined, reviewMaxDiffChars(loadConfig(cwd))),
+      reviewTarget: () => resolveReviewTarget('uncommitted', cwd, undefined, reviewMaxDiffChars(ctx.config)),
       selectReviewEngine: requested => selectReviewEngine(requested, ctx),
       review: (diff, label, engineId, signal) => runReviewCore(diff, label, engineId, ctx, signal),
       agent: (task, emit, options) => runAgentMode(task, emit as Dispatch, ctx, {

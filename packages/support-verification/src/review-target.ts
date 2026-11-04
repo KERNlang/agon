@@ -15,22 +15,27 @@ export function reviewMaxDiffChars(config: unknown): number {
   return configured as number;
 }
 
+function gitHeaderPath(paths: string): string {
+  return /^"?a\/(.+?)"? "?b\/\1"?$/.exec(paths)?.[1] ?? /.* "?b\/(.*?)"?$/.exec(paths)?.[1] ?? paths;
+}
+
 function filesBeyond(diff: string, limit: number): string[] {
-  const headers = [...diff.matchAll(/^diff --(?:git|cc|combined) (.+)$/gm)];
+  const headers = [...diff.matchAll(/^diff --(git|cc|combined) (.+)$/gm)];
   return headers.flatMap((header, index) => {
     const end = headers[index + 1]?.index ?? diff.length;
     if (end <= limit) return [];
-    return [/(?:^| )"?b\/(.*?)"?$/.exec(header[1]!)?.[1] ?? header[1]!];
+    return [header[1] === 'git' ? gitHeaderPath(header[2]!) : header[2]!];
   });
 }
 
-function diffOverLimitMessage(label: string, diff: string, limit: number): string {
+function diffOverLimitMessage(label: string, diff: string, limit: number, overrideFlag?: string): string {
   const files = filesBeyond(diff, limit);
   const shown = files.slice(0, 10).join(', ');
   const more = files.length > 10 ? ` and ${files.length - 10} more` : '';
   const chars = (value: number) => value.toLocaleString('en-US');
   return `Refusing to review ${label}: the diff is ${chars(diff.length)} chars, over the ${chars(limit)} limit, so reviewers would not fully see: ${shown || '(no file headers found)'}${more}. `
-    + `Raise the limit for this run with --max-diff-chars ${diff.length}, set reviewMaxDiffChars in config, or review a smaller target.`;
+    + (overrideFlag ? `Raise the limit for this run with ${overrideFlag} ${diff.length}, set` : 'Set')
+    + ` reviewMaxDiffChars in config, or review a smaller target.`;
 }
 
 function assertSafeRef(value: string): void {
@@ -85,7 +90,7 @@ export function resolveAutoReviewBase(cwd: string, branch: string): string|null 
   return null;
 }
 
-export function resolveReviewTarget(target: string|undefined, cwd: string, base?: string, maxDiffChars: number = DEFAULT_REVIEW_MAX_DIFF_CHARS): ReviewTarget {
+export function resolveReviewTarget(target: string|undefined, cwd: string, base?: string, maxDiffChars: number = DEFAULT_REVIEW_MAX_DIFF_CHARS, overrideFlag?: string): ReviewTarget {
   const t = (target ?? 'uncommitted').trim();
   const baseRef = (base ?? '').trim();
   let diff = '';
@@ -264,7 +269,7 @@ export function resolveReviewTarget(target: string|undefined, cwd: string, base?
   // argv entries containing NUL, so never let binary diff content through.
   diff = diff.replace(/\u0000/g, '');
 
-  if (diff.length > maxDiffChars) throw new Error(diffOverLimitMessage(label, diff, maxDiffChars));
+  if (diff.length > maxDiffChars) throw new Error(diffOverLimitMessage(label, diff, maxDiffChars, overrideFlag));
 
   return { diff, label, maxDiffChars };
 }

@@ -58,22 +58,20 @@ export const engineCommand: any = defineCommand({
       case 'list': {
         header('Engines');
         const engines = registry.list();
-        const rows: string[][] = [];
-
-        for (const engine of engines) {
+        const rows: string[][] = await Promise.all(engines.map(async (engine) => {
           const available = registry.isAvailable(engine);
           const version = available
             ? (await adapter.getVersion(engine)) ?? dim('unknown')
             : '';
 
-          rows.push([
+          return [
             available ? green(engine.id) : red(engine.id),
             engine.displayName,
             available ? green('installed') : red('missing'),
             version,
             engine.tier,
-          ]);
-        }
+          ];
+        }));
 
         table(['ID', 'Name', 'Status', 'Version', 'Tier'], rows);
         break;

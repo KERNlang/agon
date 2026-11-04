@@ -9,6 +9,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./text-forensics": {
+      "types": "./dist/text-forensics.d.ts",
+      "import": "./dist/text-forensics.js"
+    },
     "./manifest": "./agon.mod.json",
     "./ownership": "./ownership.json"
   },

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { commandResultToToolResult } from '@kernlang/agon-mod-api';
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { spawnSync } from "node:child_process";
+import { embedForWorkflow as embed } from './embedding.js';
 import type {
   AgonModFactory,
   CommandResult,
@@ -12,10 +12,6 @@ import type {
   ModServices,
   Registrar,
 } from "@kernlang/agon-mod-api";
-import {
-  resolveDedupSidecar,
-  resolveSidecarPython,
-} from "@kernlang/agon-support-dedup";
 import { withFileLock } from "@kernlang/agon-support-persistence";
 import { loadRagIndex, ragDir, saveRagIndex } from "./store.js";
 import type {
@@ -91,31 +87,6 @@ export function chunkMarkdown(text: string, source: string): RagChunk[] {
   }
   flush(lines.length - 1);
   return out;
-}
-function embed(texts: string[]) {
-  const sidecar = resolveDedupSidecar("embedder.py");
-  if (!sidecar) throw new Error("RAG embedder asset is unavailable");
-  const result = spawnSync(resolveSidecarPython(), [sidecar], {
-    input:
-      texts
-        .map((text, id) => JSON.stringify({ id: String(id), text }))
-        .join("\n") + "\n",
-    encoding: "utf8",
-    timeout: Number(process.env.AGON_RAG_EMBED_TIMEOUT_MS) || 180000,
-    maxBuffer: 64 * 1024 * 1024,
-  });
-  if (result.status !== 0 || !result.stdout)
-    throw new Error(
-      `RAG embedder failed: ${String(result.stderr ?? "").trim() || "install fastembed and numpy"}`,
-    );
-  const parsed = JSON.parse(result.stdout);
-  if (!Array.isArray(parsed.vectors) || parsed.vectors.length !== texts.length)
-    throw new Error("RAG embedder returned the wrong vector count");
-  return {
-    model: String(parsed.model),
-    dims: Number(parsed.dims),
-    vectors: parsed.vectors.map((x: any) => x.vector as number[]),
-  };
 }
 function corpus(root: string) {
   const files = collectCorpusFiles(root);

@@ -4,7 +4,13 @@ import { dirname, join } from 'node:path';
 
 import { resolveWithinRoot } from './paths.js';
 
+/**
+ * Per-file ceiling (bytes) on untracked work copied into a mutation sandbox: a stray recording or database dump must not turn hydration into a minutes-long copy.
+ */
 export const MAX_UNTRACKED_COPY_BYTES = 5 * 1024 * 1024;
+/**
+ * Beyond this many untracked files the tree is no longer 'uncommitted work' and hydration would dominate the run.
+ */
 export const MAX_UNTRACKED_COPY_FILES = 2000;
 
 export function copyUntrackedWork(repoRoot: string, sandboxRoot: string): { copied: number; skipped: number } {

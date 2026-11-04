@@ -80,12 +80,28 @@ def load_vendor_probe(path: str):
     return module
 
 
+def launch_claude_bare() -> None:
+    """Add --bare to the vendor probe's exec of the Claude binary.
+
+    A plain launch can open the agent dashboard, whose animated spinner never
+    goes idle and whose /model is not the model selector, so the probe reads
+    zero models.
+    """
+    exec_binary = os.execvp
+
+    def exec_bare(file, args):
+        exec_binary(file, [*args, "--bare"])
+
+    os.execvp = exec_bare
+
+
 def main(argv: list[str]) -> int:
     if len(argv) < 2:
         print('{"error":"usage: agon-model-probe-wrapper <vendor-probe> <binary> [slash]"}')
         return 0
     probe = load_vendor_probe(os.path.abspath(argv[0]))
     probe.PARSERS["claude"] = parse_claude_picker
+    launch_claude_bare()
     return probe.main(argv[1:])
 
 

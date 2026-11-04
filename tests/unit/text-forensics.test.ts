@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 
-import { scanText, cleanText } from '../../packages/core/src/text/forensics.js';
+import * as legacy from '../../packages/core/src/text/forensics.js';
+import * as physical from '../../packages/mod-sanitize/src/implementation.js';
 
 const ZWSP = '\u{200B}';
 const BOM = '\u{FEFF}';
@@ -12,6 +14,16 @@ const ZWJ = '\u{200D}';
 const CYRILLIC_A = '\u{0430}';
 const FULLWIDTH_H = '\u{FF48}';
 
+it('keeps text policy in Sanitize instead of either compatibility caller', () => {
+  const coreSource = readFileSync(new URL('../../packages/core/src/text/forensics.ts', import.meta.url), 'utf8');
+  const commandSource = readFileSync(new URL('../../packages/mod-sanitize/src/implementation.ts', import.meta.url), 'utf8');
+  expect(coreSource).toContain("from '@kernlang/agon-mod-sanitize/text-forensics'");
+  expect(coreSource).not.toMatch(/function\s+(scanText|cleanText|classifyInvisible)\b/);
+  expect(commandSource).toContain('from "./text-forensics.js"');
+  expect(commandSource).not.toMatch(/function\s+(scanText|cleanText)\b/);
+});
+
+describe.each([{ name: 'Core compatibility', ...legacy }, { name: 'physical Sanitize', ...physical }])('$name', ({ scanText, cleanText }) => {
 describe('text forensics — scanText', () => {
   it('reports provably clean text as clean with zero findings', () => {
     const report = scanText('Hello world. Plain ASCII, no tricks.\nSecond line.');
@@ -121,4 +133,5 @@ describe('text forensics — cleanText', () => {
     expect(report.clean).toBe(false);
     expect(report.byChannel['zero-width']).toBe(1);
   });
+});
 });

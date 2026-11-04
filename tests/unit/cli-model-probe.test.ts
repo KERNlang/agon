@@ -1,11 +1,13 @@
 import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync, utimesSync, readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { setupTestAgonHome, cleanupTestAgonHome } from '../helpers/agon-home.js';
 import {
   readProbedCliModels,
+  buildCliGroupsImmediate,
   buildCliModelGroups,
   getBinaryVersionAsync,
   refreshCliGroupVersion,
@@ -84,10 +86,58 @@ describe('CLI live-model probe cache', () => {
   it('treats a probe older than the TTL as stale (falls back)', () => {
     home = setupTestAgonHome('probe-stale');
     const file = writeProbeCache(home, 'agy', AGY_PROBE);
-    // Age the file 2 days back; default TTL is 24h, so it must read as stale.
+    const twoHoursAgoSec = (Date.now() - 2 * 3_600_000) / 1000;
+    utimesSync(file, twoHoursAgoSec, twoHoursAgoSec);
+    expect(readProbedCliModels('agy')).toBeNull();
+  });
+
+  it('keeps showing an expired probe instead of the static fallback while it refreshes', () => {
+    home = setupTestAgonHome('probe-expired-last-known');
+    const file = writeProbeCache(home, 'claude', [{ id: 'opus', name: 'Opus 5.5', current: true }]);
     const twoDaysAgoSec = (Date.now() - 2 * 86_400_000) / 1000;
     utimesSync(file, twoDaysAgoSec, twoDaysAgoSec);
-    expect(readProbedCliModels('agy')).toBeNull();
+
+    const claude = buildCliGroupsImmediate().find((g) => g.engineId === 'claude');
+    expect(claude!.models.map((m) => m.name)).toEqual(['Opus 5.5']);
+    expect(claude!.loading).toBe(true);
+    expect(buildCliModelGroups().find((g) => g.engineId === 'claude')!.models.map((m) => m.name)).toEqual(['Opus 5.5']);
+  });
+
+  it('a failed probe keeps the last list and a successful probe overwrites it', async () => {
+    home = setupTestAgonHome('probe-overwrite-last-known');
+    const file = writeProbeCache(home, 'claude', [{ id: 'opus', name: 'Opus 5', current: true }]);
+    const twoDaysAgoSec = (Date.now() - 2 * 86_400_000) / 1000;
+    utimesSync(file, twoDaysAgoSec, twoDaysAgoSec);
+    const namesShown = () => buildCliGroupsImmediate().find((g) => g.engineId === 'claude')!.models.map((m) => m.name);
+
+    const emptyProbe = join(home, 'empty-python');
+    writeFileSync(emptyProbe, `#!/usr/bin/env node\nprocess.stdout.write(JSON.stringify({ models: [] }));\n`);
+    chmodSync(emptyProbe, 0o755);
+    expect(await refreshProbedCliModels('claude', 'claude', undefined, emptyProbe)).toBe(false);
+    expect(namesShown()).toEqual(['Opus 5']);
+
+    const liveProbe = join(home, 'live-python');
+    writeFileSync(liveProbe, `#!/usr/bin/env node\nprocess.stdout.write(JSON.stringify({ models: [{ id: 'opus', name: 'Opus 5.5', current: true }] }));\n`);
+    chmodSync(liveProbe, 0o755);
+    expect(await refreshProbedCliModels('claude', 'claude', undefined, liveProbe)).toBe(true);
+    expect(namesShown()).toEqual(['Opus 5.5']);
+    expect(buildCliGroupsImmediate().find((g) => g.engineId === 'claude')!.loading).toBe(false);
+  });
+
+  it.each([
+    'packages/support-engine-runtime/python/agon-model-probe-wrapper.py',
+    'packages/cli/py/agon-model-probe-wrapper.py',
+  ])('%s launches Claude with --bare so the probe reaches the model selector, not the agent dashboard', (wrapperPath) => {
+    home = setupTestAgonHome('probe-claude-bare');
+    const vendorProbe = join(home, 'vendor', 'pkg', 'cli', 'model_probe.py');
+    mkdirSync(join(home, 'vendor', 'pkg', 'cli'), { recursive: true });
+    writeFileSync(vendorProbe, 'import os\nPARSERS = {}\ndef main(argv):\n    os.execvp(argv[0], [argv[0]])\n');
+    const fakeClaude = join(home, 'claude');
+    writeFileSync(fakeClaude, '#!/bin/sh\nprintf "%s" "$*"\n');
+    chmodSync(fakeClaude, 0o755);
+
+    const wrapper = fileURLToPath(new URL(`../../${wrapperPath}`, import.meta.url));
+    expect(execFileSync('python3', [wrapper, vendorProbe, fakeClaude, '/model'], { encoding: 'utf8' })).toBe('--bare');
   });
 
   it('buildCliModelGroups prefers the probed list over the static fallback for agy', () => {

@@ -118,6 +118,8 @@
       "dist/implementation.d.ts",
       "dist/lexical-policy.js",
       "dist/lexical-policy.d.ts",
+      "dist/workflow.js",
+      "dist/workflow.d.ts",
       "ownership.json",
       "schemas/config.schema.json"
     ],

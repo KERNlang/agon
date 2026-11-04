@@ -1,8 +1,5 @@
-// Pins the research helpers. The pure parts (buildResearchPrompt,
-// formatResearchResult) are fixture-tested; runResearch is exercised only on its
-// no-network early-exit paths (empty question / no keyless lane) — the full
-// discover→fetch→draft→verify happy path needs a live engine + egress and is
-// verified by a real run, not here.
+// Test pure helpers and early exits here. modular-research-legacy-contract.test.ts
+// tests workflow composition with mocked I/O. Live provider behavior is separate.
 import { describe, it, expect } from 'vitest';
 import {
   buildResearchPrompt,

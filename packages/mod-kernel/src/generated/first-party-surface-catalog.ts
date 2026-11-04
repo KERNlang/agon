@@ -244,7 +244,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.forge",
       "version": "1.0.0",
-      "contentHash": "sha256:58ad8bd2cf45d9f6e4659299907fa4a751615c503e5ee561b1e1edaa6382a5ef"
+      "contentHash": "sha256:8450b8e9be2d92907ee1cd997a22821d69f4c8a40863fbf8f4813256d9b53cc8"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "Forge",
@@ -1210,7 +1210,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.forge",
       "version": "1.0.0",
-      "contentHash": "sha256:58ad8bd2cf45d9f6e4659299907fa4a751615c503e5ee561b1e1edaa6382a5ef"
+      "contentHash": "sha256:8450b8e9be2d92907ee1cd997a22821d69f4c8a40863fbf8f4813256d9b53cc8"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "forge",
@@ -1233,7 +1233,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.forge",
       "version": "1.0.0",
-      "contentHash": "sha256:58ad8bd2cf45d9f6e4659299907fa4a751615c503e5ee561b1e1edaa6382a5ef"
+      "contentHash": "sha256:8450b8e9be2d92907ee1cd997a22821d69f4c8a40863fbf8f4813256d9b53cc8"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "forge",
@@ -1256,7 +1256,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.forge",
       "version": "1.0.0",
-      "contentHash": "sha256:58ad8bd2cf45d9f6e4659299907fa4a751615c503e5ee561b1e1edaa6382a5ef"
+      "contentHash": "sha256:8450b8e9be2d92907ee1cd997a22821d69f4c8a40863fbf8f4813256d9b53cc8"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "forge",
@@ -1279,7 +1279,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.forge",
       "version": "1.0.0",
-      "contentHash": "sha256:58ad8bd2cf45d9f6e4659299907fa4a751615c503e5ee561b1e1edaa6382a5ef"
+      "contentHash": "sha256:8450b8e9be2d92907ee1cd997a22821d69f4c8a40863fbf8f4813256d9b53cc8"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "forge-full",
@@ -1302,7 +1302,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.forge",
       "version": "1.0.0",
-      "contentHash": "sha256:58ad8bd2cf45d9f6e4659299907fa4a751615c503e5ee561b1e1edaa6382a5ef"
+      "contentHash": "sha256:8450b8e9be2d92907ee1cd997a22821d69f4c8a40863fbf8f4813256d9b53cc8"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "forge-slice",
@@ -1325,7 +1325,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.forge",
       "version": "1.0.0",
-      "contentHash": "sha256:58ad8bd2cf45d9f6e4659299907fa4a751615c503e5ee561b1e1edaa6382a5ef"
+      "contentHash": "sha256:8450b8e9be2d92907ee1cd997a22821d69f4c8a40863fbf8f4813256d9b53cc8"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "forge-slice",
@@ -2820,7 +2820,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.forge",
       "version": "1.0.0",
-      "contentHash": "sha256:58ad8bd2cf45d9f6e4659299907fa4a751615c503e5ee561b1e1edaa6382a5ef"
+      "contentHash": "sha256:8450b8e9be2d92907ee1cd997a22821d69f4c8a40863fbf8f4813256d9b53cc8"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "forge",
@@ -4386,7 +4386,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.forge",
       "version": "1.0.0",
-      "contentHash": "sha256:58ad8bd2cf45d9f6e4659299907fa4a751615c503e5ee561b1e1edaa6382a5ef"
+      "contentHash": "sha256:8450b8e9be2d92907ee1cd997a22821d69f4c8a40863fbf8f4813256d9b53cc8"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "Forge",
@@ -4984,7 +4984,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.forge",
       "version": "1.0.0",
-      "contentHash": "sha256:58ad8bd2cf45d9f6e4659299907fa4a751615c503e5ee561b1e1edaa6382a5ef"
+      "contentHash": "sha256:8450b8e9be2d92907ee1cd997a22821d69f4c8a40863fbf8f4813256d9b53cc8"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "apply",
@@ -5674,7 +5674,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.forge",
       "version": "1.0.0",
-      "contentHash": "sha256:58ad8bd2cf45d9f6e4659299907fa4a751615c503e5ee561b1e1edaa6382a5ef"
+      "contentHash": "sha256:8450b8e9be2d92907ee1cd997a22821d69f4c8a40863fbf8f4813256d9b53cc8"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "forge",
@@ -6226,7 +6226,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.forge",
       "version": "1.0.0",
-      "contentHash": "sha256:58ad8bd2cf45d9f6e4659299907fa4a751615c503e5ee561b1e1edaa6382a5ef"
+      "contentHash": "sha256:8450b8e9be2d92907ee1cd997a22821d69f4c8a40863fbf8f4813256d9b53cc8"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "suggest-forge",
@@ -6548,7 +6548,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.forge",
       "version": "1.0.0",
-      "contentHash": "sha256:58ad8bd2cf45d9f6e4659299907fa4a751615c503e5ee561b1e1edaa6382a5ef"
+      "contentHash": "sha256:8450b8e9be2d92907ee1cd997a22821d69f4c8a40863fbf8f4813256d9b53cc8"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "[path] [--force]       — apply winning forge patch",
@@ -7081,7 +7081,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.forge",
       "version": "1.0.0",
-      "contentHash": "sha256:58ad8bd2cf45d9f6e4659299907fa4a751615c503e5ee561b1e1edaa6382a5ef"
+      "contentHash": "sha256:8450b8e9be2d92907ee1cd997a22821d69f4c8a40863fbf8f4813256d9b53cc8"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "<task> test with <cmd> [--hardened] — competitive code generation",
@@ -8768,7 +8768,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.forge",
       "version": "1.0.0",
-      "contentHash": "sha256:58ad8bd2cf45d9f6e4659299907fa4a751615c503e5ee561b1e1edaa6382a5ef"
+      "contentHash": "sha256:8450b8e9be2d92907ee1cd997a22821d69f4c8a40863fbf8f4813256d9b53cc8"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "[path] [--force]       — apply winning forge patch",
@@ -9496,7 +9496,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.forge",
       "version": "1.0.0",
-      "contentHash": "sha256:58ad8bd2cf45d9f6e4659299907fa4a751615c503e5ee561b1e1edaa6382a5ef"
+      "contentHash": "sha256:8450b8e9be2d92907ee1cd997a22821d69f4c8a40863fbf8f4813256d9b53cc8"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "<task> test with <cmd> [--hardened] — competitive code generation",

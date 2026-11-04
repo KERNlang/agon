@@ -1,4 +1,6 @@
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 
 export function publishedIntegrity(name, version) {
   let stdout;
@@ -14,12 +16,21 @@ export function publishedIntegrity(name, version) {
   return stdout.trim() ? JSON.parse(stdout) : null;
 }
 
+export function assertTarballApproved({ name, version, integrity }, tarball) {
+  const actual = `sha512-${createHash('sha512').update(readFileSync(tarball)).digest('base64')}`;
+  if (actual !== integrity) {
+    throw new Error(`${tarball} is not the tarball approved for ${name}@${version} (${actual}, manifest ${integrity}); refusing to publish`);
+  }
+}
+
 function publishArgs(tarball, { dryRun = false, provenance = false }) {
   return ['publish', tarball, '--access', 'public',
     ...(provenance ? ['--provenance'] : []), ...(dryRun ? ['--dry-run'] : [])];
 }
 
-export function publishIfNew({ name, version, integrity }, tarball, options = {}) {
+export function publishIfNew(entry, tarball, options = {}) {
+  const { name, version, integrity } = entry;
+  assertTarballApproved(entry, tarball);
   const existing = publishedIntegrity(name, version);
   if (existing === integrity) {
     console.log(`skip: ${name}@${version} already published with identical bytes`);

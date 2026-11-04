@@ -1,5 +1,4 @@
 import { readFileSync } from 'node:fs';
-import { basename, extname } from 'node:path';
 
 const FORBIDDEN_PATHS = [
   [/(^|\/)\.env(\.|$)/i, 'dotenv file'],
@@ -14,21 +13,29 @@ const SECRET_PATTERNS = [
   [/\bnpm_[A-Za-z0-9]{36}\b/, 'npm token'],
   [/\bgh[pousr]_[A-Za-z0-9]{36,}\b/, 'GitHub token'],
   [/\bgithub_pat_[A-Za-z0-9_]{40,}\b/, 'GitHub token'],
-  [/\bsk-ant-[A-Za-z0-9_-]{20,}\b/, 'Anthropic key'],
-  [/\bsk-(?:proj-)?[A-Za-z0-9]{32,}\b/, 'OpenAI-style key'],
+  [/\bsk-ant-[A-Za-z0-9_-]{20,}/, 'Anthropic key'],
+  [/\bsk-(?!ant-)[A-Za-z0-9_-]{32,}/, 'sk- API key'],
   [/\bAKIA[0-9A-Z]{16}\b/, 'AWS access key'],
   [/-----BEGIN (?:[A-Z]+ )?PRIVATE KEY-----/, 'private key'],
 ];
 
 // Placeholders (`/Users/you`, `/home/user`) are documentation, not leaks.
-const PERSONAL_PATH = /(?:\/Users|\/home)\/(?!you\b|user\b|name\b|me\b|runner\b|example\b|alice\b|bob\b|foo\b|test\b|dev\b|agent\b)[a-z][a-z0-9._-]{2,}\//;
+const PERSONAL_PATH = /(?:(?<![\w.~-])\/(?:Users|home)|\b[a-z]:[\\/]+Users)[\\/]+(?!(?:you|user|name|me|runner|example|alice|bob|foo|test|dev|agent)\b)[a-z][a-z0-9._-]{2,}[\\/]/i;
 
-const TEXT_EXTENSIONS = new Set(['.js', '.mjs', '.cjs', '.ts', '.mts', '.cts', '.map', '.json', '.md', '.txt', '.py', '.yml', '.yaml', '.sh', '.toml', '.patch', '']);
+const ARCHIVE_EXTENSION = /\.(?:tgz|tar|gz|bz2|xz|zst|zip|7z|rar|jar|whl|vsix|asar)$/i;
+const ARCHIVE_SIGNATURES = ['\x1f\x8b', 'PK\x03\x04', 'PK\x05\x06', '7z\xbc\xaf\x27\x1c', 'BZh', '\xfd7zXZ\x00', 'Rar!\x1a\x07', '\x28\xb5\x2f\xfd'];
+const TAR_SIGNATURE_OFFSET = 257;
+
+function isArchive(path, text) {
+  return ARCHIVE_EXTENSION.test(path)
+    || ARCHIVE_SIGNATURES.some((signature) => text.startsWith(signature))
+    || text.startsWith('ustar', TAR_SIGNATURE_OFFSET);
+}
 
 export function checkPackedFile(path, text) {
   const findings = [];
   for (const [pattern, label] of FORBIDDEN_PATHS) if (pattern.test(path)) findings.push(`${path}: ${label}`);
-  if (text === null) return findings;
+  if (isArchive(path, text)) findings.push(`${path}: nested archive`);
   for (const [pattern, label] of SECRET_PATTERNS) if (pattern.test(text)) findings.push(`${path}: ${label} pattern`);
   const personal = PERSONAL_PATH.exec(text);
   if (personal) findings.push(`${path}: personal path ${personal[0]}`);
@@ -43,10 +50,8 @@ export function checkPackedFile(path, text) {
 }
 
 export function checkPackedTree(packageRoot, paths) {
-  return paths.flatMap((path) => {
-    const textual = TEXT_EXTENSIONS.has(extname(basename(path)));
-    return checkPackedFile(path, textual ? readFileSync(`${packageRoot}/${path}`, 'utf8') : null);
-  });
+  // latin1 maps every byte to one char, so ASCII secrets and archive signatures survive in binary files.
+  return paths.flatMap((path) => checkPackedFile(path, readFileSync(`${packageRoot}/${path}`, 'latin1')));
 }
 
 export function checkManifestShape(manifest, paths) {

@@ -165,6 +165,16 @@ describe('goal-multilang: structured invalid cause', () => {
     expect(typed.outcomes.map(o => [o.status, o.invalidCause, o.reason])).toEqual([['invalid', 'non-compiling', 'the mutated source does not typecheck']]);
   });
 
+  it.each([
+    ['build', { buildCmd: "if grep -q 'a - b' src/a.go; then sleep 10; fi" }, 'true'],
+    ['typecheck', { typecheckCmd: "if grep -q 'a - b' src/a.go; then sleep 10; fi" }, 'true'],
+    ['compile check', { compileChecks: { go: "if grep -q 'a - b' src/a.go; then sleep 10; fi" } }, "! grep -q 'a - b' src/a.go"],
+  ])('goal-multilang: a timed-out %s is not reported as non-compiling, so goal cannot silently drop the mutant', async (_step, checks, testCmd) => {
+    const dir = sandbox({ 'src/a.go': GO });
+    const report = await runMutants({ ...base, perMutantTimeoutSec: 1, worktree: dir, mutants: mutantsOf(dir, 'src/a.go', 'go', [4]), testCmd, ...checks });
+    expect(report.outcomes.map(o => [o.status, o.invalidCause])).toEqual([['invalid', undefined]]);
+  });
+
   it('goal-multilang: an unplaceable mutant carries invalidCause unplaceable', async () => {
     const dir = sandbox({ 'src/a.go': GO });
     const [mutant] = mutantsOf(dir, 'src/a.go', 'go', [4]);

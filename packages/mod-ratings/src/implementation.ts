@@ -49,11 +49,12 @@ function leaderboard(record:RatingRecord, input:Record<string,Json>) {
     provisional:rating.wins + rating.losses < 30,
   })).sort((a,b) => b.floor - a.floor || a.engine.localeCompare(b.engine));
 }
+const printable = (value: string) => value.replace(/[\u0000-\u001f\u007f-\u009f]/g, '');
 function leaderboardText(rows: ReturnType<typeof leaderboard>, input: Record<string, Json>): string {
-  const task = typeof input.taskClass === 'string' ? input.taskClass : '', mode = typeof input.mode === 'string' ? input.mode : '';
+  const task = typeof input.taskClass === 'string' ? printable(input.taskClass) : '', mode = typeof input.mode === 'string' ? printable(input.mode) : '';
   const title = task ? `Leaderboard: ${task}` : mode ? `Leaderboard: ${mode.charAt(0).toUpperCase()}${mode.slice(1)}` : 'Global Leaderboard';
   if (!rows.length) return `${title}\n${mode ? `No ${mode} matches recorded. Run \`agon ${mode}\` to start competing!` : 'No matches recorded. Run `agon forge` to start competing!'}\n`;
-  const cells = rows.map((row, index) => [`${index + 1}.`, row.engine + (row.provisional ? ' *' : ''), String(row.rating), `+-${row.uncertainty}`, String(row.floor), String(row.wins), String(row.losses), `${row.winPercent}%`]);
+  const cells = rows.map((row, index) => [`${index + 1}.`, printable(row.engine) + (row.provisional ? ' *' : ''), String(row.rating), `+-${row.uncertainty}`, String(row.floor), String(row.wins), String(row.losses), `${row.winPercent}%`]);
   const table = [['#', 'Engine', 'Rating', '+/-', 'Floor', 'W', 'L', 'Win%'], ...cells];
   const widths = table[0]!.map((_, column) => Math.max(...table.map(line => line[column]!.length)));
   const lines = table.map(line => line.map((cell, column) => cell.padEnd(widths[column]!)).join('  ').trimEnd());

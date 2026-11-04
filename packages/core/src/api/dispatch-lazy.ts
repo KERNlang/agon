@@ -1,6 +1,7 @@
 import type * as Impl from './dispatch.js';
 
-const impl = () => import('./dispatch.js');
+let loaded: Promise<typeof Impl> | undefined;
+const impl = () => loaded ??= import('./dispatch.js');
 
 export const apiDispatch: typeof Impl.apiDispatch = async (...args) => (await impl()).apiDispatch(...args);
 export const apiDispatchTools: typeof Impl.apiDispatchTools = async (...args) => (await impl()).apiDispatchTools(...args);

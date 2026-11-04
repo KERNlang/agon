@@ -59,7 +59,7 @@ import { canonicalStepSignature, classifyToolEffect, primaryStepInput, stepEarns
 
 import type { ToolStepEffectEntry } from './step-effect.js';
 
-import { decideFirstChunkRetry } from '@kernlang/agon-support-engine-runtime';
+import { decideFirstChunkRetry, decodeEventStreamOutput, planPromptDelivery } from '@kernlang/agon-support-engine-runtime';
 
 /**
  * Fallback: spawn per turn with --resume/--continue. Works for any CLI engine.
@@ -2683,11 +2683,20 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
         }
       }
 
-      const child = spawn(config.binaryPath, args, {
-        stdio: ['ignore', 'pipe', 'pipe'],
+      const delivery = planPromptDelivery({ engineId: config.engine.id, mode: engineExec, command: config.binaryPath, args, prompt: opts.message });
+      if (delivery.error) {
+        yield { type: 'error' as const, content: delivery.error };
+        return;
+      }
+      const child = spawn(config.binaryPath, delivery.args, {
+        stdio: [delivery.stdinInput === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
         cwd: config.cwd,
         detached: true,
       });
+      if (delivery.stdinInput !== undefined) {
+        child.stdin?.on('error', () => {});
+        child.stdin?.end(delivery.stdinInput);
+      }
       activePid = child.pid ?? null;
 
       const chunks: SessionChunk[] = [];
@@ -2723,6 +2732,9 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
             // Only use result text if no text was streamed yet
             const text = parsed.result ?? '';
             if (text && typeof text === 'string') chunks.push({ type: 'text', content: text });
+          } else if (delivery.eventStreamOutput && parsed.event === 'result') {
+            const text = decodeEventStreamOutput(line);
+            if (text) chunks.push({ type: 'text', content: text });
           }
         } catch {
           // Raw text
@@ -2746,10 +2758,6 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
       });
 
       try {
-        // Send user message
-        // wait, wait! The original spawn in ResumeSession sends opts.message via spawn arg {prompt}.
-        // No need to write to stdin unless required, but the original implementation did not write to stdin!
-        // So let's keep it exactly as it was.
         while (!done) {
           if (chunks.length > 0) {
             yield chunks.shift()!;

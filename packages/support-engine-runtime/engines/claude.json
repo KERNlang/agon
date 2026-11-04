@@ -15,13 +15,16 @@
   "timeout": 360,
 
   "exec": {
-    "args": ["--print", "--verbose", "--output-format", "stream-json", "--max-turns", "10", "{prompt}"]
+    "args": ["--print", "--verbose", "--output-format", "stream-json", "--max-turns", "10", "{prompt}"],
+    "stdin": true
   },
   "review": {
-    "args": ["--print", "--verbose", "--output-format", "stream-json", "--max-turns", "50", "{prompt}"]
+    "args": ["--print", "--verbose", "--output-format", "stream-json", "--max-turns", "50", "{prompt}"],
+    "stdin": true
   },
   "agent": {
-    "args": ["--print", "--dangerously-skip-permissions", "--verbose", "--max-turns", "100", "{prompt}"]
+    "args": ["--print", "--dangerously-skip-permissions", "--verbose", "--max-turns", "100", "{prompt}"],
+    "stdin": true
   },
 
   "model": {

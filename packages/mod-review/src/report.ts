@@ -14,7 +14,10 @@ interface ReportSeat {
   readonly role?: string;
   readonly error?: string;
   readonly output?: string;
+  readonly batch?: number;
 }
+
+export const SPLIT_CAVEAT = 'cross-file issues between batches may be missed';
 
 export interface ReviewTextOptions {
   readonly verbose?: boolean;
@@ -28,6 +31,7 @@ export interface ReviewReport {
   readonly warnings?: readonly string[];
   readonly runDir?: string;
   readonly panelHealth?: { readonly requested: number; readonly responded: number; readonly degraded: boolean };
+  readonly split?: { readonly batches: number; readonly files: number; readonly note: string; readonly details: readonly unknown[] };
 }
 
 export function lineRegion(lines: string | undefined): { startLine: number; endLine: number } | undefined {
@@ -85,6 +89,7 @@ export function formatSarif(report: ReviewReport): string {
         ...(report.diffSize ? { diffSize: report.diffSize } : {}),
         seats: report.reviews.map((seat) => ({ engine: seat.engineId, status: seat.status })),
         ...(report.panelHealth ? { panelHealth: report.panelHealth } : {}),
+        ...(report.split ? { split: report.split } : {}),
         degraded: Boolean(report.panelHealth?.degraded || report.consensus?.degraded),
         warnings: report.warnings ?? [],
       },
@@ -104,7 +109,8 @@ export function formatSummaryLine(report: ReviewReport): string {
   const ok = report.reviews.filter((seat) => seat.status === 'ok').length;
   const blocking = report.consensus ? `${report.consensus.blockers.length} blocking` : 'blocking unknown';
   const diff = report.diffSize ? `; diff ${report.diffSize.chars}/${report.diffSize.maxChars} chars` : '';
-  return `AGON_SUMMARY: ${ok}/${report.reviews.length} seats ok; ${blocking}${diff}`;
+  const split = report.split ? `; split into ${report.split.batches} batches, ${SPLIT_CAVEAT}` : '';
+  return `AGON_SUMMARY: ${ok}/${report.reviews.length} seats ok; ${blocking}${diff}${split}`;
 }
 
 export function formatText(report: ReviewReport, options: ReviewTextOptions = {}): string {
@@ -114,7 +120,7 @@ export function formatText(report: ReviewReport, options: ReviewTextOptions = {}
   if (report.diffSize) lines.push(`Diff: ${report.diffSize.chars.toLocaleString('en-US')} chars (limit ${report.diffSize.maxChars.toLocaleString('en-US')})`);
   lines.push(`Seats: ${ok}/${report.reviews.length} ok`);
   for (const seat of report.reviews) {
-    if (seat.status !== 'ok') lines.push(`  ${seat.engineId}: ${seat.status}${seat.error ? ` (${seat.error})` : ''}`);
+    if (seat.status !== 'ok') lines.push(`  ${seat.engineId}${seat.batch ? ` [batch ${seat.batch}]` : ''}: ${seat.status}${seat.error ? ` (${seat.error})` : ''}`);
   }
   const groups: Array<[string, readonly ConsensusFinding[]]> = consensus
     ? [['Blockers', consensus.blockers], ['Needs check', consensus.needsCheck], ['Speculative', consensus.speculative], ['Nits', consensus.nits]]

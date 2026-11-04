@@ -1,0 +1,155 @@
+import type { CommandResult, InvocationContext, Json, ModServices } from '@kernlang/agon-mod-api';
+import { gitHeaderPath, redactSecretsDeep, redactSecretsPreservingLines, type ReviewTarget } from '@kernlang/agon-support-verification';
+import type { ConsensusReport } from './consensus.js';
+import { formatReport, formatSummaryLine, SPLIT_CAVEAT, type ReviewFormat, type ReviewReport } from './report.js';
+
+interface FileDiff {
+  readonly path: string;
+  readonly text: string;
+}
+
+export function splitDiffByFile(diff: string): FileDiff[] {
+  const headers = [...diff.matchAll(/^diff --(git|cc|combined) (.+)$/gm)];
+  if (!headers.length) return [{ path: '(no file headers found)', text: diff }];
+  return headers.map((header, index) => ({
+    path: header[1] === 'git' ? gitHeaderPath(header[2]!) : header[2]!,
+    text: diff.slice(index === 0 ? 0 : header.index, headers[index + 1]?.index ?? diff.length),
+  }));
+}
+
+/** Fills batches in diff order, so neighbouring files stay together. */
+export function batchFiles(files: readonly FileDiff[], limit: number): FileDiff[][] {
+  const batches: FileDiff[][] = [];
+  let used = 0;
+  for (const file of files) {
+    if (!batches.length || used + file.text.length > limit) {
+      batches.push([]);
+      used = 0;
+    }
+    batches.at(-1)!.push(file);
+    used += file.text.length;
+  }
+  return batches;
+}
+
+function oversizedFilesMessage(label: string, oversized: readonly FileDiff[], limit: number): string {
+  const chars = (value: number) => value.toLocaleString('en-US');
+  const named = oversized.map(file => `${file.path} (${chars(file.text.length)} chars)`).join(', ');
+  const largest = Math.max(...oversized.map(file => file.text.length));
+  return `Refusing to review ${label} with --split: a single file cannot be divided and ${named} is over the ${chars(limit)} limit. Raise the limit with --max-diff-chars ${largest} or review a smaller target.`;
+}
+
+type BatchReport = Record<string, unknown> & Partial<ReviewReport> & { findings?: unknown[]; engines?: string[]; roles?: Record<string, string> };
+
+function mergeConsensus(reports: readonly ConsensusReport[]): ConsensusReport | undefined {
+  if (!reports.length) return undefined;
+  const all = <K extends 'findings' | 'verified' | 'needsCheck' | 'speculative' | 'nits' | 'blockers' | 'engineFailures'>(key: K) =>
+    reports.flatMap(report => report[key] as unknown[]) as unknown as ConsensusReport[K];
+  const autoBlock = reports.some(report => report.autoBlock);
+  return {
+    findings: all('findings'), verified: all('verified'), needsCheck: all('needsCheck'), speculative: all('speculative'),
+    nits: all('nits'), blockers: all('blockers'), engineFailures: all('engineFailures'),
+    panelSize: reports.reduce((sum, report) => sum + report.panelSize, 0),
+    okCount: reports.reduce((sum, report) => sum + report.okCount, 0),
+    autoBlock,
+    needsJudge: !autoBlock && reports.some(report => report.needsJudge),
+    summary: reports.map((report, index) => `batch ${index + 1}: ${report.summary}`).join(' | '),
+    degraded: reports.find(report => report.degraded)?.degraded,
+  };
+}
+
+export type ReviewBatchRunner = (target: ReviewTarget, input: Record<string, Json>) => Promise<CommandResult>;
+
+export async function runSplitReview(
+  target: ReviewTarget,
+  limit: number,
+  input: Record<string, Json>,
+  format: ReviewFormat,
+  context: InvocationContext,
+  services: ModServices,
+  runBatch: ReviewBatchRunner,
+): Promise<CommandResult> {
+  const files = splitDiffByFile(target.diff);
+  const oversized = files.filter(file => file.text.length > limit);
+  if (oversized.length) return { exitCode: 1, stderr: `${oversizedFilesMessage(target.label, oversized, limit)}\n` };
+
+  const batches = batchFiles(files, limit);
+  const startedAtMs = Date.now();
+  const deadlineSeconds = typeof input.deadline === 'string' && input.deadline.trim() ? Number(input.deadline) : undefined;
+  const run = await services.runs?.start('review', typeof input.label === 'string' && input.label.trim() ? input.label.trim() : undefined, context);
+  const reports: BatchReport[] = [];
+  const details: Array<Record<string, unknown>> = [];
+  const warnings: string[] = [];
+  let exitCode = 0;
+  for (const [index, batch] of batches.entries()) {
+    const number = index + 1;
+    const text = batch.map(file => file.text).join('');
+    const remaining = deadlineSeconds === undefined ? undefined : Math.ceil(deadlineSeconds - (Date.now() - startedAtMs) / 1000);
+    const detail: Record<string, unknown> = { batch: number, files: batch.map(file => file.path), chars: text.length };
+    details.push(detail);
+    if (context.signal.aborted || (remaining !== undefined && remaining < 1)) {
+      detail.exitCode = 1;
+      detail.error = context.signal.aborted ? 'review was aborted before this batch' : 'review deadline passed before this batch';
+      warnings.push(`batch ${number}/${batches.length} was not reviewed: ${detail.error}`);
+      exitCode = Math.max(exitCode, 1);
+      continue;
+    }
+    const outcome = await runBatch(
+      { diff: text, label: `${target.label} (batch ${number}/${batches.length})`, maxDiffChars: limit },
+      { ...input, split: false, format: 'json', quiet: false, ...(remaining !== undefined ? { deadline: String(remaining) } : {}) },
+    );
+    exitCode = Math.max(exitCode, outcome.exitCode ?? 0);
+    detail.exitCode = outcome.exitCode ?? 0;
+    const report = outcome.result as BatchReport | undefined;
+    if (report) {
+      reports.push({ ...report, batch: number });
+      if (report.runDir) detail.runDir = report.runDir;
+      if (report.mutation) detail.mutation = report.mutation;
+      if (report.routing) detail.routing = report.routing;
+      warnings.push(...(report.warnings ?? []).map(warning => `batch ${number}: ${warning}`));
+    }
+    if (outcome.exitCode === 1) {
+      const reason = outcome.stderr?.trim() || 'no reviewer produced evidence';
+      detail.error = reason;
+      warnings.push(`batch ${number}/${batches.length} did not produce a usable review: ${reason}`);
+    }
+  }
+
+  const summaryLine = `split into ${batches.length} batches of at most ${limit.toLocaleString('en-US')} chars`;
+  const merged = {
+    target: target.label,
+    diffSize: { chars: target.diff.length, maxChars: limit },
+    split: { batches: batches.length, files: files.length, note: `${summaryLine}; ${SPLIT_CAVEAT}`, details },
+    engines: [...new Set(reports.flatMap(report => report.engines ?? []))],
+    roles: Object.assign({}, ...reports.map(report => report.roles ?? {})) as Record<string, string>,
+    reviews: reports.flatMap(report => (report.reviews ?? []).map(review => ({ ...review, batch: report.batch as number }))),
+    findings: reports.flatMap(report => report.findings ?? []),
+    consensus: mergeConsensus(reports.flatMap(report => report.consensus ? [report.consensus] : [])),
+    panelHealth: {
+      requested: reports.reduce((sum, report) => sum + (report.panelHealth?.requested ?? 0), 0),
+      responded: reports.reduce((sum, report) => sum + (report.panelHealth?.responded ?? 0), 0),
+      degraded: details.some(detail => detail.exitCode === 1) || reports.some(report => report.panelHealth?.degraded),
+    },
+    warnings: [`${summaryLine}; ${SPLIT_CAVEAT}`, ...warnings],
+    ...(run ? { runDir: run.path } : {}),
+  };
+  const report = redactSecretsDeep(merged);
+  if (run) {
+    await services.runs!.writeArtifact(run, 'diff.patch', redactSecretsPreservingLines(target.diff), context);
+    await services.runs!.writeArtifact(run, 'report.json', `${JSON.stringify(report, null, 2)}\n`, context);
+    await services.runs!.finish(run, {
+      mode: 'review', startedAt: run.startedAt, endedAt: new Date().toISOString(),
+      engines: merged.reviews.map(review => ({ id: review.engineId, status: review.status, detail: review.error || null })),
+      requested: merged.engines, timeoutSec: null,
+      summary: `${summaryLine}; ${merged.panelHealth.responded}/${merged.panelHealth.requested} seats produced machine-readable evidence`,
+      ok: exitCode === 0,
+    }, context);
+  }
+  return {
+    exitCode,
+    stdout: input.quiet === true && format !== 'sarif'
+      ? `${run ? `${run.path}\n` : ''}${formatSummaryLine(report as unknown as ReviewReport)}\n`
+      : formatReport(report as unknown as ReviewReport, format, { verbose: input.verbose === true }),
+    result: report as unknown as Json,
+  };
+}

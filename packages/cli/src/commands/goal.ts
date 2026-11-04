@@ -10,6 +10,8 @@ import { resolveBuiltinEnginesDir } from '../lib/engines-dir.js';
 
 import { createCliAdapter } from '@kernlang/agon-adapter-cli';
 
+import { overLimitReason, reviewMaxDiffChars } from '@kernlang/agon-support-verification';
+import { capPrTextDiff } from '@kernlang/agon-support-worktree';
 import { runForge, runDelegate, runPrText, runGoalController, runSupervisor, loadJournal, summarizeGoal, goalDir, isTestFile, parseChangedLines, pickImplementWinner, chooseImplementRoster, runThinkChain, buildOracleCheatPrompt, oracleProbeConclusive, DEFAULT_ORACLE_GATE } from '@kernlang/agon-forge';
 
 import { deriveRoutingHints } from '../cesar/routing.js';
@@ -555,7 +557,8 @@ return defineCommand({
       // mutants to the panel so it adjudicates weak-test vs equivalent, rather
       // than reviewing a diff that looks clean while a mutant slipped through.
       if (a.mutationEvidence) diff = `### MUTATION-WITNESS EVIDENCE — adjudicate before approving\n${a.mutationEvidence}\n\n### DIFF UNDER REVIEW\n${diff}`;
-      if (diff.length > 100_000) diff = diff.slice(0, 100_000) + '\n... [truncated — diff exceeds 100K chars]';
+      const refusal = overLimitReason(`The review input for ${a.label}`, diff, reviewMaxDiffChars(config));
+      if (refusal) return { blocking: true, summary: refusal };
       // Each engine's STATUS (ok / parse-failed / error) is captured apart
       // from its parsed per-finding {severity, confidence}.
       const outcomes = await Promise.all(reviewEngines.map(async (eng: string) => {
@@ -782,8 +785,8 @@ return defineCommand({
         const logRes = await spawnWithTimeout({ command: 'git', args: ['log', '--oneline', `${prRemote}/${base}..${branch}`], cwd: repoRoot, timeout: 15_000 });
         const diffRes = await spawnWithTimeout({ command: 'git', args: ['diff', `${prRemote}/${base}...${branch}`], cwd: repoRoot, timeout: 30_000 });
         const rawDiff = diffRes.exitCode === 0 ? String(diffRes.stdout ?? '') : '';
-        const diffLines = rawDiff.split('\n');
-        const cappedDiff = diffLines.length > 1200 ? diffLines.slice(0, 1200).join('\n') + `\n... (${diffLines.length - 1200} more lines)` : rawDiff;
+        const { diff: cappedDiff, notice: prDiffNotice } = capPrTextDiff(rawDiff);
+        if (prDiffNotice) warn(prDiffNotice);
         info(`Writing PR text (${prEngine})…`);
         const prText = await runPrText({
           engineId: prEngine,
@@ -797,7 +800,7 @@ return defineCommand({
           outputDir: goalDir(goalId),
           cwd: repoRoot,
         });
-        if (prText.ok) { title = prText.title; body = prText.body; }
+        if (prText.ok) { title = prText.title; body = prDiffNotice ? `${prText.body}\n\n> ${prDiffNotice}` : prText.body; }
         else warn('PR-text engine call failed — using the templated run digest.');
         body = appendPrAttribution(body, config);
         console.log('');

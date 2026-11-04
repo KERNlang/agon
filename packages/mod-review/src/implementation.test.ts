@@ -76,6 +76,41 @@ describe('physical review mod', () => {
     expect((allowed.result as any).diffSize.maxChars).toBe(100000);
   });
 
+  it('a diff over the limit gets no review at all unless --split reviews every file and keeps the worst verdict', async () => {
+    const cwd = repo();
+    for (const name of ['b.ts', 'c.ts', 'd.ts']) writeFileSync(join(cwd, name), `export const ${name[0]} = '${'y'.repeat(150)}';\n`);
+    const h = await setup(cwd);
+    const seen: string[] = [];
+    h.dispatch.mockImplementation(async (engineId: string, prompt?: string) => {
+      seen.push(String(prompt));
+      const finding = String(prompt).includes('+++ b/d.ts')
+        ? '[{"file":"d.ts","lines":"1","severity":"blocking","blocking":true,"confidence":0.9,"problem":"unsafe d"}]' : '[]';
+      return { engineId, exitCode: 0, finishReason: 'stop', stdout: `ok\n<!--AGON_REVIEW_FINDINGS_v1-->\n\`\`\`json\n${finding}\n\`\`\``, stderr: '', timedOut: false, costUsd: undefined };
+    });
+    const out = await h.command.run({ engines: 'alpha', 'max-diff-chars': '400', split: true, format: 'text' }, h.context) as CommandResult;
+    expect(out.stderr ?? '').toBe('');
+    expect(out.exitCode).toBe(2);
+    expect(seen.length).toBeGreaterThan(1);
+    for (const name of ['a.ts', 'b.ts', 'c.ts', 'd.ts']) expect(seen.filter(prompt => prompt.includes(`+++ b/${name}`))).toHaveLength(1);
+    const report = out.result as any;
+    expect(report.split.batches).toBe(seen.length);
+    expect(report.consensus.blockers.map((finding: any) => finding.file)).toEqual(['d.ts']);
+    expect(out.stdout).toContain(`split into ${seen.length} batches`);
+    expect(out.stdout).toContain('cross-file issues between batches may be missed');
+    const summary = out.stdout!.trim().split('\n').at(-1)!;
+    expect(summary).toMatch(/^AGON_SUMMARY: .*split into \d+ batches.*cross-file/);
+  });
+
+  it('--split on a diff with one file over the limit reviews a partial change instead of refusing by name', async () => {
+    const cwd = repo();
+    writeFileSync(join(cwd, 'huge.ts'), `export const h = '${'z'.repeat(800)}';\n`);
+    const h = await setup(cwd);
+    const out = await h.command.run({ engines: 'alpha', 'max-diff-chars': '400', split: true }, h.context) as CommandResult;
+    expect(out.exitCode).toBe(1);
+    expect(out.stderr).toContain('huge.ts');
+    expect(h.dispatch).not.toHaveBeenCalled();
+  });
+
   it('honours --maxParallel so rate-limited engines are not all hit at once', async () => {
     const h = await setup(repo());
     let active = 0;

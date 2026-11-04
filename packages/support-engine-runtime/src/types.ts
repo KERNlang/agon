@@ -1,7 +1,14 @@
 export type EngineMode = 'exec' | 'review' | 'agent';
 export type TaskClass = 'algorithm' | 'refactor' | 'bugfix' | 'test' | 'docs' | 'feature' | 'other';
 
-export interface EngineModeConfig { args: string[]; stdin?: boolean }
+export interface EngineStdinProtocol {
+  /** Flag that carries the prompt in argv; on stdin delivery it becomes `<flag>=`, because the CLI still requires it. */
+  promptFlag?: string;
+  args?: string[];
+  /** NDJSON envelope for the prompt on stdin; the matching result event is decoded from stdout. */
+  envelope?: 'event-stream';
+}
+export interface EngineModeConfig { args: string[]; stdin?: boolean | EngineStdinProtocol }
 export interface ImageAttachment { path: string; filename: string; mimeType: string }
 export interface EngineModelConfig { configKey?: string; flag?: string; default?: string | null }
 export interface EngineEffortConfig { flag?: string; configKey?: string; levels: string[]; default?: string }

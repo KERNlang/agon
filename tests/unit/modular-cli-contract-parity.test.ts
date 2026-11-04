@@ -209,6 +209,8 @@ describe('physical CLI contract parity', () => {
       expected.args.format = { type: 'string', required: false, aliases: [], default: 'json' };
       expect(expected.args).not.toHaveProperty('max-diff-chars');
       expected.args['max-diff-chars'] = { type: 'string', required: false, aliases: [] };
+      expect(expected.args).not.toHaveProperty('split');
+      expected.args.split = { type: 'boolean', required: false, aliases: [] };
     }
     if (name === 'forge') {
       expect(expected.args).not.toHaveProperty('format');

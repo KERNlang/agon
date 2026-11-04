@@ -2,6 +2,8 @@ import { spawn } from 'node:child_process';
 
 import { createInterface } from 'node:readline';
 
+import { argvOverflow } from './prompt-delivery.js';
+
 import type { DispatchResult, CompanionConfig } from './types.js';
 
 class CompanionTimeoutError extends Error {}
@@ -82,6 +84,9 @@ export async function companionDispatch(opts: {config:CompanionConfig, binaryPat
   }
   if (opts.textOnly && opts.config.textOnlyArgs?.length) {
     serverArgs.push(...opts.config.textOnlyArgs);
+  }
+  if (argvOverflow(opts.binaryPath, serverArgs, opts.env)) {
+    return { exitCode: 2, stdout: '', stderr: 'Companion arguments exceed the platform limit', durationMs: Date.now() - startTime, timedOut: false };
   }
   const proc = spawn(opts.binaryPath, serverArgs, {
     stdio: ['pipe', 'pipe', 'pipe'],

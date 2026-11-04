@@ -8,7 +8,7 @@ import type { TeamSpec, TeamComposeMode, TeamRoundTrace, TeamSubmission, TeamSco
 
 import { EngineRegistry, loadConfig, buildForgePrompt, repoRoot, stashSnapshot, worktreeCreate, worktreeRemoveBestEffort, classifyTask, createSidechainLogger, composeTeams, makeFormat, spawnWithTimeout, tiebreak } from '@kernlang/agon-core';
 
-import { updateTeamElo } from '@kernlang/agon-core';
+import { capAdvisoryDiff, reviewMaxDiffChars, updateTeamElo } from '@kernlang/agon-core';
 
 import { runFitness } from './fitness.js';
 
@@ -355,7 +355,9 @@ export async function runTeamCoopForge(team: TeamSpec, task: string, fitnessCmd:
 
     if (!diff || diff.trim().length === 0 || diff === '(unable to generate diff)') break;
 
-    const reviewPrompt = `## YOUR ROLE: REVIEWER\nReview this code change for the task below. If the code is good, respond with exactly "APPROVED". If it needs changes, describe the specific issues.\n\nTask: ${task}\n\n## DIFF:\n\`\`\`diff\n${diff.slice(0, 5000)}\n\`\`\``;
+    const { diff: reviewedDiff, notice: reviewDiffNotice } = capAdvisoryDiff(diff, reviewMaxDiffChars(loadConfig(cwd)));
+    if (reviewDiffNotice) console.warn(`[agon] team-forge review is partial: ${reviewDiffNotice}`);
+    const reviewPrompt = `## YOUR ROLE: REVIEWER\nReview this code change for the task below. If the code is good, respond with exactly "APPROVED". If it needs changes, describe the specific issues.\n\nTask: ${task}\n\n## DIFF:\n\`\`\`diff\n${reviewedDiff}\n\`\`\``;
 
     const reviewResult = await adapter.dispatch({
       engine: reviewEngine,
@@ -377,7 +379,7 @@ export async function runTeamCoopForge(team: TeamSpec, task: string, fitnessCmd:
       actor: actualReviewer.engineId,
       role: 'reviewer',
       action: approved ? 'reviewed-accept' : 'reviewed-reject',
-      artifactSummary: reviewText.slice(0, 200),
+      artifactSummary: `${reviewDiffNotice ? `[${reviewDiffNotice}] ` : ''}${reviewText.slice(0, 200)}`,
       durationMs: reviewResult.durationMs,
     });
 

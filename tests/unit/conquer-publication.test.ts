@@ -22,7 +22,7 @@ describe('Conquer pull request handoff', () => {
     expect(draft).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ engineId: 'fixture', intent: input.task,
       commits: 'abc feature', context: expect.stringContaining('Acceptance gate (passed): npm test'),
       diff: expect.stringContaining('line1199\n... (2 more lines)') }));
-    expect(result).toMatchObject({ title: 'feat: new feature', body: 'Verified body\nfooter', usedTemplate: false });
+    expect(result).toMatchObject({ title: 'feat: new feature', body: 'Verified body\n\n> PR text was drafted from the first 1200 of 1202 diff lines.\nfooter', usedTemplate: false });
     expect(new URL(result.url).searchParams.get('body')).toBe(result.body);
     expect(result.mergeHint).toContain(result.url);
     expect(git.mock.calls.map(([args]) => args[0])).toEqual(['log', 'diff']);

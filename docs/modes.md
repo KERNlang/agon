@@ -4,44 +4,44 @@
 
 ## Selected CLI projection
 
-- `agent-guide` — agon.routing-docs
-- `ask` — agon.ask
-- `attach` — agon.kernel
-- `brainstorm` — agon.brainstorm
-- `browser-host` — agon.browser
+- `agent-guide` — agon.routing-docs: Print the compact Agon agent guide
+- `ask` — agon.ask: Ask one engine a single question
+- `attach` — agon.kernel: Attach (read-only) to a session: replay its EventLog and follow live (client/server split M2)
+- `brainstorm` — agon.brainstorm: Multi-model confidence brainstorm
+- `browser-host` — agon.browser: Browser integration
 - `browser-host install` — agon.browser
 - `browser-host status` — agon.browser
 - `browser-host stop` — agon.browser
 - `browser-host uninstall` — agon.browser
-- `call` — agon.kernel
-- `campfire` — agon.campfire
-- `chrome` — agon.browser
-- `config` — agon.kernel
-- `conquer` — agon.conquer
-- `council` — agon.council
-- `daemon` — agon.jobs
-- `doctor` — agon.kernel
-- `drive` — agon.browser
-- `engine` — agon.kernel
-- `ext` — agon.browser
+- `call` — agon.kernel: Live bridge for external CLIs to run Agon modes
+- `campfire` — agon.campfire: Open discussion — all engines think together, no competition
+- `chrome` — agon.browser: Browser integration
+- `config` — agon.kernel: View and modify Agon configuration
+- `conquer` — agon.conquer: Supervised autonomous build in an isolated worktree with an explicit done oracle
+- `council` — agon.council: Roundtable of ALL active engines — each takes a role, the top-rated engine chairs. agon council "<decision>". Agon's stronger LLM-Council: real heterogeneous models, decision brief, directed critique, a chairman verdict with confidence + kill-switch.
+- `daemon` — agon.jobs: Run a long-lived agon session host (agond) you can attach to (client/server split M3): start | stop | status
+- `doctor` — agon.kernel: Diagnose Agon engine and worktree health
+- `drive` — agon.browser: Browser integration
+- `engine` — agon.kernel: Manage AI engines
+- `ext` — agon.browser: Browser integration
 - `ext install` — agon.browser
 - `ext native-host` — agon.browser
 - `flow` — agon.flow: Agon Flow — node graphs where every AI step is a node. `agon flow validate <file>` type-checks a flow (subflows, ports, exclusive routes) before a single engine is dispatched.
 - `flow validate` — agon.flow: Type-check a .agon-flow.json (subflows, ports, routes) without dispatching anything
-- `forge` — agon.forge
-- `goal` — agon.goal
-- `history` — agon.history
-- `install-agent-prompts` — agon.routing-docs
-- `job` — agon.jobs
+- `forge` — agon.forge: Run competing implementations in isolated worktrees and select by measured fitness
+- `goal` — agon.goal: Run a resumable, dependency-aware, gated goal on an isolated goal/* branch
+- `history` — agon.history: Browse validated Forge run history
+- `install-agent-prompts` — agon.routing-docs: Install lightweight Agon prompts into another CLI
+- `job` — agon.jobs: Submit, observe, and cancel daemon-owned autonomous jobs
 - `job cancel` — agon.jobs
 - `job events` — agon.jobs
 - `job list` — agon.jobs
 - `job result` — agon.jobs
 - `job status` — agon.jobs
 - `job submit` — agon.jobs
-- `last` — agon.history
-- `leaderboard` — agon.ratings
-- `login` — agon.kernel
+- `last` — agon.history: Show the most recent Forge run
+- `leaderboard` — agon.ratings: Show engine leaderboard (Glicko-2 ratings)
+- `login` — agon.kernel: Log an engine's CLI into its clean workspace-pure config dir so dispatches stay authenticated without inheriting your personal Claude Code setup
 - `mod approve` — agon.kernel
 - `mod disable` — agon.kernel
 - `mod enable` — agon.kernel
@@ -51,7 +51,7 @@
 - `mod revoke` — agon.kernel
 - `mod trust` — agon.kernel
 - `mod untrust` — agon.kernel
-- `models` — agon.kernel
+- `models` — agon.kernel: Manage engine→model mappings
 - `models add` — agon.kernel
 - `models auto` — agon.kernel
 - `models disable` — agon.kernel
@@ -60,28 +60,28 @@
 - `models list` — agon.kernel
 - `models remove` — agon.kernel
 - `models set` — agon.kernel
-- `mutate` — agon.mutate
-- `naturalize` — agon.naturalize
-- `nero` — agon.nero
-- `provenance` — agon.provenance
-- `provider` — agon.kernel
-- `rag` — agon.rag
-- `ratings` — agon.ratings
+- `mutate` — agon.mutate: Measure test strength with isolated mechanical or semantic mutants
+- `naturalize` — agon.naturalize: Sanitize, rewrite with a non-author engine, enforce lexical change, and re-scan
+- `nero` — agon.nero: Adversarial self-challenge with concrete failure scenarios and a verdict
+- `provenance` — agon.provenance: AI-contribution / transparency report for a forge run
+- `provider` — agon.kernel: Add, remove, or list API providers; connect/disconnect and manage API keys
+- `rag` — agon.rag: Index and retrieve cited project documentation with local MiniLM embeddings
+- `ratings` — agon.ratings: Maintain ratings
 - `ratings purge-unknown` — agon.ratings
 - `ratings reset` — agon.ratings: Preview or reset per-discipline ratings with a backup
-- `research` — agon.research
-- `review` — agon.review
-- `room` — agon.rooms
-- `sanitize` — agon.sanitize
-- `serve` — agon.browser
-- `synthesis` — agon.synthesis
-- `team-brainstorm` — agon.team-brainstorm
-- `team-forge` — agon.team-forge
-- `team-tribunal` — agon.team-tribunal
-- `think` — agon.think
-- `tribunal` — agon.tribunal
-- `update` — agon.kernel
-- `worktree` — agon.worktrees
+- `research` — agon.research: Keyless authoritative research with bounded fetching and independently verified citations
+- `review` — agon.review: Run a non-interactive evidence-grounded review of a Git diff
+- `room` — agon.rooms: Shared persistent multi-party rooms
+- `sanitize` — agon.sanitize: Deterministically detect and remove hidden text and image metadata channels
+- `serve` — agon.browser: Browser integration
+- `synthesis` — agon.synthesis: Competitive cross-pollination: draft, swap, improve, and judge
+- `team-brainstorm` — agon.team-brainstorm: Team brainstorm — teams collaborate and compete on a question
+- `team-forge` — agon.team-forge: Two collaborating teams compete using isolated implementation worktrees and measured fitness
+- `team-tribunal` — agon.team-tribunal: Team tribunal — teams argue opposing positions
+- `think` — agon.think: Sequential thinking — decompose a problem into structured thoughts before acting. agon think "..." --strategy reflexion. Opt-in; surfaces open questions and a goal handoff.
+- `tribunal` — agon.tribunal: Adversarial debate — engines argue different sides of a question
+- `update` — agon.kernel: Stage, verify, and atomically select a Modular Agon release without overwriting the running process.
+- `worktree` — agon.worktrees: Isolated per-session Git worktrees
 
 <!-- BEGIN HANDWRITTEN: mode-guide -->
 # How to call Agon

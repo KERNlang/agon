@@ -4,6 +4,7 @@ import type { CommandResult, Json } from '@kernlang/agon-mod-api';
 import type { CapturedProcessResult } from '@kernlang/agon-support-engine-runtime';
 import type { ForgeInvocationContext, ForgeModServices } from './host.js';
 import { createForgeWorkflow } from './workflow.js';
+import { formatForgeText } from './report.js';
 import { resolveForgeMode, resolveForgeRequireDiff, resolveForgeAcceptReviewOutput } from './result-policy.js';
 
 const text = (value: Json | undefined): string => typeof value === 'string' ? value.trim() : '';
@@ -200,7 +201,8 @@ export async function runForgeCompetition(raw: Json, context: ForgeInvocationCon
     context.signal.throwIfAborted();
     const payload = { ...result, receiptId } as unknown as Json;
     return { exitCode: succeeded ? 0 : 1,
-      stdout: input.quiet === true ? `${run.path}\nForge ${workflowError ? `failed: ${workflowError}` : winner ? `winner=${winner}` : 'no winner'}; ${passing.length}/${candidates.length} passed.\n` : `${JSON.stringify(payload, null, 2)}\n`,
+      stdout: input.quiet === true ? `${run.path}\nForge ${workflowError ? `failed: ${workflowError}` : winner ? `winner=${winner}` : 'no winner'}; ${passing.length}/${candidates.length} passed.\n`
+        : input.format === 'text' ? formatForgeText({ ...result, requested: engines.length }) : `${JSON.stringify(payload, null, 2)}\n`,
       result: payload, ...(succeeded ? {} : { failure: {
         code: workflowError ? 'FORGE_WORKFLOW_FAILED' : 'NO_PASSING_CANDIDATE',
         message: workflowError ?? 'No Forge candidate passed fitness and acceptance checks', retryable: true,

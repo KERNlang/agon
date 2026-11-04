@@ -152,6 +152,24 @@ function projectParsedArguments(
     })) as Record<string, Json>;
 }
 
+export function applyTtyDefaults(
+  input: Record<string, Json>,
+  rawArgs: readonly string[],
+  projection: CommandContribution['cli'],
+  isTty: boolean,
+): Record<string, Json> {
+  if (!isTty || !projection?.ttyDefaults) return input;
+  const end = rawArgs.indexOf('--');
+  const options = end < 0 ? rawArgs : rawArgs.slice(0, end);
+  const passed = (name: string) => {
+    const alias = projection.aliases?.[name];
+    return options.some(arg => arg === `--${name}` || arg.startsWith(`--${name}=`)
+      || (alias !== undefined && (arg === `-${alias}` || arg.startsWith(`-${alias}=`))));
+  };
+  const applied = Object.entries(projection.ttyDefaults).filter(([name]) => !passed(name));
+  return { ...input, ...Object.fromEntries(applied) };
+}
+
 function schemaGeneratedCommand(publicId: string, description: string, displayName = publicId): CommandDef {
   const record = processSurfaceClient('cli').assertAvailable(publicId);
   const assertSelected = captureProcessSurfaceAuthority();
@@ -182,7 +200,8 @@ function schemaGeneratedCommand(publicId: string, description: string, displayNa
         // Normalize before parsing: defaults can hide Citty's alternate-spelling lookup.
         const rawArgs = ctx.rawArgs && normalizeOptionSpellings(ctx.rawArgs, Object.keys(properties));
         const parsed = rawArgs ? parseArgs(rawArgs, projectedArgs as ArgsDef) : ctx.args;
-        input = projectParsedArguments(parsed as Record<string, Json | undefined>, properties, projection);
+        const projected = projectParsedArguments(parsed as Record<string, Json | undefined>, properties, projection);
+        input = applyTtyDefaults(projected, rawArgs ?? [], projection, process.stdout.isTTY === true);
       }
       else {
         input = {};

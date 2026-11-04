@@ -53,8 +53,27 @@ const schema = Object.freeze({
 const cli = Object.freeze({
   positionals: ["target"],
   aliases: { engines: "e", maxParallel: "p", verbose: "v" },
+  ttyDefaults: { format: "text" },
   descriptions: {
     target: "uncommitted, branch:NAME, commit:SHA, or range:BASE...TARGET",
+    base: "Explicit diff base ref. With \"uncommitted\": diff working tree vs BASE. With \"branch:NAME\": diff BASE...NAME (checkout-independent).",
+    engine: "Use one specific engine and bypass automatic risk routing",
+    engines: "Use a strict explicit engine subset and bypass automatic risk routing; invalid or unavailable entries abort rather than silently shrinking it",
+    risk: "Automatic routing risk: auto, low, medium, or high. Sensitive diff evidence can only raise the requested risk. Ignored with --engine/--engines.",
+    "primary-engine": "Engine that implemented the diff. Automatic routing excludes its adapter identity from required independent review seats; omission widens to high risk.",
+    roles: "Role-lens review (same panel, focused attention): 'auto' deals the fixed roster (security, correctness, dryness, performance, overall) onto the selected engines in order with an overall backstop for extras, or pass a comma-separated role list zipped engine-by-engine (unknown ids fall back to overall). Composes with automatic risk routing — roles change each reviewer's lens, never the panel or the machine contract.",
+    label: "Human-readable suffix baked into the run dir name.",
+    quiet: "Suppress streaming output; stdout becomes only the run dir path + final summary. Per-engine output is still written to <run-dir>/<engineId>-output.txt.",
+    timeout: "Per-engine hard wall-clock timeout in seconds. When an engine exceeds it its dispatch is aborted and marked timeout; other engines are unaffected. Default: config.reviewTimeout or 420.",
+    maxParallel: "Max engines to review concurrently. Default: all at once. Lower it (e.g. 2) if parallel API engines hit rate limits or first-chunk stalls.",
+    mutate: "ADVISORY mutation pass after the consensus: mutate the reviewed diff in a disposable worktree, re-run the discovered test command per mutant, and list every SURVIVOR (wrong code the tests called green). Mechanical-only (zero engine spend) unless --mutate-semantic; artifacts land in <run-dir>/mutation/; never changes the review verdict or exit code.",
+    "mutate-semantic": "With --mutate: also let the reviewing engines propose AI-semantic mutants — real engine spend, and your changed source is sent to each of them. Off by default, exactly like agon mutate.",
+    "mutate-test": "With --mutate: the test command to run per mutant, instead of the discovered gate. Use it when the discovered script is not the suite that covers the diff.",
+    "mutate-build": "With --mutate: build command run before the baseline AND each mutant — required when the suite runs against a prebuilt dist rather than the mutated source (otherwise every mutant survives).",
+    "mutate-lens": "With --mutate: steer the AI-semantic panel toward one bug family — IMPLIES --mutate-semantic. Presets: security | privacy | perf | ratelimit | concurrency; anything else is used verbatim as free text.",
+    verbose: "After the consensus summary, print each engine's FULL review inline (the raw walls). Without it, full reviews stay in the run dir (the pointer line is always printed).",
+    format: "Output format: text, json or sarif. Default: text in a terminal, json when piped",
+    deadline: "Overall review deadline in seconds; seats still running when it expires are stopped",
   },
 });
 const text = (v: unknown) => (typeof v === "string" ? v.trim() : "");

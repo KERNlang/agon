@@ -108,7 +108,8 @@ export function formatText(report: ReviewReport): string {
   }
   if (consensus && !consensus.findings.length) lines.push('No findings.');
   for (const warning of report.warnings ?? []) lines.push(`warning: ${warning}`);
-  if (report.runDir) lines.push(`Run: ${report.runDir}`);
+  if (report.runDir) lines.push(`AGON_RUN: ${report.runDir}`);
+  lines.push(`AGON_SUMMARY: ${ok}/${report.reviews.length} seats ok; ${consensus?.blockers.length ?? 0} blocking`);
   return `${lines.join('\n')}\n`;
 }
 

@@ -139,7 +139,7 @@ export const createMod: AgonModFactory = (services) => Object.freeze({
     const disposers: Dispose[] = [];
     const worktree = {
       description: 'Isolated per-session Git worktrees', inputSchema: worktreeSchema,
-      cli: { positionals: ['action', 'branch'] },
+      cli: { positionals: ['action', 'branch'], descriptions: { base: "Base ref for a new branch (default: current HEAD)", deps: "Dependency setup: link (fast node_modules overlay, default) | install (run the project package manager) | none", "older-than": "Age threshold for prune (e.g. 7d, 24h, 30m)", "dry-run": "For prune: report what would be removed without removing it", force: "rm/prune: remove even when the worktree has uncommitted changes (discards them)" } },
       run: (input: Json, context: InvocationContext) => runWorktree(input, context, services),
     };
     disposers.push(registrar.command('cli', { id: 'cliCommands:0075', ...worktree }));

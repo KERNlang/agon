@@ -43,7 +43,24 @@ const schema = Object.freeze({
 const cli = Object.freeze({
   positionals: ['path'],
   aliases: { engines: 'e' },
-  descriptions: { path: 'File or directory to mutate' },
+  descriptions: { path: 'File or directory to mutate' ,
+    diff: "Mutate changed lines only: a base ref (origin/main), or a review target — uncommitted, branch:NAME, commit:SHA, range:BASE...TARGET.",
+    base: "Explicit diff base ref, composed with --diff uncommitted / --diff branch:NAME (same grammar as agon review --base).",
+    test: "Test command to run per mutant. Required when no test script can be discovered — mutate never guesses a gate.",
+    typecheck: "Typecheck/compile command; a mutant that fails it is classified invalid and excluded from the score.",
+    build: "Build command run before the baseline AND before each mutant — needed when the suite runs against a prebuilt dist rather than the mutated source.",
+    semantic: "Add the AI-semantic panel: every engine on the roster proposes a realistic bug it thinks your tests would miss. OFF by default — it sends your changed source to every panel engine and spends 1-2 dispatches each. The default run is mechanical-only and costs nothing.",
+    "mechanical-only": "Mechanical operators only, zero engine spend. This is the DEFAULT — the flag exists to say so explicitly (and to make --semantic --mechanical-only fail as the contradiction it is).",
+    engines: "Restrict the semantic panel (comma-separated). Only meaningful with --semantic; the default mechanical run dispatches no engine at all.",
+    lens: "Steer the AI-semantic panel toward one bug family — IMPLIES --semantic (a lens cannot focus mechanical operators). Presets: security (auth bypass, missing permission/ownership checks, token/session misuse, removed input validation) · privacy (returning/logging more user data than needed, PII leaks, missing redaction) · perf (N+1, missing cache/index, unbounded loops, missing pagination/limits) · ratelimit (skipped/loosened throttles, quota checks, retry storms) · concurrency (lost locks, races, non-atomic read-modify-write). Anything else is used verbatim as free text.",
+    "max-mutants": "Cap the mutant pool (high-signal first, round-robin across files).",
+    "semantic-per-engine": "Max semantic mutants accepted per engine.",
+    timeout: "Per-mutant test timeout in seconds (raised to 3x the measured baseline when that is longer).",
+    budget: "Total wall-clock budget in seconds; unrun mutants are reported as not-run, never as killed.",
+    json: "Emit ONLY the MutationReport as JSON on stdout.",
+    label: "Human-readable suffix baked into the run dir name.",
+    quiet: "Suppress per-mutant progress; print only the final report.",
+  },
 });
 
 function values(raw: Json): Record<string, Json> { return raw as Record<string, Json>; }

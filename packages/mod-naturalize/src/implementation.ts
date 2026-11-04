@@ -40,7 +40,7 @@ const cliSchema = Object.freeze({
     jsonl: { type: "boolean", default: false },
   },
 }) as Readonly<Record<string, Json>>;
-const cli = Object.freeze({ positionals: ["file"], aliases: { out: "o" } });
+const cli = Object.freeze({ positionals: ["file"], aliases: { out: "o" }, descriptions: { engine: "Engine id to rewrite with. Omit to use the first active engine (≠ --author when given).", author: "Engine that wrote the text (e.g. claude) — the rewriter is forced to differ (writer ≠ rewriter).", out: "Write naturalized output to this file instead of stdout", timeout: "Rewrite dispatch timeout in seconds", minChange: "Minimum lexical change required (percent 0-100). Retries with a stronger brief, then REFUSES to emit if the rewrite stays too close to the original — the honest proxy for statistical-watermark destruction.", maxAttempts: "Max rewrite attempts when --min-change is set", jsonl: "Emit the report as machine-readable JSONL" } });
 async function readStdin(): Promise<string> {
   const chunks: Buffer[] = [];
   for await (const chunk of process.stdin)

@@ -243,6 +243,15 @@ const schema = Object.freeze({
 const cli = Object.freeze({
   positionals: ["question"],
   aliases: { engines: "e" },
+  descriptions: {
+    engine: "Force a specific engine to draft the answer (skips rating-based selection).",
+    engines: "Constrain the candidate pool (comma-separated). Default: all active orchestration engines.",
+    count: "Number of sources to discover and read (1-10).",
+    timeout: "Engine timeout in seconds.",
+    json: "Emit the full ResearchResult as JSON on stdout (pipe-friendly).",
+    quiet: "Print only the answer.",
+    label: "Human-readable suffix baked into the run dir name.",
+  },
 });
 export async function runResearch(
   raw: Json,

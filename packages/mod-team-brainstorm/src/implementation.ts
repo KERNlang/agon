@@ -9,7 +9,11 @@ const schema = Object.freeze({
     _: { type: 'array', items: { type: 'string' } } },
 }) as Readonly<Record<string, Json>>;
 const cli = Object.freeze({ positionals: ['question'], aliases: { engines: 'e', members: 'm' },
-  descriptions: { question: 'Question to brainstorm' } });
+  descriptions: { question: 'Question to brainstorm' ,
+    engines: "Comma-separated engine list",
+    members: "Members per team",
+    timeout: "Timeout in seconds",
+  } });
 const resultSchema = Object.freeze({
   type: 'object', additionalProperties: false, required: ['exitCode'],
   properties: {

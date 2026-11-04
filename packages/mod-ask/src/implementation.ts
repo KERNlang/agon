@@ -13,7 +13,7 @@ export function resolveAskInput(input: Record<string, Json>): { engineId: string
   return { engineId: engine.trim(), prompt: [namedPrompt, extras].filter(Boolean).join(' ').trim() };
 }
 export const createMod: AgonModFactory = (services: ModServices) => Object.freeze({ apiVersion: '1' as const,
-  async activate(registrar: Registrar): Promise<Dispose> { return registrar.command('cli', { id: 'cliCommands:0001', description: 'Ask one engine a single question', inputSchema, cli: { positionals: ['engine', 'prompt'], descriptions: { engine: 'Engine id; omit to use the default active engine', prompt: 'Question to ask' } },
+  async activate(registrar: Registrar): Promise<Dispose> { return registrar.command('cli', { id: 'cliCommands:0001', description: 'Ask one engine a single question', inputSchema, cli: { positionals: ['engine', 'prompt'], descriptions: { engine: 'Engine id; omit to use the default active engine', prompt: 'Question to ask', timeout: "Timeout in seconds", system: "Optional system prompt prepended to the call.", quiet: "Print ONLY the engine answer on stdout (pipe-friendly) — no header, no run summary.", label: "Human-readable suffix baked into the run dir name." } },
     async run(raw, context): Promise<CommandResult> {
       const input = raw as Record<string, Json>; const resolved = resolveAskInput(input);
       if (!resolved.prompt) return { exitCode: 1, stderr: 'Provide a prompt. Usage: agon ask [engine] "your question"\n' };

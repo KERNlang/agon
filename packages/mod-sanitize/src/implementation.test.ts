@@ -11,6 +11,14 @@ const services = { permissions: { check: vi.fn(async () => 'allow') }, receipts:
 const context = { invocationId: 's', cwd: process.cwd(), platform: 'darwin-arm64' as const, signal: new AbortController().signal, config: {} };
 
 describe('physical sanitize mod', () => {
+  it('reports hidden channels on stderr so redirected stdout stays only the cleaned text', async () => {
+    const result = await runSanitize({ text: 'hello\u200Bworld\n' }, context, services);
+    expect(result.stdout).toBe('helloworld\n');
+    expect(result.stderr).toContain('zero-width');
+    expect(result.stderr).toContain('U+200B');
+    const jsonl = await runSanitize({ text: 'hello\u200Bworld\n', jsonl: true }, context, services);
+    expect(jsonl.stderr).toBeUndefined();
+  });
   it('does not claim preserved findings were addressed when writing output', async () => {
     const root = mkdtempSync(join(tmpdir(), 'agon-sanitize-report-'));
     const out = join(root, 'out.txt');

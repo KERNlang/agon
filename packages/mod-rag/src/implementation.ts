@@ -198,7 +198,7 @@ const schema = Object.freeze({
     _: { type: "array", items: { type: "string" } },
   },
 }) as Readonly<Record<string, Json>>;
-const cli = Object.freeze({ positionals: ["action", "text"] });
+const cli = Object.freeze({ positionals: ["action", "text"], descriptions: { force: "index: rebuild even when the corpus is unchanged", topK: "query: number of context blocks (default 4)", json: "Machine-readable JSON output" } });
 export async function runRag(
   raw: Json,
   context: InvocationContext,

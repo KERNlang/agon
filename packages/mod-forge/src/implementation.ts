@@ -38,6 +38,7 @@ const inputSchema = Object.freeze({
     label: { type: "string" },
     quiet: { type: "boolean" },
     provenance: { type: "boolean" },
+    format: { type: "string", enum: ["json", "text"], default: "json" },
     _: { type: "array", items: { type: "string" } },
   },
 }) as Readonly<Record<string, Json>>;
@@ -56,8 +57,28 @@ const cesarSchema = Object.freeze({
 const cli = Object.freeze({
   positionals: ["task"],
   aliases: { test: "t", starter: "s", engines: "e", judge: "j" },
+  ttyDefaults: { format: "text" },
   descriptions: {
     task: "Task implemented independently by each selected engine",
+    test: "Fitness test command. Optional — without it forge defaults to a non-discriminating \"true\" (all engines pass; winner decided by review/diff quality). Pass a real test for a discriminating fitness.",
+    engines: "Comma-separated engine list",
+    judge: "Judge engine (Codex-as-judge): excluded from the competing roster and used to review the winning patch after the run. Flags bugs the fitness spec missed. Defaults to config.forgeJudgeEngine.",
+    cwd: "Working directory",
+    starter: "Override starter engine",
+    timeout: "Engine timeout in seconds",
+    mode: "Forge mode: implement, improve, or validate",
+    requireDiff: "Require a candidate diff (true/false). Defaults true for implement, false for improve/validate.",
+    baselineMayPass: "Allow a passing baseline without treating fitness as discriminating.",
+    dryRun: "Show what would happen without executing",
+    acceptReviewOutput: "Accept useful no-diff review output as a validation result (true/false).",
+    earlyFinalizeCount: "Stage2 auto-finalize quorum: stop waiting once M engines pass (score >= forgeEarlyFinalizeMinScore). Overrides config.forgeEarlyFinalizePassingCount. Set to 0 to disable for this run.",
+    finalizeOnScore: "Single-engine early-finalize: stop as soon as ANY engine PASSES with score >= this threshold (0-100). Caller-driven via onResult. Useful for cost-control. Independent of --early-finalize-count.",
+    noHealthCheck: "Skip the pre-flight engine health check for this run (default: check enabled). Saves ~timeoutSec of wall-clock but lets known-bad engines waste their full dispatch timeout.",
+    healthCheckTimeoutSec: "Per-engine health-check timeout in seconds (default 20). Overrides config.forgeHealthCheckTimeoutSec.",
+    label: "Human-readable suffix baked into the forge run dir name (orchestrators: distinguish parallel runs without grep).",
+    quiet: "Suppress streaming output; stdout becomes only the run dir path + final summary.",
+    provenance: "After the run, write an AI-contribution / transparency report (provenance.md + .json) into the run dir.",
+    format: "Output format: text or json. Default: text in a terminal, json when piped",
   },
 });
 const resultIds = [

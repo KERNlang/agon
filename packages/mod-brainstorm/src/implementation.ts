@@ -16,7 +16,13 @@ const cesarSchema = Object.freeze({
   properties: { question: { type: 'string', minLength: 1 }, team: { type: 'boolean' } },
 }) as Readonly<Record<string, Json>>;
 const cli = Object.freeze({
-  positionals: ['question'], aliases: { engines: 'e' }, descriptions: { question: 'Question to brainstorm' },
+  positionals: ['question'], aliases: { engines: 'e' }, descriptions: { question: 'Question to brainstorm' ,
+    engines: "Comma-separated engine list",
+    timeout: "Timeout in seconds",
+    style: "'divergent' (default: seats get distinct stances, synthesis keeps 2-3 directions) or 'grounded' (convergent, file-path-anchored single answer)",
+    label: "Human-readable suffix baked into the run dir name (orchestrators: distinguish parallel runs without grep).",
+    quiet: "Suppress streaming output; stdout becomes only the run dir path + final summary.",
+  },
 });
 const text = (value: unknown): string => typeof value === 'string' ? value.trim() : '';
 const failure = (message: string): CommandResult => ({ exitCode: 1, stderr: message + '\n' });

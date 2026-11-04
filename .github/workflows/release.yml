@@ -225,9 +225,9 @@ jobs:
           GIT_CONFIG_KEY_0="http.https://github.com/.extraheader" \
           GIT_CONFIG_VALUE_0="AUTHORIZATION: basic ${BASIC_AUTH}" \
             git push -f origin "${BRANCH}"
-          curl -sS -X POST \
+          curl -sS --fail-with-body -X POST \
             -H "Authorization: Bearer ${GITHUB_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/${GITHUB_REPOSITORY}/pulls" \
             -d "$(printf '{"title":"chore(release): sync version to %s","head":"%s","base":"main","body":"Automated lockstep version sync after publishing %s."}' "${VERSION}" "${BRANCH}" "${VERSION}")" \
-            || echo "PR create returned non-zero (likely already open); continuing."
+            || echo "::error::Version sync PR creation failed; see the response above. HTTP 422 usually means it is already open."

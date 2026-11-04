@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { createFrozenNpmInstall, createNpmReleaseCatalog, hashInstalledPackagePayload, runIsolatedNpmCandidateProcess } from '../../packages/mod-kernel/dist/index.js';
 
 const root = resolve(import.meta.dirname, '../..');
-const version = '1.0.0';
+const { version } = JSON.parse(readFileSync(join(root, 'packages/cli/package.json'), 'utf8'));
 const check = process.argv.includes('--check');
 const selfTest = process.argv.includes('--self-test');
 const map = JSON.parse(readFileSync(join(root, 'docs/specs/evidence/modular-agon-package-map.json'), 'utf8'));
@@ -138,7 +138,8 @@ async function dependencyPayloads(catalog) {
   writeFileSync(join(prefix, 'package-lock.json'), lockText);
   // npm verifies archive integrity before unpacking. Never execute package code.
   // A separate frozen install avoids trusting the candidate under inspection.
-  const cacheDirectory = process.env.AGON_QUALIFICATION_NPM_CACHE ?? process.env.AGON_S9_NPM_CACHE ?? process.env.npm_config_cache;
+  const cacheDirectory = process.env.AGON_QUALIFICATION_NPM_CACHE ?? process.env.AGON_S9_NPM_CACHE ?? process.env.npm_config_cache
+    ?? spawnSync('npm', ['config', 'get', 'cache'], { encoding: 'utf8' }).stdout.trim();
   const result = await runIsolatedNpmCandidateProcess({ executable: 'npm', cwd: prefix,
     args: ['ci', '--offline', '--ignore-scripts', '--no-audit', '--no-fund', '--omit=optional', '--bin-links=false'],
     timeoutMs: 120_000, maxOutputBytes: 1024 * 1024 }, { cacheDirectory });
@@ -210,7 +211,7 @@ try {
   });
   if (launcherInventory.status !== 0) fail(`launcher inventory failed: ${launcherInventory.stderr}`);
   const launcherFiles = JSON.parse(launcherInventory.stdout)[0].files.map(({ path }) => path).sort();
-  const channel = { schemaVersion: 1, channel: 'local-release-candidate', version, packages: packages.map((pkg) => ({ id: pkg.id, version: pkg.version, dependencies: pkg.dependencies, ...(pkg.modId ? { modId: pkg.modId, manifestDependencies: pkg.manifestDependencies } : {}), sourceLocator: `${pkg.id}@${pkg.version}`, integrity: pkg.integrity, contentHash: pkg.tarballHash, manifestHash: pkg.manifestHash, payloadHash: pkg.payloadHash })) };
+  const channel = { schemaVersion: 1, channel: 'latest', version, packages: packages.map((pkg) => ({ id: pkg.id, version: pkg.version, dependencies: pkg.dependencies, ...(pkg.modId ? { modId: pkg.modId, manifestDependencies: pkg.manifestDependencies } : {}), sourceLocator: `${pkg.id}@${pkg.version}`, integrity: pkg.integrity, contentHash: pkg.tarballHash, manifestHash: pkg.manifestHash, payloadHash: pkg.payloadHash })) };
   channel.launcherFiles = launcherFiles;
   channel.npmCatalog = npmCatalog;
   channel.npmPayloads = npmPayloads;

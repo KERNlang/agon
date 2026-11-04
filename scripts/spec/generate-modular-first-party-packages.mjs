@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
+const RELEASE_VERSION = '1.0.0';
 const root = resolve(import.meta.dirname, '../..');
 const check = process.argv.includes('--check');
 const researchPolicyEntries = ['prompt-policy', 'format-policy', 'response-policy', 'discovery-policy', 'query-policy', 'citation-policy'];
@@ -47,9 +48,9 @@ function packageDirectory(packageName) {
 }
 
 function packageVersion(packageName) {
-  if (packageName === '@kernlang/agon-mod-api') return '1.0.0';
-  if (packageName.includes('/agon-support-')) return '1.0.0';
-  if (packageName.includes('/agon-mod-')) return '1.0.0';
+  if (packageName === '@kernlang/agon-mod-api') return RELEASE_VERSION;
+  if (packageName.includes('/agon-support-')) return RELEASE_VERSION;
+  if (packageName.includes('/agon-mod-')) return RELEASE_VERSION;
   return '>=0.0.0-0';
 }
 
@@ -206,7 +207,7 @@ function expectedFiles(packageRecord) {
     schemaVersion: 2,
     id: ownerId(packageName),
     name: short.split('-').map((word) => word[0].toUpperCase() + word.slice(1)).join(' '),
-    version: '1.0.0',
+    version: RELEASE_VERSION,
     apiRange: '>=1.0.0 <2',
     execution: 'executable',
     compatibility: { kernelRange: '>=0.0.0-0 <2', nodeRange: '>=22' },
@@ -233,9 +234,10 @@ function expectedFiles(packageRecord) {
   if (short === 'flow') dependencyVersions.zod = '^4.3.6';
   const packageJson = {
     name: packageName,
-    version: '1.0.0',
+    version: RELEASE_VERSION,
     private: false,
     license: 'MIT',
+    repository: { type: 'git', url: 'git+https://github.com/KERNlang/agon.git', directory: `packages/${packageDirectory(packageName)}` },
     type: 'module',
     exports: { '.': { types: './dist/index.d.ts', import: './dist/index.js' }, ...Object.fromEntries(policyEntries.map((entry) => [`./${entry}`, { types: `./dist/${entry}.d.ts`, import: `./dist/${entry}.js` }])), './manifest': './agon.mod.json', './ownership': './ownership.json' },
     main: './dist/index.js',

@@ -52,6 +52,7 @@ for (const [name, dependencies] of packages) {
     version,
     private: false,
     license: 'MIT',
+    repository: { type: 'git', url: 'git+https://github.com/KERNlang/agon.git', directory: `packages/support-${name}` },
     type: 'module',
     exports: { '.': { types: './dist/index.d.ts', import: './dist/index.js' } },
     main: './dist/index.js',

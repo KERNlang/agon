@@ -95,7 +95,7 @@ function validate(candidateRelease, candidateMap) {
   if (candidateRelease.compatibilityArtifacts?.length !== 1 || candidateRelease.compatibilityArtifacts[0].id !== sidecarPackage.name
     || candidateRelease.compatibilityArtifacts[0].version !== sidecarPackage.version) fail('legacy sidecar artifact identity differs from its package');
   if (candidateRelease.launcher?.id !== '@kernlang/agon' || candidateRelease.launcher.version !== candidateRelease.version || !candidateRelease.launcher.integrity || !candidateRelease.launcher.tarballHash) fail('release launcher evidence is missing or malformed');
-  if (candidateRelease.version !== '1.0.0' || candidateRelease.packages.some((pkg) => pkg.version !== candidateRelease.version)) fail('release set is not lockstep');
+  if (candidateRelease.version !== launcherPackage.version || candidateRelease.packages.some((pkg) => pkg.version !== candidateRelease.version)) fail('release set is not lockstep');
   if (new Set(candidateRelease.packages.map(({ id }) => id)).size !== 49) fail('duplicate release component');
   if ([...candidateRelease.packages, ...candidateRelease.compatibilityArtifacts].some((pkg) => !pkg.integrity || !pkg.tarballHash || !pkg.files.some(({ path }) => path.toLowerCase().startsWith('license')))) fail('release artifact lacks integrity or license evidence');
   for (const pkg of [candidateRelease.launcher, ...candidateRelease.packages, ...candidateRelease.compatibilityArtifacts]) {

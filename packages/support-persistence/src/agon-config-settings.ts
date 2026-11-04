@@ -39,7 +39,7 @@ export const DEFAULT_AGON_CONFIG: Required<AgonConfig> = {
   forgeMaxParallelApi: DEFAULT_KERNEL_SETTINGS.forgeMaxParallelApi,
   forgeJudgeEngine: DEFAULT_ENGINE_SETTINGS.forgeJudgeEngine,
   reviewMaxTokens: DEFAULT_KERNEL_SETTINGS.reviewMaxTokens,
-  reviewFileContext: DEFAULT_KERNEL_SETTINGS.reviewFileContext,
+  reviewFileContext: DEFAULT_FIRST_PARTY_SETTINGS.reviewFileContext,
   ratingsEnabled: DEFAULT_KERNEL_SETTINGS.ratingsEnabled,
   contextSummary: DEFAULT_KERNEL_SETTINGS.contextSummary,
   sessionContinuity: DEFAULT_PERSISTENCE_SETTINGS.sessionContinuity,

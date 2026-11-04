@@ -12,24 +12,28 @@ export function resolveAskInput(input: Record<string, Json>): { engineId: string
   if (!namedPrompt) return { engineId: '', prompt: [engine, extras].filter(Boolean).join(' ').trim() };
   return { engineId: engine.trim(), prompt: [namedPrompt, extras].filter(Boolean).join(' ').trim() };
 }
+function askSummary(engineId: unknown, status: string): string {
+  return status === 'ok' ? 'AGON_SUMMARY: 1/1 succeeded\n' : `AGON_SUMMARY: 0/1 succeeded; ${String(engineId)}: ${status}\n`;
+}
 export const createMod: AgonModFactory = (services: ModServices) => Object.freeze({ apiVersion: '1' as const,
-  async activate(registrar: Registrar): Promise<Dispose> { return registrar.command('cli', { id: 'cliCommands:0001', description: 'Ask one engine a single question', inputSchema, cli: { positionals: ['engine', 'prompt'], descriptions: { engine: 'Engine id; omit to use the default active engine', prompt: 'Question to ask', timeout: "Timeout in seconds", system: "Optional system prompt prepended to the call.", quiet: "Accepted for compatibility; ask always prints only the answer on stdout.", label: "Accepted for compatibility; ask creates no run dir." } },
+  async activate(registrar: Registrar): Promise<Dispose> { return registrar.command('cli', { id: 'cliCommands:0001', description: 'Ask one engine a single question', inputSchema, cli: { positionals: ['engine', 'prompt'], descriptions: { engine: 'Engine id; omit to use the default active engine', prompt: 'Question to ask', timeout: "Timeout in seconds", system: "Optional system prompt prepended to the call.", quiet: "Suppress the AGON_SUMMARY line on stderr. The answer is always the only thing on stdout.", label: "Accepted for compatibility; ask creates no run dir." } },
     async run(raw, context): Promise<CommandResult> {
       const input = raw as Record<string, Json>; const resolved = resolveAskInput(input);
       if (!resolved.prompt) return { exitCode: 1, stderr: 'Provide a prompt. Usage: agon ask [engine] "your question"\n' };
-      const timeoutSeconds = Math.max(1, Number.parseInt(typeof input.timeout === 'string' ? input.timeout : '120', 10) || 120);
+      const summarize = input.quiet !== true; const requestedEngine = resolved.engineId || 'default'; const timeoutSeconds = Math.max(1, Number.parseInt(typeof input.timeout === 'string' ? input.timeout : '120', 10) || 120);
       try { const dispatched = await services.engines.dispatch(resolved.engineId, resolved.prompt, context, { timeoutSeconds, systemPrompt: typeof input.system === 'string' ? input.system : undefined }) as Record<string, Json>;
         const answer = typeof dispatched.stdout === 'string' ? dispatched.stdout.trim() : ''; const ok = dispatched.exitCode === 0 && dispatched.timedOut !== true && answer.length > 0;
         await services.receipts.record('ask', { engineId: dispatched.engineId ?? resolved.engineId, ok, durationMs: dispatched.durationMs ?? null });
         if (!ok) {
+          const engineLabel = dispatched.engineId ?? requestedEngine;
           const summary = dispatched.timedOut === true
-            ? `${String(dispatched.engineId)} timed out after ${timeoutSeconds}s`
-            : `${String(dispatched.engineId)} exited ${String(dispatched.exitCode)} with no answer`;
+            ? `${String(engineLabel)} timed out after ${timeoutSeconds}s`
+            : `${String(engineLabel)} exited ${String(dispatched.exitCode)} with no answer`;
           const detail = typeof dispatched.stderr === 'string' ? dispatched.stderr.trim().slice(0, 500) : '';
-          return { exitCode: 1, stderr: `${summary}\n${detail ? `${detail}\n` : ''}` };
+          return { exitCode: 1, stderr: `${summary}\n${detail ? `${detail}\n` : ''}${summarize ? askSummary(engineLabel, dispatched.timedOut === true ? 'timeout' : 'error') : ''}` };
         }
-        return { exitCode: 0, stdout: `${answer}\n` };
-      } catch (error) { return { exitCode: 1, stderr: `${error instanceof Error ? error.message : String(error)}\n` }; }
+        return { exitCode: 0, stdout: `${answer}\n`, ...(summarize ? { stderr: askSummary(dispatched.engineId, 'ok') } : {}) };
+      } catch (error) { return { exitCode: 1, stderr: `${error instanceof Error ? error.message : String(error)}\n${summarize ? askSummary(requestedEngine, 'error') : ''}` }; }
     } }); }
 });
 export default createMod;

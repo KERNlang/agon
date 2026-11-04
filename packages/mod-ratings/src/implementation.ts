@@ -49,6 +49,17 @@ function leaderboard(record:RatingRecord, input:Record<string,Json>) {
     provisional:rating.wins + rating.losses < 30,
   })).sort((a,b) => b.floor - a.floor || a.engine.localeCompare(b.engine));
 }
+const printable = (value: string) => value.replace(/[\u0000-\u001f\u007f-\u009f]/g, '');
+function leaderboardText(rows: ReturnType<typeof leaderboard>, input: Record<string, Json>): string {
+  const task = typeof input.taskClass === 'string' ? printable(input.taskClass) : '', mode = typeof input.mode === 'string' ? printable(input.mode) : '';
+  const title = task ? `Leaderboard: ${task}` : mode ? `Leaderboard: ${mode.charAt(0).toUpperCase()}${mode.slice(1)}` : 'Global Leaderboard';
+  if (!rows.length) return `${title}\n${mode ? `No ${mode} matches recorded. Run \`agon ${mode}\` to start competing!` : 'No matches recorded. Run `agon forge` to start competing!'}\n`;
+  const cells = rows.map((row, index) => [`${index + 1}.`, printable(row.engine) + (row.provisional ? ' *' : ''), String(row.rating), `+-${row.uncertainty}`, String(row.floor), String(row.wins), String(row.losses), `${row.winPercent}%`]);
+  const table = [['#', 'Engine', 'Rating', '+/-', 'Floor', 'W', 'L', 'Win%'], ...cells];
+  const widths = table[0]!.map((_, column) => Math.max(...table.map(line => line[column]!.length)));
+  const lines = table.map(line => line.map((cell, column) => cell.padEnd(widths[column]!)).join('  ').trimEnd());
+  return `${[title, ...lines, ...(rows.some(row => row.provisional) ? ['', '* = provisional (< 30 matches, rating still calibrating)'] : [])].join('\n')}\n`;
+}
 export async function runRatings(raw:Json, context:InvocationContext, services:ModServices, forceLeaderboard=false):Promise<CommandResult> {
   const input = raw as Record<string,Json>;
   const action = forceLeaderboard ? 'leaderboard' : String(input.action ?? (Array.isArray(input._) ? input._[0] : 'leaderboard'));
@@ -88,7 +99,8 @@ export async function runRatings(raw:Json, context:InvocationContext, services:M
   }
   if (action === 'leaderboard') {
     const rows = leaderboard(loadRatings(), input), receiptId = await services.receipts.record('ratings-read', {count:rows.length});
-    return { exitCode:0, stdout:`${JSON.stringify({ratings:rows,receiptId},null,2)}\n`, result:{ratings:rows,receiptId} };
+    const stdout = input.json === true ? `${JSON.stringify({ratings:rows,receiptId},null,2)}\n` : leaderboardText(rows, input);
+    return { exitCode:0, stdout, result:{ratings:rows,receiptId} };
   }
   if (action !== 'purge-unknown' && action !== 'purge') return {exitCode:1,stderr:'Use leaderboard or purge-unknown.\n'};
   const targetHome = home();
@@ -115,17 +127,18 @@ export async function runRatings(raw:Json, context:InvocationContext, services:M
   const receiptId = await services.receipts.record('ratings-purge', result);
   return {exitCode:0,stdout:`${JSON.stringify({...result,receiptId},null,2)}\n`,result:{...result,receiptId}};
 }
-const parentSchema = Object.freeze({type:'object',additionalProperties:false,properties:{}}) as Readonly<Record<string,Json>>;
+const parentSchema = Object.freeze({type:'object',additionalProperties:false,properties:{json:{type:'boolean',default:false}}}) as Readonly<Record<string,Json>>;
 const resetSchema = Object.freeze({type:'object',additionalProperties:false,properties:{modes:{type:'string'},engines:{type:'string'},apply:{type:'boolean',default:false}}}) as Readonly<Record<string,Json>>;
-const leaderboardSchema = Object.freeze({type:'object',additionalProperties:false,properties:{taskClass:{type:'string'},mode:{type:'string'}}}) as Readonly<Record<string,Json>>;
+const leaderboardSchema = Object.freeze({type:'object',additionalProperties:false,properties:{taskClass:{type:'string'},mode:{type:'string'},json:{type:'boolean',default:false}}}) as Readonly<Record<string,Json>>;
 const purgeSchema = Object.freeze({type:'object',additionalProperties:false,properties:{apply:{type:'boolean',default:false},'dry-run':{type:'boolean',default:false},keep:{type:'string'}}}) as Readonly<Record<string,Json>>;
-const leaderboardCli = Object.freeze({aliases:{taskClass:'c',mode:'m'}, descriptions: { taskClass: "Filter by task class (algorithm, refactor, bugfix, test, docs, feature)", mode: "Filter by mode: forge, brainstorm, tribunal, critique" } });
+const leaderboardCli = Object.freeze({aliases:{taskClass:'c',mode:'m'}, descriptions: { taskClass: "Filter by task class (algorithm, refactor, bugfix, test, docs, feature)", mode: "Filter by mode: forge, brainstorm, tribunal, critique", json: "Print machine-readable JSON instead of the table" } });
 const cli = Object.freeze({});
+const parentCli = Object.freeze({descriptions: { json: "Print machine-readable JSON instead of the table" }});
 export const createMod:AgonModFactory = (services) => Object.freeze({apiVersion:'1' as const, async activate(registrar:Registrar):Promise<Dispose> {
   const disposers:Dispose[] = [];
   disposers.push(registrar.command('cli',{id:'physicalCliCommands:ratings-reset',description:'Preview or reset per-discipline ratings with a backup',inputSchema:resetSchema,cli,run:(i,c)=>runRatings({...i as object,action:'reset'},c,services)}));
   disposers.push(registrar.command('cli',{id:'cliCommands:0034',description:'Show engine leaderboard (Glicko-2 ratings)',inputSchema:leaderboardSchema,cli:leaderboardCli,run:(i,c)=>runRatings(i,c,services,true)}));
-  disposers.push(registrar.command('cli',{id:'cliCommands:0060',description:'Maintain ratings',inputSchema:parentSchema,cli,run:(i,c)=>runRatings(i,c,services)}));
+  disposers.push(registrar.command('cli',{id:'cliCommands:0060',description:'Maintain ratings',inputSchema:parentSchema,cli:parentCli,run:(i,c)=>runRatings(i,c,services)}));
   disposers.push(registrar.command('cli',{id:'cliCommands:0061',description:'Preview or apply purge of unknown engines',inputSchema:purgeSchema,cli:{repeatedOptions:{keep:'comma-separated'}},run:(i,c)=>runRatings({...i as object,action:'purge-unknown'},c,services)}));
   for (const id of ['intentVariants:0039','builtinCommandMetadata:0030','tuiSlashCommands:0041']) {
     const contribution = {id,description:'Show engine leaderboard',inputSchema:leaderboardSchema,run:(i:Json,c:InvocationContext)=>runRatings(i,c,services,true)};

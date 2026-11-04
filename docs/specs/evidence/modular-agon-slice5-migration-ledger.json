@@ -165,8 +165,8 @@
         "@kernlang/agon-support-verification",
         "@kernlang/agon-support-worktree"
       ],
-      "assignments": 17,
-      "assignmentHash": "sha256:bd0b97cdf81ef010524353e5fc8a238ae1b26afdf9064569c58b0441bd3f8b2f",
+      "assignments": 18,
+      "assignmentHash": "sha256:e360072f6b224cff32f25b3d44f847f686dc0d203d3740ab4d665089369e6c56",
       "compatibilityAdapter": "legacy runtime injected per invocation; no global bridge",
       "rollback": "select the retained S4 subject; legacy runtime remains authoritative"
     },
@@ -6127,6 +6127,26 @@
       "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
     },
     {
+      "category": "configKeys",
+      "id": "reviewFileContext",
+      "source": "packages/core/src/models/types.ts:90",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-review",
+      "rule": "semantic-source-rule",
+      "legacyPath": "packages/core/src/models/types.ts",
+      "physicalPackage": "packages/mod-review",
+      "physicalEntrypoint": "packages/mod-review/src/index.ts",
+      "implementationPaths": [
+        "packages/mod-review/src/index.ts"
+      ],
+      "ownershipAsset": "packages/mod-review/ownership.json",
+      "compatibilityAdapter": "packages/core/src/models/types.ts",
+      "authority": "legacy-runtime-until-s6",
+      "legacyPresent": true,
+      "registrationBoundary": "public-mod-api",
+      "removalCondition": "S6 generated registry owns the contribution and its frozen oracle remains green"
+    },
+    {
       "category": "intentVariants",
       "id": "review",
       "source": "packages/cli/src/signals/intent-types.ts:42",
@@ -7975,13 +7995,13 @@
   ],
   "counts": {
     "packages": 36,
-    "assignments": 348,
+    "assignments": 349,
     "categories": {
       "builtinCommandMetadata": 34,
       "cesarRoutes": 45,
       "cesarTools": 16,
       "cliCommands": 50,
-      "configKeys": 13,
+      "configKeys": 14,
       "emittedEvents": 9,
       "generatedDocumentation": 3,
       "intentVariants": 35,

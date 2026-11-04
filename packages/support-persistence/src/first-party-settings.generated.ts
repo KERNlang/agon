@@ -19,6 +19,7 @@ export interface FirstPartyLegacySettings {
   ratingJudging?: "off" | "shadow" | "on";
   ratingMinBallots?: number;
   ratingStaleHorizonDays?: number;
+  reviewFileContext?: boolean;
   reviewMaxDiffChars?: number;
   skillSynthesisThreshold?: number;
 }
@@ -43,6 +44,7 @@ export const DEFAULT_FIRST_PARTY_SETTINGS: Required<FirstPartyLegacySettings> = 
   "ratingJudging": "shadow",
   "ratingMinBallots": 2,
   "ratingStaleHorizonDays": 90,
+  "reviewFileContext": true,
   "reviewMaxDiffChars": 100000,
   "skillSynthesisThreshold": 3
 };

@@ -17,7 +17,6 @@ export interface KernelSettings {
   forgeHealthCheckApiTimeoutSec?: number;
   forgeMaxParallelApi?: number;
   reviewMaxTokens?: number;
-  reviewFileContext?: boolean;
   ratingsEnabled?: boolean;
   contextSummary?: boolean;
   onboarded?: boolean;
@@ -108,7 +107,6 @@ export const DEFAULT_KERNEL_SETTINGS: Required<KernelSettings> = {
   forgeHealthCheckApiTimeoutSec: 45,
   forgeMaxParallelApi: 2,
   reviewMaxTokens: 0,
-  reviewFileContext: true,
   ratingsEnabled: true,
   contextSummary: true,
   onboarded: false,

@@ -3,10 +3,11 @@
   "$id": "https://kernlang.dev/schemas/review/config.schema.json",
   "title": "review configuration",
   "type": "object",
-  "x-agon-config": { "version": 1, "legacyAliases": ["autoReviewAfterImpl", "goalReviewEngines", "reviewMaxDiffChars"] },
+  "x-agon-config": { "version": 1, "legacyAliases": ["autoReviewAfterImpl", "goalReviewEngines", "reviewFileContext", "reviewMaxDiffChars"] },
   "properties": {
     "autoReviewAfterImpl": { "type": "boolean", "default": true },
     "goalReviewEngines": { "type": "array", "items": { "type": "string" }, "default": [] },
+    "reviewFileContext": { "type": "boolean", "default": true },
     "reviewMaxDiffChars": { "type": "number", "default": 100000 }
   },
   "additionalProperties": true

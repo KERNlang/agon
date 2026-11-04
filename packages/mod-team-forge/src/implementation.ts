@@ -27,7 +27,12 @@ const inputSchema = Object.freeze({
 const cli = Object.freeze({
   positionals: ["task"],
   aliases: { test: "t", engines: "e", members: "m" },
-  descriptions: { task: "Task for two collaborating implementation teams" },
+  descriptions: { task: "Task for two collaborating implementation teams" ,
+    engines: "Comma-separated engine list",
+    members: "Members per team",
+    cwd: "Working directory",
+    timeout: "Engine timeout in seconds",
+  },
 });
 const text = (value: Json | undefined): string =>
   typeof value === "string" ? value.trim() : "";

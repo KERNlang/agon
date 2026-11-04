@@ -53,6 +53,7 @@ import type {
   WorkConfig,
   WorkState,
 } from "./runtime/index.js";
+import { cliDescriptions } from "./cli-descriptions.js";
 
 const json = (value: unknown): Json =>
   JSON.parse(JSON.stringify(value)) as Json;
@@ -416,6 +417,7 @@ const cliSchema = Object.freeze({
 const cli = Object.freeze({
   positionals: ["action", "room"],
   aliases: { text: "m", name: "n", resource: "r" },
+  descriptions: cliDescriptions,
 });
 const ids = [
   ["mcpTools:0022", "join"],

@@ -119,7 +119,7 @@ const parentSchema = Object.freeze({type:'object',additionalProperties:false,pro
 const resetSchema = Object.freeze({type:'object',additionalProperties:false,properties:{modes:{type:'string'},engines:{type:'string'},apply:{type:'boolean',default:false}}}) as Readonly<Record<string,Json>>;
 const leaderboardSchema = Object.freeze({type:'object',additionalProperties:false,properties:{taskClass:{type:'string'},mode:{type:'string'}}}) as Readonly<Record<string,Json>>;
 const purgeSchema = Object.freeze({type:'object',additionalProperties:false,properties:{apply:{type:'boolean',default:false},'dry-run':{type:'boolean',default:false},keep:{type:'string'}}}) as Readonly<Record<string,Json>>;
-const leaderboardCli = Object.freeze({aliases:{taskClass:'c',mode:'m'}});
+const leaderboardCli = Object.freeze({aliases:{taskClass:'c',mode:'m'}, descriptions: { taskClass: "Filter by task class (algorithm, refactor, bugfix, test, docs, feature)", mode: "Filter by mode: forge, brainstorm, tribunal, critique" } });
 const cli = Object.freeze({});
 export const createMod:AgonModFactory = (services) => Object.freeze({apiVersion:'1' as const, async activate(registrar:Registrar):Promise<Dispose> {
   const disposers:Dispose[] = [];

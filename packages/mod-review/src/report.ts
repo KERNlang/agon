@@ -13,6 +13,11 @@ interface ReportSeat {
   readonly status: string;
   readonly role?: string;
   readonly error?: string;
+  readonly output?: string;
+}
+
+export interface ReviewTextOptions {
+  readonly verbose?: boolean;
 }
 
 export interface ReviewReport {
@@ -93,7 +98,13 @@ function textFinding(finding: ConsensusFinding): string {
   return `  - [${finding.severity}] ${where} (${finding.engines.join(', ')})${quote}\n    ${finding.problem}${fix}`;
 }
 
-export function formatText(report: ReviewReport): string {
+export function formatSummaryLine(report: ReviewReport): string {
+  const ok = report.reviews.filter((seat) => seat.status === 'ok').length;
+  const blocking = report.consensus ? `${report.consensus.blockers.length} blocking` : 'blocking unknown';
+  return `AGON_SUMMARY: ${ok}/${report.reviews.length} seats ok; ${blocking}`;
+}
+
+export function formatText(report: ReviewReport, options: ReviewTextOptions = {}): string {
   const consensus = report.consensus;
   const ok = report.reviews.filter((seat) => seat.status === 'ok').length;
   const lines = [`Review: ${report.target}`, `Seats: ${ok}/${report.reviews.length} ok`];
@@ -108,12 +119,17 @@ export function formatText(report: ReviewReport): string {
   }
   if (consensus && !consensus.findings.length) lines.push('No findings.');
   for (const warning of report.warnings ?? []) lines.push(`warning: ${warning}`);
-  if (report.runDir) lines.push(`Run: ${report.runDir}`);
+  if (options.verbose) {
+    for (const seat of report.reviews) if (seat.output) lines.push('', `--- ${seat.engineId} ---`, seat.output.trimEnd());
+    lines.push('');
+  }
+  if (report.runDir) lines.push(`AGON_RUN: ${report.runDir}`);
+  lines.push(formatSummaryLine(report));
   return `${lines.join('\n')}\n`;
 }
 
-export function formatReport(report: ReviewReport, format: ReviewFormat): string {
+export function formatReport(report: ReviewReport, format: ReviewFormat, options: ReviewTextOptions = {}): string {
   if (format === 'sarif') return formatSarif(report);
-  if (format === 'text') return formatText(report);
+  if (format === 'text') return formatText(report, options);
   return `${JSON.stringify(report, null, 2)}\n`;
 }

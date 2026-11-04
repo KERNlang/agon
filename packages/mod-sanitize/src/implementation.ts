@@ -10,6 +10,7 @@ import type {
 } from "@kernlang/agon-mod-api";
 
 import { scanText, cleanText } from "./text-forensics.js";
+import { formatForensicReport } from "./report.js";
 export { scanText, cleanText };
 export type { TextFinding as Finding } from "./text-forensics.js";
 export type MetadataFinding = {
@@ -232,7 +233,7 @@ const cliSchema = Object.freeze({
     inPlace: { type: "boolean", default: false },
   },
 }) as Readonly<Record<string, Json>>;
-const cli = Object.freeze({ positionals: ["file"], aliases: { out: "o" } });
+const cli = Object.freeze({ positionals: ["file"], aliases: { out: "o" }, descriptions: { detect: "Report-only forensic scan; exits 1 when actionable hidden channels are found", out: "Write cleaned output to this file instead of stdout", jsonl: "Emit the report as machine-readable JSONL", metadata: "Metadata mode: scan a PNG/JPEG/SVG file for signed provenance metadata (C2PA/JUMBF, XMP, Exif). Requires a file argument. Honest framing: pixel-level watermarks are not assessable.", stripMetadata: "With --metadata: strip the provenance metadata (breaks the C2PA signature — result is honestly \"metadata removed\"). Writes to --out or overwrites nothing (refuses without --out unless --in-place).", inPlace: "With --metadata --strip-metadata: rewrite the input file in place after stripping" } });
 async function readStdin(): Promise<string> {
   const chunks: Buffer[] = [];
   for await (const chunk of process.stdin)
@@ -351,6 +352,7 @@ export async function runSanitize(
       : out
         ? `Cleaned output written to ${out} (${addressed} finding(s) addressed${preserved}; verified by re-scan).\n`
         : cleaned.output,
+    ...(jsonl ? {} : { stderr: formatForensicReport(source, report) }),
     result: { ...result, receiptId } as unknown as Json,
   };
 }

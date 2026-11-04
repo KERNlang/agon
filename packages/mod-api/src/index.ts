@@ -86,6 +86,8 @@ export interface CommandContribution {
     readonly aliases?: Readonly<Record<string, string>>;
     /** Normalize repeated string flags before schema validation. Unlisted flags stay unchanged. */
     readonly repeatedOptions?: Readonly<Record<string, 'last' | 'comma-separated'>>;
+    /** Option values used when stdout is a terminal and the caller did not pass that option. Piped output keeps the schema default. */
+    readonly ttyDefaults?: Readonly<Record<string, string>>;
   };
   parse?(input: string): Awaitable<Json | Readonly<Record<string, Json | undefined>> | undefined>;
   run(input: Json, context: InvocationContext): InvocationOutput;

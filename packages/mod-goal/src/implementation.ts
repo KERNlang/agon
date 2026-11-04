@@ -35,6 +35,7 @@ import {
   createPersistenceEnvelope,
   unwrapPersistenceEnvelope,
 } from "@kernlang/agon-mod-plan";
+import { cliDescriptions } from "./cli-descriptions.js";
 
 type Task = {
   id: string;
@@ -337,6 +338,7 @@ const cli = Object.freeze({
     reviewEngines: "r",
     judge: "j",
   },
+  descriptions: cliDescriptions,
 });
 const cesarSchema = Object.freeze({
   type: "object",

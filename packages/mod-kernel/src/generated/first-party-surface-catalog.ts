@@ -2317,10 +2317,10 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
       "contentHash": "sha256:db512f69fc633e33e3aaacc27b2a9efd4aa4e712fe4dfb30bd2bd1b6f755c488"
     },
     "ownerClass": "user-toggleable-mod-package",
-    "description": "agent-guide",
+    "description": "Print the compact Agon agent guide",
     "accessibility": {
-      "label": "agent-guide",
-      "fallbackText": "agent-guide",
+      "label": "Print the compact Agon agent guide",
+      "fallbackText": "Print the compact Agon agent guide",
       "keyboardAccessible": true,
       "colorIndependent": true
     }
@@ -2340,10 +2340,10 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
       "contentHash": "sha256:1837f3986b77315a26ccb62f432923613c0c0a3f43b2e70e08ce839ff518abbc"
     },
     "ownerClass": "user-toggleable-mod-package",
-    "description": "ask",
+    "description": "Ask one engine a single question",
     "accessibility": {
-      "label": "ask",
-      "fallbackText": "ask",
+      "label": "Ask one engine a single question",
+      "fallbackText": "Ask one engine a single question",
       "keyboardAccessible": true,
       "colorIndependent": true
     }
@@ -2363,10 +2363,10 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
       "contentHash": "sha256:f13bf6a1b7e46f6a54c4f5398e46cc4abd390db9dfc90ab9f8b854aa5d2e16e5"
     },
     "ownerClass": "minimal-kernel-machinery",
-    "description": "attach",
+    "description": "Attach (read-only) to a session: replay its EventLog and follow live (client/server split M2)",
     "accessibility": {
-      "label": "attach",
-      "fallbackText": "attach",
+      "label": "Attach (read-only) to a session: replay its EventLog and follow live (client/server split M2)",
+      "fallbackText": "Attach (read-only) to a session: replay its EventLog and follow live (client/server split M2)",
       "keyboardAccessible": true,
       "colorIndependent": true
     }
@@ -2386,10 +2386,10 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
       "contentHash": "sha256:073a19d4aa6e7433a7764b60efe58febf1649e0e9f80ab338daed53234373211"
     },
     "ownerClass": "user-toggleable-mod-package",
-    "description": "brainstorm",
+    "description": "Multi-model confidence brainstorm",
     "accessibility": {
-      "label": "brainstorm",
-      "fallbackText": "brainstorm",
+      "label": "Multi-model confidence brainstorm",
+      "fallbackText": "Multi-model confidence brainstorm",
       "keyboardAccessible": true,
       "colorIndependent": true
     }
@@ -2409,10 +2409,10 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
       "contentHash": "sha256:1e041f9dc6b3299687483180fd2aa256e8a43cc2f04930b0b3f75eef2141ac25"
     },
     "ownerClass": "user-toggleable-mod-package",
-    "description": "browser-host",
+    "description": "Browser integration",
     "accessibility": {
-      "label": "browser-host",
-      "fallbackText": "browser-host",
+      "label": "Browser integration",
+      "fallbackText": "Browser integration",
       "keyboardAccessible": true,
       "colorIndependent": true
     }
@@ -2524,10 +2524,10 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
       "contentHash": "sha256:f13bf6a1b7e46f6a54c4f5398e46cc4abd390db9dfc90ab9f8b854aa5d2e16e5"
     },
     "ownerClass": "minimal-kernel-machinery",
-    "description": "call",
+    "description": "Live bridge for external CLIs to run Agon modes",
     "accessibility": {
-      "label": "call",
-      "fallbackText": "call",
+      "label": "Live bridge for external CLIs to run Agon modes",
+      "fallbackText": "Live bridge for external CLIs to run Agon modes",
       "keyboardAccessible": true,
       "colorIndependent": true
     }
@@ -2547,10 +2547,10 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
       "contentHash": "sha256:71db2f4682342b6efebb1aaec140a858e6f4ff2251c29f6403256b33582719af"
     },
     "ownerClass": "user-toggleable-mod-package",
-    "description": "campfire",
+    "description": "Open discussion — all engines think together, no competition",
     "accessibility": {
-      "label": "campfire",
-      "fallbackText": "campfire",
+      "label": "Open discussion — all engines think together, no competition",
+      "fallbackText": "Open discussion — all engines think together, no competition",
       "keyboardAccessible": true,
       "colorIndependent": true
     }
@@ -2570,10 +2570,10 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
       "contentHash": "sha256:1e041f9dc6b3299687483180fd2aa256e8a43cc2f04930b0b3f75eef2141ac25"
     },
     "ownerClass": "user-toggleable-mod-package",
-    "description": "chrome",
+    "description": "Browser integration",
     "accessibility": {
-      "label": "chrome",
-      "fallbackText": "chrome",
+      "label": "Browser integration",
+      "fallbackText": "Browser integration",
       "keyboardAccessible": true,
       "colorIndependent": true
     }
@@ -2593,10 +2593,10 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
       "contentHash": "sha256:f13bf6a1b7e46f6a54c4f5398e46cc4abd390db9dfc90ab9f8b854aa5d2e16e5"
     },
     "ownerClass": "minimal-kernel-machinery",
-    "description": "config",
+    "description": "View and modify Agon configuration",
     "accessibility": {
-      "label": "config",
-      "fallbackText": "config",
+      "label": "View and modify Agon configuration",
+      "fallbackText": "View and modify Agon configuration",
       "keyboardAccessible": true,
       "colorIndependent": true
     }
@@ -2616,10 +2616,10 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
       "contentHash": "sha256:85b6651d966550ace2eaf2b3d5b98444e8ac57161ec305f5d3e55cca00c01f5f"
     },
     "ownerClass": "user-toggleable-mod-package",
-    "description": "conquer",
+    "description": "Supervised autonomous build in an isolated worktree with an explicit done oracle",
     "accessibility": {
-      "label": "conquer",
-      "fallbackText": "conquer",
+      "label": "Supervised autonomous build in an isolated worktree with an explicit done oracle",
+      "fallbackText": "Supervised autonomous build in an isolated worktree with an explicit done oracle",
       "keyboardAccessible": true,
       "colorIndependent": true
     }
@@ -2639,10 +2639,10 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
       "contentHash": "sha256:3db76282f96780b2e5b04a1edc8a9c74bdf2367b040665470f44c3836d86eb81"
     },
     "ownerClass": "user-toggleable-mod-package",
-    "description": "council",
+    "description": "Roundtable of ALL active engines — each takes a role, the top-rated engine chairs. agon council \"<decision>\". Agon's stronger LLM-Council: real heterogeneous models, decision brief, directed critique, a chairman verdict with confidence + kill-switch.",
     "accessibility": {
-      "label": "council",
-      "fallbackText": "council",
+      "label": "Roundtable of ALL active engines — each takes a role, the top-rated engine chairs. agon council \"<decision>\". Agon's stronger LLM-Council: real heterogeneous models, decision brief, directed critique, a chairman verdict with confidence + kill-switch.",
+      "fallbackText": "Roundtable of ALL active engines — each takes a role, the top-rated engine chairs. agon council \"<decision>\". Agon's stronger LLM-Council: real heterogeneous models, decision brief, directed critique, a chairman verdict with confidence + kill-switch.",
       "keyboardAccessible": true,
       "colorIndependent": true
     }
@@ -2662,10 +2662,10 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
       "contentHash": "sha256:21348585d696dcf541f52a2ee1c237815174f3c56b1f2e5384f3865edf8f1d9b"
     },
     "ownerClass": "user-toggleable-mod-package",
-    "description": "daemon",
+    "description": "Run a long-lived agon session host (agond) you can attach to (client/server split M3): start | stop | status",
     "accessibility": {
-      "label": "daemon",
-      "fallbackText": "daemon",
+      "label": "Run a long-lived agon session host (agond) you can attach to (client/server split M3): start | stop | status",
+      "fallbackText": "Run a long-lived agon session host (agond) you can attach to (client/server split M3): start | stop | status",
       "keyboardAccessible": true,
       "colorIndependent": true
     }
@@ -2685,10 +2685,10 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
       "contentHash": "sha256:f13bf6a1b7e46f6a54c4f5398e46cc4abd390db9dfc90ab9f8b854aa5d2e16e5"
     },
     "ownerClass": "minimal-kernel-machinery",
-    "description": "doctor",
+    "description": "Diagnose Agon engine and worktree health",
     "accessibility": {
-      "label": "doctor",
-      "fallbackText": "doctor",
+      "label": "Diagnose Agon engine and worktree health",
+      "fallbackText": "Diagnose Agon engine and worktree health",
       "keyboardAccessible": true,
       "colorIndependent": true
     }
@@ -2708,10 +2708,10 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
       "contentHash": "sha256:1e041f9dc6b3299687483180fd2aa256e8a43cc2f04930b0b3f75eef2141ac25"
     },
     "ownerClass": "user-toggleable-mod-package",
-    "description": "drive",
+    "description": "Browser integration",
     "accessibility": {
-      "label": "drive",
-      "fallbackText": "drive",
+      "label": "Browser integration",
+      "fallbackText": "Browser integration",
       "keyboardAccessible": true,
       "colorIndependent": true
     }
@@ -2731,10 +2731,10 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
       "contentHash": "sha256:f13bf6a1b7e46f6a54c4f5398e46cc4abd390db9dfc90ab9f8b854aa5d2e16e5"
     },
     "ownerClass": "minimal-kernel-machinery",
-    "description": "engine",
+    "description": "Manage AI engines",
     "accessibility": {
-      "label": "engine",
-      "fallbackText": "engine",
+      "label": "Manage AI engines",
+      "fallbackText": "Manage AI engines",
       "keyboardAccessible": true,
       "colorIndependent": true
     }
@@ -2754,10 +2754,10 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
       "contentHash": "sha256:1e041f9dc6b3299687483180fd2aa256e8a43cc2f04930b0b3f75eef2141ac25"
     },
     "ownerClass": "user-toggleable-mod-package",
-    "description": "ext",
+    "description": "Browser integration",
     "accessibility": {
-      "label": "ext",
-      "fallbackText": "ext",
+      "label": "Browser integration",
+      "fallbackText": "Browser integration",
       "keyboardAccessible": true,
       "colorIndependent": true
     }
@@ -2823,10 +2823,10 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
       "contentHash": "sha256:8450b8e9be2d92907ee1cd997a22821d69f4c8a40863fbf8f4813256d9b53cc8"
     },
     "ownerClass": "user-toggleable-mod-package",
-    "description": "forge",
+    "description": "Run competing implementations in isolated worktrees and select by measured fitness",
     "accessibility": {
-      "label": "forge",
-      "fallbackText": "forge",
+      "label": "Run competing implementations in isolated worktrees and select by measured fitness",
+      "fallbackText": "Run competing implementations in isolated worktrees and select by measured fitness",
       "keyboardAccessible": true,
       "colorIndependent": true
     }
@@ -2846,10 +2846,10 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
       "contentHash": "sha256:2fee89267297c7b22bd38367947c9f6297645ab3040255a53529243d4d55e402"
     },
     "ownerClass": "user-toggleable-mod-package",
-    "description": "goal",
+    "description": "Run a resumable, dependency-aware, gated goal on an isolated goal/* branch",
     "accessibility": {
-      "label": "goal",
-      "fallbackText": "goal",
+      "label": "Run a resumable, dependency-aware, gated goal on an isolated goal/* branch",
+      "fallbackText": "Run a resumable, dependency-aware, gated goal on an isolated goal/* branch",
       "keyboardAccessible": true,
       "colorIndependent": true
     }
@@ -2869,10 +2869,10 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
       "contentHash": "sha256:38553f60b55f32cc3281354219e0c30d19d18d5c5c6e2aa4cc9ff9c516eea46d"
     },
     "ownerClass": "user-toggleable-mod-package",
-    "description": "history",
+    "description": "Browse validated Forge run history",
     "accessibility": {
-      "label": "history",
-      "fallbackText": "history",
+      "label": "Browse validated Forge run history",
+      "fallbackText": "Browse validated Forge run history",
       "keyboardAccessible": true,
       "colorIndependent": true
     }
@@ -2892,10 +2892,10 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
       "contentHash": "sha256:db512f69fc633e33e3aaacc27b2a9efd4aa4e712fe4dfb30bd2bd1b6f755c488"
     },
     "ownerClass": "user-toggleable-mod-package",
-    "description": "install-agent-prompts",
+    "description": "Install lightweight Agon prompts into another CLI",
     "accessibility": {
-      "label": "install-agent-prompts",
-      "fallbackText": "install-agent-prompts",
+      "label": "Install lightweight Agon prompts into another CLI",
+      "fallbackText": "Install lightweight Agon prompts into another CLI",
       "keyboardAccessible": true,
       "colorIndependent": true
     }
@@ -2915,10 +2915,10 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
       "contentHash": "sha256:21348585d696dcf541f52a2ee1c237815174f3c56b1f2e5384f3865edf8f1d9b"
     },
     "ownerClass": "user-toggleable-mod-package",
-    "description": "job",
+    "description": "Submit, observe, and cancel daemon-owned autonomous jobs",
     "accessibility": {
-      "label": "job",
-      "fallbackText": "job",
+      "label": "Submit, observe, and cancel daemon-owned autonomous jobs",
+      "fallbackText": "Submit, observe, and cancel daemon-owned autonomous jobs",
       "keyboardAccessible": true,
       "colorIndependent": true
     }
@@ -3076,10 +3076,10 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
       "contentHash": "sha256:38553f60b55f32cc3281354219e0c30d19d18d5c5c6e2aa4cc9ff9c516eea46d"
     },
     "ownerClass": "user-toggleable-mod-package",
-    "description": "last",
+    "description": "Show the most recent Forge run",
     "accessibility": {
-      "label": "last",
-      "fallbackText": "last",
+      "label": "Show the most recent Forge run",
+      "fallbackText": "Show the most recent Forge run",
       "keyboardAccessible": true,
       "colorIndependent": true
     }
@@ -3099,10 +3099,10 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
       "contentHash": "sha256:75ea0fb79c652908ea9fd79bfea196b78ee1bc515287ae2e9e3b091ce618221a"
     },
     "ownerClass": "user-toggleable-mod-package",
-    "description": "leaderboard",
+    "description": "Show engine leaderboard (Glicko-2 ratings)",
     "accessibility": {
-      "label": "leaderboard",
-      "fallbackText": "leaderboard",
+      "label": "Show engine leaderboard (Glicko-2 ratings)",
+      "fallbackText": "Show engine leaderboard (Glicko-2 ratings)",
       "keyboardAccessible": true,
       "colorIndependent": true
     }
@@ -3122,10 +3122,10 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
       "contentHash": "sha256:f13bf6a1b7e46f6a54c4f5398e46cc4abd390db9dfc90ab9f8b854aa5d2e16e5"
     },
     "ownerClass": "minimal-kernel-machinery",
-    "description": "login",
+    "description": "Log an engine's CLI into its clean workspace-pure config dir so dispatches stay authenticated without inheriting your personal Claude Code setup",
     "accessibility": {
-      "label": "login",
-      "fallbackText": "login",
+      "label": "Log an engine's CLI into its clean workspace-pure config dir so dispatches stay authenticated without inheriting your personal Claude Code setup",
+      "fallbackText": "Log an engine's CLI into its clean workspace-pure config dir so dispatches stay authenticated without inheriting your personal Claude Code setup",
       "keyboardAccessible": true,
       "colorIndependent": true
     }
@@ -3352,10 +3352,10 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
       "contentHash": "sha256:f13bf6a1b7e46f6a54c4f5398e46cc4abd390db9dfc90ab9f8b854aa5d2e16e5"
     },
     "ownerClass": "minimal-kernel-machinery",
-    "description": "models",
+    "description": "Manage engine→model mappings",
     "accessibility": {
-      "label": "models",
-      "fallbackText": "models",
+      "label": "Manage engine→model mappings",
+      "fallbackText": "Manage engine→model mappings",
       "keyboardAccessible": true,
       "colorIndependent": true
     }
@@ -3559,10 +3559,10 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
       "contentHash": "sha256:62668da901e8d50445974ed8f7163db6b661ea22db5b3352b48fe14513599e2c"
     },
     "ownerClass": "user-toggleable-mod-package",
-    "description": "mutate",
+    "description": "Measure test strength with isolated mechanical or semantic mutants",
     "accessibility": {
-      "label": "mutate",
-      "fallbackText": "mutate",
+      "label": "Measure test strength with isolated mechanical or semantic mutants",
+      "fallbackText": "Measure test strength with isolated mechanical or semantic mutants",
       "keyboardAccessible": true,
       "colorIndependent": true
     }
@@ -3582,10 +3582,10 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
       "contentHash": "sha256:f75f46384adff10fbbbe22aeec5558b09e44580812317e47d72031cf8c84e026"
     },
     "ownerClass": "user-toggleable-mod-package",
-    "description": "naturalize",
+    "description": "Sanitize, rewrite with a non-author engine, enforce lexical change, and re-scan",
     "accessibility": {
-      "label": "naturalize",
-      "fallbackText": "naturalize",
+      "label": "Sanitize, rewrite with a non-author engine, enforce lexical change, and re-scan",
+      "fallbackText": "Sanitize, rewrite with a non-author engine, enforce lexical change, and re-scan",
       "keyboardAccessible": true,
       "colorIndependent": true
     }
@@ -3605,10 +3605,10 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
       "contentHash": "sha256:1a4cd3f103c53d6a8e2b00e4fa5e5a75a3b7ac92db307e2cd3c101369f7f3ba1"
     },
     "ownerClass": "user-toggleable-mod-package",
-    "description": "nero",
+    "description": "Adversarial self-challenge with concrete failure scenarios and a verdict",
     "accessibility": {
-      "label": "nero",
-      "fallbackText": "nero",
+      "label": "Adversarial self-challenge with concrete failure scenarios and a verdict",
+      "fallbackText": "Adversarial self-challenge with concrete failure scenarios and a verdict",
       "keyboardAccessible": true,
       "colorIndependent": true
     }
@@ -3628,10 +3628,10 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
       "contentHash": "sha256:55a397353c6bc5eb73f699d86d5006535d96c7eabdb7946c26eac3f36c06599d"
     },
     "ownerClass": "user-toggleable-mod-package",
-    "description": "provenance",
+    "description": "AI-contribution / transparency report for a forge run",
     "accessibility": {
-      "label": "provenance",
-      "fallbackText": "provenance",
+      "label": "AI-contribution / transparency report for a forge run",
+      "fallbackText": "AI-contribution / transparency report for a forge run",
       "keyboardAccessible": true,
       "colorIndependent": true
     }
@@ -3651,10 +3651,10 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
       "contentHash": "sha256:f13bf6a1b7e46f6a54c4f5398e46cc4abd390db9dfc90ab9f8b854aa5d2e16e5"
     },
     "ownerClass": "minimal-kernel-machinery",
-    "description": "provider",
+    "description": "Add, remove, or list API providers; connect/disconnect and manage API keys",
     "accessibility": {
-      "label": "provider",
-      "fallbackText": "provider",
+      "label": "Add, remove, or list API providers; connect/disconnect and manage API keys",
+      "fallbackText": "Add, remove, or list API providers; connect/disconnect and manage API keys",
       "keyboardAccessible": true,
       "colorIndependent": true
     }
@@ -3674,10 +3674,10 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
       "contentHash": "sha256:fc32c0375d9499c43d9fb870e4b15fe749b4d387d5de3c15506ae5d5371eb716"
     },
     "ownerClass": "user-toggleable-mod-package",
-    "description": "rag",
+    "description": "Index and retrieve cited project documentation with local MiniLM embeddings",
     "accessibility": {
-      "label": "rag",
-      "fallbackText": "rag",
+      "label": "Index and retrieve cited project documentation with local MiniLM embeddings",
+      "fallbackText": "Index and retrieve cited project documentation with local MiniLM embeddings",
       "keyboardAccessible": true,
       "colorIndependent": true
     }
@@ -3697,10 +3697,10 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
       "contentHash": "sha256:75ea0fb79c652908ea9fd79bfea196b78ee1bc515287ae2e9e3b091ce618221a"
     },
     "ownerClass": "user-toggleable-mod-package",
-    "description": "ratings",
+    "description": "Maintain ratings",
     "accessibility": {
-      "label": "ratings",
-      "fallbackText": "ratings",
+      "label": "Maintain ratings",
+      "fallbackText": "Maintain ratings",
       "keyboardAccessible": true,
       "colorIndependent": true
     }
@@ -3743,10 +3743,10 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
       "contentHash": "sha256:12d017ed5a2e085e95ee35327cb58670cbd8b6d5234b6f8417731b889dd8dd10"
     },
     "ownerClass": "user-toggleable-mod-package",
-    "description": "research",
+    "description": "Keyless authoritative research with bounded fetching and independently verified citations",
     "accessibility": {
-      "label": "research",
-      "fallbackText": "research",
+      "label": "Keyless authoritative research with bounded fetching and independently verified citations",
+      "fallbackText": "Keyless authoritative research with bounded fetching and independently verified citations",
       "keyboardAccessible": true,
       "colorIndependent": true
     }
@@ -3766,10 +3766,10 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
       "contentHash": "sha256:b6d6118e8f1c045f5668160df4e8b017675d7d56d7ce5064326e4d27efed3b6b"
     },
     "ownerClass": "user-toggleable-mod-package",
-    "description": "review",
+    "description": "Run a non-interactive evidence-grounded review of a Git diff",
     "accessibility": {
-      "label": "review",
-      "fallbackText": "review",
+      "label": "Run a non-interactive evidence-grounded review of a Git diff",
+      "fallbackText": "Run a non-interactive evidence-grounded review of a Git diff",
       "keyboardAccessible": true,
       "colorIndependent": true
     }
@@ -3789,10 +3789,10 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
       "contentHash": "sha256:a9e8c37dca0eaa8af3c524f3a939f78890993bc0f3ff0419a9a940ddb88683a7"
     },
     "ownerClass": "user-toggleable-mod-package",
-    "description": "room",
+    "description": "Shared persistent multi-party rooms",
     "accessibility": {
-      "label": "room",
-      "fallbackText": "room",
+      "label": "Shared persistent multi-party rooms",
+      "fallbackText": "Shared persistent multi-party rooms",
       "keyboardAccessible": true,
       "colorIndependent": true
     }
@@ -3812,10 +3812,10 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
       "contentHash": "sha256:b62c976ab88e5566ba88b87cf627be905d18e8ad8ec066ce96cf15dbbf7c74d4"
     },
     "ownerClass": "user-toggleable-mod-package",
-    "description": "sanitize",
+    "description": "Deterministically detect and remove hidden text and image metadata channels",
     "accessibility": {
-      "label": "sanitize",
-      "fallbackText": "sanitize",
+      "label": "Deterministically detect and remove hidden text and image metadata channels",
+      "fallbackText": "Deterministically detect and remove hidden text and image metadata channels",
       "keyboardAccessible": true,
       "colorIndependent": true
     }
@@ -3835,10 +3835,10 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
       "contentHash": "sha256:1e041f9dc6b3299687483180fd2aa256e8a43cc2f04930b0b3f75eef2141ac25"
     },
     "ownerClass": "user-toggleable-mod-package",
-    "description": "serve",
+    "description": "Browser integration",
     "accessibility": {
-      "label": "serve",
-      "fallbackText": "serve",
+      "label": "Browser integration",
+      "fallbackText": "Browser integration",
       "keyboardAccessible": true,
       "colorIndependent": true
     }
@@ -3858,10 +3858,10 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
       "contentHash": "sha256:7b261f6f8411e93d7f70e9e42cdb2204ab081dc6e2571c2928d6ce238ee34563"
     },
     "ownerClass": "user-toggleable-mod-package",
-    "description": "synthesis",
+    "description": "Competitive cross-pollination: draft, swap, improve, and judge",
     "accessibility": {
-      "label": "synthesis",
-      "fallbackText": "synthesis",
+      "label": "Competitive cross-pollination: draft, swap, improve, and judge",
+      "fallbackText": "Competitive cross-pollination: draft, swap, improve, and judge",
       "keyboardAccessible": true,
       "colorIndependent": true
     }
@@ -3881,10 +3881,10 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
       "contentHash": "sha256:3ecdf24fe2d12db500745565b8db255d6cd45f0275b1314766f1387e40caa8f4"
     },
     "ownerClass": "user-toggleable-mod-package",
-    "description": "team-brainstorm",
+    "description": "Team brainstorm — teams collaborate and compete on a question",
     "accessibility": {
-      "label": "team-brainstorm",
-      "fallbackText": "team-brainstorm",
+      "label": "Team brainstorm — teams collaborate and compete on a question",
+      "fallbackText": "Team brainstorm — teams collaborate and compete on a question",
       "keyboardAccessible": true,
       "colorIndependent": true
     }
@@ -3904,10 +3904,10 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
       "contentHash": "sha256:735867c0a8106ad3c8b6b94d65f8f7805e0d869fd7f612d82225a3c415542f0e"
     },
     "ownerClass": "user-toggleable-mod-package",
-    "description": "team-forge",
+    "description": "Two collaborating teams compete using isolated implementation worktrees and measured fitness",
     "accessibility": {
-      "label": "team-forge",
-      "fallbackText": "team-forge",
+      "label": "Two collaborating teams compete using isolated implementation worktrees and measured fitness",
+      "fallbackText": "Two collaborating teams compete using isolated implementation worktrees and measured fitness",
       "keyboardAccessible": true,
       "colorIndependent": true
     }
@@ -3927,10 +3927,10 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
       "contentHash": "sha256:2dfacdae6f1a9cdd61d9a6f8af3f4e76f69716d444b5ade0e33acd4e8d36e18f"
     },
     "ownerClass": "user-toggleable-mod-package",
-    "description": "team-tribunal",
+    "description": "Team tribunal — teams argue opposing positions",
     "accessibility": {
-      "label": "team-tribunal",
-      "fallbackText": "team-tribunal",
+      "label": "Team tribunal — teams argue opposing positions",
+      "fallbackText": "Team tribunal — teams argue opposing positions",
       "keyboardAccessible": true,
       "colorIndependent": true
     }
@@ -3950,10 +3950,10 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
       "contentHash": "sha256:2f252136820a213b9e394cac8f48239276f4f398c17c0a34b9b20ba2538ddd2c"
     },
     "ownerClass": "user-toggleable-mod-package",
-    "description": "think",
+    "description": "Sequential thinking — decompose a problem into structured thoughts before acting. agon think \"...\" --strategy reflexion. Opt-in; surfaces open questions and a goal handoff.",
     "accessibility": {
-      "label": "think",
-      "fallbackText": "think",
+      "label": "Sequential thinking — decompose a problem into structured thoughts before acting. agon think \"...\" --strategy reflexion. Opt-in; surfaces open questions and a goal handoff.",
+      "fallbackText": "Sequential thinking — decompose a problem into structured thoughts before acting. agon think \"...\" --strategy reflexion. Opt-in; surfaces open questions and a goal handoff.",
       "keyboardAccessible": true,
       "colorIndependent": true
     }
@@ -3973,10 +3973,10 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
       "contentHash": "sha256:42173e196620704d5c6b33f4e5fb1afcb6907f3e5b07db010bf5312dcd73fd6c"
     },
     "ownerClass": "user-toggleable-mod-package",
-    "description": "tribunal",
+    "description": "Adversarial debate — engines argue different sides of a question",
     "accessibility": {
-      "label": "tribunal",
-      "fallbackText": "tribunal",
+      "label": "Adversarial debate — engines argue different sides of a question",
+      "fallbackText": "Adversarial debate — engines argue different sides of a question",
       "keyboardAccessible": true,
       "colorIndependent": true
     }
@@ -3996,10 +3996,10 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
       "contentHash": "sha256:f13bf6a1b7e46f6a54c4f5398e46cc4abd390db9dfc90ab9f8b854aa5d2e16e5"
     },
     "ownerClass": "minimal-kernel-machinery",
-    "description": "update",
+    "description": "Stage, verify, and atomically select a Modular Agon release without overwriting the running process.",
     "accessibility": {
-      "label": "update",
-      "fallbackText": "update",
+      "label": "Stage, verify, and atomically select a Modular Agon release without overwriting the running process.",
+      "fallbackText": "Stage, verify, and atomically select a Modular Agon release without overwriting the running process.",
       "keyboardAccessible": true,
       "colorIndependent": true
     }
@@ -4020,10 +4020,10 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
       "contentHash": "sha256:f13bf6a1b7e46f6a54c4f5398e46cc4abd390db9dfc90ab9f8b854aa5d2e16e5"
     },
     "ownerClass": "minimal-kernel-machinery",
-    "description": "upgrade",
+    "description": "Stage, verify, and atomically select a Modular Agon release without overwriting the running process.",
     "accessibility": {
-      "label": "upgrade",
-      "fallbackText": "upgrade",
+      "label": "Stage, verify, and atomically select a Modular Agon release without overwriting the running process.",
+      "fallbackText": "Stage, verify, and atomically select a Modular Agon release without overwriting the running process.",
       "keyboardAccessible": true,
       "colorIndependent": true
     }
@@ -4043,10 +4043,10 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
       "contentHash": "sha256:6e6608e1c820fe579c83664c8a2a2cba20e3eded2fb88b6d6c33e3477903bd32"
     },
     "ownerClass": "user-toggleable-mod-package",
-    "description": "worktree",
+    "description": "Isolated per-session Git worktrees",
     "accessibility": {
-      "label": "worktree",
-      "fallbackText": "worktree",
+      "label": "Isolated per-session Git worktrees",
+      "fallbackText": "Isolated per-session Git worktrees",
       "keyboardAccessible": true,
       "colorIndependent": true
     }
@@ -4067,10 +4067,10 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
       "contentHash": "sha256:6e6608e1c820fe579c83664c8a2a2cba20e3eded2fb88b6d6c33e3477903bd32"
     },
     "ownerClass": "user-toggleable-mod-package",
-    "description": "wt",
+    "description": "Isolated per-session Git worktrees",
     "accessibility": {
-      "label": "wt",
-      "fallbackText": "wt",
+      "label": "Isolated per-session Git worktrees",
+      "fallbackText": "Isolated per-session Git worktrees",
       "keyboardAccessible": true,
       "colorIndependent": true
     }

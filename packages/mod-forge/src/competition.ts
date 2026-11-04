@@ -202,7 +202,7 @@ export async function runForgeCompetition(raw: Json, context: ForgeInvocationCon
     const payload = { ...result, receiptId } as unknown as Json;
     return { exitCode: succeeded ? 0 : 1,
       stdout: input.quiet === true ? `${run.path}\nForge ${workflowError ? `failed: ${workflowError}` : winner ? `winner=${winner}` : 'no winner'}; ${passing.length}/${candidates.length} passed.\n`
-        : input.format === 'text' ? formatForgeText({ ...result, requested: engines.length }) : `${JSON.stringify(payload, null, 2)}\n`,
+        : input.format === 'text' ? formatForgeText({ ...result, requested: engines.length, baselineMayPass: input.baselineMayPass === true || !requireDiff }) : `${JSON.stringify(payload, null, 2)}\n`,
       result: payload, ...(succeeded ? {} : { failure: {
         code: workflowError ? 'FORGE_WORKFLOW_FAILED' : 'NO_PASSING_CANDIDATE',
         message: workflowError ?? 'No Forge candidate passed fitness and acceptance checks', retryable: true,

@@ -53,6 +53,17 @@ async function harness(cwd: string) {
 }
 
 describe('physical Forge mod', () => {
+  it('prints a readable report from a real forge result when text is requested', async () => {
+    const cwd = repo();
+    const h = await harness(cwd);
+    const output = await h.command.run({ task: 'create solved.txt', test: 'test -f solved.txt', engines: 'alpha,beta', format: 'text' }, h.context) as { exitCode: number; stdout: string };
+    expect(output.stdout).toContain('Winner: alpha');
+    expect(output.stdout).not.toContain('warning:');
+    expect(output.stdout).toContain(`AGON_RUN: ${h.runPath}`);
+    expect(output.stdout).toContain('AGON_SUMMARY: 1/2 passed');
+    expect(h.command.cli?.ttyDefaults).toEqual({ format: 'text' });
+  });
+
   it('isolates competitors, selects only a fitness-passing patch, receipts it, and removes every worktree', async () => {
     const cwd = repo();
     const h = await harness(cwd);

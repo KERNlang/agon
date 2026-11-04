@@ -13,6 +13,8 @@ export interface ForgeTextReport {
   readonly status: string;
   readonly error?: string;
   readonly task: string;
+  readonly mode?: string;
+  readonly baselineMayPass?: boolean;
   readonly fitness: string;
   readonly baseline: { readonly exitCode?: number | null } | null;
   readonly winner: string | null | undefined;
@@ -30,7 +32,12 @@ function table(rows: readonly (readonly string[])[]): string[] {
 export function formatForgeText(report: ForgeTextReport): string {
   const lines = [`Forge: ${report.task}`];
   if (report.fitness) lines.push(`Fitness: ${report.fitness}`);
-  if (report.baseline && report.baseline.exitCode !== 0) lines.push('warning: baseline fails before candidate patches');
+  const baselineExit = report.baseline?.exitCode;
+  if (report.mode === 'implement') {
+    if (baselineExit === 0 && !report.baselineMayPass) lines.push('warning: fitness already passes before any patch, so it cannot tell candidates apart');
+  } else if (typeof baselineExit === 'number' && baselineExit !== 0) {
+    lines.push('warning: baseline fails before candidate patches');
+  }
   const header = ['', 'Engine', 'Status', 'Score', 'Diff', 'Files', 'Time'];
   const rows = report.candidates.map(candidate => [
     candidate.engineId === report.winner ? '*' : '',

@@ -19,6 +19,6 @@ export function formatForensicReport(source: string, report: ScanReport): string
     lines.push("", ...table([["Offset", "Channel", "Codepoint", "Action", "Detail"], ...listed]));
     if (report.findings.length > MAX_LISTED_FINDINGS) lines.push(`... and ${report.findings.length - MAX_LISTED_FINDINGS} more findings`);
   }
-  lines.push("", `Not assessable: ${report.notAssessable.join("; ")}`);
+  if (report.notAssessable.length) lines.push("", `Not assessable: ${report.notAssessable.join("; ")}`);
   return `${lines.join("\n")}\n`;
 }

@@ -201,7 +201,7 @@ function schemaGeneratedCommand(publicId: string, description: string, displayNa
         const rawArgs = ctx.rawArgs && normalizeOptionSpellings(ctx.rawArgs, Object.keys(properties));
         const parsed = rawArgs ? parseArgs(rawArgs, projectedArgs as ArgsDef) : ctx.args;
         const projected = projectParsedArguments(parsed as Record<string, Json | undefined>, properties, projection);
-        input = applyTtyDefaults(projected, rawArgs ?? [], projection, process.stdout.isTTY === true);
+        input = rawArgs ? applyTtyDefaults(projected, rawArgs, projection, process.stdout.isTTY === true) : projected;
       }
       else {
         input = {};

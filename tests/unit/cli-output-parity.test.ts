@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { applyTtyDefaults } from '../../packages/cli/src/lazy-commands.js';
 import { formatForgeText } from '../../packages/mod-forge/src/report.js';
+import { formatText } from '../../packages/mod-review/src/report.js';
 import { FIRST_PARTY_SURFACE_CATALOG } from '../../packages/mod-kernel/src/generated/first-party-surface-catalog.js';
 
 const projection = { ttyDefaults: { format: 'text' } };
@@ -36,6 +37,24 @@ describe('forge text output', () => {
     expect(text).toContain('skipped agy: unhealthy');
     expect(text).toContain('AGON_RUN: /run');
     expect(text).toContain('AGON_SUMMARY: 1/2 passed');
+  });
+});
+
+describe('forge baseline warning', () => {
+  const report = { status: 'winner', task: 't', fitness: 'f', winner: 'a', candidates: [], skippedEngines: [], requested: 1, runDir: '/run' };
+
+  it('stays quiet on the red baseline implement mode expects', () => {
+    expect(formatForgeText({ ...report, mode: 'implement', baseline: { exitCode: 1 } })).not.toContain('warning:');
+  });
+
+  it('warns when fitness passes before implementing, since it cannot pick a winner', () => {
+    expect(formatForgeText({ ...report, mode: 'implement', baseline: { exitCode: 0 } })).toContain('warning: fitness already passes');
+  });
+});
+
+describe('review summary', () => {
+  it('does not claim zero blockers when no consensus exists', () => {
+    expect(formatText({ target: 'x', reviews: [] })).toContain('blocking unknown');
   });
 });
 

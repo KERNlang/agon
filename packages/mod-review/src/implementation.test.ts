@@ -59,6 +59,33 @@ async function setup(cwd: string, valid = true) {
 }
 
 describe('physical review mod', () => {
+  it('honours --maxParallel so rate-limited engines are not all hit at once', async () => {
+    const h = await setup(repo());
+    let active = 0;
+    let peak = 0;
+    h.dispatch.mockImplementation(async (engineId: string) => {
+      peak = Math.max(peak, ++active);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      active--;
+      return { engineId, exitCode: 0, finishReason: 'stop', stdout: '<!--AGON_REVIEW_FINDINGS_v1-->\n```json\n[]\n```', stderr: '', timedOut: false, costUsd: undefined };
+    });
+    const out = await h.command.run({ engines: 'alpha,beta,gamma', maxParallel: '1' }, h.context) as CommandResult;
+    expect(peak).toBe(1);
+    expect((out.result as any).reviews.map((review: any) => review.engineId)).toEqual(['alpha', 'beta', 'gamma']);
+    const bad = await h.command.run({ engines: 'alpha', maxParallel: '0' }, h.context) as CommandResult;
+    expect(bad.exitCode).toBe(1);
+  });
+
+  it('keeps --quiet stdout to the run dir and summary, and --verbose prints each seat', async () => {
+    const h = await setup(repo());
+    const quiet = await h.command.run({ engines: 'alpha', quiet: true }, h.context) as CommandResult;
+    expect(quiet.stdout).toBe(`${h.runPath}\nAGON_SUMMARY: 1/1 seats ok; 1 blocking\n`);
+    const verbose = await h.command.run({ engines: 'alpha', verbose: true, format: 'text' }, h.context) as CommandResult;
+    expect(verbose.stdout).toContain('--- alpha ---');
+    expect(verbose.stdout).toContain('AGON_RUN:');
+    expect(h.command.cli?.ttyDefaults).toEqual({ format: 'text' });
+  });
+
   it.each(['valid', 'failed', 'timeout', 'malformed'])('retains reported seat costs for %s evidence', async (mode) => {
     const valid = mode === 'valid';
     const h = await setup(repo());

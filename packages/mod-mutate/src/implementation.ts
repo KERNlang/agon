@@ -59,7 +59,7 @@ const cli = Object.freeze({
     budget: "Total wall-clock budget in seconds; unrun mutants are reported as not-run, never as killed.",
     json: "Emit ONLY the MutationReport as JSON on stdout.",
     label: "Human-readable suffix baked into the run dir name.",
-    quiet: "Suppress per-mutant progress; print only the final report.",
+    quiet: "Accepted for compatibility; mutate already prints only the final report.",
   },
 });
 
@@ -121,7 +121,7 @@ async function executeMutation(raw: Json, context: InvocationContext, services: 
     if (!diff.trim()) return { exitCode: 1, stderr: 'No changed lines to mutate. Pass a path to mutate whole files, or --diff <base>.\n' };
   }
 
-  const run = await services.runs?.start('mutate', target, context);
+  const run = await services.runs?.start('mutate', String(input.label ?? '').trim() || target, context);
   const outputDir = run ? join(run.path, 'mutation') : mkdtempSync(join(tmpdir(), 'agon-mutate-report-'));
   const semantic = forceSemantic || input.semantic === true || Boolean(lens);
   const requestedEngines = typeof input.engines === 'string'

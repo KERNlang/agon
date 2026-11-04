@@ -78,7 +78,7 @@ const cli = Object.freeze({
     label: "Human-readable suffix baked into the forge run dir name (orchestrators: distinguish parallel runs without grep).",
     quiet: "Suppress streaming output; stdout becomes only the run dir path + final summary.",
     provenance: "After the run, write an AI-contribution / transparency report (provenance.md + .json) into the run dir.",
-    format: "Output format: text or json. Default: text in a terminal, json when piped",
+    format: "Output format: text or json. Default: text in a terminal, json when piped. --quiet takes precedence",
   },
 });
 const resultIds = [

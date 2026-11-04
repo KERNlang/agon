@@ -86,8 +86,8 @@ describe('CLI live-model probe cache', () => {
   it('treats a probe older than the TTL as stale (falls back)', () => {
     home = setupTestAgonHome('probe-stale');
     const file = writeProbeCache(home, 'agy', AGY_PROBE);
-    const twoDaysAgoSec = (Date.now() - 2 * 86_400_000) / 1000;
-    utimesSync(file, twoDaysAgoSec, twoDaysAgoSec);
+    const twoHoursAgoSec = (Date.now() - 2 * 3_600_000) / 1000;
+    utimesSync(file, twoHoursAgoSec, twoHoursAgoSec);
     expect(readProbedCliModels('agy')).toBeNull();
   });
 

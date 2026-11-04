@@ -353,12 +353,12 @@ export async function runMutants(opts: RunMutantsOptions): Promise<MutationRepor
           const b = await sh(opts.buildCmd, buildTimeoutMs);
           // A mutant that breaks the build proves nothing about the tests.
           if (!b.res || b.budgetCut) cutByBudget = true;
-          else if (b.res.exitCode !== 0 || b.res.timedOut) { status = 'invalid'; exitCode = b.res.exitCode; reason = 'the mutated source does not build'; invalidCause = b.res.timedOut ? undefined : 'non-compiling'; decided = true; }
+          else if (b.res.exitCode !== 0 || b.res.timedOut) { status = 'invalid'; exitCode = b.res.exitCode; reason = b.res.timedOut ? 'the build timed out' : 'the mutated source does not build'; invalidCause = b.res.timedOut ? undefined : 'non-compiling'; decided = true; }
         }
         if (!cutByBudget && !decided && opts.typecheckCmd) {
           const tc = await sh(opts.typecheckCmd, typecheckTimeoutMs);
           if (!tc.res || tc.budgetCut) cutByBudget = true;
-          else if (tc.res.exitCode !== 0 || tc.res.timedOut) { status = 'invalid'; exitCode = tc.res.exitCode; reason = 'the mutated source does not typecheck'; invalidCause = tc.res.timedOut ? undefined : 'non-compiling'; decided = true; }
+          else if (tc.res.exitCode !== 0 || tc.res.timedOut) { status = 'invalid'; exitCode = tc.res.exitCode; reason = tc.res.timedOut ? 'the typecheck timed out' : 'the mutated source does not typecheck'; invalidCause = tc.res.timedOut ? undefined : 'non-compiling'; decided = true; }
         }
         if (!cutByBudget && !decided) {
           const res = await sh(testCmd, effTimeoutMs);
@@ -374,7 +374,7 @@ export async function runMutants(opts: RunMutantsOptions): Promise<MutationRepor
         if (checkTemplate) {
           const check = await sh(expandCompileCheck(checkTemplate, abs), checkTimeoutMs, checkEnv);
           if (!check.res || check.budgetCut) cutByBudget = true;
-          else if (check.res.exitCode !== 0 || check.res.timedOut) { status = 'invalid'; exitCode = check.res.exitCode; reason = 'the mutated source does not compile'; invalidCause = check.res.timedOut ? undefined : 'non-compiling'; }
+          else if (check.res.exitCode !== 0 || check.res.timedOut) { status = 'invalid'; exitCode = check.res.exitCode; reason = check.res.timedOut ? 'the compile check timed out' : 'the mutated source does not compile'; invalidCause = check.res.timedOut ? undefined : 'non-compiling'; }
         }
       } finally {
         // Restore immediately so mutants in different files never stack.

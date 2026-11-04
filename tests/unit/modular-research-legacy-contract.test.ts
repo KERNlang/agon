@@ -85,7 +85,6 @@ describe('legacy Research workflow characterization before owner retirement', ()
   });
 
   it('records rejected citations without redefining legacy ok as physical grounding', async () => {
-    // This records legacy behavior, not the required policy of the physical mod.
     io.verify.mockResolvedValue({ total: 2, verified: 0, blocked: 0, rejected: 2, results: [] });
     const result = await runResearch(options());
     expect(result.ok).toBe(true);

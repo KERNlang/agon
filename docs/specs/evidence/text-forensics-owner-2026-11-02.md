@@ -16,6 +16,9 @@ SHA256 8939f2b82384ed45a1b310291a22bb825cf08dd44fe67307397f9d7bf001afb2.
 
 The physical scanner previously omitted mixed-script and variation-selector
 reports. Existing legacy expectations now run against both implementations.
+Physical cleaning now also strips U+180E and U+2000-class spaces, as Core does;
+it previously collapsed the spaces to one space and kept U+180E, so words
+separated only by such a space now join.
 Core → existing mod-sanitize is the only dependency addition. No external
 version changed. Metadata scanning remains unchanged in this PR.
 

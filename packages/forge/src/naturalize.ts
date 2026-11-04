@@ -14,7 +14,6 @@ export interface NaturalizeOptions extends Omit<NaturalizeWorkflowOptions, 'regi
   registry: EngineRegistry;
 }
 
-// Preserve the legacy text policy until its physical owner has parity.
 export function runNaturalize(opts: NaturalizeOptions): Promise<NaturalizeResult> {
   return runNaturalizeWorkflow(opts, { cleanText, scanText });
 }

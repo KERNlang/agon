@@ -59,6 +59,23 @@ async function setup(cwd: string, valid = true) {
 }
 
 describe('physical review mod', () => {
+  it('refuses an over-limit diff before spending on engines, and an override reviews all of it', async () => {
+    const h = await setup(repo());
+    const refused = await h.command.run({ engines: 'alpha', 'max-diff-chars': '10' }, h.context) as CommandResult;
+    expect(refused.exitCode).toBe(1);
+    expect(refused.stderr).toContain('a.ts');
+    expect(refused.stderr).toContain('--max-diff-chars');
+    expect(h.dispatch).not.toHaveBeenCalled();
+    const fromConfig = await h.command.run({ engines: 'alpha' }, { ...h.context, config: { reviewMaxDiffChars: 10 } }) as CommandResult;
+    expect(fromConfig.exitCode).toBe(1);
+    expect(fromConfig.stderr).toContain('over the 10 limit');
+    expect(h.dispatch).not.toHaveBeenCalled();
+    const allowed = await h.command.run({ engines: 'alpha', 'max-diff-chars': '100000', format: 'text' }, { ...h.context, config: { reviewMaxDiffChars: 10 } }) as CommandResult;
+    expect(h.dispatch).toHaveBeenCalledTimes(1);
+    expect(allowed.stdout).toContain('(limit 100,000)');
+    expect((allowed.result as any).diffSize.maxChars).toBe(100000);
+  });
+
   it('honours --maxParallel so rate-limited engines are not all hit at once', async () => {
     const h = await setup(repo());
     let active = 0;
@@ -79,7 +96,8 @@ describe('physical review mod', () => {
   it('keeps --quiet stdout to the run dir and summary, and --verbose prints each seat', async () => {
     const h = await setup(repo());
     const quiet = await h.command.run({ engines: 'alpha', quiet: true }, h.context) as CommandResult;
-    expect(quiet.stdout).toBe(`${h.runPath}\nAGON_SUMMARY: 1/1 seats ok; 1 blocking\n`);
+    expect(quiet.stdout).toMatch(/^.*\nAGON_SUMMARY: 1\/1 seats ok; 1 blocking; diff \d+\/100000 chars\n$/);
+    expect(quiet.stdout.startsWith(`${h.runPath}\n`)).toBe(true);
     const verbose = await h.command.run({ engines: 'alpha', verbose: true, format: 'text' }, h.context) as CommandResult;
     expect(verbose.stdout).toContain('--- alpha ---');
     expect(verbose.stdout).toContain('AGON_RUN:');

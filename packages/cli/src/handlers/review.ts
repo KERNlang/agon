@@ -24,10 +24,10 @@ import { stripReasoning, stripTuiChrome } from '../blocks/engine-helpers.js';
 
 import { hostNowMs } from '../lib/kern-host.js';
 
-import { resolveReviewTarget, resolveExplicitReviewEngines, gatherReviewFileContext, buildReviewPrompt, REVIEW_ROLES, REVIEW_ROLE_OUTSIDE_TAIL, resolveReviewRole, assignReviewRoles, buildRoleInstructions } from '@kernlang/agon-support-verification';
-export { gatherReviewFileContext, REVIEW_ROLES, REVIEW_ROLE_OUTSIDE_TAIL, resolveReviewRole, assignReviewRoles, buildRoleInstructions };
+import { resolveReviewTarget, reviewMaxDiffChars, resolveExplicitReviewEngines, gatherReviewFileContext, buildReviewPrompt, REVIEW_ROLES, REVIEW_ROLE_OUTSIDE_TAIL, resolveReviewRole, assignReviewRoles, buildRoleInstructions } from '@kernlang/agon-support-verification';
+export { resolveReviewTarget, reviewMaxDiffChars, gatherReviewFileContext, REVIEW_ROLES, REVIEW_ROLE_OUTSIDE_TAIL, resolveReviewRole, assignReviewRoles, buildRoleInstructions };
 export type { ReviewRole } from '@kernlang/agon-support-verification';
-export { resolveReviewTarget, resolveAutoReviewBase } from '@kernlang/agon-support-verification';
+export { resolveAutoReviewBase } from '@kernlang/agon-support-verification';
 
 // ── Module: ReviewEngineSelection ──
 
@@ -467,7 +467,7 @@ export async function handleReview(dispatch: Dispatch, ctx: HandlerContext, targ
     let diff: string;
     let label: string;
     try {
-      ({ diff, label } = resolveReviewTarget(target, cwd, undefined));
+      ({ diff, label } = resolveReviewTarget(target, cwd, undefined, reviewMaxDiffChars(ctx.config)));
     } catch (err) {
       dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) });
       return;
@@ -624,7 +624,7 @@ export async function handleReviewMany(dispatch: Dispatch, ctx: HandlerContext, 
     let diff: string;
     let label: string;
     try {
-      ({ diff, label } = resolveReviewTarget(target, cwd, undefined));
+      ({ diff, label } = resolveReviewTarget(target, cwd, undefined, reviewMaxDiffChars(ctx.config)));
     } catch (err) {
       dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) });
       return;
@@ -775,7 +775,7 @@ export async function handleReviewRoles(dispatch: Dispatch, ctx: HandlerContext,
     let diff: string;
     let label: string;
     try {
-      ({ diff, label } = resolveReviewTarget(target, cwd, undefined));
+      ({ diff, label } = resolveReviewTarget(target, cwd, undefined, reviewMaxDiffChars(ctx.config)));
     } catch (err) {
       dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) });
       return;

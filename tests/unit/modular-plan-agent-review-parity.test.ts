@@ -110,7 +110,7 @@ it.each(cases)('matches legacy $kind/$scenario without result normalization', as
       expect(call[4]).toBe(signal);
       return call.slice(0, 4);
     });
-    results.push({ outcome, calls, target: effects.target.mock.calls.slice(), select: effects.select.mock.calls.slice(), review });
+    results.push({ outcome, calls, target: effects.target.mock.calls.map(call => call.slice(0, 3)), select: effects.select.mock.calls.slice(), review });
   }
   // Callback and signal identities are checked at their host boundaries.
   // All serializable calls and results remain unchanged.

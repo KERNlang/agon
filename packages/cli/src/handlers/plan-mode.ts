@@ -20,7 +20,7 @@ import { loadConfig } from '@kernlang/agon-core';
 
 import type { Dispatch, HandlerContext } from './types.js';
 
-import { runReviewCore, resolveReviewTarget, selectReviewEngine } from './review.js';
+import { runReviewCore, resolveReviewTarget, reviewMaxDiffChars, selectReviewEngine } from './review.js';
 
 import { runAgentMode, runAgentTeam } from './agent.js';
 
@@ -131,7 +131,7 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
     agentReview: {
       assertAvailable: assertStepAvailable,
       snapshot: snapshotTokens,
-      reviewTarget: () => resolveReviewTarget('uncommitted', cwd, undefined),
+      reviewTarget: () => resolveReviewTarget('uncommitted', cwd, undefined, reviewMaxDiffChars(ctx.config)),
       selectReviewEngine: requested => selectReviewEngine(requested, ctx),
       review: (diff, label, engineId, signal) => runReviewCore(diff, label, engineId, ctx, signal),
       agent: (task, emit, options) => runAgentMode(task, emit as Dispatch, ctx, {

@@ -43,15 +43,17 @@ export async function currentBranchName(cwd: string): Promise<string> {
 export async function resolveMutateDiff(diffArg: string|undefined, baseArg: string|undefined, cwd: string): Promise<{diff:string, label:string}> {
   const raw = (diffArg ?? '').trim();
   const base = (baseArg ?? '').trim();
+  // Mutation is capped by its mutant budget, not diff size; the physical mutate command has no diff limit either.
+  const limit = Number.MAX_SAFE_INTEGER;
   if (raw) {
-    if (MUTATE_TARGET_GRAMMAR.test(raw)) return resolveReviewTarget(raw, cwd, base || undefined);
+    if (MUTATE_TARGET_GRAMMAR.test(raw)) return resolveReviewTarget(raw, cwd, base || undefined, limit);
     if (base) throw new Error(`--base does not compose with --diff ${raw} (which is already a base ref). Pass one of them.`);
-    return resolveReviewTarget('uncommitted', cwd, raw);
+    return resolveReviewTarget('uncommitted', cwd, raw, limit);
   }
-  if (base) return resolveReviewTarget('uncommitted', cwd, base);
+  if (base) return resolveReviewTarget('uncommitted', cwd, base, limit);
   const branch = await currentBranchName(cwd);
   const auto = resolveAutoReviewBase(cwd, branch) ?? 'origin/main';
-  return resolveReviewTarget('uncommitted', cwd, auto);
+  return resolveReviewTarget('uncommitted', cwd, auto, limit);
 }
 
 export interface MutateArgs {

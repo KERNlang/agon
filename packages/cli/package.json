@@ -56,7 +56,7 @@
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.67",
     "@ai-sdk/openai-compatible": "^2.0.40",
-    "@kernlang/agon-dedup": "^0.2.5",
+    "@kernlang/agon-dedup": "1.0.0",
     "@kernlang/agon-engines": "^0.1.2",
     "@kernlang/agon-kernel": "1.0.0",
     "@kernlang/agon-support-browser-bridge": "1.0.0",

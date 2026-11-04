@@ -1,6 +1,11 @@
 {
   "name": "@kernlang/agon-mod-api",
   "version": "1.0.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/KERNlang/agon.git",
+    "directory": "packages/mod-api"
+  },
   "private": false,
   "type": "module",
   "exports": {
@@ -22,7 +27,8 @@
   "files": [
     "dist",
     "schemas",
-    "LICENSE"
+    "LICENSE",
+    "!dist/**/*.test.*"
   ],
   "sideEffects": false,
   "scripts": {

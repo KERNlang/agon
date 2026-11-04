@@ -14,7 +14,7 @@ export const REVIEW_ROLES: readonly ReviewRole[] = [
 
 export const REVIEW_ROLE_OUTSIDE_TAIL: string = "Even though that is your focus, if you notice a BLOCKING issue OUTSIDE your role, flag it too — never let a real blocker fall through the cracks.";
 
-export const REVIEW_TESTS_CHECK: string = "TESTS: if the diff adds or changes tests, judge them too. Is each guarded failure worth guarding (money, data, security, a shared contract, a bug that already happened)? Would the test actually catch it? Is any a duplicate? Is an important path untested or only stubbed? A green suite is not evidence. A test problem is blocking only if it hides a confirmed bug.";
+export const REVIEW_TESTS_CHECK: string = "TESTS: flag any important changed path left untested or only stubbed, even if the diff touches no tests. If it adds or changes tests, also judge them: is each guarded failure worth guarding (money, data, security, a shared contract, a bug that already happened), would the test actually catch it, is any a duplicate? A green suite is not evidence. A test problem is blocking only if it hides a confirmed bug.";
 
 /**
  * Look up a role by id (case-insensitive). Returns undefined for none/unknown so callers can fall back to the generic prompt.

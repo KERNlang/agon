@@ -49,7 +49,7 @@ export const FALLBACK_MODELS: Record<string, {id:string, name:string, contextWin
 
 export const CACHE_TTL_MS: number = 3600000;
 
-export const PROBE_TTL_MS: number = 86400000;
+export const PROBE_TTL_MS: number = 3600000;
 
 export interface ProbedModel {
   id: string;
@@ -251,7 +251,17 @@ export async function refreshCliGroupVersion(engineId: string): Promise<string|n
 }
 
 /**
- * Build CLI provider groups synchronously from fallback models. For async version use buildCliModelGroupsAsync.
+ * The engine's most recent successful probe regardless of age, else its static FALLBACK. Age only decides whether to re-probe: an expired live list is still closer to the truth than the hardcoded one.
+ */
+function lastKnownCliModelEntries(key: string, eng: {providerId:string, engineId:string, engineBinary:string}, displayName: string): CliModelEntry[] {
+  const shared = { providerId: eng.providerId, providerName: displayName, engineId: eng.engineId, engineBinary: eng.engineBinary };
+  const lastKnown = readProbedCliModels(eng.engineId, Number.POSITIVE_INFINITY);
+  if (lastKnown) return lastKnown.map((m) => ({ ...shared, id: m.id, name: m.name, toolCall: true, reasoning: true }));
+  return (FALLBACK_MODELS[key] ?? []).map((m) => ({ ...shared, id: m.id, name: m.name, contextWindow: m.contextWindow, toolCall: m.toolCall, reasoning: m.reasoning }));
+}
+
+/**
+ * Build CLI provider groups synchronously from the last known probe or fallback models. For async version use buildCliModelGroupsAsync.
  */
 export function buildCliModelGroups(): CliProviderGroup[] {
   const groups: CliProviderGroup[] = [];
@@ -259,23 +269,21 @@ export function buildCliModelGroups(): CliProviderGroup[] {
     const binaryPath = findBinary(eng.engineBinary);
     const installed = binaryPath !== null;
     const version = installed ? getBinaryVersion(eng.engineBinary, eng.versionCmd) : null;
-    const fallbackModels = FALLBACK_MODELS[key] ?? [];
-    const probedSync = readProbedCliModels(eng.engineId);
     const displayName = ENGINE_DISPLAY_NAMES[eng.engineId] ?? eng.engineId.charAt(0).toUpperCase() + eng.engineId.slice(1);
-    const models: CliModelEntry[] = (probedSync && probedSync.length > 0) ? probedSync.map((m: ProbedModel) => Object.assign({}, { id: m.id, name: m.name, providerId: eng.providerId, providerName: displayName, engineId: eng.engineId, engineBinary: eng.engineBinary, toolCall: true, reasoning: true })) : fallbackModels.map((m: any) => Object.assign({}, { id: m.id, name: m.name, providerId: eng.providerId, providerName: displayName, engineId: eng.engineId, engineBinary: eng.engineBinary, contextWindow: m.contextWindow, toolCall: m.toolCall, reasoning: m.reasoning }));
+    const models = lastKnownCliModelEntries(key, eng, displayName);
     groups.push({ providerId: eng.providerId, providerName: displayName, engineId: eng.engineId, engineBinary: eng.engineBinary, installed: installed, version: version, models: models, effortLevels: eng.effortLevels ?? [] });
   }
   return groups;
 }
 
 /**
- * Build CLI provider groups showing each engine's REAL models: its live /model probe (cached; refreshed here in parallel for installed probe-capable engines, cheap once warm) when available, else the small static FALLBACK. Deliberately does NOT use the models.dev catalog — that's the API view (buildModelEntries). Keeps the CLI picker to what the CLI actually offers, and stays correct if a probe breaks (falls back to FALLBACK, never a 150-model dump).
+ * Build CLI provider groups showing each engine's REAL models: its live /model probe (cached; refreshed here in parallel for installed probe-capable engines, cheap once warm) when one has ever succeeded, else the small static FALLBACK. Deliberately does NOT use the models.dev catalog — that's the API view (buildModelEntries). Keeps the CLI picker to what the CLI actually offers, and stays correct if a probe breaks (falls back to FALLBACK, never a 150-model dump).
  */
 export async function buildCliModelGroupsAsync(): Promise<CliProviderGroup[]> {
   // Phase 1: refresh probes for installed, probe-capable engines in parallel.
   // refreshProbedCliModels short-circuits on a fresh cache, so this is cheap
   // once warm; on a cold cache it spawns the probes concurrently (~one probe's
-  // latency, not the sum). Failures fall through to FALLBACK per engine.
+  // latency, not the sum). Failures keep the last known list per engine.
   await Promise.all(
     Object.values(ENGINE_PROVIDER_MAP)
       .filter((e) => Array.isArray(e.listCmd) && e.listCmd.length > 0)
@@ -285,24 +293,21 @@ export async function buildCliModelGroupsAsync(): Promise<CliProviderGroup[]> {
       }),
   );
 
-  // Phase 2: build groups from the probe cache → small FALLBACK (no models.dev).
+  // Phase 2: build groups from the last known probe → small FALLBACK (no models.dev).
   const groups: CliProviderGroup[] = [];
   for (const [key, eng] of Object.entries(ENGINE_PROVIDER_MAP)) {
     const binaryPath = findBinary(eng.engineBinary);
     const installed = binaryPath !== null;
     const version = installed ? await getBinaryVersionAsync(eng.engineId, binaryPath as string, eng.versionCmd) : null;
     const displayName = ENGINE_DISPLAY_NAMES[eng.engineId] ?? (eng.engineId.charAt(0).toUpperCase() + eng.engineId.slice(1));
-    const probed = readProbedCliModels(eng.engineId);
-    const models: CliModelEntry[] = (probed && probed.length > 0)
-      ? probed.map((m) => Object.assign({}, { id: m.id, name: m.name, providerId: eng.providerId, providerName: displayName, engineId: eng.engineId, engineBinary: eng.engineBinary, toolCall: true, reasoning: true }))
-      : (FALLBACK_MODELS[key] ?? []).map((m: any) => Object.assign({}, { id: m.id, name: m.name, providerId: eng.providerId, providerName: displayName, engineId: eng.engineId, engineBinary: eng.engineBinary, contextWindow: m.contextWindow, toolCall: m.toolCall, reasoning: m.reasoning }));
+    const models = lastKnownCliModelEntries(key, eng, displayName);
     groups.push({ providerId: eng.providerId, providerName: displayName, engineId: eng.engineId, engineBinary: eng.engineBinary, installed, version, models, effortLevels: eng.effortLevels ?? [] });
   }
   return groups;
 }
 
 /**
- * Synchronous, instant CLI groups for the /models picker to render right away: cached probe → static FALLBACK per engine. Marks `loading: true` on installed, probe-capable engines whose live /model probe isn't cached yet, so the picker can show a 'refreshing…' indicator while refreshCliGroup runs per engine in the background. No subprocess spawns — never blocks the picker open.
+ * Synchronous, instant CLI groups for the /models picker to render right away: last known probe → static FALLBACK per engine. Marks `loading: true` on installed, probe-capable engines whose live /model probe is absent or expired, so the picker can show a 'refreshing…' indicator while refreshCliGroup runs per engine in the background. No subprocess spawns — never blocks the picker open.
  */
 export function buildCliGroupsImmediate(): CliProviderGroup[] {
   const groups: CliProviderGroup[] = [];
@@ -311,19 +316,16 @@ export function buildCliGroupsImmediate(): CliProviderGroup[] {
     const installed = binaryPath !== null;
     const version = installed ? (VERSION_CACHE.get(eng.engineId) ?? null) : null;
     const displayName = ENGINE_DISPLAY_NAMES[eng.engineId] ?? (eng.engineId.charAt(0).toUpperCase() + eng.engineId.slice(1));
-    const probed = readProbedCliModels(eng.engineId);
     const probeCapable = Array.isArray(eng.listCmd) && eng.listCmd.length > 0;
-    const loading = installed && probeCapable && !(probed && probed.length > 0);
-    const models: CliModelEntry[] = (probed && probed.length > 0)
-      ? probed.map((m) => Object.assign({}, { id: m.id, name: m.name, providerId: eng.providerId, providerName: displayName, engineId: eng.engineId, engineBinary: eng.engineBinary, toolCall: true, reasoning: true }))
-      : (FALLBACK_MODELS[key] ?? []).map((m: any) => Object.assign({}, { id: m.id, name: m.name, providerId: eng.providerId, providerName: displayName, engineId: eng.engineId, engineBinary: eng.engineBinary, contextWindow: m.contextWindow, toolCall: m.toolCall, reasoning: m.reasoning }));
+    const loading = installed && probeCapable && !readProbedCliModels(eng.engineId);
+    const models = lastKnownCliModelEntries(key, eng, displayName);
     groups.push({ providerId: eng.providerId, providerName: displayName, engineId: eng.engineId, engineBinary: eng.engineBinary, installed, version, models, effortLevels: eng.effortLevels ?? [], loading });
   }
   return groups;
 }
 
 /**
- * Probe a SINGLE engine's live /model list and return its rebuilt group (loading: false), for the picker to merge in as each probe resolves independently. Returns null for an unknown/uninstalled/non-probe-capable engine (nothing to refresh). Falls back to FALLBACK on probe failure — never throws.
+ * Probe a SINGLE engine's live /model list and return its rebuilt group (loading: false), for the picker to merge in as each probe resolves independently. Returns null for an unknown/uninstalled/non-probe-capable engine (nothing to refresh). Keeps the last known list (else FALLBACK) on probe failure — never throws.
  */
 export async function refreshCliGroup(engineId: string): Promise<CliProviderGroup|null> {
   const entry = Object.entries(ENGINE_PROVIDER_MAP).find(([, e]) => e.engineId === engineId);
@@ -338,9 +340,6 @@ export async function refreshCliGroup(engineId: string): Promise<CliProviderGrou
   try {
     await refreshProbedCliModels(eng.engineId, binaryPath, eng.listCmd);
   } catch { /* keep going — fall back below */ }
-  const probed = readProbedCliModels(eng.engineId);
-  const models: CliModelEntry[] = (probed && probed.length > 0)
-    ? probed.map((m) => Object.assign({}, { id: m.id, name: m.name, providerId: eng.providerId, providerName: displayName, engineId: eng.engineId, engineBinary: eng.engineBinary, toolCall: true, reasoning: true }))
-    : (FALLBACK_MODELS[key] ?? []).map((m: any) => Object.assign({}, { id: m.id, name: m.name, providerId: eng.providerId, providerName: displayName, engineId: eng.engineId, engineBinary: eng.engineBinary, contextWindow: m.contextWindow, toolCall: m.toolCall, reasoning: m.reasoning }));
+  const models = lastKnownCliModelEntries(key, eng, displayName);
   return { providerId: eng.providerId, providerName: displayName, engineId: eng.engineId, engineBinary: eng.engineBinary, installed, version, models, effortLevels: eng.effortLevels ?? [], loading: false };
 }

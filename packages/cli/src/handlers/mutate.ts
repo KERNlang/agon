@@ -6,7 +6,8 @@ import { runMutate, mutateVerdictLine, discoverMutateGate, NO_GATE_DISCOVERED_ME
 
 import { filterDefaultOrchestrationEngines } from './engine-filter.js';
 
-import { resolveReviewTarget, resolveAutoReviewBase } from './review.js';
+import { loadConfig } from '@kernlang/agon-core';
+import { resolveReviewTarget, resolveAutoReviewBase, reviewMaxDiffChars } from './review.js';
 
 import { renderMutationLines, formatMutateProgressLine, mutateSpendLine, mutateActualSpendLine, mutateChatSummary, mutationScorePct, mutateLensLine, mutateLensImpliesSemanticLine } from '../blocks/mutate-render.js';
 
@@ -43,15 +44,16 @@ export async function currentBranchName(cwd: string): Promise<string> {
 export async function resolveMutateDiff(diffArg: string|undefined, baseArg: string|undefined, cwd: string): Promise<{diff:string, label:string}> {
   const raw = (diffArg ?? '').trim();
   const base = (baseArg ?? '').trim();
+  const limit = reviewMaxDiffChars(loadConfig(cwd));
   if (raw) {
-    if (MUTATE_TARGET_GRAMMAR.test(raw)) return resolveReviewTarget(raw, cwd, base || undefined);
+    if (MUTATE_TARGET_GRAMMAR.test(raw)) return resolveReviewTarget(raw, cwd, base || undefined, limit);
     if (base) throw new Error(`--base does not compose with --diff ${raw} (which is already a base ref). Pass one of them.`);
-    return resolveReviewTarget('uncommitted', cwd, raw);
+    return resolveReviewTarget('uncommitted', cwd, raw, limit);
   }
-  if (base) return resolveReviewTarget('uncommitted', cwd, base);
+  if (base) return resolveReviewTarget('uncommitted', cwd, base, limit);
   const branch = await currentBranchName(cwd);
   const auto = resolveAutoReviewBase(cwd, branch) ?? 'origin/main';
-  return resolveReviewTarget('uncommitted', cwd, auto);
+  return resolveReviewTarget('uncommitted', cwd, auto, limit);
 }
 
 export interface MutateArgs {

@@ -80,11 +80,13 @@ describe('shared Review target contract', () => {
     expect(() => resolveReviewTarget(target, root)).toThrow(/unsafe Git ref/);
   });
 
-  it('caps large review output and reports the truncation', () => {
+  it('refuses a diff over the limit and names the file reviewers would miss, instead of cutting it', () => {
     writeFileSync(join(root, 'base.txt'), 'long changed line\n'.repeat(10000));
-    const { diff } = resolveReviewTarget('uncommitted', root);
-    expect(diff).toHaveLength(100000 + '\n... [truncated — diff exceeds 100K chars]'.length);
-    expect(diff).toContain('[truncated');
+    expect(() => resolveReviewTarget('uncommitted', root)).toThrow(/over the 100,000 limit.*base\.txt.*--max-diff-chars/);
+    const { diff, maxDiffChars } = resolveReviewTarget('uncommitted', root, undefined, 500_000);
+    expect(diff).toContain('long changed line');
+    expect(diff).not.toContain('[truncated');
+    expect(maxDiffChars).toBe(500_000);
   });
 
   it.each(['main..feature..other', 'main...feature...other'])('rejects extra range endpoints in %s', range => {

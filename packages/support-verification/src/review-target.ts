@@ -2,7 +2,36 @@ import { execFileSync } from 'node:child_process';
 import { resolve, sep } from 'node:path';
 import { lstatSync, openSync, readSync, closeSync, constants } from 'node:fs';
 
-export interface ReviewTarget { readonly diff: string; readonly label: string }
+export const DEFAULT_REVIEW_MAX_DIFF_CHARS = 100_000;
+
+export interface ReviewTarget { readonly diff: string; readonly label: string; readonly maxDiffChars: number }
+
+export function reviewMaxDiffChars(config: unknown): number {
+  const configured = (config as { reviewMaxDiffChars?: unknown } | null | undefined)?.reviewMaxDiffChars;
+  if (configured === undefined || configured === null) return DEFAULT_REVIEW_MAX_DIFF_CHARS;
+  if (!Number.isSafeInteger(configured) || (configured as number) < 1) {
+    throw new TypeError('Config reviewMaxDiffChars must be a positive integer.');
+  }
+  return configured as number;
+}
+
+function filesBeyond(diff: string, limit: number): string[] {
+  const headers = [...diff.matchAll(/^diff --(?:git|cc|combined) (.+)$/gm)];
+  return headers.flatMap((header, index) => {
+    const end = headers[index + 1]?.index ?? diff.length;
+    if (end <= limit) return [];
+    return [/(?:^| )"?b\/(.*?)"?$/.exec(header[1]!)?.[1] ?? header[1]!];
+  });
+}
+
+function diffOverLimitMessage(label: string, diff: string, limit: number): string {
+  const files = filesBeyond(diff, limit);
+  const shown = files.slice(0, 10).join(', ');
+  const more = files.length > 10 ? ` and ${files.length - 10} more` : '';
+  const chars = (value: number) => value.toLocaleString('en-US');
+  return `Refusing to review ${label}: the diff is ${chars(diff.length)} chars, over the ${chars(limit)} limit, so reviewers would not fully see: ${shown || '(no file headers found)'}${more}. `
+    + `Raise the limit for this run with --max-diff-chars ${diff.length}, set reviewMaxDiffChars in config, or review a smaller target.`;
+}
 
 function assertSafeRef(value: string): void {
   if (!value || value.startsWith('-') || /[\0\r\n]/.test(value)) {
@@ -56,7 +85,7 @@ export function resolveAutoReviewBase(cwd: string, branch: string): string|null 
   return null;
 }
 
-export function resolveReviewTarget(target: string|undefined, cwd: string, base?: string): ReviewTarget {
+export function resolveReviewTarget(target: string|undefined, cwd: string, base?: string, maxDiffChars: number = DEFAULT_REVIEW_MAX_DIFF_CHARS): ReviewTarget {
   const t = (target ?? 'uncommitted').trim();
   const baseRef = (base ?? '').trim();
   let diff = '';
@@ -235,10 +264,7 @@ export function resolveReviewTarget(target: string|undefined, cwd: string, base?
   // argv entries containing NUL, so never let binary diff content through.
   diff = diff.replace(/\u0000/g, '');
 
-  // Cap diff at 100K chars
-  if (diff.length > 100_000) {
-    diff = diff.slice(0, 100_000) + '\n... [truncated — diff exceeds 100K chars]';
-  }
+  if (diff.length > maxDiffChars) throw new Error(diffOverLimitMessage(label, diff, maxDiffChars));
 
-  return { diff, label };
+  return { diff, label, maxDiffChars };
 }

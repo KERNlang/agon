@@ -22,6 +22,7 @@ export interface ReviewTextOptions {
 
 export interface ReviewReport {
   readonly target: string;
+  readonly diffSize?: { readonly chars: number; readonly maxChars: number };
   readonly reviews: readonly ReportSeat[];
   readonly consensus?: ConsensusReport;
   readonly warnings?: readonly string[];
@@ -81,6 +82,7 @@ export function formatSarif(report: ReviewReport): string {
       results: findings.map(sarifResult),
       properties: {
         target: report.target,
+        ...(report.diffSize ? { diffSize: report.diffSize } : {}),
         seats: report.reviews.map((seat) => ({ engine: seat.engineId, status: seat.status })),
         ...(report.panelHealth ? { panelHealth: report.panelHealth } : {}),
         degraded: Boolean(report.panelHealth?.degraded || report.consensus?.degraded),
@@ -101,13 +103,16 @@ function textFinding(finding: ConsensusFinding): string {
 export function formatSummaryLine(report: ReviewReport): string {
   const ok = report.reviews.filter((seat) => seat.status === 'ok').length;
   const blocking = report.consensus ? `${report.consensus.blockers.length} blocking` : 'blocking unknown';
-  return `AGON_SUMMARY: ${ok}/${report.reviews.length} seats ok; ${blocking}`;
+  const diff = report.diffSize ? `; diff ${report.diffSize.chars}/${report.diffSize.maxChars} chars` : '';
+  return `AGON_SUMMARY: ${ok}/${report.reviews.length} seats ok; ${blocking}${diff}`;
 }
 
 export function formatText(report: ReviewReport, options: ReviewTextOptions = {}): string {
   const consensus = report.consensus;
   const ok = report.reviews.filter((seat) => seat.status === 'ok').length;
-  const lines = [`Review: ${report.target}`, `Seats: ${ok}/${report.reviews.length} ok`];
+  const lines = [`Review: ${report.target}`];
+  if (report.diffSize) lines.push(`Diff: ${report.diffSize.chars.toLocaleString('en-US')} chars (limit ${report.diffSize.maxChars.toLocaleString('en-US')})`);
+  lines.push(`Seats: ${ok}/${report.reviews.length} ok`);
   for (const seat of report.reviews) {
     if (seat.status !== 'ok') lines.push(`  ${seat.engineId}: ${seat.status}${seat.error ? ` (${seat.error})` : ''}`);
   }

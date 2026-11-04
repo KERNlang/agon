@@ -18,7 +18,9 @@ describe('physical ask mod', () => {
     const mod = await createMod(services); await mod.activate(registrar, services);
     expect(command).toBeDefined();
     const result = await command!.run({ engine: 'codex', prompt: 'hello', timeout: '10' }, { invocationId: 'i', cwd: '/tmp', platform: 'darwin-arm64', signal: new AbortController().signal, config: {} });
-    expect(result).toEqual({ exitCode: 0, stdout: 'OK\n' });
+    expect(result).toEqual({ exitCode: 0, stdout: 'OK\n', stderr: 'AGON_SUMMARY: 1/1 succeeded\n' });
+    const quiet = await command!.run({ engine: 'codex', prompt: 'hello', quiet: true }, { invocationId: 'i', cwd: '/tmp', platform: 'darwin-arm64', signal: new AbortController().signal, config: {} });
+    expect(quiet).toEqual({ exitCode: 0, stdout: 'OK\n' });
     expect(dispatch).toHaveBeenCalledWith('codex', 'hello', expect.anything(), { timeoutSeconds: 10, systemPrompt: undefined });
     expect(receipt).toHaveBeenCalledWith('ask', expect.objectContaining({ engineId: 'codex', ok: true }));
   });

@@ -52,9 +52,23 @@ has no recorded provider shim launches.
 
 ## Remaining product work
 
-This integration does not close Plan session ownership, Brainstorm host effects,
+This integration did not close Plan session ownership, Brainstorm host effects,
 Apply backend extraction, A15's intermittent daemon failure, or final release
 qualification. Passing component tests is not complete release acceptance.
+
+Status as of 2026-11-04, re-checked against the code on `main`:
+
+- Plan session ownership: closed. `packages/mod-plan` owns session routing and the
+  execution coordinator; the CLI binds only terminal effects.
+- Brainstorm host effects: closed. `packages/forge/src/brainstorm.ts` is a facade
+  over the `mod-brainstorm` runtime; no host adapter algorithm remains there.
+- Apply backend extraction: closed. `packages/core/src/blocks/patch-apply.ts` holds
+  compatibility exports only; the backend lives in `support-worktree` and the
+  approval workflow in `packages/cli/src/patch-application-host.ts`.
+- A15 daemon survival: still open. No root cause was established and no run has
+  explained the original no-pong observation.
+- Final release qualification: still open. Release evidence is regenerated per
+  change and no final serialized clean-checkout receipt exists for the release.
 
 No active/global Agon installation, personal state, or provider configuration is
 changed. No push or promotion is performed.

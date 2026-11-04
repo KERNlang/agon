@@ -543,7 +543,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.review",
       "version": "1.0.0",
-      "contentHash": "sha256:e6370b13c4bbd65fbf6cca48838c05aa59990ccd8f5429cfc0eb63f1735088d1"
+      "contentHash": "sha256:2feece2a3a9892a7fe2f448c44d779b53641603cc4fabc6ba09f4d3313a1cd36"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "Review",
@@ -1647,7 +1647,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.review",
       "version": "1.0.0",
-      "contentHash": "sha256:e6370b13c4bbd65fbf6cca48838c05aa59990ccd8f5429cfc0eb63f1735088d1"
+      "contentHash": "sha256:2feece2a3a9892a7fe2f448c44d779b53641603cc4fabc6ba09f4d3313a1cd36"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "review",
@@ -1670,7 +1670,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.review",
       "version": "1.0.0",
-      "contentHash": "sha256:e6370b13c4bbd65fbf6cca48838c05aa59990ccd8f5429cfc0eb63f1735088d1"
+      "contentHash": "sha256:2feece2a3a9892a7fe2f448c44d779b53641603cc4fabc6ba09f4d3313a1cd36"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "review",
@@ -1693,7 +1693,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.review",
       "version": "1.0.0",
-      "contentHash": "sha256:e6370b13c4bbd65fbf6cca48838c05aa59990ccd8f5429cfc0eb63f1735088d1"
+      "contentHash": "sha256:2feece2a3a9892a7fe2f448c44d779b53641603cc4fabc6ba09f4d3313a1cd36"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "review",
@@ -1716,7 +1716,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.review",
       "version": "1.0.0",
-      "contentHash": "sha256:e6370b13c4bbd65fbf6cca48838c05aa59990ccd8f5429cfc0eb63f1735088d1"
+      "contentHash": "sha256:2feece2a3a9892a7fe2f448c44d779b53641603cc4fabc6ba09f4d3313a1cd36"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "review",
@@ -1739,7 +1739,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.review",
       "version": "1.0.0",
-      "contentHash": "sha256:e6370b13c4bbd65fbf6cca48838c05aa59990ccd8f5429cfc0eb63f1735088d1"
+      "contentHash": "sha256:2feece2a3a9892a7fe2f448c44d779b53641603cc4fabc6ba09f4d3313a1cd36"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "review",
@@ -1762,7 +1762,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.review",
       "version": "1.0.0",
-      "contentHash": "sha256:e6370b13c4bbd65fbf6cca48838c05aa59990ccd8f5429cfc0eb63f1735088d1"
+      "contentHash": "sha256:2feece2a3a9892a7fe2f448c44d779b53641603cc4fabc6ba09f4d3313a1cd36"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "review",
@@ -3763,7 +3763,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.review",
       "version": "1.0.0",
-      "contentHash": "sha256:e6370b13c4bbd65fbf6cca48838c05aa59990ccd8f5429cfc0eb63f1735088d1"
+      "contentHash": "sha256:2feece2a3a9892a7fe2f448c44d779b53641603cc4fabc6ba09f4d3313a1cd36"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "Run a non-interactive evidence-grounded review of a Git diff",
@@ -4708,7 +4708,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.review",
       "version": "1.0.0",
-      "contentHash": "sha256:e6370b13c4bbd65fbf6cca48838c05aa59990ccd8f5429cfc0eb63f1735088d1"
+      "contentHash": "sha256:2feece2a3a9892a7fe2f448c44d779b53641603cc4fabc6ba09f4d3313a1cd36"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "Review",
@@ -6157,7 +6157,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.review",
       "version": "1.0.0",
-      "contentHash": "sha256:e6370b13c4bbd65fbf6cca48838c05aa59990ccd8f5429cfc0eb63f1735088d1"
+      "contentHash": "sha256:2feece2a3a9892a7fe2f448c44d779b53641603cc4fabc6ba09f4d3313a1cd36"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "review",
@@ -7476,7 +7476,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.review",
       "version": "1.0.0",
-      "contentHash": "sha256:e6370b13c4bbd65fbf6cca48838c05aa59990ccd8f5429cfc0eb63f1735088d1"
+      "contentHash": "sha256:2feece2a3a9892a7fe2f448c44d779b53641603cc4fabc6ba09f4d3313a1cd36"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "[with <engine>] [<target>] — code review (uncommitted|branch:NAME|commit:SHA)",
@@ -10114,7 +10114,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.review",
       "version": "1.0.0",
-      "contentHash": "sha256:e6370b13c4bbd65fbf6cca48838c05aa59990ccd8f5429cfc0eb63f1735088d1"
+      "contentHash": "sha256:2feece2a3a9892a7fe2f448c44d779b53641603cc4fabc6ba09f4d3313a1cd36"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "[with <engine>] [<target>] — code review (uncommitted|branch:NAME|commit:SHA)",
@@ -10137,7 +10137,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.review",
       "version": "1.0.0",
-      "contentHash": "sha256:e6370b13c4bbd65fbf6cca48838c05aa59990ccd8f5429cfc0eb63f1735088d1"
+      "contentHash": "sha256:2feece2a3a9892a7fe2f448c44d779b53641603cc4fabc6ba09f4d3313a1cd36"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "[security|correctness|dryness|performance] [<target>] — multi-role review: each engine a focused lens + overall backstop",

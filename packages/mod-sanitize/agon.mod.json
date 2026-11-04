@@ -102,6 +102,8 @@
       "dist/index.js",
       "dist/index.d.ts",
       "dist/implementation.d.ts",
+      "dist/text-forensics.js",
+      "dist/text-forensics.d.ts",
       "ownership.json",
       "schemas/config.schema.json"
     ],

@@ -11,6 +11,29 @@ const services = { permissions: { check: vi.fn(async () => 'allow') }, receipts:
 const context = { invocationId: 's', cwd: process.cwd(), platform: 'darwin-arm64' as const, signal: new AbortController().signal, config: {} };
 
 describe('physical sanitize mod', () => {
+  it('does not claim preserved findings were addressed when writing output', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'agon-sanitize-report-'));
+    const out = join(root, 'out.txt');
+    const text = 'payp\u0430l 1\uFE00';
+    const result = await runSanitize({ text, out }, context, services);
+    expect(result.exitCode).toBe(0);
+    expect(readFileSync(out, 'utf8')).toBe(text);
+    expect(result.stdout).toContain('0 finding(s) addressed; 2 reported-only finding(s) preserved');
+    const mixed = await runSanitize({ text: `a\u200Bb ${text}`, out }, context, services);
+    expect(mixed.stdout).toContain('1 finding(s) addressed; 2 reported-only finding(s) preserved');
+    const actionable = await runSanitize({ text: 'a\u200Bb', out }, context, services);
+    expect(actionable.stdout).toBe(`Cleaned output written to ${out} (1 finding(s) addressed; verified by re-scan).\n`);
+  });
+  it('preserves reported-only Unicode while removing legacy hidden characters', async () => {
+    const reported = 'payp\u0430l 1\uFE00';
+    const detected = await runSanitize({ text: reported, detect: true }, context, services);
+    expect(detected.exitCode).toBe(0);
+    expect(detected.result).toMatchObject({ clean: true, byChannel: { homoglyph: 1, 'variation-selector': 1 } });
+    const cleaned = await runSanitize({ text: `a\u180Eb\u2000c ${reported}` }, context, services);
+    expect(cleaned.exitCode).toBe(0);
+    expect(cleaned.result).toMatchObject({ output: `abc ${reported}`, verifiedClean: true });
+    expect(services.engines.dispatch).not.toHaveBeenCalled();
+  });
   it('detects, cleans, and re-scans hidden channels idempotently', async () => {
     const dirty = 'a\u200bb  \nＦ'; expect(scanText(dirty).clean).toBe(false);
     const once = cleanText(dirty).output; expect(scanText(once).clean).toBe(true); expect(cleanText(once).output).toBe(once);

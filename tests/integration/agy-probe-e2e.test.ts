@@ -9,10 +9,14 @@ import {
   buildCliModelGroups,
 } from '../../packages/core/src/cli-models-registry.js';
 
+// Live probes start real provider TUIs (login prompts, browser tabs, brew
+// auto-updates). Run them only on explicit operator opt-in, never because a
+// binary happens to be installed.
+const liveProbes = process.env.AGON_LIVE_PROVIDER_PROBES === '1';
 const agyInstalled = existsSync(join(homedir(), '.local', 'bin', 'agy'));
 const claudeInstalled = existsSync(join(homedir(), '.local', 'bin', 'claude'));
 
-describe.skipIf(!agyInstalled)('agy live /model probe — full TS→python→cache→read chain', () => {
+describe.skipIf(!liveProbes || !agyInstalled)('agy live /model probe — full TS→python→cache→read chain', () => {
   it('refresh spawns the probe, caches, and the group builder shows live tiers', async () => {
     const home = setupTestAgonHome('agy-e2e');
     try {
@@ -33,7 +37,7 @@ describe.skipIf(!agyInstalled)('agy live /model probe — full TS→python→cac
 const codexInstalled = existsSync('/opt/homebrew/bin/codex') || existsSync(join(homedir(), '.local', 'bin', 'codex'));
 const opencodeInstalled = existsSync(join(homedir(), '.opencode', 'bin', 'opencode'));
 
-describe.skipIf(!opencodeInstalled)('opencode live model list — plain `opencode models` (no TUI scrape)', () => {
+describe.skipIf(!liveProbes || !opencodeInstalled)('opencode live model list — plain `opencode models` (no TUI scrape)', () => {
   it('refresh runs `opencode models`, caches, and the opencode group shows provider/model ids', async () => {
     const home = setupTestAgonHome('opencode-e2e');
     try {
@@ -51,7 +55,7 @@ describe.skipIf(!opencodeInstalled)('opencode live model list — plain `opencod
   }, 30_000);
 });
 
-describe.skipIf(!codexInstalled)('codex live /model probe — per-engine parser + chain', () => {
+describe.skipIf(!liveProbes || !codexInstalled)('codex live /model probe — per-engine parser + chain', () => {
   it('probes codex /model when available (tolerates the brew auto-update intercept)', async () => {
     const home = setupTestAgonHome('codex-e2e');
     try {
@@ -70,7 +74,7 @@ describe.skipIf(!codexInstalled)('codex live /model probe — per-engine parser 
   }, 60_000);
 });
 
-describe.skipIf(!claudeInstalled)('claude live /model probe — per-engine parser + chain', () => {
+describe.skipIf(!liveProbes || !claudeInstalled)('claude live /model probe — per-engine parser + chain', () => {
   it('refresh probes claude /model and the anthropic group shows the live models', async () => {
     const home = setupTestAgonHome('claude-e2e');
     try {

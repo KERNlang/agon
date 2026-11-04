@@ -1,8 +1,180 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { mkdtempSync, writeFileSync, rmSync, existsSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import { companionDispatch } from '../../packages/core/src/sessions/companion-dispatch.js';
 
 describe('companionDispatch', () => {
+  it.each([
+    { reply: 'stall', exitCode: 124, timedOut: true },
+    { reply: 'error', exitCode: 2, timedOut: false },
+  ])('classifies a stream-json $reply by deadline origin, not remote text', async ({ reply, exitCode, timedOut }) => {
+    const script = [
+      "const w = o => process.stdout.write(JSON.stringify(o) + '\\n');",
+      "w({type:'assistant',message:{content:[{type:'text',text:JSON.stringify({pid:process.pid,text:'partial'})}]}});",
+      `if (${JSON.stringify(reply)} === 'error') w({type:'error',message:'remote service timed out'});`,
+      'setInterval(() => {}, 1000);',
+    ].join('');
+    const result = await companionDispatch({
+      binaryPath: process.execPath,
+      config: { protocol: 'stream-json', serverCmd: ['-e', script] },
+      prompt: 'fixture', cwd: process.cwd(), timeout: 1, mode: 'exec',
+    });
+    const partial = JSON.parse(result.stdout) as { pid: number; text: string };
+    expect(partial.text).toBe('partial');
+    expect(() => process.kill(partial.pid, 0)).toThrow();
+    expect(result.exitCode, result.stderr).toBe(exitCode);
+    expect(result.timedOut).toBe(timedOut);
+    if (reply === 'stall') expect(result.stderr).toBe('Turn timed out');
+    if (reply === 'error') expect(result.stderr).toContain('remote service timed out');
+  });
+
+  it.each([
+    { reply: 'stall', exitCode: 124, timedOut: true },
+    { reply: 'success', exitCode: 0, timedOut: false },
+    { reply: 'error', exitCode: 2, timedOut: false },
+  ])('classifies an ACP $reply without losing partial output or leaving its child alive', async ({ reply, exitCode, timedOut }) => {
+    const script = [
+      "const rl = require('node:readline').createInterface({ input: process.stdin });",
+      "const w = o => process.stdout.write(JSON.stringify(o) + '\\n');",
+      "rl.on('line', line => {",
+      'const msg = JSON.parse(line);',
+      "if (msg.method === 'initialize') w({id:msg.id,result:{protocolVersion:1}});",
+      "if (msg.method === 'session/new') w({id:msg.id,result:{sessionId:'fixture'}});",
+      "if (msg.method === 'session/prompt') {",
+      "w({method:'session/update',params:{update:{sessionUpdate:'agent_message_chunk',content:{type:'text',text:JSON.stringify({pid:process.pid,text:'partial'})}}}});",
+      `if (${JSON.stringify(reply)} === 'success') w({id:msg.id,result:{stopReason:'end_turn'}});`,
+      `if (${JSON.stringify(reply)} === 'error') w({id:msg.id,error:{code:-32000,message:'remote service timed out'}});`,
+      '}',
+      '});',
+    ].join('');
+    const result = await companionDispatch({
+      binaryPath: process.execPath,
+      config: { protocol: 'acp', serverCmd: ['-e', script] },
+      prompt: 'fixture', cwd: process.cwd(), timeout: 1, mode: 'exec',
+    });
+    const partial = JSON.parse(result.stdout) as { pid: number; text: string };
+    expect(partial.text).toBe('partial');
+    expect(() => process.kill(partial.pid, 0)).toThrow();
+    expect(result.exitCode, result.stderr).toBe(exitCode);
+    expect(result.timedOut).toBe(timedOut);
+    if (reply === 'stall') expect(result.stderr).toBe('Timeout waiting for session/prompt');
+    if (reply === 'success') expect(result.stderr).toBe('');
+    if (reply === 'error') expect(result.stderr).toContain('remote service timed out');
+  });
+
+  it.each([
+    ['initialize', false], ['session/prompt', false], ['session/prompt', true],
+  ] as const)('cancels pending ACP %s and reaps its child (resists SIGTERM: %s)', async (method, resistsTermination) => {
+    const directory = mkdtempSync(join(tmpdir(), 'agon-companion-cancel-'));
+    const ready = join(directory, 'ready');
+    const script = [
+      resistsTermination ? "process.on('SIGTERM', () => {});" : '',
+      "const rl = require('node:readline').createInterface({ input: process.stdin });",
+      "const w = o => process.stdout.write(JSON.stringify(o) + '\\n');",
+      "rl.on('line', line => {",
+      'const msg = JSON.parse(line);',
+      `if (msg.id === 999 && !msg.method) { if (msg.result?.optionId === 'reject') require('node:fs').writeFileSync(${JSON.stringify(ready)}, String(process.pid)); return; }`,
+      `if (msg.method !== ${JSON.stringify(method)}) { w({id:msg.id,result:{}}); return; }`,
+      "w({method:'session/update',params:{update:{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'partial'}}}});",
+      // The reply proves the parent parsed the preceding output before abort.
+      "w({id:999,method:'session/request_permission',params:{options:[{kind:'reject_once',optionId:'reject'}]}});",
+      '});',
+      'setInterval(() => {}, 1000);',
+    ].join('');
+    const controller = new AbortController();
+    const pending = companionDispatch({
+      binaryPath: process.execPath,
+      config: { protocol: 'acp', serverCmd: ['-e', script] },
+      prompt: 'fixture', cwd: directory, timeout: 5, mode: 'exec', signal: controller.signal,
+    });
+    try {
+      await vi.waitFor(() => expect(existsSync(ready)).toBe(true), { timeout: 3000 });
+      const pid = Number(readFileSync(ready, 'utf8'));
+      const abortedAt = performance.now();
+      controller.abort();
+      const result = await pending;
+      expect(performance.now() - abortedAt).toBeLessThan(2000);
+      expect(() => process.kill(pid, 0)).toThrow();
+      expect(result.stdout).toBe('partial');
+      expect(result).toMatchObject({ exitCode: 130, timedOut: false, stderr: 'Aborted' });
+    } finally {
+      controller.abort();
+      await pending;
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('reports cancellation during the startup wait before sending an RPC', async () => {
+    const controller = new AbortController();
+    const pending = companionDispatch({
+      binaryPath: process.execPath,
+      config: { protocol: 'acp', serverCmd: ['-e', 'setInterval(() => {}, 1000)'] },
+      prompt: 'fixture', cwd: process.cwd(), timeout: 2, mode: 'exec', signal: controller.signal,
+    });
+    controller.abort();
+    expect(await pending).toMatchObject({ exitCode: 130, timedOut: false, stderr: 'Aborted' });
+  });
+
+  it('drains diagnostic stderr so a companion can finish its protocol response', async () => {
+    const script = [
+      "process.stderr.write(Buffer.alloc(2 * 1024 * 1024, 'x'), () => {",
+      "process.stdout.write(JSON.stringify({ type: 'result', result: 'AFTER_DIAGNOSTICS' }) + '\\n');",
+      '});',
+      'setInterval(() => {}, 1000);',
+    ].join('');
+    const result = await companionDispatch({
+      binaryPath: process.execPath,
+      config: { protocol: 'stream-json', serverCmd: ['-e', script] },
+      prompt: 'fixture', cwd: process.cwd(), timeout: 2, mode: 'exec',
+    });
+    expect(result.exitCode, result.stderr).toBe(0);
+    expect(result.stdout).toBe('AFTER_DIAGNOSTICS');
+    expect(result.stderr).toBe('');
+  });
+
+  it.each([undefined, 'uncommittedChanges'] as const)('sends the correct JSON-RPC review request for %s', async (reviewTarget) => {
+    const folder = mkdtempSync(join(tmpdir(), 'agon-companion-wire-'));
+    const binaryPath = join(folder, 'fixture.cjs');
+    writeFileSync(binaryPath, `#!/usr/bin/env node
+if (process.argv.includes('--help')) process.exit(0);
+const readline = require('node:readline');
+const lines = readline.createInterface({ input: process.stdin });
+const messages = [];
+const send = message => process.stdout.write(JSON.stringify(message) + '\\n');
+lines.on('line', line => {
+  const message = JSON.parse(line);
+  messages.push(message);
+  if (message.method === 'initialize') send({ jsonrpc: '2.0', id: message.id, result: {} });
+  if (message.method === 'thread/start') send({ jsonrpc: '2.0', id: message.id, result: { thread: { id: 'fixture-thread' } } });
+  if (message.method === 'turn/start' || message.method === 'review/start') {
+    send({ jsonrpc: '2.0', id: message.id, result: {} });
+    send({ jsonrpc: '2.0', method: 'item/completed', params: { item: { type: 'agentMessage', text: JSON.stringify(messages) } } });
+    send({ jsonrpc: '2.0', method: 'turn/completed', params: {} });
+  }
+});
+`, { mode: 0o700 });
+    try {
+      const result = await companionDispatch({ binaryPath,
+        config: { protocol: 'jsonrpc', serverCmd: ['app-server'] },
+        prompt: 'REVIEW_SUBJECT_FIXTURE', systemPrompt: 'READ_ONLY_FIXTURE',
+        cwd: folder, timeout: 5, mode: 'review', reviewTarget,
+      });
+      expect(result.exitCode, result.stderr).toBe(0);
+      const messages = JSON.parse(result.stdout) as Array<{ method: string; params?: Record<string, unknown> }>;
+      expect(messages.map(message => message.method)).toEqual([
+        'initialize', 'initialized', 'thread/start', reviewTarget ? 'review/start' : 'turn/start',
+      ]);
+      expect(messages[2].params).toMatchObject({ cwd: folder, sandbox: 'read-only', ephemeral: true, instructions: 'READ_ONLY_FIXTURE' });
+      expect(messages[3].params).toEqual(reviewTarget
+        ? { threadId: 'fixture-thread', target: { type: 'uncommittedChanges' } }
+        : { threadId: 'fixture-thread', input: [{ type: 'text', text: 'REVIEW_SUBJECT_FIXTURE', text_elements: [] }] });
+    } finally {
+      rmSync(folder, { recursive: true, force: true });
+    }
+  });
+
   it('returns an error result instead of crashing when companion stdin closes early', async () => {
     const result = await companionDispatch({
       binaryPath: process.execPath,
@@ -71,7 +243,7 @@ describe('companionDispatch', () => {
   });
 
   it('appends textOnlyArgs only when the dispatch sets textOnly', async () => {
-    const script = "process.stdout.write(JSON.stringify({ type: 'result', result: process.argv.slice(1).join(' ') }) + '\\n'); setInterval(() => {}, 1000);";
+    const script = "process.stdout.write(JSON.stringify({ type: 'result', result: JSON.stringify(process.argv.slice(1)) }) + '\\n'); setInterval(() => {}, 1000);";
     const config = {
       protocol: 'stream-json' as const,
       serverCmd: ['-e', script, '--'],
@@ -80,10 +252,12 @@ describe('companionDispatch', () => {
     const base = { binaryPath: process.execPath, config, prompt: 'hello', cwd: process.cwd(), timeout: 5, mode: 'exec' as const };
 
     const withTextOnly = await companionDispatch({ ...base, textOnly: true });
-    expect(withTextOnly.stdout).toContain('--tools');
+    expect(withTextOnly.exitCode).toBe(0);
+    expect(JSON.parse(withTextOnly.stdout)).toEqual(['--tools', '']);
 
     const withoutTextOnly = await companionDispatch({ ...base });
-    expect(withoutTextOnly.stdout).not.toContain('--tools');
+    expect(withoutTextOnly.exitCode).toBe(0);
+    expect(JSON.parse(withoutTextOnly.stdout)).toEqual([]);
   });
 
   it('returns empty stdout when a stream-json exec turn ends on tool_use, so the adapter falls through to CLI spawn', async () => {

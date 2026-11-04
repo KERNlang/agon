@@ -1,0 +1,6 @@
+command: ["node","scripts/spec/check-modular-agon-pack.mjs"]
+exitCode: 0
+signal:
+error:
+
+{"status":"passed","files":["agon.mod.json","dist/index.d.ts","dist/index.js","package.json"],"temporaryPackage":"agon-mod-pack-check-6ePkgL"}

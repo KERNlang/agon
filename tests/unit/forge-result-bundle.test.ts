@@ -1,7 +1,9 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import * as persistenceOwner from '@kernlang/agon-support-persistence';
+import { writeVersionedResultEnvelope } from '../../packages/forge/src/result-envelope.js';
 
 import {
   buildForgeCleanupCommand,
@@ -17,6 +19,33 @@ afterEach(() => {
 });
 
 describe('forge result bundle helpers', () => {
+  it('uses the shared persistence owner for versioned result envelopes', () => {
+    expect(persistenceOwner).toHaveProperty('writeVersionedResultEnvelope', writeVersionedResultEnvelope);
+  });
+
+  it.each(['agon.forge', 'agon.team-forge', 'agon.goal'])(
+    'preserves raw result and writes owner-tagged sibling for %s', ownerModId => {
+      tempDir = mkdtempSync(join(tmpdir(), 'agon-result-envelope-'));
+      const resultPath = join(tempDir, 'result.json');
+      const original = '{ "raw": true }\n';
+      writeFileSync(resultPath, original);
+      const createdAt = '2026-01-01T00:00:00.000Z';
+      const path = writeVersionedResultEnvelope({
+        resultPath, payload: { retained: 42, omitted: undefined }, status: 'partial',
+        idSeed: 'result-fixture', ownerModId, contributionId: `${ownerModId}.persisted-result`, createdAt,
+      });
+      expect(path).toBe(join(tempDir, 'result-envelope.json'));
+      expect(readFileSync(resultPath, 'utf8')).toBe(original);
+      expect(JSON.parse(readFileSync(path, 'utf8'))).toMatchObject({
+        kind: 'result', ownerModId, ownerModVersion: '1.0.0',
+        contributionId: `${ownerModId}.persisted-result`, status: 'partial', createdAt,
+        payload: { retained: 42 },
+      });
+      expect(JSON.parse(readFileSync(path, 'utf8')).payload).not.toHaveProperty('omitted');
+      expect(existsSync(path + '.tmp')).toBe(false);
+    },
+  );
+
   it('builds a cleanup command with safe quoting', () => {
     expect(buildForgeCleanupCommand('/repo/root', '/tmp/forge run')).toBe("for wt in '/tmp/forge run'/wt-* '/tmp/forge run'/synth-worktree; do [ -e \"$wt\" ] && git -C /repo/root worktree remove --force \"$wt\"; done; git -C /repo/root worktree prune; rm -rf '/tmp/forge run'");
   });
@@ -82,6 +111,15 @@ describe('forge result bundle helpers', () => {
     expect(bundle.worktrees[0]).toMatchObject({ cleanupPlanned: true, cleanupMode: 'best-effort-after-bundle' });
     expect(bundle.worktrees[0]).not.toHaveProperty('removedAfterRun');
     expect(manifest.resultBundlePath).toBe(bundlePath);
+    const envelopePath = join(tempDir, 'result-envelope.json');
+    expect(existsSync(envelopePath)).toBe(true);
+    expect(JSON.parse(readFileSync(envelopePath, 'utf-8'))).toMatchObject({
+      schemaVersion: 1,
+      kind: 'result',
+      status: 'succeeded',
+      ownerModId: 'agon.forge',
+      payload: { forgeId: 'forge-test', winner: 'claude' },
+    });
   });
 
   it('marks selected engines without output as terminal failed results', () => {

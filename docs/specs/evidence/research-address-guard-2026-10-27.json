@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "scope": "Research address representation guard, not full modular acceptance",
+  "baseCommit": "a4e06dfb8869acd14fe4c90cc16a88abebeb3243",
+  "archiveRoot": "/Users/ra/dev/modular-agon-remediation",
+  "retention": "Do not delete archived evidence without Raphael's approval",
+  "sourceSha256": "9ac2d5179ec9e93f1c81936b4ed8f2126fe08aa3cf2d7ca64beb79d23cb0670f",
+  "testSha256": "3d771f8079f2390a0e9b98ce74eb812777a5920dd57ee97845ad23cdf40a8bb7",
+  "packedVerifierSha256": "291dcb762e07c4b5e30811889fd4b8b2e9119efbd88d08f509bfcab0c1364871",
+  "evidence": [
+    {
+      "log": "research-address-negative-20261027.log",
+      "sha256": "7f0ec8404c3ac37456b287b00a31c063dbac7f5de46780b661f566fc9df61438",
+      "result": "Five intended regressions fail before repair; four prior tests pass"
+    },
+    {
+      "log": "research-address-boundaries-20261027.log",
+      "sha256": "6c1eb224dc85479fceb502c449da3c04836aaae29a8ecfe4acb2f11098fa0c03",
+      "result": "46 focused tests pass"
+    },
+    {
+      "log": "research-address-full-qualified-20261027.log",
+      "sha256": "7f434443fcaf75d91d47b5968f8bf16bab3c3780d019ca242709d76a9d5d2cee",
+      "receipt": "research-address-full-qualified-20261027.receipt.json",
+      "result": "11996 tests pass, 7 skipped; 95 installed checks pass; zero provider launches"
+    }
+  ],
+  "review": {
+    "packetSha256": "d587331a4464ec5b9afa47624ef81771603b0a9274151551c46ff3e4629da1ef",
+    "codexLogSha256": "80947ea490c70d8574279ce8d2ee69d0cb9851c635dfc43478047449f429b526",
+    "result": "Codex static review found no introduced defect; Kimi produced no answer, not a pass",
+    "limit": "Packed verifier added after review; tested against repaired and old compiled guard"
+  },
+  "limits": [
+    "Clean committed replay pending; working-tree qualification is not committed-subject qualification",
+    "Native darwin-arm64 Node26 only; other platforms and supported Node versions unverified",
+    "Workflow DNS and fetch are mocked; no live HTTP pinning claim",
+    "Earlier outer-sandbox socket/watch failures retained in research-address-full-gates-20261027.log; unchanged failing files passed outside that sandbox",
+    "Extra answer URL coverage remains a separate reproduced defect",
+    "Global Agon and personal state untouched; OpenCode not invoked"
+  ]
+}

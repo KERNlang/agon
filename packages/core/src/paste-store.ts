@@ -1,7 +1,7 @@
 // Process-wide paste store: the single PasteStore instance every surface
-// shares, over the implementation in ./signals/paste-store.ts.
-export { PASTE_MAX_AGE, PasteStore } from './signals/paste-store.js';
-export type { PasteStoreResult } from './signals/paste-store.js';
+// shares, over the persistence package implementation.
+export { PASTE_MAX_AGE, PasteStore } from '@kernlang/agon-support-persistence';
+export type { PasteStoreResult } from '@kernlang/agon-support-persistence';
 
-import { PasteStore } from './signals/paste-store.js';
+import { PasteStore } from '@kernlang/agon-support-persistence';
 export const pasteStore = new PasteStore();

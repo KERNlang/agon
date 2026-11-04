@@ -1,75 +1,23 @@
-import { readFileSync, writeFileSync, mkdirSync, readdirSync, unlinkSync, renameSync } from 'node:fs';
-
-import { join, resolve } from 'node:path';
-
-import { homedir } from 'node:os';
-
-import { ensureAgonHome } from './config.js';
+/** @deprecated S4 compatibility adapter. Import generic persistence from @kernlang/agon-support-persistence. */
+import {
+  deletePersistedPlan,
+  listPersistedPlans,
+  loadPersistedPlan,
+  savePersistedPlan,
+} from '@kernlang/agon-support-persistence';
 
 import type { Plan } from '../blocks/plan.js';
 
-import { hostPrettyJson } from '../blocks/host-runtime.js';
-
-function getPlansDir(): string {
-  const override = process.env.AGON_HOME?.trim();
-  const home = override ? resolve(override) : join(homedir(), '.agon');
-  return join(home, 'plans');
-}
-
-function ensurePlansDir(): void {
-  ensureAgonHome();
-  mkdirSync(getPlansDir(), { recursive: true });
-}
-
-function safePlanPath(id: string): string {
-  const sanitized = id.replace(/[^a-zA-Z0-9_-]/g, '');
-  const plansDir = getPlansDir();
-  const full = resolve(plansDir, `${sanitized}.json`);
-  if (!full.startsWith(resolve(plansDir))) {
-    throw new Error(`Invalid plan ID: ${id}`);
-  }
-  return full;
-}
-
 export function savePlan(plan: Plan): void {
-  ensurePlansDir();
-  const target = safePlanPath(plan.id);
-  const tmpPath = target + '.tmp';
-  writeFileSync(tmpPath, hostPrettyJson(plan) + '\n');
-  renameSync(tmpPath, target);
+  savePersistedPlan(plan);
 }
 
-export function loadPlan(id: string): Plan|null {
-  try { return JSON.parse(readFileSync(safePlanPath(id), 'utf-8')) as Plan; }
-  catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-      console.warn(`[agon] failed to load plan ${id}: ${err instanceof Error ? err.message : String(err)}`);
-    }
-    return null;
-  }
+export function loadPlan(id: string): Plan | null {
+  return loadPersistedPlan<Plan>(id);
 }
 
 export function listPlans(limit?: number): Plan[] {
-  ensurePlansDir();
-  try {
-    const plansDir = getPlansDir();
-    const files = readdirSync(plansDir).filter((f: string) => f.endsWith('.json'));
-    return files
-      .map((f: string) => JSON.parse(readFileSync(join(plansDir, f), 'utf-8')) as Plan)
-      .sort((a: any, b: any) => b.updatedAt.localeCompare(a.updatedAt))
-      .slice(0, limit ?? 20);
-  } catch (err) {
-    console.warn(`[agon] failed to list plans: ${err instanceof Error ? err.message : String(err)}`);
-    return [];
-  }
+  return listPersistedPlans<Plan>(limit);
 }
 
-export function deletePlan(id: string): boolean {
-  try { unlinkSync(safePlanPath(id)); return true; }
-  catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-      console.warn(`[agon] failed to delete plan ${id}: ${err instanceof Error ? err.message : String(err)}`);
-    }
-    return false;
-  }
-}
+export const deletePlan = deletePersistedPlan;

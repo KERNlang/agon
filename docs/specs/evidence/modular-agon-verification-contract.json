@@ -1,0 +1,206 @@
+{
+  "schemaVersion": 1,
+  "id": "agon.verify.spec-readiness",
+  "version": "1.0.0",
+  "owner": "agon.kernel",
+  "platforms": [
+    "darwin-arm64",
+    "darwin-x64",
+    "linux-arm64",
+    "linux-x64"
+  ],
+  "checks": [
+    {
+      "id": "inventory",
+      "authority": "host",
+      "kind": "command",
+      "command": [
+        "node",
+        "scripts/spec/generate-modular-agon-inventory.mjs"
+      ],
+      "timeoutMs": 1200000,
+      "maxOutputBytes": 67108864,
+      "evidence": [
+        "docs/specs/evidence/verification-logs/inventory.log"
+      ]
+    },
+    {
+      "id": "ownership-and-dag",
+      "authority": "host",
+      "kind": "command",
+      "command": [
+        "node",
+        "scripts/spec/generate-modular-agon-ownership.mjs"
+      ],
+      "timeoutMs": 1200000,
+      "maxOutputBytes": 67108864,
+      "evidence": [
+        "docs/specs/evidence/verification-logs/ownership-and-dag.log"
+      ]
+    },
+    {
+      "id": "fixtures",
+      "authority": "host",
+      "kind": "command",
+      "command": [
+        "node",
+        "scripts/spec/generate-modular-agon-fixtures.mjs"
+      ],
+      "timeoutMs": 1200000,
+      "maxOutputBytes": 67108864,
+      "evidence": [
+        "docs/specs/evidence/verification-logs/fixtures.log"
+      ]
+    },
+    {
+      "id": "json-schemas",
+      "authority": "host",
+      "kind": "schema",
+      "command": [
+        "node",
+        "scripts/spec/generate-modular-agon-schemas.mjs"
+      ],
+      "timeoutMs": 1200000,
+      "maxOutputBytes": 67108864,
+      "evidence": [
+        "docs/specs/evidence/verification-logs/json-schemas.log"
+      ]
+    },
+    {
+      "id": "coverage-ledger",
+      "authority": "host",
+      "kind": "schema",
+      "command": [
+        "node",
+        "scripts/spec/generate-modular-agon-coverage-ledger.mjs"
+      ],
+      "timeoutMs": 1200000,
+      "maxOutputBytes": 67108864,
+      "evidence": [
+        "docs/specs/evidence/verification-logs/coverage-ledger.log"
+      ]
+    },
+    {
+      "id": "contract-properties",
+      "authority": "host",
+      "kind": "property",
+      "command": [
+        "npx",
+        "vitest",
+        "run",
+        "tests/spec/modular-agon-contracts.test.ts"
+      ],
+      "timeoutMs": 1200000,
+      "maxOutputBytes": 67108864,
+      "evidence": [
+        "docs/specs/evidence/verification-logs/contract-properties.log"
+      ]
+    },
+    {
+      "id": "external-example-compile",
+      "authority": "host",
+      "kind": "command",
+      "command": [
+        "npx",
+        "tsc",
+        "-p",
+        "docs/specs/fixtures/modular-agon-contracts/example-mod/tsconfig.json"
+      ],
+      "timeoutMs": 1200000,
+      "maxOutputBytes": 67108864,
+      "evidence": [
+        "docs/specs/evidence/verification-logs/external-example-compile.log"
+      ]
+    },
+    {
+      "id": "pack-content",
+      "authority": "host",
+      "kind": "pack",
+      "command": [
+        "node",
+        "scripts/spec/check-modular-agon-pack.mjs"
+      ],
+      "timeoutMs": 1200000,
+      "maxOutputBytes": 67108864,
+      "evidence": [
+        "docs/specs/evidence/verification-logs/pack-content.log"
+      ]
+    },
+    {
+      "id": "consistency-and-links",
+      "authority": "host",
+      "kind": "property",
+      "command": [
+        "node",
+        "scripts/spec/check-modular-agon-consistency.mjs"
+      ],
+      "timeoutMs": 1200000,
+      "maxOutputBytes": 67108864,
+      "evidence": [
+        "docs/specs/evidence/verification-logs/consistency-and-links.log"
+      ]
+    },
+    {
+      "id": "repository-typecheck",
+      "authority": "host",
+      "kind": "command",
+      "command": [
+        "npm",
+        "run",
+        "typecheck"
+      ],
+      "timeoutMs": 1200000,
+      "maxOutputBytes": 67108864,
+      "evidence": [
+        "docs/specs/evidence/verification-logs/repository-typecheck.log"
+      ]
+    },
+    {
+      "id": "reexport-guard",
+      "authority": "host",
+      "kind": "command",
+      "command": [
+        "npm",
+        "run",
+        "guard:reexports"
+      ],
+      "timeoutMs": 1200000,
+      "maxOutputBytes": 67108864,
+      "evidence": [
+        "docs/specs/evidence/verification-logs/reexport-guard.log"
+      ]
+    },
+    {
+      "id": "spec-lint",
+      "authority": "host",
+      "kind": "command",
+      "command": [
+        "npx",
+        "eslint",
+        "scripts/spec",
+        "tests/spec",
+        "--max-warnings",
+        "0"
+      ],
+      "timeoutMs": 1200000,
+      "maxOutputBytes": 67108864,
+      "evidence": [
+        "docs/specs/evidence/verification-logs/spec-lint.log"
+      ]
+    },
+    {
+      "id": "full-test-suite",
+      "authority": "host",
+      "kind": "command",
+      "command": [
+        "npm",
+        "test"
+      ],
+      "timeoutMs": 1200000,
+      "maxOutputBytes": 67108864,
+      "evidence": [
+        "docs/specs/evidence/verification-logs/full-test-suite.log"
+      ]
+    }
+  ]
+}

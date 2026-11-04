@@ -1,6 +1,12 @@
 import { defineCommand, runMain } from 'citty';
-import { lazySubCommands } from './lazy-commands.js';
-import { loadConfig, loadAllAuthKeys } from '@kernlang/agon-core';
+import { existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { createGeneratedLazySubCommands, normalizeCliArguments } from './lazy-commands.js';
+import { captureProcessSurfaceAuthority, initializeProcessSurfaceAuthority, modularHostRoot, processSurfaceClient, processSurfacePublicIds } from './surface-authority-runtime.js';
+import { loadAllAuthKeys } from '@kernlang/agon-support-engine-runtime';
+import { installCliExitSignals } from './lib/exit-signals.js';
+
+installCliExitSignals();
 
 // `surfaces/app.js` (the whole interactive Cesar/Ink surface — ~2k lines
 // pulling in React/Ink + the full tool/agent stack) and
@@ -144,19 +150,39 @@ consumeGroundFlag();
 consumeContinueFlag();
 guardAgainstRecursiveDispatch();
 
+const topLevelMetadataOnly = process.argv.length === 3
+  && ['--help', '-h', '--version', '-v'].includes(process.argv[2] ?? '');
+const hostRoot = modularHostRoot();
+// A pristine installation has the frozen all-enabled generation already in
+// memory. Top-level metadata does not need to import and activate 36 physical
+// packages. Once any durable host or folder-mod state exists, help performs
+// the full authoritative bootstrap so disabled and external commands cannot
+// be misrepresented. Safe-mode help uses only kernel commands. Version output
+// is state-independent.
+const mayUsePristineCatalog = process.env.AGON_MOD_SAFE_MODE !== '1'
+  && !existsSync(hostRoot) && !existsSync(join(dirname(hostRoot), 'mods'));
+if (process.env.AGON_JOB_GENERATION !== undefined || !topLevelMetadataOnly || (!process.argv.includes('--version') && !process.argv.includes('-v') && !mayUsePristineCatalog)) {
+  await initializeProcessSurfaceAuthority();
+}
+
+if (process.env.AGON_JOB_GENERATION !== undefined) {
+  const { confirmWorkflowGeneration } = await import('@kernlang/agon-mod-jobs');
+  await confirmWorkflowGeneration(processSurfaceClient('cli').generation, captureProcessSurfaceAuthority());
+}
+
 const main = defineCommand({
   meta: {
     name: 'agon',
-    version: '0.2.5',
+    version: '1.0.0',
     description: 'Any AI can join. They compete. You ship.',
   },
-  subCommands: lazySubCommands,
+  subCommands: createGeneratedLazySubCommands(processSurfacePublicIds('cli')),
 });
 
 // Interactive REPL only when: no args at all AND stdin is a TTY
 const noArgs = process.argv.length <= 2;
 const isTty = process.stdin.isTTY === true;
-const isSetup = process.argv[2] === 'setup';
+const isInteractiveSetup = process.argv[2] === 'setup' && process.argv.length === 3;
 
 // Both interactive modules are loaded UP FRONT (before running either), so a
 // module-load failure hits the loud reporting catch while runtime rejections
@@ -172,9 +198,10 @@ function runOnboardingThenRepl(): void {
   );
 }
 
-if (isSetup && isTty) {
+if (isInteractiveSetup && isTty) {
   runOnboardingThenRepl();
 } else if (noArgs && isTty) {
+  const { loadConfig } = await import('@kernlang/agon-core');
   const config = loadConfig();
   if (!config.onboarded) {
     runOnboardingThenRepl();
@@ -182,5 +209,5 @@ if (isSetup && isTty) {
     void importRepl().then((startRepl) => startRepl(), reportInteractiveLoadFailure);
   }
 } else {
-  await runMain(main);
+  await runMain(main, { rawArgs: await normalizeCliArguments(main, process.argv.slice(2)) });
 }

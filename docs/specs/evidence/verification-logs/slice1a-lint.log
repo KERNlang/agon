@@ -1,0 +1,11 @@
+command: ["npm","run","lint"]
+exitCode: 0
+signal: none
+error: none
+outputBytes: 35
+outputHash: sha256:735df14d75fb4f4f6d568c4faba7d5a5b9ca4a75a019510be2a7d88c49924e1a
+outputTruncated: false
+
+
+> lint
+> eslint . --max-warnings 0

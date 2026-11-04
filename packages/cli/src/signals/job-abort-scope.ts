@@ -19,9 +19,10 @@ export async function runInJobAbortScope(signal: AbortSignal, fn: ()=>Promise<vo
   }
 }
 
-export function trackJobAbortController(child: AbortController|null): boolean {
+export function trackJobAbortController(child: AbortController|null, expectedOwner?: AbortController): boolean {
   const store = jobAbortStorage.getStore();
   if (!store) return false;
+  if (expectedOwner && store.child !== expectedOwner) return true;
   store.detach?.();
   store.detach = null;
   store.child = child;

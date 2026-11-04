@@ -1,13 +1,22 @@
-import { describe, it, expect, afterEach } from 'vitest';
-import { mkdirSync, writeFileSync, utimesSync, readFileSync } from 'node:fs';
+import { describe, it, expect, afterEach, beforeEach } from 'vitest';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync, utimesSync, readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { setupTestAgonHome, cleanupTestAgonHome } from '../helpers/agon-home.js';
 import {
   readProbedCliModels,
+  buildCliGroupsImmediate,
   buildCliModelGroups,
   getBinaryVersionAsync,
   refreshCliGroupVersion,
+  refreshProbedCliModels,
+  findBinary,
+  getBinaryVersion,
+  ENGINE_PROVIDER_MAP,
 } from '../../packages/core/src/cli-models-registry.js';
+import { resolveAgonModelProbeWrapper } from '../../packages/core/src/signals/cli-models-registry.js';
 
 function writeProbeCache(home: string, engineId: string, models: any[]): string {
   const dir = join(home, 'cache');
@@ -23,11 +32,41 @@ const AGY_PROBE = [
   { id: 'gpt-oss-120b-medium', name: 'GPT-OSS 120B (Medium)', current: false },
 ];
 
+// buildCliModelGroups runs `<engine> --version` through PATH. Resolve every
+// provider binary to a recording stub so a test run never launches a real
+// provider CLI (login prompts, browser tabs, auto-updates).
+let stubDir = '';
+let originalPath: string | undefined;
+beforeEach(() => {
+  stubDir = mkdtempSync(join(tmpdir(), 'agon-provider-stubs-'));
+  for (const { engineBinary } of Object.values(ENGINE_PROVIDER_MAP)) {
+    const stub = join(stubDir, engineBinary);
+    writeFileSync(stub, `#!/bin/sh\necho "${engineBinary} $*" >> "${join(stubDir, 'calls.log')}"\nexit 97\n`);
+    chmodSync(stub, 0o755);
+  }
+  originalPath = process.env.PATH;
+  process.env.PATH = `${stubDir}:${originalPath ?? ''}`;
+});
+afterEach(() => {
+  process.env.PATH = originalPath;
+  rmSync(stubDir, { recursive: true, force: true });
+});
+
 describe('CLI live-model probe cache', () => {
   let home: string | undefined;
   afterEach(() => {
     cleanupTestAgonHome(home);
     home = undefined;
+  });
+
+  it('probes provider versions only through PATH stubs, never a real provider binary', () => {
+    home = setupTestAgonHome('probe-stubbed-providers');
+    buildCliModelGroups();
+    const calls = readFileSync(join(stubDir, 'calls.log'), 'utf8').trim().split('\n');
+    const expected = Object.values(ENGINE_PROVIDER_MAP)
+      .filter(({ versionCmd }) => versionCmd.length > 0)
+      .map(({ engineBinary, versionCmd }) => `${engineBinary} ${versionCmd.join(' ')}`);
+    expect(calls).toEqual(expected);
   });
 
   it('readProbedCliModels returns the fresh cached probe with the current flag', () => {
@@ -47,10 +86,58 @@ describe('CLI live-model probe cache', () => {
   it('treats a probe older than the TTL as stale (falls back)', () => {
     home = setupTestAgonHome('probe-stale');
     const file = writeProbeCache(home, 'agy', AGY_PROBE);
-    // Age the file 2 days back; default TTL is 24h, so it must read as stale.
+    const twoHoursAgoSec = (Date.now() - 2 * 3_600_000) / 1000;
+    utimesSync(file, twoHoursAgoSec, twoHoursAgoSec);
+    expect(readProbedCliModels('agy')).toBeNull();
+  });
+
+  it('keeps showing an expired probe instead of the static fallback while it refreshes', () => {
+    home = setupTestAgonHome('probe-expired-last-known');
+    const file = writeProbeCache(home, 'claude', [{ id: 'opus', name: 'Opus 5.5', current: true }]);
     const twoDaysAgoSec = (Date.now() - 2 * 86_400_000) / 1000;
     utimesSync(file, twoDaysAgoSec, twoDaysAgoSec);
-    expect(readProbedCliModels('agy')).toBeNull();
+
+    const claude = buildCliGroupsImmediate().find((g) => g.engineId === 'claude');
+    expect(claude!.models.map((m) => m.name)).toEqual(['Opus 5.5']);
+    expect(claude!.loading).toBe(true);
+    expect(buildCliModelGroups().find((g) => g.engineId === 'claude')!.models.map((m) => m.name)).toEqual(['Opus 5.5']);
+  });
+
+  it('a failed probe keeps the last list and a successful probe overwrites it', async () => {
+    home = setupTestAgonHome('probe-overwrite-last-known');
+    const file = writeProbeCache(home, 'claude', [{ id: 'opus', name: 'Opus 5', current: true }]);
+    const twoDaysAgoSec = (Date.now() - 2 * 86_400_000) / 1000;
+    utimesSync(file, twoDaysAgoSec, twoDaysAgoSec);
+    const namesShown = () => buildCliGroupsImmediate().find((g) => g.engineId === 'claude')!.models.map((m) => m.name);
+
+    const emptyProbe = join(home, 'empty-python');
+    writeFileSync(emptyProbe, `#!/usr/bin/env node\nprocess.stdout.write(JSON.stringify({ models: [] }));\n`);
+    chmodSync(emptyProbe, 0o755);
+    expect(await refreshProbedCliModels('claude', 'claude', undefined, emptyProbe)).toBe(false);
+    expect(namesShown()).toEqual(['Opus 5']);
+
+    const liveProbe = join(home, 'live-python');
+    writeFileSync(liveProbe, `#!/usr/bin/env node\nprocess.stdout.write(JSON.stringify({ models: [{ id: 'opus', name: 'Opus 5.5', current: true }] }));\n`);
+    chmodSync(liveProbe, 0o755);
+    expect(await refreshProbedCliModels('claude', 'claude', undefined, liveProbe)).toBe(true);
+    expect(namesShown()).toEqual(['Opus 5.5']);
+    expect(buildCliGroupsImmediate().find((g) => g.engineId === 'claude')!.loading).toBe(false);
+  });
+
+  it.each([
+    'packages/support-engine-runtime/python/agon-model-probe-wrapper.py',
+    'packages/cli/py/agon-model-probe-wrapper.py',
+  ])('%s launches Claude with --bare so the probe reaches the model selector, not the agent dashboard', (wrapperPath) => {
+    home = setupTestAgonHome('probe-claude-bare');
+    const vendorProbe = join(home, 'vendor', 'pkg', 'cli', 'model_probe.py');
+    mkdirSync(join(home, 'vendor', 'pkg', 'cli'), { recursive: true });
+    writeFileSync(vendorProbe, 'import os\nPARSERS = {}\ndef main(argv):\n    os.execvp(argv[0], [argv[0]])\n');
+    const fakeClaude = join(home, 'claude');
+    writeFileSync(fakeClaude, '#!/bin/sh\nprintf "%s" "$*"\n');
+    chmodSync(fakeClaude, 0o755);
+
+    const wrapper = fileURLToPath(new URL(`../../${wrapperPath}`, import.meta.url));
+    expect(execFileSync('python3', [wrapper, vendorProbe, fakeClaude, '/model'], { encoding: 'utf8' })).toBe('--bare');
   });
 
   it('buildCliModelGroups prefers the probed list over the static fallback for agy', () => {
@@ -76,6 +163,109 @@ describe('CLI live-model probe cache', () => {
     const ids = grp!.models.map((m) => m.id);
     expect(ids).toContain('github-copilot/gpt-5.5');
     expect(ids).toContain('kimi-for-coding/k2p6');
+  });
+
+  it('routes Claude probes through the packaged compatibility parser', async () => {
+    home = setupTestAgonHome('probe-claude-wrapper');
+    const fakePython = join(home, 'fake-python');
+    writeFileSync(fakePython, `#!/usr/bin/env node
+const usesWrapper = process.argv.some((arg) => arg.endsWith('agon-model-probe-wrapper.py'));
+process.stdout.write(JSON.stringify({ models: [{ id: 'opus', name: 'Opus 4.8', current: usesWrapper }] }));
+`);
+    chmodSync(fakePython, 0o755);
+
+    expect(await refreshProbedCliModels('claude', 'claude', undefined, fakePython)).toBe(true);
+    expect(readProbedCliModels('claude')?.find((model) => model.id === 'opus')?.current).toBe(true);
+  });
+
+  it('resolves the wrapper from an installed sibling @kernlang/agon package', () => {
+    home = setupTestAgonHome('probe-installed-layout');
+    const coreModule = join(home, 'node_modules', '@kernlang', 'agon-core', 'dist', 'index.js');
+    const wrapper = join(home, 'node_modules', '@kernlang', 'agon', 'py', 'agon-model-probe-wrapper.py');
+    mkdirSync(join(home, 'node_modules', '@kernlang', 'agon-core', 'dist'), { recursive: true });
+    mkdirSync(join(home, 'node_modules', '@kernlang', 'agon', 'py'), { recursive: true });
+    writeFileSync(coreModule, '');
+    writeFileSync(wrapper, '# fixture');
+
+    expect(resolveAgonModelProbeWrapper(pathToFileURL(coreModule).href)).toBe(wrapper);
+  });
+
+  it.each(['src', 'dist'])('resolves the runtime-owned wrapper from %s without the CLI package', (directory) => {
+    home = setupTestAgonHome('probe-runtime-owner');
+    const runtime = join(home, 'node_modules', '@kernlang', 'agon-support-engine-runtime');
+    const module = join(runtime, directory, 'index.js');
+    const wrapper = join(runtime, 'python', 'agon-model-probe-wrapper.py');
+    mkdirSync(join(runtime, directory), { recursive: true });
+    mkdirSync(join(runtime, 'python'), { recursive: true });
+    writeFileSync(module, '');
+    writeFileSync(wrapper, '# runtime fixture');
+
+    expect(resolveAgonModelProbeWrapper(pathToFileURL(module))).toBe(wrapper);
+  });
+
+  it('uses the physical runtime asset through the unchanged public resolver', () => {
+    const wrapper = fileURLToPath(new URL('../../packages/support-engine-runtime/python/agon-model-probe-wrapper.py', import.meta.url));
+    expect(resolveAgonModelProbeWrapper()).toBe(wrapper);
+    expect(existsSync(wrapper)).toBe(true);
+  });
+
+  it('prefers the runtime-owned wrapper when a legacy CLI copy also exists', () => {
+    home = setupTestAgonHome('probe-runtime-precedence');
+    const scope = join(home, 'node_modules', '@kernlang');
+    const runtime = join(scope, 'agon-support-engine-runtime');
+    const wrapper = join(runtime, 'python', 'agon-model-probe-wrapper.py');
+    mkdirSync(join(runtime, 'python'), { recursive: true });
+    mkdirSync(join(scope, 'agon', 'py'), { recursive: true });
+    writeFileSync(wrapper, '# runtime fixture');
+    writeFileSync(join(scope, 'agon', 'py', 'agon-model-probe-wrapper.py'), '# legacy fixture');
+
+    expect(resolveAgonModelProbeWrapper(pathToFileURL(join(runtime, 'dist', 'index.js')))).toBe(wrapper);
+  });
+
+  it('returns null when neither runtime nor legacy wrapper exists', () => {
+    home = setupTestAgonHome('probe-no-wrapper');
+    expect(resolveAgonModelProbeWrapper(pathToFileURL(join(home, 'absent', 'dist', 'index.js')))).toBeNull();
+  });
+
+  it.each([
+    ['packages/support-engine-catalog/src/index.js', 'packages/cli/py'],
+    ['packages/core/src/signals/cli-models-registry.js', 'packages/cli/py'],
+    ['node_modules/@kernlang/agon/dist/index.js', 'node_modules/@kernlang/agon/py'],
+  ])('retains the legacy wrapper lookup from %s', (modulePath, assetDirectory) => {
+    home = setupTestAgonHome('probe-legacy-layout');
+    const directory = join(home, assetDirectory);
+    const wrapper = join(directory, 'agon-model-probe-wrapper.py');
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(wrapper, '# legacy fixture');
+
+    expect(resolveAgonModelProbeWrapper(pathToFileURL(join(home, modulePath)))).toBe(wrapper);
+  });
+
+  it('rejects a nonzero PTY probe even when it emits plausible model JSON', async () => {
+    home = setupTestAgonHome('probe-nonzero');
+    const fakePython = join(home, 'failing-python');
+    writeFileSync(fakePython, `#!/usr/bin/env node
+process.stdout.write(JSON.stringify({ models: [{ id: 'opus', name: 'Opus 4.8', current: true }] }));
+process.exit(7);
+`);
+    chmodSync(fakePython, 0o755);
+
+    expect(await refreshProbedCliModels('claude', 'claude', undefined, fakePython)).toBe(false);
+    expect(readProbedCliModels('claude')).toBeNull();
+  });
+
+  it('treats binary discovery input as one argument instead of shell syntax', () => {
+    home = setupTestAgonHome('probe-find-binary-injection');
+    const marker = join(home, 'unexpected-marker');
+    expect(findBinary(`missing-binary; touch ${marker}; #`)).toBeNull();
+    expect(existsSync(marker)).toBe(false);
+  });
+
+  it('treats version arguments as data instead of shell syntax', () => {
+    home = setupTestAgonHome('probe-version-injection');
+    const marker = join(home, 'unexpected-marker');
+    expect(getBinaryVersion('/usr/bin/printf', [`ok; touch ${marker}`])).toContain('ok');
+    expect(existsSync(marker)).toBe(false);
   });
 
   it('labels CLI groups by engine (Antigravity, not Google) and carries effort levels', () => {

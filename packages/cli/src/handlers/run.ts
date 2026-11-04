@@ -1,6 +1,7 @@
 import { spawnWithTimeout, appendMessage } from '@kernlang/agon-core';
 
 import type { Dispatch, HandlerContext } from './types.js';
+import { isExplicitApproval } from '../lib/explicit-approval.js';
 
 export const RUN_CONTEXT_OUTPUT_CAP: number = 4000;
 
@@ -31,7 +32,7 @@ export async function handleRun(command: string, dispatch: Dispatch, ctx: Handle
   const isSafe = !hasShellMeta && RUN_SAFE.some(s => lower.startsWith(s));
   if (!isSafe) {
     const answer = await ctx.askQuestion(`Run: ${command.length > 60 ? command.slice(0, 60) + '…' : command} — proceed? (y/n)`);
-    if (!answer.toLowerCase().startsWith('y')) {
+    if (!isExplicitApproval(answer)) {
       dispatch({ type: 'info', message: 'Cancelled' });
       return;
     }

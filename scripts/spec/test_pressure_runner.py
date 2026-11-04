@@ -1,0 +1,117 @@
+import importlib.util
+import os
+from pathlib import Path
+import sys
+import tempfile
+import time
+import unittest
+
+spec = importlib.util.spec_from_file_location("runner", Path(__file__).with_name("pressure_modular.py"))
+runner = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(runner)
+
+
+class RunnerTests(unittest.TestCase):
+    def test_every_profile_checks_types_before_build_outputs_exist(self):
+        checkout = Path(__file__).resolve().parents[2]
+        for full in (False, True):
+            with self.subTest(full=full):
+                commands = runner.plan(checkout, 1, 1701, full)
+                self.assertEqual(commands[:3], [
+                    ("install-offline", ["npm", "ci", "--ignore-scripts", "--offline"]),
+                    ("typecheck-cold", ["npm", "run", "typecheck"]),
+                    ("build", ["npm", "run", "build:cli:workspaces"]),
+                ])
+
+    def test_short_run_root_leaves_room_for_unix_socket_fixtures(self):
+        root = runner.new_run_directory()
+        try:
+            socket = root / "runtime/tmp/agon-daemon-survival-XXXXXX/daemon/agond.sock"
+            self.assertLess(len(str(socket).encode()), 104)
+        finally:
+            root.rmdir()
+
+    def test_environment_does_not_inherit_credentials_or_personal_home(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            env = runner.isolated_environment(Path(tmp), {"PATH": os.environ["PATH"], "HOME": "/personal", "OPENAI_API_KEY": "secret", "AGON_HOME": "/personal/agon"})
+            self.assertNotIn("OPENAI_API_KEY", env)
+            self.assertEqual(env["HOME"], str(Path(tmp) / "home"))
+            self.assertTrue(env["AGON_HOME"].startswith(tmp))
+            self.assertNotEqual(env["npm_config_userconfig"], env["npm_config_globalconfig"])
+
+    def fake_real_path(self, root):
+        # Stand-ins for the operator's real CLIs: even a broken guard can only
+        # reach these, never an installed provider.
+        real = root / "real-bin"
+        real.mkdir()
+        for executable in runner.PROVIDER_EXECUTABLES:
+            stub = real / executable
+            stub.write_text(f"#!/bin/sh\necho {executable} >> {root / 'leaked.log'}\n")
+            stub.chmod(0o755)
+        return f"{real}:/usr/bin:/bin"
+
+    def test_provider_executables_resolve_to_recording_blockers(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env = runner.isolated_environment(root / "run", {"PATH": self.fake_real_path(root)})
+            for executable in ("claude", "codex", "agy", "opencode", "agon", "open"):
+                result = runner.subprocess.run([executable, "--version"], env=env, capture_output=True, timeout=10)
+                self.assertEqual(result.returncode, 97, executable)
+            self.assertFalse((root / "leaked.log").exists())
+            self.assertEqual(runner.provider_launches(root / "run"),
+                             ["claude --version", "codex --version", "agy --version",
+                              "opencode --version", "agon --version", "open --version"])
+
+    def test_clean_run_records_no_provider_launches(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            runner.isolated_environment(root / "run", {"PATH": self.fake_real_path(root)})
+            self.assertEqual(runner.provider_launches(root / "run"), [])
+
+    def test_provider_launch_cannot_pass(self):
+        self.assertTrue(runner.complete_pass([{"passed": True}], 1, []))
+        self.assertFalse(runner.complete_pass([{"passed": True}], 1, ["codex --version"]))
+
+    def test_failure_is_retained_and_cannot_pass(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            result = runner.run_step("failure", [sys.executable, "-c", "print('witness'); raise SystemExit(7)"], root, os.environ.copy(), root, 5)
+            self.assertFalse(result["passed"])
+            self.assertEqual(result["exitCode"], 7)
+            self.assertIn("witness", (root / result["log"]).read_text())
+            self.assertEqual(result["logSha256"], runner.digest(root / result["log"]))
+
+    def test_timeout_is_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            result = runner.run_step("hang", [sys.executable, "-c", "import time; time.sleep(30)"], root, os.environ.copy(), root, .1)
+            self.assertFalse(result["passed"])
+            self.assertTrue(result["timedOut"])
+
+    def test_spawn_failure_is_a_receipt_not_an_exception(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            result = runner.run_step("missing", ["/nonexistent/pressure-executable"], root, os.environ.copy(), root, 1)
+            self.assertFalse(result["passed"])
+            self.assertIsNotNone(result["error"])
+
+    def test_empty_partial_or_failed_runs_cannot_pass(self):
+        self.assertFalse(runner.complete_pass([], 1, []))
+        self.assertFalse(runner.complete_pass([{"passed": True}], 2, []))
+        self.assertFalse(runner.complete_pass([{"passed": False}], 1, []))
+        self.assertTrue(runner.complete_pass([{"passed": True}], 1, []))
+
+    def test_background_descendant_is_killed_after_parent_exit(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            marker = root / "orphan-wrote"
+            child = f"import time; from pathlib import Path; time.sleep(.4); Path({str(marker)!r}).touch()"
+            parent = f"import subprocess,sys; subprocess.Popen([sys.executable,'-c',{child!r}])"
+            result = runner.run_step("descendant", [sys.executable, "-c", parent], root, os.environ.copy(), root, 3)
+            self.assertTrue(result["passed"])
+            time.sleep(.6)
+            self.assertFalse(marker.exists())
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -1,0 +1,113 @@
+{
+  "schemaVersion": 1,
+  "scope": "Top-level development logs, receipts, review packets, notes and reproduction helpers matching filenamePrefix; no nested worktrees, caches or installed dependencies.",
+  "filenamePrefix": "dev-base-cold",
+  "warning": "Historical failures and review hypotheses are retained. Exported files may be sanitized; original receipt log hashes refer to original bytes, not sanitized bytes. This is not release acceptance.",
+  "archiveSha256": "82e5d9d060ebfd4081d04b402b62d75b35065d69159c4a2e028a4020edaa4a4d",
+  "files": [
+    {
+      "originalRelativePath": "dev-base-cold-order-fixed.log",
+      "archivePath": "development-evidence/dev-base-cold-order-fixed.log",
+      "originalSha256": "fb73e00a4188ad05a0025a3ad1440c38069012b2a752621f31d59714a6b78467",
+      "exportSha256": "fb73e00a4188ad05a0025a3ad1440c38069012b2a752621f31d59714a6b78467",
+      "bytes": 776,
+      "redactions": 0
+    },
+    {
+      "originalRelativePath": "dev-base-cold-order-fixed.receipt.json",
+      "archivePath": "development-evidence/dev-base-cold-order-fixed.receipt.json",
+      "originalSha256": "6c35e5f60763a752195ce0b5567b75a05aaa2bc7fe868a5748d1893c97f104c1",
+      "exportSha256": "6c35e5f60763a752195ce0b5567b75a05aaa2bc7fe868a5748d1893c97f104c1",
+      "bytes": 540,
+      "redactions": 0
+    },
+    {
+      "originalRelativePath": "dev-base-cold-order-negative.log",
+      "archivePath": "development-evidence/dev-base-cold-order-negative.log",
+      "originalSha256": "0319d429054434d59e089987b6b5d5be60e463bf694d79ce5cc982e156f0b3ab",
+      "exportSha256": "0319d429054434d59e089987b6b5d5be60e463bf694d79ce5cc982e156f0b3ab",
+      "bytes": 3717,
+      "redactions": 0
+    },
+    {
+      "originalRelativePath": "dev-base-cold-order-negative.receipt.json",
+      "archivePath": "development-evidence/dev-base-cold-order-negative.receipt.json",
+      "originalSha256": "d70cb400526964498ddfdd60926cc4d69edce6f476c28284089f75fa821c79ab",
+      "exportSha256": "d70cb400526964498ddfdd60926cc4d69edce6f476c28284089f75fa821c79ab",
+      "bytes": 503,
+      "redactions": 0
+    },
+    {
+      "originalRelativePath": "dev-base-cold-qualified-full.log",
+      "archivePath": "development-evidence/dev-base-cold-qualified-full.log",
+      "originalSha256": "285d81fd5b03d82ff14fc763b70bafa6ceb8463fc207ab3877885aeba2fbe7b4",
+      "exportSha256": "285d81fd5b03d82ff14fc763b70bafa6ceb8463fc207ab3877885aeba2fbe7b4",
+      "bytes": 573329,
+      "redactions": 0
+    },
+    {
+      "originalRelativePath": "dev-base-cold-qualified-full.receipt.json",
+      "archivePath": "development-evidence/dev-base-cold-qualified-full.receipt.json",
+      "originalSha256": "20dee5a2486cb6ea5627a441c16bdd17df35e67b65fd1a830240973bca76e5c9",
+      "exportSha256": "20dee5a2486cb6ea5627a441c16bdd17df35e67b65fd1a830240973bca76e5c9",
+      "bytes": 590,
+      "redactions": 0
+    },
+    {
+      "originalRelativePath": "dev-base-cold-typecheck-codex-review.log",
+      "archivePath": "development-evidence/dev-base-cold-typecheck-codex-review.log",
+      "originalSha256": "6e076acace51ef44b4dec90d8cdf6229cb7e4f4339175656175efe1b6ac0181e",
+      "exportSha256": "6e076acace51ef44b4dec90d8cdf6229cb7e4f4339175656175efe1b6ac0181e",
+      "bytes": 1735,
+      "redactions": 0
+    },
+    {
+      "originalRelativePath": "dev-base-cold-typecheck-codex-review.receipt.json",
+      "archivePath": "development-evidence/dev-base-cold-typecheck-codex-review.receipt.json",
+      "originalSha256": "5a4b11ae596ac55f17f79198e31b25a5b3626447db111a7a477ced9efc2d5e24",
+      "exportSha256": "5a4b11ae596ac55f17f79198e31b25a5b3626447db111a7a477ced9efc2d5e24",
+      "bytes": 210,
+      "redactions": 0
+    },
+    {
+      "originalRelativePath": "dev-base-cold-typecheck-fixed.log",
+      "archivePath": "development-evidence/dev-base-cold-typecheck-fixed.log",
+      "originalSha256": "be1cf12bc2c9d30c2cc1484ecb5ad9f709e037352543b5aeaf93337177ed2a06",
+      "exportSha256": "be1cf12bc2c9d30c2cc1484ecb5ad9f709e037352543b5aeaf93337177ed2a06",
+      "bytes": 23,
+      "redactions": 0
+    },
+    {
+      "originalRelativePath": "dev-base-cold-typecheck-fixed.receipt.json",
+      "archivePath": "development-evidence/dev-base-cold-typecheck-fixed.receipt.json",
+      "originalSha256": "cd44346204cf2ffcef41b573493af59061e7197f6e5668f1e3ba6f6b025fa576",
+      "exportSha256": "cd44346204cf2ffcef41b573493af59061e7197f6e5668f1e3ba6f6b025fa576",
+      "bytes": 462,
+      "redactions": 0
+    },
+    {
+      "originalRelativePath": "dev-base-cold-typecheck-negative.log",
+      "archivePath": "development-evidence/dev-base-cold-typecheck-negative.log",
+      "originalSha256": "60d453ecc7ec0218295a82999b1f40e8cd91c543a10a34c9b45d4006036c0040",
+      "exportSha256": "60d453ecc7ec0218295a82999b1f40e8cd91c543a10a34c9b45d4006036c0040",
+      "bytes": 12909,
+      "redactions": 0
+    },
+    {
+      "originalRelativePath": "dev-base-cold-typecheck-negative.receipt.json",
+      "archivePath": "development-evidence/dev-base-cold-typecheck-negative.receipt.json",
+      "originalSha256": "363fb1aa5a8f5516209e9083413d35e0fce3b085602122a4b42554aad1b16d6c",
+      "exportSha256": "363fb1aa5a8f5516209e9083413d35e0fce3b085602122a4b42554aad1b16d6c",
+      "bytes": 468,
+      "redactions": 0
+    },
+    {
+      "originalRelativePath": "dev-base-cold-typecheck-review-input.txt",
+      "archivePath": "development-evidence/dev-base-cold-typecheck-review-input.txt",
+      "originalSha256": "9d8b5ad55d3936cd657d1cf79b0d435741c19a42e6d638c2d43c551bbec6e799",
+      "exportSha256": "d09b505eded6072ae351930fcaa4f33d12cf061372b2164831e3ab3762f61a22",
+      "bytes": 36044,
+      "redactions": 1
+    }
+  ]
+}

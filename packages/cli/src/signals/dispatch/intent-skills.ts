@@ -13,6 +13,7 @@ import { clearPersistedSessionContext } from './utils.js';
 import { routeWithCesar } from './cesar-router.js';
 
 import { emitPostDispatch } from './utils.js';
+import { assertProcessSurfaceAvailable } from '../../surface-authority-runtime.js';
 
 export async function dispatchSkillsUiIntent(intent: any, input: string, cb: DispatchCallbacks): Promise<DispatchResult | null> {
   switch (intent.type) {
@@ -164,23 +165,7 @@ export async function dispatchSkillsUiIntent(intent: any, input: string, cb: Dis
   
     // ── UI commands ──
     case 'extensions': {
-      const exts = cb.loadedExtensions ?? [];
-      if (exts.length === 0) {
-        cb.dispatch({ type: 'info', message: 'No extensions loaded. Add extensions to ~/.agon/extensions/ or .agon/extensions/' });
-      } else {
-        const lines = exts.map((ext: any) => {
-          const m = ext.manifest;
-          const contribs: string[] = [];
-          if (m.contributes?.commands?.length) contribs.push(`${m.contributes.commands.length} cmd`);
-          if (m.contributes?.skills?.length) contribs.push(`${m.contributes.skills.length} skill`);
-          if (m.contributes?.hooks?.length) contribs.push(`${m.contributes.hooks.length} hook`);
-          if (m.contributes?.engines?.length) contribs.push(`${m.contributes.engines.length} engine`);
-          if (m.contributes?.systemPromptFragments?.length) contribs.push(`${m.contributes.systemPromptFragments.length} prompt`);
-          const contribStr = contribs.length > 0 ? ` (${contribs.join(', ')})` : '';
-          return `  ${m.id} v${m.version} [${ext.source}]${contribStr} — ${m.description}`;
-        });
-        cb.dispatch({ type: 'text', content: `Extensions (${exts.length}):\n${lines.join('\n')}` });
-      }
+      cb.dispatch({ type: 'info', message: 'Legacy extensions were replaced by trusted folder mods. Use `agon mod list` and `agon mod inspect <path>`.' });
       break;
     }
     case 'slash-list': cb.dispatch({ type: 'text', content: cb.allSlashCommands.map((c: any) => `${c.cmd.padEnd(16)} ${c.desc}`).join('\n') }); break;
@@ -330,6 +315,15 @@ export async function dispatchSkillsUiIntent(intent: any, input: string, cb: Dis
     // ── Cesar-routed intents ──
     case 'auto':
     case 'unknown': {
+      // Legacy requests must check the selected owner before any host effect.
+      if (intent.autoMode === true) {
+        try {
+          assertProcessSurfaceAvailable('tui', '/auto');
+        } catch (error) {
+          cb.dispatch({ type: 'error', message: error instanceof Error ? error.message : String(error) });
+          break;
+        }
+      }
       // Check dynamic skills for unknown slash commands
       const trimmed = (intent.input ?? '').trim();
       if (intent.type === 'unknown' && trimmed.startsWith('/')) {

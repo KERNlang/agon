@@ -2,11 +2,9 @@ import { mkdirSync } from 'node:fs';
 
 import { join } from 'node:path';
 
-import { discoverGate } from '@kernlang/agon-core';
-
 import type { EngineRegistry, EngineAdapter } from '@kernlang/agon-core';
 
-import { runMutate } from '@kernlang/agon-forge';
+import { runMutate, discoverMutateGate } from '@kernlang/agon-forge';
 
 import { filterDefaultOrchestrationEngines } from '../handlers/engine-filter.js';
 
@@ -60,9 +58,9 @@ export async function runReviewMutation(opts: ReviewMutationOptions): Promise<st
   const heading = '\n▸ MUTATION (advisory)';
   try {
     if (!opts.diff.trim()) return [heading, '  skipped — no diff to mutate'];
-    const testCmd = (opts.testCmd ?? '').trim() || discoverGate(opts.repoRoot).command.trim();
+    const testCmd = (opts.testCmd ?? '').trim() || discoverMutateGate(opts.repoRoot);
     if (!testCmd) {
-      return [heading, '  skipped — no test command discovered (add a package.json test script or a `fitness:` brief line, or run `agon mutate --test "<cmd>"`)'];
+      return [heading, '  skipped — no test command discovered (add a `fitness:` brief line, a package.json test script or a pyproject.toml/go.mod/Cargo.toml/pom.xml/build.gradle manifest, or run `agon mutate --test "<cmd>"`)'];
     }
     // Never the review's own run dir — see the header note on engine-output
     // collision. mkdir here so runMutate never has to create it under a

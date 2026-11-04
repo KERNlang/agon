@@ -1,4 +1,5 @@
-import type { EngineRegistry, EngineAdapter, Plan, CesarPlan, AgonConfig, ChatSession, PersistentSession, CesarMemory, EventBus, ToolRegistry, DiscoveredGate } from '@kernlang/agon-core';
+import type { EngineRegistry, EngineAdapter, Plan, AgonConfig, ChatSession, PersistentSession, CesarMemory, EventBus, ToolRegistry, DiscoveredGate } from '@kernlang/agon-core';
+import type { CesarPlan } from '@kernlang/agon-mod-plan';
 
 import type { EngineVitals } from '../cesar/telemetry.js';
 
@@ -16,7 +17,7 @@ export interface EngineProgress {
 
 export type OutputEvent =
   | { type: 'text'; content: string }
-  | { type: 'engine-block'; engineId: string; color: number; content: string; actingNote?: string; foldedSteps?: number }
+  | { type: 'engine-block'; engineId: string; color: number; content: string; format?: 'diff'; actingNote?: string; foldedSteps?: number }
   | { type: 'streaming-chunk'; engineId: string; chunk: string }
   | { type: 'streaming-preview'; engineId: string; content: string }
   | { type: 'thinking-chunk'; engineId: string; chunk: string }
@@ -24,8 +25,8 @@ export type OutputEvent =
   | { type: 'spinner-start'; message: string; color?: number }
   | { type: 'spinner-stop'; message?: string }
   | { type: 'spinner-update'; message: string }
-  | { type: 'progress-update'; engines: EngineProgress[] }
-  | { type: 'progress-clear' }
+  | { type: 'progress-update'; engines: EngineProgress[]; ownerId?: string }
+  | { type: 'progress-clear'; ownerId?: string }
   | { type: 'separator' }
   | { type: 'header'; title: string }
   | { type: 'success'; message: string }
@@ -48,6 +49,7 @@ export type OutputEvent =
   | { type: 'debate-round'; round: number; engineId: string; position: string; argument: string }
   | { type: 'verdict'; summary: string }
   | { type: 'question'; prompt: string; resolve: (answer: string) => void }
+  | { type: 'question-cancel'; resolve: (answer: string) => void }
   | { type: 'permission-ask'; tool: string; command: string; description?: string; reason: string; diffPreview?: { files: Array<{ path: string; relPath: string; status: string; additions: number; deletions: number; lines: string[]; omitted: number }>; totalFiles: number }; fallbackNote?: string; resolve: (approved: boolean) => void }
   | { type: 'patch-review'; winnerId: string; patchPath: string; patchContent: string }
   | { type: 'tool-call'; engineId: string; tool: string; input: string; status: 'running'|'done'|'error'; toolCallId?: string; terminalReason?: 'succeeded'|'failed'|'skipped_policy'|'denied'|'cancelled'|'unknown'; output?: string; durationMs?: number }
@@ -75,6 +77,8 @@ export type OutputEvent =
 
 export interface PendingDelegation {
   action: string;
+  roles?: string[];
+  chairman?: string;
   task?: string;
   reasoning: string;
   scope?: 'slice'|'full';
@@ -188,6 +192,7 @@ export interface CesarState {
   mcpSignalPath?: string | undefined;
   planDispatch: ((event: any) => void) | null;
   proposedPlan: any | undefined;
+  justExitedPlanMode?: boolean;
   lastEscalation: string | null;
   turnId?: string | undefined;
   sessionMcpServers: Array<{name:string, type?:string, url?:string, command?:string, args?:string[]}>;
@@ -208,7 +213,8 @@ export interface HandlerContext {
   chatSession: ChatSession;
   currentPlan: Plan | null;
   setCurrentPlan: (plan: Plan | null) => void;
-  setActiveAbort: (abort: AbortController | null) => void;
+  setLastUndoToken?: (token: string | null) => void;
+  setActiveAbort: (abort: AbortController | null, expectedOwner?: AbortController) => void;
   askQuestion: (prompt: string) => Promise<string>;
   cesarSession: PersistentSession | null;
   setCesarSession: (session: PersistentSession | null) => void;

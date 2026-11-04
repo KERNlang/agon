@@ -45,11 +45,12 @@ export class TelemetryPoller {
   private activeEngineIds: (() => string[])|undefined;
   private vitals: Map<string, EngineVitals>;
   private subscribers: Set<(snapshot: Map<string, EngineVitals>) => void>;
-  private stalledIds: Set<string>;
+  private stallEpisodes: Map<string, symbol>;
   private timer: ReturnType<typeof setInterval>|undefined;
   private tickInFlight: boolean;
   private catchUpTimer: ReturnType<typeof setTimeout>|undefined;
   private running: boolean;
+  private lifecycle = new AbortController();
 
   constructor(opts: TelemetryPollerOptions) {
     this.registry = opts.registry;
@@ -64,7 +65,7 @@ export class TelemetryPoller {
     this.activeEngineIds = opts.activeEngineIds;
     this.vitals = new Map();
     this.subscribers = hostSet();
-    this.stalledIds = hostSet();
+    this.stallEpisodes = new Map();
     this.timer = undefined;
     this.tickInFlight = false;
     this.catchUpTimer = undefined;
@@ -80,6 +81,10 @@ export class TelemetryPoller {
 
   stop(): void {
     this.running = false;
+    this.lifecycle.abort();
+    this.lifecycle = new AbortController();
+    this.tickInFlight = false;
+    this.stallEpisodes.clear();
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = undefined;
@@ -93,6 +98,10 @@ export class TelemetryPoller {
   private async tick(): Promise<void> {
     if (this.tickInFlight) return;
     this.tickInFlight = true;
+    const signal = this.lifecycle.signal;
+    let cancel!: () => void;
+    const cancelled = new Promise<Partial<EngineVitals>>(resolve => { cancel = () => resolve({}); });
+    signal.addEventListener('abort', cancel, { once: true });
     try {
       const activeIds = this.activeEngineIds ? this.activeEngineIds() : this.registry.listIds();
       const ids = activeIds.length > 0 ? activeIds : [];
@@ -112,7 +121,7 @@ export class TelemetryPoller {
                 lastHeartbeatAt: prev.lastHeartbeatAt,
               }), this.probeTimeoutMs);
             });
-            const partial = await Promise.race([this.probe(id), timeout]);
+            const partial = await Promise.race([this.probe(id), timeout, cancelled]);
             if (timeoutHandle) clearTimeout(timeoutHandle);
             return { id, partial, ok: true as const };
           } catch (err) {
@@ -127,8 +136,10 @@ export class TelemetryPoller {
           }
         })
       );
+      if (signal.aborted) return;
       const now = Date.now();
       for (const { id, partial } of probes) {
+        if (signal.aborted) return;
         const prev = this.vitals.get(id) ?? {
           engineId: id,
           state: 'idle' as EngineVitalState,
@@ -138,16 +149,20 @@ export class TelemetryPoller {
         const checked = markEngineStalled(merged, this.stallThresholdMs);
         this.vitals.set(id, checked);
         const isStalled = checked.state === 'stalled';
-        const wasStalled = this.stalledIds.has(id);
+        const wasStalled = this.stallEpisodes.has(id);
         if (isStalled && !wasStalled) {
-          this.stalledIds.add(id);
+          const episode = Symbol(id);
+          this.stallEpisodes.set(id, episode);
           if (this.onFallback) {
             try { this.onFallback(id, checked); }
             catch { /* fallback handler errors must not break the poll loop */ }
           }
-          void this.handleAutoFallback(id, checked);
+          if (signal.aborted) return;
+          void this.handleAutoFallback(id, checked, signal, episode).catch(() => {
+            // A failed handoff must not become an unhandled rejection or a success state.
+          });
         } else if (!isStalled && wasStalled) {
-          this.stalledIds.delete(id);
+          this.stallEpisodes.delete(id);
         }
       }
       // Drop vitals for engines that have been unregistered since the last tick.
@@ -155,15 +170,16 @@ export class TelemetryPoller {
       for (const id of Array.from(this.vitals.keys())) {
         if (!liveIds.has(id)) {
           this.vitals.delete(id);
-          this.stalledIds.delete(id);
+          this.stallEpisodes.delete(id);
         }
       }
-      this.notify();
+      if (!signal.aborted) this.notify();
     } finally {
-      this.tickInFlight = false;
+      signal.removeEventListener('abort', cancel);
+      if (!signal.aborted) this.tickInFlight = false;
       // Schedule catch-up tick if any engine is stalled so we recover faster
       const hasStalled = Array.from(this.vitals.values()).some((v: EngineVitals) => v.state === 'stalled');
-      if (this.running && hasStalled && !this.catchUpTimer) {
+      if (!signal.aborted && this.running && hasStalled && !this.catchUpTimer) {
         this.catchUpTimer = setTimeout(() => {
           this.catchUpTimer = undefined;
           void this.tick();
@@ -204,12 +220,12 @@ export class TelemetryPoller {
 
   clear(): void {
     this.vitals.clear();
-    this.stalledIds.clear();
+    this.stallEpisodes.clear();
     this.subscribers.clear();
   }
 
-  private async handleAutoFallback(engineId: string, vitals: EngineVitals): Promise<void> {
-    if (this.autoFallback === 'off') {
+  private async handleAutoFallback(engineId: string, vitals: EngineVitals, signal: AbortSignal, episode: symbol): Promise<void> {
+    if (signal.aborted || this.autoFallback === 'off') {
       return;
     }
     const candidateIds = this.activeEngineIds ? this.activeEngineIds() : undefined;
@@ -219,38 +235,16 @@ export class TelemetryPoller {
     }
     const candidate = chain[0];
     const reason = vitals.task ?? 'stalled';
-    if (this.autoFallback === 'auto') {
-      if (this.onAutoFallback) {
-        const accepted = await this.onAutoFallback(engineId, candidate, reason);
-        if (!accepted) {
-          return;
-        }
-      }
-      // Immediately mark fallback state on both engines
-      const fromVitals = this.vitals.get(engineId);
-      if (fromVitals) {
-        this.vitals.set(engineId, { ...fromVitals, state: 'fallback' as EngineVitalState, fallbackTo: candidate, fallbackReason: reason });
-      }
-      const toPrev = this.vitals.get(candidate) ?? { engineId: candidate, state: 'idle' as EngineVitalState, lastHeartbeatAt: hostNowMs() };
-      this.vitals.set(candidate, { ...toPrev, state: 'busy' as EngineVitalState, task: `fallback from ${engineId}` });
-      this.notify();
-      return;
-    }
-    if (this.autoFallback === 'ask' && this.onAutoFallback) {
-      try {
-        const approved = await this.onAutoFallback(engineId, candidate, reason);
-        if (approved) {
-          const fromVitals = this.vitals.get(engineId);
-          if (fromVitals) {
-            this.vitals.set(engineId, { ...fromVitals, state: 'fallback' as EngineVitalState, fallbackTo: candidate, fallbackReason: reason });
-          }
-          const toPrev = this.vitals.get(candidate) ?? { engineId: candidate, state: 'idle' as EngineVitalState, lastHeartbeatAt: hostNowMs() };
-          this.vitals.set(candidate, { ...toPrev, state: 'busy' as EngineVitalState, task: `fallback from ${engineId}` });
-          this.notify();
-        }
-      } catch (e) {
-      }
-    }
+    if (this.autoFallback === 'ask' && !this.onAutoFallback) return;
+    if (this.onAutoFallback && !await this.onAutoFallback(engineId, candidate, reason)) return;
+    // Repeated observations of the same stall retain approval, but recovery,
+    // removal and stop invalidate it even if the engine subsequently stalls again.
+    const current = this.vitals.get(engineId);
+    if (signal.aborted || this.stallEpisodes.get(engineId) !== episode || current?.state !== 'stalled') return;
+    this.vitals.set(engineId, { ...current, state: 'fallback' as EngineVitalState, fallbackTo: candidate, fallbackReason: reason });
+    const toPrev = this.vitals.get(candidate) ?? { engineId: candidate, state: 'idle' as EngineVitalState, lastHeartbeatAt: hostNowMs() };
+    this.vitals.set(candidate, { ...toPrev, state: 'busy' as EngineVitalState, task: `fallback from ${engineId}` });
+    this.notify();
   }
 }
 

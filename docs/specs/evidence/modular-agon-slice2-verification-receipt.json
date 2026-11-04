@@ -1,0 +1,106 @@
+{
+  "schemaVersion": 1,
+  "qualification": "modular-agon-slice2-clean-checkout",
+  "subject": {
+    "kind": "commit",
+    "hash": "sha256:01e5b16e510051c8e773740fa2014240434b6bfc51e00bfb66b05d1c6e67df24",
+    "indexHash": "sha256:01e5b16e510051c8e773740fa2014240434b6bfc51e00bfb66b05d1c6e67df24",
+    "commitHash": "sha256:01e5b16e510051c8e773740fa2014240434b6bfc51e00bfb66b05d1c6e67df24",
+    "indexEqualsCommit": true
+  },
+  "contamination": {
+    "ignored": [],
+    "untracked": [],
+    "unstaged": []
+  },
+  "graph": {
+    "packages": 49,
+    "declaredEdges": 144,
+    "uniqueEdges": 144,
+    "duplicateEdges": []
+  },
+  "performance": {
+    "platform": "darwin-arm64",
+    "coldBootP95Ms": 120.88137499999993,
+    "peakRssP95Mb": 69.515625,
+    "budgets": {
+      "coldGreen": true,
+      "rssGreen": true
+    }
+  },
+  "reviewEvidence": {
+    "passed": true,
+    "engines": [
+      "ollama-direct-qwen",
+      "ollama-direct-gpt-oss"
+    ],
+    "locallyActionableFindingsOpen": 0
+  },
+  "cleanCheckoutSteps": [
+    {
+      "id": "npm-ci",
+      "passed": true
+    },
+    {
+      "id": "mod-api-build",
+      "passed": true
+    },
+    {
+      "id": "mod-kernel-build",
+      "passed": true
+    },
+    {
+      "id": "slice1b-negative-controls",
+      "passed": true
+    },
+    {
+      "id": "slice2-host",
+      "tests": 15,
+      "passed": true
+    },
+    {
+      "id": "slice2-crash-recovery",
+      "tests": 36,
+      "passed": true
+    },
+    {
+      "id": "slice2-migrations",
+      "tests": 3,
+      "passed": true
+    },
+    {
+      "id": "slice2-observability",
+      "tests": 10,
+      "passed": true
+    },
+    {
+      "id": "legacy-oracle",
+      "workflows": 160,
+      "passed": true
+    },
+    {
+      "id": "legacy-oracle-negative-controls",
+      "passed": true
+    },
+    {
+      "id": "roadmap-contract",
+      "passed": true
+    },
+    {
+      "id": "pack-contract",
+      "passed": true
+    },
+    {
+      "id": "performance",
+      "passed": true
+    }
+  ],
+  "supplemental": {
+    "fullRepositorySuite": "passed",
+    "build": "passed",
+    "typecheck": "passed",
+    "lint": "passed",
+    "cliDryRunPackContainsProbeWrapper": true
+  },
+  "passed": true
+}

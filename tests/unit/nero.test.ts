@@ -2,10 +2,12 @@
 // Covers the rating-based critic selection (discipline -> global -> random, with
 // author exclusion) and the pure prompt/verdict/confidence helpers. No paid
 // engine dispatch needed.
-import { describe, it, expect } from 'vitest';
+import { getEventListeners } from 'node:events';
+import { describe, it, expect, vi } from 'vitest';
 import { rankEnginesByRating, pickTopRatedEngine, seedSuccessorRating, seedEnginesFromLineage } from '@kernlang/agon-core';
 import type { GlickoRating, RatingRecord } from '@kernlang/agon-core';
 import { buildNeroPrompt, parseNeroVerdict, parseNeroConfidence, runNero, rankNeroCritics, applyNeroExploration } from '@kernlang/agon-forge';
+import * as neroOwner from '@kernlang/agon-mod-nero';
 
 const rating = (mu: number, phi = 50): GlickoRating => ({
   mu,
@@ -47,9 +49,14 @@ describe('rankEnginesByRating', () => {
   });
 
   it('breaks ties on mu, then engine id', () => {
-    // same floor: higher phi means lower mu pairing — force equal floor, different mu
-    const r = ratings({ global: { a: { ...rating(1600, 50) }, b: { ...rating(1600, 50) } } });
-    expect(rankEnginesByRating(['b', 'a'], r)).toEqual(['a', 'b']);
+    const now = Date.UTC(2026, 0, 1);
+    // Equal timestamps keep inactivity decay from changing the tie.
+    const shared = { ...rating(1600, 50), lastActive: new Date(now).toISOString() };
+    const r = ratings({ global: { a: { ...shared }, b: { ...shared } } });
+    expect(rankEnginesByRating(['b', 'a'], r, undefined, { now })).toEqual(['a', 'b']);
+
+    const equalFloor = ratings({ global: { a: { ...shared }, b: { ...shared, mu: 1700, phi: 100 } } });
+    expect(rankEnginesByRating(['a', 'b'], equalFloor, undefined, { now })).toEqual(['b', 'a']);
   });
 });
 
@@ -121,6 +128,9 @@ describe('buildNeroPrompt', () => {
 });
 
 describe('parseNeroVerdict', () => {
+  it('uses the physical owner through the historical Forge export', () => {
+    expect(neroOwner).toHaveProperty('parseNeroVerdict', parseNeroVerdict);
+  });
   it('extracts each verdict', () => {
     expect(parseNeroVerdict('… VERDICT: FLAWED')).toBe('flawed');
     expect(parseNeroVerdict('VERDICT: PROCEED WITH CAUTION')).toBe('proceed-with-caution');
@@ -239,6 +249,74 @@ describe('runNero — self-healing dispatch (resend + down-pass)', () => {
   // explorationRate is pinned to 0 so these tests assert the deterministic
   // exploit-only cascade order; the ε-greedy branch has its own suite below.
   const baseC = { decision: 'x', timeout: 30, outputDir: '/tmp/nero-test', cwd: '/tmp', retryBackoffMs: 0, registry, explorationRate: 0 };
+
+  it('releases retry listeners after timeout across runs sharing a signal', async () => {
+    const controller = new AbortController();
+    vi.useFakeTimers();
+    try {
+      for (let run = 0; run < 2; run++) {
+        const { adapter, calls } = scripted({ a: [{ stdout: '' }, { stdout: VALID }] });
+        const result = runNero({ ...baseC, engines: ['a'], engine: 'a', adapter,
+          signal: controller.signal, retryBackoffMs: 100 });
+        await vi.advanceTimersByTimeAsync(0);
+        expect(calls.a).toBe(1);
+        expect(getEventListeners(controller.signal, 'abort')).toHaveLength(1);
+        await vi.advanceTimersByTimeAsync(100);
+        expect((await result).ok).toBe(true);
+        expect(calls.a).toBe(2);
+        expect(getEventListeners(controller.signal, 'abort')).toHaveLength(0);
+        expect(vi.getTimerCount()).toBe(0);
+      }
+    } finally {
+      controller.abort();
+      vi.useRealTimers();
+    }
+  });
+
+  it.each(['before sleep', 'during sleep'])('cancels retry %s without retaining resources', async (timing) => {
+    const controller = new AbortController();
+    const { adapter, calls } = scripted({ a: [{ stdout: '' }, { stdout: VALID }] });
+    vi.useFakeTimers();
+    try {
+      const result = runNero({ ...baseC, engines: ['a'], engine: 'a', adapter,
+        signal: controller.signal, retryBackoffMs: 5000,
+        onStatus: () => { if (timing === 'before sleep') controller.abort(); },
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      if (timing === 'during sleep') {
+        expect(getEventListeners(controller.signal, 'abort')).toHaveLength(1);
+        expect(vi.getTimerCount()).toBe(1);
+        controller.abort();
+      }
+      expect(vi.getTimerCount()).toBe(0);
+      expect(getEventListeners(controller.signal, 'abort')).toHaveLength(0);
+      expect((await result).ok).toBe(false);
+      expect(calls.a).toBe(1);
+    } finally {
+      controller.abort();
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([false, true])('preserves immediate success and retry without a signal (retry=%s)', async (retry) => {
+    const { adapter, calls } = scripted({ a: retry
+      ? [{ stdout: '' }, { stdout: VALID }]
+      : [{ stdout: VALID }] });
+    vi.useFakeTimers();
+    try {
+      const result = runNero({ ...baseC, engines: ['a'], engine: 'a', adapter, retryBackoffMs: 100 });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(vi.getTimerCount()).toBe(retry ? 1 : 0);
+      await vi.advanceTimersByTimeAsync(100);
+      expect((await result).verdict).toBe('sound');
+      expect(calls.a).toBe(retry ? 2 : 1);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
+  });
 
   it('resends the SAME critic on a transient empty and accepts the retry', async () => {
     const { adapter, calls } = scripted({ a: [{ stdout: '' }, { stdout: VALID }] });
@@ -501,5 +579,54 @@ describe('seedEnginesFromLineage', () => {
   it('skips engines that already have a rating, or whose predecessor is unrated', () => {
     const r = ratings({ global: { 'opus-4.7': withGames(1750), 'opus-4.8': rating(1500) } });
     expect(seedEnginesFromLineage(r, { 'opus-4.8': 'opus-4.7', 'kimi-3': 'kimi-2-missing' })).toEqual([]);
+  });
+});
+
+describe('rankEnginesByRating — a changed model identity reopens the rating', () => {
+  const critics = () => ratings({
+    byMode: { forge: {}, brainstorm: {}, tribunal: {}, critique: { top: rating(1900, 60), next: rating(1700, 60) } },
+    engineMeta: {
+      top: { firstSeen: '', lastActive: '', matchCount: 90, derivedFrom: null, versions: [], identity: 'model-A' },
+      next: { firstSeen: '', lastActive: '', matchCount: 90, derivedFrom: null, versions: [], identity: 'model-N' },
+    } as unknown as RatingRecord['engineMeta'],
+  });
+
+  it('AC-8 the #1 critic whose stored identity differs from the current one ranks with the maximum phi and loses #1', () => {
+    const r = critics();
+    expect(rankNeroCritics(['top', 'next'], r).map((p) => p.engineId)).toEqual(['top', 'next']);
+    expect(rankNeroCritics(['top', 'next'], r, { identities: { top: 'model-B', next: 'model-N' } } as any).map((p) => p.engineId)).toEqual(['next', 'top']);
+    expect(rankEnginesByRating(['top', 'next'], r, 'critique', { identities: { top: 'model-B' } } as any)).toEqual(['next', 'top']);
+    expect(r.byMode.critique.top.phi).toBe(60);
+  });
+
+  it('AC-8 an unchanged, unknown or unresolvable current identity keeps the stored phi', () => {
+    const r = critics();
+    expect(rankEnginesByRating(['top', 'next'], r, 'critique', { identities: { top: 'model-A' } } as any)).toEqual(['top', 'next']);
+    expect(rankEnginesByRating(['top', 'next'], r, 'critique', { identities: { top: null } } as any)).toEqual(['top', 'next']);
+    const legacy = ratings({ byMode: { forge: {}, brainstorm: {}, tribunal: {}, critique: { top: rating(1900, 60), next: rating(1700, 60) } } });
+    expect(rankEnginesByRating(['top', 'next'], legacy, 'critique', { identities: { top: 'model-B' } } as any)).toEqual(['top', 'next']);
+  });
+});
+
+describe('runNero — current identities from the adapter', () => {
+  it('AC-8 ranks critics with the identity the adapter reports now, so a changed #1 critic is not picked first', async () => {
+    const r = ratings({
+      byMode: { forge: {}, brainstorm: {}, tribunal: {}, critique: { top: rating(1900, 60), next: rating(1700, 60) } },
+      engineMeta: {
+        top: { firstSeen: '', lastActive: '', matchCount: 90, derivedFrom: null, versions: [], identity: 'model-A' },
+      } as unknown as RatingRecord['engineMeta'],
+    });
+    const picked: string[] = [];
+    const adapter = {
+      identify: async (engine: { id: string }) => (engine.id === 'top' ? 'model-B' : null),
+      dispatch: async (o: { engine: { id: string } }) => {
+        picked.push(o.engine.id);
+        return { exitCode: 0, stdout: 'Confidence: 50%\nVERDICT: SOUND', stderr: '', durationMs: 1, timedOut: false };
+      },
+    } as any;
+    const registry = { get: (id: string) => ({ id }), list: () => [] } as any;
+    const res = await runNero({ decision: 'x', engines: ['top', 'next'], ratings: r, explorationRate: 0, registry, adapter, timeout: 30, outputDir: '/tmp/nero-test', cwd: '/tmp', retryBackoffMs: 0 });
+    expect(res.engineId).toBe('next');
+    expect(picked).toEqual(['next']);
   });
 });

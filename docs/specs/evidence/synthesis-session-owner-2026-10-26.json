@@ -1,0 +1,34 @@
+{
+  "scope": "Restore generated Synthesis interactive session behavior through one mod-owned session workflow",
+  "base": "a4e06dfb8869acd14fe4c90cc16a88abebeb3243",
+  "status": "working-tree qualification passed; clean committed-checkout qualification pending",
+  "archive": "/Users/ra/dev/modular-agon-remediation",
+  "verification": {
+    "reviewNegative": { "log": "synthesis-session-review-negative-20261026.log", "sha256": "5ecf10fc95a9cd2097e281bfb9e169207371b29c4f02b48d0c01367aaf273893", "expectedFailures": 2 },
+    "focused": { "log": "synthesis-session-review-stale-guard-20261026.log", "sha256": "c8f9d12924770a0870d63a952bcc1c1fd6776817d35630a9f685cc6f3e5e6c35", "testsPassed": 43 },
+    "full": { "log": "synthesis-session-reviewed-full-gates-20261026.log", "sha256": "b4689e68019f6b1a7ffb3a6c0cb7ae092f40c4dacaa762e682b76d058dce5e69", "passed": true, "testsPassed": 11969, "testsSkipped": 7, "packedChecksPassed": 95, "providerLaunches": 0 },
+    "retainedFailures": ["synthesis-session-parity-negative-20261026", "synthesis-session-job-failure-negative-20261026", "synthesis-session-unknown-winner-negative-20261026", "synthesis-session-full-gates-20261026", "synthesis-session-review-fixed-20261026"],
+    "failureNotes": "Full precursor failed three catalog-drift tests; catalog regenerated. First review-fix rerun loaded stale public package output; rebuilding Synthesis and rerunning passed without weakening assertions. Negative controls intentionally fail before implementation."
+  },
+  "review": {
+    "packetSha256": "8b5eeb8eb54b03df0ccd8c9c6e4629a7819b876b05826193b894f3b7c3926e98",
+    "codexLogSha256": "a5b7b3b0c8a6b2508d1dedba63f20004c15f2505478e7401009bda4fad769cd1",
+    "kimi": "No answer; not counted as passing review",
+    "kimiLogSha256": "a4eebf5d7d44f5490f265ba973efba6a7b0a1712213a895f830b6440c27cdbff",
+    "resolved": ["Pending cancellation now clears progress without clearing stale-generation output", "Generated routing forwards an explicitly supplied judge"],
+    "resolutionEvidence": "Both findings reproduced before fixes; unchanged assertions and additional stale-generation coverage pass after fixes"
+  },
+  "sourceSha256": {
+    "packages/mod-synthesis/src/session-workflow.ts": "d83f1da267fdfdd97d412c7bcb72c424ab9f2e11bc1baf98494ed19fb5ebee9e",
+    "packages/cli/src/blocks/synthesis-session.ts": "5316b65e56af0aebdc01416cc304ff1e4c8ac41d49e994ba1cea8f176218015c",
+    "packages/cli/src/handlers/synthesis.ts": "bd9ab1e9e2fba6e74c437989ee2289f2a7764bf1ceb8d80cf2fe82fe3569ea08",
+    "packages/cli/src/signals/dispatch/intent-orchestration.ts": "c9ba0f36e79374afe47350c22260247dacb0787e17162d08255d40e85782cfa2",
+    "packages/cli/src/signals/dispatch/intent-router.ts": "60e19ea1a71bd2d539babe2ce363d391ea767487445bb5fea752119a6b96e21b",
+    "packages/cli/src/signals/dispatch/intent-session.ts": "1a1414fc237630cbb2fcbcca33c8f5436ebdd081e843fd498c7da5e47d11faa6",
+    "packages/mod-synthesis/src/implementation.ts": "06078714a1657999d13398f1a5e261533b1c3fb0d6cbbc6d51396390454d025a",
+    "scripts/spec/verify-modular-npx.mjs": "78bbc2d971847b1c1bd173fc20747626ddd98f1436ca2dee569fa4660a3b318a",
+    "tests/unit/modular-synthesis-session-parity.test.ts": "470fe278adb5d650a5a2c49e12779d9df154b7807c7ba4191f309d30c6c2a3b0",
+    "tests/unit/synthesis-session-cancellation.test.ts": "dab6b37fcb52826fffd97368b0b2e09a5a9d4f35072daa1f327a5b92822a67ec"
+  },
+  "limits": ["Legacy-shaped entry adapter remains until callers and public handler contract retire", "PR335 runtime composition is independent and not assumed merged", "No aggregate modular release acceptance", "No live provider, unavailable native platform or publishing qualification"]
+}

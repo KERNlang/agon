@@ -1,0 +1,64 @@
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { expect, it } from 'vitest';
+import { readWorktreePatch, composeWorktreePatch, createWorktreeSnapshot } from '../../packages/support-worktree/src/forge-arena.js';
+import { applyPatchToTree } from '../../packages/support-worktree/src/patch-apply.js';
+
+it('diffs from a saved dirty baseline without committing or replacing the live index', () => {
+  const root = mkdtempSync(join(tmpdir(), 'agon-snapshot-test-'));
+  const git = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: 'pipe' }).trim();
+  try {
+    git('init', '-q', '-b', 'main');
+    git('config', 'user.name', 'fixture');
+    git('config', 'user.email', 'fixture@example.invalid');
+    writeFileSync(join(root, 'data.bin'), Buffer.from([0, 1, 2]));
+    writeFileSync(join(root, 'old.txt'), 'old\n');
+    git('add', '.'); git('commit', '-qm', 'base');
+    const base = git('rev-parse', 'HEAD');
+    writeFileSync(join(root, 'data.bin'), Buffer.from([0, 3, 4]));
+    writeFileSync(join(root, 'über.txt'), 'accepted\n');
+    unlinkSync(join(root, 'old.txt'));
+    git('add', 'data.bin');
+    const snapshot = readWorktreePatch(root, base);
+    const indexBefore = git('diff', '--cached', '--binary');
+    const snapshotCommit = createWorktreeSnapshot(root, base, snapshot);
+    expect(git('rev-parse', `${snapshotCommit}^`)).toBe(base);
+    expect(git('show', `${snapshotCommit}:über.txt`)).toBe('accepted');
+    expect(execFileSync('git', ['show', `${snapshotCommit}:data.bin`], { cwd: root })).toEqual(Buffer.from([0, 3, 4]));
+    expect(() => git('show', `${snapshotCommit}:old.txt`)).toThrow();
+    expect(git('rev-parse', 'HEAD')).toBe(base);
+    expect(git('diff', '--cached', '--binary')).toBe(indexBefore);
+    expect(() => createWorktreeSnapshot(root, base, 'invalid patch\n')).toThrow();
+    expect(git('diff', '--cached', '--binary')).toBe(indexBefore);
+    writeFileSync(join(root, 'data.bin'), Buffer.from([0, 5, 6]));
+    writeFileSync(join(root, 'next.txt'), 'next\n');
+    const patch = readWorktreePatch(root, base, snapshot);
+    expect(patch).toContain('data.bin');
+    expect(patch).toContain('next.txt');
+    expect(patch).not.toContain('old.txt');
+    expect(patch).not.toContain('ber.txt');
+    expect(git('diff', '--cached', '--binary')).toBe(indexBefore);
+    expect(git('rev-parse', 'HEAD')).toBe(base);
+    expect(readFileSync(join(root, 'über.txt'), 'utf8')).toBe('accepted\n');
+    const composed = composeWorktreePatch(root, base, [snapshot, patch]);
+    expect(composed).toBe(readWorktreePatch(root, base));
+    expect(git('diff', '--cached', '--binary')).toBe(indexBefore);
+    expect(() => composeWorktreePatch(root, base, [snapshot, snapshot])).toThrow();
+    expect(git('diff', '--cached', '--binary')).toBe(indexBefore);
+    const replay = join(root, 'replay');
+    git('worktree', 'add', '--detach', replay, base);
+    expect(applyPatchToTree(replay, snapshot)).toEqual({ ok: true });
+    expect(applyPatchToTree(replay, patch)).toEqual({ ok: true });
+    expect(readFileSync(join(replay, 'data.bin'))).toEqual(Buffer.from([0, 5, 6]));
+    expect(readFileSync(join(replay, 'über.txt'), 'utf8')).toBe('accepted\n');
+    expect(readFileSync(join(replay, 'next.txt'), 'utf8')).toBe('next\n');
+    git('worktree', 'remove', '--force', replay);
+    expect(() => readWorktreePatch(root, base, 'invalid patch\n')).toThrow();
+    expect(git('rev-parse', 'HEAD')).toBe(base);
+    expect(git('diff', '--cached', '--binary')).toBe(indexBefore);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

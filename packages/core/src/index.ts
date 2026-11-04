@@ -1,13 +1,16 @@
 export * from './models/types.js';
 export * from './models/errors.js';
-export { loadConfig, configGet, configSet, invalidateConfigCache, ensureAgonHome, getAgonHome, agonPath, AGON_HOME, RATINGS_PATH, TEAM_ELO_PATH, CORPUS_PATH, SKILLS_DIR, RUNS_DIR } from './signals/config.js';
+export { loadConfig, configGet, configSet, OPTIONAL_CONFIG_KEYS, configValueKind, parseConfigSetValue, invalidateConfigCache, ensureAgonHome, getAgonHome, agonPath, AGON_HOME, RATINGS_PATH, TEAM_ELO_PATH, CORPUS_PATH, SKILLS_DIR, RUNS_DIR } from './signals/config.js';
 export { computeScore, tiebreak, DEFAULT_WEIGHTS } from './signals/scoring.js';
-export { updateGlicko, updateGlickoRanked, getRatings, getEngineGlickoRating, advisorScore, rankEnginesByRating, pickTopRatedEngine, seedSuccessorRating, seedEnginesFromLineage, lineageFromRegistry, seedNewEnginesFromRegistry } from './signals/glicko.js';
-export { computeUnknownEngineIds, computeRunManifestPurge, purgeUnknownEngineData } from './signals/ratings-maintenance.js';
-export type { PurgeReport } from './signals/ratings-maintenance.js';
+export { updateGlicko, updateGlickoRanked, getRatings, getEngineGlickoRating, advisorScore, effectivePhi, rankEnginesByRating, pickTopRatedEngine, seedSuccessorRating, seedEnginesFromLineage, lineageFromRegistry, seedNewEnginesFromRegistry } from './signals/glicko.js';
+export type { RatingRankOptions } from './signals/glicko.js';
+export { tapDispatchIdentities, resolveCurrentIdentities } from './signals/rating-identity.js';
+export type { EngineIdentities } from './signals/rating-identity.js';
+export { computeUnknownEngineIds, computeRunManifestPurge, purgeUnknownEngineData, resetRatings, applyRatingsReset } from './signals/ratings-maintenance.js';
+export type { PurgeReport, RatingsResetPlan, RatingsResetReport } from './signals/ratings-maintenance.js';
 export { classifyTask } from './blocks/task-classifier.js';
-export { searchHistorySemantic } from './sessions/history-search-bridge.js';
-export type { HistorySearchItem, HistorySearchHit } from './sessions/history-search-bridge.js';
+export { searchHistorySemantic } from '@kernlang/agon-support-persistence';
+export type { HistorySearchItem, HistorySearchHit } from '@kernlang/agon-support-persistence';
 export {
   validateSyntax, detectLanguageFromPath,
   SYNTAX_VALIDATOR_TIMEOUT_MS, SYNTAX_VALIDATOR_DISABLE_ENV,
@@ -20,10 +23,10 @@ export type { MetadataFinding, MetadataScanReport, MetadataStripResult } from '.
 export {
   createRunDir, writeRunStatus, printRunSummary, findLatestRunDir,
   sanitizeRunLabel,
-} from './signals/run-dir.js';
+} from '@kernlang/agon-support-persistence';
 export type {
   CreateRunDirOptions, RunDirHandle, RunStatus, RunStatusEngine,
-} from './signals/run-dir.js';
+} from '@kernlang/agon-support-persistence';
 export type {
   SyntaxValidatorInput, SyntaxValidatorResult, SyntaxValidationError,
 } from './blocks/syntax-validator-bridge.js';
@@ -50,8 +53,8 @@ export {
   acquireApplyLock, releaseApplyLock, headChanged, branchChanged,
 } from './blocks/worktree-lock.js';
 export type { ApplyLockInfo, ApplyLockResult } from './blocks/worktree-lock.js';
-export { withFileLock } from './blocks/file-lock.js';
-export type { FileLockInfo } from './blocks/file-lock.js';
+export { withFileLock } from '@kernlang/agon-support-persistence';
+export type { FileLockInfo } from '@kernlang/agon-support-persistence';
 export { spawnWithTimeout, spawnStream } from './blocks/process.js';
 export type { SpawnOptions } from './blocks/process.js';
 export {
@@ -64,6 +67,11 @@ export type { Logger } from './signals/logger.js';
 export { EngineRegistry } from './signals/engine-registry.js';
 export { scanProjectContext, isKernProject, hasProjectBrief, buildKernContextSpine, discoverGate, bashRanGate, isGateSkipSignal } from './blocks/context-scanner.js';
 export type { DiscoveredGate } from './blocks/context-scanner.js';
+export { stripReasoning, stripTuiChrome, resolveReviewMaxTokens, cleanEngineText, classifyModEngineFault, modDispatchMaxTokens, modDispatchTimeoutSeconds, resolveReviewTimeoutSeconds, modDispatchFields, describeModEngines, resolveReviewMaxWallSeconds, DEFAULT_REVIEW_MAX_WALL_SECONDS, modDispatchCeilingSeconds, modEngineBackend } from './blocks/mod-dispatch-output.js';
+export type { ModEngineFault, ModEngineDescription } from './blocks/mod-dispatch-output.js';
+export { classifyApiFailure } from './api/failure-classify.js';
+export type { ApiFailure, ApiFailureKind } from './api/failure-classify.js';
+export { buildGlobalInstructionsBlock, GLOBAL_INSTRUCTIONS_FILE, MAX_GLOBAL_INSTRUCTIONS_CHARS } from './blocks/global-instructions.js';
 export { buildCodebaseMap, collectSourceFiles, extractSymbols, clearCodebaseMapCache } from './blocks/codebase-map.js';
 export {
   addWorkspace, removeWorkspace, listWorkspaces,
@@ -96,10 +104,10 @@ export { discoverEngines } from './blocks/engine-discover.js';
 export type { DiscoveryResult } from './blocks/engine-discover.js';
 export { preflightApply, applyPatchToTree, readPatchFromManifest, readPatchFromPath, applyPatchWithUndo, undoPatch } from './blocks/patch-apply.js';
 export type { PatchInfo, ApplyPreflight } from './blocks/patch-apply.js';
-export { parsePatch, patchSummary, invertPatch } from './blocks/patch-parser.js';
-export type { PatchFile, PatchHunk } from './blocks/patch-parser.js';
-export { takeSnapshot, revertSnapshot, listSnapshots, getLatestSnapshotId } from './blocks/file-history.js';
-export type { FileSnapshot, HistoryEntry } from './blocks/file-history.js';
+export { parsePatch, patchSummary, invertPatch } from '@kernlang/agon-support-worktree';
+export type { PatchFile, PatchHunk } from '@kernlang/agon-support-worktree';
+export { takeSnapshot, revertSnapshot, listSnapshots, getLatestSnapshotId } from '@kernlang/agon-support-persistence';
+export type { FileSnapshot, HistoryEntry } from '@kernlang/agon-support-persistence';
 export { copyToClipboard } from './blocks/clipboard.js';
 export { pasteStore, PASTE_MAX_AGE } from './paste-store.js';
 export type { PasteStoreResult } from './paste-store.js';
@@ -108,7 +116,7 @@ export {
   saveToolResultToDisk, loadToolResultFromDisk, pruneToolCache,
   sessionCacheDir,
   saveConversation, loadConversation, clearConversation, stripEngineArtifacts,
-} from './signals/session-store.js';
+} from '@kernlang/agon-support-persistence';
 // ── Session budget — proactive context-window management ──
 export {
   estimateSessionTokens, estimateMessageHistoryTokens, estimateFlatHistoryTokens,
@@ -145,12 +153,12 @@ export {
   readDelegateLedgerRecords, summarizeDelegateReliability, summarizeDelegateReliabilityByEngine,
   deriveOutcomeCounts, delegateLedgerPath, buildApiLoopDigest, textTransportDigest,
   formatDelegateReliability, formatAllDelegateReliability,
-} from './signals/delegate-ledger.js';
+} from '@kernlang/agon-support-persistence';
 export type {
   AgentToolOutcome, DelegateToolStatus, DelegateBackend, OutcomeProvenance,
   DelegateOutcomeCounts, DelegateLedgerRecord, DelegateBackendSummary,
   DelegateReliabilitySummary, TextTransportOpts,
-} from './signals/delegate-ledger.js';
+} from '@kernlang/agon-support-persistence';
 export { safeAgentVisibleText } from './api/agent-visible.js';
 // ── Engine dispatch isolation ──
 export { resolveIsolationMode, planEngineIsolation, isValidIsolationMode, ISOLATION_MODES } from './signals/isolation.js';
@@ -162,9 +170,9 @@ export { FileStateCache, fileStateCache, getProjectFileStateCache, clearProjectF
 export { ToolRegistry, executeToolCall, executeToolCalls, PERMISSION_DENIED_MESSAGE } from './signals/tool-registry.js';
 export { isDangerousCommand, isReadOnlyCommand, isPathUnderCwd } from './tools/tool-permissions.js';
 export { parsePermissionRule, parsePermissionRuleSet, ruleMatches, evaluatePermissionRules, evaluateToolRules, evaluateBashRules, evaluateFilePathRules, hasShellControl, hasRedirection, hasSubstitution, splitShellSegments, resolveRulePath, pathRuleMatches } from './tools/tool-permissions.js';
-export { createReadTool, createEditTool, createMultiEditTool, createWriteTool, createBashTool, createGrepTool, createGlobTool, createForgeTool, createBrainstormTool, createTribunalTool, createCampfireTool, createReportConfidenceTool, createDelegateTool, createPipelineTool, createGoalTool, createConquerTool, createReviewTool, createAgentTool, createProposePlanTool, createExitPlanModeTool, createListPlansTool, createRetrieveResultTool, createWebFetchTool, parseAndValidateUrl, htmlToText, createTodoWriteTool, normalizeTodos, createSaveMemoryTool, appendMemoryLine, normalizeMemoryLine, todayPrefix, canonicalMemorySection, MEMORY_SECTIONS, createWebSearchTool, buildSearchRequest, parseSearchResults, formatSearchResults, createQuickNeroTool, classifyQuery, cleanQuery, buildAuthoritativeRequest, parseAuthoritativeResults, extractCitations, judgeProbe, formatCitationReport, probeCitation, verifyCitations } from './tools.js';
+export { createReadTool, createEditTool, createMultiEditTool, createWriteTool, createBashTool, createGrepTool, createGlobTool, createReportConfidenceTool, createProposePlanTool, createExitPlanModeTool, createListPlansTool, createRetrieveResultTool, createWebFetchTool, parseAndValidateUrl, htmlToText, createTodoWriteTool, normalizeTodos, createSaveMemoryTool, appendMemoryLine, normalizeMemoryLine, todayPrefix, canonicalMemorySection, MEMORY_SECTIONS, createWebSearchTool, buildSearchRequest, parseSearchResults, formatSearchResults, classifyQuery, cleanQuery, buildAuthoritativeRequest, parseAuthoritativeResults, extractCitations, judgeProbe, formatCitationReport, probeCitation, verifyCitations } from './tools.js';
 export type { SearchResult, SearchRequest, ResearchIntent, CitationStatus, CitationProbe, CitationVerdict, CitationReport } from './tools.js';
-export { formatCesarPlanMarkdown } from './cesar/plan-formatter.js';
+export { formatCesarPlanMarkdown } from '@kernlang/agon-mod-plan';
 export { generateToolPrompt, toolsToOpenAIFormat } from './tools/tool-prompt.js';
 export { parseToolCalls, toolCallsToApiFormat, formatToolResults, formatToolResult } from './tools/tool-parser.js';
 export type { ParsedToolCall, ParseResult } from './tools/tool-parser.js';
@@ -178,8 +186,8 @@ export { runMutants } from './tools/mutant-runner.js';
 export type { MutantOutcome, MutationReport, MutantProgress, RunMutantsOptions } from './tools/mutant-runner.js';
 export { buildToolSystemPrompt, processToolResponse, runToolLoop } from './tools/tool-loop.js';
 export type { ToolLoopCallbacks, ToolLoopResult } from './tools/tool-loop.js';
-export { startChatSession, appendMessage, appendUserTurnIfAbsent, updateChatSummary, formatChatHistoryForPrompt, formatChatContextForPrompt, buildHistoryPrimedPrompt, seedChatSessionFromThread, loadChatSession, resumeChatSession, listChatSessions, latestChatSession } from './signals/chat-store.js';
-export type { ChatMessage as StoredChatMessage, ChatSession } from './signals/chat-store.js';
+export { startChatSession, appendMessage, appendUserTurnIfAbsent, updateChatSummary, formatChatHistoryForPrompt, formatChatContextForPrompt, buildHistoryPrimedPrompt, seedChatSessionFromThread, loadChatSession, resumeChatSession, listChatSessions, latestChatSession } from '@kernlang/agon-support-persistence';
+export type { ChatMessage as StoredChatMessage, ChatSession } from '@kernlang/agon-support-persistence';
 export {
   isImagePath, mimeFromExt, resolveImagePath,
   buildImageAttachment, extractImagesFromInput, normalizeDroppedPath,
@@ -187,19 +195,6 @@ export {
   decodeDataUrlToImageFile, parseImageDimensions, sniffImageMime, MAX_DISPATCH_IMAGES, MAX_DISPATCH_IMAGE_BYTES,
 } from './blocks/image.js';
 export type { DataUrlImageResult, ImageDimensions } from './blocks/image.js';
-// ── Agon Rooms — multi-party room ledger (file-first; CLI/MCP/daemon are adapters) ──
-export {
-  roomsDir, roomDir, createRoom, listRooms, roomExists, closeRoom, isRoomClosed,
-  appendEvent, readEvents, parseMentions, slugifyRoomId,
-} from './rooms/store.js';
-export { recordPresence, removePresence, listPresence, advanceReadCursor, getReadCursor, PRESENCE_TTL_MS } from './rooms/presence.js';
-export { getUnreadState, listUnreadStates, isUnreadKind } from './rooms/unread.js';
-export { foldLocks, listRoomLocks, claimRoomLock, releaseRoomLock, expiredLocksHeldBy } from './rooms/locks.js';
-export { acquireTurnLease, releaseTurnLease, readActiveLease } from './rooms/leases.js';
-export { detectTrigger, detectPingPong, evaluateStop } from './rooms/auto-policy.js';
-export { drainNdjson, drainRoom, readTailOffset, writeTailOffset, createRoomWaker } from './rooms/tail.js';
-export { foldTasks, pickNextTask, postTask, claimTask, postTaskResult, postTaskStop, shouldStopWork } from './rooms/tasks.js';
-export type { RoomActor, RoomEvent, RoomMeta, PresenceEntry, RoomLockState, RoomUnreadState, TurnLease, AutoConfig, AutoState, StopDecision, TriggerDecision, TailCursor, TailDrain, RoomTaskState, WorkConfig, WorkState } from './rooms/types.js';
 // ── EventLog — append-only per-session event ledger (client/server split M1) ──
 export {
   append as eventLogAppend, flush as eventLogFlush, replay as eventLogReplay,
@@ -209,11 +204,11 @@ export {
   eventsPath as eventLogEventsPath, metaPath as eventLogMetaPath,
   sanitizeSessionId as eventLogSanitizeSessionId,
   EVENT_LOG_FLUSH_MS, EVENT_LOG_ROTATE_BYTES,
-} from './sessions/event-log.js';
-export type { LoggedEvent, SessionMeta as EventLogSessionMeta, AppendOptions as EventLogAppendOptions } from './sessions/event-log.js';
+} from '@kernlang/agon-support-persistence';
+export type { LoggedEvent, SessionMeta as EventLogSessionMeta, AppendOptions as EventLogAppendOptions } from '@kernlang/agon-support-persistence';
 // ── SessionHost — read-side seam over the EventLog ledger (client/server split M2) ──
-export { InProcessSessionHost, inProcessSessionHost, getSessionHost, SUBSCRIBE_POLL_MS } from './sessions/session-host.js';
-export type { SessionHost, SessionDescriptor, SubscribeOptions } from './sessions/session-host.js';
+export { InProcessSessionHost, inProcessSessionHost, getSessionHost, SUBSCRIBE_POLL_MS } from '@kernlang/agon-support-persistence';
+export type { SessionHost, SessionDescriptor, SubscribeOptions } from '@kernlang/agon-support-persistence';
 // ── Daemon wire protocol — newline-JSON frames agond speaks (client/server split M3) ──
 export {
   encodeDaemonRequest, encodeDaemonResponse,
@@ -221,18 +216,18 @@ export {
 } from './sessions/daemon-protocol.js';
 export type { DaemonRequest, DaemonResponse } from './sessions/daemon-protocol.js';
 // ── JobService — cancellable autonomous execution + bounded replay ──
-export { JobService } from './jobs/job-service.js';
-export type { JobState, JobSnapshot, JobEvent, JobEventPage, JobOutcome, JobTaskContext, JobExecutor, JobServiceOptions } from './jobs/job-service.js';
+export { JobService } from '@kernlang/agon-mod-jobs';
+export type { JobState, JobSnapshot, JobEvent, JobEventPage, JobOutcome, JobTaskContext, JobExecutor, JobServiceOptions } from '@kernlang/agon-mod-jobs';
 // ── BrainClient — daemon↔brain boundary for the Agon Everywhere bridge (client/server split M4) ──
-export { canonicalCapabilityInputDigest, conservativeControlCapabilities } from './sessions/brain-client.js';
+export { canonicalCapabilityInputDigest, conservativeControlCapabilities } from '@kernlang/agon-support-persistence';
 export type {
   BrainClient, BrainClientConfig, BrainEvent, BrainTurnRequest, BrainTurnResult,
   ControlAck, ControlCapabilities, ClientRef, ApprovalResponse, AnswerResponse,
   SteerRequest, CancelRequest, CapabilitySpec, CapabilityRegistration,
   CapabilityUnregister, CapabilityResult, CapabilityAuthorizationLease, BrainHealth,
-} from './sessions/brain-client.js';
-export { logFlow, readFlows, analyzeFlows, FLOWS_DIR, FRICTION_TAGS } from './signals/flow.js';
-export type { FlowRecord, FlowTelemetry, FlowFeedback, FlowModeMeta, FlowWorkflowIdentity, FlowAnalysis, ModeStats } from './signals/flow.js';
+} from '@kernlang/agon-support-persistence';
+export { logFlow, readFlows, analyzeFlows, FLOWS_DIR, FRICTION_TAGS } from '@kernlang/agon-support-persistence';
+export type { FlowRecord, FlowTelemetry, FlowFeedback, FlowModeMeta, FlowWorkflowIdentity, FlowAnalysis, ModeStats } from '@kernlang/agon-support-persistence';
 // ── Full Vertical Workflow Kernel V1 ──
 export { RESERVED_WORKFLOW_ALIASES, normalizeWorkflowAlias, validateWorkflowAliases, assertWorkflowAliasesAllowed } from './workflows/alias-policy.js';
 export { compileWorkflowSpec, defaultWorkflowMutationPolicy, mutationRank } from './workflows/compiler.js';
@@ -295,13 +290,12 @@ export {
 export type {
   ThreadMessage, ThreadCheckpoint, FileTouch, LoopMessage, ContextThreadConfig, ThreadSize,
 } from './cesar/context-thread.js';
-export { createCesarPlan, approveCesarPlan, advanceCesarStep, cancelCesarPlan, exitCesarPlan, saveCesarPlan, loadCesarPlan, listCesarPlans, getCesarPlansDir, cesarPlanJsonPath, cesarPlanMarkdownPath, CESAR_STEP_TYPES } from './cesar/plan.js';
-export type { CesarPlan, CesarPlanStep, CesarStepResult } from './cesar/plan.js';
-export { sanitizePlanSteps } from './cesar/plan-validation.js';
-export { planCostEstimator } from './cesar/plan-cost-estimator.js';
+export { createCesarPlan, approveCesarPlan, advanceCesarStep, cancelCesarPlan, exitCesarPlan, saveCesarPlan, loadCesarPlan, listCesarPlans, getCesarPlansDir, cesarPlanJsonPath, cesarPlanMarkdownPath, CESAR_STEP_TYPES } from '@kernlang/agon-mod-plan';
+export type { CesarPlan, CesarPlanStep, CesarStepResult } from '@kernlang/agon-mod-plan';
+export { planCostEstimator, sanitizePlanSteps, executePlan } from './cesar/plan-cost-estimator.js';
 export type { CostEstimate } from './cesar/plan-cost-estimator.js';
-export { executePlan, getReadySteps } from './cesar/plan-executor.js';
-export type { StepExecutor, PlanExecutorCallbacks } from './cesar/plan-executor.js';
+export { getReadySteps } from '@kernlang/agon-mod-plan';
+export type { StepExecutor, PlanExecutorCallbacks } from '@kernlang/agon-mod-plan';
 export { AgentSession, makeBudgetError } from './cesar/agent-session.js';
 export type {
   AgentBudget, AgentStepResult, AgentSessionStats, AgentSessionConfig,
@@ -357,8 +351,10 @@ export type { EngineNote, EngineProfile, EngineMemoryRecord, EngineStrengthObser
 export { rankByTaskClass, buildSpecializedPrompt, assignForgeRoles } from './blocks/role-specialization.js';
 export type { EngineRole } from './blocks/role-specialization.js';
 export type { Skill } from './blocks/skill-loader.js';
-export { createSidechainLogger } from './blocks/sidechain-logger.js';
-export type { SidechainEvent, SidechainLogger } from './blocks/sidechain-logger.js';
+export { createSidechainLogger } from '@kernlang/agon-kernel';
+export { createBrainstormHostServices } from './blocks/brainstorm-host.js';
+export { createForgeHostServices, createForgeWorkflowEffects } from './blocks/forge-host.js';
+export type { SidechainEvent, SidechainLogger } from '@kernlang/agon-kernel';
 export {
   buildForgeProvenance,
   renderProvenanceMarkdown,
@@ -372,7 +368,6 @@ export { validateManifest } from './models/extension-manifest.js';
 export type { ExtensionManifest, ExtensionContributions, CommandContribution, LoadedExtension } from './models/extension-manifest.js';
 export { CommandRegistry } from './signals/command-registry.js';
 export type { CommandDefinition, CommandHandler } from './signals/command-registry.js';
-export { initExtensions, loadExtensions, discoverExtensionDirs, buildExtensionContext } from './blocks/extension-loader.js';
 export { registerBuiltinCommands } from './blocks/builtin-commands.js';
 export { EventBus, bridgeShellHooks } from './signals/event-bus.js';
 export type { EventPayload, EventListener } from './signals/event-bus.js';
@@ -380,7 +375,7 @@ export { EngineHealth, engineHealth, classifyDispatchFailure, authFailureHint, a
 export type { EngineHealthRecord } from './signals/engine-health.js';
 export type { ValidatedEngineDefinition } from './schemas/engine-schema.js';
 export { sessionContext } from './blocks/session-context.js';
-export type { SessionResult, BrainstormResultData, CampfireResultData, TribunalResultData, ForgeResultData, ThinkResultData, CouncilResultData, SynthesisResultData, NeroResultData, ReviewResultData, ResearchResultData, ChromeResultData } from './models/session-result-types.js';
+export type { SessionResult, BrainstormResultData, CampfireResultData, TribunalResultData, ForgeResultData, ThinkResultData, CouncilResultData, SynthesisResultData, NeroResultData, ReviewResultData, ResearchResultData, ChromeResultData } from '@kernlang/agon-support-persistence';
 export {
   splitPromptBlocks, mergeBlocksByRole,
 } from './blocks/prompt-builder.js';

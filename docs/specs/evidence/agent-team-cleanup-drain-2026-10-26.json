@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "scope": "Drain admitted AgentTeam steps before removing worktrees",
+  "base": "01a10699fe2199bc50c16da516b455d1fb8b6941",
+  "archive": "modular-agon-remediation (durable operator archive outside Git worktrees)",
+  "sourceSha256": "41a1afa38b2884d5435df08801417294f4f3585e37389d3356b001d460e26390",
+  "testSha256": "42c66e89ccf58ce8f1e441dfc4c68f33493ca5613b5768446a0f9c566d13c25f",
+  "negativeControls": [
+    {
+      "receipt": "agent-team-cleanup-drain-before-20261026.receipt.json",
+      "sha256": "8849a848f4ff3dd7d1a446bba4dfde16b70eedaef058309272989c685835d36a",
+      "result": "Pending member loses its real Git worktree before settlement"
+    },
+    {
+      "receipt": "agent-team-cleanup-review-permission-before-20261026.receipt.json",
+      "sha256": "eed5c991285c9a9f19c327d4b86d96f7c081076fa9d1c312fdeff15f5cb57be3",
+      "result": "Initial fix delays cancellation and deadlocks when approval awaits cleanup"
+    }
+  ],
+  "focused": {
+    "receipt": "agent-team-cleanup-lifecycle-20261026.receipt.json",
+    "sha256": "cbb49eb08d3906cbce05b66c38d89403bd5eedcc98a963add8d8ff87ee0e4b0d",
+    "testsPassed": 55,
+    "includes": "Real worktrees, two members, provider rejection, concurrent and reentrant cleanup, cancelled approval"
+  },
+  "fullWorkingTreeGate": {
+    "receipt": "agent-team-cleanup-full-20261026.receipt.json",
+    "sha256": "1a4f325b4d9fb60c53bb826efb367692ab56ef8b12e73970258ca8a1664ba133",
+    "logSha256": "ffa3f4f235ce514aa63e03ad5a1fbdcec2817191bfe6170759e5645be9ed1a74",
+    "exitCode": 0,
+    "testsPassed": 11837,
+    "testsSkipped": 7,
+    "packedCandidateChecks": 85,
+    "providerLaunches": 0
+  },
+  "review": {
+    "packetSha256": "87a40e52fa97b6ed21cdbe811dd4da52acd3427747cc24e953df3cb713678c40",
+    "codexLogSha256": "cb73f7501d621b14b2a180b259b0000e8fc8f0161efc87e04b136b4eca79f709",
+    "adjudication": "agent-team-cleanup-drain-review-adjudication-20261026.md",
+    "resolution": "Both new regressions reproduced and fixed; final source includes post-review fixes and tests",
+    "kimi": "Unavailable: exit 1, no answer; not a passing review"
+  },
+  "limits": [
+    "Clean committed checkout qualification and CI pending at index creation",
+    "Cancellation is cooperative, not a process hard-kill guarantee",
+    "Pre-existing initialization/cleanup overlap remains a separate lifecycle issue",
+    "Local Node26/npm11 changes archive hashes; all49 mod payload, package.json and manifest hashes unchanged",
+    "Full Agent ownership and original modular release acceptance remain open"
+  ]
+}

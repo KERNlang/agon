@@ -1,9 +1,6 @@
 export type { OutputEvent, Dispatch, HandlerContext, EngineProgress } from './types.js';
 export { handleForge } from './forge.js';
 export { handleChat } from './chat.js';
-export { handleBrainstorm } from './brainstorm.js';
-export { handleCampfire } from './campfire.js';
-export { handleTribunal } from './tribunal.js';
 export {
   handleLeaderboard,
   handleCesarReport,
@@ -27,7 +24,6 @@ export {
   handleApprove,
   handleRetry,
   handleCancel,
-  handleApplyPatch,
 } from './plan.js';
 export { handleCp, handleCpLast } from './cp.js';
 export { handleBuild } from './build.js';
@@ -37,9 +33,6 @@ export { handleFlowReport, handleFlowAnalysis, autoLogFlow } from './flow.js';
 export { handleCommit } from './commit.js';
 export { handleReview, handleReviewMany, handleReviewRoles } from './review.js';
 export { runAgentMode, runAgentTeam } from './agent.js';
-export { handleThink } from './think.js';
-export { handleCouncil } from './council.js';
-export { handleConquer } from './conquer.js';
 export { handleSynthesis } from './synthesis.js';
 export { handleNeroChallenge } from './nero-challenge.js';
 export { handleResearch } from './research.js';

@@ -13,6 +13,7 @@ import { updateTeamElo } from '@kernlang/agon-core';
 import { runFitness } from './fitness.js';
 
 import type { WorktreeEntry } from './types.js';
+import { writeVersionedResultEnvelope } from './result-envelope.js';
 
 export function shellQuoteForTeamForge(value: string): string {
   const s = String(value ?? '');
@@ -103,6 +104,15 @@ export function writeTeamForgeResultBundle(matchId: string, options: TeamForgeOp
   const bundleTmp = bundlePath + '.tmp';
   writeFileSync(bundleTmp, bundleBody);
   renameSync(bundleTmp, bundlePath);
+  writeVersionedResultEnvelope({
+    resultPath: bundlePath,
+    payload: bundle,
+    status: errorMessage ? 'failed' : result?.winnerTeamId ? 'succeeded' : 'partial',
+    idSeed: matchId,
+    ownerModId: 'agon.team-forge',
+    contributionId: 'agon.team-forge.persisted-result',
+    createdAt: bundle.timestamp,
+  });
   return bundlePath;
 }
 
@@ -252,7 +262,7 @@ export async function runTeamCoopForge(team: TeamSpec, task: string, fitnessCmd:
     tokenSum += implResult.usage?.totalTokens ?? 0;
 
     // Score this implementation
-    const fitness = await runFitness({ engineId: impl.engineId, worktreePath: wt.path, fitnessCmd, timeout: fitnessTimeout, forgeDir });
+    const fitness = await runFitness({ engineId: impl.engineId, worktreePath: wt.path, fitnessCmd, timeout: fitnessTimeout, forgeDir, signal });
 
     trace.push({ round: implRound, actor: impl.engineId, role: 'implementer', action: 'implemented', artifactSummary: `score=${fitness.score}`, durationMs: implResult.durationMs });
 
@@ -407,7 +417,7 @@ export async function runTeamCoopForge(team: TeamSpec, task: string, fitnessCmd:
     }
 
     // Re-score after revision
-    const revisedFitness = await runFitness({ engineId: bestImpl.engineId, worktreePath: currentWorktree.path, fitnessCmd, timeout: fitnessTimeout, forgeDir });
+    const revisedFitness = await runFitness({ engineId: bestImpl.engineId, worktreePath: currentWorktree.path, fitnessCmd, timeout: fitnessTimeout, forgeDir, signal });
     currentScore = revisedFitness.score;
 
     trace.push({ round, actor: bestImpl.engineId, role: 'implementer', action: 'implemented', artifactSummary: `revised score=${currentScore}`, durationMs: 0 });
@@ -417,7 +427,7 @@ export async function runTeamCoopForge(team: TeamSpec, task: string, fitnessCmd:
   }
 
   // --- Final scoring ---
-  const finalFitness = await runFitness({ engineId: `team:${team.teamId}`, worktreePath: currentWorktree.path, fitnessCmd, timeout: fitnessTimeout, forgeDir });
+  const finalFitness = await runFitness({ engineId: `team:${team.teamId}`, worktreePath: currentWorktree.path, fitnessCmd, timeout: fitnessTimeout, forgeDir, signal });
 
   const finalResult: EngineResult = {
     engineId: `team:${team.teamId}`,

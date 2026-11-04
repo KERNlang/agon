@@ -1,0 +1,108 @@
+{
+  "schemaVersion": 1,
+  "measuredAt": "2026-08-23T13:18:00.000Z",
+  "slice": "1A",
+  "activeAgonMutated": false,
+  "cells": [
+    {
+      "platform": "darwin-arm64",
+      "node": "v26.3.0",
+      "execution": "native",
+      "cleanInstall": "passed",
+      "contracts": {
+        "status": "passed",
+        "tests": 77
+      },
+      "fullRepository": {
+        "status": "passed",
+        "testsPassed": 5477,
+        "testsSkipped": 6
+      },
+      "representativeWorkflows": {
+        "status": "passed",
+        "tests": 160
+      },
+      "performance": {
+        "status": "passed",
+        "artifact": "docs/specs/evidence/modular-agon-slice1a-performance.json"
+      },
+      "audit": "passed"
+    },
+    {
+      "platform": "darwin-arm64",
+      "node": "v22.23.2",
+      "execution": "native",
+      "contracts": {
+        "status": "passed",
+        "tests": 77
+      },
+      "cleanInstall": "passed",
+      "audit": "passed"
+    },
+    {
+      "platform": "darwin-arm64",
+      "node": "v24.19.0",
+      "execution": "native",
+      "contracts": {
+        "status": "passed",
+        "tests": 77
+      }
+    },
+    {
+      "platform": "darwin-x64",
+      "node": "v22.23.2",
+      "execution": "Rosetta on darwin-arm64",
+      "cleanInstall": "passed",
+      "contracts": {
+        "status": "passed",
+        "tests": 77
+      },
+      "performance": {
+        "status": "external-native-runner-required"
+      },
+      "audit": "passed"
+    },
+    {
+      "platform": "linux-arm64",
+      "node": "v22.23.2",
+      "execution": "Docker Linux VM on arm64 host",
+      "cleanInstall": "passed",
+      "contracts": {
+        "status": "passed",
+        "tests": 77
+      },
+      "performance": {
+        "status": "passed",
+        "artifact": "docs/specs/evidence/modular-agon-slice1a-performance-linux-arm64.json",
+        "artifactHash": "sha256:31b033ea890d81e6bb52dabe46b1106f635abe31b691cfb40108dbb7985df201"
+      },
+      "audit": "passed"
+    },
+    {
+      "platform": "linux-x64",
+      "node": "v22.23.2",
+      "execution": "QEMU emulation in Docker on arm64 host",
+      "cleanInstall": "passed",
+      "contracts": {
+        "status": "passed",
+        "tests": 77
+      },
+      "performance": {
+        "status": "external-native-runner-required"
+      },
+      "audit": "passed"
+    }
+  ],
+  "findingsResolvedDuringMatrix": [
+    "npm 10 rejected the npm 11-generated vulnerable-range override lock; the canonical npm 10-generated lock now uses an exact esbuild 0.28.2 override, has no nested vulnerable copy, clean-installs on npm 10 and npm 11, and audits at zero vulnerabilities",
+    "test:modular-slice1a assumed prebuilt dist output; its pretest now builds mod-api and mod-kernel",
+    "the performance runner applied the macOS cold-start ceiling on Linux; it now selects the frozen platform ceiling",
+    "the hostile resolver wall-clock assertion was architecture-speed-sensitive; deterministic attempt accounting remains authoritative and wall time is a five-second runaway guard",
+    "the final asset consumer reference contract now rejects dangling contribution IDs and passes as test 77 on every platform lane",
+    "qualification logs are bounded to 2 MiB with original-output hashes so review tests cannot inflate evidence artifacts"
+  ],
+  "externalCells": [
+    "native darwin-x64 performance receipt",
+    "native linux-x64 performance receipt"
+  ]
+}

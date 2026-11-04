@@ -1,161 +1,17 @@
-import { readFileSync, writeFileSync, mkdirSync, renameSync } from 'node:fs';
-
-import { join } from 'node:path';
-
-import { execSync } from 'node:child_process';
-
-import type { ForgeManifest } from '../models/types.js';
-
+/** A13-PATCH-BACKEND: compatibility exports only. The physical owner is
+ * agon-support-worktree. Remove after legacy core callers have migrated. */
+import { applyPatchWithUndo as applyWithUndo, undoPatch as undo } from '@kernlang/agon-support-worktree';
 import { getUndoDir } from '../utils/paths.js';
 
-import { normalizePatchContent } from '../utils/patch.js';
+export { readPatchFromManifest, readPatchFromPath, isTreeDirty, dryRunApply,
+  preflightApply, applyPatchToTree } from '@kernlang/agon-support-worktree';
+export type { PatchInfo, ApplyPreflight } from '@kernlang/agon-support-worktree';
 
-import { invertPatch } from './patch-parser.js';
-
-export interface PatchInfo {
-  path: string;
-  engineId: string;
-  lineCount: number;
-  content: string;
+/** Preserve the historical undo location while the backend owns the operation. */
+export function applyPatchWithUndo(cwd: string, patchContent: string): { ok: boolean; error?: string; undoToken?: string } {
+  return applyWithUndo(cwd, patchContent, getUndoDir());
 }
 
-export interface ApplyPreflight {
-  ok: boolean;
-  error?: string;
-  patch?: PatchInfo;
-  dirtyTree: boolean;
-}
-
-export function readPatchFromManifest(manifestPath: string): PatchInfo|null {
-  try {
-    const raw = readFileSync(manifestPath, 'utf-8');
-    const manifest: ForgeManifest = JSON.parse(raw);
-    if (!manifest.winner) return null;
-    const patchPath = manifest.patches[manifest.winner];
-    if (!patchPath) return null;
-    const content = normalizePatchContent(readFileSync(patchPath, 'utf-8'));
-    const lineCount = content.split('\n').filter(
-      (l: string) => (l.startsWith('+') && !l.startsWith('+++')) || (l.startsWith('-') && !l.startsWith('---'))
-    ).length;
-    return { path: patchPath, engineId: manifest.winner, lineCount, content };
-  } catch (err) {
-    console.warn(`[agon] failed to read patch from manifest ${manifestPath}: ${err instanceof Error ? err.message : String(err)}`);
-    return null;
-  }
-}
-
-export function readPatchFromPath(patchPath: string): PatchInfo|null {
-  try {
-    const content = normalizePatchContent(readFileSync(patchPath, 'utf-8'));
-    if (!content.trim()) return null;
-    const lineCount = content.split('\n').filter(
-      (l: string) => (l.startsWith('+') && !l.startsWith('+++')) || (l.startsWith('-') && !l.startsWith('---'))
-    ).length;
-    return { path: patchPath, engineId: 'unknown', lineCount, content };
-  } catch (err) {
-    console.warn(`[agon] failed to read patch from ${patchPath}: ${err instanceof Error ? err.message : String(err)}`);
-    return null;
-  }
-}
-
-export function isTreeDirty(cwd: string): boolean {
-  try {
-    const result = execSync('git status --porcelain', { cwd, encoding: 'utf-8' });
-    return result.trim().length > 0;
-  } catch (err) {
-    console.warn(`[agon] failed to check tree dirty state: ${err instanceof Error ? err.message : String(err)}`);
-    return false;
-  }
-}
-
-export function dryRunApply(cwd: string, patchContent: string): { ok:boolean, error?:string } {
-  try {
-    execSync('git apply --check -', { cwd, input: normalizePatchContent(patchContent), encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
-    return { ok: true };
-  } catch (err) {
-    const msg = err instanceof Error ? (err as any).stderr || err.message : String(err);
-    return { ok: false, error: msg };
-  }
-}
-
-export function applyPatchToTree(cwd: string, patchContent: string): { ok:boolean, error?:string } {
-  try {
-    execSync('git apply --allow-empty -', { cwd, input: normalizePatchContent(patchContent), encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
-    return { ok: true };
-  } catch (err) {
-    const msg = err instanceof Error ? (err as any).stderr || err.message : String(err);
-    return { ok: false, error: msg };
-  }
-}
-
-export function preflightApply(cwd: string, patchPath: string|null, manifestPath: string|null): ApplyPreflight {
-  const dirtyTree = isTreeDirty(cwd);
-  let patch: PatchInfo | null = null;
-  if (patchPath) {
-    patch = readPatchFromPath(patchPath);
-  } else if (manifestPath) {
-    patch = readPatchFromManifest(manifestPath);
-  }
-  if (!patch) {
-    return { ok: false, error: 'No patch found. Run /forge first or provide a path.', dirtyTree: dirtyTree };
-  }
-  if (dirtyTree) {
-    return { ok: false, error: 'Working tree has uncommitted changes. Commit or stash first, or use /apply --force.', patch: patch, dirtyTree: dirtyTree };
-  }
-  const dryRun = dryRunApply(cwd, patch.content);
-  if (!dryRun.ok) {
-    return { ok: false, error: `Patch would not apply cleanly: ${dryRun.error}`, patch: patch, dirtyTree: dirtyTree };
-  }
-  return { ok: true, patch: patch, dirtyTree: dirtyTree };
-}
-
-/**
- * Apply patch and save an inverse for undo.
- */
-export function applyPatchWithUndo(cwd: string, patchContent: string): { ok:boolean, error?:string, undoToken?:string } {
-  const undoDir = getUndoDir();
-  mkdirSync(undoDir, { recursive: true });
-
-  // Compute inverse before applying
-  const inverse = invertPatch(patchContent);
-  const token = `undo-${Date.now()}`;
-
-  // Apply the patch
-  try {
-    execSync('git apply --allow-empty -', { cwd, input: normalizePatchContent(patchContent), encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
-  } catch (err) {
-    const msg = err instanceof Error ? (err as any).stderr || err.message : String(err);
-    return { ok: false, error: msg };
-  }
-
-  // Save inverse patch atomically (temp + rename)
-  const inversePath = join(undoDir, `${token}.patch`);
-  const tmpPath = join(undoDir, `${token}.patch.tmp`);
-  writeFileSync(tmpPath, inverse);
-  renameSync(tmpPath, inversePath);
-
-  return { ok: true, undoToken: token };
-}
-
-/**
- * Apply the saved inverse patch to undo a previous apply.
- */
-export function undoPatch(cwd: string, undoToken: string): { ok:boolean, error?:string } {
-  const undoDir = getUndoDir();
-  const inversePath = join(undoDir, `${undoToken}.patch`);
-
-  let inverse: string;
-  try {
-    inverse = readFileSync(inversePath, 'utf-8');
-  } catch {
-    return { ok: false, error: `Undo token not found: ${undoToken}` };
-  }
-
-  try {
-    execSync('git apply --allow-empty -', { cwd, input: normalizePatchContent(inverse), encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
-    return { ok: true };
-  } catch (err) {
-    const msg = err instanceof Error ? (err as any).stderr || err.message : String(err);
-    return { ok: false, error: `Undo failed: ${msg}` };
-  }
+export function undoPatch(cwd: string, undoToken: string): ReturnType<typeof undo> {
+  return undo(cwd, undoToken, getUndoDir());
 }

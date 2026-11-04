@@ -1,0 +1,1 @@
+<!--AGON_REVIEW_FINDINGS_v1-->```json[{"file":"src/auth.ts","lines":"42","severity":"important","blocking":false,"confidence":0.7,"problem":"missing null check","minimalFix":"guard before deref"}]```

@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kernlang.dev/schemas/synthesis/config.schema.json",
+  "title": "synthesis configuration",
+  "type": "object",
+  "x-agon-config": { "version": 1, "legacyAliases": ["skillSynthesisThreshold"] },
+  "properties": {
+    "skillSynthesisThreshold": { "type": "number", "default": 3 }
+  },
+  "additionalProperties": true
+}

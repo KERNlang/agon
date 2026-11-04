@@ -1,0 +1,255 @@
+import { createHash } from 'node:crypto';
+
+/**
+ * A surface attached to a session. `clientId` is minted by the daemon at attach time and is what every control message (approve/answer/steer/capability) carries so the brain can arbitrate (e.g. host-only vs first-wins) and route a capability request to the client that owns it. `surface` lets the brain reason about origin — e.g. a screenshot capability lives on a 'browser' client; 'agent' is a headless automation peer.
+ */
+export interface ClientRef {
+  clientId: string;
+  surface: 'cli'|'browser'|'electron'|'headless'|'agent';
+  label?: string;
+}
+
+/**
+ * The reply to every inbound control method (steer/provideApproval/provideAnswer/registerCapability/provideCapabilityResult/cancel). `accepted` = applied. `rejected` = a valid request the brain declined (stale requestId, wrong turn, not the arbitration winner) — carries a human reason. `unsupported` = the v1 implementation does not implement this multi-client path yet; the method EXISTS in the contract (so the end-state is fixed) but this host can't honor it — distinct from `rejected` so a client can tell 'never, on this host' from 'no, this time'.
+ */
+export type ControlAck =
+  | { status: 'accepted' }
+  | { status: 'rejected'; reason: string }
+  | { status: 'unsupported'; reason: string };
+
+/**
+ * What multi-client control the implementation actually supports. Declared statically by every BrainClient so the daemon can route or refuse BEFORE dispatching (and so a client UI can grey out an approve button it can't win). v1 (single CLI host) declares the conservative matrix from conservativeControlCapabilities(): turns serialize per session, steering/approvals/questions are host-only, cancellation is per-turn, and client-provided capabilities ARE supported (the frontend-inspector screenshot path works even in v1). The axes are the END-STATE vocabulary; widening them later is an implementation change, not a contract change.
+ */
+export interface ControlCapabilities {
+  concurrentTurns: 'per-session-serialized'|'unsupported';
+  concurrentSteering: 'broadcast'|'serialized'|'host-only'|'unsupported';
+  approvalArbitration: 'first-wins'|'host-only'|'quorum'|'unsupported';
+  questionArbitration: 'first-wins'|'host-only'|'unsupported';
+  clientCapabilities: 'supported'|'unsupported';
+  cancellation: 'per-turn'|'unsupported';
+}
+
+/**
+ * Server-issued authorization provenance carried from a destructive capability's approval gate to the client that executes it. The lease is bound to the exact capability request id, turn, submitter, target capability owner, capability name, and canonical input digest. Executors must require `capabilityRequestId` to equal the enclosing capability-request `requestId`; replaying either a once or session lease on any fresh request therefore fails closed. `mode='once'` authorizes only the emitted capability request; `mode='session'` records that the originating submitter approved this tool for the session while preserving the original approval request and automated/manual provenance, but every emitted request still receives a freshly bound lease. This is continuity over the authenticated loopback channel, not a cryptographic client signature.
+ */
+export interface CapabilityAuthorizationLease {
+  turnId: string;
+  capabilityRequestId: string;
+  approvalRequestId?: string;
+  submitterClientId: string;
+  targetClientId: string;
+  capability: string;
+  inputDigest: string;
+  mode: 'once'|'session';
+  automated: boolean;
+}
+
+/**
+ * Return the deterministic `sha256:<hex>` digest used to bind a capability authorization lease to its exact JSON input. The root must be a plain object. Object keys are sorted recursively; array order and JSON primitive types are preserved; object properties that JSON would omit and array entries that JSON would coerce to null follow JSON.stringify semantics. Cycles, bigint, functions at the root, and non-plain objects fail closed instead of producing an ambiguous digest.
+ */
+export function canonicalCapabilityInputDigest(input: Record<string,unknown>): string {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) throw new globalThis.TypeError('capability input must be a JSON object');
+  const seen = new Set<object>();
+  const canonicalize = (value: unknown, inArray: boolean): unknown => {
+    if (value === null || typeof value === 'string' || typeof value === 'boolean') return value;
+    if (typeof value === 'number') return Number.isFinite(value) ? (Object.is(value, -0) ? 0 : value) : null;
+    if (typeof value === 'undefined' || typeof value === 'function' || typeof value === 'symbol') return inArray ? null : undefined;
+    if (typeof value === 'bigint') throw new globalThis.TypeError('capability input must be JSON-compatible (bigint is unsupported)');
+    if (typeof value !== 'object') throw new globalThis.TypeError('capability input must be JSON-compatible');
+    if (seen.has(value)) throw new globalThis.TypeError('capability input must be acyclic');
+    seen.add(value);
+    try {
+      if (Array.isArray(value)) return value.map((entry) => canonicalize(entry, true));
+      const proto = Object.getPrototypeOf(value);
+      if (proto !== Object.prototype && proto !== null) throw new globalThis.TypeError('capability input must contain only plain objects');
+      const out = Object.create(null) as Record<string, unknown>;
+      for (const key of Object.keys(value as Record<string, unknown>).sort()) {
+        const normalized = canonicalize((value as Record<string, unknown>)[key], false);
+        if (normalized !== undefined) out[key] = normalized;
+      }
+      return out;
+    } finally {
+      seen.delete(value);
+    }
+  };
+  const canonical = JSON.stringify(canonicalize(input, false));
+  if (typeof canonical !== 'string') throw new globalThis.TypeError('capability input must be a JSON object');
+  return `sha256:${createHash('sha256').update(canonical, 'utf8').digest('hex')}`;
+}
+
+/**
+ * What the brain streams out of a turn, projected to a JSON-serializable shape the daemon appends to the event ledger and fans out to every subscribed client. This is NOT the CLI OutputEvent (which carries `resolve` callbacks and 56 render-specific variants); it is the bridge projection. The output variants (text/engine/tool/notice/recap/confidence/context) are coarse, lossless-enough renderings of their OutputEvent counterparts. The three *-request variants are the crux: each carries a `requestId` INSTEAD of a callback — the brain pauses that turn until the matching provideApproval/provideAnswer/provideCapabilityResult arrives (routed by the daemon from whichever client the arbitration policy admits).
+ */
+export type BrainEvent =
+  | { kind: 'text'; content: string }
+  | { kind: 'engine'; engineId: string; content: string }
+  | { kind: 'tool'; engineId?: string; tool: string; status: 'running'|'done'|'error'; input?: string; output?: string }
+  | { kind: 'notice'; level: 'info'|'success'|'warning'|'error'; message: string }
+  | { kind: 'recap'; engineId: string; mode: string; outcome: string; durationMs: number; confidence?: number|null; toolCount: number }
+  | { kind: 'confidence'; value: number|null }
+  | { kind: 'context'; pct: number; used: number; limit: number }
+  | { kind: 'approval-request'; requestId: string; tool: string; command: string; reason: string; input?: Record<string,unknown>; description?: string; fallbackNote?: string; diffPreview?: Record<string,unknown>; targetClientId?: string }
+  | { kind: 'question-request'; requestId: string; prompt: string; choices?: Array<{ key: string; label: string; color?: string }>; defaultChoiceKey?: string }
+  | { kind: 'capability-request'; requestId: string; turnId?: string; capability: string; input: Record<string,unknown>; targetClientId?: string; authorization?: CapabilityAuthorizationLease };
+
+/**
+ * One unit of work submitted to the brain. The daemon serializes these per session (single-writer) via a Rooms TurnLease; concurrent submits for one session queue or are rejected per ControlCapabilities.concurrentTurns. `clientId` is the submitting surface (origin provenance — logged per-frame in the ledger, the security tripwire). `images` are references/data-URLs (serializable), matching SessionSendOptions.images.
+ */
+export interface BrainTurnRequest {
+  sessionId: string;
+  turnId: string;
+  clientId: string;
+  input: string;
+  images?: string[];
+  hintClass?: 'code'|'question'|'ambiguous';
+  mode?: string;
+  engineId?: string;
+}
+
+/**
+ * The terminal outcome of a turn — the serializable, core-level projection of the CLI CesarTurnOutcome (the CLI impl maps the rich outcome down to this). Returned as the AsyncGenerator return value of runTurn so the daemon can record the turn's disposition. `awaitingUserInput` true means the turn ended pending a client answer (a question/approval that was never resolved within the turn).
+ */
+export interface BrainTurnResult {
+  turnId: string;
+  delegated: boolean;
+  responded: boolean;
+  mode?: string;
+  action?: string;
+  engineId?: string;
+  awaitingUserInput?: boolean;
+  reason?: string;
+}
+
+/**
+ * A client's answer to a BrainEvent 'approval-request'. `decision` mirrors the CLI onApproval contract (Promise<boolean|string>): approve/deny once, approve-session/deny-session to remember for the session, abort to cancel the turn. Optional `automated` distinguishes an unattended policy/--auto-approve decision from an interactive human decision; omission is backward-compatible and means false. Arbitration: per ControlCapabilities.approvalArbitration — v1 accepts only the host client and returns { unsupported } otherwise.
+ */
+export interface ApprovalResponse {
+  sessionId: string;
+  requestId: string;
+  clientId: string;
+  decision: 'approve'|'approve-session'|'deny'|'deny-session'|'abort';
+  automated?: boolean;
+}
+
+/**
+ * A client's answer to a BrainEvent 'question-request'. Arbitration per ControlCapabilities.questionArbitration (v1: host-only).
+ */
+export interface AnswerResponse {
+  sessionId: string;
+  requestId: string;
+  clientId: string;
+  answer: string;
+}
+
+/**
+ * Mid-turn input injection — the serializable replacement for the process-global steering FIFO (pushSteering/markSteeringTurn). `turnId` optional: omit to steer whatever turn is active for the session. Arbitration per ControlCapabilities.concurrentSteering (v1: host-only; end-state: broadcast/serialized across clients).
+ */
+export interface SteerRequest {
+  sessionId: string;
+  clientId: string;
+  input: string;
+  images?: string[];
+  turnId?: string;
+}
+
+/**
+ * Abort an in-flight turn — the serializable replacement for an AbortSignal (which cannot cross the boundary). The impl translates this into its internal AbortController.
+ */
+export interface CancelRequest {
+  sessionId: string;
+  turnId: string;
+  clientId: string;
+  reason?: string;
+}
+
+/**
+ * A tool a CLIENT offers TO the brain — e.g. the browser extension registering 'screenshot' or 'page-content' so the brain can inspect a live frontend. Mirrors core ToolDefinition (name/description/inputSchema/isReadOnly/isDestructive) so the brain can surface it as a normal tool; invoking it emits a BrainEvent 'capability-request' routed back to the owning client.
+ */
+export interface CapabilitySpec {
+  name: string;
+  description: string;
+  inputSchema: Record<string,unknown>;
+  isReadOnly: boolean;
+  isDestructive?: boolean;
+}
+
+export interface CapabilityRegistration {
+  sessionId: string;
+  clientId: string;
+  spec: CapabilitySpec;
+}
+
+export interface CapabilityUnregister {
+  sessionId: string;
+  clientId: string;
+  name: string;
+}
+
+/**
+ * A client's reply to a BrainEvent 'capability-request' (e.g. the browser returning a screenshot data-URL in `output`). `ok=false` with `error` surfaces a capture failure to the brain so it can recover instead of hanging.
+ */
+export interface CapabilityResult {
+  sessionId: string;
+  requestId: string;
+  clientId: string;
+  ok: boolean;
+  output?: string;
+  error?: string;
+}
+
+/**
+ * What the daemon hands the brain at open(). `ledgerPath` lets a native headless brain append directly to the same event ledger the daemon fans out; a subprocess impl may instead stream BrainEvents back over its stdio and let the daemon append.
+ */
+export interface BrainClientConfig {
+  sessionId: string;
+  engineId: string;
+  cwd: string;
+  systemPrompt?: string;
+  ledgerPath?: string;
+}
+
+/**
+ * Liveness/occupancy for the daemon's supervisor — so it can restart a crashed CLI host (and Electron can bundle a hidden host). `activeTurnId` null = idle; `queuedTurns` is the single-writer backlog.
+ */
+export interface BrainHealth {
+  alive: boolean;
+  engineId: string;
+  pid?: number|null;
+  activeTurnId?: string|null;
+  queuedTurns: number;
+  uptimeMs: number;
+}
+
+/**
+ * The boundary the daemon uses to drive a brain. v1 implementation wraps the CLI `handleCesarBrain` in a spawned subprocess; vN is a native headless brain — same interface, swapped behind it. Every method is serializable end-to-end (no callbacks, no AbortSignal, no CLI types). `controlCapabilities` is declared statically so the daemon can route/refuse before dispatch. `runTurn` is the single-writer WRITE path (daemon serializes per session) and streams BrainEvents with a BrainTurnResult return; the inbound control methods (steer/provideApproval/provideAnswer/provideCapabilityResult/cancel) answer the *-request BrainEvents by requestId; the capability methods let clients lend tools to the brain; notifyClient* keeps the brain's live client set current for arbitration and capability routing. Consume runTurn by draining the generator (for-await over the BrainEvents); the terminal BrainTurnResult is the generator's RETURN value — the `value` of the final next(), not a yielded event.
+ */
+export interface BrainClient {
+  controlCapabilities: ControlCapabilities;
+  open: (config: BrainClientConfig) => Promise<void>;
+  runTurn: (req: BrainTurnRequest) => AsyncGenerator<BrainEvent, BrainTurnResult, void>;
+  steer: (req: SteerRequest) => Promise<ControlAck>;
+  provideApproval: (res: ApprovalResponse) => Promise<ControlAck>;
+  provideAnswer: (res: AnswerResponse) => Promise<ControlAck>;
+  registerCapability: (reg: CapabilityRegistration) => Promise<ControlAck>;
+  unregisterCapability: (req: CapabilityUnregister) => Promise<ControlAck>;
+  provideCapabilityResult: (res: CapabilityResult) => Promise<ControlAck>;
+  cancel: (req: CancelRequest) => Promise<ControlAck>;
+  notifyClientAttached: (sessionId: string, client: ClientRef) => void;
+  notifyClientDetached: (sessionId: string, clientId: string) => void;
+  health: () => Promise<BrainHealth>;
+  close: () => Promise<void>;
+}
+
+/**
+ * The honest support matrix for the v1 brain (one CLI host behind the daemon). Turns serialize per session; steering, approvals and questions are HOST-ONLY (a non-host client's control message gets { status: 'unsupported' }); cancellation is per-turn; client-provided capabilities ARE supported so the browser-extension screenshot/page-content path works in v1. Widening any axis later is an implementation change behind the unchanged BrainClient interface — never a re-spec.
+ */
+export function conservativeControlCapabilities(): ControlCapabilities {
+  return {
+    concurrentTurns: 'per-session-serialized',
+    concurrentSteering: 'host-only',
+    approvalArbitration: 'host-only',
+    questionArbitration: 'host-only',
+    clientCapabilities: 'supported',
+    cancellation: 'per-turn',
+  };
+}

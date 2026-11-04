@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "scope": "Rollback AgentTeam initialization when disposal occurs during creation settlement",
+  "base": "01a10699fe2199bc50c16da516b455d1fb8b6941",
+  "archive": "modular-agon-remediation (durable operator archive outside Git worktrees)",
+  "sourceSha256": "a2237f882d86024525596a3a6c66dd556fca9c515630d5997bfd85f47466158e",
+  "testSha256": "29dcabda0ceb270225874864517106501b218ec716f0faf7ea29966609ffbd46",
+  "negativeControl": {
+    "receipt": "agent-team-init-dispose-before-20261026.receipt.json",
+    "sha256": "d76791cd5b8d81b93830a6a177e906500a298af4fbf4329b579142c5dcb0c217",
+    "result": "Two failures on unchanged production: false initialization success and two leaked Git worktrees"
+  },
+  "focused": {
+    "receipt": "agent-team-init-dispose-controls-20261026.receipt.json",
+    "sha256": "20901e1e0dde18438847c331a90f60f45c0dcb74f03e947cce6c074da9ebe401",
+    "testsPassed": 55,
+    "includes": "Real Git isolation, healthy startup, partial creation failures, disposal precedence, occupied-path preservation"
+  },
+  "fullWorkingTreeGate": {
+    "receipt": "agent-team-init-dispose-full-20261026.receipt.json",
+    "sha256": "d555666f2dad6daf8659d66d769c2174bc9d36fe4c232bf80ab56d6e34faabcb",
+    "logSha256": "7c9abbfa288a765d34ee2bdb8cd750046ac05973c3189f67673e87266113497f",
+    "exitCode": 0,
+    "testsPassed": 11837,
+    "testsSkipped": 7,
+    "packedCandidateChecks": 85,
+    "providerLaunches": 0
+  },
+  "review": {
+    "packetSha256": "781001629e694b845afa232f4bf1c355924e2cce219049f814e1a06f509229c9",
+    "codexLogSha256": "365c95fcb62f3067a072a26ec4cddee9135747a7491c7ca8d8e6dfb1e9a29145",
+    "adjudication": "agent-team-init-dispose-review-adjudication-20261026.md",
+    "resolution": "No blocking regression; suggested controls added and verified. Production unchanged from review packet.",
+    "kimi": "Unavailable: exit 1, no answer; not a passing review"
+  },
+  "limits": [
+    "Clean committed checkout qualification and CI pending at index creation",
+    "Cleanup does not await already-running initialization; callers must observe initialization settlement",
+    "Concurrent initialization and synchronous callback reentrancy are not redesigned",
+    "Full Agent ownership and original modular release acceptance remain open"
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "mode": "tribunal",
+  "label": "s8-final-ba8c411f",
+  "startedAt": "2026-09-04T04:31:22.866Z",
+  "endedAt": "2026-09-04T04:33:08.282Z",
+  "engines": [
+    {
+      "id": "zai-coding-plan-glm-5.2",
+      "status": "ok",
+      "detail": "1 arguments"
+    },
+    {
+      "id": "minimax-coding-plan-minimax-m3",
+      "status": "ok",
+      "detail": "1 arguments"
+    }
+  ],
+  "summary": "2/2 engines argued across 1 round(s) (mode=red-team, protocol=parallel)",
+  "ok": true
+}

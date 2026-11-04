@@ -1,0 +1,207 @@
+import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync } from 'node:fs';
+import { dirname } from 'node:path';
+import { assertSafeGoalId } from './paths.js';
+import type { JournalState, GoalSpec, GoalTask, AttemptRecord, GoalEvent } from './journal-types.js';
+
+export interface GoalJournalEffects {
+  path(...parts: string[]): string;
+  ensureHome(): void;
+}
+
+/** Keep journal storage within the host-selected home. */
+export function createGoalJournalStore(effects: GoalJournalEffects) {
+  function goalDir(goalId: string): string {
+    return effects.path('goals', assertSafeGoalId(goalId));
+  }
+
+  function journalPath(goalId: string): string {
+    return effects.path('goals', assertSafeGoalId(goalId), 'journal.json');
+  }
+
+  /**
+   * Atomically checkpoint the journal: write a temp file then rename, so a crash mid-write can never corrupt the resume source of truth.
+   */
+  function saveJournal(state: JournalState): void {
+    effects.ensureHome();
+    const target = journalPath(state.spec.goalId);
+    mkdirSync(dirname(target), { recursive: true });
+    // Stamp a liveness heartbeat on every checkpoint so a concurrent
+    // `--status` can distinguish a running task from a crashed one.
+    state.heartbeatAt = Date.now();
+    const tmp = target + '.tmp';
+    writeFileSync(tmp, JSON.stringify(state, null, 2));
+    renameSync(tmp, target);
+  }
+
+  /**
+   * Load a journal for --resume; null when absent or corrupt.
+   */
+  function loadJournal(goalId: string): JournalState | null {
+    const p = journalPath(goalId);
+    if (!existsSync(p)) return null;
+    try {
+      return JSON.parse(readFileSync(p, 'utf-8')) as JournalState;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Read exact source bytes. Only an absent file means absent state. */
+  function readJournalSnapshot(goalId: string): { bytes: Uint8Array; state: unknown } | null {
+    const path = journalPath(goalId);
+    let bytes: Buffer;
+    try { bytes = readFileSync(path); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+      throw error;
+    }
+    let text: string;
+    try { text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes); }
+    catch { throw new Error('Historical Goal journal is not valid UTF-8. Preserve the file before repair.'); }
+    let state: unknown;
+    try { state = JSON.parse(text); }
+    catch { throw new Error('Historical Goal journal contains invalid JSON. Preserve the file before repair.'); }
+    return { bytes, state };
+  }
+  return { goalDir, journalPath, saveJournal, loadJournal, readJournalSnapshot };
+}
+
+/**
+ * Fresh journal for a new goal run.
+ */
+export function createJournal(spec: GoalSpec): JournalState {
+  const now = Date.now();
+  return {
+    spec,
+    createdAt: now,
+    spentUsd: 0,
+    parkedStreak: 0,
+    noProgressStreak: 0,
+    lastRemainingCount: 0,
+    tasks: [],
+    events: [{ ts: now, kind: 'created', detail: spec.intent }],
+  };
+}
+
+/**
+ * Append queued tasks, skipping any id already present (idempotent on resume — so a resumed task keeps its ORIGINAL verify; a changed verify only applies to new ids).
+ */
+export function addTasks(state: JournalState, items: Array<{id:string,source:string,dependsOn?:string[],verify?:string}>): JournalState {
+  const existing = new Set(state.tasks.map((t) => t.id));
+  const added: GoalTask[] = [];
+  for (const it of items) {
+    if (existing.has(it.id)) continue;
+    existing.add(it.id);
+    added.push({
+      id: it.id,
+      source: it.source,
+      status: 'queued',
+      attempts: 0,
+      attemptLog: [],
+      dependsOn: it.dependsOn,
+      verify: it.verify,
+      costUsd: 0,
+    });
+  }
+  if (added.length === 0) return state;
+  return { ...state, tasks: [...state.tasks, ...added] };
+}
+
+/**
+ * Resume safety: reset any task left 'inflight' back to 'queued'. A loaded journal's inflight task was interrupted mid-attempt (crash / kill / context limit). Because a task only reaches a TERMINAL state via the atomic commit + ref-advance at the very end of its cycle, an interruption lands no partial work (the worktree is thrown away), so re-running from 'queued' is correct and idempotent. Without this, nextTask — which only yields 'queued' — silently skips the orphaned task forever (dogfood: a killed run dropped task-03). Pure; the caller logs the count and re-saves.
+ */
+export function requeueInflightTasks(state: JournalState): {state:JournalState, count:number} {
+  let count = 0;
+  const tasks = state.tasks.map((t) => {
+    if (t.status === 'inflight') { count++; return { ...t, status: 'queued' as const }; }
+    return t;
+  });
+  return { state: count > 0 ? { ...state, tasks } : state, count };
+}
+
+/**
+ * First queued task whose dependsOn are all done; null if none runnable.
+ */
+export function nextTask(state: JournalState): GoalTask | null {
+  const byId = new Map(state.tasks.map((t) => [t.id, t] as const));
+  for (const t of state.tasks) {
+    if (t.status !== 'queued') continue;
+    const deps = t.dependsOn ?? [];
+    const blocked = deps.some((d) => {
+      const dep = byId.get(d);
+      return !dep || dep.status !== 'done';
+    });
+    if (!blocked) return t;
+  }
+  return null;
+}
+
+/**
+ * Set a task's status (and optional field patch). No-op if id unknown.
+ */
+export function markStatus(state: JournalState, taskId: string, status: GoalTask['status'], patch?: Partial<GoalTask>): JournalState {
+  const tasks = state.tasks.map((t) =>
+    t.id === taskId ? { ...t, status, ...(patch ?? {}) } : t
+  );
+  return { ...state, tasks };
+}
+
+/**
+ * Append an outcome. An explicit count preserves attempts counted before dispatch.
+ */
+export function recordAttempt<S extends { tasks: Array<{ id: string; attempts: number; attemptLog?: AttemptRecord[] }> }>(
+  state: S, taskId: string, rec: AttemptRecord, countedAttempt?: number,
+): S {
+  if (countedAttempt !== undefined && (!Number.isSafeInteger(countedAttempt) || countedAttempt < 1)) {
+    throw new Error('Goal attempt number must be a positive integer.');
+  }
+  if (countedAttempt !== undefined && state.tasks.some(task => task.id === taskId && task.attempts > countedAttempt)) {
+    throw new Error('Goal attempt count cannot move backwards.');
+  }
+  const tasks = state.tasks.map((t) =>
+    t.id === taskId
+      ? { ...t, attempts: countedAttempt ?? t.attempts + 1,
+        attemptLog: [...(t.attemptLog ?? []), countedAttempt === undefined ? rec : { ...rec, attempt: countedAttempt }] }
+      : t
+  );
+  return { ...state, tasks };
+}
+
+/**
+ * Tasks still queued or in flight.
+ */
+export function remainingCount(state: JournalState): number {
+  return state.tasks.filter((t) => t.status === 'queued' || t.status === 'inflight').length;
+}
+
+/**
+ * No queued or in-flight tasks remain.
+ */
+export function isDone(state: JournalState): boolean {
+  return state.tasks.filter((t) => t.status === 'queued' || t.status === 'inflight').length === 0;
+}
+
+/**
+ * Max audit events retained in a journal's events[]. The journal is rewritten whole on every checkpoint, so this bounds a 24h run's per-checkpoint cost; ~500 keeps a generous recent window while staying small.
+ */
+export const GOAL_EVENT_CAP: number = 500;
+
+/**
+ * Keep the audit trail bounded so a long run's per-checkpoint full-rewrite stays O(1) in event count rather than O(n) (an unbounded events[] makes 24h persistence O(n^2)). When events exceed cap, drop the OLDEST and report how many were dropped so the caller can accumulate a running total. cap <= 0 = unbounded. Pure: events are audit-only — resume logic reads tasks/counters, never events — so trimming the oldest is safe.
+ */
+export function boundEvents(events: GoalEvent[], cap: number): {events:GoalEvent[], dropped:number} {
+  if (cap <= 0 || events.length <= cap) return { events, dropped: 0 };
+  const dropped = events.length - cap;
+  return { events: events.slice(dropped), dropped };
+}
+
+/**
+ * Append an audit event, keeping events[] bounded (the journal is rewritten whole on every checkpoint).
+ */
+export function logEvent(state: JournalState, kind: string, taskId?: string, detail?: string): JournalState {
+  const appended = [...state.events, { ts: Date.now(), kind, taskId, detail }];
+  const { events, dropped } = boundEvents(appended, GOAL_EVENT_CAP);
+  return dropped > 0
+    ? { ...state, events, droppedEvents: (state.droppedEvents ?? 0) + dropped }
+    : { ...state, events };
+}

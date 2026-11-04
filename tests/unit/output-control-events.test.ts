@@ -15,16 +15,18 @@ vi.mock('@kernlang/agon-core', async () => {
 // output.ts imports markdown from ../blocks/markdown.js — mock the module it
 // actually resolves, not the re-typed facade in src/markdown.ts.
 vi.mock('../../packages/cli/src/blocks/markdown.js', () => ({
-  parseMarkdownBlocks: () => [],
-  cleanEngineOutput: (s: string) => s,
+  parseMarkdownBlocks: vi.fn(() => []),
+  cleanEngineOutput: vi.fn((s: string) => s),
 }));
 vi.mock('../../packages/cli/src/code-buffer.js', () => ({
-  codeBlockBuffer: { recordFromSegments: () => {}, clear: () => {} },
+  codeBlockBuffer: { recordFromSegments: vi.fn(), clear: () => {} },
 }));
 
 // Source of truth: packages/cli/src/signals/output.ts
 import { handleOutputEvent } from '../../packages/cli/src/signals/output.js';
 import type { OutputActions, OutputState } from '../../packages/cli/src/signals/output.js';
+import { cleanEngineOutput, parseMarkdownBlocks } from '../../packages/cli/src/blocks/markdown.js';
+import { codeBlockBuffer } from '../../packages/cli/src/code-buffer.js';
 
 function createMockActions(): OutputActions & { calls: Record<string, unknown[][]> } {
   const calls: Record<string, unknown[][]> = { addBlock: [], flushStream: [] };
@@ -58,6 +60,101 @@ function emptyState(): OutputState {
 }
 
 describe('handleOutputEvent — control-plane events never render', () => {
+  it('rejects stale progress cleanup before flushing another job’s thinking', () => {
+    const actions = createMockActions();
+    handleOutputEvent({ type: 'progress-update', ownerId: 'newer', engines: [] }, emptyState(), actions, 'chat', 0);
+    handleOutputEvent({ type: 'thinking-chunk', engineId: 'newer', chunk: 'Pending thought' }, emptyState(), actions, 'chat', 0);
+    vi.mocked(actions.addBlock).mockClear();
+    handleOutputEvent({ type: 'progress-clear', ownerId: 'older' }, emptyState(), actions, 'chat', 0);
+    const staleCalls = [...vi.mocked(actions.addBlock).mock.calls];
+    handleOutputEvent({ type: 'progress-clear', ownerId: 'newer' }, emptyState(), actions, 'chat', 0);
+    expect(staleCalls).toEqual([]);
+    expect(actions.addBlock).toHaveBeenCalledExactlyOnceWith({ type: 'thinking-chunk', engineId: 'newer', chunk: 'Pending thought' });
+  });
+  it.each(['newer', undefined])('does not clear replacement progress owned by %s', ownerId => {
+    const actions = createMockActions();
+    const older = { type: 'progress-update' as const, ownerId: 'older', engines: [] };
+    const newer = { type: 'progress-update' as const, ownerId, engines: [] };
+    const cleanup = { type: 'progress-clear' as const, ownerId: 'older' };
+    handleOutputEvent(older, emptyState(), actions, 'chat', 0);
+    handleOutputEvent(newer, emptyState(), { ...actions }, 'chat', 0);
+    vi.mocked(actions.setLiveProgress).mockClear();
+    handleOutputEvent(cleanup, emptyState(), actions, 'chat', 0);
+    expect(actions.setLiveProgress).not.toHaveBeenCalled();
+    expect(actions.setLiveScoreboard).not.toHaveBeenCalled();
+    expect(actions.setLiveRationale).not.toHaveBeenCalled();
+  });
+  it('clears matching progress once without affecting another output sink', () => {
+    const actions = createMockActions();
+    const other = createMockActions();
+    const update = { type: 'progress-update' as const, ownerId: 'owned', engines: [] };
+    const cleanup = { type: 'progress-clear' as const, ownerId: 'owned' };
+    handleOutputEvent(update, emptyState(), actions, 'chat', 0);
+    handleOutputEvent(update, emptyState(), other, 'chat', 0);
+    vi.mocked(actions.setLiveProgress).mockClear();
+    vi.mocked(other.setLiveProgress).mockClear();
+    handleOutputEvent(cleanup, emptyState(), actions, 'chat', 0);
+    handleOutputEvent(cleanup, emptyState(), actions, 'chat', 0);
+    expect(actions.setLiveProgress).toHaveBeenCalledExactlyOnceWith(null);
+    expect(other.setLiveProgress).not.toHaveBeenCalled();
+    handleOutputEvent(cleanup, emptyState(), other, 'chat', 0);
+    expect(other.setLiveProgress).toHaveBeenCalledExactlyOnceWith(null);
+  });
+  it('preserves unscoped progress cleanup', () => {
+    const actions = createMockActions();
+    const update = { type: 'progress-update' as const, ownerId: 'owned', engines: [] };
+    handleOutputEvent(update, emptyState(), actions, 'chat', 0);
+    vi.mocked(actions.setLiveProgress).mockClear();
+    handleOutputEvent({ type: 'progress-clear' }, emptyState(), actions, 'chat', 0);
+    expect(actions.setLiveProgress).toHaveBeenCalledExactlyOnceWith(null);
+    expect(actions.setLiveScoreboard).toHaveBeenCalledExactlyOnceWith(null);
+  });
+  it('never cleans, folds, or parses a literal patch preview', () => {
+    vi.mocked(cleanEngineOutput).mockClear();
+    vi.mocked(parseMarkdownBlocks).mockClear();
+    const actions = createMockActions();
+    const event = { type: 'engine-block' as const, engineId: 'patch', color: 245, format: 'diff' as const,
+      content: '+<think>literal</think>\n ```\n+**data**' };
+    handleOutputEvent(event, emptyState(), actions, 'agent', 0);
+    expect(actions.addBlock).toHaveBeenCalledWith(event);
+    expect(cleanEngineOutput).not.toHaveBeenCalled();
+    expect(parseMarkdownBlocks).not.toHaveBeenCalled();
+    expect(codeBlockBuffer.recordFromSegments).toHaveBeenCalledWith([
+      expect.objectContaining({ type: 'code', language: 'diff', code: event.content }),
+    ]);
+  });
+  it('does not turn patch metadata into a model timing footer', () => {
+    const actions = createMockActions();
+    handleOutputEvent({ type: 'engine-block', format: 'diff', engineId: 'untrusted\u001b[2J', color: 245,
+      content: '+patch' }, emptyState(), actions, 'chat', Date.now() - 100);
+    expect(actions.addBlock).toHaveBeenCalledOnce();
+    expect(actions.addBlock).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'response-meta' }));
+  });
+  it('cancels only the matching question, without hiding a newer prompt', () => {
+    const actions = createMockActions();
+    const resolve = vi.fn();
+    handleOutputEvent({ type: 'question-cancel', resolve } as any, emptyState(), actions, 'agent', 0);
+    expect(actions.setQuestionState).toHaveBeenCalledOnce();
+    const update = vi.mocked(actions.setQuestionState).mock.calls[0][0];
+    expect(update({ resolve })).toBeNull();
+    const newer = { resolve: vi.fn(), prompt: 'newer' };
+    expect(update(newer)).toBe(newer);
+    expect(update(null)).toBeNull();
+    expect(actions.calls.addBlock).toHaveLength(0);
+  });
+  it('preserves the real question identity through cancellation', () => {
+    const actions = createMockActions();
+    let current: any = null;
+    vi.mocked(actions.setQuestionState).mockImplementation(value => {
+      current = typeof value === 'function' ? value(current) : value;
+    });
+    const resolve = vi.fn();
+    handleOutputEvent({ type: 'question', prompt: 'Apply?', resolve }, emptyState(), actions, 'agent', 0);
+    expect(current.resolve).toBe(resolve);
+    handleOutputEvent({ type: 'question-cancel', resolve }, emptyState(), actions, 'agent', 0);
+    expect(current).toBeNull();
+    expect(resolve).not.toHaveBeenCalled();
+  });
   it('swallows engine-pid and engine-pid-clear instead of committing "[engine-pid-clear]" blocks', () => {
     const actions = createMockActions();
     handleOutputEvent({ type: 'engine-pid', engineId: 'codex', pid: 1234 } as any, emptyState(), actions, 'agent', 0);

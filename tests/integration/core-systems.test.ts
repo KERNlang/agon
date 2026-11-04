@@ -341,7 +341,7 @@ describe('Engine Registry Integration', () => {
 // ── 10. Patch Parser ──────────────────────────────────────────────
 describe('Patch Parser Integration', () => {
   it('parses a unified diff correctly', async () => {
-    const { parsePatch } = await import('../../packages/core/src/blocks/patch-parser.js');
+    const { parsePatch } = await import('@kernlang/agon-support-worktree');
 
     const diff = `diff --git a/src/index.ts b/src/index.ts
 --- a/src/index.ts
@@ -359,7 +359,7 @@ describe('Patch Parser Integration', () => {
   });
 
   it('patchSummary returns human-readable summary', async () => {
-    const { parsePatch, patchSummary } = await import('../../packages/core/src/blocks/patch-parser.js');
+    const { parsePatch, patchSummary } = await import('@kernlang/agon-support-worktree');
 
     const diff = `diff --git a/src/a.ts b/src/a.ts
 --- a/src/a.ts
@@ -380,7 +380,7 @@ diff --git a/src/b.ts b/src/b.ts
   });
 
   it('invertPatch swaps + and - lines', async () => {
-    const { invertPatch } = await import('../../packages/core/src/blocks/patch-parser.js');
+    const { invertPatch } = await import('@kernlang/agon-support-worktree');
 
     const diff = `diff --git a/test.ts b/test.ts
 --- a/test.ts

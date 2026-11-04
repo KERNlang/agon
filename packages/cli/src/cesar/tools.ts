@@ -1,10 +1,13 @@
-import { ToolRegistry, getProjectFileStateCache, createReadTool, createEditTool, createMultiEditTool, createWriteTool, createBashTool, createGrepTool, createGlobTool, createForgeTool, createBrainstormTool, createTribunalTool, createCampfireTool, createPipelineTool, createGoalTool, createConquerTool, createReviewTool, createDelegateTool, createAgentTool, createReportConfidenceTool, createProposePlanTool, createExitPlanModeTool, createListPlansTool, createRetrieveResultTool, createQuickNeroTool, createTodoWriteTool, createSaveMemoryTool, executeToolCall, resolveWorkingDir, parsePermissionRuleSet, parseToolHooks, isReadOnlyCommand, loadConfig } from '@kernlang/agon-core';
+import { assertContributionInput, selectModSettings } from '@kernlang/agon-kernel';
+import { statSync } from 'node:fs';
 
-import type { ToolContext, ToolCallResult } from '@kernlang/agon-core';
+import { ToolRegistry, getProjectFileStateCache, createReadTool, createEditTool, createMultiEditTool, createWriteTool, createBashTool, createGrepTool, createGlobTool, createReportConfidenceTool, createRetrieveResultTool, createTodoWriteTool, executeToolCall, resolveWorkingDir, parsePermissionRuleSet, parseToolHooks, isReadOnlyCommand, loadConfig } from '@kernlang/agon-core';
+
+import { assertCanonicalSurfaceSelectionCurrent, captureProcessSurfaceAuthority, processSurfaceCatalog, processSurfaceClient, processSurfaceNames } from '../surface-authority-runtime.js';
+
+import type { ToolContext, ToolCallResult, ToolHandler } from '@kernlang/agon-core';
 
 import type { Dispatch, HandlerContext } from '../handlers/types.js';
-
-import { createCouncilTool } from './council-tool.js';
 
 import { createEngineReliabilityTool } from './tool-engine-reliability.js';
 
@@ -25,48 +28,96 @@ import { isBashToolName } from './brain-helpers.js';
 /**
  * Create and populate the standard Cesar tool registry. Single source of truth — no more duplication.
  */
-export function createCesarToolRegistry(engineId?: string): ToolRegistry {
+export function createCesarToolRegistry(engineId?: string, available: ReadonlySet<string> = processSurfaceNames('cesar')): ToolRegistry {
   const toolRegistry = new ToolRegistry();
-  toolRegistry.register(createReadTool());
-  toolRegistry.register(createEditTool());
-  toolRegistry.register(createMultiEditTool());
-  toolRegistry.register(createWriteTool());
-  toolRegistry.register(createBashTool());
-  toolRegistry.register(createGrepTool());
-  toolRegistry.register(createGlobTool());
-  toolRegistry.register(createForgeTool());
-  toolRegistry.register(createBrainstormTool());
-  toolRegistry.register(createTribunalTool());
-  toolRegistry.register(createCampfireTool());
-  toolRegistry.register(createCouncilTool());
-  toolRegistry.register(createPipelineTool());
-  toolRegistry.register(createGoalTool());
-  toolRegistry.register(createConquerTool());
-  toolRegistry.register(createReviewTool());
-  toolRegistry.register(createDelegateTool());
-  toolRegistry.register(createAgentTool());
-  toolRegistry.register(createReportConfidenceTool());
-  toolRegistry.register(createQuickNeroTool());
-  toolRegistry.register(createTodoWriteTool());
-  toolRegistry.register(createSaveMemoryTool());
-  toolRegistry.register(createProposePlanTool());
-  toolRegistry.register(createExitPlanModeTool());
-  toolRegistry.register(createListPlansTool());
-  toolRegistry.register(createRetrieveResultTool(engineId));
-  toolRegistry.register(createEngineReliabilityTool());
-  toolRegistry.register(createRenderProbeTool());
-  toolRegistry.register(createTuiProbeTool());
+  const assertSelected = captureProcessSurfaceAuthority();
+  const catalog = processSurfaceCatalog('cesar').filter((entry) => entry.kind === 'cesar-tool');
+  for (const entry of catalog.filter(({ ownerClass }) => ownerClass === 'user-toggleable-mod-package')) {
+    const record = processSurfaceClient('cesar').assertAvailable(entry.publicId);
+    const payload = record.payload as {
+      readonly description: string;
+      readonly inputSchema: Record<string, unknown>;
+      readonly effect: 'read' | 'write' | 'network' | 'process';
+      readonly requiresConfirmation?: boolean;
+      readonly metadata?: Record<string, unknown>;
+      run(input: Record<string, unknown>, context: Record<string, unknown>): Promise<unknown> | unknown;
+    };
+    const readOnly = payload.effect === 'read';
+    for (const name of [entry.publicId, ...entry.aliases]) {
+      if (toolRegistry.has(name) || !available.has(name)) continue;
+      const validate = (input: Record<string, unknown>): string | null => {
+        try { assertCanonicalSurfaceSelectionCurrent(); assertContributionInput(payload.inputSchema, input); return null; }
+        catch (error) { return error instanceof Error ? error.message : String(error); }
+      };
+      toolRegistry.register({
+        definition: { name, description: payload.description, inputSchema: payload.inputSchema,
+          maxResultSizeChars: 100_000, isReadOnly: readOnly, isConcurrencySafe: readOnly,
+          ...(payload.metadata ? { metadata: payload.metadata } : {}) },
+        validate,
+        checkPermission: input => {
+          assertSelected();
+          if (payload.requiresConfirmation === true) {
+            return { behavior: 'ask', message: `Allow ${name}: ${JSON.stringify(input)}?` };
+          }
+          // Bundled tools preserve their established host-intercepted approval
+          // semantics. Third-party tools remain fail-closed at this adapter in
+          // addition to their capability wrappers.
+          return !entry.category.startsWith('external:') || readOnly
+            ? { behavior: 'allow' }
+            : { behavior: 'ask', message: `Allow external mod tool ${name}?` };
+        },
+        execute: async (input, context) => {
+          assertSelected();
+          assertContributionInput(payload.inputSchema, input);
+          const platform = `${process.platform}-${process.arch}`;
+          if (!['darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64'].includes(platform)) return { ok: false, content: '', error: `unsupported platform: ${platform}` };
+          const value = await payload.run(input, {
+            invocationId: `cesar-${Date.now()}`, cwd: context.cwd, platform,
+            signal: context.abortSignal ?? new AbortController().signal, config: selectModSettings(loadConfig(context.cwd), record.owner.id),
+            ...(record.owner.id === 'agon.memory' ? {
+              assertCurrent: assertSelected,
+              didWriteFile: (path: string, content: string) => {
+                context.readFileState.set(path, {
+                  content, timestamp: statSync(path).mtimeMs, offset: undefined, limit: undefined,
+                  isPartialView: false, lastTouchedBy: 'save-memory', lastTouchedAt: Date.now(),
+                });
+              },
+            } : {}),
+          });
+          return { ok: true, content: typeof value === 'string' ? value : JSON.stringify(value) };
+        },
+      });
+    }
+  }
+  const registerHost = (handler: ToolHandler): void => {
+    const entry = catalog.find(({ publicId, aliases }) => publicId === handler.definition.name || aliases.includes(handler.definition.name));
+    if (!entry || entry.ownerClass === 'user-toggleable-mod-package' || !available.has(handler.definition.name) || toolRegistry.has(handler.definition.name)) return;
+    toolRegistry.register(handler);
+  };
+  registerHost(createReadTool());
+  registerHost(createEditTool());
+  registerHost(createMultiEditTool());
+  registerHost(createWriteTool());
+  registerHost(createBashTool());
+  registerHost(createGrepTool());
+  registerHost(createGlobTool());
+  registerHost(createReportConfidenceTool());
+  registerHost(createTodoWriteTool());
+  registerHost(createRetrieveResultTool(engineId));
+  registerHost(createEngineReliabilityTool());
+  registerHost(createRenderProbeTool());
+  registerHost(createTuiProbeTool());
   return toolRegistry;
 }
 
 /**
  * Create a shared ToolContext for eager tool execution during streaming.
  */
-export function createEagerToolContext(ctx: HandlerContext, config: any, signal: AbortSignal, dispatch: Dispatch): ToolContext {
+export function createEagerToolContext(ctx: HandlerContext, config: any, signal: AbortSignal, dispatch: Dispatch, executionRefusal?: ToolContext['executionRefusal']): ToolContext {
   const cwd = resolveWorkingDir();
   const fsc = getProjectFileStateCache(cwd);
   const explorationMode = (ctx as any).explorationMode ?? false;
-  return { cwd: cwd, readFileState: (fsc as any).cache, abortSignal: signal, permissionMode: (config as any).permissionMode ?? 'ask', explorationMode: explorationMode, allowedCommands: (config as any).allowedCommands ?? [], toolPermissions: (config as any).toolPermissions ?? {}, source: 'orchestrator' as const, permissionRules: parsePermissionRuleSet((config as any).permissions), toolHooks: parseToolHooks((config as any).hooks), taskExecutionLease: ctx.cesar?.taskExecutionLease, onProgress: (msg: string) => dispatch({ type: 'spinner-update', message: `Cesar: ${msg}` }), onTodos: (todos: any[]) => dispatch({ type: 'todos-set', todos: asLiveTodos(todos) } as any) } as any;
+  return { cwd: cwd, readFileState: (fsc as any).cache, abortSignal: signal, executionRefusal, permissionMode: (config as any).permissionMode ?? 'ask', explorationMode: explorationMode, allowedCommands: (config as any).allowedCommands ?? [], toolPermissions: (config as any).toolPermissions ?? {}, source: 'orchestrator' as const, permissionRules: parsePermissionRuleSet((config as any).permissions), toolHooks: parseToolHooks((config as any).hooks), taskExecutionLease: ctx.cesar?.taskExecutionLease, onProgress: (msg: string) => dispatch({ type: 'spinner-update', message: `Cesar: ${msg}` }), onTodos: (todos: any[]) => dispatch({ type: 'todos-set', todos: asLiveTodos(todos) } as any) } as any;
 }
 
 /**
@@ -143,7 +194,7 @@ export async function executeEagerTool(toolName: string, meta: Record<string,unk
   const requestTaskApproval = (tool: string, message: string) => new Promise<boolean>((resolve) => {
     const command = (parsedInput as any).command ?? (parsedInput as any).file_path ?? toolInput;
     dispatch({ type: 'permission-ask', tool, command, reason: message, resolve: (approved: boolean | string) => {
-      resolve(isApprovedPermissionResponse(approved));
+      resolve(toolCtx.executionRefusal?.() === undefined && !toolCtx.abortSignal?.aborted && isApprovedPermissionResponse(approved));
     } } as any);
   });
   const authorizeEagerTaskAction = async (tool: string, input: Record<string, unknown>): Promise<boolean | string> => {

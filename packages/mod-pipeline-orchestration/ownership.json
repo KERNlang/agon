@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "package": "@kernlang/agon-mod-pipeline-orchestration",
+  "assignments": [
+    {
+      "category": "mcpTools",
+      "id": "Pipeline",
+      "source": "packages/mcp/src/agon-orchestration.ts:24",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-pipeline-orchestration",
+      "rule": "pipeline-surface-split"
+    }
+  ]
+}

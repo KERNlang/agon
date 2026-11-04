@@ -4,13 +4,8 @@ import { join } from 'node:path';
 
 import { setupTestAgonHome, cleanupTestAgonHome, agonHomePath } from '../helpers/agon-home.js';
 
-// Fix 3: loadConfig() previously did up to 3 readFileSync+JSON.parse+merge on
-// EVERY call (46 call sites, zero caching). It's now memoized in-process,
-// keyed by the resolved config paths + each file's mtime (missing file =
-// mtime 0) — same mtimes serves from cache (skipping the readFileSync calls
-// entirely), a touched file forces a fresh read+merge, and
-// invalidateConfigCache() clears the memo outright (belt-and-suspenders for
-// a write landing within the same mtime tick as a following read).
+// Read each source once per call. Content hashes reuse the parsed merge even
+// when timestamps change. Changed bytes invalidate it even at the same mtime.
 //
 // Contract (external review, fix 2): every call returns a FRESH object — a
 // structuredClone of the cached merge, never the cached instance itself.
@@ -36,12 +31,45 @@ afterEach(() => {
 });
 
 describe('loadConfig() memoization', () => {
-  it('serves from cache (no re-read) when nothing changed — as a fresh, equal object', async () => {
+  it.each([
+    ['gauntletEnabled', true, false],
+    ['gauntletEnabled', false, true],
+    ['gauntletMaxBreakers', 7, 8],
+    ['gauntletRepairTimeout', 450, 600],
+    ['corpusReplayLimit', 9, 12],
+  ] as const)('preserves legacy and namespaced Forge setting %s through writes', async (key, legacy, namespaced) => {
+    home = setupTestAgonHome('forge-config-roundtrip');
+    const path = agonHomePath('config.json');
+    const { loadConfig, configSet } = await import('../../packages/core/src/signals/config.js');
+    writeFileSync(path, JSON.stringify({ [key]: legacy, future: { keep: true } }));
+    expect(loadConfig()[key]).toBe(legacy);
+    writeFileSync(path, JSON.stringify({ [key]: legacy, mods: { 'agon.forge': { [key]: namespaced, future: 'keep' } }, future: { keep: true } }));
+    expect(loadConfig()[key]).toBe(namespaced);
+    configSet(key, legacy);
+    expect(loadConfig()[key]).toBe(legacy);
+    expect(JSON.parse(readFileSync(path, 'utf8'))).toMatchObject({
+      [key]: legacy, mods: { 'agon.forge': { [key]: legacy, future: 'keep' } }, future: { keep: true },
+    });
+    const project = join(home, 'project');
+    mkdirSync(project);
+    const localPath = join(project, '.agon.json');
+    writeFileSync(path, JSON.stringify({ mods: { 'agon.forge': { [key]: namespaced } } }));
+    writeFileSync(localPath, JSON.stringify({ [key]: legacy }));
+    expect(loadConfig(project)).toMatchObject({ [key]: legacy, mods: { 'agon.forge': { [key]: legacy } } });
+    writeFileSync(path, JSON.stringify({ [key]: legacy }));
+    writeFileSync(localPath, JSON.stringify({ mods: { 'agon.forge': { [key]: namespaced } } }));
+    expect(loadConfig(project)).toMatchObject({ [key]: namespaced, mods: { 'agon.forge': { [key]: namespaced } } });
+    writeFileSync(join(project, '.agon.local.json'), JSON.stringify({ [key]: legacy }));
+    expect(loadConfig(project)).toMatchObject({ [key]: legacy, mods: { 'agon.forge': { [key]: legacy } } });
+  });
+
+  it('reuses the parsed merge after checking current bytes and returns a fresh object', async () => {
     home = setupTestAgonHome('config-memo-same');
     writeFileSync(agonHomePath('config.json'), JSON.stringify({ commitCoAuthor: 'v1' }));
 
-    const { loadConfig } = await import('../../packages/core/src/signals/config.js');
+    const { loadConfig, _configMemoCache } = await import('../../packages/core/src/signals/config.js');
     const first = loadConfig();
+    const entries = [..._configMemoCache.values()];
     expect(first.commitCoAuthor).toBe('v1');
 
     vi.mocked(readFileSync).mockClear();
@@ -49,7 +77,8 @@ describe('loadConfig() memoization', () => {
 
     expect(second).toEqual(first); // same content — served from cache…
     expect(second).not.toBe(first); // …but a fresh clone, never the cached instance
-    expect(readFileSync).not.toHaveBeenCalled();
+    expect(vi.mocked(readFileSync).mock.calls).toEqual([[agonHomePath('config.json')], [agonHomePath('modular-host/current-generation.json')]]);
+    expect([..._configMemoCache.values()].every((entry, index) => entry === entries[index])).toBe(true);
   });
 
   it('a caller mutating the returned config cannot poison the cache for later callers', async () => {
@@ -66,7 +95,7 @@ describe('loadConfig() memoization', () => {
     (first as { engineModels: Record<string, string> }).engineModels.claude = 'poisoned';
     (first as { commitCoAuthor: string }).commitCoAuthor = 'poisoned';
 
-    const second = loadConfig(); // cache hit — same mtimes
+    const second = loadConfig(); // Cache hit: same contents.
     expect(second.permissions.allow).toEqual(['Read(a)']);
     expect((second as { engineModels: Record<string, string> }).engineModels.claude).toBeUndefined();
     expect(second.commitCoAuthor).not.toBe('poisoned');
@@ -95,7 +124,7 @@ describe('loadConfig() memoization', () => {
     expect(readFileSync).toHaveBeenCalled();
   });
 
-  it('treats a missing config file as mtime 0 and still caches correctly', async () => {
+  it('checks that a missing config file is still absent and caches its defaults', async () => {
     home = setupTestAgonHome('config-memo-missing');
     // No config.json written at all.
     const { loadConfig } = await import('../../packages/core/src/signals/config.js');
@@ -105,7 +134,7 @@ describe('loadConfig() memoization', () => {
     vi.mocked(readFileSync).mockClear();
     const second = loadConfig();
     expect(second).toEqual(first);
-    expect(readFileSync).not.toHaveBeenCalled();
+    expect(vi.mocked(readFileSync).mock.calls).toEqual([[agonHomePath('config.json')], [agonHomePath('modular-host/current-generation.json')]]);
   });
 
   it('keys the cache per-cwd: a project .agon.json changing invalidates only that cwd', async () => {
@@ -127,7 +156,7 @@ describe('loadConfig() memoization', () => {
     vi.mocked(readFileSync).mockClear();
     const globalAgain = loadConfig();
     expect(globalAgain).toEqual(globalOnly);
-    expect(readFileSync).not.toHaveBeenCalled();
+    expect(vi.mocked(readFileSync).mock.calls).toEqual([[agonHomePath('config.json')], [agonHomePath('modular-host/current-generation.json')]]);
   });
 
   it('invalidateConfigCache() forces a fresh read even when mtime hasn\'t changed', async () => {
@@ -139,9 +168,7 @@ describe('loadConfig() memoization', () => {
     const first = loadConfig();
     expect(first.commitCoAuthor).toBe('v1');
 
-    // Overwrite WITHOUT bumping mtime (same-tick write hazard) — normally
-    // this would still hit the memo, which is exactly what
-    // invalidateConfigCache() exists to override.
+    // Explicit invalidation remains supported alongside content checks.
     writeFileSync(path, JSON.stringify({ commitCoAuthor: 'v2' }));
     invalidateConfigCache();
 

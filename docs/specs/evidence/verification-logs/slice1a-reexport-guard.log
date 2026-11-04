@@ -1,0 +1,13 @@
+command: ["npm","run","guard:reexports"]
+exitCode: 0
+signal: none
+error: none
+outputBytes: 129
+outputHash: sha256:8e4f46fe74e0147198654ecdf47e0eb60a2c12e640d6db79cc16e78b60e61db8
+outputTruncated: false
+
+
+> guard:reexports
+> node scripts/guard/reexport-surface.mjs
+
+guard:reexports — OK (no re-export-without-local-binding crashes)

@@ -1,4 +1,15 @@
 import { describe, expect, it } from 'vitest';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import type { CommandContribution, Json, ModServices } from '@kernlang/agon-mod-api';
+import { ModRegistry } from '../../packages/mod-kernel/src/registry.js';
+import { assertContributionInput } from '../../packages/mod-kernel/src/index.js';
+import { createMod, MANIFEST } from '../../packages/mod-naturalize/src/index.js';
+import { fileURLToPath } from 'node:url';
+import ts from 'typescript';
+import { runNaturalize as runPhysicalNaturalize } from '../../packages/mod-naturalize/src/implementation.js';
+import { wordDiffStats as ownedWordDiffStats } from '@kernlang/agon-mod-naturalize/lexical-policy';
 
 import {
   runNaturalize,
@@ -9,7 +20,218 @@ import {
 
 // ── wordDiffStats ────────────────────────────────────────────────────────────
 
+describe('registered Naturalize TUI input', () => {
+  it.each(['--out', '-o'])('reads the selected file and honors rewriter, author, threshold and %s', async outFlag => {
+    const root = mkdtempSync(join(tmpdir(), 'naturalize-tui-'));
+    const input = join(root, 'article draft.txt');
+    const out = join(root, 'rewritten.txt');
+    const original = 'Alpha beta gamma delta.';
+    const rewritten = 'Fresh wording retains all facts.';
+    const calls: Array<{ engine: string; prompt: string }> = [];
+    const registry = new ModRegistry({ generation: 'naturalize-tui', activeOwners: [
+      { id: MANIFEST.id, version: MANIFEST.version, contentHash: `sha256:${'a'.repeat(64)}` },
+    ] });
+    try {
+      writeFileSync(input, original);
+      const mod = await createMod({
+        engines: { listActive: async () => ['writer', 'other', 'rewriter'],
+          dispatch: async (engine: string, prompt: string) => {
+            calls.push({ engine, prompt });
+            return { exitCode: 0, stdout: calls.length < 3 ? original : rewritten };
+          } },
+        permissions: { check: async () => 'allow' },
+        receipts: { record: async () => 'fixture-receipt' },
+      } as unknown as ModServices);
+      const session = registry.beginRegistration(MANIFEST);
+      const dispose = await mod.activate(session.registrar);
+      session.commit();
+      try {
+        const command = registry.project('tui').entries[0]!.payload as CommandContribution;
+        const parsed = await command.parse!(`/naturalize ${input} --author writer --engine rewriter --min-change 50 --max-attempts 3 ${outFlag} ${out}`);
+        assertContributionInput(command.inputSchema!, parsed as Json);
+        const result = await command.run(parsed as Json, {
+          invocationId: 'tui-file', cwd: root, platform: 'darwin-arm64',
+          signal: new AbortController().signal, config: {},
+        });
+        expect(result.exitCode).toBe(0);
+        expect(calls.map(call => call.engine)).toEqual(['rewriter', 'rewriter', 'rewriter']);
+        expect(calls.every(call => call.prompt.includes(original))).toBe(true);
+        expect(calls.every(call => !call.prompt.includes(input))).toBe(true);
+        expect(readFileSync(input, 'utf8')).toBe(original);
+        expect(readFileSync(out, 'utf8')).toBe(rewritten);
+        expect(result.result).toMatchObject({ author: 'writer', attempts: 3, minChangeMet: true });
+      } finally { await dispose(); }
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+  it.each(['empty', 'same-author', 'invalid-threshold'])('rejects %s input without provider dispatch', async scenario => {
+    const root = mkdtempSync(join(tmpdir(), 'naturalize-tui-refusal-'));
+    const file = join(root, 'input.txt');
+    let calls = 0;
+    const owner = { id: MANIFEST.id, version: MANIFEST.version, contentHash: `sha256:${'a'.repeat(64)}` as const };
+    const registry = new ModRegistry({ generation: 'naturalize-refusal', activeOwners: [owner] });
+    try {
+      writeFileSync(file, 'Original prose.');
+      const mod = await createMod({
+        engines: { listActive: async () => ['writer'], dispatch: async () => { calls++; return { exitCode: 0, stdout: 'Unexpected rewrite.' }; } },
+        receipts: { record: async () => 'fixture' },
+      } as unknown as ModServices);
+      const session = registry.beginRegistration(MANIFEST);
+      const dispose = await mod.activate(session.registrar);
+      session.commit();
+      try {
+        const command = registry.project('tui').entries[0]!.payload as CommandContribution;
+        const input = scenario === 'empty' ? '/naturalize'
+          : scenario === 'same-author' ? `/naturalize ${file} --author writer --engine writer`
+            : `/naturalize ${file} --min-change 101`;
+        const parsed = await command.parse!(input);
+        if (scenario === 'empty') expect(parsed).toEqual({ text: '' });
+        assertContributionInput(command.inputSchema!, parsed as Json);
+        const result = await command.run(parsed as Json, { invocationId: scenario, cwd: root, platform: 'darwin-arm64',
+          signal: new AbortController().signal, config: {} });
+        expect(result.exitCode).toBe(1);
+        expect(calls).toBe(0);
+        expect(readFileSync(file, 'utf8')).toBe('Original prose.');
+      } finally { await dispose(); }
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+});
+
+describe('Naturalize workflow ownership', () => {
+  it('preserves the full legacy registry type and the owned result contract', () => {
+    const path = fileURLToPath(new URL('../naturalize-compile-only.ts', import.meta.url));
+    const source = `
+      import { runNaturalize, type NaturalizeOptions } from '@kernlang/agon-forge';
+      import type { NaturalizeWorkflowOptions, NaturalizeResult } from '@kernlang/agon-mod-naturalize/workflow';
+      declare const legacy: NaturalizeOptions;
+      legacy.registry.load('fixture');
+      legacy.registry.register(legacy.registry.get('fixture'));
+      legacy.registry.list();
+      const owned: NaturalizeWorkflowOptions = legacy;
+      const run: (input: NaturalizeOptions) => Promise<NaturalizeResult> = runNaturalize;
+      // @ts-expect-error The legacy registry keeps its full public API.
+      const incomplete: NaturalizeOptions['registry'] = { get: legacy.registry.get };
+      // @ts-expect-error The result retains its required fields.
+      const invalid: NaturalizeResult = { ok: true };
+    `;
+    const options: ts.CompilerOptions = {
+      strict: true, noEmit: true, skipLibCheck: true,
+      target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.NodeNext,
+      moduleResolution: ts.ModuleResolutionKind.NodeNext, types: [],
+    };
+    const host = ts.createCompilerHost(options);
+    const original = host.getSourceFile.bind(host);
+    host.getSourceFile = (name, version, onError, fresh) => name === path
+      ? ts.createSourceFile(name, source, version, true)
+      : original(name, version, onError, fresh);
+    const program = ts.createProgram([path], options, host);
+    expect(ts.getPreEmitDiagnostics(program).map(diagnostic =>
+      ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n'))).toEqual([]);
+  });
+
+  it('keeps the prompt and legacy workflow in the physical owner', async () => {
+    const owner = await import('@kernlang/agon-mod-naturalize/workflow');
+    expect(buildNaturalizePrompt).toBe(owner.buildNaturalizePrompt);
+    const legacy = readFileSync(new URL('../../packages/forge/src/naturalize.ts', import.meta.url), 'utf8');
+    expect(legacy).toContain('@kernlang/agon-mod-naturalize/workflow');
+    expect(legacy).not.toContain('for (let attempt');
+    expect(legacy).not.toContain('opts.adapter.dispatch(');
+    const ledger = JSON.parse(readFileSync(new URL('../../docs/specs/evidence/modular-agon-slice5-migration-ledger.json', import.meta.url), 'utf8'));
+    const row = ledger.assignments.find((entry: { id: string; category: string }) =>
+      entry.id === 'NaturalizeResult' && entry.category === 'resultAndEnvelopeTypes');
+    expect(row).toMatchObject({
+      implementationPaths: ['packages/mod-naturalize/src/workflow.ts'],
+      compatibilityAdapter: 'packages/forge/src/naturalize.ts',
+      authority: 'legacy-runtime-until-s6',
+    });
+  });
+
+  it('preserves legacy sanitization and report values across the owner boundary', async () => {
+    const opts = makeOpts({ input: 'alpha\u180ebeta\u2000gamma\ufe00' });
+    let prompt = '';
+    opts.adapter = {
+      dispatch: async (request: { prompt: string }) => {
+        prompt = request.prompt;
+        return { exitCode: 0, timedOut: false, stdout: 'Different clean prose.', stderr: '' };
+      },
+    } as unknown as NaturalizeOptions['adapter'];
+    const result = await runNaturalize(opts);
+    expect(result.ok).toBe(true);
+    expect(prompt).toContain('alphabetagamma\ufe00');
+    expect(prompt).not.toContain('\u180e');
+    expect(prompt).not.toContain('\u2000');
+    expect(result.initialFindings).toBe(3);
+    expect(result.residualNotAssessable).toEqual([
+      'keyed statistical watermarks (green-list token bias) — undetectable without the generator key',
+    ]);
+  });
+});
+
+describe('physical Naturalize lexical-change gate', () => {
+  it.each([
+    ['case only', 'hello world', 'HELLO WORLD', false],
+    ['punctuation only', 'hello world', 'hello, world!', false],
+    ['reordered words', 'one two three', 'three two one', false],
+    ['different words', 'alpha beta gamma', 'delta epsilon zeta', true],
+    ['CJK replacement', '你好', '再见', true],
+    ['Cyrillic replacement', 'привет мир', 'добрый вечер', true],
+    ['Arabic replacement', 'مرحبا', 'وداعا', true],
+    ['unchanged CJK', '你好', '你好', false],
+    ['Cyrillic case only', 'привет мир', 'ПРИВЕТ МИР', false],
+    ['Arabic punctuation only', 'مرحبا عالم', 'مرحبا، عالم!', false],
+  ])('preserves the legacy gate for %s', async (_label, input, output, accepted) => {
+    let calls = 0;
+    const services = {
+      engines: {
+        listActive: async () => ['fixture-rewriter'],
+        dispatch: async () => { calls++; return { exitCode: 0, stdout: output }; },
+      },
+      receipts: { record: async () => 'fixture-receipt' },
+    } as unknown as ModServices;
+    const result = await runPhysicalNaturalize(
+      { text: input, engine: 'fixture-rewriter', minChange: 50, maxAttempts: 1 },
+      { invocationId: 'lexical-test', cwd: process.cwd(), platform: 'darwin-arm64', signal: new AbortController().signal, config: {} },
+      services,
+    );
+    expect(calls).toBe(1);
+    expect(result.exitCode === 0).toBe(accepted);
+    if (accepted) {
+      expect(result.result).toMatchObject({ ...wordDiffStats(input, output), minChangeMet: true });
+    } else {
+      expect(result.failure?.code).toBe('NATURALIZE_GATE_FAILED');
+      expect(result.stdout).toBeUndefined();
+    }
+  });
+});
+
+describe('physical Naturalize dispatch restrictions', () => {
+  it('requests text-only execution on the first attempt and retry', async () => {
+    const textOnly: Array<boolean | undefined> = [];
+    const services = {
+      engines: {
+        listActive: async () => ['fixture'],
+        dispatch: async (_engine, _prompt, _context, options) => {
+          textOnly.push(options?.textOnly);
+          return textOnly.length === 1
+            ? { exitCode: 1, stdout: '' }
+            : { exitCode: 0, stdout: 'Rewritten plain prose.' };
+        },
+      },
+      receipts: { record: async () => 'fixture-receipt' },
+    } as ModServices;
+    const result = await runPhysicalNaturalize(
+      { text: 'Original plain prose.', engine: 'fixture', maxAttempts: 2 },
+      { invocationId: 'text-only', cwd: process.cwd(), platform: 'darwin-arm64', signal: new AbortController().signal, config: {} },
+      services,
+    );
+    expect(result.exitCode).toBe(0);
+    expect(textOnly).toEqual([true, true]);
+  });
+});
+
 describe('naturalize — wordDiffStats', () => {
+  it('uses the physical Naturalize policy through the legacy API', () => {
+    expect(wordDiffStats).toBe(ownedWordDiffStats);
+  });
   it('identical text → unchangedRatio 1, zero changed words', () => {
     const d = wordDiffStats('the quick brown fox', 'the quick brown fox');
     expect(d).toEqual({ wordsBefore: 4, wordsAfter: 4, changedWords: 0, unchangedRatio: 1 });
@@ -42,6 +264,14 @@ describe('naturalize — wordDiffStats', () => {
   it('is case-insensitive and strips punctuation', () => {
     const d = wordDiffStats('Hello, World!', 'hello world');
     expect(d.unchangedRatio).toBe(1);
+  });
+
+  it('keeps combining marks inside words', () => {
+    expect(wordDiffStats('कि', 'कु')).toEqual({ wordsBefore: 1, wordsAfter: 1, changedWords: 1, unchangedRatio: 0 });
+  });
+
+  it('counts repeated non-Latin words independently', () => {
+    expect(wordDiffStats('你好 你好', '你好')).toEqual({ wordsBefore: 2, wordsAfter: 1, changedWords: 1, unchangedRatio: 0.5 });
   });
 });
 

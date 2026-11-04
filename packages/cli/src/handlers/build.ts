@@ -15,6 +15,7 @@ import { buildAgentApprovalCallback } from './agent.js';
 import { asLiveTodos } from '../signals/todos.js';
 
 import { yieldToInk } from '../cesar/brain-helpers.js';
+import { isExplicitApproval } from '../lib/explicit-approval.js';
 
 function injectFileReferences(input: string, cwd: string): string {
   const FILE_REF = /(?:^|\s)([\w./-]+\.\w{1,10})\b/g;
@@ -128,8 +129,18 @@ export async function handleBuild(input: string, dispatch: Dispatch, ctx: Handle
     
       const approvalLevel = (config.approvalLevel ?? 'plan') as ApprovalLevel;
       if (!skipPlanApproval && approvalLevel !== 'auto') {
-        const answer = await ctx.askQuestion('Approve build plan? [Y/n]');
-        if (answer.trim().toLowerCase() === 'n') {
+        const pendingPlan = ctx.currentPlan;
+        const answer = await ctx.askQuestion('Approve build plan? Type y or yes to approve.');
+        if (ctx.currentPlan !== pendingPlan || plan.state !== 'draft' || abort.signal.aborted) {
+          dispatch({ type: 'info', message: 'Build plan changed while approval was pending. No build started.' });
+          return;
+        }
+        if (!answer.trim()) {
+          savePlan(plan);
+          dispatch({ type: 'info', message: 'Build draft saved. Run build again when ready to approve and execute.' });
+          return;
+        }
+        if (!isExplicitApproval(answer)) {
           plan = cancelPlan(plan);
           ctx.setCurrentPlan(plan);
           savePlan(plan);

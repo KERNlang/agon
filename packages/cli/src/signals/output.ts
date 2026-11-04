@@ -287,7 +287,12 @@ export function foldEngineContent(content: string): { content: string, foldedSte
 /**
  * Process a single OutputEvent — updates spinner, streaming, and block state.
  */
+// The setter is stable across renders; React state can lag behind incoming events.
+const progressOwners = new WeakMap<OutputActions['setLiveProgress'], string>();
+
 export function handleOutputEvent(event: OutputEvent, state: OutputState, actions: OutputActions, mode: string, chatStartTime: number): void {
+  if (event.type === 'progress-clear' && event.ownerId !== undefined
+    && progressOwners.get(actions.setLiveProgress) !== event.ownerId) return;
   // Control-plane events consumed by App.dispatch (the active-engine pid map
   // for kill/cleanup) — never transcript content and no rendering side
   // effects. Without this early return they fall through to the default
@@ -313,7 +318,7 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
   // transcript blocks and we need tools → answer order preserved
   // (codex/gemini/opencode review).
   const _nonFlushing = new Set([
-    'tool-call', 'clear',
+    'tool-call', 'clear', 'question-cancel',
     'spinner-start', 'spinner-stop', 'spinner-update',
     'progress-update', 'progress-clear',
     'confidence-update', 'context-usage',
@@ -349,10 +354,14 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
       return;
     }
     case 'progress-update':
+      if (event.ownerId !== undefined) progressOwners.set(actions.setLiveProgress, event.ownerId);
+      else progressOwners.delete(actions.setLiveProgress);
       actions.setLiveProgress(event.engines);
       return;
     case 'progress-clear':
+      progressOwners.delete(actions.setLiveProgress);
       actions.setLiveProgress(null);
+      if (event.ownerId !== undefined) return;
       if (actions.setLiveScoreboard) actions.setLiveScoreboard(null);
       if (actions.setLiveRationale) actions.setLiveRationale(null);
       return;
@@ -496,6 +505,7 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
       _thinkingBuffer.engineId = '';
       _thinkingBuffer.content = '';
       actions.setLiveSpinner(null);
+      progressOwners.delete(actions.setLiveProgress);
       actions.setLiveProgress(null);
       actions.setLiveToolStreams({});
       if (actions.setLiveScoreboard) actions.setLiveScoreboard(null);
@@ -512,6 +522,12 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
     case 'patch-review':
       actions.setReviewEvent({ winnerId: (event as any).winnerId, patchPath: (event as any).patchPath, patchContent: (event as any).patchContent });
       return;
+    case 'question-cancel': {
+      const resolve = (event as Extract<OutputEvent, { type: 'question-cancel' }>).resolve;
+      actions.setQuestionState((current: { resolve: (answer: string) => void } | null) =>
+        current?.resolve === resolve ? null : current);
+      return;
+    }
     case 'question': {
       // Don't overwrite a pending permission prompt — permission has priority
       if (_permissionQueue.length > 0) {
@@ -905,7 +921,10 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
     }
     default:
       // Record code blocks from engine-block events
-      if (event.type === 'engine-block') {
+      if (event.type === 'engine-block' && (event as any).format === 'diff') {
+        codeBlockBuffer.recordFromSegments([{ type: 'code', code: (event as any).content, language: 'diff' }]);
+      }
+      if (event.type === 'engine-block' && (event as any).format !== 'diff') {
         const cleaned = cleanEngineOutput((event as any).content);
         // Skip folding if this block already carries fold metadata — a /raw
         // re-dispatch sets foldedSteps (0) so the raw text renders unfolded.
@@ -924,7 +943,7 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
       }
       actions.addBlock(event);
       // Chat mode timing for engine-block
-      if (mode === 'chat' && event.type === 'engine-block' && chatStartTime > 0) {
+      if (mode === 'chat' && event.type === 'engine-block' && (event as any).format !== 'diff' && chatStartTime > 0) {
         actions.addBlock({ type: 'response-meta', engineId: (event as any).engineId, elapsed: Date.now() - chatStartTime } as any);
       }
   }

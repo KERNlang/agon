@@ -110,14 +110,16 @@ export function stripReasoning(text: string): string {
 }
 
 /**
- * Strip claude TUI thinking-animation chrome that leaks into pty-captured output. The animation redraws on one line, so ANSI-stripping flattens its frames into a glyph/label/counter soup ('·✢✳✶✻✽…This one needs a moment…Working through it…95%…Review …'). Spinner glyph frames and the input-bar prompt char (❯) are NEVER legitimate content, so they're always removed. The …-terminated spinner labels (claude invents endless ones — 'Cogitating…', 'Untangling some thoughts…' — so enumerating them is hopeless) and the leading token/elapsed counter residue are removed ONLY when glyph frames were present, i.e. proof this is TUI chrome. That glyph-gate means API engines (kimi/zai — no TUI) never have real content touched.
+ * Strip claude TUI thinking-animation chrome that leaks into pty-captured output. The animation redraws on one line, so ANSI-stripping flattens its frames into a glyph/label/counter soup ('·✢✳✶✻✽…This one needs a moment…Working through it…95%…Review …'). The input-bar prompt char (❯) is never legitimate content, so it's always removed; spinner glyphs are removed only once chrome is proven, because a middle dot also appears in prose and only counts as a frame when it directly precedes a …-label. The …-terminated spinner labels (claude invents endless ones — 'Cogitating…', 'Untangling some thoughts…' — so enumerating them is hopeless) and the leading token/elapsed counter residue are removed ONLY when glyph frames were present, i.e. proof this is TUI chrome. That glyph-gate means API engines (kimi/zai — no TUI) never have real content touched.
  */
 export function stripTuiChrome(text: string): string {
-  const hadChrome = /[·✢✳✴✵✶✷✸✹✺✻✼✽✾⎿]/.test(text);
-  let s = text.replace(/[·✢✳✴✵✶✷✸✹✺✻✼✽✾⎿]/g, '').replace(/❯/g, '');
+  const hadChrome = /[✢✳✴✵✶✷✸✹✺✻✼✽✾⎿]|·[A-Z][^\n…]{0,40}…/.test(text);
+  let s = text.replace(/❯/g, '');
   if (hadChrome) {
+    s = s.replace(/[·✢✳✴✵✶✷✸✹✺✻✼✽✾⎿]/g, '');
     s = s.replace(/[A-Z][^\n…]{0,40}…/g, '');
     s = s.replace(/^[\s\d%]+/, '');
+    s = s.replace(/[ \t]{2,}/g, ' ');
   }
-  return s.replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+  return s.replace(/\n{3,}/g, '\n\n').trim();
 }

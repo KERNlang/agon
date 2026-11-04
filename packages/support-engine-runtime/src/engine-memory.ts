@@ -1,0 +1,254 @@
+import { readFileSync, writeFileSync, mkdirSync, renameSync } from 'node:fs';
+
+import { join, resolve } from 'node:path';
+
+import { homedir } from 'node:os';
+
+import type { TaskClass } from './types.js';
+
+export interface EngineNote {
+  taskClass: TaskClass;
+  observation: string;
+  timestamp: string;
+  forgeId?: string;
+  filePatterns?: string[];
+}
+
+export interface EngineStrengthObservation {
+  engineId: string;
+  category: string;
+  reason: string;
+}
+
+export interface EngineProfile {
+  strengths: string[];
+  weaknesses: string[];
+  tendencies: string[];
+  notes: EngineNote[];
+}
+
+export interface EngineMemoryRecord {
+  engines: Record<string,EngineProfile>;
+  lastUpdated: string;
+}
+
+function memoryPath(): string {
+  const override = process.env.AGON_HOME?.trim();
+  const home = override ? resolve(override) : join(homedir(), '.agon');
+  return join(home, 'engine-memory.json');
+}
+
+export function loadEngineMemory(): EngineMemoryRecord {
+  try { return JSON.parse(readFileSync(memoryPath(), 'utf-8')) as EngineMemoryRecord; }
+  catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+      console.warn(`[agon] failed to load engine memory: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    return { engines: {}, lastUpdated: new Date().toISOString() };
+  }
+}
+
+function saveEngineMemory(record: EngineMemoryRecord): void {
+  const override = process.env.AGON_HOME?.trim();
+  const home = override ? resolve(override) : join(homedir(), '.agon');
+  mkdirSync(home, { recursive: true });
+  record.lastUpdated = new Date().toISOString();
+  const path = memoryPath();
+  const tmpPath = path + '.tmp';
+  writeFileSync(tmpPath, JSON.stringify(record, null, 2) + '\n');
+  renameSync(tmpPath, path);
+}
+
+function ensureProfile(record: EngineMemoryRecord, engineId: string): EngineProfile {
+  if (!record.engines[engineId]) {
+    record.engines[engineId] = { strengths: [], weaknesses: [], tendencies: [], notes: [] };
+  }
+  return record.engines[engineId];
+}
+
+function uniqueStrings(values: string[], limit?: number): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  const max = limit ?? 20;
+  for (const value of values) {
+    const clean = String(value ?? '').trim();
+    if (!clean || seen.has(clean)) {
+      continue;
+    }
+    seen.add(clean);
+    out.push(clean);
+    if (out.length >= max) {
+      break;
+    }
+  }
+  return out;
+}
+
+/**
+ * Collapse a touched file path to a reusable routing-memory pattern.
+ */
+export function filePathToMemoryPattern(path: string): string {
+  const clean = String(path ?? '')
+    .trim()
+    .replace(/^['"]|['"]$/g, '')
+    .replace(/^a\//, '')
+    .replace(/^b\//, '');
+  if (!clean || clean === '/dev/null' || clean === 'dev/null') return '';
+
+  const parts = clean.split('/').filter(Boolean);
+  const extMatch = clean.match(/(\.[A-Za-z0-9]+)$/);
+  const ext = extMatch ? extMatch[1] : '';
+  const generatedIdx = parts.indexOf('generated');
+  if (generatedIdx >= 0) {
+    const prefix = parts.slice(0, generatedIdx + 1).join('/');
+    return `${prefix}/**/*${ext}`;
+  }
+  if (parts.length >= 3) return `${parts.slice(0, 2).join('/')}/**/*${ext}`;
+  if (parts.length === 2) return `${parts[0]}/*${ext}`;
+  return ext ? `*${ext}` : clean;
+}
+
+/**
+ * Extract stable file-scope patterns from a unified diff for engine memory.
+ */
+export function extractPatchFilePatterns(patch: string): string[] {
+  const paths: string[] = [];
+  for (const line of String(patch ?? '').split('\n')) {
+    const diffMatch = ((__m) => __m === null ? null : { full: __m[0], groups: Array.from(__m).slice(1).map((g) => g === undefined ? null : g), index: __m.index, named: __m.groups ? Object.fromEntries(Object.entries(__m.groups).map(([__k, __v]) => [__k, __v === undefined ? null : __v])) : {} })(line.match(/^diff --git[ \t\n\r\f\v]+a\/(.+?)[ \t\n\r\f\v]+b\/(.+)$/));
+    if (diffMatch) {
+      paths.push(diffMatch.groups[0] as string, diffMatch.groups[1] as string);
+      continue;
+    }
+    const markerMatch = ((__m) => __m === null ? null : { full: __m[0], groups: Array.from(__m).slice(1).map((g) => g === undefined ? null : g), index: __m.index, named: __m.groups ? Object.fromEntries(Object.entries(__m.groups).map(([__k, __v]) => [__k, __v === undefined ? null : __v])) : {} })(line.match(/^(?:---|\+\+\+)[ \t\n\r\f\v]+(?:a\/|b\/)?(.+)$/));
+    if (markerMatch) {
+      paths.push(markerMatch.groups[0] as string);
+    }
+  }
+  return uniqueStrings(paths.map(filePathToMemoryPattern).filter(Boolean), 12);
+}
+
+export function addEngineNote(engineId: string, taskClass: TaskClass, observation: string, forgeId?: string, filePatterns?: string[]): void {
+  const record = loadEngineMemory();
+  const profile = ensureProfile(record, engineId);
+  const note = { taskClass: taskClass, observation: observation, timestamp: new Date().toISOString(), forgeId: forgeId } as EngineNote;
+  const patterns = uniqueStrings(filePatterns ?? [], 12);
+  if (patterns.length > 0) {
+    note.filePatterns = patterns;
+  }
+  profile.notes.push(note);
+  // Keep only last 50 notes per engine
+  if (profile.notes.length > 50) {
+    profile.notes = profile.notes.slice(-50);
+  }
+  saveEngineMemory(record);
+}
+
+export function setEngineStrengths(engineId: string, strengths: string[]): void {
+  const record = loadEngineMemory();
+  const profile = ensureProfile(record, engineId);
+  profile.strengths = strengths;
+  saveEngineMemory(record);
+}
+
+export function setEngineWeaknesses(engineId: string, weaknesses: string[]): void {
+  const record = loadEngineMemory();
+  const profile = ensureProfile(record, engineId);
+  profile.weaknesses = weaknesses;
+  saveEngineMemory(record);
+}
+
+export function addEngineTendency(engineId: string, tendency: string): void {
+  const record = loadEngineMemory();
+  const profile = ensureProfile(record, engineId);
+  if (!profile.tendencies.includes(tendency)) {
+    profile.tendencies.push(tendency);
+    if (profile.tendencies.length > 10) {
+      profile.tendencies = profile.tendencies.slice(-10);
+    }
+  }
+  saveEngineMemory(record);
+}
+
+export function getEngineProfile(engineId: string): EngineProfile|null {
+  const record = loadEngineMemory();
+  return record.engines[engineId] ?? null;
+}
+
+export function buildRolePrompt(engineId: string, taskClass: TaskClass): string {
+  const profile = getEngineProfile(engineId);
+  if (!profile) return '';
+
+  const parts: string[] = [];
+
+  if (profile.strengths.length > 0) {
+    parts.push(`Your known strengths: ${profile.strengths.join(', ')}.`);
+  }
+  if (profile.weaknesses.length > 0) {
+    parts.push(`Watch out for: ${profile.weaknesses.join(', ')}.`);
+  }
+
+  // Recent notes for this task class
+  const classNotes = profile.notes
+    .filter((n) => n.taskClass === taskClass)
+    .slice(-3)
+    .map((n) => {
+      const scope = n.filePatterns?.length
+        ? ` [scope: ${n.filePatterns.slice(0, 4).join(', ')}]`
+        : '';
+      return `${n.observation}${scope}`;
+    });
+  if (classNotes.length > 0) {
+    parts.push(`Recent observations on ${taskClass} tasks: ${classNotes.join('; ')}.`);
+  }
+
+  if (profile.tendencies.length > 0) {
+    parts.push(`Known tendencies: ${profile.tendencies.join(', ')}.`);
+  }
+
+  return parts.length > 0
+    ? `\n## YOUR PROFILE (based on past performance)\n${parts.join('\n')}`
+    : '';
+}
+
+export function recordForgeOutcome(winnerId: string, loserIds: string[], taskClass: TaskClass, forgeId: string, winnerScore: number, loserScores: Record<string,number>, filePatterns?: string[]): void {
+  // Auto-populate notes from forge outcomes
+  const patterns = uniqueStrings(filePatterns ?? [], 12);
+  const scope = (patterns.length > 0) ? ` on ${patterns.slice(0, 4).join(', ')}` : '';
+  addEngineNote(winnerId, taskClass, `Won ${taskClass} forge${scope} (score ${winnerScore})`, forgeId, patterns);
+  for (const loserId of loserIds) {
+    const score = loserScores[loserId] ?? 0;
+    if (score === 0) {
+      addEngineNote(loserId, taskClass, `Failed ${taskClass} forge${scope} (did not pass fitness)`, forgeId, patterns);
+    } else {
+      addEngineNote(loserId, taskClass, `Lost ${taskClass} forge${scope} (score ${score} vs winner ${winnerScore})`, forgeId, patterns);
+    }
+  }
+}
+
+/**
+ * Record Cesar's final forge judgment so future routing learns from scorer overrides and per-engine strengths.
+ */
+export function recordForgeJudgment(judgedWinnerId: string, automaticWinnerId: string|null, engineIds: string[], taskClass: TaskClass, forgeId: string, summary: string, strengths?: EngineStrengthObservation[], filePatterns?: string[]): void {
+  const patterns = uniqueStrings(filePatterns ?? [], 12);
+  const cleanSummary = String(summary ?? '').replace(/[ \t\n\r\f\v]+/g, ' ').trim();
+  const clippedSummary = (cleanSummary.length > 240) ? (cleanSummary.slice(0, 237) + '...') : cleanSummary;
+  const summarySuffix = clippedSummary ? `: ${clippedSummary}` : '';
+  if (engineIds.includes(judgedWinnerId)) {
+    const overrideSuffix = (automaticWinnerId && automaticWinnerId !== judgedWinnerId) ? ` (overrode automatic winner ${automaticWinnerId})` : '';
+    addEngineNote(judgedWinnerId, taskClass, `Cesar judged this as the best forge result${overrideSuffix}${summarySuffix}`, forgeId, patterns);
+  }
+  if (automaticWinnerId && automaticWinnerId !== judgedWinnerId && engineIds.includes(automaticWinnerId)) {
+    addEngineNote(automaticWinnerId, taskClass, `Cesar overrode this automatic forge winner in favor of ${judgedWinnerId}${summarySuffix}`, forgeId, patterns);
+  }
+  for (const strength of strengths ?? []) {
+    if (!strength?.engineId || !engineIds.includes(strength.engineId)) {
+      continue;
+    }
+    const category = String(strength.category ?? 'strength').replace(/[ \t\n\r\f\v]+/g, ' ').trim() || 'strength';
+    const reason = String(strength.reason ?? '').replace(/[ \t\n\r\f\v]+/g, ' ').trim();
+    if (!reason) {
+      continue;
+    }
+    addEngineNote(strength.engineId, taskClass, `Cesar noted strength (${category}): ${reason}`, forgeId, patterns);
+  }
+}

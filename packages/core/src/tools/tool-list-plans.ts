@@ -2,7 +2,7 @@ import type { ToolHandler, ToolDefinition, ToolResult, PermissionDecision } from
 
 import type { ToolContext } from '../models/tool-types.js';
 
-import { listCesarPlans } from '../cesar/plan.js';
+import { listCesarPlans } from '@kernlang/agon-mod-plan';
 
 export function createListPlansTool(): ToolHandler {
   const definition: ToolDefinition = {

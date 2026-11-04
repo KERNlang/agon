@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "status": "working-tree qualification passed; exact committed replay pending",
+  "scope": "Restore Naturalize text-only dispatch request on first attempt and retry; not a sandbox",
+  "baseCommit": "a4e06dfb8869acd14fe4c90cc16a88abebeb3243",
+  "archiveRoot": "/Users/ra/dev/modular-agon-remediation",
+  "retention": "Do not delete archived evidence without Raphael's approval",
+  "sourceManifest": "naturalize-text-only-source-manifest-20261027.json",
+  "evidence": [
+    {
+      "log": "naturalize-text-only-negative-20261027.log",
+      "sha256": "ad56ddc3aff78ad9c4b473eb36196924917127ab926c528f3dacfa91076fef37",
+      "result": "Before fix: one expected failure captured undefined instead of true on both attempts; 23 other tests pass"
+    },
+    {
+      "log": "naturalize-text-only-review-fix-20261027.log",
+      "sha256": "6295da7a8578c6d125e073f5f07d3813c3514c706206d9008a21bb43a58b573a",
+      "result": "37 focused tests, edited lint and diffcheck pass; fake companion asserts exact argv including empty argument; zero providers"
+    },
+    {
+      "log": "naturalize-text-only-full-gates-20261027.log",
+      "receipt": "naturalize-text-only-full-gates-20261027.receipt.json",
+      "sha256": "67e931f6d94597f3093ea0458ca9d9abab723905fe484026ebf25d53f64137e7",
+      "result": "Build, types, lint, re-export/generated/release/supply-chain gates pass; 11955 tests pass, 7 skipped; 95 npm/npx checks; zero provider launches"
+    }
+  ],
+  "review": {
+    "packet": "naturalize-text-only-review-input.txt",
+    "packetSha256": "d9b19314189f1cdee326cb8fc7ad763f574170153847faeb82cb362e4cefd615",
+    "codexLog": "naturalize-text-only-codex-review.log",
+    "codexLogSha256": "14113741f04d033e3c7c0fc6e80210333f5d4b519b273367f0dee655707bb868",
+    "result": "No production regression found. Confirmed inherited argv-test weakness fixed locally; all 37 focused tests pass again.",
+    "limits": "Kimi returned no answer, not a pass. Exact-argv assertion is a local post-review correction."
+  },
+  "limits": [
+    "Exact committed replay pending; working-tree qualification is not a committed-subject receipt",
+    "Flag requests configured engine restrictions; it does not guarantee every engine enforces them",
+    "Other native platform and Node-version cells remain open",
+    "Existing OSV debt remains; no external versions changed",
+    "Strict ignored-file contamination and aggregate acceptance remain separate requirements",
+    "No OpenCode call or active/global Agon change"
+  ]
+}

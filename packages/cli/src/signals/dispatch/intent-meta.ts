@@ -1,9 +1,13 @@
 
-import { resolveWorkingDir, undoPatch, listSnapshots, revertSnapshot, resumeChatSession, configSet, clearConversation } from '@kernlang/agon-core';
+import { resolveWorkingDir, listSnapshots, revertSnapshot, resumeChatSession, configSet, clearConversation } from '@kernlang/agon-core';
+import { undoPatch } from '@kernlang/agon-support-worktree';
+import { runSessionJobAction } from '@kernlang/agon-mod-jobs';
+import { assertProcessSurfaceAvailable } from '../../surface-authority-runtime.js';
+import { persistencePath } from '@kernlang/agon-support-persistence';
 
 import { icons } from '../icons.js';
 
-import { handleForge, handleChat, handleBrainstorm, handleTribunal } from '../../handlers/index.js';
+import { handleForge, handleChat } from '../../handlers/index.js';
 
 import type { DispatchCallbacks, DispatchResult } from '../dispatch.js';
 
@@ -11,9 +15,10 @@ import { countTrackedUserTurns } from './utils.js';
 
 import { withThreadOutcome, buildBrainstormContinuationMessage } from './delegation.js';
 
-import { continueCesarAfterResult } from './cesar-router.js';
+import { continueCesarAfterResult, runPhysicalCesarWorkflow } from './cesar-router.js';
 
 import { emitPostDispatch } from './utils.js';
+import { isExplicitApproval } from '../../lib/explicit-approval.js';
 
 export async function dispatchMetaIntent(intent: any, input: string, cb: DispatchCallbacks): Promise<DispatchResult | null> {
   switch (intent.type) {
@@ -56,10 +61,11 @@ export async function dispatchMetaIntent(intent: any, input: string, cb: Dispatc
         break;
       }
       if (cb.lastUndoToken) {
-        const undoResult = undoPatch(cwd, cb.lastUndoToken);
+        const undoResult = undoPatch(cwd, cb.lastUndoToken, persistencePath('undo'));
         if (undoResult.ok) {
           cb.dispatch({ type: 'success', message: 'Patch reverted successfully.' });
           cb.setLastUndoToken(null);
+          if (undoResult.warning) cb.dispatch({ type: 'warning', message: undoResult.warning });
         } else {
           cb.dispatch({ type: 'error', message: undoResult.error ?? 'Undo failed' });
         }
@@ -120,41 +126,15 @@ export async function dispatchMetaIntent(intent: any, input: string, cb: Dispatc
   
     // ── Job commands ──
     case 'jobs': {
-      const jobsIntent = intent as any;
-      if (jobsIntent.action === 'cancel') {
-        if (!jobsIntent.jobId) {
-          cb.dispatch({ type: 'info', message: 'Usage: /jobs cancel <job-id>' });
-          break;
-        }
-        const cancelled = cb.jobManager?.cancel?.(jobsIntent.jobId, 'Cancelled by user') ?? false;
-        if (!cancelled) {
-          const existing = cb.jobManager?.get?.(jobsIntent.jobId);
-          cb.dispatch({
-            type: existing ? 'info' : 'error',
-            message: existing ? `Job ${jobsIntent.jobId} is already ${existing.state}.` : `Job not found: ${jobsIntent.jobId}`,
-          });
-        } else {
-          cb.dispatch({ type: 'success', message: `Cancelled job ${jobsIntent.jobId}.` });
-        }
-        break;
-      }
-      const allJobs = cb.jobManager?.list?.() ?? [];
-      if (allJobs.length === 0) {
-        cb.dispatch({ type: 'info', message: 'No jobs.' });
-      } else {
-        cb.dispatch({ type: 'header', title: 'Jobs' });
-        const rows = allJobs.map((j: any) => [j.id, j.type, j.state, j.label.slice(0, 40), j.startedAt.slice(11, 19)]);
-        cb.dispatch({ type: 'table', headers: ['ID', 'Type', 'State', 'Label', 'Started'], rows });
-      }
+      assertProcessSurfaceAvailable('tui', '/jobs');
+      runSessionJobAction(intent.action === 'cancel' ? 'cancel' : 'list', intent.jobId, {
+        manager: cb.jobManager, dispatch: cb.dispatch,
+      });
       break;
     }
     case 'focus': {
-      const focusId = (intent as any).jobId;
-      if (!focusId) { cb.dispatch({ type: 'info', message: 'Usage: /focus <job-id>' }); break; }
-      const job = cb.jobManager?.get?.(focusId);
-      if (!job) { cb.dispatch({ type: 'error', message: `Job not found: ${focusId}` }); break; }
-      cb.dispatch({ type: 'info', message: `Job ${job.id}: ${job.type} — ${job.state} — ${job.label}` });
-      if (job.error && job.state === 'failed') cb.dispatch({ type: 'error', message: job.error });
+      assertProcessSurfaceAvailable('tui', '/focus');
+      runSessionJobAction('focus', intent.jobId, { manager: cb.jobManager, dispatch: cb.dispatch });
       break;
     }
   
@@ -162,19 +142,19 @@ export async function dispatchMetaIntent(intent: any, input: string, cb: Dispatc
     case 'suggest-brainstorm': {
       const si = intent as any;
       const answer = await cb.askQuestion('Brainstorm with all engines? (y/n)');
-      if (answer.toLowerCase().startsWith('y')) {
+      if (isExplicitApproval(answer)) {
         const continuationEpoch = cb.ctx.inputEpoch ?? 0;
         const continuationUserTurns = countTrackedUserTurns(cb.ctx);
         const question = si.question ?? si.input;
         const _sCwd = resolveWorkingDir();
-        cb.runAsJob('brainstorm', si.question?.slice(0, 40) ?? 'brainstorm', withThreadOutcome(_sCwd, 'brainstorm', si.question?.slice(0, 40) ?? 'brainstorm', async () => {
-          const bsResult = await handleBrainstorm(question, cb.dispatch, cb.ctx);
+        cb.runAsJob('brainstorm', si.question?.slice(0, 40) ?? 'brainstorm', signal => withThreadOutcome(_sCwd, 'brainstorm', si.question?.slice(0, 40) ?? 'brainstorm', async () => {
+          const bsResult = await runPhysicalCesarWorkflow('brainstorm', { question }, cb, signal);
           if (bsResult) {
             cb.dispatch({ type: 'info', message: 'Cesar absorbing brainstorm results…' });
             await continueCesarAfterResult(buildBrainstormContinuationMessage('Brainstorm complete', question, bsResult), cb, continuationEpoch, continuationUserTurns);
           }
           return bsResult;
-        }, cb.ctx));
+        }, cb.ctx)());
         return { handled: true, ranAsJob: true };
       }
       await handleChat(si.input, cb.dispatch, cb.ctx, cb.allImages);
@@ -183,8 +163,8 @@ export async function dispatchMetaIntent(intent: any, input: string, cb: Dispatc
     case 'suggest-tribunal': {
       const si = intent as any;
       const answer = await cb.askQuestion('Debate with all engines? (y/n)');
-      if (answer.toLowerCase().startsWith('y')) {
-        cb.runAsJob('tribunal', si.question?.slice(0, 40) ?? 'tribunal', () => handleTribunal(si.question ?? si.input, cb.dispatch, cb.ctx));
+      if (isExplicitApproval(answer)) {
+        cb.runAsJob('tribunal', si.question?.slice(0, 40) ?? 'tribunal', async signal => { await runPhysicalCesarWorkflow('tribunal', { question: si.question ?? si.input }, cb, signal); });
         return { handled: true, ranAsJob: true };
       }
       await handleChat(si.input, cb.dispatch, cb.ctx, cb.allImages);
@@ -193,7 +173,7 @@ export async function dispatchMetaIntent(intent: any, input: string, cb: Dispatc
     case 'suggest-forge': {
       const si = intent as any;
       const answer = await cb.askQuestion('Forge — engines compete to build? (y/n)');
-      if (answer.toLowerCase().startsWith('y')) {
+      if (isExplicitApproval(answer)) {
         cb.runAsJob('forge', si.task?.slice(0, 40) ?? 'forge', async () => { await handleForge(si.task ?? si.input, si.fitnessCmd, cb.dispatch, cb.ctx, undefined, undefined, true); });
         return { handled: true, ranAsJob: true };
       }

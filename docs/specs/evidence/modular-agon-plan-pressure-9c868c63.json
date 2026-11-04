@@ -1,0 +1,1029 @@
+{
+  "schemaVersion": 1,
+  "passed": true,
+  "status": "passed",
+  "steps": [
+    {
+      "id": "install-offline",
+      "command": [
+        "npm",
+        "ci",
+        "--ignore-scripts",
+        "--offline"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "error": null,
+      "passed": true,
+      "log": "install-offline.log",
+      "seconds": 1.641,
+      "logSha256": "sha256:61dea9963f7492eba8b0e621a17e8b05a1c36fec7bba8bb02f3f28a04eb70dce"
+    },
+    {
+      "id": "build",
+      "command": [
+        "npm",
+        "run",
+        "build:cli:workspaces"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "error": null,
+      "passed": true,
+      "log": "build.log",
+      "seconds": 138.958,
+      "logSha256": "sha256:c00d150ad81010ebd591387e61595b5b11142c385a617b58dc5d018fbc6e26f8"
+    },
+    {
+      "id": "real-process-death",
+      "command": [
+        "node",
+        "/Users/ra/dev/agon-plan-resume/scripts/spec/pressure-process-death.mjs",
+        "/tmp/agon-pressure-fto_tang/checkout"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "error": null,
+      "passed": true,
+      "log": "real-process-death.log",
+      "seconds": 7.101,
+      "logSha256": "sha256:bc1f74300789f2e1c379ce15df3eb1fa8b43faffc7052a8b65e5fc8da0ed8d94"
+    },
+    {
+      "id": "spec-modular-generated-self-test",
+      "command": [
+        "npm",
+        "run",
+        "spec:modular-generated:self-test"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "error": null,
+      "passed": true,
+      "log": "spec-modular-generated-self-test.log",
+      "seconds": 0.724,
+      "logSha256": "sha256:a5faac71de73e2041daaf3844c8ec0045df09eef4ef4e6bd11906a7c968f1472"
+    },
+    {
+      "id": "spec-modular-generated-check",
+      "command": [
+        "npm",
+        "run",
+        "spec:modular-generated:check"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "error": null,
+      "passed": true,
+      "log": "spec-modular-generated-check.log",
+      "seconds": 0.619,
+      "logSha256": "sha256:d178fe18e59aaa5f1c55a7a37eb1e073e4c37f7c5e1a86a8ed41c2016f490734"
+    },
+    {
+      "id": "spec-modular-first-party-check",
+      "command": [
+        "npm",
+        "run",
+        "spec:modular-first-party:check"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "error": null,
+      "passed": true,
+      "log": "spec-modular-first-party-check.log",
+      "seconds": 0.293,
+      "logSha256": "sha256:8d17d993096d08b39c412a7de8d5c55eae129a67e0bd9f057d46d2b3c9808bde"
+    },
+    {
+      "id": "test-modular-disable-matrix",
+      "command": [
+        "npm",
+        "run",
+        "test:modular-disable-matrix"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "error": null,
+      "passed": true,
+      "log": "test-modular-disable-matrix.log",
+      "seconds": 0.346,
+      "logSha256": "sha256:414ff4ce853e99f75cd01c88c3b6598e789ca5387bd636e1187649025e8db96c"
+    },
+    {
+      "id": "test-modular-foundation-mutation",
+      "command": [
+        "npm",
+        "run",
+        "test:modular-foundation-mutation"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "error": null,
+      "passed": true,
+      "log": "test-modular-foundation-mutation.log",
+      "seconds": 6.493,
+      "logSha256": "sha256:c482aea815d1a40b61b30c190555cc330d7d812da321242bf23bc4a923c95d03"
+    },
+    {
+      "id": "test-representative-workflows",
+      "command": [
+        "npm",
+        "run",
+        "test:representative-workflows"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "error": null,
+      "passed": true,
+      "log": "test-representative-workflows.log",
+      "seconds": 0.663,
+      "logSha256": "sha256:5da5a7e2674a4a95c87f7350ecea287fc5cd1685c9cb79e4a6d09902422573ad"
+    },
+    {
+      "id": "modular-seed-1701",
+      "command": [
+        "node",
+        "node_modules/vitest/vitest.mjs",
+        "run",
+        "tests/unit/modular-activation-service.test.ts",
+        "tests/unit/modular-additional-tui-contracts.test.ts",
+        "tests/unit/modular-adversarial-discovery.test.ts",
+        "tests/unit/modular-apply-approval.test.ts",
+        "tests/unit/modular-apply-authority.test.ts",
+        "tests/unit/modular-apply-host-scope.test.ts",
+        "tests/unit/modular-apply-preview.test.ts",
+        "tests/unit/modular-apply-route.test.ts",
+        "tests/unit/modular-apply-tui-integration.test.ts",
+        "tests/unit/modular-apply-workflow.test.ts",
+        "tests/unit/modular-array-input-schema.test.ts",
+        "tests/unit/modular-boundary.test.ts",
+        "tests/unit/modular-brainstorm-cli-output-host.test.ts",
+        "tests/unit/modular-brainstorm-collector-owner.test.ts",
+        "tests/unit/modular-brainstorm-interactive-recovery.test.ts",
+        "tests/unit/modular-brainstorm-job-cancellation.test.ts",
+        "tests/unit/modular-brainstorm-policy-owner.test.ts",
+        "tests/unit/modular-brainstorm-policy-parity.test.ts",
+        "tests/unit/modular-brainstorm-presentation.test.ts",
+        "tests/unit/modular-brainstorm-runtime-owner.test.ts",
+        "tests/unit/modular-brainstorm-runtime.test.ts",
+        "tests/unit/modular-brainstorm-session-record.test.ts",
+        "tests/unit/modular-brainstorm-session-route.test.ts",
+        "tests/unit/modular-brainstorm-slash-session.test.ts",
+        "tests/unit/modular-brainstorm-workflow-owner.test.ts",
+        "tests/unit/modular-brainstorm-workflow-parity.test.ts",
+        "tests/unit/modular-candidate-process.test.ts",
+        "tests/unit/modular-cesar-orchestration-parity.test.ts",
+        "tests/unit/modular-cli-contract-parity.test.ts",
+        "tests/unit/modular-cli-lifecycle-dispatch.test.ts",
+        "tests/unit/modular-crash-recovery.test.ts",
+        "tests/unit/modular-dedup-owner.test.ts",
+        "tests/unit/modular-dedup-parity.test.ts",
+        "tests/unit/modular-docs-projection.test.ts",
+        "tests/unit/modular-engine-dispatch-contract.test.ts",
+        "tests/unit/modular-envelope-contract.test.ts",
+        "tests/unit/modular-external-surfaces.test.ts",
+        "tests/unit/modular-first-party-activation-matrix.test.ts",
+        "tests/unit/modular-first-party-cli-recovery.test.ts",
+        "tests/unit/modular-first-party-lock-validation.test.ts",
+        "tests/unit/modular-first-party-observability.test.ts",
+        "tests/unit/modular-folder-mod-bootstrap.test.ts",
+        "tests/unit/modular-folder-mod-manager.test.ts",
+        "tests/unit/modular-folder-mod-snapshot.test.ts",
+        "tests/unit/modular-folder-mods.test.ts",
+        "tests/unit/modular-generation-leases.test.ts",
+        "tests/unit/modular-host-boundaries.test.ts",
+        "tests/unit/modular-host-corruption.test.ts",
+        "tests/unit/modular-host-failures.test.ts",
+        "tests/unit/modular-host-receipts.test.ts",
+        "tests/unit/modular-host.test.ts",
+        "tests/unit/modular-installer.test.ts",
+        "tests/unit/modular-journal-schema.test.ts",
+        "tests/unit/modular-lease-corruption.test.ts",
+        "tests/unit/modular-legacy-update-guard.test.ts",
+        "tests/unit/modular-lifecycle-approval.test.ts",
+        "tests/unit/modular-lifecycle-concurrency.test.ts",
+        "tests/unit/modular-lifecycle-fault-injection.test.ts",
+        "tests/unit/modular-lifecycle-recovery.test.ts",
+        "tests/unit/modular-lifecycle-secret-redaction.test.ts",
+        "tests/unit/modular-lint-partitions.test.ts",
+        "tests/unit/modular-lock.test.ts",
+        "tests/unit/modular-manifest.test.ts",
+        "tests/unit/modular-mcp-command-failures.test.ts",
+        "tests/unit/modular-mcp-engine-assets.test.ts",
+        "tests/unit/modular-mcp-failure-wire.test.ts",
+        "tests/unit/modular-mcp-production-authority.test.ts",
+        "tests/unit/modular-migration-engine.test.ts",
+        "tests/unit/modular-mod-picker.test.ts",
+        "tests/unit/modular-mod-state-store.test.ts",
+        "tests/unit/modular-no-legacy-orchestration-owner.test.ts",
+        "tests/unit/modular-observability.test.ts",
+        "tests/unit/modular-package-graph.test.ts",
+        "tests/unit/modular-patch-backend.test.ts",
+        "tests/unit/modular-physical-activation-order.test.ts",
+        "tests/unit/modular-physical-surface-activation.test.ts",
+        "tests/unit/modular-pipeline-workflow-identity.test.ts",
+        "tests/unit/modular-plan-coordinator.test.ts",
+        "tests/unit/modular-plan-executor-owner.test.ts",
+        "tests/unit/modular-plan-natural-input.test.ts",
+        "tests/unit/modular-plan-scheduler-mutations.test.ts",
+        "tests/unit/modular-plan-session-host.test.ts",
+        "tests/unit/modular-plan-session-route.test.ts",
+        "tests/unit/modular-plan-session-tui.test.ts",
+        "tests/unit/modular-plan-state-owner.test.ts",
+        "tests/unit/modular-plan-store-owner.test.ts",
+        "tests/unit/modular-process-crash.test.ts",
+        "tests/unit/modular-production-surface-bootstrap.test.ts",
+        "tests/unit/modular-projection-parity.test.ts",
+        "tests/unit/modular-purge-retention.test.ts",
+        "tests/unit/modular-receipt-immutability.test.ts",
+        "tests/unit/modular-receipt-reconciliation.test.ts",
+        "tests/unit/modular-registry.test.ts",
+        "tests/unit/modular-release-state-migrations.test.ts",
+        "tests/unit/modular-resolver.test.ts",
+        "tests/unit/modular-review-regressions.test.ts",
+        "tests/unit/modular-rollback.test.ts",
+        "tests/unit/modular-run-abrupt-exit.test.ts",
+        "tests/unit/modular-run-record-exit.test.ts",
+        "tests/unit/modular-s8-bootstrap-isolation.test.ts",
+        "tests/unit/modular-s8-hardening.test.ts",
+        "tests/unit/modular-s8-review-acceptance.test.ts",
+        "tests/unit/modular-s8-review-regressions.test.ts",
+        "tests/unit/modular-selected-lock-integrity.test.ts",
+        "tests/unit/modular-setup-actions.test.ts",
+        "tests/unit/modular-source-boundaries.test.ts",
+        "tests/unit/modular-state-matrix.test.ts",
+        "tests/unit/modular-state-schema.test.ts",
+        "tests/unit/modular-state.test.ts",
+        "tests/unit/modular-static-discovery.test.ts",
+        "tests/unit/modular-support-parity.test.ts",
+        "tests/unit/modular-support-runtime-isolation.test.ts",
+        "tests/unit/modular-surface-collision.test.ts",
+        "tests/unit/modular-surface-cutover.test.ts",
+        "tests/unit/modular-surface-generation.test.ts",
+        "tests/unit/modular-think-surface-contract.test.ts",
+        "tests/unit/modular-third-party-activation.test.ts",
+        "tests/unit/modular-third-party-lifecycle.test.ts",
+        "tests/unit/modular-third-party-s7-deny.test.ts",
+        "tests/unit/modular-third-party-ui.test.ts",
+        "tests/unit/modular-topology-invariant.test.ts",
+        "tests/unit/modular-transactional-authority.test.ts",
+        "tests/unit/modular-trust-authority.test.ts",
+        "tests/unit/modular-tui-input-validation.test.ts",
+        "tests/unit/modular-tui-physical-execution.test.ts",
+        "tests/unit/modular-ui-accessibility.test.ts",
+        "tests/unit/modular-ui.test.ts",
+        "tests/unit/modular-updater.test.ts",
+        "tests/unit/modular-writer-lock-safety.test.ts",
+        "--sequence.shuffle",
+        "--sequence.seed=1701"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "error": null,
+      "passed": true,
+      "log": "modular-seed-1701.log",
+      "seconds": 30.115,
+      "logSha256": "sha256:ccca8d5e7504608dc6a51a4e88b4a7d68a03532851c697afee1e20d13b8847cb"
+    },
+    {
+      "id": "fresh-workflows-seed-1701",
+      "command": [
+        "node",
+        "node_modules/vitest/vitest.mjs",
+        "run",
+        "tests/integration/forge-e2e.test.ts",
+        "tests/integration/workflow-pipeline-call.test.ts",
+        "tests/integration/workflow-pipeline-slash.test.ts",
+        "tests/unit/brainstorm-dedup.test.ts",
+        "tests/unit/daemon-workflow-job.test.ts",
+        "tests/unit/rag-core.test.ts",
+        "tests/unit/review-roles.test.ts",
+        "tests/unit/rooms.test.ts",
+        "tests/unit/thinking.test.ts",
+        "tests/unit/tribunal-modes.test.ts",
+        "--sequence.shuffle",
+        "--sequence.seed=1701"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "error": null,
+      "passed": true,
+      "log": "fresh-workflows-seed-1701.log",
+      "seconds": 19.441,
+      "logSha256": "sha256:825395ae59e84618c46ee90afdc6b713e4e3b36b082326ea62d128c3f5819ea1"
+    },
+    {
+      "id": "typecheck",
+      "command": [
+        "npm",
+        "run",
+        "typecheck"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "error": null,
+      "passed": true,
+      "log": "typecheck.log",
+      "seconds": 3.57,
+      "logSha256": "sha256:be1cf12bc2c9d30c2cc1484ecb5ad9f709e037352543b5aeaf93337177ed2a06"
+    },
+    {
+      "id": "lint",
+      "command": [
+        "npm",
+        "run",
+        "lint"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "error": null,
+      "passed": true,
+      "log": "lint.log",
+      "seconds": 54.94,
+      "logSha256": "sha256:51c1cf26d2d51ee80c79157b45658b8e79340700e0996f043fa51ad37e9c7266"
+    },
+    {
+      "id": "guard-reexports",
+      "command": [
+        "npm",
+        "run",
+        "guard:reexports"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "error": null,
+      "passed": true,
+      "log": "guard-reexports.log",
+      "seconds": 0.233,
+      "logSha256": "sha256:de95be878ed3034819e11e168353c9f410a639a5c6304bc61e26718877a0291a"
+    },
+    {
+      "id": "test-ts",
+      "command": [
+        "npm",
+        "run",
+        "test:ts"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "error": null,
+      "passed": true,
+      "log": "test-ts.log",
+      "seconds": 40.254,
+      "logSha256": "sha256:fe801e4c5b24793e7e2116bd25d94caf0e3c4a98f96a59f2e88e22cb8aefdc03"
+    },
+    {
+      "id": "test-modular-release",
+      "command": [
+        "npm",
+        "run",
+        "test:modular-release"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "error": null,
+      "passed": true,
+      "log": "test-modular-release.log",
+      "seconds": 12.433,
+      "logSha256": "sha256:b1b7a6f92f6aeda9c9867788b217ef80b2f388972560b03ccce0ec983ea9ada8"
+    },
+    {
+      "id": "test-modular-supply-chain",
+      "command": [
+        "npm",
+        "run",
+        "test:modular-supply-chain"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "error": null,
+      "passed": true,
+      "log": "test-modular-supply-chain.log",
+      "seconds": 0.186,
+      "logSha256": "sha256:598109af5521408556d3cda568cfc371d29f03493b0e15e5b7d667171c3ceeb2"
+    },
+    {
+      "id": "spec-modular-slice8-e2e",
+      "command": [
+        "npm",
+        "run",
+        "spec:modular-slice8:e2e"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "error": null,
+      "passed": true,
+      "log": "spec-modular-slice8-e2e.log",
+      "seconds": 7.087,
+      "logSha256": "sha256:093921b1de8795ba861e4e8521c54fa586ff6664c189f1b2310eeee2a2cc0b33"
+    },
+    {
+      "id": "test-modular-npx",
+      "command": [
+        "npm",
+        "run",
+        "test:modular-npx",
+        "--",
+        "--no-write"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "error": null,
+      "passed": true,
+      "log": "test-modular-npx.log",
+      "seconds": 50.271,
+      "logSha256": "sha256:40045ac44272f57e36e8b54e779c5b8e5273580723a297c93d4010e9f1d39464"
+    },
+    {
+      "id": "test-modular-state-migrations",
+      "command": [
+        "npm",
+        "run",
+        "test:modular-state-migrations",
+        "--",
+        "--no-write"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "error": null,
+      "passed": true,
+      "log": "test-modular-state-migrations.log",
+      "seconds": 1.373,
+      "logSha256": "sha256:6699622f33c206dc8c5041ce48b616b6ccb9a4cbbfdd102cfe13819e95b6a33d"
+    },
+    {
+      "id": "test-modular-physical-cutover",
+      "command": [
+        "npm",
+        "run",
+        "test:modular-physical-cutover",
+        "--",
+        "--no-write"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "error": null,
+      "passed": true,
+      "log": "test-modular-physical-cutover.log",
+      "seconds": 0.186,
+      "logSha256": "sha256:f4f279f87b17272758f81ebbfcf2f30b586593cdff99cfbb7c490f4adccc0fb7"
+    },
+    {
+      "id": "perf-modular-slice1a",
+      "command": [
+        "npm",
+        "run",
+        "perf:modular-slice1a",
+        "--",
+        "--no-write"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "error": null,
+      "passed": true,
+      "log": "perf-modular-slice1a.log",
+      "seconds": 15.239,
+      "logSha256": "sha256:6d12de4a341d0952f13a797c522fa2f635bc94240b65abba4baf75d1260f44d6"
+    },
+    {
+      "id": "perf-modular-slice2",
+      "command": [
+        "npm",
+        "run",
+        "perf:modular-slice2",
+        "--",
+        "--no-write"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "error": null,
+      "passed": true,
+      "log": "perf-modular-slice2.log",
+      "seconds": 4.933,
+      "logSha256": "sha256:eb9ce2756872ebfa7104f78724d9a5f9078d984c449247e9efb5a08aed386331"
+    },
+    {
+      "id": "perf-modular-slice3",
+      "command": [
+        "npm",
+        "run",
+        "perf:modular-slice3",
+        "--",
+        "--no-write"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "error": null,
+      "passed": true,
+      "log": "perf-modular-slice3.log",
+      "seconds": 0.619,
+      "logSha256": "sha256:e6c43a6a8bdf8552eda2ffc793300b0b0e79c5af7f9d3a93621b4ef3da665738"
+    },
+    {
+      "id": "perf-modular-slice4",
+      "command": [
+        "npm",
+        "run",
+        "perf:modular-slice4",
+        "--",
+        "--no-write"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "error": null,
+      "passed": true,
+      "log": "perf-modular-slice4.log",
+      "seconds": 2.723,
+      "logSha256": "sha256:e72642177cdfeac53a988851b82679f9e54dd292bda34d7a5938883c2dfec486"
+    },
+    {
+      "id": "perf-modular-slice5",
+      "command": [
+        "npm",
+        "run",
+        "perf:modular-slice5",
+        "--",
+        "--no-write"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "error": null,
+      "passed": true,
+      "log": "perf-modular-slice5.log",
+      "seconds": 3.922,
+      "logSha256": "sha256:c1d30e3f1c2d6082c3bbd664a14b757002c7b5ec767cf78d0abdd6e03c6b4e43"
+    },
+    {
+      "id": "perf-modular-slice6",
+      "command": [
+        "npm",
+        "run",
+        "perf:modular-slice6",
+        "--",
+        "--no-write"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "error": null,
+      "passed": true,
+      "log": "perf-modular-slice6.log",
+      "seconds": 2.528,
+      "logSha256": "sha256:1a795b24f90d2239e6ba2275d65c5d29c2ef6bf3b2a79a31b43d1d7875e533a5"
+    },
+    {
+      "id": "perf-modular-slice7",
+      "command": [
+        "npm",
+        "run",
+        "perf:modular-slice7",
+        "--",
+        "--no-write"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "error": null,
+      "passed": true,
+      "log": "perf-modular-slice7.log",
+      "seconds": 5.923,
+      "logSha256": "sha256:22f0cb475e164bb0077edb30231aa0d063f352629ec6be47f379ff3066a80e67"
+    },
+    {
+      "id": "perf-modular-slice8",
+      "command": [
+        "npm",
+        "run",
+        "perf:modular-slice8",
+        "--",
+        "--no-write"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "error": null,
+      "passed": true,
+      "log": "perf-modular-slice8.log",
+      "seconds": 3.162,
+      "logSha256": "sha256:f626219b62d8372cc15d323f589a025996b630e3edfbc5282f89403866289bc1"
+    }
+  ],
+  "runnerSha256": "sha256:8f08c843654af5b818574816e5b3cb1b7e828c243a73fdddbb22ae2ec513e8fa",
+  "platform": "macOS-26.1-arm64-arm-64bit-Mach-O",
+  "processDeathHarnessSha256": "sha256:b96cbc3d04df6abc438e42530731df53638437504a6bf041d463b2002bc1feff",
+  "profile": "full",
+  "repeat": 1,
+  "seed": 1701,
+  "scope": "Fresh offline fixture regression; not live-provider or complete release certification",
+  "notVerified": [
+    "live provider authentication and model quality",
+    "other native OS/CPU/Node combinations",
+    "registry publication/signing",
+    "independent model review",
+    "absence of all possible bugs"
+  ],
+  "subject": {
+    "commit": "9c868c63a59993d39193c5b3076118d7f4a2bf35",
+    "tree": "b5810e2ce77b5c358237cbe5360e49714481471d",
+    "workingChangesExcluded": false
+  },
+  "archiveSha256": "sha256:bf0553b27e987e1ef5fc4ff67f69244d28e1403cd2912a4556a1679d945184c2",
+  "plan": [
+    {
+      "id": "install-offline",
+      "command": [
+        "npm",
+        "ci",
+        "--ignore-scripts",
+        "--offline"
+      ]
+    },
+    {
+      "id": "build",
+      "command": [
+        "npm",
+        "run",
+        "build:cli:workspaces"
+      ]
+    },
+    {
+      "id": "real-process-death",
+      "command": [
+        "node",
+        "/Users/ra/dev/agon-plan-resume/scripts/spec/pressure-process-death.mjs",
+        "/tmp/agon-pressure-fto_tang/checkout"
+      ]
+    },
+    {
+      "id": "spec-modular-generated-self-test",
+      "command": [
+        "npm",
+        "run",
+        "spec:modular-generated:self-test"
+      ]
+    },
+    {
+      "id": "spec-modular-generated-check",
+      "command": [
+        "npm",
+        "run",
+        "spec:modular-generated:check"
+      ]
+    },
+    {
+      "id": "spec-modular-first-party-check",
+      "command": [
+        "npm",
+        "run",
+        "spec:modular-first-party:check"
+      ]
+    },
+    {
+      "id": "test-modular-disable-matrix",
+      "command": [
+        "npm",
+        "run",
+        "test:modular-disable-matrix"
+      ]
+    },
+    {
+      "id": "test-modular-foundation-mutation",
+      "command": [
+        "npm",
+        "run",
+        "test:modular-foundation-mutation"
+      ]
+    },
+    {
+      "id": "test-representative-workflows",
+      "command": [
+        "npm",
+        "run",
+        "test:representative-workflows"
+      ]
+    },
+    {
+      "id": "modular-seed-1701",
+      "command": [
+        "node",
+        "node_modules/vitest/vitest.mjs",
+        "run",
+        "tests/unit/modular-activation-service.test.ts",
+        "tests/unit/modular-additional-tui-contracts.test.ts",
+        "tests/unit/modular-adversarial-discovery.test.ts",
+        "tests/unit/modular-apply-approval.test.ts",
+        "tests/unit/modular-apply-authority.test.ts",
+        "tests/unit/modular-apply-host-scope.test.ts",
+        "tests/unit/modular-apply-preview.test.ts",
+        "tests/unit/modular-apply-route.test.ts",
+        "tests/unit/modular-apply-tui-integration.test.ts",
+        "tests/unit/modular-apply-workflow.test.ts",
+        "tests/unit/modular-array-input-schema.test.ts",
+        "tests/unit/modular-boundary.test.ts",
+        "tests/unit/modular-brainstorm-cli-output-host.test.ts",
+        "tests/unit/modular-brainstorm-collector-owner.test.ts",
+        "tests/unit/modular-brainstorm-interactive-recovery.test.ts",
+        "tests/unit/modular-brainstorm-job-cancellation.test.ts",
+        "tests/unit/modular-brainstorm-policy-owner.test.ts",
+        "tests/unit/modular-brainstorm-policy-parity.test.ts",
+        "tests/unit/modular-brainstorm-presentation.test.ts",
+        "tests/unit/modular-brainstorm-runtime-owner.test.ts",
+        "tests/unit/modular-brainstorm-runtime.test.ts",
+        "tests/unit/modular-brainstorm-session-record.test.ts",
+        "tests/unit/modular-brainstorm-session-route.test.ts",
+        "tests/unit/modular-brainstorm-slash-session.test.ts",
+        "tests/unit/modular-brainstorm-workflow-owner.test.ts",
+        "tests/unit/modular-brainstorm-workflow-parity.test.ts",
+        "tests/unit/modular-candidate-process.test.ts",
+        "tests/unit/modular-cesar-orchestration-parity.test.ts",
+        "tests/unit/modular-cli-contract-parity.test.ts",
+        "tests/unit/modular-cli-lifecycle-dispatch.test.ts",
+        "tests/unit/modular-crash-recovery.test.ts",
+        "tests/unit/modular-dedup-owner.test.ts",
+        "tests/unit/modular-dedup-parity.test.ts",
+        "tests/unit/modular-docs-projection.test.ts",
+        "tests/unit/modular-engine-dispatch-contract.test.ts",
+        "tests/unit/modular-envelope-contract.test.ts",
+        "tests/unit/modular-external-surfaces.test.ts",
+        "tests/unit/modular-first-party-activation-matrix.test.ts",
+        "tests/unit/modular-first-party-cli-recovery.test.ts",
+        "tests/unit/modular-first-party-lock-validation.test.ts",
+        "tests/unit/modular-first-party-observability.test.ts",
+        "tests/unit/modular-folder-mod-bootstrap.test.ts",
+        "tests/unit/modular-folder-mod-manager.test.ts",
+        "tests/unit/modular-folder-mod-snapshot.test.ts",
+        "tests/unit/modular-folder-mods.test.ts",
+        "tests/unit/modular-generation-leases.test.ts",
+        "tests/unit/modular-host-boundaries.test.ts",
+        "tests/unit/modular-host-corruption.test.ts",
+        "tests/unit/modular-host-failures.test.ts",
+        "tests/unit/modular-host-receipts.test.ts",
+        "tests/unit/modular-host.test.ts",
+        "tests/unit/modular-installer.test.ts",
+        "tests/unit/modular-journal-schema.test.ts",
+        "tests/unit/modular-lease-corruption.test.ts",
+        "tests/unit/modular-legacy-update-guard.test.ts",
+        "tests/unit/modular-lifecycle-approval.test.ts",
+        "tests/unit/modular-lifecycle-concurrency.test.ts",
+        "tests/unit/modular-lifecycle-fault-injection.test.ts",
+        "tests/unit/modular-lifecycle-recovery.test.ts",
+        "tests/unit/modular-lifecycle-secret-redaction.test.ts",
+        "tests/unit/modular-lint-partitions.test.ts",
+        "tests/unit/modular-lock.test.ts",
+        "tests/unit/modular-manifest.test.ts",
+        "tests/unit/modular-mcp-command-failures.test.ts",
+        "tests/unit/modular-mcp-engine-assets.test.ts",
+        "tests/unit/modular-mcp-failure-wire.test.ts",
+        "tests/unit/modular-mcp-production-authority.test.ts",
+        "tests/unit/modular-migration-engine.test.ts",
+        "tests/unit/modular-mod-picker.test.ts",
+        "tests/unit/modular-mod-state-store.test.ts",
+        "tests/unit/modular-no-legacy-orchestration-owner.test.ts",
+        "tests/unit/modular-observability.test.ts",
+        "tests/unit/modular-package-graph.test.ts",
+        "tests/unit/modular-patch-backend.test.ts",
+        "tests/unit/modular-physical-activation-order.test.ts",
+        "tests/unit/modular-physical-surface-activation.test.ts",
+        "tests/unit/modular-pipeline-workflow-identity.test.ts",
+        "tests/unit/modular-plan-coordinator.test.ts",
+        "tests/unit/modular-plan-executor-owner.test.ts",
+        "tests/unit/modular-plan-natural-input.test.ts",
+        "tests/unit/modular-plan-scheduler-mutations.test.ts",
+        "tests/unit/modular-plan-session-host.test.ts",
+        "tests/unit/modular-plan-session-route.test.ts",
+        "tests/unit/modular-plan-session-tui.test.ts",
+        "tests/unit/modular-plan-state-owner.test.ts",
+        "tests/unit/modular-plan-store-owner.test.ts",
+        "tests/unit/modular-process-crash.test.ts",
+        "tests/unit/modular-production-surface-bootstrap.test.ts",
+        "tests/unit/modular-projection-parity.test.ts",
+        "tests/unit/modular-purge-retention.test.ts",
+        "tests/unit/modular-receipt-immutability.test.ts",
+        "tests/unit/modular-receipt-reconciliation.test.ts",
+        "tests/unit/modular-registry.test.ts",
+        "tests/unit/modular-release-state-migrations.test.ts",
+        "tests/unit/modular-resolver.test.ts",
+        "tests/unit/modular-review-regressions.test.ts",
+        "tests/unit/modular-rollback.test.ts",
+        "tests/unit/modular-run-abrupt-exit.test.ts",
+        "tests/unit/modular-run-record-exit.test.ts",
+        "tests/unit/modular-s8-bootstrap-isolation.test.ts",
+        "tests/unit/modular-s8-hardening.test.ts",
+        "tests/unit/modular-s8-review-acceptance.test.ts",
+        "tests/unit/modular-s8-review-regressions.test.ts",
+        "tests/unit/modular-selected-lock-integrity.test.ts",
+        "tests/unit/modular-setup-actions.test.ts",
+        "tests/unit/modular-source-boundaries.test.ts",
+        "tests/unit/modular-state-matrix.test.ts",
+        "tests/unit/modular-state-schema.test.ts",
+        "tests/unit/modular-state.test.ts",
+        "tests/unit/modular-static-discovery.test.ts",
+        "tests/unit/modular-support-parity.test.ts",
+        "tests/unit/modular-support-runtime-isolation.test.ts",
+        "tests/unit/modular-surface-collision.test.ts",
+        "tests/unit/modular-surface-cutover.test.ts",
+        "tests/unit/modular-surface-generation.test.ts",
+        "tests/unit/modular-think-surface-contract.test.ts",
+        "tests/unit/modular-third-party-activation.test.ts",
+        "tests/unit/modular-third-party-lifecycle.test.ts",
+        "tests/unit/modular-third-party-s7-deny.test.ts",
+        "tests/unit/modular-third-party-ui.test.ts",
+        "tests/unit/modular-topology-invariant.test.ts",
+        "tests/unit/modular-transactional-authority.test.ts",
+        "tests/unit/modular-trust-authority.test.ts",
+        "tests/unit/modular-tui-input-validation.test.ts",
+        "tests/unit/modular-tui-physical-execution.test.ts",
+        "tests/unit/modular-ui-accessibility.test.ts",
+        "tests/unit/modular-ui.test.ts",
+        "tests/unit/modular-updater.test.ts",
+        "tests/unit/modular-writer-lock-safety.test.ts",
+        "--sequence.shuffle",
+        "--sequence.seed=1701"
+      ]
+    },
+    {
+      "id": "fresh-workflows-seed-1701",
+      "command": [
+        "node",
+        "node_modules/vitest/vitest.mjs",
+        "run",
+        "tests/integration/forge-e2e.test.ts",
+        "tests/integration/workflow-pipeline-call.test.ts",
+        "tests/integration/workflow-pipeline-slash.test.ts",
+        "tests/unit/brainstorm-dedup.test.ts",
+        "tests/unit/daemon-workflow-job.test.ts",
+        "tests/unit/rag-core.test.ts",
+        "tests/unit/review-roles.test.ts",
+        "tests/unit/rooms.test.ts",
+        "tests/unit/thinking.test.ts",
+        "tests/unit/tribunal-modes.test.ts",
+        "--sequence.shuffle",
+        "--sequence.seed=1701"
+      ]
+    },
+    {
+      "id": "typecheck",
+      "command": [
+        "npm",
+        "run",
+        "typecheck"
+      ]
+    },
+    {
+      "id": "lint",
+      "command": [
+        "npm",
+        "run",
+        "lint"
+      ]
+    },
+    {
+      "id": "guard-reexports",
+      "command": [
+        "npm",
+        "run",
+        "guard:reexports"
+      ]
+    },
+    {
+      "id": "test-ts",
+      "command": [
+        "npm",
+        "run",
+        "test:ts"
+      ]
+    },
+    {
+      "id": "test-modular-release",
+      "command": [
+        "npm",
+        "run",
+        "test:modular-release"
+      ]
+    },
+    {
+      "id": "test-modular-supply-chain",
+      "command": [
+        "npm",
+        "run",
+        "test:modular-supply-chain"
+      ]
+    },
+    {
+      "id": "spec-modular-slice8-e2e",
+      "command": [
+        "npm",
+        "run",
+        "spec:modular-slice8:e2e"
+      ]
+    },
+    {
+      "id": "test-modular-npx",
+      "command": [
+        "npm",
+        "run",
+        "test:modular-npx",
+        "--",
+        "--no-write"
+      ]
+    },
+    {
+      "id": "test-modular-state-migrations",
+      "command": [
+        "npm",
+        "run",
+        "test:modular-state-migrations",
+        "--",
+        "--no-write"
+      ]
+    },
+    {
+      "id": "test-modular-physical-cutover",
+      "command": [
+        "npm",
+        "run",
+        "test:modular-physical-cutover",
+        "--",
+        "--no-write"
+      ]
+    },
+    {
+      "id": "perf-modular-slice1a",
+      "command": [
+        "npm",
+        "run",
+        "perf:modular-slice1a",
+        "--",
+        "--no-write"
+      ]
+    },
+    {
+      "id": "perf-modular-slice2",
+      "command": [
+        "npm",
+        "run",
+        "perf:modular-slice2",
+        "--",
+        "--no-write"
+      ]
+    },
+    {
+      "id": "perf-modular-slice3",
+      "command": [
+        "npm",
+        "run",
+        "perf:modular-slice3",
+        "--",
+        "--no-write"
+      ]
+    },
+    {
+      "id": "perf-modular-slice4",
+      "command": [
+        "npm",
+        "run",
+        "perf:modular-slice4",
+        "--",
+        "--no-write"
+      ]
+    },
+    {
+      "id": "perf-modular-slice5",
+      "command": [
+        "npm",
+        "run",
+        "perf:modular-slice5",
+        "--",
+        "--no-write"
+      ]
+    },
+    {
+      "id": "perf-modular-slice6",
+      "command": [
+        "npm",
+        "run",
+        "perf:modular-slice6",
+        "--",
+        "--no-write"
+      ]
+    },
+    {
+      "id": "perf-modular-slice7",
+      "command": [
+        "npm",
+        "run",
+        "perf:modular-slice7",
+        "--",
+        "--no-write"
+      ]
+    },
+    {
+      "id": "perf-modular-slice8",
+      "command": [
+        "npm",
+        "run",
+        "perf:modular-slice8",
+        "--",
+        "--no-write"
+      ]
+    }
+  ],
+  "providerLaunches": []
+}

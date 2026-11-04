@@ -133,6 +133,14 @@ describe('execution planner', () => {
     expect(input.timeout).toBe(120);
   });
 
+  it('hands the review wall-clock ceiling to the API config only', () => {
+    const api = planEngineExecution(options({ maxWallSeconds: 1800 }), null, true, 'resolved-model');
+    expect(api.apiConfig).toMatchObject({ extendWhileActiveMaxSeconds: 1800 });
+    const cli = planEngineExecution(options({ maxWallSeconds: 1800 }), '/usr/local/bin/planner-cli', true, null);
+    expect(cli.apiConfig).toBeUndefined();
+    expect(planEngineExecution(options(), null, true, 'resolved-model').apiConfig).not.toHaveProperty('extendWhileActiveMaxSeconds');
+  });
+
   it('normalizes a successful API agent result without inventing an error', () => {
     expect(normalizeApiAgentOutcome({ response: 'done', toolCalls: 2, steps: 3 })).toEqual({
       exitCode: 0,

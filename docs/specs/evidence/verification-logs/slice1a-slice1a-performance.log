@@ -1,0 +1,119 @@
+command: ["npm","run","perf:modular-slice1a"]
+exitCode: 0
+signal: none
+error: none
+outputBytes: 2282
+outputHash: sha256:b7d8d99ce6eca24bf902f0754ee503201cd836a502b9ead225e1be6e371eeeb9
+outputTruncated: false
+
+
+> perf:modular-slice1a
+> node --expose-gc scripts/spec/measure-modular-slice1a.mjs
+
+{
+  "schemaVersion": 1,
+  "measuredAt": "2026-08-23T13:23:23.351Z",
+  "platform": "darwin-arm64",
+  "node": "v26.3.0",
+  "isolation": {
+    "agonHome": "temporary",
+    "home": "temporary",
+    "npmCache": "temporary"
+  },
+  "coldStart": [
+    {
+      "args": [
+        "--version"
+      ],
+      "runs": 15,
+      "latencyMs": {
+        "p50": 150.494958,
+        "p95": 154.53762500000005,
+        "max": 154.53762500000005
+      },
+      "peakRssMb": {
+        "p50": 95.703125,
+        "p95": 96.765625,
+        "max": 96.765625
+      }
+    },
+    {
+      "args": [
+        "--help"
+      ],
+      "runs": 15,
+      "latencyMs": {
+        "p50": 153.52420799999982,
+        "p95": 157.38395800000035,
+        "max": 157.38395800000035
+      },
+      "peakRssMb": {
+        "p50": 96.609375,
+        "p95": 96.953125,
+        "max": 96.953125
+      }
+    }
+  ],
+  "resolver": {
+    "candidates": 1000,
+    "runs": 15,
+    "p50Ms": 30.1225000000004,
+    "p95Ms": 31.203583000000435,
+    "maxMs": 31.203583000000435,
+    "maxHeapDeltaBytes": 674272
+  },
+  "projections": {
+    "entries": 441,
+    "runs": 100,
+    "p50Ms": 0.2857910000002448,
+    "p95Ms": 0.42041599999993196,
+    "maxMs": 1.2331670000003214
+  },
+  "packages": {
+    "reports": [
+      {
+        "workspace": "packages/cli",
+        "packedBytes": 1583931,
+        "unpackedBytes": 7418502,
+        "files": 197
+      },
+      {
+        "workspace": "packages/mod-api",
+        "packedBytes": 9010,
+        "unpackedBytes": 70370,
+        "files": 19
+      },
+      {
+        "workspace": "packages/mod-kernel",
+        "packedBytes": 44303,
+        "unpackedBytes": 682318,
+        "files": 11
+      }
+    ],
+    "aggregate": {
+      "packedBytes": 1637244,
+      "unpackedBytes": 8171190,
+      "files": 227
+    }
+  },
+  "tui": {
+    "exitCode": 0,
+    "p95Ms": 3.78
+  },
+  "budgetLimits": {
+    "coldStartP95Ms": 185,
+    "peakRssP95Mb": 124,
+    "resolverP95Ms": 100,
+    "resolverHeapBytes": 16777216,
+    "packedBytes": 1980000,
+    "unpackedBytes": 9280000,
+    "files": 250,
+    "tuiP95Ms": 12
+  },
+  "budgets": {
+    "coldStartGreen": true,
+    "resolverGreen": true,
+    "packageGreen": true,
+    "tuiGreen": true
+  }
+}

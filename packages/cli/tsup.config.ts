@@ -1,17 +1,6 @@
-import { defineConfig } from 'tsup';
-import { copyFileSync, mkdirSync, readdirSync } from 'node:fs';
+import { build, defineConfig } from 'tsup';
+import { copyFileSync } from 'node:fs';
 import { join } from 'node:path';
-
-function copyEngines(outDir: string) {
-  const src = join(process.cwd(), '..', '..', 'engines');
-  const dest = join(outDir, 'engines');
-  mkdirSync(dest, { recursive: true });
-  for (const file of readdirSync(src)) {
-    if (file.endsWith('.json')) {
-      copyFileSync(join(src, file), join(dest, file));
-    }
-  }
-}
 
 export default defineConfig({
   // Two entries from ONE build: the CLI itself, and the agon-orchestration MCP
@@ -34,13 +23,25 @@ export default defineConfig({
     options.sourcesContent = false;
   },
   clean: true,
+  // Core still uses these pure policies when Research is not installed.
+  // Bundle those policies, but keep the Research runtime and Undici external.
+  noExternal: [/^@kernlang\/agon-mod-research\/(prompt|format|response|discovery|query|citation)-policy$/],
   // @kernlang/agon-core, @kernlang/agon-forge, @kernlang/agon-adapter-cli are INLINED (pure JS) so a bare
   // `npm i -g @kernlang/agon` is self-contained — they are deliberately NOT external.
   // @kernlang/agon-engines + @kernlang/agon-dedup stay external: both are loaded at RUNTIME
   // (dynamic import / require.resolve of spawned .py twins) and published as
   // their own packages, so esbuild must not try to bundle them.
   external: [
-    '@kernlang/agon-engines', '@kernlang/agon-dedup',
+    '@kernlang/agon-engines', '@kernlang/agon-dedup', '@kernlang/agon-mod-api',
+    '@kernlang/agon-kernel',
+    // Research owns Undici; keep its CommonJS dependency outside the ESM bundle.
+    '@kernlang/agon-mod-research',
+    '@kernlang/agon-support-agent-runtime', '@kernlang/agon-support-browser-bridge',
+    '@kernlang/agon-support-dedup', '@kernlang/agon-support-engine-catalog',
+    '@kernlang/agon-support-engine-runtime', '@kernlang/agon-support-judge',
+    '@kernlang/agon-support-panel', '@kernlang/agon-support-persistence',
+    '@kernlang/agon-support-saas-api', '@kernlang/agon-support-verification',
+    '@kernlang/agon-support-worktree',
     '@huggingface/transformers', 'onnxruntime-node',
     'ink', 'react', 'ink-text-input', 'ink-spinner', 'ink-select-input',
     'chalk', 'supports-color',
@@ -54,11 +55,10 @@ export default defineConfig({
     js: '#!/usr/bin/env node',
   },
   async onSuccess() {
-    copyEngines(join(process.cwd(), 'dist'));
-    // The bundled MCP server resolves engines via <its-own-dir>/engines
-    // (resolveBuiltinEnginesDir), so it needs a copy next to dist/mcp/index.js —
-    // otherwise the spawned server starts with ZERO engines and Cesar silently
-    // loses its orchestration tools.
-    copyEngines(join(process.cwd(), 'dist', 'mcp'));
+    // The persistent launcher must not depend on chunks in an ephemeral prefix.
+    await build({ entry: { 'stable-launcher': 'src/stable-launcher-entry.ts' },
+      format: ['esm'], target: 'node22', splitting: false, clean: false,
+      noExternal: [/.*/], sourcemap: false, dts: false, config: false, outDir: 'dist' });
+    copyFileSync(join(process.cwd(), 'release-channel.json'), join(process.cwd(), 'dist', 'release-channel.json'));
   },
 });

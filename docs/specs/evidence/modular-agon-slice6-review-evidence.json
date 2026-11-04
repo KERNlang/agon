@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "subject": {
+    "kind": "index",
+    "hash": "sha256:7581221503f5450dc5330b5e92b7f07a0eb49c7a8ca391207811e32d8b5cc9e1"
+  },
+  "disposition": "passed",
+  "scopeNote": "The engine reviews covered an exact superset differing only by two subsequently externalized host-runner files; the Codex source adjudication rechecked every finding against this exact product subject.",
+  "runs": [
+    {
+      "engine": "ollama-direct-qwen",
+      "status": "completed",
+      "artifacts": [
+        {
+          "path": "docs/specs/evidence/verification-logs/slice6/review-qwen-output.txt",
+          "hash": "sha256:ea745ae517d4e834683667d5f1400a3e2e8314bd5a767fcd6a0dfa765f54a732"
+        }
+      ]
+    },
+    {
+      "engine": "ollama-direct-gpt-oss",
+      "status": "completed",
+      "artifacts": [
+        {
+          "path": "docs/specs/evidence/verification-logs/slice6/review-gpt-oss-output.txt",
+          "hash": "sha256:6b0081097f00483d16edf53d74c1431f0a743e41f282f12c87d1d7da4e4e570a"
+        }
+      ]
+    },
+    {
+      "engine": "codex-local-source-adjudicator",
+      "status": "completed",
+      "artifacts": [
+        {
+          "path": "docs/specs/evidence/verification-logs/slice6/review-adjudication-758122.md",
+          "hash": "sha256:87c9d2deae75886b6de6bb13b1cb6e1b3fbb3ad30f745e9d91f7e7e3de19e670"
+        }
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "id": "S6-REVIEW-001",
+      "status": "resolved",
+      "summary": "The host-only runner was externalized after generated-artifact verification correctly identified it as an unowned non-product Python component; the frozen 863-assignment inventory and generated artifacts are current again."
+    },
+    {
+      "id": "S6-REVIEW-002",
+      "status": "refuted",
+      "summary": "Qwen's disposal, import ordering, MCP connection, alias, docs fallback, and TUI divergence claims contradicted exact source, the explicit compatibility-adapter ledger, or passing reachability tests."
+    },
+    {
+      "id": "S6-REVIEW-003",
+      "status": "refuted",
+      "summary": "GPT-OSS claimed duplicate exports/imports and compile or lint failures that do not exist; clean build, typecheck, lint, and the full repository suite passed."
+    },
+    {
+      "id": "S6-REVIEW-004",
+      "status": "refuted",
+      "summary": "Brainstorm and tribunal claims about registry signing, Discord UI, snapshot caches, and Forge deployment cited nonexistent files and contracts."
+    }
+  ]
+}

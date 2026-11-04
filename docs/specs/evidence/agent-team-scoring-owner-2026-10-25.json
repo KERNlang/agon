@@ -1,0 +1,144 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-25",
+  "scope": "Agent team result types and scoring ownership; not full modular acceptance",
+  "subject": {
+    "base": "700c867987567e3d427f4da906a3fed129c777b1",
+    "trackedDiffBeforeIndexSha256": "9b2815ddcd0ccc5d0c3b90d386ac75775c8d6f3f7f934f64a7d524bc12268876",
+    "qualificationMatchesOwner": true,
+    "newFiles": [
+      {
+        "path": "packages/mod-agent/src/team-results.ts",
+        "sha256": "6ffabab3e70118f05cfcdd8d0c85955255b6db46d1d5a0ce3d84ae32f169ee87"
+      },
+      {
+        "path": "packages/mod-agent/src/team-scoring.ts",
+        "sha256": "7b29ba9aeed924c596f7dc6e5311a08512d0069813b86d93dc41e057953a9df5"
+      },
+      {
+        "path": "tests/unit/modular-agent-team-scoring.test.ts",
+        "sha256": "640f3a33abefc15f464fdbc7ff3c74f7ae14914ea501a7b7f350f203a5c0ce86"
+      }
+    ]
+  },
+  "mainIntegration": {
+    "date": "2026-10-26",
+    "previousHead": "e5bee436ed5bb9d4c58d0f0415f937a38cc74e3a",
+    "main": "01a10699fe2199bc50c16da516b455d1fb8b6941",
+    "sourcePatchUnchangedSha256": "2d19e8bb646bdfc9b5e37e8fbbf6eef530a9133bd29f0ffd925ca5f2033d5a6b",
+    "trackedDiffBeforeIndexSha256": "c812c50a4435e97f8364accd409fd5d96ee0885f2a5a6de72555cf036881a171",
+    "fullGate": "pr325-main-integration-gates-20261026.receipt.json",
+    "receiptSha256": "da0414da97eb571f02b4ba63cc68d35d3fd7f1a492092f1fa66fa1a97a9432c6",
+    "logSha256": "a1a51e7ef7164befa73b929d87ae310257aa2ab9441d97ed4626dddffb17e3e9",
+    "passed": 11837,
+    "skipped": 7,
+    "failed": 0,
+    "providerLaunches": 0,
+    "cleanCommittedQualification": "Required on the resulting merge commit; not implied by this integration receipt."
+  },
+  "change": {
+    "owner": "@kernlang/agon-mod-agent",
+    "compatibility": "Core preserves its scoreAgentTeamResult signature and injects the existing Git shortstat reader.",
+    "dependency": "Core to existing mod-agent workspace package. No external version change; no Agent to Forge dependency.",
+    "ledger": "Only the two result-type definitions migrate. Core AgentTeam runtime ownership is not retired."
+  },
+  "verification": {
+    "fullSuite": {
+      "passed": 11682,
+      "skipped": 6,
+      "failed": 0
+    },
+    "fullGateSeconds": 988.845,
+    "fullGateScope": "Production and tests unchanged afterward; additional public-type verifier probes separately qualified.",
+    "focusedTests": 37,
+    "realGitTests": 5,
+    "legacyOracleCases": 26,
+    "semanticMutantsKilled": 3,
+    "installedChecks": 88,
+    "packedAgentRuntimeAndPublicTypes": true,
+    "compiledCorePublicTypes": true,
+    "actualWorkspaceDependencyGraphAcyclic": true,
+    "build": true,
+    "typecheck": true,
+    "lint": true,
+    "reexportGuard": true,
+    "supplyChainSelfTest": true,
+    "generatedMetadataChecks": true,
+    "performanceGroups": 8,
+    "docsUnchanged": true,
+    "releaseSetAndSbomChecks": true,
+    "providerLaunches": 0,
+    "cleanCommittedQualification": "Required separately before PR readiness; not implied by this pre-commit index."
+  },
+  "review": {
+    "route": "Isolated Agon bounded source packet",
+    "codex": "Completed; evidence gaps resolved with installed and compiled public-type probes.",
+    "kimi": "Unavailable; no usable answer. Not a passing review."
+  },
+  "limits": [
+    "Core is not independently packed; its compatibility types are checked through the compiled public barrel.",
+    "AgentTeam sessions, host effects, fitness and CLI ownership remain separate work.",
+    "Full modular acceptance and unavailable native/platform/provider release evidence remain open.",
+    "OSV offline scan lacked a database; no passing security scan is claimed.",
+    "No active/global installation, publishing or personal-state changes."
+  ],
+  "reproduce": [
+    "npm run build",
+    "npm run typecheck",
+    "npm run lint",
+    "npm run guard:reexports",
+    "npm run test:modular-supply-chain",
+    "node scripts/spec/verify-modular-npx.mjs",
+    "npm test",
+    "npm run perf:modular-release",
+    "npm run docs:modes",
+    "node scripts/spec/verify-modular-release-set.mjs --check",
+    "node scripts/spec/verify-modular-supply-chain.mjs --check"
+  ],
+  "archive": {
+    "location": "durable operator archive: modular-agon-remediation, outside Git worktrees",
+    "retention": "Never delete without Raphael approval",
+    "artifacts": [
+      {
+        "path": "agent-team-scoring-full-20261025.receipt.json",
+        "sha256": "8c39591b4a027690802d11472054bcfe90bab84baa9090f62118f6e99663b620"
+      },
+      {
+        "path": "agent-team-scoring-public-types-20261025.receipt.json",
+        "sha256": "14adf624fc1365befcf2fedde8cb4159877603e7fcfbdaa42dd87cfb860310d3"
+      },
+      {
+        "path": "agent-team-scoring-perf-docs-20261025.receipt.json",
+        "sha256": "9fac65bdc7e89d0dc34f4a34db8c3a55b702c20cdae05d7ebe0b5bce260dacf6"
+      },
+      {
+        "path": "agent-team-scoring-parity-20261025.receipt.json",
+        "sha256": "35bfec73c1244c16a1ac93622007d97fc4924fc0758bc274bb0a06e97aaa3a79"
+      },
+      {
+        "path": "agent-team-scoring-focused-20261025.receipt.json",
+        "sha256": "af7b9a671255687f2ac9e66c41f39873cc53e8646fcf556ca97b282ed12aac71"
+      },
+      {
+        "path": "agent-team-scoring-git-20261025.receipt.json",
+        "sha256": "433cdcf9c125af51716255cac7d01e31c6dd806598e267ecd8e640c027f136b1"
+      },
+      {
+        "path": "agent-team-scoring-owner-negative-20261025.receipt.json",
+        "sha256": "22cb64d0ac34d3aaa2051ab89dfc2f5982de7e034518818dca391b690367d78a"
+      },
+      {
+        "path": "agent-team-scoring-owner-codex-review.receipt.json",
+        "sha256": "1cd9d751e81afcebfde5bee12c3cb228b7dd3bb4ed128a880ea4194a4e299f93"
+      },
+      {
+        "path": "agent-team-scoring-owner-kimi-review.receipt.json",
+        "sha256": "d672f6b53d6a160bac2b031442385043ee8913a35e5c6966efbe078561466f92"
+      },
+      {
+        "path": "agent-team-scoring-review-adjudication-20261025.md",
+        "sha256": "c1206752ffc8dde57b33f4ed16d462b421a97026d60e774023c8bbf2722ab114"
+      }
+    ]
+  }
+}

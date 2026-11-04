@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "subject": {
+    "kind": "commit",
+    "hash": "sha256:ee3c676a41accb052015680def6a707c4ef4be893d247dd0462a0825be54d5d5"
+  },
+  "disposition": "passed",
+  "scopeNote": "External reviews covered tree c88b2200ac209dbab52395e955154d033661aa12. The final subject adds only the locally adjudicated Vitest hook budget correction; no assertion or product behavior changed.",
+  "runs": [
+    {
+      "engine": "ollama-direct-qwen",
+      "status": "completed",
+      "artifacts": [
+        {
+          "path": "docs/specs/evidence/verification-logs/slice7/review-qwen-output.txt",
+          "hash": "sha256:823cc44e4a055ce21d4fe49cbe36be08c36f8a4792e857f28974b73e8b021f71"
+        }
+      ]
+    },
+    {
+      "engine": "ollama-direct-gpt-oss-tribunal-red-team",
+      "status": "completed",
+      "artifacts": [
+        {
+          "path": "docs/specs/evidence/verification-logs/slice7/tribunal-gpt-oss-output.txt",
+          "hash": "sha256:35f76f764f2757731a26551890e1e64abaa4add107b72107b4f80efc8ebb078c"
+        }
+      ]
+    },
+    {
+      "engine": "codex-local-source-adjudicator",
+      "status": "completed",
+      "artifacts": [
+        {
+          "path": "docs/specs/evidence/verification-logs/slice7/review-adjudication-c88b2200.md",
+          "hash": "sha256:7644490e067e40f4f15103322179dac05d60088af5503bd89c4c2cb67f0c4733"
+        }
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "id": "S7-REVIEW-001",
+      "status": "refuted",
+      "summary": "The claimed zero-timeout and missing rollback-import blockers contradict exact source and clean compilation/tests."
+    },
+    {
+      "id": "S7-REVIEW-002",
+      "status": "refuted",
+      "summary": "The executable, integrity, recovery, setup ordering, recursive freeze, and generation-race claims contradict the bounded runner, deterministic tree hash, fail-closed recovery contract, pre-execution hash check, recursive freeze, or shared writer fence."
+    },
+    {
+      "id": "S7-REVIEW-003",
+      "status": "refuted",
+      "summary": "The GPT-OSS Tribunal critique cited nonexistent direct live-tree mutation, cache, snapshot, lock, pack, and CandidateProcess machinery instead of the staged immutable-generation implementation."
+    },
+    {
+      "id": "S7-REVIEW-004",
+      "status": "refuted",
+      "summary": "Brainstorm and Think proposals based on Git checkout rollback, localhost registries, or missing journaling conflict with or duplicate the frozen S7 architecture and its passing recovery/fault-injection evidence."
+    }
+  ]
+}

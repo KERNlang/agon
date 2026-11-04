@@ -1,0 +1,82 @@
+{
+  "schemaVersion": 3,
+  "id": "codex",
+  "displayName": "Codex (OpenAI)",
+  "binary": "codex",
+  "searchPaths": [
+    "${HOME}/.local/bin",
+    "${HOME}/.npm-global/bin",
+    "/usr/local/bin"
+  ],
+  "versionCmd": ["--version"],
+  "isLocal": false,
+  "tier": "builtin",
+  "installHint": "npm install -g @openai/codex",
+  "timeout": 120,
+
+  "exec": {
+    "args": ["exec", "{prompt}"]
+  },
+  "review": {
+    "_comment": "Deliberately `codex exec`, NOT `codex review`. An agon review seat pastes a self-contained diff INSIDE the prompt; `codex review` ignores that prompt-borne diff and reviews the WORKING TREE instead, so it would review the wrong thing (and find nothing on a clean tree). Keep this exec-equivalent unless codex grows a flag that reviews a diff handed to it on stdin/argv.",
+    "args": ["exec", "{prompt}"]
+  },
+  "agent": {
+    "args": ["exec", "--dangerously-bypass-approvals-and-sandbox", "--skip-git-repo-check", "{prompt}"]
+  },
+
+  "model": {
+    "configKey": "codex_model",
+    "flag": "--model"
+  },
+
+  "effort": {
+    "configKey": "model_reasoning_effort",
+    "levels": ["low", "medium", "high", "xhigh"]
+  },
+
+  "api": {
+    "baseUrl": "https://api.openai.com/v1",
+    "apiKeyEnv": "OPENAI_API_KEY",
+    "model": "gpt-5.5",
+    "maxTokens": 4096
+  },
+
+  "sessionBudget": {
+    "contextWindow": 400000
+  },
+
+  "env": {
+    "OPENAI_API_KEY": { "required": false }
+  },
+
+  "companion": {
+    "protocol": "jsonrpc",
+    "serverCmd": ["app-server"],
+    "sandbox": "danger-full-access",
+    "features": {
+      "threadResume": true,
+      "nativeReview": true,
+      "structuredOutput": true
+    }
+  },
+
+  "test": { "args": ["--version"] },
+
+  "cliModels": {
+    "dynamicListCmd": ["__pty:/model"]
+  },
+
+  "capabilities": ["vision"],
+  "imageFlag": "--image",
+
+  "isolationHints": {
+    "configEnv": "CODEX_HOME",
+    "personalPaths": ["~/.codex"],
+    "authFiles": ["auth.json"],
+    "authMarker": "auth.json",
+    "loginArgs": ["login"],
+    "setupHint": "Clean codex dispatch needs codex signed in (so ~/.codex/auth.json exists). Run `agon login codex` or `codex login`.",
+    "supportsProjectMcp": true
+  }
+}

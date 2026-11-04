@@ -1,0 +1,54 @@
+{
+  "sourceCommit": "797f7a3089f176c94daa0d82aa9b08917049e791",
+  "sourcePath": "packages/cli/src/commands/tribunal.ts",
+  "sourceSha256": "2925a5f3ea536fa5c7886ee7b765694c30e166c31659c28b42b5e0580ac27012",
+  "command": {
+    "meta": {
+      "name": "tribunal",
+      "description": "Adversarial debate — engines argue different sides of a question"
+    },
+    "args": {
+      "question": {
+        "type": "positional",
+        "description": "Question to debate",
+        "required": true
+      },
+      "rounds": {
+        "type": "string",
+        "alias": "r",
+        "description": "Number of debate rounds",
+        "default": "2"
+      },
+      "engines": {
+        "type": "string",
+        "alias": "e",
+        "description": "Comma-separated engine list"
+      },
+      "mode": {
+        "type": "string",
+        "alias": "m",
+        "description": "Tribunal mode (adversarial, synthesis, steelman, socratic, red-team, postmortem)",
+        "default": "adversarial"
+      },
+      "protocol": {
+        "type": "string",
+        "alias": "p",
+        "description": "Execution protocol (auto, parallel, chained, hybrid)",
+        "default": "auto"
+      },
+      "timeout": {
+        "type": "string",
+        "description": "Timeout per engine in seconds",
+        "default": "120"
+      },
+      "label": {
+        "type": "string",
+        "description": "Human-readable suffix baked into the run dir name."
+      },
+      "quiet": {
+        "type": "boolean",
+        "description": "Suppress streaming output; stdout becomes only the run dir path + final summary."
+      }
+    }
+  }
+}

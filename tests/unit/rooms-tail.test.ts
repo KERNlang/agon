@@ -3,9 +3,8 @@ import { join } from 'node:path';
 import { mkdtempSync, rmSync, writeFileSync, appendFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 
-import { createRoom, appendEvent } from '../../packages/core/src/rooms/store.js';
-import { drainNdjson, drainRoom, readTailOffset, writeTailOffset, createRoomWaker } from '../../packages/core/src/rooms/tail.js';
-import type { RoomActor, TailCursor } from '../../packages/core/src/rooms/types.js';
+import { createRoom, appendEvent, drainNdjson, drainRoom, readTailOffset, writeTailOffset, createRoomWaker } from '@kernlang/agon-mod-rooms';
+import type { RoomActor, TailCursor } from '@kernlang/agon-mod-rooms';
 
 let home: string;
 beforeEach(() => { home = mkdtempSync(join(tmpdir(), 'agon-tail-')); process.env.AGON_HOME = home; });

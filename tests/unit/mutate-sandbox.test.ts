@@ -7,7 +7,7 @@
 // packages/forge/src/mutate-sandbox.ts
 import { describe, it, expect } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -15,6 +15,16 @@ import {
   isSafePackageName, pnpmWorkspaceGlobs, repointWorkspaceLinks, gitIgnoredPaths,
   expandWorkspaceGlob, workspaceGlobToRegExp,
 } from '../../packages/forge/src/mutate-sandbox.js';
+import * as sharedSandbox from '@kernlang/agon-support-worktree';
+
+it('keeps legacy sandbox exports bound to the shared owner', () => {
+  expect(typeof prepareSandboxNodeModules).toBe('function');
+  expect(typeof clearShadowingDist).toBe('function');
+  expect(typeof workspacePackageDirs).toBe('function');
+  expect(prepareSandboxNodeModules).toBe(sharedSandbox.prepareSandboxNodeModules);
+  expect(clearShadowingDist).toBe(sharedSandbox.clearShadowingDist);
+  expect(workspacePackageDirs).toBe(sharedSandbox.workspacePackageDirs);
+});
 
 const write = (path: string, content: string): void => {
   mkdirSync(join(path, '..'), { recursive: true });
@@ -50,6 +60,72 @@ const makeRepo = (over?: { entry?: string; ignore?: string }): { repo: string; s
 };
 
 describe('mutate sandbox — workspace map', () => {
+  it('counts an outer setup failure but not an absent dependency directory', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agon-mutate-setup-error-'));
+    const repo = join(root, 'repo'), sandbox = join(root, 'sandbox');
+    mkdirSync(repo); mkdirSync(sandbox);
+    try {
+      expect(prepareSandboxNodeModules(repo, sandbox, {}).failed).toBe(0);
+      write(join(repo, 'node_modules'), 'not a directory');
+      const result = prepareSandboxNodeModules(repo, sandbox, {});
+      expect(result.mode).toBe('skipped');
+      expect(result.failed).toBe(1);
+      expect(result.note).toBeTruthy();
+      expect(readFileSync(join(repo, 'node_modules'), 'utf8')).toBe('not a directory');
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
+  it('counts an existing source link whose sandbox workspace is missing', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agon-mutate-missing-workspace-'));
+    const sandbox = join(root, 'sandbox');
+    write(join(root, 'source/index.js'), 'source bytes');
+    mkdirSync(join(sandbox, 'node_modules'), { recursive: true });
+    symlinkSync(join(root, 'source'), join(sandbox, 'node_modules/sample'), 'dir');
+    try {
+      const result = repointWorkspaceLinks(sandbox, { sample: 'packages/sample' });
+      expect(result.failed).toBe(1);
+      expect(result.repaired).toBe(0);
+      expect(result.notes.join(' ')).toContain('missing');
+      expect(readFileSync(join(root, 'source/index.js'), 'utf8')).toBe('source bytes');
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
+  it.each([false, true])('preserves force-tracked files beneath ignored output (strict=%s)', strict => {
+    const { repo, sandbox } = makeRepo({ ignore: 'packages/foo/dist/\n' });
+    write(join(repo, 'packages/foo/dist/index.js'), 'committed output');
+    write(join(sandbox, 'packages/foo/dist/index.js'), 'committed output');
+    write(join(sandbox, 'packages/foo/dist/extra.js'), 'ignored output');
+    try {
+      const git = (args: string[]) => execFileSync('git', args, { cwd: repo, encoding: 'utf8' });
+      git(['config', 'user.email', 'fixture@example.invalid']);
+      git(['config', 'user.name', 'Fixture']);
+      git(['add', '-f', 'packages/foo/dist/index.js']);
+      git(['commit', '-qm', 'committed output fixture']);
+      expect(git(['ls-files', 'packages/foo/dist']).trim()).toBe('packages/foo/dist/index.js');
+      expect(clearShadowingDist(repo, sandbox, ['packages/foo/src/index.ts'], undefined, { throwOnError: strict })).toEqual([]);
+      expect(readFileSync(join(sandbox, 'packages/foo/dist/index.js'), 'utf8')).toBe('committed output');
+      expect(readFileSync(join(repo, 'packages/foo/dist/index.js'), 'utf8')).toBe('committed output');
+    } finally { rmSync(join(repo, '..'), { recursive: true, force: true }); }
+  });
+
+  it('rejects an uncleared build output in strict mode but preserves legacy best effort', () => {
+    const { repo, sandbox } = makeRepo({ ignore: 'packages/foo/dist/\n' });
+    const output = join(sandbox, 'packages/foo/dist');
+    write(join(repo, 'packages/foo/dist/index.js'), 'original compiled fixture');
+    write(join(output, 'index.js'), 'compiled fixture');
+    chmodSync(output, 0o555);
+    try {
+      expect(gitIgnoredPaths(repo, ['packages/foo/dist'])).toEqual(['packages/foo/dist']);
+      expect(clearShadowingDist(repo, sandbox, ['packages/foo/src/index.ts'])).toEqual([]);
+      expect(existsSync(join(output, 'index.js'))).toBe(true);
+      expect(() => clearShadowingDist(repo, sandbox, ['packages/foo/src/index.ts'], undefined,
+        { throwOnError: true })).toThrow('could not clear');
+    } finally {
+      chmodSync(output, 0o755);
+      rmSync(join(repo, '..'), { recursive: true, force: true });
+    }
+  });
+
   it('resolves every workspace package name to its repo-relative directory', () => {
     const { repo } = makeRepo();
     expect(workspacePackageDirs(repo)).toEqual({ '@t/foo': 'packages/foo' });
@@ -255,7 +331,7 @@ describe('mutate sandbox — prebuilt output', () => {
     rmSync(join(repo, '..'), { recursive: true, force: true });
   });
 
-  it('leaves a COMMITTED (non-ignored) build directory alone — it belongs to HEAD', () => {
+  it('leaves a non-ignored build directory alone', () => {
     const { repo, sandbox } = makeRepo({ entry: './lib/index.js', ignore: 'node_modules\n' });
     write(join(sandbox, 'packages/foo/lib/index.js'), 'export const answer = 42;\n');
 

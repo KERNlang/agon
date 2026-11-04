@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kernlang.dev/schemas/routing-docs/config.schema.json",
+  "title": "routing-docs configuration",
+  "type": "object",
+  "additionalProperties": true
+}

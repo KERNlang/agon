@@ -1,0 +1,5502 @@
+{
+  "schemaVersion": 1,
+  "releaseSet": "@kernlang/agon-modular",
+  "version": "1.0.0",
+  "packageCount": 49,
+  "artifactCount": 51,
+  "dependencyEdgeCount": 158,
+  "launcher": {
+    "id": "@kernlang/agon",
+    "version": "1.0.0",
+    "role": "managed-launcher",
+    "dependencies": [
+      {
+        "id": "@ai-sdk/anthropic",
+        "range": "^3.0.67"
+      },
+      {
+        "id": "@ai-sdk/openai-compatible",
+        "range": "^2.0.40"
+      },
+      {
+        "id": "@kernlang/agon-dedup",
+        "range": "^0.2.5"
+      },
+      {
+        "id": "@kernlang/agon-engines",
+        "range": "^0.1.2"
+      },
+      {
+        "id": "@kernlang/agon-kernel",
+        "range": "1.0.0"
+      },
+      {
+        "id": "@kernlang/agon-mod-agent",
+        "range": "1.0.0"
+      },
+      {
+        "id": "@kernlang/agon-mod-ask",
+        "range": "1.0.0"
+      },
+      {
+        "id": "@kernlang/agon-mod-brainstorm",
+        "range": "1.0.0"
+      },
+      {
+        "id": "@kernlang/agon-mod-browser",
+        "range": "1.0.0"
+      },
+      {
+        "id": "@kernlang/agon-mod-campfire",
+        "range": "1.0.0"
+      },
+      {
+        "id": "@kernlang/agon-mod-conquer",
+        "range": "1.0.0"
+      },
+      {
+        "id": "@kernlang/agon-mod-council",
+        "range": "1.0.0"
+      },
+      {
+        "id": "@kernlang/agon-mod-flow",
+        "range": "1.0.0"
+      },
+      {
+        "id": "@kernlang/agon-mod-forge",
+        "range": "1.0.0"
+      },
+      {
+        "id": "@kernlang/agon-mod-git-actions",
+        "range": "1.0.0"
+      },
+      {
+        "id": "@kernlang/agon-mod-goal",
+        "range": "1.0.0"
+      },
+      {
+        "id": "@kernlang/agon-mod-history",
+        "range": "1.0.0"
+      },
+      {
+        "id": "@kernlang/agon-mod-jobs",
+        "range": "1.0.0"
+      },
+      {
+        "id": "@kernlang/agon-mod-memory",
+        "range": "1.0.0"
+      },
+      {
+        "id": "@kernlang/agon-mod-mutate",
+        "range": "1.0.0"
+      },
+      {
+        "id": "@kernlang/agon-mod-naturalize",
+        "range": "1.0.0"
+      },
+      {
+        "id": "@kernlang/agon-mod-nero",
+        "range": "1.0.0"
+      },
+      {
+        "id": "@kernlang/agon-mod-pipeline-delivery",
+        "range": "1.0.0"
+      },
+      {
+        "id": "@kernlang/agon-mod-pipeline-orchestration",
+        "range": "1.0.0"
+      },
+      {
+        "id": "@kernlang/agon-mod-plan",
+        "range": "1.0.0"
+      },
+      {
+        "id": "@kernlang/agon-mod-provenance",
+        "range": "1.0.0"
+      },
+      {
+        "id": "@kernlang/agon-mod-rag",
+        "range": "1.0.0"
+      },
+      {
+        "id": "@kernlang/agon-mod-ratings",
+        "range": "1.0.0"
+      },
+      {
+        "id": "@kernlang/agon-mod-research",
+        "range": "1.0.0"
+      },
+      {
+        "id": "@kernlang/agon-mod-review",
+        "range": "1.0.0"
+      },
+      {
+        "id": "@kernlang/agon-mod-rooms",
+        "range": "1.0.0"
+      },
+      {
+        "id": "@kernlang/agon-mod-routing-docs",
+        "range": "1.0.0"
+      },
+      {
+        "id": "@kernlang/agon-mod-sanitize",
+        "range": "1.0.0"
+      },
+      {
+        "id": "@kernlang/agon-mod-skill-authoring",
+        "range": "1.0.0"
+      },
+      {
+        "id": "@kernlang/agon-mod-synthesis",
+        "range": "1.0.0"
+      },
+      {
+        "id": "@kernlang/agon-mod-team-brainstorm",
+        "range": "1.0.0"
+      },
+      {
+        "id": "@kernlang/agon-mod-team-forge",
+        "range": "1.0.0"
+      },
+      {
+        "id": "@kernlang/agon-mod-team-tribunal",
+        "range": "1.0.0"
+      },
+      {
+        "id": "@kernlang/agon-mod-think",
+        "range": "1.0.0"
+      },
+      {
+        "id": "@kernlang/agon-mod-tribunal",
+        "range": "1.0.0"
+      },
+      {
+        "id": "@kernlang/agon-mod-worktrees",
+        "range": "1.0.0"
+      },
+      {
+        "id": "@kernlang/agon-support-browser-bridge",
+        "range": "1.0.0"
+      },
+      {
+        "id": "@kernlang/agon-support-dedup",
+        "range": "1.0.0"
+      },
+      {
+        "id": "@kernlang/agon-support-engine-catalog",
+        "range": "1.0.0"
+      },
+      {
+        "id": "@kernlang/agon-support-engine-runtime",
+        "range": "1.0.0"
+      },
+      {
+        "id": "@kernlang/agon-support-judge",
+        "range": "1.0.0"
+      },
+      {
+        "id": "@kernlang/agon-support-persistence",
+        "range": "1.0.0"
+      },
+      {
+        "id": "@kernlang/agon-support-verification",
+        "range": "1.0.0"
+      },
+      {
+        "id": "@kernlang/agon-support-worktree",
+        "range": "1.0.0"
+      },
+      {
+        "id": "@kernlang/protocol",
+        "range": "~4.5.0"
+      },
+      {
+        "id": "ai",
+        "range": "^6.0.149"
+      },
+      {
+        "id": "chalk",
+        "range": "4.1.2"
+      },
+      {
+        "id": "citty",
+        "range": "^0.1.6"
+      },
+      {
+        "id": "ink",
+        "range": "^7.0.1"
+      },
+      {
+        "id": "ink-spinner",
+        "range": "^5.0.0"
+      },
+      {
+        "id": "ink-text-input",
+        "range": "^6.0.0"
+      },
+      {
+        "id": "pidusage",
+        "range": "^4.0.1"
+      },
+      {
+        "id": "react",
+        "range": "^19.2.0"
+      }
+    ],
+    "packedBytes": 1509293,
+    "unpackedBytes": 7052986,
+    "fileCount": 140,
+    "files": [
+      {
+        "path": "dist/agon-orchestration-3FHZ62KI.js",
+        "size": 458
+      },
+      {
+        "path": "dist/agon-orchestration-3FHZ62KI.js.map",
+        "size": 51
+      },
+      {
+        "path": "dist/app-Z36D3FWB.js",
+        "size": 379290
+      },
+      {
+        "path": "dist/app-Z36D3FWB.js.map",
+        "size": 253843
+      },
+      {
+        "path": "dist/attach-5USHRFDY.js",
+        "size": 6653
+      },
+      {
+        "path": "dist/attach-5USHRFDY.js.map",
+        "size": 4710
+      },
+      {
+        "path": "dist/browser-host.js",
+        "size": 791
+      },
+      {
+        "path": "dist/browser-host.js.map",
+        "size": 385
+      },
+      {
+        "path": "dist/call-MDXPCJOZ.js",
+        "size": 648
+      },
+      {
+        "path": "dist/call-MDXPCJOZ.js.map",
+        "size": 51
+      },
+      {
+        "path": "dist/chunk-25YUIVBP.js",
+        "size": 24313
+      },
+      {
+        "path": "dist/chunk-25YUIVBP.js.map",
+        "size": 14490
+      },
+      {
+        "path": "dist/chunk-2NFP6W2Q.js",
+        "size": 156731
+      },
+      {
+        "path": "dist/chunk-2NFP6W2Q.js.map",
+        "size": 93312
+      },
+      {
+        "path": "dist/chunk-37LCQRNC.js",
+        "size": 714
+      },
+      {
+        "path": "dist/chunk-37LCQRNC.js.map",
+        "size": 544
+      },
+      {
+        "path": "dist/chunk-3G43QNFV.js",
+        "size": 1317
+      },
+      {
+        "path": "dist/chunk-3G43QNFV.js.map",
+        "size": 51
+      },
+      {
+        "path": "dist/chunk-3OSFL63Q.js",
+        "size": 54122
+      },
+      {
+        "path": "dist/chunk-3OSFL63Q.js.map",
+        "size": 31785
+      },
+      {
+        "path": "dist/chunk-5YW7OXSR.js",
+        "size": 25347
+      },
+      {
+        "path": "dist/chunk-5YW7OXSR.js.map",
+        "size": 16588
+      },
+      {
+        "path": "dist/chunk-6WXUGR3E.js",
+        "size": 15167
+      },
+      {
+        "path": "dist/chunk-6WXUGR3E.js.map",
+        "size": 8746
+      },
+      {
+        "path": "dist/chunk-AA34QAOS.js",
+        "size": 302190
+      },
+      {
+        "path": "dist/chunk-AA34QAOS.js.map",
+        "size": 196705
+      },
+      {
+        "path": "dist/chunk-ALMSW3JH.js",
+        "size": 83184
+      },
+      {
+        "path": "dist/chunk-ALMSW3JH.js.map",
+        "size": 51388
+      },
+      {
+        "path": "dist/chunk-AX2RLTOL.js",
+        "size": 21076
+      },
+      {
+        "path": "dist/chunk-AX2RLTOL.js.map",
+        "size": 14380
+      },
+      {
+        "path": "dist/chunk-BDT27QAC.js",
+        "size": 24126
+      },
+      {
+        "path": "dist/chunk-BDT27QAC.js.map",
+        "size": 15022
+      },
+      {
+        "path": "dist/chunk-BH4DA7YA.js",
+        "size": 14313
+      },
+      {
+        "path": "dist/chunk-BH4DA7YA.js.map",
+        "size": 9302
+      },
+      {
+        "path": "dist/chunk-C4OUBIJA.js",
+        "size": 294
+      },
+      {
+        "path": "dist/chunk-C4OUBIJA.js.map",
+        "size": 140
+      },
+      {
+        "path": "dist/chunk-CTSJ6SLK.js",
+        "size": 15006
+      },
+      {
+        "path": "dist/chunk-CTSJ6SLK.js.map",
+        "size": 10118
+      },
+      {
+        "path": "dist/chunk-DBJPKKIC.js",
+        "size": 157630
+      },
+      {
+        "path": "dist/chunk-DBJPKKIC.js.map",
+        "size": 96275
+      },
+      {
+        "path": "dist/chunk-FW6HPUNM.js",
+        "size": 52146
+      },
+      {
+        "path": "dist/chunk-FW6HPUNM.js.map",
+        "size": 34421
+      },
+      {
+        "path": "dist/chunk-GMMNBRS3.js",
+        "size": 4793
+      },
+      {
+        "path": "dist/chunk-GMMNBRS3.js.map",
+        "size": 2830
+      },
+      {
+        "path": "dist/chunk-H26P37ET.js",
+        "size": 8041
+      },
+      {
+        "path": "dist/chunk-H26P37ET.js.map",
+        "size": 6122
+      },
+      {
+        "path": "dist/chunk-HZQJ6MNN.js",
+        "size": 92366
+      },
+      {
+        "path": "dist/chunk-HZQJ6MNN.js.map",
+        "size": 60573
+      },
+      {
+        "path": "dist/chunk-IS5UVFXU.js",
+        "size": 35949
+      },
+      {
+        "path": "dist/chunk-IS5UVFXU.js.map",
+        "size": 23370
+      },
+      {
+        "path": "dist/chunk-IUXC7V6V.js",
+        "size": 534
+      },
+      {
+        "path": "dist/chunk-IUXC7V6V.js.map",
+        "size": 475
+      },
+      {
+        "path": "dist/chunk-K3ST5S5H.js",
+        "size": 2574
+      },
+      {
+        "path": "dist/chunk-K3ST5S5H.js.map",
+        "size": 1366
+      },
+      {
+        "path": "dist/chunk-K5JFSNLM.js",
+        "size": 24259
+      },
+      {
+        "path": "dist/chunk-K5JFSNLM.js.map",
+        "size": 15095
+      },
+      {
+        "path": "dist/chunk-L5OLLF6O.js",
+        "size": 149792
+      },
+      {
+        "path": "dist/chunk-L5OLLF6O.js.map",
+        "size": 100495
+      },
+      {
+        "path": "dist/chunk-LQI6FFN7.js",
+        "size": 105025
+      },
+      {
+        "path": "dist/chunk-LQI6FFN7.js.map",
+        "size": 58399
+      },
+      {
+        "path": "dist/chunk-LRUN32H4.js",
+        "size": 14922
+      },
+      {
+        "path": "dist/chunk-LRUN32H4.js.map",
+        "size": 10167
+      },
+      {
+        "path": "dist/chunk-LWG7OCSG.js",
+        "size": 46752
+      },
+      {
+        "path": "dist/chunk-LWG7OCSG.js.map",
+        "size": 28851
+      },
+      {
+        "path": "dist/chunk-M2AEQORQ.js",
+        "size": 739299
+      },
+      {
+        "path": "dist/chunk-M2AEQORQ.js.map",
+        "size": 481274
+      },
+      {
+        "path": "dist/chunk-NKVSZJW5.js",
+        "size": 56965
+      },
+      {
+        "path": "dist/chunk-NKVSZJW5.js.map",
+        "size": 33280
+      },
+      {
+        "path": "dist/chunk-OJPAY356.js",
+        "size": 6302
+      },
+      {
+        "path": "dist/chunk-OJPAY356.js.map",
+        "size": 4785
+      },
+      {
+        "path": "dist/chunk-QBSUTLTV.js",
+        "size": 151740
+      },
+      {
+        "path": "dist/chunk-QBSUTLTV.js.map",
+        "size": 96819
+      },
+      {
+        "path": "dist/chunk-S2KFUKJ3.js",
+        "size": 14986
+      },
+      {
+        "path": "dist/chunk-S2KFUKJ3.js.map",
+        "size": 9394
+      },
+      {
+        "path": "dist/chunk-UXBZYSHU.js",
+        "size": 59230
+      },
+      {
+        "path": "dist/chunk-UXBZYSHU.js.map",
+        "size": 40795
+      },
+      {
+        "path": "dist/chunk-WEPQ25XK.js",
+        "size": 781290
+      },
+      {
+        "path": "dist/chunk-WEPQ25XK.js.map",
+        "size": 465463
+      },
+      {
+        "path": "dist/chunk-WLPTMSUE.js",
+        "size": 4188
+      },
+      {
+        "path": "dist/chunk-WLPTMSUE.js.map",
+        "size": 3151
+      },
+      {
+        "path": "dist/cli-host-CODQFTPR.js",
+        "size": 1535
+      },
+      {
+        "path": "dist/cli-host-CODQFTPR.js.map",
+        "size": 812
+      },
+      {
+        "path": "dist/config-YSYIJ4YH.js",
+        "size": 2675
+      },
+      {
+        "path": "dist/config-YSYIJ4YH.js.map",
+        "size": 1696
+      },
+      {
+        "path": "dist/daemon-TWQ5SICL.js",
+        "size": 1166
+      },
+      {
+        "path": "dist/daemon-TWQ5SICL.js.map",
+        "size": 51
+      },
+      {
+        "path": "dist/dist-3XH47MZF.js",
+        "size": 1848
+      },
+      {
+        "path": "dist/dist-3XH47MZF.js.map",
+        "size": 51
+      },
+      {
+        "path": "dist/dist-72KTFEHJ.js",
+        "size": 2200
+      },
+      {
+        "path": "dist/dist-72KTFEHJ.js.map",
+        "size": 51
+      },
+      {
+        "path": "dist/dist-7IRBBZQF.js",
+        "size": 3770
+      },
+      {
+        "path": "dist/dist-7IRBBZQF.js.map",
+        "size": 51
+      },
+      {
+        "path": "dist/dist-AGVZ624N.js",
+        "size": 2204
+      },
+      {
+        "path": "dist/dist-AGVZ624N.js.map",
+        "size": 51
+      },
+      {
+        "path": "dist/doctor-LUPFSMOX.js",
+        "size": 1228
+      },
+      {
+        "path": "dist/doctor-LUPFSMOX.js.map",
+        "size": 51
+      },
+      {
+        "path": "dist/engine-VNWF77K7.js",
+        "size": 6802
+      },
+      {
+        "path": "dist/engine-VNWF77K7.js.map",
+        "size": 4250
+      },
+      {
+        "path": "dist/first-party-services-7AKPG7RL.js",
+        "size": 52423
+      },
+      {
+        "path": "dist/first-party-services-7AKPG7RL.js.map",
+        "size": 31635
+      },
+      {
+        "path": "dist/first-party-services-RGKKCHJQ.js",
+        "size": 14623
+      },
+      {
+        "path": "dist/first-party-services-RGKKCHJQ.js.map",
+        "size": 8568
+      },
+      {
+        "path": "dist/forge-ALX7M34Y.js",
+        "size": 1417
+      },
+      {
+        "path": "dist/forge-ALX7M34Y.js.map",
+        "size": 51
+      },
+      {
+        "path": "dist/index.js",
+        "size": 6312
+      },
+      {
+        "path": "dist/index.js.map",
+        "size": 4203
+      },
+      {
+        "path": "dist/intent-skills-7IE7P5J6.js",
+        "size": 951
+      },
+      {
+        "path": "dist/intent-skills-7IE7P5J6.js.map",
+        "size": 51
+      },
+      {
+        "path": "dist/lazy-commands-UTZG7SBG.js",
+        "size": 393
+      },
+      {
+        "path": "dist/lazy-commands-UTZG7SBG.js.map",
+        "size": 51
+      },
+      {
+        "path": "dist/login-FTKMLMCW.js",
+        "size": 4957
+      },
+      {
+        "path": "dist/login-FTKMLMCW.js.map",
+        "size": 2854
+      },
+      {
+        "path": "dist/mcp/index.js",
+        "size": 514
+      },
+      {
+        "path": "dist/mcp/index.js.map",
+        "size": 153
+      },
+      {
+        "path": "dist/mod-YELAJHJ5.js",
+        "size": 42651
+      },
+      {
+        "path": "dist/mod-YELAJHJ5.js.map",
+        "size": 25577
+      },
+      {
+        "path": "dist/models-7XOKLYJT.js",
+        "size": 9380
+      },
+      {
+        "path": "dist/models-7XOKLYJT.js.map",
+        "size": 6093
+      },
+      {
+        "path": "dist/onboarding-RAFPWJXZ.js",
+        "size": 6180
+      },
+      {
+        "path": "dist/onboarding-RAFPWJXZ.js.map",
+        "size": 3695
+      },
+      {
+        "path": "dist/plan-mode-WW2KIYJU.js",
+        "size": 785
+      },
+      {
+        "path": "dist/plan-mode-WW2KIYJU.js.map",
+        "size": 51
+      },
+      {
+        "path": "dist/provider-5RVNGHED.js",
+        "size": 14982
+      },
+      {
+        "path": "dist/provider-5RVNGHED.js.map",
+        "size": 9365
+      },
+      {
+        "path": "dist/release-channel.json",
+        "size": 128194
+      },
+      {
+        "path": "dist/setup-65TY5RU5.js",
+        "size": 285
+      },
+      {
+        "path": "dist/setup-65TY5RU5.js.map",
+        "size": 51
+      },
+      {
+        "path": "dist/src-GOWU2G7A.js",
+        "size": 37653
+      },
+      {
+        "path": "dist/src-GOWU2G7A.js.map",
+        "size": 51
+      },
+      {
+        "path": "dist/stable-launcher.js",
+        "size": 513763
+      },
+      {
+        "path": "dist/surface-authority-runtime-US3G5QTT.js",
+        "size": 1169
+      },
+      {
+        "path": "dist/surface-authority-runtime-US3G5QTT.js.map",
+        "size": 51
+      },
+      {
+        "path": "dist/update-NFGGNJPQ.js",
+        "size": 2645
+      },
+      {
+        "path": "dist/update-NFGGNJPQ.js.map",
+        "size": 1191
+      },
+      {
+        "path": "LICENSE",
+        "size": 1070
+      },
+      {
+        "path": "package.json",
+        "size": 3833
+      },
+      {
+        "path": "py/agon-model-probe-wrapper.py",
+        "size": 3622
+      },
+      {
+        "path": "py/agon-tui-probe.py",
+        "size": 21308
+      },
+      {
+        "path": "README.md",
+        "size": 1965
+      },
+      {
+        "path": "release-channel.json",
+        "size": 128194
+      }
+    ],
+    "payloadHash": "sha256:883f5765ed0a2f1d986631a0a407b0ae72cb168e8d13db6e238dfde9fd8b592c",
+    "integrity": "sha512-f/pmYUYtHSUmCeCZs31MGhoMoRsZBY/p77d5zszVMj3d8XoueJcQsdz98s7xSYSDzy8gkNht/U2BgZfSfWCWjw==",
+    "shasum": "39124dd2032c5c0fa0d532bd7d30208eba23f769",
+    "tarballHash": "sha256:8bb1b6127d12bdb476b68ea32447f64ea0ec4e18a7a8ba32caa430f6fbdd6726",
+    "packageJsonHash": "sha256:28e901652911437b0e49a15bf3be184c09f24652c51bdf68ef3055b27494ced1"
+  },
+  "packages": [
+    {
+      "id": "@kernlang/agon-kernel",
+      "modId": null,
+      "manifestDependencies": [],
+      "directory": "packages/mod-kernel",
+      "version": "1.0.0",
+      "class": "minimal-kernel-machinery",
+      "dependencies": [
+        "@kernlang/agon-mod-api"
+      ],
+      "peerDependencies": {},
+      "packedBytes": 194684,
+      "unpackedBytes": 1591795,
+      "fileCount": 79,
+      "files": [
+        {
+          "path": "dist/activated-surface-generation.d.ts",
+          "size": 1353
+        },
+        {
+          "path": "dist/activation-service.d.ts",
+          "size": 1946
+        },
+        {
+          "path": "dist/bounded-file-read.d.ts",
+          "size": 374
+        },
+        {
+          "path": "dist/bounded-work.d.ts",
+          "size": 293
+        },
+        {
+          "path": "dist/candidate-activation-runner.js",
+          "size": 2955
+        },
+        {
+          "path": "dist/candidate-process.d.ts",
+          "size": 2504
+        },
+        {
+          "path": "dist/chunk-I4SKWZKK.js",
+          "size": 55048
+        },
+        {
+          "path": "dist/compatibility.d.ts",
+          "size": 657
+        },
+        {
+          "path": "dist/configuration-migration.d.ts",
+          "size": 1414
+        },
+        {
+          "path": "dist/configuration-scope.d.ts",
+          "size": 782
+        },
+        {
+          "path": "dist/desired-state.d.ts",
+          "size": 4391
+        },
+        {
+          "path": "dist/discovery.d.ts",
+          "size": 987
+        },
+        {
+          "path": "dist/durable-host.d.ts",
+          "size": 7750
+        },
+        {
+          "path": "dist/external-activation-state.d.ts",
+          "size": 2659
+        },
+        {
+          "path": "dist/external-mod-services-safe.d.ts",
+          "size": 640
+        },
+        {
+          "path": "dist/external-resolution.d.ts",
+          "size": 1098
+        },
+        {
+          "path": "dist/external-surface-catalog.d.ts",
+          "size": 362
+        },
+        {
+          "path": "dist/first-party-activation.d.ts",
+          "size": 310
+        },
+        {
+          "path": "dist/first-party-lock-validation.d.ts",
+          "size": 404
+        },
+        {
+          "path": "dist/first-party-surface-bootstrap.d.ts",
+          "size": 1996
+        },
+        {
+          "path": "dist/folder-mod-bounds.d.ts",
+          "size": 1097
+        },
+        {
+          "path": "dist/folder-mod-diagnostics.d.ts",
+          "size": 740
+        },
+        {
+          "path": "dist/folder-mod-limits.d.ts",
+          "size": 223
+        },
+        {
+          "path": "dist/folder-mod-manager.d.ts",
+          "size": 3603
+        },
+        {
+          "path": "dist/folder-mod-snapshot.d.ts",
+          "size": 311
+        },
+        {
+          "path": "dist/folder-mods.d.ts",
+          "size": 815
+        },
+        {
+          "path": "dist/generated/first-party-package-graph.d.ts",
+          "size": 38920
+        },
+        {
+          "path": "dist/generated/first-party-surface-catalog.d.ts",
+          "size": 253
+        },
+        {
+          "path": "dist/generated/first-party-ui-hierarchy.d.ts",
+          "size": 2132
+        },
+        {
+          "path": "dist/generated/legacy-surface-catalog.d.ts",
+          "size": 313520
+        },
+        {
+          "path": "dist/generation-disposal.d.ts",
+          "size": 194
+        },
+        {
+          "path": "dist/generation-leases.d.ts",
+          "size": 1634
+        },
+        {
+          "path": "dist/generation-retirement.d.ts",
+          "size": 1701
+        },
+        {
+          "path": "dist/host-contracts.d.ts",
+          "size": 1330
+        },
+        {
+          "path": "dist/host-errors.d.ts",
+          "size": 821
+        },
+        {
+          "path": "dist/host-io.d.ts",
+          "size": 1405
+        },
+        {
+          "path": "dist/host-observability.d.ts",
+          "size": 1367
+        },
+        {
+          "path": "dist/host-rollback.d.ts",
+          "size": 705
+        },
+        {
+          "path": "dist/index.d.ts",
+          "size": 11015
+        },
+        {
+          "path": "dist/index.js",
+          "size": 1038014
+        },
+        {
+          "path": "dist/json-schema-input.d.ts",
+          "size": 328
+        },
+        {
+          "path": "dist/kernel-management-surfaces.d.ts",
+          "size": 174
+        },
+        {
+          "path": "dist/legacy-config-assignments.generated.d.ts",
+          "size": 1058
+        },
+        {
+          "path": "dist/lifecycle-recovery.d.ts",
+          "size": 5735
+        },
+        {
+          "path": "dist/lock.d.ts",
+          "size": 1551
+        },
+        {
+          "path": "dist/managed-installation.d.ts",
+          "size": 508
+        },
+        {
+          "path": "dist/managed-lifecycle.d.ts",
+          "size": 7960
+        },
+        {
+          "path": "dist/migration-engine.d.ts",
+          "size": 1529
+        },
+        {
+          "path": "dist/mod-management-ui.d.ts",
+          "size": 2716
+        },
+        {
+          "path": "dist/mod-observability.d.ts",
+          "size": 717
+        },
+        {
+          "path": "dist/mod-settings.d.ts",
+          "size": 1733
+        },
+        {
+          "path": "dist/mod-state-store.d.ts",
+          "size": 436
+        },
+        {
+          "path": "dist/npm-lock.d.ts",
+          "size": 1964
+        },
+        {
+          "path": "dist/package-activation-order.d.ts",
+          "size": 522
+        },
+        {
+          "path": "dist/quota-retention.d.ts",
+          "size": 2632
+        },
+        {
+          "path": "dist/readonly-map.d.ts",
+          "size": 464
+        },
+        {
+          "path": "dist/registry.d.ts",
+          "size": 2236
+        },
+        {
+          "path": "dist/release-setup.d.ts",
+          "size": 1029
+        },
+        {
+          "path": "dist/release-setup.test.d.ts",
+          "size": 11
+        },
+        {
+          "path": "dist/removable-tree.d.ts",
+          "size": 128
+        },
+        {
+          "path": "dist/resolver.d.ts",
+          "size": 3240
+        },
+        {
+          "path": "dist/runtime-version.d.ts",
+          "size": 148
+        },
+        {
+          "path": "dist/scoped-config-store.d.ts",
+          "size": 1251
+        },
+        {
+          "path": "dist/selected-lock-integrity.d.ts",
+          "size": 473
+        },
+        {
+          "path": "dist/settings.d.ts",
+          "size": 3892
+        },
+        {
+          "path": "dist/setup-actions.d.ts",
+          "size": 2000
+        },
+        {
+          "path": "dist/sidechain-logger.d.ts",
+          "size": 887
+        },
+        {
+          "path": "dist/support-module.d.ts",
+          "size": 1178
+        },
+        {
+          "path": "dist/surface-generation.d.ts",
+          "size": 3772
+        },
+        {
+          "path": "dist/team-contracts.d.ts",
+          "size": 1781
+        },
+        {
+          "path": "dist/third-party-activation.d.ts",
+          "size": 2674
+        },
+        {
+          "path": "dist/third-party-worker-F5OWMLMD.js",
+          "size": 12198
+        },
+        {
+          "path": "dist/third-party-worker-runner.js",
+          "size": 7286
+        },
+        {
+          "path": "dist/third-party-worker.d.ts",
+          "size": 324
+        },
+        {
+          "path": "dist/transactional-authority.d.ts",
+          "size": 2275
+        },
+        {
+          "path": "dist/trust-authority.d.ts",
+          "size": 4070
+        },
+        {
+          "path": "dist/writer-lock.d.ts",
+          "size": 1574
+        },
+        {
+          "path": "LICENSE",
+          "size": 1070
+        },
+        {
+          "path": "package.json",
+          "size": 548
+        }
+      ],
+      "payloadHash": "sha256:be439a949c10f461087badb551f0c9a72cce99ea3f72d7b1faa2a57ccb50cb74",
+      "integrity": "sha512-tK37DTzzLYYQ269hMWjbYnk9txif+SWXsxeUyTfVMpVFP8dHOQzUnxb2GNit76HBVAUi4VY20IAoKCH//wc/TQ==",
+      "shasum": "ab588820c07b8bb57f0bf9b987f89acbd17552e6",
+      "tarballHash": "sha256:91b4c702ff9b61878cb39a87584358535e536398269f17bd716eb8c38b8e27f5",
+      "packageJsonHash": "sha256:583381b00786c2729a1e32eb2d42f6324cb58df263378f0d0ad57a1401970f17",
+      "manifestHash": "sha256:583381b00786c2729a1e32eb2d42f6324cb58df263378f0d0ad57a1401970f17"
+    },
+    {
+      "id": "@kernlang/agon-mod-api",
+      "modId": null,
+      "manifestDependencies": [],
+      "directory": "packages/mod-api",
+      "version": "1.0.0",
+      "class": "minimal-kernel-machinery",
+      "dependencies": [],
+      "peerDependencies": {},
+      "packedBytes": 15343,
+      "unpackedBytes": 100692,
+      "fileCount": 28,
+      "files": [
+        {
+          "path": "dist/chunk-N2N7HXF3.js",
+          "size": 8759
+        },
+        {
+          "path": "dist/chunk-VSQEUULN.js",
+          "size": 2747
+        },
+        {
+          "path": "dist/command-tool-result.d.ts",
+          "size": 555
+        },
+        {
+          "path": "dist/command-tool-result.test.d.ts",
+          "size": 11
+        },
+        {
+          "path": "dist/envelopes.d.ts",
+          "size": 7447
+        },
+        {
+          "path": "dist/index.d.ts",
+          "size": 13566
+        },
+        {
+          "path": "dist/index.js",
+          "size": 3474
+        },
+        {
+          "path": "dist/manifest.d.ts",
+          "size": 5222
+        },
+        {
+          "path": "dist/manifest.js",
+          "size": 329
+        },
+        {
+          "path": "dist/state.d.ts",
+          "size": 2092
+        },
+        {
+          "path": "dist/state.js",
+          "size": 347
+        },
+        {
+          "path": "dist/version.d.ts",
+          "size": 52
+        },
+        {
+          "path": "LICENSE",
+          "size": 1070
+        },
+        {
+          "path": "package.json",
+          "size": 743
+        },
+        {
+          "path": "schemas/modular-agon-coverage-ledger.schema.json",
+          "size": 2091
+        },
+        {
+          "path": "schemas/modular-agon-desired-state.schema.json",
+          "size": 2205
+        },
+        {
+          "path": "schemas/modular-agon-grant.schema.json",
+          "size": 2240
+        },
+        {
+          "path": "schemas/modular-agon-job-envelope.schema.json",
+          "size": 3793
+        },
+        {
+          "path": "schemas/modular-agon-journal.schema.json",
+          "size": 4173
+        },
+        {
+          "path": "schemas/modular-agon-lock.schema.json",
+          "size": 3113
+        },
+        {
+          "path": "schemas/modular-agon-manifest.schema.json",
+          "size": 14463
+        },
+        {
+          "path": "schemas/modular-agon-plan-envelope.schema.json",
+          "size": 3763
+        },
+        {
+          "path": "schemas/modular-agon-profile.schema.json",
+          "size": 1143
+        },
+        {
+          "path": "schemas/modular-agon-result-envelope.schema.json",
+          "size": 3714
+        },
+        {
+          "path": "schemas/modular-agon-session-envelope.schema.json",
+          "size": 4038
+        },
+        {
+          "path": "schemas/modular-agon-trust.schema.json",
+          "size": 2924
+        },
+        {
+          "path": "schemas/modular-agon-verification-contract.schema.json",
+          "size": 2454
+        },
+        {
+          "path": "schemas/modular-agon-verification-receipt.schema.json",
+          "size": 4164
+        }
+      ],
+      "payloadHash": "sha256:da18b948f24238610b8113f63afd778ce096d01e2c0bca7ddf5aa9514793cd5b",
+      "integrity": "sha512-I35r5hzBCuPrgLUafHYqqnVT58XxfCSzRl2rVrlZ1nuVyFoyiS8dSEJk/7FRspIkey34NNmQr6w+r9f9OEKwcA==",
+      "shasum": "ec580cf260bdf1d2a2a37c5d6b0dc126d9ba2a31",
+      "tarballHash": "sha256:4fce3b5c0c0a43065c97e1cfdecbc67806ac6d79eaca6f9b7b49c0cff0b44912",
+      "packageJsonHash": "sha256:bd2313a9cf283860dfdd7713fa0a737b521944d2c819a5cca2d63e5ed40fdbb5",
+      "manifestHash": "sha256:bd2313a9cf283860dfdd7713fa0a737b521944d2c819a5cca2d63e5ed40fdbb5"
+    },
+    {
+      "id": "@kernlang/agon-support-engine-runtime",
+      "modId": null,
+      "manifestDependencies": [],
+      "directory": "packages/support-engine-runtime",
+      "version": "1.0.0",
+      "class": "hidden-shared-support-package",
+      "dependencies": [
+        "@kernlang/agon-kernel"
+      ],
+      "peerDependencies": {
+        "@kernlang/agon-kernel": ">=1.0.0 <2"
+      },
+      "packedBytes": 36382,
+      "unpackedBytes": 132716,
+      "fileCount": 38,
+      "files": [
+        {
+          "path": "dist/adapter-guard.d.ts",
+          "size": 240
+        },
+        {
+          "path": "dist/auth-store.d.ts",
+          "size": 731
+        },
+        {
+          "path": "dist/companion-dispatch.d.ts",
+          "size": 1813
+        },
+        {
+          "path": "dist/dispatch-identity.d.ts",
+          "size": 997
+        },
+        {
+          "path": "dist/engine-discover.d.ts",
+          "size": 496
+        },
+        {
+          "path": "dist/engine-health.d.ts",
+          "size": 2931
+        },
+        {
+          "path": "dist/engine-memory.d.ts",
+          "size": 2099
+        },
+        {
+          "path": "dist/engine-schema.d.ts",
+          "size": 10088
+        },
+        {
+          "path": "dist/engine-settings.d.ts",
+          "size": 809
+        },
+        {
+          "path": "dist/errors.d.ts",
+          "size": 604
+        },
+        {
+          "path": "dist/first-chunk-retry-policy.d.ts",
+          "size": 619
+        },
+        {
+          "path": "dist/index.d.ts",
+          "size": 1348
+        },
+        {
+          "path": "dist/index.js",
+          "size": 71198
+        },
+        {
+          "path": "dist/isolation.d.ts",
+          "size": 2725
+        },
+        {
+          "path": "dist/model-probe-assets.d.ts",
+          "size": 182
+        },
+        {
+          "path": "dist/package-metadata.d.ts",
+          "size": 223
+        },
+        {
+          "path": "dist/process.d.ts",
+          "size": 771
+        },
+        {
+          "path": "dist/semaphore.d.ts",
+          "size": 1223
+        },
+        {
+          "path": "dist/session-budget.d.ts",
+          "size": 1400
+        },
+        {
+          "path": "dist/token-estimator.d.ts",
+          "size": 3782
+        },
+        {
+          "path": "dist/turn-protocol.d.ts",
+          "size": 2024
+        },
+        {
+          "path": "dist/types.d.ts",
+          "size": 6106
+        },
+        {
+          "path": "dist/write-permissions.d.ts",
+          "size": 262
+        },
+        {
+          "path": "engines/agy.json",
+          "size": 1951
+        },
+        {
+          "path": "engines/aider.json",
+          "size": 952
+        },
+        {
+          "path": "engines/claude.json",
+          "size": 2223
+        },
+        {
+          "path": "engines/codex.json",
+          "size": 2136
+        },
+        {
+          "path": "engines/kimi-code.json",
+          "size": 829
+        },
+        {
+          "path": "engines/minimax-coding-plan-minimax-m3.json",
+          "size": 578
+        },
+        {
+          "path": "engines/mistral.json",
+          "size": 930
+        },
+        {
+          "path": "engines/ollama.json",
+          "size": 670
+        },
+        {
+          "path": "engines/opencode.json",
+          "size": 1137
+        },
+        {
+          "path": "engines/openrouter.json",
+          "size": 1354
+        },
+        {
+          "path": "engines/qwen.json",
+          "size": 820
+        },
+        {
+          "path": "LICENSE",
+          "size": 1070
+        },
+        {
+          "path": "package.json",
+          "size": 637
+        },
+        {
+          "path": "patches/@kernlang+agon-engines+0.1.3.patch",
+          "size": 1136
+        },
+        {
+          "path": "python/agon-model-probe-wrapper.py",
+          "size": 3622
+        }
+      ],
+      "payloadHash": "sha256:315496c08b9220f7d0de5b9530f9f2de2ee3a9bee02a934d29a0829f981f8027",
+      "integrity": "sha512-kyu8KqaFnkY6NKNTrx/Ri6weI/2rTsNfXIeAf7FWgqUslxLmj72R4qf/g83tgyM21B/IIpBxOzU9osKkxSa+Ow==",
+      "shasum": "de2b2bbde805471b0eb801bd92f6729a70d17014",
+      "tarballHash": "sha256:6bf119d382ef5f1b7a9c749ed401707a918d0c1c1d3d84978a2a7cb5a2d307a2",
+      "packageJsonHash": "sha256:8e9c071513209e50bb7cba2db0017ae7090e41015c117343f8a3bd2d143b555e",
+      "manifestHash": "sha256:8e9c071513209e50bb7cba2db0017ae7090e41015c117343f8a3bd2d143b555e"
+    },
+    {
+      "id": "@kernlang/agon-support-engine-catalog",
+      "modId": null,
+      "manifestDependencies": [],
+      "directory": "packages/support-engine-catalog",
+      "version": "1.0.0",
+      "class": "hidden-shared-support-package",
+      "dependencies": [
+        "@kernlang/agon-support-engine-runtime"
+      ],
+      "peerDependencies": {
+        "@kernlang/agon-kernel": ">=1.0.0 <2"
+      },
+      "packedBytes": 18290,
+      "unpackedBytes": 67179,
+      "fileCount": 10,
+      "files": [
+        {
+          "path": "dist/api-models-registry.d.ts",
+          "size": 5516
+        },
+        {
+          "path": "dist/cli-models-registry.d.ts",
+          "size": 5042
+        },
+        {
+          "path": "dist/engine-registry.d.ts",
+          "size": 2826
+        },
+        {
+          "path": "dist/index.d.ts",
+          "size": 873
+        },
+        {
+          "path": "dist/index.js",
+          "size": 46867
+        },
+        {
+          "path": "dist/package-metadata.d.ts",
+          "size": 223
+        },
+        {
+          "path": "dist/public-cli-models-registry.d.ts",
+          "size": 558
+        },
+        {
+          "path": "dist/token-tracker.d.ts",
+          "size": 3538
+        },
+        {
+          "path": "LICENSE",
+          "size": 1070
+        },
+        {
+          "path": "package.json",
+          "size": 666
+        }
+      ],
+      "payloadHash": "sha256:800f5e358986ad73587234b56fb3fc9ceb569ff155e46c6efe65e586e60ac8ad",
+      "integrity": "sha512-1/X0nbJeFYnCi04zmkUy7ZcBMezT1UQ19TpixSr4mY/QSBpRkeyzjx58ob7RRvMPBv49XL+ND2Te8JhdYwOZDQ==",
+      "shasum": "967db0bc97a28c7ee491d24709964f10af1bb39c",
+      "tarballHash": "sha256:a99cd14b3a9c8129a731fa1811ff7b138339599e6aab382d73952a8ddd6a3920",
+      "packageJsonHash": "sha256:6f07fc6e64ae607bec7d2bf7ea3f65ddb686f89bbfc2d65e2b9274736daa77fa",
+      "manifestHash": "sha256:6f07fc6e64ae607bec7d2bf7ea3f65ddb686f89bbfc2d65e2b9274736daa77fa"
+    },
+    {
+      "id": "@kernlang/agon-support-persistence",
+      "modId": null,
+      "manifestDependencies": [],
+      "directory": "packages/support-persistence",
+      "version": "1.0.0",
+      "class": "hidden-shared-support-package",
+      "dependencies": [
+        "@kernlang/agon-kernel",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-browser-bridge"
+      ],
+      "peerDependencies": {
+        "@kernlang/agon-kernel": ">=0.0.0-0 <2"
+      },
+      "packedBytes": 59831,
+      "unpackedBytes": 211963,
+      "fileCount": 37,
+      "files": [
+        {
+          "path": "dist/agon-config-settings.d.ts",
+          "size": 617
+        },
+        {
+          "path": "dist/agon-config.d.ts",
+          "size": 1514
+        },
+        {
+          "path": "dist/brain-client.d.ts",
+          "size": 13786
+        },
+        {
+          "path": "dist/chat-store.d.ts",
+          "size": 4322
+        },
+        {
+          "path": "dist/config-value.d.ts",
+          "size": 848
+        },
+        {
+          "path": "dist/context-types.d.ts",
+          "size": 605
+        },
+        {
+          "path": "dist/control-plane-ledger.d.ts",
+          "size": 646
+        },
+        {
+          "path": "dist/delegate-ledger.d.ts",
+          "size": 6421
+        },
+        {
+          "path": "dist/event-log.d.ts",
+          "size": 8322
+        },
+        {
+          "path": "dist/file-history.d.ts",
+          "size": 831
+        },
+        {
+          "path": "dist/file-lock.d.ts",
+          "size": 1359
+        },
+        {
+          "path": "dist/first-party-settings.generated.d.ts",
+          "size": 918
+        },
+        {
+          "path": "dist/flow.d.ts",
+          "size": 1924
+        },
+        {
+          "path": "dist/history-search-bridge.d.ts",
+          "size": 1013
+        },
+        {
+          "path": "dist/index.d.ts",
+          "size": 1981
+        },
+        {
+          "path": "dist/index.js",
+          "size": 123263
+        },
+        {
+          "path": "dist/package-metadata.d.ts",
+          "size": 220
+        },
+        {
+          "path": "dist/paste-store.d.ts",
+          "size": 450
+        },
+        {
+          "path": "dist/paths.d.ts",
+          "size": 475
+        },
+        {
+          "path": "dist/persisted-envelope.d.ts",
+          "size": 1036
+        },
+        {
+          "path": "dist/plan-store.d.ts",
+          "size": 435
+        },
+        {
+          "path": "dist/project-memory.d.ts",
+          "size": 2490
+        },
+        {
+          "path": "dist/result-envelope.d.ts",
+          "size": 650
+        },
+        {
+          "path": "dist/run-dir.d.ts",
+          "size": 4670
+        },
+        {
+          "path": "dist/run-owner.d.ts",
+          "size": 916
+        },
+        {
+          "path": "dist/runs-store.d.ts",
+          "size": 2539
+        },
+        {
+          "path": "dist/session-contracts.d.ts",
+          "size": 2302
+        },
+        {
+          "path": "dist/session-host.d.ts",
+          "size": 4319
+        },
+        {
+          "path": "dist/session-pty.d.ts",
+          "size": 5826
+        },
+        {
+          "path": "dist/session-result-types.d.ts",
+          "size": 3688
+        },
+        {
+          "path": "dist/session-store.d.ts",
+          "size": 5316
+        },
+        {
+          "path": "dist/settings.d.ts",
+          "size": 399
+        },
+        {
+          "path": "dist/staged-run-status.d.ts",
+          "size": 241
+        },
+        {
+          "path": "dist/team-elo-types.d.ts",
+          "size": 572
+        },
+        {
+          "path": "LICENSE",
+          "size": 1070
+        },
+        {
+          "path": "package.json",
+          "size": 733
+        },
+        {
+          "path": "python/history-search.py",
+          "size": 5246
+        }
+      ],
+      "payloadHash": "sha256:f3e04b93a8d6dc54bd225ecc37025d93d970f3418d174b3ba78147bc22d21940",
+      "integrity": "sha512-f9DVJEkNoxS3ZkVOI7sCLSA+Y42VH05m4JhZfdMYheTahoUPvAlNDai/QJ25PvckkVun6A9Q8nNfR23+awRx4Q==",
+      "shasum": "3f4a3b61e5ae0ef121d253f24216a8b93c9e1b78",
+      "tarballHash": "sha256:650518f70e1884e3acad8af6e002071830f5844c1ecb257386109d50670f2779",
+      "packageJsonHash": "sha256:51410d23abbedf593354e352cf8adaa9248ba6f4f3cf211adf901fddb4035a18",
+      "manifestHash": "sha256:51410d23abbedf593354e352cf8adaa9248ba6f4f3cf211adf901fddb4035a18"
+    },
+    {
+      "id": "@kernlang/agon-support-verification",
+      "modId": null,
+      "manifestDependencies": [],
+      "directory": "packages/support-verification",
+      "version": "1.0.0",
+      "class": "hidden-shared-support-package",
+      "dependencies": [
+        "@kernlang/agon-kernel",
+        "@kernlang/agon-support-persistence",
+        "@kernlang/agon-support-engine-runtime"
+      ],
+      "peerDependencies": {
+        "@kernlang/agon-kernel": ">=0.0.0-0 <2"
+      },
+      "packedBytes": 38231,
+      "unpackedBytes": 123188,
+      "fileCount": 22,
+      "files": [
+        {
+          "path": "dist/checker-discovery.d.ts",
+          "size": 2601
+        },
+        {
+          "path": "dist/explicit-approval.d.ts",
+          "size": 144
+        },
+        {
+          "path": "dist/fitness-command.d.ts",
+          "size": 526
+        },
+        {
+          "path": "dist/guard-telemetry-store.d.ts",
+          "size": 4670
+        },
+        {
+          "path": "dist/guard-telemetry.d.ts",
+          "size": 8320
+        },
+        {
+          "path": "dist/guard-types.d.ts",
+          "size": 2720
+        },
+        {
+          "path": "dist/index.d.ts",
+          "size": 632
+        },
+        {
+          "path": "dist/index.js",
+          "size": 56245
+        },
+        {
+          "path": "dist/information-gain.d.ts",
+          "size": 3586
+        },
+        {
+          "path": "dist/package-metadata.d.ts",
+          "size": 221
+        },
+        {
+          "path": "dist/pipeline-types.d.ts",
+          "size": 358
+        },
+        {
+          "path": "dist/review-engines.d.ts",
+          "size": 410
+        },
+        {
+          "path": "dist/review-file-context.d.ts",
+          "size": 675
+        },
+        {
+          "path": "dist/review-prompt.d.ts",
+          "size": 1720
+        },
+        {
+          "path": "dist/review-router.d.ts",
+          "size": 2878
+        },
+        {
+          "path": "dist/review-target.d.ts",
+          "size": 656
+        },
+        {
+          "path": "dist/secret-redaction.d.ts",
+          "size": 702
+        },
+        {
+          "path": "dist/tui-probe-assets.d.ts",
+          "size": 150
+        },
+        {
+          "path": "LICENSE",
+          "size": 1070
+        },
+        {
+          "path": "package.json",
+          "size": 691
+        },
+        {
+          "path": "python/agon-tui-probe.py",
+          "size": 21308
+        },
+        {
+          "path": "python/claude-tui-probe.py",
+          "size": 12905
+        }
+      ],
+      "payloadHash": "sha256:d5f54f7995f19e7d17125dce1f2260cda0f023c3d5006e8da300cf6132def4cb",
+      "integrity": "sha512-YMt0VK4B3DB5VQ56Ncb9WD8NsOI+7LUUBy05/0OkVcO5tgn72DKn2RgL9uVvyFLoAQ/3Pl68LjNq9DXRkoorow==",
+      "shasum": "17fedee2ec0a1248895ff61911087ee807174724",
+      "tarballHash": "sha256:32a5bdb0df0d483b6c27eb994d4fd8b0870b843700860f1b4a736f67928f07e9",
+      "packageJsonHash": "sha256:328be978f63e2a273282905e0f01ea9c9597f4610ec3e9b6338d16f3e7b6fb7e",
+      "manifestHash": "sha256:328be978f63e2a273282905e0f01ea9c9597f4610ec3e9b6338d16f3e7b6fb7e"
+    },
+    {
+      "id": "@kernlang/agon-support-worktree",
+      "modId": null,
+      "manifestDependencies": [],
+      "directory": "packages/support-worktree",
+      "version": "1.0.0",
+      "class": "hidden-shared-support-package",
+      "dependencies": [
+        "@kernlang/agon-kernel",
+        "@kernlang/agon-support-verification",
+        "@kernlang/agon-support-engine-runtime"
+      ],
+      "peerDependencies": {
+        "@kernlang/agon-kernel": ">=1.0.0 <2"
+      },
+      "packedBytes": 55204,
+      "unpackedBytes": 203435,
+      "fileCount": 33,
+      "files": [
+        {
+          "path": "dist/dependency-overlay.d.ts",
+          "size": 783
+        },
+        {
+          "path": "dist/ephemeral-prune.d.ts",
+          "size": 627
+        },
+        {
+          "path": "dist/errors.d.ts",
+          "size": 493
+        },
+        {
+          "path": "dist/forge-arena.d.ts",
+          "size": 1461
+        },
+        {
+          "path": "dist/git-diff.d.ts",
+          "size": 764
+        },
+        {
+          "path": "dist/git-path.d.ts",
+          "size": 135
+        },
+        {
+          "path": "dist/git.d.ts",
+          "size": 9110
+        },
+        {
+          "path": "dist/index.d.ts",
+          "size": 997
+        },
+        {
+          "path": "dist/index.js",
+          "size": 149424
+        },
+        {
+          "path": "dist/mutant-compile-check.d.ts",
+          "size": 742
+        },
+        {
+          "path": "dist/mutant-generator.d.ts",
+          "size": 2350
+        },
+        {
+          "path": "dist/mutant-runner.d.ts",
+          "size": 2792
+        },
+        {
+          "path": "dist/mutation-languages.d.ts",
+          "size": 3466
+        },
+        {
+          "path": "dist/mutation-lexer.d.ts",
+          "size": 1650
+        },
+        {
+          "path": "dist/mutation-operators.d.ts",
+          "size": 591
+        },
+        {
+          "path": "dist/mutation-runner.d.ts",
+          "size": 2379
+        },
+        {
+          "path": "dist/mutation-sandbox.d.ts",
+          "size": 7478
+        },
+        {
+          "path": "dist/package-metadata.d.ts",
+          "size": 217
+        },
+        {
+          "path": "dist/patch-apply.d.ts",
+          "size": 1798
+        },
+        {
+          "path": "dist/patch-content.d.ts",
+          "size": 165
+        },
+        {
+          "path": "dist/patch-materialization.d.ts",
+          "size": 197
+        },
+        {
+          "path": "dist/patch-parser.d.ts",
+          "size": 866
+        },
+        {
+          "path": "dist/paths.d.ts",
+          "size": 1137
+        },
+        {
+          "path": "dist/plan.d.ts",
+          "size": 2537
+        },
+        {
+          "path": "dist/pr-links.d.ts",
+          "size": 1527
+        },
+        {
+          "path": "dist/pull-request.d.ts",
+          "size": 1044
+        },
+        {
+          "path": "dist/shell-quote.d.ts",
+          "size": 59
+        },
+        {
+          "path": "dist/untracked-copy.d.ts",
+          "size": 531
+        },
+        {
+          "path": "dist/workspace-bookmarks.d.ts",
+          "size": 919
+        },
+        {
+          "path": "dist/worktree-lock.d.ts",
+          "size": 1762
+        },
+        {
+          "path": "dist/worktree-session.d.ts",
+          "size": 3692
+        },
+        {
+          "path": "LICENSE",
+          "size": 1070
+        },
+        {
+          "path": "package.json",
+          "size": 672
+        }
+      ],
+      "payloadHash": "sha256:91c9da8e63628bf66ce96013c6c74c04a2cd9069cfe4835e9452c21affcf6ca3",
+      "integrity": "sha512-evQrhZnKzAIgS4062ThTjZ54Ni4ZTZ2PIXrPKymRJRFj4u6yBw2u8G9iblk9mNrxoFkxIGLfwHBqlVCok2QvOg==",
+      "shasum": "92a0bd40013b53348ae1cec5b4c03739529213e5",
+      "tarballHash": "sha256:6c6a4c63157415a1008ffd7b9764a3e40d0288c1794c7b74013e061c8ddf040a",
+      "packageJsonHash": "sha256:ebdc821563e22e623aa74032e2c86f13d68d09da4fc51874e1cda976bdc57213",
+      "manifestHash": "sha256:ebdc821563e22e623aa74032e2c86f13d68d09da4fc51874e1cda976bdc57213"
+    },
+    {
+      "id": "@kernlang/agon-support-panel",
+      "modId": null,
+      "manifestDependencies": [],
+      "directory": "packages/support-panel",
+      "version": "1.0.0",
+      "class": "hidden-shared-support-package",
+      "dependencies": [
+        "@kernlang/agon-support-engine-runtime"
+      ],
+      "peerDependencies": {
+        "@kernlang/agon-kernel": ">=0.0.0-0 <2"
+      },
+      "packedBytes": 7906,
+      "unpackedBytes": 24452,
+      "fileCount": 9,
+      "files": [
+        {
+          "path": "dist/health-check.d.ts",
+          "size": 4381
+        },
+        {
+          "path": "dist/index.d.ts",
+          "size": 262
+        },
+        {
+          "path": "dist/index.js",
+          "size": 14984
+        },
+        {
+          "path": "dist/package-metadata.d.ts",
+          "size": 214
+        },
+        {
+          "path": "dist/seat-dispatch.d.ts",
+          "size": 1813
+        },
+        {
+          "path": "dist/team-composition.d.ts",
+          "size": 618
+        },
+        {
+          "path": "dist/teams.d.ts",
+          "size": 491
+        },
+        {
+          "path": "LICENSE",
+          "size": 1070
+        },
+        {
+          "path": "package.json",
+          "size": 619
+        }
+      ],
+      "payloadHash": "sha256:ada16f2411a10e886e2047edef12dcb86a15eb03054bbeff03f3639ca605cb3e",
+      "integrity": "sha512-WwICPelaqp3QIRmhrJy12F6hQEOXDemEwyhKP6gj7+c5jomiuq8BksDbuTmOKW9CWMB4KjanNmaxTAbZLoQG0w==",
+      "shasum": "980dd1f932234354dd7c26dea728d1a62c3c0c88",
+      "tarballHash": "sha256:3144aad6efa1e9b44835efbb7ef25f5e9279b1e53918702e934f3d18d88ac283",
+      "packageJsonHash": "sha256:560c4bb47db3017854ccf56909622b5377687e24dc3666f4a13e50ffb0c18fc5",
+      "manifestHash": "sha256:560c4bb47db3017854ccf56909622b5377687e24dc3666f4a13e50ffb0c18fc5"
+    },
+    {
+      "id": "@kernlang/agon-support-judge",
+      "modId": null,
+      "manifestDependencies": [],
+      "directory": "packages/support-judge",
+      "version": "1.0.0",
+      "class": "hidden-shared-support-package",
+      "dependencies": [
+        "@kernlang/agon-support-panel",
+        "@kernlang/agon-support-verification"
+      ],
+      "peerDependencies": {
+        "@kernlang/agon-kernel": ">=0.0.0-0 <2"
+      },
+      "packedBytes": 7368,
+      "unpackedBytes": 23380,
+      "fileCount": 8,
+      "files": [
+        {
+          "path": "dist/contracts.d.ts",
+          "size": 2194
+        },
+        {
+          "path": "dist/deterministic-ranking.d.ts",
+          "size": 801
+        },
+        {
+          "path": "dist/index.d.ts",
+          "size": 246
+        },
+        {
+          "path": "dist/index.js",
+          "size": 16619
+        },
+        {
+          "path": "dist/judge.d.ts",
+          "size": 1574
+        },
+        {
+          "path": "dist/package-metadata.d.ts",
+          "size": 214
+        },
+        {
+          "path": "LICENSE",
+          "size": 1070
+        },
+        {
+          "path": "package.json",
+          "size": 662
+        }
+      ],
+      "payloadHash": "sha256:2bbe9eefd0254fd741fb1c15faa9f087381cfc1d53f25f161684c2e3373797de",
+      "integrity": "sha512-G1HByxREYHZYsNMb2b4WcZq8v/+DuhJIYRIF+jhZR/ES8OmNMY4Ajui8eDZ7oayrNUauqf5L5XHPGNsixd6h+g==",
+      "shasum": "4a9ed08a8998534acd9bd0284911d8c38ce5679d",
+      "tarballHash": "sha256:9d8be1c88c0a7fb682f63f1616824737f14f033637b0bda848efa78c138fb7a2",
+      "packageJsonHash": "sha256:e7a7bccd299b21c997f1e5da5b5845ca11755d0638d1970f9788b23ec74d7e71",
+      "manifestHash": "sha256:e7a7bccd299b21c997f1e5da5b5845ca11755d0638d1970f9788b23ec74d7e71"
+    },
+    {
+      "id": "@kernlang/agon-support-agent-runtime",
+      "modId": null,
+      "manifestDependencies": [],
+      "directory": "packages/support-agent-runtime",
+      "version": "1.0.0",
+      "class": "hidden-shared-support-package",
+      "dependencies": [
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-persistence",
+        "@kernlang/agon-support-verification"
+      ],
+      "peerDependencies": {
+        "@kernlang/agon-kernel": ">=0.0.0-0 <2"
+      },
+      "packedBytes": 11806,
+      "unpackedBytes": 44849,
+      "fileCount": 7,
+      "files": [
+        {
+          "path": "dist/agent-loop.d.ts",
+          "size": 4058
+        },
+        {
+          "path": "dist/agent-session.d.ts",
+          "size": 3130
+        },
+        {
+          "path": "dist/index.d.ts",
+          "size": 126
+        },
+        {
+          "path": "dist/index.js",
+          "size": 35513
+        },
+        {
+          "path": "dist/package-metadata.d.ts",
+          "size": 222
+        },
+        {
+          "path": "LICENSE",
+          "size": 1070
+        },
+        {
+          "path": "package.json",
+          "size": 730
+        }
+      ],
+      "payloadHash": "sha256:32e856f67bc2186606f630c87811ed489a1820c109c3d2b9d98f117f1a50121f",
+      "integrity": "sha512-fwfamfNKB3dGszo/LSYRetUwMM8mcwYRXLv5i9i8HnM5gb7tI0i8ojqg4NFjs+MNZgKvymiHoKgaj+jjd/vQOw==",
+      "shasum": "9a495a988aeb6bd577ef13c44570368e7e1aaede",
+      "tarballHash": "sha256:799fa75e682ecbf5adcb570392d26e1c63af6e6838bdacd72bc9878ac10ff863",
+      "packageJsonHash": "sha256:985e7bb221f4d57f2d8a861d6d557a5ba815261c33821e685cbe083590277eae",
+      "manifestHash": "sha256:985e7bb221f4d57f2d8a861d6d557a5ba815261c33821e685cbe083590277eae"
+    },
+    {
+      "id": "@kernlang/agon-support-dedup",
+      "modId": null,
+      "manifestDependencies": [],
+      "directory": "packages/support-dedup",
+      "version": "1.0.0",
+      "class": "hidden-shared-support-package",
+      "dependencies": [
+        "@kernlang/agon-kernel"
+      ],
+      "peerDependencies": {
+        "@kernlang/agon-kernel": ">=0.0.0-0 <2"
+      },
+      "packedBytes": 12559,
+      "unpackedBytes": 39857,
+      "fileCount": 14,
+      "files": [
+        {
+          "path": "dist/brainstorm-dedup.d.ts",
+          "size": 709
+        },
+        {
+          "path": "dist/dedup-resolver.d.ts",
+          "size": 448
+        },
+        {
+          "path": "dist/index.d.ts",
+          "size": 280
+        },
+        {
+          "path": "dist/index.js",
+          "size": 7793
+        },
+        {
+          "path": "dist/package-metadata.d.ts",
+          "size": 214
+        },
+        {
+          "path": "dist/task-classifier.d.ts",
+          "size": 1452
+        },
+        {
+          "path": "LICENSE",
+          "size": 1070
+        },
+        {
+          "path": "package.json",
+          "size": 577
+        },
+        {
+          "path": "python/classifier.py",
+          "size": 5594
+        },
+        {
+          "path": "python/embedder.py",
+          "size": 3442
+        },
+        {
+          "path": "python/install-python.mjs",
+          "size": 1602
+        },
+        {
+          "path": "python/requirements.txt",
+          "size": 189
+        },
+        {
+          "path": "python/sidecar.py",
+          "size": 4908
+        },
+        {
+          "path": "python/syntax-validator.py",
+          "size": 11579
+        }
+      ],
+      "payloadHash": "sha256:00aea1f3184b33d3079246997e0ee75e7bcd647537221445c2cd14c59bb1fc7e",
+      "integrity": "sha512-OSurWrnCqxEp3Gb2hH1nCI+xpKJhvryQ2cK06bjz9o7cSgC/TFBNfWbqVij0+laAZtLimtBSoZuboTSgvojKTA==",
+      "shasum": "7a493289c4096cf0126d493875f7935f43a98e34",
+      "tarballHash": "sha256:c10d373de8fbcdb79b3dd88444dca65abb0cae09884fce1adc07b315030d2f59",
+      "packageJsonHash": "sha256:dfef1431e13bdd263cd00c419c8125a27f504c5e786de52d4fbcfbcb258f5c8d",
+      "manifestHash": "sha256:dfef1431e13bdd263cd00c419c8125a27f504c5e786de52d4fbcfbcb258f5c8d"
+    },
+    {
+      "id": "@kernlang/agon-support-browser-bridge",
+      "modId": null,
+      "manifestDependencies": [],
+      "directory": "packages/support-browser-bridge",
+      "version": "1.0.0",
+      "class": "hidden-shared-support-package",
+      "dependencies": [
+        "@kernlang/agon-kernel"
+      ],
+      "peerDependencies": {
+        "@kernlang/agon-kernel": ">=0.0.0-0 <2"
+      },
+      "packedBytes": 8416,
+      "unpackedBytes": 22506,
+      "fileCount": 9,
+      "files": [
+        {
+          "path": "dist/browser-host.d.ts",
+          "size": 8967
+        },
+        {
+          "path": "dist/index.d.ts",
+          "size": 340
+        },
+        {
+          "path": "dist/index.js",
+          "size": 9256
+        },
+        {
+          "path": "dist/package-metadata.d.ts",
+          "size": 223
+        },
+        {
+          "path": "dist/response-error.d.ts",
+          "size": 207
+        },
+        {
+          "path": "dist/settings.d.ts",
+          "size": 293
+        },
+        {
+          "path": "dist/syntax-validator-bridge.d.ts",
+          "size": 1578
+        },
+        {
+          "path": "LICENSE",
+          "size": 1070
+        },
+        {
+          "path": "package.json",
+          "size": 572
+        }
+      ],
+      "payloadHash": "sha256:5a99ca7aaa091e437a12a8bb2b85133138ce40a1c41053f6101422a1ea33553b",
+      "integrity": "sha512-LtRE74LZyZY9C3xqO1KS/ROaJqLPHYXcDg1dprz0bqUhLmHlybyNuYcq9C06TLKDFnMbj4XXM6WO+74SmTnU1g==",
+      "shasum": "d985a10513ea4dd47a49ae2442021a586dba7388",
+      "tarballHash": "sha256:76b7f7b718228c1300dc723f5bb1ffd9e49d8ced04dadf5be9d84fd99894260b",
+      "packageJsonHash": "sha256:512fb49495978f7c5a83297b7dc42ca3680e0579a6cfd68b1fe03abced4f8f78",
+      "manifestHash": "sha256:512fb49495978f7c5a83297b7dc42ca3680e0579a6cfd68b1fe03abced4f8f78"
+    },
+    {
+      "id": "@kernlang/agon-support-saas-api",
+      "modId": null,
+      "manifestDependencies": [],
+      "directory": "packages/support-saas-api",
+      "version": "1.0.0",
+      "class": "hidden-shared-support-package",
+      "dependencies": [
+        "@kernlang/agon-kernel"
+      ],
+      "peerDependencies": {
+        "@kernlang/agon-kernel": ">=0.0.0-0 <2"
+      },
+      "packedBytes": 2211,
+      "unpackedBytes": 3710,
+      "fileCount": 10,
+      "files": [
+        {
+          "path": "dist/index.d.ts",
+          "size": 57
+        },
+        {
+          "path": "dist/index.js",
+          "size": 269
+        },
+        {
+          "path": "dist/package-metadata.d.ts",
+          "size": 217
+        },
+        {
+          "path": "LICENSE",
+          "size": 1070
+        },
+        {
+          "path": "package.json",
+          "size": 580
+        },
+        {
+          "path": "python/__init__.py",
+          "size": 25
+        },
+        {
+          "path": "python/health.py",
+          "size": 1267
+        },
+        {
+          "path": "python/requirements.txt",
+          "size": 29
+        },
+        {
+          "path": "python/routes/__init__.py",
+          "size": 23
+        },
+        {
+          "path": "python/routes/get_health.py",
+          "size": 173
+        }
+      ],
+      "payloadHash": "sha256:84c3adf0c2ededf2bab1e2a3c87689ee58fe12f811efb66eeb173ed4f8deaf82",
+      "integrity": "sha512-YQeb44U/NzITQWs9SygXg5pegvJlr1nMdH37peek68Sc7suShva8LtVNxxf2rQp/fVrQPBwO0OQY2PxoBiwx9Q==",
+      "shasum": "9217b5d850489a38b4c6c6c6530dcd897a521996",
+      "tarballHash": "sha256:c913bc29adecf21ae0bc6878dd623aa7f1c740e8c387c49624c028c8f3d4aa30",
+      "packageJsonHash": "sha256:6499061291aa65f3d35cf2a6a3bd390c14cd84ba6214012fafcb55faca36272e",
+      "manifestHash": "sha256:6499061291aa65f3d35cf2a6a3bd390c14cd84ba6214012fafcb55faca36272e"
+    },
+    {
+      "id": "@kernlang/agon-mod-ask",
+      "modId": "agon.ask",
+      "manifestDependencies": [
+        "agon.api",
+        "agon.engine-runtime"
+      ],
+      "directory": "packages/mod-ask",
+      "version": "1.0.0",
+      "class": "user-toggleable-mod-package",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime"
+      ],
+      "peerDependencies": {
+        "@kernlang/agon-kernel": ">=0.0.0-0 <2"
+      },
+      "packedBytes": 4270,
+      "unpackedBytes": 13919,
+      "fileCount": 8,
+      "files": [
+        {
+          "path": "agon.mod.json",
+          "size": 2186
+        },
+        {
+          "path": "dist/implementation.d.ts",
+          "size": 259
+        },
+        {
+          "path": "dist/index.d.ts",
+          "size": 3340
+        },
+        {
+          "path": "dist/index.js",
+          "size": 5733
+        },
+        {
+          "path": "LICENSE",
+          "size": 1070
+        },
+        {
+          "path": "ownership.json",
+          "size": 333
+        },
+        {
+          "path": "package.json",
+          "size": 786
+        },
+        {
+          "path": "schemas/config.schema.json",
+          "size": 212
+        }
+      ],
+      "payloadHash": "sha256:e481a0d275e56efb69b93eead7217abec88e48616b442fa9a59c25933b36493e",
+      "integrity": "sha512-pzDjB5ce570Ic2ULvU+FpHXG3RPG9Rr7Fsl91oa9W4iC5Tna6zRREPslM9N0lIZDcnbxdohSW/0sDEx0cPOUPg==",
+      "shasum": "f4c2460add8056e5c57d826bc6cec1e51b13a8ec",
+      "tarballHash": "sha256:95ffa4e643c6d9a626c6a96440ea1aa751e9db19cade72e16239488f6ed9b015",
+      "packageJsonHash": "sha256:0bce5196cc0dc22ab301d57e938ed092c7b9c0f2934c5626ca44f7ba97ac0bd3",
+      "manifestHash": "sha256:c540d9d571b3ad7ce39ec258525d24fd25e573e16743d92d342caa1b3ae69b39"
+    },
+    {
+      "id": "@kernlang/agon-mod-plan",
+      "modId": "agon.plan",
+      "manifestDependencies": [
+        "agon.api",
+        "agon.engine-runtime",
+        "agon.persistence",
+        "agon.verification",
+        "agon.worktree"
+      ],
+      "directory": "packages/mod-plan",
+      "version": "1.0.0",
+      "class": "user-toggleable-mod-package",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-persistence",
+        "@kernlang/agon-support-verification",
+        "@kernlang/agon-support-worktree"
+      ],
+      "peerDependencies": {
+        "@kernlang/agon-kernel": ">=0.0.0-0 <2"
+      },
+      "packedBytes": 46846,
+      "unpackedBytes": 216542,
+      "fileCount": 33,
+      "files": [
+        {
+          "path": "agon.mod.json",
+          "size": 5476
+        },
+        {
+          "path": "dist/agent-review-step-execution.d.ts",
+          "size": 1334
+        },
+        {
+          "path": "dist/approval-policy.d.ts",
+          "size": 1512
+        },
+        {
+          "path": "dist/cost-estimator.d.ts",
+          "size": 477
+        },
+        {
+          "path": "dist/execution-callbacks.d.ts",
+          "size": 1490
+        },
+        {
+          "path": "dist/execution-coordinator.d.ts",
+          "size": 2235
+        },
+        {
+          "path": "dist/execution-model.d.ts",
+          "size": 2715
+        },
+        {
+          "path": "dist/execution-state.d.ts",
+          "size": 1364
+        },
+        {
+          "path": "dist/execution-store.d.ts",
+          "size": 1327
+        },
+        {
+          "path": "dist/executor.d.ts",
+          "size": 1430
+        },
+        {
+          "path": "dist/forge-step-execution.d.ts",
+          "size": 3209
+        },
+        {
+          "path": "dist/formatter.d.ts",
+          "size": 210
+        },
+        {
+          "path": "dist/implementation.d.ts",
+          "size": 243
+        },
+        {
+          "path": "dist/index.d.ts",
+          "size": 8132
+        },
+        {
+          "path": "dist/index.js",
+          "size": 152627
+        },
+        {
+          "path": "dist/panel-step-execution.d.ts",
+          "size": 1773
+        },
+        {
+          "path": "dist/pipeline-step-execution.d.ts",
+          "size": 2767
+        },
+        {
+          "path": "dist/proposal-workflow.d.ts",
+          "size": 2141
+        },
+        {
+          "path": "dist/resume-policy.d.ts",
+          "size": 951
+        },
+        {
+          "path": "dist/resume-workflow.d.ts",
+          "size": 584
+        },
+        {
+          "path": "dist/runtime.d.ts",
+          "size": 1574
+        },
+        {
+          "path": "dist/self-step-execution.d.ts",
+          "size": 1592
+        },
+        {
+          "path": "dist/session-scope.d.ts",
+          "size": 690
+        },
+        {
+          "path": "dist/session-selection.d.ts",
+          "size": 1988
+        },
+        {
+          "path": "dist/session-workflow.d.ts",
+          "size": 1634
+        },
+        {
+          "path": "dist/session.d.ts",
+          "size": 2690
+        },
+        {
+          "path": "dist/step-executors.d.ts",
+          "size": 1391
+        },
+        {
+          "path": "dist/step-validation.d.ts",
+          "size": 785
+        },
+        {
+          "path": "dist/worktree-workflow.d.ts",
+          "size": 1193
+        },
+        {
+          "path": "LICENSE",
+          "size": 1070
+        },
+        {
+          "path": "ownership.json",
+          "size": 7881
+        },
+        {
+          "path": "package.json",
+          "size": 1843
+        },
+        {
+          "path": "schemas/config.schema.json",
+          "size": 214
+        }
+      ],
+      "payloadHash": "sha256:84edac35045909c997fc4f6977b72776c910c55ccc13321ed6ed742505d0501c",
+      "integrity": "sha512-x1UxoNEpMpljNQptF4s+AfzsuA8nt9a18/XcCS+gtr9lKcBxAVzmbbD3avse+C+go/R5tt8N57zDSb7dCoxDGA==",
+      "shasum": "5cf795d583b98a3872cb16002f09cf4944b06a69",
+      "tarballHash": "sha256:1609eace90ca5edf3d3e46dc411d551a2c772f5c752e6c6a19111ea2a321d025",
+      "packageJsonHash": "sha256:10f8128b08ac64dc5f9fe64aecab6e88cf2edc72fd74d610ce5983539b65f4b6",
+      "manifestHash": "sha256:14622efdc9512c5fa16a7ada5be2ae909fa2d6d4f69284f613d3b0662e23d3c7"
+    },
+    {
+      "id": "@kernlang/agon-mod-think",
+      "modId": "agon.think",
+      "manifestDependencies": [
+        "agon.api",
+        "agon.engine-runtime"
+      ],
+      "directory": "packages/mod-think",
+      "version": "1.0.0",
+      "class": "user-toggleable-mod-package",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime"
+      ],
+      "peerDependencies": {
+        "@kernlang/agon-kernel": ">=0.0.0-0 <2"
+      },
+      "packedBytes": 17832,
+      "unpackedBytes": 61662,
+      "fileCount": 13,
+      "files": [
+        {
+          "path": "agon.mod.json",
+          "size": 2507
+        },
+        {
+          "path": "dist/host.d.ts",
+          "size": 1456
+        },
+        {
+          "path": "dist/implementation.d.ts",
+          "size": 136
+        },
+        {
+          "path": "dist/index.d.ts",
+          "size": 3897
+        },
+        {
+          "path": "dist/index.js",
+          "size": 40839
+        },
+        {
+          "path": "dist/presentation.d.ts",
+          "size": 490
+        },
+        {
+          "path": "dist/runtime.d.ts",
+          "size": 1584
+        },
+        {
+          "path": "dist/session-workflow.d.ts",
+          "size": 2288
+        },
+        {
+          "path": "dist/thinking.d.ts",
+          "size": 5531
+        },
+        {
+          "path": "LICENSE",
+          "size": 1070
+        },
+        {
+          "path": "ownership.json",
+          "size": 860
+        },
+        {
+          "path": "package.json",
+          "size": 788
+        },
+        {
+          "path": "schemas/config.schema.json",
+          "size": 216
+        }
+      ],
+      "payloadHash": "sha256:9466f8f7360b77928f1491b90355778aaebf4e104ea13c8436b35603cbc303b8",
+      "integrity": "sha512-ORQIb/K/PlY1xVN6ikxQyEnZwpVKjkfngplhNIAxO3RKgrvtbpt+BsoyGU5xd9uSpi9Bd5TvyVx5CuIN4wPBzg==",
+      "shasum": "84dac62a299d54a29ae09ba87b50fdfe21be4085",
+      "tarballHash": "sha256:5982df06853178caa979078b97424e4ccedc2d35b1ded968a941f2e97709a10f",
+      "packageJsonHash": "sha256:b3ce2b73b44c428b21425e4f9e2fcddc2a0ce5f80db4c8f87755c8318973e185",
+      "manifestHash": "sha256:77dc80685bc2e775671807a34e5b773b563b7cd287a22c0e13247cbf7fe73b27"
+    },
+    {
+      "id": "@kernlang/agon-mod-brainstorm",
+      "modId": "agon.brainstorm",
+      "manifestDependencies": [
+        "agon.api",
+        "agon.dedup",
+        "agon.engine-runtime",
+        "agon.panel"
+      ],
+      "directory": "packages/mod-brainstorm",
+      "version": "1.0.0",
+      "class": "user-toggleable-mod-package",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-panel",
+        "@kernlang/agon-support-dedup"
+      ],
+      "peerDependencies": {
+        "@kernlang/agon-kernel": ">=0.0.0-0 <2"
+      },
+      "packedBytes": 20409,
+      "unpackedBytes": 84864,
+      "fileCount": 18,
+      "files": [
+        {
+          "path": "agon.mod.json",
+          "size": 3500
+        },
+        {
+          "path": "dist/collector.d.ts",
+          "size": 1142
+        },
+        {
+          "path": "dist/host.d.ts",
+          "size": 2715
+        },
+        {
+          "path": "dist/implementation.d.ts",
+          "size": 408
+        },
+        {
+          "path": "dist/index.d.ts",
+          "size": 5286
+        },
+        {
+          "path": "dist/index.js",
+          "size": 51128
+        },
+        {
+          "path": "dist/policy.d.ts",
+          "size": 1457
+        },
+        {
+          "path": "dist/presentation.d.ts",
+          "size": 1938
+        },
+        {
+          "path": "dist/result.d.ts",
+          "size": 805
+        },
+        {
+          "path": "dist/runtime.d.ts",
+          "size": 2596
+        },
+        {
+          "path": "dist/scout.d.ts",
+          "size": 1183
+        },
+        {
+          "path": "dist/session-record.d.ts",
+          "size": 2200
+        },
+        {
+          "path": "dist/session-workflow.d.ts",
+          "size": 1590
+        },
+        {
+          "path": "dist/workflow.d.ts",
+          "size": 3449
+        },
+        {
+          "path": "LICENSE",
+          "size": 1070
+        },
+        {
+          "path": "ownership.json",
+          "size": 3288
+        },
+        {
+          "path": "package.json",
+          "size": 883
+        },
+        {
+          "path": "schemas/config.schema.json",
+          "size": 226
+        }
+      ],
+      "payloadHash": "sha256:6016a687521fe4d6bfc8ce1a3afb7fa853ea146e3052987d8b84d79e747f2218",
+      "integrity": "sha512-k4iATuK3v98GS954NTg/suYSpWwAItcE5A4n+OtxE5wGMhIRPWBmM7WfBueQWfOuZ1KV3JdOy/9PVCsWETTG5w==",
+      "shasum": "1ddd49422e72f7000c2ad1b9d67e3f546f2fdbb8",
+      "tarballHash": "sha256:d5cea3256a451534578ee457893c627796cbe1a45ce2c45d1a37a05cca885382",
+      "packageJsonHash": "sha256:e8856b8275aa127aa0a26684306297971a5dc884cb4c88d33e2424b368366f6d",
+      "manifestHash": "sha256:22b12a7f1158f5d4b4fe4e946d3d9718fb5df5242d3e4adbdc0d2f7cb67e4ecd"
+    },
+    {
+      "id": "@kernlang/agon-mod-team-brainstorm",
+      "modId": "agon.team-brainstorm",
+      "manifestDependencies": [
+        "agon.api",
+        "agon.brainstorm",
+        "agon.engine-runtime",
+        "agon.panel"
+      ],
+      "directory": "packages/mod-team-brainstorm",
+      "version": "1.0.0",
+      "class": "user-toggleable-mod-package",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-mod-brainstorm",
+        "@kernlang/agon-support-panel"
+      ],
+      "peerDependencies": {
+        "@kernlang/agon-kernel": ">=0.0.0-0 <2"
+      },
+      "packedBytes": 12024,
+      "unpackedBytes": 47585,
+      "fileCount": 12,
+      "files": [
+        {
+          "path": "agon.mod.json",
+          "size": 2732
+        },
+        {
+          "path": "dist/host.d.ts",
+          "size": 1398
+        },
+        {
+          "path": "dist/implementation.d.ts",
+          "size": 136
+        },
+        {
+          "path": "dist/index.d.ts",
+          "size": 4098
+        },
+        {
+          "path": "dist/index.js",
+          "size": 30992
+        },
+        {
+          "path": "dist/presentation.d.ts",
+          "size": 627
+        },
+        {
+          "path": "dist/runtime.d.ts",
+          "size": 2575
+        },
+        {
+          "path": "dist/session-workflow.d.ts",
+          "size": 1341
+        },
+        {
+          "path": "LICENSE",
+          "size": 1070
+        },
+        {
+          "path": "ownership.json",
+          "size": 1491
+        },
+        {
+          "path": "package.json",
+          "size": 889
+        },
+        {
+          "path": "schemas/config.schema.json",
+          "size": 236
+        }
+      ],
+      "payloadHash": "sha256:855c9f551fb96e94061e967ec16019b3646280deb28c862e41ca65b011d4abb9",
+      "integrity": "sha512-2Bf/AssW7ezb3ruRiA/9vNTewYiFEKksm+Uv2Mu0fCukSBd/TvVuYDo7lj11jZA70GE+QVN3nVmMrqlmFjQWEg==",
+      "shasum": "059700102a8a7abccdf143e1b66dfc45394664ac",
+      "tarballHash": "sha256:ed8618a35d9dca353d662790f4afbf1c2209d751bf117d83e79dde33e990833e",
+      "packageJsonHash": "sha256:21367fb6049c329caa5c689368c50d046eb780afce9a7775bbcab10c919e8d79",
+      "manifestHash": "sha256:8a3a2880ef10bc5b2341504af121e6b957e5a4029f99526d094a7d9c311e2448"
+    },
+    {
+      "id": "@kernlang/agon-mod-tribunal",
+      "modId": "agon.tribunal",
+      "manifestDependencies": [
+        "agon.api",
+        "agon.engine-runtime",
+        "agon.judge",
+        "agon.panel"
+      ],
+      "directory": "packages/mod-tribunal",
+      "version": "1.0.0",
+      "class": "user-toggleable-mod-package",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-panel",
+        "@kernlang/agon-support-judge"
+      ],
+      "peerDependencies": {
+        "@kernlang/agon-kernel": ">=0.0.0-0 <2"
+      },
+      "packedBytes": 19506,
+      "unpackedBytes": 74888,
+      "fileCount": 14,
+      "files": [
+        {
+          "path": "agon.mod.json",
+          "size": 3208
+        },
+        {
+          "path": "dist/host.d.ts",
+          "size": 1558
+        },
+        {
+          "path": "dist/implementation.d.ts",
+          "size": 492
+        },
+        {
+          "path": "dist/index.d.ts",
+          "size": 4535
+        },
+        {
+          "path": "dist/index.js",
+          "size": 50332
+        },
+        {
+          "path": "dist/modes.d.ts",
+          "size": 1213
+        },
+        {
+          "path": "dist/presentation.d.ts",
+          "size": 642
+        },
+        {
+          "path": "dist/runtime.d.ts",
+          "size": 3459
+        },
+        {
+          "path": "dist/session-record.d.ts",
+          "size": 1654
+        },
+        {
+          "path": "dist/session-workflow.d.ts",
+          "size": 2388
+        },
+        {
+          "path": "LICENSE",
+          "size": 1070
+        },
+        {
+          "path": "ownership.json",
+          "size": 3234
+        },
+        {
+          "path": "package.json",
+          "size": 881
+        },
+        {
+          "path": "schemas/config.schema.json",
+          "size": 222
+        }
+      ],
+      "payloadHash": "sha256:186ead62315371b86b3779c7b39eeffa3caa642ed3a03b1fa814d1577f05e349",
+      "integrity": "sha512-zzWKmjaYTUywezIqzhN7q4vJbhsxjT/ggLmITh9XBEKdBNwL82qK2JsmJwtDpkmv+eX8NBlCMoI4sD1YS80N7g==",
+      "shasum": "63805502f3cdcc76c3c07a0fa4fbc733e688f666",
+      "tarballHash": "sha256:e637844a29124641f5ebc907cb8aa17e7b775dd042874a1da8f622981e326671",
+      "packageJsonHash": "sha256:58c2e690ff06aecf638e4393a0eea6ece218c3393c6449f99305142b2c7bc41f",
+      "manifestHash": "sha256:14766e688db041649d199e05f0b4b06622242fa22f46b5964e4a94cc63526c31"
+    },
+    {
+      "id": "@kernlang/agon-mod-team-tribunal",
+      "modId": "agon.team-tribunal",
+      "manifestDependencies": [
+        "agon.api",
+        "agon.engine-runtime",
+        "agon.panel",
+        "agon.tribunal"
+      ],
+      "directory": "packages/mod-team-tribunal",
+      "version": "1.0.0",
+      "class": "user-toggleable-mod-package",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-mod-tribunal",
+        "@kernlang/agon-support-panel"
+      ],
+      "peerDependencies": {
+        "@kernlang/agon-kernel": ">=0.0.0-0 <2"
+      },
+      "packedBytes": 7687,
+      "unpackedBytes": 27425,
+      "fileCount": 9,
+      "files": [
+        {
+          "path": "agon.mod.json",
+          "size": 2723
+        },
+        {
+          "path": "dist/cooperative.d.ts",
+          "size": 698
+        },
+        {
+          "path": "dist/implementation.d.ts",
+          "size": 136
+        },
+        {
+          "path": "dist/index.d.ts",
+          "size": 3458
+        },
+        {
+          "path": "dist/index.js",
+          "size": 16754
+        },
+        {
+          "path": "LICENSE",
+          "size": 1070
+        },
+        {
+          "path": "ownership.json",
+          "size": 1469
+        },
+        {
+          "path": "package.json",
+          "size": 885
+        },
+        {
+          "path": "schemas/config.schema.json",
+          "size": 232
+        }
+      ],
+      "payloadHash": "sha256:a96e399aedfa6fa47eb1909ce273de447afc0495bade762124d3cd75ea5135bc",
+      "integrity": "sha512-2bEziDcJrc/wNmxfUoqgWWpaaoemjJ9xxzMMx/wyXqeqBD8ILcxrsZIVvdCUAHJ6o7ZtZXMSzsxMGHedw9Y2FQ==",
+      "shasum": "539adc2011f88a86ba540a5bfd994f68d1f05aa0",
+      "tarballHash": "sha256:72e6ce0ed335c296de05c5371433d3c85c245dfa550f55c0da253532033153a7",
+      "packageJsonHash": "sha256:de9b0f9af3928707d4e1d9e81edca07d1b094f5340ea701a4a9d404a4ebbea9d",
+      "manifestHash": "sha256:81b7ee425cd89d4d1a327918ebc2036089da6ec09a29a653ec21b5a0315dac65"
+    },
+    {
+      "id": "@kernlang/agon-mod-campfire",
+      "modId": "agon.campfire",
+      "manifestDependencies": [
+        "agon.api",
+        "agon.engine-runtime",
+        "agon.panel"
+      ],
+      "directory": "packages/mod-campfire",
+      "version": "1.0.0",
+      "class": "user-toggleable-mod-package",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-panel"
+      ],
+      "peerDependencies": {
+        "@kernlang/agon-kernel": ">=0.0.0-0 <2"
+      },
+      "packedBytes": 10658,
+      "unpackedBytes": 43002,
+      "fileCount": 12,
+      "files": [
+        {
+          "path": "agon.mod.json",
+          "size": 3059
+        },
+        {
+          "path": "dist/host.d.ts",
+          "size": 1348
+        },
+        {
+          "path": "dist/implementation.d.ts",
+          "size": 136
+        },
+        {
+          "path": "dist/index.d.ts",
+          "size": 3853
+        },
+        {
+          "path": "dist/index.js",
+          "size": 26293
+        },
+        {
+          "path": "dist/input.d.ts",
+          "size": 159
+        },
+        {
+          "path": "dist/runtime.d.ts",
+          "size": 908
+        },
+        {
+          "path": "dist/session-workflow.d.ts",
+          "size": 2157
+        },
+        {
+          "path": "LICENSE",
+          "size": 1070
+        },
+        {
+          "path": "ownership.json",
+          "size": 2961
+        },
+        {
+          "path": "package.json",
+          "size": 836
+        },
+        {
+          "path": "schemas/config.schema.json",
+          "size": 222
+        }
+      ],
+      "payloadHash": "sha256:18cde14f1c3463ce8afe5676b8b8a81777982e3618eafabcc669e47118215036",
+      "integrity": "sha512-YOQbbQE+Ws3B3HbnVzC0xE/viRxMo6PkhGU5/DAHbO4jV8qptJ9ROL4/DyV+ah3PqDvavZZNo2n3QnC3cKMQrA==",
+      "shasum": "c7207f8cf18dc994e2c421ddb46b4de680c79f4f",
+      "tarballHash": "sha256:ffad1e4e6cc6ac899e5881d801f73205fa45a36c7090e9d67914ca05afa07f6f",
+      "packageJsonHash": "sha256:7069a90bb835d0adb091f875eeef4833acd2343ecff49dae54622f3db0637cec",
+      "manifestHash": "sha256:a454583f86d56394245fa375a773b9c60c7159b6703b971e3876018091f6b9dd"
+    },
+    {
+      "id": "@kernlang/agon-mod-forge",
+      "modId": "agon.forge",
+      "manifestDependencies": [
+        "agon.api",
+        "agon.engine-runtime",
+        "agon.judge",
+        "agon.panel",
+        "agon.verification",
+        "agon.worktree"
+      ],
+      "directory": "packages/mod-forge",
+      "version": "1.0.0",
+      "class": "user-toggleable-mod-package",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-panel",
+        "@kernlang/agon-support-judge",
+        "@kernlang/agon-support-worktree",
+        "@kernlang/agon-support-verification"
+      ],
+      "peerDependencies": {
+        "@kernlang/agon-kernel": ">=0.0.0-0 <2"
+      },
+      "packedBytes": 48852,
+      "unpackedBytes": 218886,
+      "fileCount": 28,
+      "files": [
+        {
+          "path": "agon.mod.json",
+          "size": 5805
+        },
+        {
+          "path": "dist/apply.d.ts",
+          "size": 614
+        },
+        {
+          "path": "dist/competition.d.ts",
+          "size": 368
+        },
+        {
+          "path": "dist/corpus.d.ts",
+          "size": 985
+        },
+        {
+          "path": "dist/delegate.d.ts",
+          "size": 657
+        },
+        {
+          "path": "dist/errors.d.ts",
+          "size": 232
+        },
+        {
+          "path": "dist/fitness.d.ts",
+          "size": 2236
+        },
+        {
+          "path": "dist/gauntlet.d.ts",
+          "size": 1927
+        },
+        {
+          "path": "dist/host.d.ts",
+          "size": 1220
+        },
+        {
+          "path": "dist/implementation.d.ts",
+          "size": 224
+        },
+        {
+          "path": "dist/index.d.ts",
+          "size": 6169
+        },
+        {
+          "path": "dist/index.js",
+          "size": 157293
+        },
+        {
+          "path": "dist/manifest.d.ts",
+          "size": 544
+        },
+        {
+          "path": "dist/pr-text.d.ts",
+          "size": 1300
+        },
+        {
+          "path": "dist/prompts.d.ts",
+          "size": 808
+        },
+        {
+          "path": "dist/quality.d.ts",
+          "size": 1549
+        },
+        {
+          "path": "dist/result-policy.d.ts",
+          "size": 976
+        },
+        {
+          "path": "dist/scoring.d.ts",
+          "size": 815
+        },
+        {
+          "path": "dist/stage-context.d.ts",
+          "size": 1056
+        },
+        {
+          "path": "dist/stages.d.ts",
+          "size": 5639
+        },
+        {
+          "path": "dist/synth-plan.d.ts",
+          "size": 857
+        },
+        {
+          "path": "dist/synthesis.d.ts",
+          "size": 1515
+        },
+        {
+          "path": "dist/types.d.ts",
+          "size": 8767
+        },
+        {
+          "path": "dist/workflow.d.ts",
+          "size": 4682
+        },
+        {
+          "path": "LICENSE",
+          "size": 1070
+        },
+        {
+          "path": "ownership.json",
+          "size": 9598
+        },
+        {
+          "path": "package.json",
+          "size": 978
+        },
+        {
+          "path": "schemas/config.schema.json",
+          "size": 1002
+        }
+      ],
+      "payloadHash": "sha256:4156381314b6e2af74cd6d1c4ffe021af42c761930bcbf96c8f211de989a8081",
+      "integrity": "sha512-AcPLLO9+Ar5p3vYlqCkR5HbV3Gtsnd+Hk6SltWgN8RWDeqcHj9ww/zBBX2yl8ilMWNP1Hn8vhSlsGXXrzmK5HA==",
+      "shasum": "7641e6b1c9e7373aaf30213b8900e580b80796ee",
+      "tarballHash": "sha256:13bdc19ec82f98f1710ef8ea8603bd7c1f3d97dcc6b842dcc3188ad6a78e579f",
+      "packageJsonHash": "sha256:92c0cbe0b2acf76366ec182435ae7bb0c04f69b4170b90df26a74b40d8fbe3df",
+      "manifestHash": "sha256:c58b77fb423b30973a3eea5015ecbf0f8888a024d6dab336e2a87fd71f0418e0"
+    },
+    {
+      "id": "@kernlang/agon-mod-team-forge",
+      "modId": "agon.team-forge",
+      "manifestDependencies": [
+        "agon.api",
+        "agon.engine-runtime",
+        "agon.forge",
+        "agon.panel"
+      ],
+      "directory": "packages/mod-team-forge",
+      "version": "1.0.0",
+      "class": "user-toggleable-mod-package",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-mod-forge",
+        "@kernlang/agon-support-panel"
+      ],
+      "peerDependencies": {
+        "@kernlang/agon-kernel": ">=0.0.0-0 <2"
+      },
+      "packedBytes": 6244,
+      "unpackedBytes": 22982,
+      "fileCount": 8,
+      "files": [
+        {
+          "path": "agon.mod.json",
+          "size": 2785
+        },
+        {
+          "path": "dist/implementation.d.ts",
+          "size": 136
+        },
+        {
+          "path": "dist/index.d.ts",
+          "size": 3340
+        },
+        {
+          "path": "dist/index.js",
+          "size": 12854
+        },
+        {
+          "path": "LICENSE",
+          "size": 1070
+        },
+        {
+          "path": "ownership.json",
+          "size": 1692
+        },
+        {
+          "path": "package.json",
+          "size": 879
+        },
+        {
+          "path": "schemas/config.schema.json",
+          "size": 226
+        }
+      ],
+      "payloadHash": "sha256:8abe48cbf8499fa16a86d583efd16b2154c3348723a169d5be395792f65a1694",
+      "integrity": "sha512-cKVBqT8sMgxvlpLLOUdVJ/Jr66IIUQWUkpKQKD5iFUuTD3Ytn1TQyt1BxNRWmd5FJw6pj7NsYXmWa3/9iIq4mA==",
+      "shasum": "09cb7443fc18f412555fbf1fda5a223b13f98632",
+      "tarballHash": "sha256:09cb4c9c1a66ba0341af7af9cfae59f4ce0f30efc04ed627389048b4af3ba462",
+      "packageJsonHash": "sha256:17ae021dc5086866cdf3ef40924c8b21e37347813d0730f64a399b06be666588",
+      "manifestHash": "sha256:4f07d53e5796f3045a245e0b97d121a01a13da383d1c8693a1482c4781031a65"
+    },
+    {
+      "id": "@kernlang/agon-mod-synthesis",
+      "modId": "agon.synthesis",
+      "manifestDependencies": [
+        "agon.api",
+        "agon.engine-runtime",
+        "agon.judge",
+        "agon.panel"
+      ],
+      "directory": "packages/mod-synthesis",
+      "version": "1.0.0",
+      "class": "user-toggleable-mod-package",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-panel",
+        "@kernlang/agon-support-judge"
+      ],
+      "peerDependencies": {
+        "@kernlang/agon-kernel": ">=0.0.0-0 <2"
+      },
+      "packedBytes": 15031,
+      "unpackedBytes": 53942,
+      "fileCount": 14,
+      "files": [
+        {
+          "path": "agon.mod.json",
+          "size": 2868
+        },
+        {
+          "path": "dist/host.d.ts",
+          "size": 1752
+        },
+        {
+          "path": "dist/implementation.d.ts",
+          "size": 136
+        },
+        {
+          "path": "dist/index.d.ts",
+          "size": 4407
+        },
+        {
+          "path": "dist/index.js",
+          "size": 35303
+        },
+        {
+          "path": "dist/judge-parser.d.ts",
+          "size": 405
+        },
+        {
+          "path": "dist/presentation.d.ts",
+          "size": 944
+        },
+        {
+          "path": "dist/routing-policy.d.ts",
+          "size": 164
+        },
+        {
+          "path": "dist/runtime.d.ts",
+          "size": 1887
+        },
+        {
+          "path": "dist/session-workflow.d.ts",
+          "size": 2299
+        },
+        {
+          "path": "LICENSE",
+          "size": 1070
+        },
+        {
+          "path": "ownership.json",
+          "size": 1429
+        },
+        {
+          "path": "package.json",
+          "size": 882
+        },
+        {
+          "path": "schemas/config.schema.json",
+          "size": 396
+        }
+      ],
+      "payloadHash": "sha256:901089e1ab039cf2f1748283f65ae45191a1fdda8fee17932ca58c8c0ce5307b",
+      "integrity": "sha512-BCtUg/1eBITMDHIkIm1yaWDMJ7PP31r4l9kiplPalzB5M1+FnM8CUbMVEXb3XU45KtzkfnPRCsJRHdrgrdWO+Q==",
+      "shasum": "f2d1d1f46bfbb0f1aa7c12ff656001c43f9cdfdb",
+      "tarballHash": "sha256:14fa48817c64d2e970af1843e66575273b0e41dbaba36597fd45f5a9fb962fd5",
+      "packageJsonHash": "sha256:1b12b6d14d791311d72fa51a3150bfa95700dfada749ac7920cbb17106758709",
+      "manifestHash": "sha256:861192fac9d6b793352bfa499db3c89188186523820776266528dd7111f086a1"
+    },
+    {
+      "id": "@kernlang/agon-mod-review",
+      "modId": "agon.review",
+      "manifestDependencies": [
+        "agon.api",
+        "agon.engine-runtime",
+        "agon.panel",
+        "agon.verification",
+        "agon.worktree"
+      ],
+      "directory": "packages/mod-review",
+      "version": "1.0.0",
+      "class": "user-toggleable-mod-package",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-panel",
+        "@kernlang/agon-support-verification",
+        "@kernlang/agon-support-worktree"
+      ],
+      "peerDependencies": {
+        "@kernlang/agon-kernel": ">=0.0.0-0 <2"
+      },
+      "packedBytes": 24440,
+      "unpackedBytes": 91503,
+      "fileCount": 17,
+      "files": [
+        {
+          "path": "agon.mod.json",
+          "size": 3725
+        },
+        {
+          "path": "dist/cluster.d.ts",
+          "size": 572
+        },
+        {
+          "path": "dist/consensus.d.ts",
+          "size": 5745
+        },
+        {
+          "path": "dist/existing-code.d.ts",
+          "size": 537
+        },
+        {
+          "path": "dist/findings.d.ts",
+          "size": 131
+        },
+        {
+          "path": "dist/implementation.d.ts",
+          "size": 379
+        },
+        {
+          "path": "dist/index.d.ts",
+          "size": 3476
+        },
+        {
+          "path": "dist/index.js",
+          "size": 63968
+        },
+        {
+          "path": "dist/panel.d.ts",
+          "size": 1264
+        },
+        {
+          "path": "dist/prompt.d.ts",
+          "size": 677
+        },
+        {
+          "path": "dist/repair.d.ts",
+          "size": 1740
+        },
+        {
+          "path": "dist/report.d.ts",
+          "size": 1133
+        },
+        {
+          "path": "dist/seat.d.ts",
+          "size": 1161
+        },
+        {
+          "path": "LICENSE",
+          "size": 1070
+        },
+        {
+          "path": "ownership.json",
+          "size": 4492
+        },
+        {
+          "path": "package.json",
+          "size": 934
+        },
+        {
+          "path": "schemas/config.schema.json",
+          "size": 499
+        }
+      ],
+      "payloadHash": "sha256:b2f17785d2821183ff9561cd0ffb62f2b68f3a1367944261a7c014375eeacdd5",
+      "integrity": "sha512-zJ192IEr7SX5ZBfrfrj3GQBaNUPegotZZHPCa3NjxomBcWLu7TzikjqnCBj60lVy1vsaHCyuQKx9seB4nFavIw==",
+      "shasum": "6da8fba825cffa491abe9e102c9861eec0cd4419",
+      "tarballHash": "sha256:a9b09b44d80089ebb684114463878263ad2fa9c28586ed5ac4ab6a4f592cd11f",
+      "packageJsonHash": "sha256:33adc86d68b0d177c5acb2db50672b2eacaaa4127d1eb1b5bd31c695f435760f",
+      "manifestHash": "sha256:8618c61f5ab3580bf29a78673714648779ae4e851a367ce694b9d19350c4f468"
+    },
+    {
+      "id": "@kernlang/agon-mod-pipeline-orchestration",
+      "modId": "agon.pipeline-orchestration",
+      "manifestDependencies": [
+        "agon.api",
+        "agon.brainstorm",
+        "agon.engine-runtime",
+        "agon.forge",
+        "agon.tribunal"
+      ],
+      "directory": "packages/mod-pipeline-orchestration",
+      "version": "1.0.0",
+      "class": "user-toggleable-mod-package",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-mod-brainstorm",
+        "@kernlang/agon-mod-forge",
+        "@kernlang/agon-mod-tribunal"
+      ],
+      "peerDependencies": {
+        "@kernlang/agon-kernel": ">=0.0.0-0 <2"
+      },
+      "packedBytes": 4604,
+      "unpackedBytes": 15656,
+      "fileCount": 8,
+      "files": [
+        {
+          "path": "agon.mod.json",
+          "size": 2467
+        },
+        {
+          "path": "dist/implementation.d.ts",
+          "size": 521
+        },
+        {
+          "path": "dist/index.d.ts",
+          "size": 3340
+        },
+        {
+          "path": "dist/index.js",
+          "size": 6691
+        },
+        {
+          "path": "LICENSE",
+          "size": 1070
+        },
+        {
+          "path": "ownership.json",
+          "size": 381
+        },
+        {
+          "path": "package.json",
+          "size": 936
+        },
+        {
+          "path": "schemas/config.schema.json",
+          "size": 250
+        }
+      ],
+      "payloadHash": "sha256:fd81005b2a6afbee8e5b0db272d9d9ed2e3a380ba98b4492a5075bd022d9d387",
+      "integrity": "sha512-lENx09bRols/RSIJASv2XXQTxGZHQ7U0M71XJmnhRiHOJKMqy/8aqDIqJWjalEPw4/j3L0O7dg5gjUAwZdSHGA==",
+      "shasum": "c9a0f18dc6f23f5790e4f6f1881d76e50b8720f8",
+      "tarballHash": "sha256:aaa6e9f22fb9398086915c46760d679a51bc14ef42466b5e5694b068d1cf1a1f",
+      "packageJsonHash": "sha256:433ed06b1c10871de54355adda8f8536e63f4d4d0679c6618ebb56f02beda2c3",
+      "manifestHash": "sha256:54b368f3f561134360382f4a8712d3a09de40597fa66928900348ff50a3c1b6c"
+    },
+    {
+      "id": "@kernlang/agon-mod-pipeline-delivery",
+      "modId": "agon.pipeline-delivery",
+      "manifestDependencies": [
+        "agon.agent",
+        "agon.api",
+        "agon.engine-runtime",
+        "agon.review"
+      ],
+      "directory": "packages/mod-pipeline-delivery",
+      "version": "1.0.0",
+      "class": "user-toggleable-mod-package",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-mod-agent",
+        "@kernlang/agon-mod-review"
+      ],
+      "peerDependencies": {
+        "@kernlang/agon-kernel": ">=0.0.0-0 <2"
+      },
+      "packedBytes": 5397,
+      "unpackedBytes": 20230,
+      "fileCount": 8,
+      "files": [
+        {
+          "path": "agon.mod.json",
+          "size": 2767
+        },
+        {
+          "path": "dist/implementation.d.ts",
+          "size": 608
+        },
+        {
+          "path": "dist/index.d.ts",
+          "size": 3340
+        },
+        {
+          "path": "dist/index.js",
+          "size": 9571
+        },
+        {
+          "path": "LICENSE",
+          "size": 1070
+        },
+        {
+          "path": "ownership.json",
+          "size": 1751
+        },
+        {
+          "path": "package.json",
+          "size": 883
+        },
+        {
+          "path": "schemas/config.schema.json",
+          "size": 240
+        }
+      ],
+      "payloadHash": "sha256:9605a03af452e3d8867aae7c4babb01e286516660226b84135218cb2eff83d07",
+      "integrity": "sha512-zKaloU71PxKsCJdkomU9FF1nvvWq0ZcwrLwssd5292JctF3xgy5cU5FLOaXNgHo2hOKM5+o0GsXgme2vuVCngg==",
+      "shasum": "869c28434008f48a430e94402adceb1a4deaf5c2",
+      "tarballHash": "sha256:646e1ee20cc8a2443c296d430037a9be798d525afada5fbe4c600ba09dae6645",
+      "packageJsonHash": "sha256:eb3d23ba61fe17d37c24dd0b4425069d831ce260884882e1925ea30972cdc377",
+      "manifestHash": "sha256:a9e2157b100f5ebb4d91b0aa6ce0ee91dbe4273c0f8bc32253c2e75dea86c37a"
+    },
+    {
+      "id": "@kernlang/agon-mod-agent",
+      "modId": "agon.agent",
+      "manifestDependencies": [
+        "agon.agent-runtime",
+        "agon.api",
+        "agon.engine-runtime"
+      ],
+      "directory": "packages/mod-agent",
+      "version": "1.0.0",
+      "class": "user-toggleable-mod-package",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-agent-runtime"
+      ],
+      "peerDependencies": {
+        "@kernlang/agon-kernel": ">=0.0.0-0 <2"
+      },
+      "packedBytes": 21590,
+      "unpackedBytes": 97564,
+      "fileCount": 13,
+      "files": [
+        {
+          "path": "agon.mod.json",
+          "size": 5328
+        },
+        {
+          "path": "dist/events.d.ts",
+          "size": 3367
+        },
+        {
+          "path": "dist/implementation.d.ts",
+          "size": 442
+        },
+        {
+          "path": "dist/index.d.ts",
+          "size": 4141
+        },
+        {
+          "path": "dist/index.js",
+          "size": 57789
+        },
+        {
+          "path": "dist/team-refinement.d.ts",
+          "size": 8244
+        },
+        {
+          "path": "dist/team-results.d.ts",
+          "size": 528
+        },
+        {
+          "path": "dist/team-runtime.d.ts",
+          "size": 4209
+        },
+        {
+          "path": "dist/team-scoring.d.ts",
+          "size": 775
+        },
+        {
+          "path": "LICENSE",
+          "size": 1070
+        },
+        {
+          "path": "ownership.json",
+          "size": 10429
+        },
+        {
+          "path": "package.json",
+          "size": 841
+        },
+        {
+          "path": "schemas/config.schema.json",
+          "size": 401
+        }
+      ],
+      "payloadHash": "sha256:cf71e66f731e2b84b085602e0fb00554c383be9d57778885a8a99b291c44dfdb",
+      "integrity": "sha512-PtF5W/eEsdLrNGWo/dNYk//zWz72aQ7T0GqZnvEaukio3U/QP0jCE4gvJvLdC+SeZ0miaoDbPNkqyS35QVogBw==",
+      "shasum": "c1b945d0620be81cd313e39eb85bab16a6102f83",
+      "tarballHash": "sha256:6d79eb91ccd44e98fb45b317dc628b1efbbc57fd733ef47a20223b1735a2353a",
+      "packageJsonHash": "sha256:c6c433348f16f29a9d3f195ef8c9d924f3edec38b752b5cddc68851047c29fee",
+      "manifestHash": "sha256:c98675c195baaf635cba9531837cf45108b554f57c327eb45246f97ea6ec3e59"
+    },
+    {
+      "id": "@kernlang/agon-mod-goal",
+      "modId": "agon.goal",
+      "manifestDependencies": [
+        "agon.agent",
+        "agon.api",
+        "agon.engine-runtime",
+        "agon.forge",
+        "agon.git-actions",
+        "agon.jobs",
+        "agon.plan",
+        "agon.review",
+        "agon.verification",
+        "agon.worktree"
+      ],
+      "directory": "packages/mod-goal",
+      "version": "1.0.0",
+      "class": "user-toggleable-mod-package",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-mod-plan",
+        "@kernlang/agon-mod-agent",
+        "@kernlang/agon-mod-review",
+        "@kernlang/agon-mod-jobs",
+        "@kernlang/agon-mod-git-actions",
+        "@kernlang/agon-support-worktree",
+        "@kernlang/agon-support-verification",
+        "@kernlang/agon-mod-forge"
+      ],
+      "peerDependencies": {
+        "@kernlang/agon-kernel": ">=0.0.0-0 <2"
+      },
+      "packedBytes": 46456,
+      "unpackedBytes": 190928,
+      "fileCount": 20,
+      "files": [
+        {
+          "path": "agon.mod.json",
+          "size": 3818
+        },
+        {
+          "path": "dist/artifacts.d.ts",
+          "size": 828
+        },
+        {
+          "path": "dist/host.d.ts",
+          "size": 4095
+        },
+        {
+          "path": "dist/implementation.d.ts",
+          "size": 1262
+        },
+        {
+          "path": "dist/index.d.ts",
+          "size": 4885
+        },
+        {
+          "path": "dist/index.js",
+          "size": 150247
+        },
+        {
+          "path": "dist/journal-types.d.ts",
+          "size": 1793
+        },
+        {
+          "path": "dist/journal.d.ts",
+          "size": 3801
+        },
+        {
+          "path": "dist/mutation-evidence.d.ts",
+          "size": 1052
+        },
+        {
+          "path": "dist/mutation.d.ts",
+          "size": 629
+        },
+        {
+          "path": "dist/oracle-probe.d.ts",
+          "size": 1274
+        },
+        {
+          "path": "dist/oracle-redteam.d.ts",
+          "size": 2478
+        },
+        {
+          "path": "dist/oracle.d.ts",
+          "size": 2233
+        },
+        {
+          "path": "dist/paths.d.ts",
+          "size": 779
+        },
+        {
+          "path": "dist/policy.d.ts",
+          "size": 5431
+        },
+        {
+          "path": "dist/test-paths.d.ts",
+          "size": 128
+        },
+        {
+          "path": "LICENSE",
+          "size": 1070
+        },
+        {
+          "path": "ownership.json",
+          "size": 3773
+        },
+        {
+          "path": "package.json",
+          "size": 1138
+        },
+        {
+          "path": "schemas/config.schema.json",
+          "size": 214
+        }
+      ],
+      "payloadHash": "sha256:0fb53a06b90e594b6f53d61d5a1ce2d0f14b0037e44c062d561a198ac44ccb72",
+      "integrity": "sha512-tcnqcangaK0e8RUuPOSQdQROuk8Vs5A4HASS7x4Z7KWts0t2JAE7gi/H+2sq1GmU8SajLWe+RJ0kxBGBrO1rXQ==",
+      "shasum": "f6f4105335d72fe2ba57e1e8837b9cb37f081a83",
+      "tarballHash": "sha256:7198c00a4157df542d2c4ba1b9308da51c1e174498b5399cf97378c578b68dfa",
+      "packageJsonHash": "sha256:9a729ce173b658d965d40ede6bc5a89a98eeb6a90677f3e6014e73b9ff1c64a4",
+      "manifestHash": "sha256:8c113b8a44d42a8652f5770fc33a64e8bf2b963b57fd4b8215b1c7647d8a4c6b"
+    },
+    {
+      "id": "@kernlang/agon-mod-conquer",
+      "modId": "agon.conquer",
+      "manifestDependencies": [
+        "agon.agent",
+        "agon.api",
+        "agon.brainstorm",
+        "agon.council",
+        "agon.engine-runtime",
+        "agon.nero",
+        "agon.tribunal",
+        "agon.verification",
+        "agon.worktree"
+      ],
+      "directory": "packages/mod-conquer",
+      "version": "1.0.0",
+      "class": "user-toggleable-mod-package",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-mod-agent",
+        "@kernlang/agon-mod-nero",
+        "@kernlang/agon-mod-tribunal",
+        "@kernlang/agon-mod-brainstorm",
+        "@kernlang/agon-mod-council",
+        "@kernlang/agon-support-worktree",
+        "@kernlang/agon-support-verification"
+      ],
+      "peerDependencies": {
+        "@kernlang/agon-kernel": ">=0.0.0-0 <2"
+      },
+      "packedBytes": 28936,
+      "unpackedBytes": 101810,
+      "fileCount": 18,
+      "files": [
+        {
+          "path": "agon.mod.json",
+          "size": 3406
+        },
+        {
+          "path": "dist/cli-workflow.d.ts",
+          "size": 487
+        },
+        {
+          "path": "dist/completion-policy.d.ts",
+          "size": 1460
+        },
+        {
+          "path": "dist/falsifier.d.ts",
+          "size": 6442
+        },
+        {
+          "path": "dist/host.d.ts",
+          "size": 2276
+        },
+        {
+          "path": "dist/implementation.d.ts",
+          "size": 567
+        },
+        {
+          "path": "dist/index.d.ts",
+          "size": 5105
+        },
+        {
+          "path": "dist/index.js",
+          "size": 65416
+        },
+        {
+          "path": "dist/isolation.d.ts",
+          "size": 605
+        },
+        {
+          "path": "dist/presentation.d.ts",
+          "size": 1080
+        },
+        {
+          "path": "dist/publication.d.ts",
+          "size": 900
+        },
+        {
+          "path": "dist/pull-request.d.ts",
+          "size": 597
+        },
+        {
+          "path": "dist/session-workflow.d.ts",
+          "size": 1350
+        },
+        {
+          "path": "dist/workflow.d.ts",
+          "size": 8067
+        },
+        {
+          "path": "LICENSE",
+          "size": 1070
+        },
+        {
+          "path": "ownership.json",
+          "size": 1658
+        },
+        {
+          "path": "package.json",
+          "size": 1104
+        },
+        {
+          "path": "schemas/config.schema.json",
+          "size": 220
+        }
+      ],
+      "payloadHash": "sha256:385df110b7ffbb8ca8b4b10c4b78fa8f222d760286a5402aae116d33ad08a017",
+      "integrity": "sha512-992uPp9HBLgqJBfdcYN6jT4d7Xa8cN6RMOcbUs2E+mGBYJgCbVH6Db/wMfH9pX3E4W+iWQ8QYKTDF65X2sGe+A==",
+      "shasum": "6857acb0f1f32e5d27b489b61dfdb35ad0463837",
+      "tarballHash": "sha256:dc6818036bff08bfa9eab6e19bb1bc22282cff8a82089d232e16081659d63257",
+      "packageJsonHash": "sha256:4378dd4f686e42bdc6bd1d96d82f1045c2dd005f76dce431db5cf5559a6b894a",
+      "manifestHash": "sha256:d6c2d91fd258349edd0313f0cc6f2719dfb284675575f38307f646bbb4ed85e7"
+    },
+    {
+      "id": "@kernlang/agon-mod-nero",
+      "modId": "agon.nero",
+      "manifestDependencies": [
+        "agon.api",
+        "agon.engine-runtime",
+        "agon.judge"
+      ],
+      "directory": "packages/mod-nero",
+      "version": "1.0.0",
+      "class": "user-toggleable-mod-package",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-judge"
+      ],
+      "peerDependencies": {
+        "@kernlang/agon-kernel": ">=0.0.0-0 <2"
+      },
+      "packedBytes": 7231,
+      "unpackedBytes": 25561,
+      "fileCount": 10,
+      "files": [
+        {
+          "path": "agon.mod.json",
+          "size": 2819
+        },
+        {
+          "path": "dist/critic-cascade.d.ts",
+          "size": 307
+        },
+        {
+          "path": "dist/implementation.d.ts",
+          "size": 321
+        },
+        {
+          "path": "dist/index.d.ts",
+          "size": 3493
+        },
+        {
+          "path": "dist/index.js",
+          "size": 14432
+        },
+        {
+          "path": "dist/verdict.d.ts",
+          "size": 195
+        },
+        {
+          "path": "LICENSE",
+          "size": 1070
+        },
+        {
+          "path": "ownership.json",
+          "size": 1878
+        },
+        {
+          "path": "package.json",
+          "size": 832
+        },
+        {
+          "path": "schemas/config.schema.json",
+          "size": 214
+        }
+      ],
+      "payloadHash": "sha256:96038d2b7a240ea56f872e40a4aa00a576b8a193e41323bb7415f16443d3ddbc",
+      "integrity": "sha512-bMLOhbeGFGfzQFDjSPTq+IJer6g1Z+RHOEScNZ6MFWwzwNdzXZNqSNZLLdTLapPtLL2gko+Wro2H04pJPTQSqg==",
+      "shasum": "8b10f78fc5be8dc9d7744bdeb02f4f17c4205eef",
+      "tarballHash": "sha256:664c9c9170071298f8de5834be497ff748c9ea2d0ca655f866523c13df245ddd",
+      "packageJsonHash": "sha256:63224c24a8f29a685e6847ca776de9f432b36ed22db441a95e581626a07f5c2b",
+      "manifestHash": "sha256:6727b3095855dafd2f13c591b5d48457d5a1c66e936844bb32c3fd46042daa75"
+    },
+    {
+      "id": "@kernlang/agon-mod-council",
+      "modId": "agon.council",
+      "manifestDependencies": [
+        "agon.api",
+        "agon.engine-runtime",
+        "agon.judge",
+        "agon.panel"
+      ],
+      "directory": "packages/mod-council",
+      "version": "1.0.0",
+      "class": "user-toggleable-mod-package",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-panel",
+        "@kernlang/agon-support-judge"
+      ],
+      "peerDependencies": {
+        "@kernlang/agon-kernel": ">=0.0.0-0 <2"
+      },
+      "packedBytes": 19880,
+      "unpackedBytes": 70628,
+      "fileCount": 13,
+      "files": [
+        {
+          "path": "agon.mod.json",
+          "size": 2734
+        },
+        {
+          "path": "dist/command.d.ts",
+          "size": 289
+        },
+        {
+          "path": "dist/host.d.ts",
+          "size": 1775
+        },
+        {
+          "path": "dist/implementation.d.ts",
+          "size": 202
+        },
+        {
+          "path": "dist/index.d.ts",
+          "size": 4297
+        },
+        {
+          "path": "dist/index.js",
+          "size": 47897
+        },
+        {
+          "path": "dist/presentation.d.ts",
+          "size": 1016
+        },
+        {
+          "path": "dist/runtime.d.ts",
+          "size": 6558
+        },
+        {
+          "path": "dist/session-workflow.d.ts",
+          "size": 2403
+        },
+        {
+          "path": "LICENSE",
+          "size": 1070
+        },
+        {
+          "path": "ownership.json",
+          "size": 1125
+        },
+        {
+          "path": "package.json",
+          "size": 880
+        },
+        {
+          "path": "schemas/config.schema.json",
+          "size": 382
+        }
+      ],
+      "payloadHash": "sha256:312402255a106cc8d74717974f1b4473158eac8d35c6456064538de0c70908cb",
+      "integrity": "sha512-IUGu3jQeZYOBEVNDj5Oja0gStqoAoomIkp81EXo9oSOcNRKCc0cn2DudIUfh3cr8dKv38UglF3uytuy94orPHA==",
+      "shasum": "df615ed84eac0c4398b36337b431ec0e6975fe91",
+      "tarballHash": "sha256:703eacc4de5b4e9f5a20133eee22fae7229fcbc56c3f23578be259df49d10656",
+      "packageJsonHash": "sha256:f6587949970e5236eef5534856f3a3e82c92624477a28283c3733cfc91cc990a",
+      "manifestHash": "sha256:c62be20689a9375932c8b23021e40e716d1d2c898f7f6db0a7ba226f6f2eaae6"
+    },
+    {
+      "id": "@kernlang/agon-mod-research",
+      "modId": "agon.research",
+      "manifestDependencies": [
+        "agon.api",
+        "agon.engine-runtime"
+      ],
+      "directory": "packages/mod-research",
+      "version": "1.0.0",
+      "class": "user-toggleable-mod-package",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime"
+      ],
+      "peerDependencies": {
+        "@kernlang/agon-kernel": ">=0.0.0-0 <2"
+      },
+      "packedBytes": 18175,
+      "unpackedBytes": 61289,
+      "fileCount": 21,
+      "files": [
+        {
+          "path": "agon.mod.json",
+          "size": 2986
+        },
+        {
+          "path": "dist/citation-policy.d.ts",
+          "size": 1986
+        },
+        {
+          "path": "dist/citation-policy.js",
+          "size": 3008
+        },
+        {
+          "path": "dist/discovery-policy.d.ts",
+          "size": 1052
+        },
+        {
+          "path": "dist/discovery-policy.js",
+          "size": 2584
+        },
+        {
+          "path": "dist/format-policy.d.ts",
+          "size": 532
+        },
+        {
+          "path": "dist/format-policy.js",
+          "size": 1324
+        },
+        {
+          "path": "dist/implementation.d.ts",
+          "size": 1366
+        },
+        {
+          "path": "dist/index.d.ts",
+          "size": 4271
+        },
+        {
+          "path": "dist/index.js",
+          "size": 28355
+        },
+        {
+          "path": "dist/prompt-policy.d.ts",
+          "size": 531
+        },
+        {
+          "path": "dist/prompt-policy.js",
+          "size": 1574
+        },
+        {
+          "path": "dist/query-policy.d.ts",
+          "size": 642
+        },
+        {
+          "path": "dist/query-policy.js",
+          "size": 975
+        },
+        {
+          "path": "dist/response-policy.d.ts",
+          "size": 600
+        },
+        {
+          "path": "dist/response-policy.js",
+          "size": 2862
+        },
+        {
+          "path": "dist/session-workflow.d.ts",
+          "size": 2640
+        },
+        {
+          "path": "LICENSE",
+          "size": 1070
+        },
+        {
+          "path": "ownership.json",
+          "size": 1167
+        },
+        {
+          "path": "package.json",
+          "size": 1542
+        },
+        {
+          "path": "schemas/config.schema.json",
+          "size": 222
+        }
+      ],
+      "payloadHash": "sha256:282dd090aee753dd9ebeed831ffeac5e4d185e1ac5c0a428cd0b627d739dca85",
+      "integrity": "sha512-s7h9vBZ7QLrKPstiSMQWBnx8GZrVNIzQeG89iHpklMF+dh1VMNhX3xTVHiZVNhtKsTM6o85pLHejFzsrPyZVgA==",
+      "shasum": "aef6bbf4a5e57087bf72778ca09a681fd39a8038",
+      "tarballHash": "sha256:820f691b0280e0eedfc46fd7d1ad702043a583a471c84940b7587fc18d14aef5",
+      "packageJsonHash": "sha256:918f62943661a4551a63a20d644f23c9762d4eb30da3f13870227d1d623b85d9",
+      "manifestHash": "sha256:16261a936aa384bc9c11e6e6a9582a2ba88267e6290b40fc9db162db07248f04"
+    },
+    {
+      "id": "@kernlang/agon-mod-rag",
+      "modId": "agon.rag",
+      "manifestDependencies": [
+        "agon.api",
+        "agon.dedup",
+        "agon.engine-runtime",
+        "agon.persistence"
+      ],
+      "directory": "packages/mod-rag",
+      "version": "1.0.0",
+      "class": "user-toggleable-mod-package",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-persistence",
+        "@kernlang/agon-support-dedup"
+      ],
+      "peerDependencies": {
+        "@kernlang/agon-kernel": ">=0.0.0-0 <2"
+      },
+      "packedBytes": 9332,
+      "unpackedBytes": 33318,
+      "fileCount": 12,
+      "files": [
+        {
+          "path": "agon.mod.json",
+          "size": 2779
+        },
+        {
+          "path": "dist/embedding.d.ts",
+          "size": 403
+        },
+        {
+          "path": "dist/grounding.d.ts",
+          "size": 319
+        },
+        {
+          "path": "dist/implementation.d.ts",
+          "size": 712
+        },
+        {
+          "path": "dist/index.d.ts",
+          "size": 3571
+        },
+        {
+          "path": "dist/index.js",
+          "size": 19319
+        },
+        {
+          "path": "dist/store.d.ts",
+          "size": 1418
+        },
+        {
+          "path": "dist/types.d.ts",
+          "size": 984
+        },
+        {
+          "path": "LICENSE",
+          "size": 1070
+        },
+        {
+          "path": "ownership.json",
+          "size": 1649
+        },
+        {
+          "path": "package.json",
+          "size": 882
+        },
+        {
+          "path": "schemas/config.schema.json",
+          "size": 212
+        }
+      ],
+      "payloadHash": "sha256:4ad2da96ed9315eeccec68992c1f651991547b762e1a3c5a3c33dd36766bd177",
+      "integrity": "sha512-r7BlsFUu4fgnSDuFP5x1k3PJsP2Gu+hG8sVBmuMu7uyvYut8oRV9OMuS0MVTPuZJBXwcGslTeAJQ6MCJCnGY2g==",
+      "shasum": "6db9e002fdb0933b0f2b335b5d221386e1b88451",
+      "tarballHash": "sha256:d8088fe29b5f782b61b41826246c2c0def7ea017c06e77d4ce9dfb2b79bf9838",
+      "packageJsonHash": "sha256:f884103bd7651316678bd7b077ad38f2cde75c768ff0e245ec559e579bde2616",
+      "manifestHash": "sha256:d0fd22be83ba8a86b7b3beb8f7baaa3ab972b75f09d33069e662d2111ebb000c"
+    },
+    {
+      "id": "@kernlang/agon-mod-mutate",
+      "modId": "agon.mutate",
+      "manifestDependencies": [
+        "agon.api",
+        "agon.engine-runtime",
+        "agon.verification",
+        "agon.worktree"
+      ],
+      "directory": "packages/mod-mutate",
+      "version": "1.0.0",
+      "class": "user-toggleable-mod-package",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-verification",
+        "@kernlang/agon-support-worktree"
+      ],
+      "peerDependencies": {
+        "@kernlang/agon-kernel": ">=0.0.0-0 <2"
+      },
+      "packedBytes": 6053,
+      "unpackedBytes": 22156,
+      "fileCount": 8,
+      "files": [
+        {
+          "path": "agon.mod.json",
+          "size": 2588
+        },
+        {
+          "path": "dist/implementation.d.ts",
+          "size": 794
+        },
+        {
+          "path": "dist/index.d.ts",
+          "size": 3406
+        },
+        {
+          "path": "dist/index.js",
+          "size": 11615
+        },
+        {
+          "path": "LICENSE",
+          "size": 1070
+        },
+        {
+          "path": "ownership.json",
+          "size": 1412
+        },
+        {
+          "path": "package.json",
+          "size": 889
+        },
+        {
+          "path": "schemas/config.schema.json",
+          "size": 382
+        }
+      ],
+      "payloadHash": "sha256:da124153a3e1f21c8a54701f21599181b702618e309d099332ea1bb785aa3e8c",
+      "integrity": "sha512-NdxZHiV/jK2SMG+OMzxnfhY+7c2Iv2dq0b3VXgURai+SDAcWI5jpp2EZFuAtZE6wD+OocXeOcQcWnA5EYyR1jg==",
+      "shasum": "27134d3fe947fa04929d8acd0ede62319f3f5147",
+      "tarballHash": "sha256:6e984eb5c7854df8c92089b435e2af5205314406134e4158f48405deed866dd8",
+      "packageJsonHash": "sha256:0381c685fcd249b39ab2b25c48dd518a5eec5d3dbec5d7c9ae11b578969ea033",
+      "manifestHash": "sha256:72b48f344d3f0dffa823039ec7f69713f1e71383a60fa76fc4cbc962a4403810"
+    },
+    {
+      "id": "@kernlang/agon-mod-naturalize",
+      "modId": "agon.naturalize",
+      "manifestDependencies": [
+        "agon.api",
+        "agon.engine-runtime",
+        "agon.sanitize"
+      ],
+      "directory": "packages/mod-naturalize",
+      "version": "1.0.0",
+      "class": "user-toggleable-mod-package",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-mod-sanitize"
+      ],
+      "peerDependencies": {
+        "@kernlang/agon-kernel": ">=0.0.0-0 <2"
+      },
+      "packedBytes": 9296,
+      "unpackedBytes": 31539,
+      "fileCount": 12,
+      "files": [
+        {
+          "path": "agon.mod.json",
+          "size": 2665
+        },
+        {
+          "path": "dist/implementation.d.ts",
+          "size": 314
+        },
+        {
+          "path": "dist/index.d.ts",
+          "size": 3461
+        },
+        {
+          "path": "dist/index.js",
+          "size": 12567
+        },
+        {
+          "path": "dist/lexical-policy.d.ts",
+          "size": 383
+        },
+        {
+          "path": "dist/lexical-policy.js",
+          "size": 751
+        },
+        {
+          "path": "dist/workflow.d.ts",
+          "size": 2342
+        },
+        {
+          "path": "dist/workflow.js",
+          "size": 5802
+        },
+        {
+          "path": "LICENSE",
+          "size": 1070
+        },
+        {
+          "path": "ownership.json",
+          "size": 897
+        },
+        {
+          "path": "package.json",
+          "size": 1061
+        },
+        {
+          "path": "schemas/config.schema.json",
+          "size": 226
+        }
+      ],
+      "payloadHash": "sha256:de29cd85bfd4ae1a0a70a0bc286b18e80a4c1c644b341a7e4c53f3b46094fe13",
+      "integrity": "sha512-EjnY8ks9cHf8sguofpOGjfklg7D2K/TU0y9bJ5/vUxne0TrQcMPoQEiqxtUMtM5jtcXA0ECgusEH6H49eg5g0w==",
+      "shasum": "d3b6092f50457ad6f6601cedad7aed4fcc278081",
+      "tarballHash": "sha256:a3fadd1516e63a1370d60183e4a0dc1ac3aefc23dd57604011d2413bc13d65e7",
+      "packageJsonHash": "sha256:ff9b23a3a38eff1329ff6bf1df45ddb498512bb4a960ed87570890373e956ca3",
+      "manifestHash": "sha256:2527cf62e4b3e46882d70cc864392155a6e1b1ead044e34550e5d8a4c8e1a358"
+    },
+    {
+      "id": "@kernlang/agon-mod-sanitize",
+      "modId": "agon.sanitize",
+      "manifestDependencies": [
+        "agon.api",
+        "agon.engine-runtime"
+      ],
+      "directory": "packages/mod-sanitize",
+      "version": "1.0.0",
+      "class": "user-toggleable-mod-package",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime"
+      ],
+      "peerDependencies": {
+        "@kernlang/agon-kernel": ">=0.0.0-0 <2"
+      },
+      "packedBytes": 9059,
+      "unpackedBytes": 31809,
+      "fileCount": 10,
+      "files": [
+        {
+          "path": "agon.mod.json",
+          "size": 2344
+        },
+        {
+          "path": "dist/implementation.d.ts",
+          "size": 1177
+        },
+        {
+          "path": "dist/index.d.ts",
+          "size": 3412
+        },
+        {
+          "path": "dist/index.js",
+          "size": 14560
+        },
+        {
+          "path": "dist/text-forensics.d.ts",
+          "size": 2434
+        },
+        {
+          "path": "dist/text-forensics.js",
+          "size": 5068
+        },
+        {
+          "path": "LICENSE",
+          "size": 1070
+        },
+        {
+          "path": "ownership.json",
+          "size": 610
+        },
+        {
+          "path": "package.json",
+          "size": 912
+        },
+        {
+          "path": "schemas/config.schema.json",
+          "size": 222
+        }
+      ],
+      "payloadHash": "sha256:2b5f7b9ee314b21bee041216be8ba22f95ffce8e12de55b7af91ad9eabcaee7b",
+      "integrity": "sha512-GuUbui753DWq4HBjQIUXXUpF3gZxPdbD5fp++7WTNAuIHoDSilg8WiqJP/I66wAe7tTOSJvKLcIcihfBzKxTqg==",
+      "shasum": "b5d7f1f507c0054877c759ff099f89a554ec31f5",
+      "tarballHash": "sha256:ecbaa4cc28e5bfb6d2f7e1241d387f235f696ea045a83b92c77da178bceaec67",
+      "packageJsonHash": "sha256:2c5866678e3fab38556c9dd3705abebf528f83aa3bcbdb70001058b1ccd6bab8",
+      "manifestHash": "sha256:6ea8a127865d27a908d3b84de157e6fded5e289ae1cfbdb5fb9321f6433de4aa"
+    },
+    {
+      "id": "@kernlang/agon-mod-rooms",
+      "modId": "agon.rooms",
+      "manifestDependencies": [
+        "agon.api",
+        "agon.engine-runtime",
+        "agon.persistence"
+      ],
+      "directory": "packages/mod-rooms",
+      "version": "1.0.0",
+      "class": "user-toggleable-mod-package",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-persistence"
+      ],
+      "peerDependencies": {
+        "@kernlang/agon-kernel": ">=0.0.0-0 <2"
+      },
+      "packedBytes": 22110,
+      "unpackedBytes": 87307,
+      "fileCount": 19,
+      "files": [
+        {
+          "path": "agon.mod.json",
+          "size": 3401
+        },
+        {
+          "path": "dist/implementation.d.ts",
+          "size": 287
+        },
+        {
+          "path": "dist/index.d.ts",
+          "size": 3426
+        },
+        {
+          "path": "dist/index.js",
+          "size": 54446
+        },
+        {
+          "path": "dist/paths.d.ts",
+          "size": 72
+        },
+        {
+          "path": "dist/runtime/auto-policy.d.ts",
+          "size": 1278
+        },
+        {
+          "path": "dist/runtime/index.d.ts",
+          "size": 267
+        },
+        {
+          "path": "dist/runtime/leases.d.ts",
+          "size": 872
+        },
+        {
+          "path": "dist/runtime/locks.d.ts",
+          "size": 1694
+        },
+        {
+          "path": "dist/runtime/presence.d.ts",
+          "size": 1489
+        },
+        {
+          "path": "dist/runtime/store.d.ts",
+          "size": 4636
+        },
+        {
+          "path": "dist/runtime/tail.d.ts",
+          "size": 2400
+        },
+        {
+          "path": "dist/runtime/tasks.d.ts",
+          "size": 3514
+        },
+        {
+          "path": "dist/runtime/types.d.ts",
+          "size": 2864
+        },
+        {
+          "path": "dist/runtime/unread.d.ts",
+          "size": 878
+        },
+        {
+          "path": "LICENSE",
+          "size": 1070
+        },
+        {
+          "path": "ownership.json",
+          "size": 3658
+        },
+        {
+          "path": "package.json",
+          "size": 839
+        },
+        {
+          "path": "schemas/config.schema.json",
+          "size": 216
+        }
+      ],
+      "payloadHash": "sha256:cd9d28f4fa5318727cc619dac573d6db99cea9ca96e28bf91cc5f94ee199c1b6",
+      "integrity": "sha512-WCKLanz0pkJxodgDP05e179AqlKRa6Yp+GuWiomEixWiwYkGhqTIh+VO2MyXJ2xIoRGUD5RQTLqTvCtJpKkadw==",
+      "shasum": "7eaf4fc247bde9bcb44e41abff55aa71e751305d",
+      "tarballHash": "sha256:67c764ad9a9e026c7f480457aaa54438e812c9e07e7981def6cf4e2253dca173",
+      "packageJsonHash": "sha256:0eb827a76c9970a9704ed9740d90e5b54edb8b422d4f87dc92e404a0a011ddb7",
+      "manifestHash": "sha256:46a0023ba13b480dd0d94edcffc17405504a4560db4b2cf634a957b4b064cfed"
+    },
+    {
+      "id": "@kernlang/agon-mod-jobs",
+      "modId": "agon.jobs",
+      "manifestDependencies": [
+        "agon.api",
+        "agon.engine-runtime",
+        "agon.persistence"
+      ],
+      "directory": "packages/mod-jobs",
+      "version": "1.0.0",
+      "class": "user-toggleable-mod-package",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-persistence"
+      ],
+      "peerDependencies": {
+        "@kernlang/agon-kernel": ">=0.0.0-0 <2"
+      },
+      "packedBytes": 31222,
+      "unpackedBytes": 139844,
+      "fileCount": 23,
+      "files": [
+        {
+          "path": "agon.mod.json",
+          "size": 4561
+        },
+        {
+          "path": "dist/cli-client.d.ts",
+          "size": 2354
+        },
+        {
+          "path": "dist/cli-contract.d.ts",
+          "size": 970
+        },
+        {
+          "path": "dist/cli-invocation.d.ts",
+          "size": 584
+        },
+        {
+          "path": "dist/cli-projection.d.ts",
+          "size": 4108
+        },
+        {
+          "path": "dist/daemon-contract.d.ts",
+          "size": 1129
+        },
+        {
+          "path": "dist/daemon-controller.d.ts",
+          "size": 3032
+        },
+        {
+          "path": "dist/daemon-job-router.d.ts",
+          "size": 770
+        },
+        {
+          "path": "dist/daemon-protocol.d.ts",
+          "size": 3495
+        },
+        {
+          "path": "dist/daemon-workflow.d.ts",
+          "size": 2027
+        },
+        {
+          "path": "dist/implementation.d.ts",
+          "size": 513
+        },
+        {
+          "path": "dist/index.d.ts",
+          "size": 5871
+        },
+        {
+          "path": "dist/index.js",
+          "size": 92852
+        },
+        {
+          "path": "dist/job-service.d.ts",
+          "size": 3251
+        },
+        {
+          "path": "dist/mcp-contract.d.ts",
+          "size": 685
+        },
+        {
+          "path": "dist/persisted-job-service.d.ts",
+          "size": 1333
+        },
+        {
+          "path": "dist/session-jobs.d.ts",
+          "size": 1223
+        },
+        {
+          "path": "dist/workflow-handshake.d.ts",
+          "size": 989
+        },
+        {
+          "path": "dist/workflow-process.d.ts",
+          "size": 452
+        },
+        {
+          "path": "LICENSE",
+          "size": 1070
+        },
+        {
+          "path": "ownership.json",
+          "size": 7523
+        },
+        {
+          "path": "package.json",
+          "size": 838
+        },
+        {
+          "path": "schemas/config.schema.json",
+          "size": 214
+        }
+      ],
+      "payloadHash": "sha256:9e219d54cb70d42addc27c3f284bf3530eebd783c37821dbdaa6fbffdfcb0937",
+      "integrity": "sha512-NUl1/f61NuRK7taQmAvOGn7XXN3s5dBT+/2cPV8FIUVabkLzFZl6vArDTr2AWDBcRaY+dZkAEyjkZYKlAVLCwg==",
+      "shasum": "e375bcc61218be551cbfca8c7996b64358da27ce",
+      "tarballHash": "sha256:47ecb3881fe95f15c5a21c2af045119ced30947d6f3886ffc034c35050b84d51",
+      "packageJsonHash": "sha256:5f48e81c23db019c5509d6b61338b867daa99dc8100493b770952e22461d4300",
+      "manifestHash": "sha256:f188e2a149095e0fcad41fd4d209ed1a94d6e678192ada0eaed3476461fef0b7"
+    },
+    {
+      "id": "@kernlang/agon-mod-browser",
+      "modId": "agon.browser",
+      "manifestDependencies": [
+        "agon.agent-runtime",
+        "agon.api",
+        "agon.browser-bridge",
+        "agon.engine-runtime"
+      ],
+      "directory": "packages/mod-browser",
+      "version": "1.0.0",
+      "class": "user-toggleable-mod-package",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-browser-bridge",
+        "@kernlang/agon-support-agent-runtime"
+      ],
+      "peerDependencies": {
+        "@kernlang/agon-kernel": ">=0.0.0-0 <2"
+      },
+      "packedBytes": 7261,
+      "unpackedBytes": 33056,
+      "fileCount": 8,
+      "files": [
+        {
+          "path": "agon.mod.json",
+          "size": 3263
+        },
+        {
+          "path": "dist/implementation.d.ts",
+          "size": 557
+        },
+        {
+          "path": "dist/index.d.ts",
+          "size": 3415
+        },
+        {
+          "path": "dist/index.js",
+          "size": 19114
+        },
+        {
+          "path": "LICENSE",
+          "size": 1070
+        },
+        {
+          "path": "ownership.json",
+          "size": 4520
+        },
+        {
+          "path": "package.json",
+          "size": 897
+        },
+        {
+          "path": "schemas/config.schema.json",
+          "size": 220
+        }
+      ],
+      "payloadHash": "sha256:80481171b768751061e6dac468c682eaad483bb50ea08ba17f6e68d03ce816e5",
+      "integrity": "sha512-RtRVKDqZwnbJmMTQT8X6930tt+27O2igft3mn3OUtFKnAas+m7ZRCMr6Ykc1yswl37vHecNG6DMF0V9yQu9NVg==",
+      "shasum": "aab0f2b283c56a3c51ee40c4b498bf29e3cda4d0",
+      "tarballHash": "sha256:3f752de7dbf877198ef69f750b7f82ba5c585f3c34036d8192811ed00fa3e28a",
+      "packageJsonHash": "sha256:2cd766b6dd0265fc37c22cdf8ecc07365a690360a2522ec401adca2a4d93dfd6",
+      "manifestHash": "sha256:5211e1ebd8e777f0649a9b858c3ac7eb13bb1fa300332099d4f63221a83c0ecf"
+    },
+    {
+      "id": "@kernlang/agon-mod-ratings",
+      "modId": "agon.ratings",
+      "manifestDependencies": [
+        "agon.api",
+        "agon.engine-runtime",
+        "agon.persistence"
+      ],
+      "directory": "packages/mod-ratings",
+      "version": "1.0.0",
+      "class": "user-toggleable-mod-package",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-persistence"
+      ],
+      "peerDependencies": {
+        "@kernlang/agon-kernel": ">=0.0.0-0 <2"
+      },
+      "packedBytes": 29800,
+      "unpackedBytes": 106646,
+      "fileCount": 19,
+      "files": [
+        {
+          "path": "agon.mod.json",
+          "size": 3138
+        },
+        {
+          "path": "dist/ballot-prompt.d.ts",
+          "size": 2304
+        },
+        {
+          "path": "dist/glicko.d.ts",
+          "size": 7450
+        },
+        {
+          "path": "dist/identity.d.ts",
+          "size": 1320
+        },
+        {
+          "path": "dist/implementation.d.ts",
+          "size": 858
+        },
+        {
+          "path": "dist/index.d.ts",
+          "size": 5082
+        },
+        {
+          "path": "dist/index.js",
+          "size": 66867
+        },
+        {
+          "path": "dist/judge-pool.d.ts",
+          "size": 1745
+        },
+        {
+          "path": "dist/maintenance.d.ts",
+          "size": 1440
+        },
+        {
+          "path": "dist/rating-judge.d.ts",
+          "size": 6029
+        },
+        {
+          "path": "dist/reset.d.ts",
+          "size": 1737
+        },
+        {
+          "path": "dist/role-specialization.d.ts",
+          "size": 559
+        },
+        {
+          "path": "dist/storage.d.ts",
+          "size": 373
+        },
+        {
+          "path": "dist/team-elo.d.ts",
+          "size": 1431
+        },
+        {
+          "path": "dist/types.d.ts",
+          "size": 727
+        },
+        {
+          "path": "LICENSE",
+          "size": 1070
+        },
+        {
+          "path": "ownership.json",
+          "size": 2808
+        },
+        {
+          "path": "package.json",
+          "size": 841
+        },
+        {
+          "path": "schemas/config.schema.json",
+          "size": 867
+        }
+      ],
+      "payloadHash": "sha256:b6a8065253f4c4ca41b585cc751c3af891c979279e2451dc3481f5c79110a6d4",
+      "integrity": "sha512-8fs7OKARBSniTgV8DSN+1VVW5corNuFfK7gdEG6qrjadaEHIKg1a488EDF5o1i/kCpdtBCqBP9pB2uhZPfvONg==",
+      "shasum": "a8d3e88ae0190ccf6f7998fccc62dc08405d9828",
+      "tarballHash": "sha256:d0bac3a2bd74a0e914d93a0343986100f478d70c6e8befd839a356d0e5cb5843",
+      "packageJsonHash": "sha256:ec8585d43d01d26566fee41ac29aebd70d849d7bda496a03116c7e100ad7aef3",
+      "manifestHash": "sha256:496f2005d5c5a4349ebd284a4972de640788837190efbe369dd59a3c89b51d28"
+    },
+    {
+      "id": "@kernlang/agon-mod-history",
+      "modId": "agon.history",
+      "manifestDependencies": [
+        "agon.api",
+        "agon.engine-runtime",
+        "agon.persistence"
+      ],
+      "directory": "packages/mod-history",
+      "version": "1.0.0",
+      "class": "user-toggleable-mod-package",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-persistence"
+      ],
+      "peerDependencies": {
+        "@kernlang/agon-kernel": ">=0.0.0-0 <2"
+      },
+      "packedBytes": 5465,
+      "unpackedBytes": 19477,
+      "fileCount": 8,
+      "files": [
+        {
+          "path": "agon.mod.json",
+          "size": 2497
+        },
+        {
+          "path": "dist/implementation.d.ts",
+          "size": 448
+        },
+        {
+          "path": "dist/index.d.ts",
+          "size": 3390
+        },
+        {
+          "path": "dist/index.js",
+          "size": 9617
+        },
+        {
+          "path": "LICENSE",
+          "size": 1070
+        },
+        {
+          "path": "ownership.json",
+          "size": 1394
+        },
+        {
+          "path": "package.json",
+          "size": 841
+        },
+        {
+          "path": "schemas/config.schema.json",
+          "size": 220
+        }
+      ],
+      "payloadHash": "sha256:f20ef9e70941c4aee4a94a00e68a578488a3135674a9539a6f38c4b89cc8ab71",
+      "integrity": "sha512-FuszltbeO6DoD/YmSj8riqJ4CSYhMapPHG4Nk4fFTv8uXxO0FDmq6g+KiI6OczinvNMzcy1bG+DHGWDdicfFTQ==",
+      "shasum": "4cbc47147f63361b1d8a9f58c4384e9f335fbf10",
+      "tarballHash": "sha256:66260f6798a5df5464428025d863a490b6397cbb197dd987487a2f848f4dd15e",
+      "packageJsonHash": "sha256:04627fbbe5a3cdfcd17c11167bfd0a381b0d0466323546567060c6f3510584da",
+      "manifestHash": "sha256:31b601e355462563bf5f896a5cf1ce420c4c6d341ec377da0af5356d2ca6614d"
+    },
+    {
+      "id": "@kernlang/agon-mod-provenance",
+      "modId": "agon.provenance",
+      "manifestDependencies": [
+        "agon.api",
+        "agon.engine-runtime",
+        "agon.persistence"
+      ],
+      "directory": "packages/mod-provenance",
+      "version": "1.0.0",
+      "class": "user-toggleable-mod-package",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-persistence"
+      ],
+      "peerDependencies": {
+        "@kernlang/agon-kernel": ">=0.0.0-0 <2"
+      },
+      "packedBytes": 8567,
+      "unpackedBytes": 29086,
+      "fileCount": 10,
+      "files": [
+        {
+          "path": "agon.mod.json",
+          "size": 2422
+        },
+        {
+          "path": "dist/implementation.d.ts",
+          "size": 593
+        },
+        {
+          "path": "dist/index.d.ts",
+          "size": 3661
+        },
+        {
+          "path": "dist/index.js",
+          "size": 15956
+        },
+        {
+          "path": "dist/models.d.ts",
+          "size": 1838
+        },
+        {
+          "path": "dist/reports.d.ts",
+          "size": 1245
+        },
+        {
+          "path": "LICENSE",
+          "size": 1070
+        },
+        {
+          "path": "ownership.json",
+          "size": 1231
+        },
+        {
+          "path": "package.json",
+          "size": 844
+        },
+        {
+          "path": "schemas/config.schema.json",
+          "size": 226
+        }
+      ],
+      "payloadHash": "sha256:bffea57200dba6076aac610ebb24a204541f7b57f1344d20b174965845440b88",
+      "integrity": "sha512-fhkqYzzVfNA2AZk6ZFSm+S693/aKf9ftrvPhqlQx+aQjEzWurCdT3XMKXjTJrcsn6MnMRmMzXEj3t2DOLnZbTQ==",
+      "shasum": "ec96f33adeef83d48cb7aa11abf2691f83b5016b",
+      "tarballHash": "sha256:c2b4b51aa84d5cc0d306867b228bcc0a7d85b84662462a6152c96d90f43e0740",
+      "packageJsonHash": "sha256:827b323165ac329b0a294ec56620b22228a4df01a36036013d6c7a1213321415",
+      "manifestHash": "sha256:d273a0b66a12b126509e31c826af1371a668730335b737a7abd09d4979d0ddc3"
+    },
+    {
+      "id": "@kernlang/agon-mod-flow",
+      "modId": "agon.flow",
+      "manifestDependencies": [
+        "agon.api",
+        "agon.engine-runtime",
+        "agon.persistence"
+      ],
+      "directory": "packages/mod-flow",
+      "version": "1.0.0",
+      "class": "user-toggleable-mod-package",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-persistence"
+      ],
+      "peerDependencies": {
+        "@kernlang/agon-kernel": ">=0.0.0-0 <2"
+      },
+      "packedBytes": 4169,
+      "unpackedBytes": 16162,
+      "fileCount": 8,
+      "files": [
+        {
+          "path": "agon.mod.json",
+          "size": 2579
+        },
+        {
+          "path": "dist/implementation.d.ts",
+          "size": 327
+        },
+        {
+          "path": "dist/index.d.ts",
+          "size": 3387
+        },
+        {
+          "path": "dist/index.js",
+          "size": 6096
+        },
+        {
+          "path": "LICENSE",
+          "size": 1070
+        },
+        {
+          "path": "ownership.json",
+          "size": 1651
+        },
+        {
+          "path": "package.json",
+          "size": 838
+        },
+        {
+          "path": "schemas/config.schema.json",
+          "size": 214
+        }
+      ],
+      "payloadHash": "sha256:8338527c8d50eaf1696dc5949b6abaebfcaeb9d7eb5b065c52a16bc99cc76135",
+      "integrity": "sha512-J5iuZpPTC6eCIJ4nC/22NKVMpqRQYnVr8RKQNg8zhw8CphS+61vHzsa0wsIcIlXheMrL013lgmfOQAas+HnUuA==",
+      "shasum": "f01da2ba97758e0e9149989b9d165075b38e4de4",
+      "tarballHash": "sha256:64244936f91a3f52913ebc42279047899ba6ef7c1866fc2d3905b9fc6e46254e",
+      "packageJsonHash": "sha256:c091b25c994af3b1861da2c0649bb2cadd57a969f23400ac46d469ec954d6fbc",
+      "manifestHash": "sha256:5c30f8d79409bc8ea7133e7b227d9d92c015500b02a1639a39e2cfa276e434f7"
+    },
+    {
+      "id": "@kernlang/agon-mod-memory",
+      "modId": "agon.memory",
+      "manifestDependencies": [
+        "agon.api",
+        "agon.engine-runtime",
+        "agon.persistence"
+      ],
+      "directory": "packages/mod-memory",
+      "version": "1.0.0",
+      "class": "user-toggleable-mod-package",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-persistence"
+      ],
+      "peerDependencies": {
+        "@kernlang/agon-kernel": ">=0.0.0-0 <2"
+      },
+      "packedBytes": 4407,
+      "unpackedBytes": 14550,
+      "fileCount": 8,
+      "files": [
+        {
+          "path": "agon.mod.json",
+          "size": 2345
+        },
+        {
+          "path": "dist/implementation.d.ts",
+          "size": 287
+        },
+        {
+          "path": "dist/index.d.ts",
+          "size": 3390
+        },
+        {
+          "path": "dist/index.js",
+          "size": 5801
+        },
+        {
+          "path": "LICENSE",
+          "size": 1070
+        },
+        {
+          "path": "ownership.json",
+          "size": 599
+        },
+        {
+          "path": "package.json",
+          "size": 840
+        },
+        {
+          "path": "schemas/config.schema.json",
+          "size": 218
+        }
+      ],
+      "payloadHash": "sha256:c4cfb97008f807795ef633cfa0850a51e645d957046e9902d61cb690ea0eeacb",
+      "integrity": "sha512-s9wJ+h1jNLDSuBPYQ9cj6WIQ7xTO4V/cAxpwlURp/Yt2Oya1LDwKSFIWbD47VLDA6zfM34lQ93uJpDZu8uizjA==",
+      "shasum": "79e0c33e68f949641155d199678a702807083082",
+      "tarballHash": "sha256:cb82cfe2a7f01cdb3028854d5eafe6972e1a824dd6ee27c131aa5325623dea3c",
+      "packageJsonHash": "sha256:59fc61472816df05a22b3a39996da8ddc84f4dc282e46e5cfec10d7987872079",
+      "manifestHash": "sha256:db313f07924bf0be4c5663cc9fc99cd8dd840943b3e1b5fbb65af079bc866c51"
+    },
+    {
+      "id": "@kernlang/agon-mod-worktrees",
+      "modId": "agon.worktrees",
+      "manifestDependencies": [
+        "agon.api",
+        "agon.engine-runtime",
+        "agon.worktree"
+      ],
+      "directory": "packages/mod-worktrees",
+      "version": "1.0.0",
+      "class": "user-toggleable-mod-package",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-worktree"
+      ],
+      "peerDependencies": {
+        "@kernlang/agon-kernel": ">=0.0.0-0 <2"
+      },
+      "packedBytes": 7502,
+      "unpackedBytes": 30654,
+      "fileCount": 10,
+      "files": [
+        {
+          "path": "agon.mod.json",
+          "size": 3012
+        },
+        {
+          "path": "dist/implementation.d.ts",
+          "size": 436
+        },
+        {
+          "path": "dist/index.d.ts",
+          "size": 3438
+        },
+        {
+          "path": "dist/index.js",
+          "size": 18434
+        },
+        {
+          "path": "dist/runtime.d.ts",
+          "size": 781
+        },
+        {
+          "path": "dist/workspaces.d.ts",
+          "size": 473
+        },
+        {
+          "path": "LICENSE",
+          "size": 1070
+        },
+        {
+          "path": "ownership.json",
+          "size": 1946
+        },
+        {
+          "path": "package.json",
+          "size": 840
+        },
+        {
+          "path": "schemas/config.schema.json",
+          "size": 224
+        }
+      ],
+      "payloadHash": "sha256:f35faf929d1c2d54e1678243b37042f6480dbce66ed09ef067707686850025b1",
+      "integrity": "sha512-RaFYyUc14KOMbF5hFDkR17iPC7dVuRjIL+DFqv4PJia3eOv5nJ2lPOqMNpAnlZGS4J28F7utQ4DA3cFIg7GZPg==",
+      "shasum": "a462e23dd65281dacee34673d520366b6c7314b9",
+      "tarballHash": "sha256:61e00eab08dd2df81d42630bacf700dcef7d4f469d8c32146499d463a0fd0d1d",
+      "packageJsonHash": "sha256:ab6aa87988deebcdf7bbf195b29972ef5a89744b313129a249a2e27b0ee42516",
+      "manifestHash": "sha256:a0785a7392c4ef0fae2ca1403ce756a293f44b6dd28c786d400e9cd8a1c60660"
+    },
+    {
+      "id": "@kernlang/agon-mod-skill-authoring",
+      "modId": "agon.skill-authoring",
+      "manifestDependencies": [
+        "agon.api",
+        "agon.engine-runtime",
+        "agon.persistence"
+      ],
+      "directory": "packages/mod-skill-authoring",
+      "version": "1.0.0",
+      "class": "user-toggleable-mod-package",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-persistence"
+      ],
+      "peerDependencies": {
+        "@kernlang/agon-kernel": ">=0.0.0-0 <2"
+      },
+      "packedBytes": 4659,
+      "unpackedBytes": 15560,
+      "fileCount": 8,
+      "files": [
+        {
+          "path": "agon.mod.json",
+          "size": 2456
+        },
+        {
+          "path": "dist/implementation.d.ts",
+          "size": 312
+        },
+        {
+          "path": "dist/index.d.ts",
+          "size": 3391
+        },
+        {
+          "path": "dist/index.js",
+          "size": 6310
+        },
+        {
+          "path": "LICENSE",
+          "size": 1070
+        },
+        {
+          "path": "ownership.json",
+          "size": 936
+        },
+        {
+          "path": "package.json",
+          "size": 849
+        },
+        {
+          "path": "schemas/config.schema.json",
+          "size": 236
+        }
+      ],
+      "payloadHash": "sha256:9a45115e7b2507c885266d90c731d4cb521bf0c69972f26843fd886fa550b60f",
+      "integrity": "sha512-F5vzPwVyglXINzXlvFpcx4jh1skBeu4cnr/zlbODr8dNvwgl9GMfwZmHnPfm/1GmmUhHU5D8yGvgvArOM3CdNw==",
+      "shasum": "bfc9ffcb60822329ea9f243c13d220e3f5e0cd5c",
+      "tarballHash": "sha256:0e1e9399bf84050e0139833028f0581c70e0267602a1f54c69a32b7587bf48fa",
+      "packageJsonHash": "sha256:e94a7db4bf155654ea065d35df44270bef64ddcdee716ead44288726b5e87d80",
+      "manifestHash": "sha256:2039534dea86be8614e0803e01a09f533bcdfaa0b2f40c5f2078340e0e3bc88f"
+    },
+    {
+      "id": "@kernlang/agon-mod-git-actions",
+      "modId": "agon.git-actions",
+      "manifestDependencies": [
+        "agon.api",
+        "agon.engine-runtime",
+        "agon.verification"
+      ],
+      "directory": "packages/mod-git-actions",
+      "version": "1.0.0",
+      "class": "user-toggleable-mod-package",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-verification"
+      ],
+      "peerDependencies": {
+        "@kernlang/agon-kernel": ">=0.0.0-0 <2"
+      },
+      "packedBytes": 5300,
+      "unpackedBytes": 19467,
+      "fileCount": 8,
+      "files": [
+        {
+          "path": "agon.mod.json",
+          "size": 2703
+        },
+        {
+          "path": "dist/implementation.d.ts",
+          "size": 441
+        },
+        {
+          "path": "dist/index.d.ts",
+          "size": 3392
+        },
+        {
+          "path": "dist/index.js",
+          "size": 9084
+        },
+        {
+          "path": "LICENSE",
+          "size": 1070
+        },
+        {
+          "path": "ownership.json",
+          "size": 1703
+        },
+        {
+          "path": "package.json",
+          "size": 846
+        },
+        {
+          "path": "schemas/config.schema.json",
+          "size": 228
+        }
+      ],
+      "payloadHash": "sha256:03eeb0d32af471be150731fd3eb918357fdbd442aad839718a4a0c5b287360c5",
+      "integrity": "sha512-9Ri28UYyNTsXRWwl40/Ia+lFRCAQH6tGNGdY209YtHZYLw+/Y+Wtrhu+1adY1E8ap4B4SK4rSNDsQesRQzUd9A==",
+      "shasum": "1e73ab13f8813158920fa8ed80c10a4e00a9b813",
+      "tarballHash": "sha256:bc56099e5568c2f43b458f75da61124a9c0ad0dcdae308fd97f2eff6edbed493",
+      "packageJsonHash": "sha256:75ea8379541577fc78898238578a87cf3d8efde8f7394d5933e7850312fb9326",
+      "manifestHash": "sha256:051d01490f326a5b1a946149550f4f798d2debbd7be6fb3149d939c43b48c66e"
+    },
+    {
+      "id": "@kernlang/agon-mod-routing-docs",
+      "modId": "agon.routing-docs",
+      "manifestDependencies": [
+        "agon.api",
+        "agon.engine-runtime",
+        "agon.persistence"
+      ],
+      "directory": "packages/mod-routing-docs",
+      "version": "1.0.0",
+      "class": "user-toggleable-mod-package",
+      "dependencies": [
+        "@kernlang/agon-mod-api",
+        "@kernlang/agon-support-engine-runtime",
+        "@kernlang/agon-support-persistence"
+      ],
+      "peerDependencies": {
+        "@kernlang/agon-kernel": ">=0.0.0-0 <2"
+      },
+      "packedBytes": 13918,
+      "unpackedBytes": 41253,
+      "fileCount": 9,
+      "files": [
+        {
+          "path": "agon.mod.json",
+          "size": 2648
+        },
+        {
+          "path": "dist/guide-content.d.ts",
+          "size": 1317
+        },
+        {
+          "path": "dist/implementation.d.ts",
+          "size": 329
+        },
+        {
+          "path": "dist/index.d.ts",
+          "size": 3541
+        },
+        {
+          "path": "dist/index.js",
+          "size": 29783
+        },
+        {
+          "path": "LICENSE",
+          "size": 1070
+        },
+        {
+          "path": "ownership.json",
+          "size": 1489
+        },
+        {
+          "path": "package.json",
+          "size": 846
+        },
+        {
+          "path": "schemas/config.schema.json",
+          "size": 230
+        }
+      ],
+      "payloadHash": "sha256:c2f7e17a46f8246f0ea3f924ec9814d1ee552b279343ac36c1009f2e1896f769",
+      "integrity": "sha512-5slI+7VOUkFzKSMxapBjBlJzJaIsvxae+eoyIuq0RvMC0C7gtFstzWOzXQXlfT+w5uYRAFReOyoA2ulfUSvrxQ==",
+      "shasum": "7bb6ddec54108f0123117a645feb47633ebfbca8",
+      "tarballHash": "sha256:aeb6969341d7277fb80047f0a9569a053c99f56306f518e3b743bd207ef1a6cd",
+      "packageJsonHash": "sha256:b16df8fdb03c1a7c34590574a552bd1dfa709618fd677fc4068aa1bbcc5f075d",
+      "manifestHash": "sha256:2394786341508fa10e770bcdad612766b361965574cf1bb9ee68d7acdf399ca5"
+    }
+  ],
+  "compatibilityArtifacts": [
+    {
+      "id": "@kernlang/agon-dedup",
+      "version": "0.2.5",
+      "directory": "packages/dedup",
+      "class": "legacy-sidecar-compatibility",
+      "files": [
+        {
+          "path": "classifier.py",
+          "size": 5594
+        },
+        {
+          "path": "embedder.py",
+          "size": 3442
+        },
+        {
+          "path": "history-search.py",
+          "size": 5246
+        },
+        {
+          "path": "install-python.mjs",
+          "size": 1602
+        },
+        {
+          "path": "LICENSE",
+          "size": 1070
+        },
+        {
+          "path": "package.json",
+          "size": 1213
+        },
+        {
+          "path": "README.md",
+          "size": 3399
+        },
+        {
+          "path": "requirements.txt",
+          "size": 189
+        },
+        {
+          "path": "sidecar.py",
+          "size": 4908
+        },
+        {
+          "path": "syntax-validator.py",
+          "size": 11579
+        }
+      ],
+      "dependencies": [],
+      "peerDependencies": {},
+      "integrity": "sha512-sGCmPNaTLSBdjXgUQzzOaMRvKdwBM8SePCs4hU4H1Mut9wzGcpp1tK/zszpb3zCNYLWlwVlzhvSwvgngG4oOdg==",
+      "tarballHash": "sha256:58828756adb4519e0f5d5ba7f26335b615216e22b91438b6951cf383c1527969",
+      "payloadHash": "sha256:07ff459bb19930ee5ce73879dd13694991866fd270efffa15c0fd02200f85cf4",
+      "manifestHash": "sha256:f72fbe8dec4e0523b33eea8d2875036091d791d081f850fdde5968111c85705c",
+      "packedBytes": 11431
+    }
+  ]
+}

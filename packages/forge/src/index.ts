@@ -5,12 +5,14 @@ export type { NeroOptions, NeroResult } from './nero.js';
 export { runResearch, buildResearchPrompt, formatResearchResult } from './research.js';
 export type { ResearchOptions, ResearchResult, ResearchSource } from './research.js';
 export {
-  runCouncil, assignCouncilRoles, roleGuidance, buildCouncilBriefPrompt,
+  runCouncil, assignCouncilRoles, applyChairExploration, roleGuidance, buildCouncilBriefPrompt,
   buildRolePrompt, buildCritiquePrompt, buildChairmanPrompt, parseCouncilConfidence,
   DEFAULT_COUNCIL_ROLES,
 } from './council.js';
 export type { CouncilOptions, CouncilResult, CouncilSeat } from './council.js';
 export { runTribunal } from './tribunal.js';
+export { parseBallot } from './rating-judge.js';
+export { buildBallotPrompt, JUDGE_SYSTEM_PROMPT } from './ballot-prompt.js';
 export { runSynthesis } from './synthesis.js';
 export { runSynthesisModus, synthesisRoutingAdvice } from './synthesis-modus.js';
 export type { SynthesisDraft, SynthesisSwap, SynthesisScore, SynthesisResult as SynthesisModusResult } from './synthesis-modus.js';
@@ -18,6 +20,7 @@ export { runBaseline, runStage1, runStage2, determineWinner } from './stages.js'
 export { runFitness } from './fitness.js';
 export { runLint, runStyleCheck } from './quality.js';
 export { writeManifest, readManifest, updateManifest } from './manifest.js';
+export { writeVersionedResultEnvelope } from './result-envelope.js';
 export type { StageResult, SynthesisResult, ForgeEventCallback, WorktreeEntry } from './types.js';
 export type { TribunalResult, TribunalRound, TribunalPosition } from './tribunal.js';
 export { getModeConfig, buildModePrompt, buildModeSummaryPrompt, isTribunalMode, isTribunalProtocol, TRIBUNAL_MODES, TRIBUNAL_PROTOCOLS } from './tribunal-modes.js';
@@ -47,19 +50,24 @@ export {
   runMutate, dedupeMutants, selectMutants,
   mutationTargetsFromDiff, isMutableFile,
 } from './mutate.js';
+export {
+  classifyMutateTarget, resolveMutateTargets, discoverMutateGate, NO_GATE_DISCOVERED_MESSAGE, GENERIC_SOURCE_MAX_BYTES,
+} from './mutate-targets.js';
+export type { MutateTargetKind, ResolvedMutateTargets } from './mutate-targets.js';
 export type { MutateOptions, MutateResult } from './mutate.js';
 // The ONE mutation-report renderer — every surface (mutate, /mutate, review
 // --mutate) must render through formatMutationReportLines, never its own copy.
 export {
   formatMutationReportLines, formatMutateVerdict, mutateVerdictLine,
   allMutantsSurvived, noMutantsRanLine, staleDistHint, mutateLensSuffix, MUTATE_ALL_SURVIVED_WARNING,
+  MUTATE_ALL_SURVIVED_WARNING_GENERIC, isNodeMutationRun,
 } from './mutate-report.js';
 export {
   prepareSandboxNodeModules, clearShadowingDist, workspacePackageDirs,
   packageEntryDirs, repointWorkspaceLinks, isInside, isSafePackageName,
-  pnpmWorkspaceGlobs, gitIgnoredPaths, expandWorkspaceGlob, workspaceGlobToRegExp,
+  pnpmWorkspaceGlobs, gitIgnoredPaths, expandWorkspaceGlob, workspaceGlobToRegExp, prepareNodeSandbox,
 } from './mutate-sandbox.js';
-export type { SandboxNodeModules, SandboxLinkRepair } from './mutate-sandbox.js';
+export type { SandboxNodeModules, SandboxLinkRepair, NodeSandboxPrep } from './mutate-sandbox.js';
 export {
   buildSemanticMutantPrompt, extractJsonArray, validateSemanticMutants, collectSemanticMutants,
   seatGrantsWriteAccess, stripControlChars, normalizeLens, MUTATE_LENS_PRESETS,
@@ -84,7 +92,7 @@ export type { Mutant } from './goal/mutation.js';
 export { generateMutants, applyMutantToSource, mutationSurvivors } from './goal/mutation.js';
 export type { FrozenOracle, WitnessResult } from './goal/oracle.js';
 export { hashOracleInputs, snapshotOracle, oracleTampered, witnessTest } from './goal/oracle.js';
-export { isTestFile, parseChangedLines, newFilesInDiff } from './goal/diff.js';
+export { isTestFile, parseChangedLines, newFilesInDiff } from '@kernlang/agon-support-worktree';
 export { gateFailureSignature, taskParkDecision, globalBreaker, budgetExceeded, timeExceeded, pickImplementWinner, chooseImplementRoster } from './goal/policy.js';
 export { planSynthesis } from './synth-plan.js';
 export type { SynthCandidate, SynthPlanOpts, SynthPlan } from './synth-plan.js';

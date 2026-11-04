@@ -1,0 +1,247 @@
+{
+  "schemaVersion": 1,
+  "qualification": "modular-agon-slice8-clean-checkout",
+  "subject": {
+    "kind": "commit",
+    "hash": "sha256:6e9f8e13647f7bf2b1c3de7cc93796ec7f091c8a97fd7ab14158c5115cc277a6",
+    "indexHash": "sha256:6e9f8e13647f7bf2b1c3de7cc93796ec7f091c8a97fd7ab14158c5115cc277a6",
+    "commitHash": "sha256:6e9f8e13647f7bf2b1c3de7cc93796ec7f091c8a97fd7ab14158c5115cc277a6",
+    "indexEqualsCommit": true
+  },
+  "contamination": {
+    "ignored": [],
+    "untracked": [],
+    "unstaged": []
+  },
+  "graph": {
+    "declaredEdges": 144,
+    "uniqueEdges": 144,
+    "duplicateEdges": []
+  },
+  "coverage": {
+    "behavioralSecuritySuites": [
+      "trust-and-grants",
+      "third-party-lifecycle",
+      "bounded-discovery",
+      "canonical-resolution",
+      "dynamic-mcp-cesar",
+      "transaction-recovery"
+    ],
+    "structuralDriftVerifier": "spec:modular-slice8:self-test",
+    "cliEndToEndVerifier": "spec:modular-slice8:e2e",
+    "verifierCountsAreRuntimeDerived": true,
+    "trustModel": "full-code-not-sandboxed",
+    "externalExampleDriftChecked": true,
+    "trustAndActivationSeparate": true,
+    "transactionalAuthority": true,
+    "immutableActivationSnapshot": true,
+    "measuredPerformance": true
+  },
+  "reviewEvidence": {
+    "passed": true
+  },
+  "cleanCheckoutSteps": [
+    {
+      "id": "npm-ci",
+      "command": [
+        "npm",
+        "ci",
+        "--ignore-scripts",
+        "--offline"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "\nadded 429 packages, and audited 486 packages in 2s\n\n112 packages are looking for funding\n  run `npm fund` for details\n\nfound 0 vulnerabilities\nnpm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me\n"
+    },
+    {
+      "id": "clean-build",
+      "command": [
+        "npm",
+        "run",
+        "build:cli:workspaces"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "UJU4Z3J.js.map                1.18 KB\nESM dist/chunk-FCXYFH6X.js.map                 1.58 KB\nESM dist/ext-VVSED6X7.js.map                   6.43 KB\nESM dist/chunk-NDTWK5TX.js.map                 8.02 KB\nESM dist/chunk-R5CSK6VE.js.map                 49.76 KB\nESM dist/browser-host-TNT6NPNB.js.map          51.00 B\nESM dist/login-D3D4KYFX.js.map                 2.78 KB\nESM dist/synthesis-4WJ35JHA.js.map             3.59 KB\nESM dist/ask-HYKVI4ZI.js.map                   3.23 KB\nESM dist/rag-DSQHX4XU.js.map                   2.13 KB\nESM dist/council-YNH47PNS.js.map               5.14 KB\nESM dist/think-SJICF6DO.js.map                 5.00 KB\nESM dist/nero-I2CL2GPF.js.map                  4.38 KB\nESM dist/research-PNKM5Y45.js.map              3.71 KB\nESM dist/conquer-7VAWTOJ5.js.map               7.26 KB\nESM dist/naturalize-5H37GJYK.js.map            4.28 KB\nESM dist/chunk-Y74PMIW3.js.map                 7.62 KB\nESM dist/daemon-GWCLGRZ7.js.map                51.00 B\nESM dist/mutate-HADOTILV.js.map                5.75 KB\nESM dist/sanitize-YQLTQFKL.js.map              4.46 KB\nESM dist/job-AFGGFN3I.js.map                   10.63 KB\nESM dist/chunk-NFSPPSCU.js.map                 331.00 B\nESM dist/goal-SD4NJMJT.js.map                  21.87 KB\nESM dist/chunk-JAGSH7OK.js.map                 14.70 KB\nESM dist/chunk-XLH2EWRY.js.map                 5.39 KB\nESM dist/chunk-TTYLDS4I.js.map                 1.94 KB\nESM dist/install-agent-prompts-55WHN4UX.js.map 2.71 KB\nESM dist/agent-guide-DRI3EQDO.js.map           1.63 KB\nESM dist/engine-4GVTSLRW.js.map                4.15 KB\nESM dist/chunk-ETDKJQHT.js.map                 10.06 KB\nESM dist/models-EEBYIA46.js.map                5.95 KB\nESM dist/doctor-FID6W2L3.js.map                51.00 B\nESM dist/chunk-N4JA2E6T.js.map                 9.34 KB\nESM dist/chunk-6GFINX2U.js.map                 14.45 KB\nESM dist/provider-W472UM55.js.map              9.14 KB\nESM dist/last-23B4H7ED.js.map                  1.19 KB\nESM dist/review-ZLWE6J4Y.js.map                13.05 KB\nESM dist/chunk-4LLOADGC.js.map                 4.87 KB\nESM dist/config-UURRKIXI.js.map                1.96 KB\nESM dist/call-KARGISWK.js.map                  51.00 B\nESM dist/chunk-XNJVWCUC.js.map                 3.26 KB\nESM dist/team-forge-SIG2I2J2.js.map            2.89 KB\nESM dist/team-tribunal-SFOVGCQP.js.map         2.20 KB\nESM dist/leaderboard-B55GBEWX.js.map           2.12 KB\nESM dist/chunk-UG7OOEJZ.js.map                 14.12 KB\nESM dist/team-brainstorm-CCWSFAII.js.map       1.79 KB\nESM dist/room-O3RPTUEE.js.map                  19.42 KB\nESM dist/ratings-CPWYNZWI.js.map               2.06 KB\nESM dist/provenance-Z2YBE67Z.js.map            2.26 KB\nESM dist/chunk-ECW5BESF.js.map                 1.83 KB\nESM dist/history-6LFL5ACT.js.map               4.71 KB\nESM dist/browser-host.js.map                   108.00 B\nESM dist/index.js.map                          10.61 KB\nESM dist/chunk-BDMZRPEE.js.map                 12.49 KB\nESM dist/brainstorm-VCB6BNZF.js.map            3.71 KB\nESM dist/chunk-LRWH5JEI.js.map                 921.00 B\nESM dist/src-WH3GOMIX.js.map                   51.00 B\nESM dist/forge-CFG6A5PW.js.map                 9.82 KB\nESM dist/chunk-PE7LS225.js.map                 32.09 KB\nESM dist/chunk-F73V43HJ.js.map                 3.06 KB\nESM dist/tribunal-32FC44ED.js.map              5.02 KB\nESM dist/campfire-OOWBNHLL.js.map              2.38 KB\nESM dist/chunk-IUXC7V6V.js.map                 475.00 B\nESM dist/chunk-7SUV6RHW.js.map                 606.00 B\nESM dist/chunk-OT67KTOH.js.map                 6.04 KB\nESM dist/chunk-L5B5AEPB.js.map                 31.70 KB\nESM dist/chunk-WVSC4TRD.js.map                 381.00 B\nESM dist/chunk-3G43QNFV.js.map                 51.00 B\nESM dist/chunk-OBSUBI57.js.map                 230.20 KB\nESM dist/app-KH3X4ADK.js.map                   465.42 KB\nESM dist/chunk-YQLQGX6N.js.map                 398.63 KB\nESM dist/chunk-HSU2G3GF.js.map                 940.30 KB\nESM ⚡️ Build success in 128ms\n"
+    },
+    {
+      "id": "slice8-behavioral-security",
+      "command": [
+        "npm",
+        "run",
+        "test:modular-slice8"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "s/unit/modular-installer.test.ts tests/unit/modular-candidate-process.test.ts tests/unit/modular-setup-actions.test.ts tests/unit/modular-lifecycle-secret-redaction.test.ts tests/unit/modular-lifecycle-approval.test.ts tests/unit/modular-third-party-s7-deny.test.ts\n\n\n RUN  v3.2.7 /private/var/folders/c4/_6ktcrg57m5_8kjcymvhn8fc0000gn/T/agon-modular-s8-commit-e9aMNS\n\n ✓ tests/unit/modular-setup-actions.test.ts (3 tests) 25ms\n ✓ tests/unit/modular-third-party-s7-deny.test.ts (1 test) 3ms\n ✓ tests/unit/modular-lifecycle-secret-redaction.test.ts (3 tests) 4ms\n ✓ tests/unit/modular-candidate-process.test.ts (6 tests) 96ms\n ✓ tests/unit/modular-lifecycle-approval.test.ts (1 test) 330ms\n   ✓ managed lifecycle approval binding > requires exact plan approval when provenance or source changes need a decision  330ms\n ✓ tests/unit/modular-installer.test.ts (5 tests) 385ms\n   ✓ managed installer > installs the complete closure into an immutable prefix and selects it once  340ms\n\n Test Files  6 passed (6)\n      Tests  19 passed (19)\n   Start at  07:37:52\n   Duration  773ms (transform 129ms, setup 88ms, collect 626ms, tests 843ms, environment 0ms, prepare 179ms)\n\n\n> test:modular-updater\n> node scripts/run-node22.mjs node_modules/.bin/vitest run tests/unit/modular-updater.test.ts tests/unit/modular-lifecycle-recovery.test.ts tests/unit/modular-purge-retention.test.ts tests/unit/modular-legacy-update-guard.test.ts\n\n\n RUN  v3.2.7 /private/var/folders/c4/_6ktcrg57m5_8kjcymvhn8fc0000gn/T/agon-modular-s8-commit-e9aMNS\n\n ✓ tests/unit/modular-purge-retention.test.ts (1 test) 894ms\n   ✓ managed purge generation retention > cannot purge a non-selected installation while any retained generation references it  893ms\n ✓ tests/unit/modular-lifecycle-recovery.test.ts (6 tests) 1278ms\n   ✓ managed lifecycle crash recovery > repairs a lifecycle journal when host generation promotion already committed  594ms\n   ✓ managed purge preview and apply > requires an exact preview hash and never targets the selected installation  422ms\n ✓ tests/unit/modular-updater.test.ts (3 tests) 1736ms\n   ✓ managed updater and rollback > retains the previous qualified prefix and rolls back package, lock and state together  1017ms\n   ✓ managed updater and rollback > fails closed when retained rollback bytes are missing or corrupt  524ms\n ✓ tests/unit/modular-legacy-update-guard.test.ts (2 tests) 1ms\n\n Test Files  4 passed (4)\n      Tests  12 passed (12)\n   Start at  07:37:53\n   Duration  2.25s (transform 663ms, setup 66ms, collect 2.41s, tests 3.91s, environment 0ms, prepare 115ms)\n\n\n> test:modular-fault-injection\n> node scripts/run-node22.mjs node_modules/.bin/vitest run tests/unit/modular-lifecycle-fault-injection.test.ts\n\n\n RUN  v3.2.7 /private/var/folders/c4/_6ktcrg57m5_8kjcymvhn8fc0000gn/T/agon-modular-s8-commit-e9aMNS\n\n ✓ tests/unit/modular-lifecycle-fault-injection.test.ts (11 tests) 3545ms\n   ✓ managed lifecycle fault injection > keeps the previous generation bootable when failure occurs at after-prefix-promoted  313ms\n   ✓ managed lifecycle fault injection > marks restart-required but leaves the new selected generation valid at after-generation-selected  469ms\n   ✓ managed lifecycle fault injection > marks restart-required but leaves the new selected generation valid at after-lifecycle-receipt  503ms\n\n Test Files  1 passed (1)\n      Tests  11 passed (11)\n   Start at  07:37:56\n   Duration  3.94s (transform 77ms, setup 20ms, collect 102ms, tests 3.55s, environment 0ms, prepare 32ms)\n\n\n> test:modular-lifecycle-concurrency\n> node scripts/run-node22.mjs node_modules/.bin/vitest run tests/unit/modular-lifecycle-concurrency.test.ts\n\n\n RUN  v3.2.7 /private/var/folders/c4/_6ktcrg57m5_8kjcymvhn8fc0000gn/T/agon-modular-s8-commit-e9aMNS\n\n ✓ tests/unit/modular-lifecycle-concurrency.test.ts (2 tests) 431ms\n\n Test Files  1 passed (1)\n      Tests  2 passed (2)\n   Start at  07:38:00\n   Duration  853ms (transform 77ms, setup 19ms, collect 103ms, tests 431ms, environment 0ms, prepare 30ms)\n\n"
+    },
+    {
+      "id": "slice8-structural-drift-controls",
+      "command": [
+        "npm",
+        "run",
+        "spec:modular-slice8:self-test"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "nial\",\n      \"passed\": true,\n      \"file\": \"packages/mod-kernel/src/third-party-activation.ts\"\n    },\n    {\n      \"id\": \"bounded-activation\",\n      \"passed\": true,\n      \"file\": \"packages/mod-kernel/src/third-party-activation.ts\"\n    },\n    {\n      \"id\": \"owner-cleanup\",\n      \"passed\": true,\n      \"file\": \"packages/mod-kernel/src/third-party-activation.ts\"\n    },\n    {\n      \"id\": \"capability-decision-receipt\",\n      \"passed\": true,\n      \"file\": \"packages/mod-kernel/src/third-party-activation.ts\"\n    },\n    {\n      \"id\": \"separate-activation-state\",\n      \"passed\": true,\n      \"file\": \"packages/mod-kernel/src/external-activation-state.ts\"\n    },\n    {\n      \"id\": \"strict-activation-journal-shape\",\n      \"passed\": true,\n      \"file\": \"packages/mod-kernel/src/external-activation-state.ts\"\n    },\n    {\n      \"id\": \"owner-scoped-durable-state\",\n      \"passed\": true,\n      \"file\": \"packages/mod-kernel/src/external-mod-services-safe.ts\"\n    },\n    {\n      \"id\": \"operator-backend\",\n      \"passed\": true,\n      \"file\": \"packages/mod-kernel/src/folder-mod-manager.ts\"\n    },\n    {\n      \"id\": \"full-code-warning\",\n      \"passed\": true,\n      \"file\": \"packages/mod-kernel/src/folder-mod-manager.ts\"\n    },\n    {\n      \"id\": \"visible-trust-ui\",\n      \"passed\": true,\n      \"file\": \"packages/mod-kernel/src/mod-management-ui.ts\"\n    },\n    {\n      \"id\": \"visible-permissions-ui\",\n      \"passed\": true,\n      \"file\": \"packages/mod-kernel/src/mod-management-ui.ts\"\n    },\n    {\n      \"id\": \"persisted-authority-proof\",\n      \"passed\": true,\n      \"file\": \"packages/mod-kernel/src/managed-lifecycle.ts\"\n    },\n    {\n      \"id\": \"trusted-process-bootstrap\",\n      \"passed\": true,\n      \"file\": \"packages/mod-kernel/src/first-party-surface-bootstrap.ts\"\n    },\n    {\n      \"id\": \"safe-mode-early-branch\",\n      \"passed\": true,\n      \"file\": \"packages/mod-kernel/src/first-party-surface-bootstrap.ts\"\n    },\n    {\n      \"id\": \"safe-mode-kernel-generation\",\n      \"passed\": true,\n      \"file\": \"packages/mod-kernel/src/first-party-surface-bootstrap.ts\"\n    },\n    {\n      \"id\": \"safe-mode-kernel-catalog-only\",\n      \"passed\": true,\n      \"file\": \"packages/mod-kernel/src/first-party-surface-bootstrap.ts\"\n    },\n    {\n      \"id\": \"safe-mode-no-mod-packages\",\n      \"passed\": true,\n      \"file\": \"packages/mod-kernel/src/first-party-surface-bootstrap.ts\"\n    },\n    {\n      \"id\": \"safe-mode-no-external-discovery\",\n      \"passed\": true,\n      \"file\": \"packages/mod-kernel/src/first-party-surface-bootstrap.ts\"\n    },\n    {\n      \"id\": \"canonical-external-resolution\",\n      \"passed\": true,\n      \"file\": \"packages/mod-kernel/src/external-resolution.ts\"\n    },\n    {\n      \"id\": \"mcp-safe-mode-propagation\",\n      \"passed\": true,\n      \"file\": \"packages/mcp/src/surface-authority.ts\"\n    },\n    {\n      \"id\": \"mcp-dynamic-invocation\",\n      \"passed\": true,\n      \"file\": \"packages/mcp/src/surface-authority.ts\"\n    },\n    {\n      \"id\": \"cesar-dynamic-invocation\",\n      \"passed\": true,\n      \"file\": \"packages/cli/src/cesar/tools.ts\"\n    },\n    {\n      \"id\": \"external-registry-projection\",\n      \"passed\": true,\n      \"file\": \"packages/mod-kernel/src/external-surface-catalog.ts\"\n    },\n    {\n      \"id\": \"exact-cli-plan-approval\",\n      \"passed\": true,\n      \"file\": \"packages/cli/src/commands/mod.ts\"\n    },\n    {\n      \"id\": \"separate-cli-activation\",\n      \"passed\": true,\n      \"file\": \"packages/cli/src/commands/mod.ts\"\n    },\n    {\n      \"id\": \"explicit-cli-grants\",\n      \"passed\": true,\n      \"file\": \"packages/cli/src/commands/mod.ts\"\n    },\n    {\n      \"id\": \"visible-authority-recovery\",\n      \"passed\": true,\n      \"file\": \"packages/cli/src/commands/mod.ts\"\n    },\n    {\n      \"id\": \"public-api-only-example\",\n      \"passed\": true,\n      \"file\": \"docs/examples/hello-folder-mod/README.md\"\n    },\n    {\n      \"id\": \"final-ignored-contamination-scan\",\n      \"passed\": true,\n      \"file\": \"scripts/spec/qualify-modular-agon-slice8.mjs\"\n    }\n  ],\n  \"negativeControls\": 47,\n  \"passed\": true\n}\n"
+    },
+    {
+      "id": "runtime-version-drift",
+      "command": [
+        "node",
+        "scripts/spec/verify-modular-runtime-version.mjs",
+        "--self-test"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "{\n  \"schemaVersion\": 1,\n  \"verifier\": \"modular-runtime-version-drift\",\n  \"packageVersion\": \"0.2.5\",\n  \"checks\": [\n    {\n      \"id\": \"kernel-runtime\",\n      \"path\": \"packages/mod-kernel/src/runtime-version.ts\",\n      \"observed\": \"0.2.5\",\n      \"expected\": \"0.2.5\",\n      \"passed\": true\n    },\n    {\n      \"id\": \"cli-program\",\n      \"path\": \"packages/cli/src/index.ts\",\n      \"observed\": \"0.2.5\",\n      \"expected\": \"0.2.5\",\n      \"passed\": true\n    },\n    {\n      \"id\": \"cli-fallback\",\n      \"path\": \"packages/cli/src/blocks/engine.tsx\",\n      \"observed\": \"0.2.5\",\n      \"expected\": \"0.2.5\",\n      \"passed\": true\n    }\n  ],\n  \"negativeControls\": 3,\n  \"passed\": true\n}\n"
+    },
+    {
+      "id": "external-example-drift",
+      "command": [
+        "node",
+        "scripts/spec/verify-folder-mod-example-drift.mjs"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "{\"passed\":true,\"isolatedInstall\":true,\"packedPublicApiOnly\":true,\"privateImportNegativeControls\":3,\"files\":[\"agon.mod.json\",\"package.json\",\"src/index.ts\",\"dist/index.js\",\"dist/index.d.ts\"],\"runtimeImported\":true,\"publicApiOnly\":true}\n"
+    },
+    {
+      "id": "folder-mod-cli-e2e",
+      "command": [
+        "npm",
+        "run",
+        "spec:modular-slice8:e2e"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "\n> spec:modular-slice8:e2e\n> node scripts/spec/verify-modular-folder-mod-cli.mjs\n\n{\n  \"schemaVersion\": 1,\n  \"verifier\": \"modular-folder-mod-cli-e2e\",\n  \"checks\": 31,\n  \"passed\": true\n}\n"
+    },
+    {
+      "id": "slice8-performance",
+      "command": [
+        "npm",
+        "run",
+        "perf:modular-slice8",
+        "--",
+        "--no-write"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "9986,\n      5.885250000000013,\n      5.977708000000007,\n      5.768249999999995,\n      5.7357920000000036,\n      5.918292000000008,\n      5.685791999999992,\n      5.713458000000003,\n      5.816791999999992,\n      5.686916999999994,\n      5.631541999999996,\n      5.692584000000011,\n      5.880166000000003,\n      5.888833000000005,\n      5.689040999999975,\n      5.589999999999975,\n      5.344957999999991,\n      5.547041999999976,\n      5.55291600000001,\n      6.068833000000012,\n      5.487541999999962,\n      5.3670419999999694,\n      5.818290999999988,\n      5.76604100000003,\n      5.770457999999962,\n      5.806125000000009,\n      5.511957999999993,\n      5.387999999999977,\n      5.4973340000000235,\n      5.690499999999986,\n      5.66904199999999,\n      5.339125000000024\n    ],\n    \"authorityTenModsMs\": [\n      0.9432919999999285,\n      0.18145900000001802,\n      0.19374999999990905,\n      0.16570899999999256,\n      0.1383339999999862,\n      0.1376669999999649,\n      0.19908399999997073,\n      0.07966700000008586,\n      0.06658300000003692,\n      0.0670830000000251,\n      0.065166999999974,\n      0.06466699999998582,\n      0.06495800000004692,\n      0.064583999999968,\n      0.06425000000001546,\n      0.06508400000006986,\n      0.0644999999999527,\n      0.06566700000007586,\n      0.0871670000000222,\n      0.0582920000000513,\n      0.08958399999994526,\n      0.057249999999953616,\n      0.058041000000002896,\n      0.05737499999997908,\n      0.05708300000003419,\n      0.0730829999999969,\n      0.05816699999991215,\n      0.0574579999999969,\n      0.07399999999995543,\n      0.06379200000003493,\n      0.08287500000005821,\n      0.05358400000000074,\n      0.05304100000000744,\n      0.05320900000003803,\n      0.052583000000026914,\n      0.05283400000007532,\n      0.05379100000004655,\n      0.05308300000001509,\n      0.05550000000005184,\n      0.053541999999993095,\n      0.052541999999903055,\n      0.05304200000000492,\n      0.054416000000060194,\n      0.0690829999999778,\n      0.05487499999992451,\n      0.05470900000000256,\n      0.0730829999999969,\n      0.15008299999999508,\n      0.06254200000000765,\n      0.057624999999916326,\n      0.0757499999999709,\n      0.12279100000000653,\n      0.054708000000005086,\n      0.04833300000007057,\n      0.04979200000002493,\n      0.044582999999988715,\n      0.048583000000007814,\n      0.12325000000009823,\n      0.04483300000003965,\n      0.08829100000002654,\n      0.04787499999997635,\n      0.04395799999997507,\n      0.04695800000001782,\n      0.04666599999995924,\n      0.04349999999999454,\n      0.04650000000003729,\n      0.0728750000000673,\n      0.044916000000057466,\n      0.04737499999998818,\n      0.049040999999988344,\n      0.04425000000003365,\n      0.13879100000008293,\n      0.04454099999998107,\n      0.04037500000004002,\n      0.04437500000005912,\n      0.04345899999998437,\n      0.07041700000002038,\n      0.04475000000002183,\n      0.03991700000005949,\n      0.04329199999995126,\n      0.04270899999994526,\n      0.03954199999998309,\n      0.04379200000005312,\n      0.043541000000004715,\n      0.03954199999998309,\n      0.04320800000004965,\n      0.07016699999996945,\n      0.03995799999995597,\n      0.04270799999994779,\n      0.10012499999993452,\n      0.041208000000096945,\n      0.042749999999955435,\n      0.03958399999999074,\n      0.04645900000002712,\n      0.043124999999918145,\n      0.03958299999999326,\n      0.07587499999999636,\n      0.04337499999996908,\n      0.04025000000001455,\n      0.04250000000001819\n    ],\n    \"trustedBootstrapMs\": [\n      467.72466600000007,\n      352.95395899999994,\n      366.0740840000001,\n      376.5100419999999,\n      369.5801660000002\n    ]\n  },\n  \"discoveryP95Ms\": 6.598084,\n  \"authorityTenModsP95Ms\": 0.15008299999999508,\n  \"trustedBootstrapP95Ms\": 467.72466600000007,\n  \"maxRssBytes\": 205586432,\n  \"budgets\": {\n    \"discoveryP95Ms\": 100,\n    \"authorityTenModsP95Ms\": 25,\n    \"trustedBootstrapP95Ms\": 750,\n    \"maxRssBytes\": 268435456\n  },\n  \"passed\": true\n}\n"
+    },
+    {
+      "id": "typecheck",
+      "command": [
+        "npm",
+        "run",
+        "typecheck"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "\n> typecheck\n> tsc -b\n\n"
+    },
+    {
+      "id": "lint",
+      "command": [
+        "npm",
+        "run",
+        "lint"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "\n> lint\n> eslint . --max-warnings 0\n\n"
+    },
+    {
+      "id": "full-suite",
+      "command": [
+        "npm",
+        "run",
+        "test:ts"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "efaultBranch <name>\nhint:\nhint: Names commonly chosen instead of 'master' are 'main', 'trunk' and\nhint: 'development'. The just-created branch can be renamed via this command:\nhint:\nhint: \tgit branch -m <name>\nhint:\nhint: Disable this message with \"git config set advice.defaultBranchName false\"\nhint: Using 'master' as the name for the initial branch. This default branch name\nhint: will change to \"main\" in Git 3.0. To configure the initial branch name\nhint: to use in all of your new repositories, which will suppress this warning,\nhint: call:\nhint:\nhint: \tgit config --global init.defaultBranch <name>\nhint:\nhint: Names commonly chosen instead of 'master' are 'main', 'trunk' and\nhint: 'development'. The just-created branch can be renamed via this command:\nhint:\nhint: \tgit branch -m <name>\nhint:\nhint: Disable this message with \"git config set advice.defaultBranchName false\"\nhint: Using 'master' as the name for the initial branch. This default branch name\nhint: will change to \"main\" in Git 3.0. To configure the initial branch name\nhint: to use in all of your new repositories, which will suppress this warning,\nhint: call:\nhint:\nhint: \tgit config --global init.defaultBranch <name>\nhint:\nhint: Names commonly chosen instead of 'master' are 'main', 'trunk' and\nhint: 'development'. The just-created branch can be renamed via this command:\nhint:\nhint: \tgit branch -m <name>\nhint:\nhint: Disable this message with \"git config set advice.defaultBranchName false\"\nhint: Using 'master' as the name for the initial branch. This default branch name\nhint: will change to \"main\" in Git 3.0. To configure the initial branch name\nhint: to use in all of your new repositories, which will suppress this warning,\nhint: call:\nhint:\nhint: \tgit config --global init.defaultBranch <name>\nhint:\nhint: Names commonly chosen instead of 'master' are 'main', 'trunk' and\nhint: 'development'. The just-created branch can be renamed via this command:\nhint:\nhint: \tgit branch -m <name>\nhint:\nhint: Disable this message with \"git config set advice.defaultBranchName false\"\nstderr | tests/integration/forge-e2e.test.ts > Forge E2E > returns brainstorm drafts when final synthesis dispatch fails\n[agon] brainstorm synthesis (thinker) failed: synthesis failed\n\nstderr | tests/integration/forge-e2e.test.ts > Forge E2E > does not rank empty brainstorm replies as usable drafts\n[agon] brainstorm dispatch (empty) failed after 2 attempt(s): empty\n\nstderr | tests/integration/forge-e2e.test.ts > Forge E2E > does not rank empty brainstorm replies as usable drafts\n[agon] brainstorm panel degraded: empty empty → retry empty, dropped (1/2 responded)\n\nstderr | tests/integration/forge-e2e.test.ts > Forge E2E > fails honestly when every brainstorm seat is unusable\n[agon] brainstorm dispatch (empty-a) failed after 2 attempt(s): empty\n[agon] brainstorm dispatch (empty-b) failed after 2 attempt(s): empty\n\nstderr | tests/integration/forge-e2e.test.ts > Forge E2E > fails honestly when every brainstorm seat is unusable\n[agon] brainstorm panel degraded: empty-a empty → retry empty, dropped; empty-b empty → retry empty, dropped (0/2 responded)\n\nstderr | tests/integration/forge-e2e.test.ts > Forge E2E > falls back to debate text when tribunal summary engine returns empty output\n[agon] tribunal summary failed: tribunal summary returned empty response\n\nhint: Using 'master' as the name for the initial branch. This default branch name\nhint: will change to \"main\" in Git 3.0. To configure the initial branch name\nhint: to use in all of your new repositories, which will suppress this warning,\nhint: call:\nhint:\nhint: \tgit config --global init.defaultBranch <name>\nhint:\nhint: Names commonly chosen instead of 'master' are 'main', 'trunk' and\nhint: 'development'. The just-created branch can be renamed via this command:\nhint:\nhint: \tgit branch -m <name>\nhint:\nhint: Disable this message with \"git config set advice.defaultBranchName false\"\n\n[agon] Cleaning up active git worktrees...\n\n[agon] Cleaning up active git worktrees...\n"
+    },
+    {
+      "id": "generated-artifacts",
+      "command": [
+        "npm",
+        "run",
+        "spec:modular-generated:check"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "\n> spec:modular-generated:check\n> node scripts/spec/verify-modular-generated-artifacts.mjs\n\nall modular generated artifacts are current\n"
+    },
+    {
+      "id": "spec-consistency",
+      "command": [
+        "node",
+        "scripts/spec/check-modular-agon-consistency.mjs"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "{\n  \"inventoryAssignments\": 872,\n  \"packages\": 49,\n  \"mods\": 36,\n  \"coverageCells\": 1480,\n  \"markdownFiles\": 16,\n  \"status\": \"passed\"\n}\n"
+    },
+    {
+      "id": "roadmap-contract",
+      "command": [
+        "node",
+        "scripts/spec/verify-modular-agon-roadmap.mjs"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "{\n  \"packages\": 49,\n  \"uniqueEdges\": 144,\n  \"legacyAssignments\": 872,\n  \"slices\": 9,\n  \"claims\": 10,\n  \"status\": \"passed\"\n}\n"
+    },
+    {
+      "id": "legacy-oracle",
+      "command": [
+        "npm",
+        "run",
+        "test:modular-legacy-oracle"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "\n> test:modular-legacy-oracle\n> node scripts/spec/verify-modular-legacy-oracle.mjs\n\n{\n  \"workflows\": 160,\n  \"rawEnvelopes\": 7,\n  \"transformStages\": 4,\n  \"status\": \"passed\"\n}\n"
+    },
+    {
+      "id": "oracle-negative-controls",
+      "command": [
+        "npm",
+        "run",
+        "test:modular-oracle-boundary"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "\n> test:modular-oracle-boundary\n> node scripts/spec/verify-modular-legacy-oracle-negative-controls.mjs\n\nLegacy oracle negative controls passed\n"
+    },
+    {
+      "id": "final-ignored-source-contamination",
+      "command": [
+        "git",
+        "ls-files",
+        "--others",
+        "--ignored",
+        "--exclude-standard"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "[]"
+    },
+    {
+      "id": "final-clean-worktree",
+      "command": [
+        "git",
+        "status",
+        "--porcelain",
+        "--untracked-files=all"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": ""
+    }
+  ],
+  "passed": true
+}

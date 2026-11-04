@@ -1,7 +1,113 @@
 import { describe, it, expect } from 'vitest';
-import { generateMutants, applyMutantToSource } from '../../packages/forge/src/goal/mutation.js';
+import { generateMutants, applyMutantToSource, mutationSurvivors } from '../../packages/forge/src/goal/mutation.js';
 import { hashOracleInputs } from '../../packages/forge/src/goal/oracle.js';
 import { assertSafeGoalId, resolveWithin } from '../../packages/forge/src/goal/paths.js';
+import * as physicalGoal from '../../packages/mod-goal/src/index.js';
+import { spawnWithTimeout } from '../../packages/core/src/blocks/process.js';
+import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+describe('physical Goal mutation runner', () => {
+  it.each(['legacy', 'physical'] as const)('%s keeps only surviving mutants and restores the original file after real commands', async (route) => {
+    const dir = mkdtempSync(join(tmpdir(), 'goal-mutation-owner-'));
+    try {
+      const source = 'export const value = 2 + 3;\n';
+      const file = join(dir, 'value.mjs');
+      writeFileSync(file, source);
+      const mutants = generateMutants(source, [1]);
+      const run = route === 'legacy' ? mutationSurvivors : physicalGoal.createGoalMutationRunner({ spawnWithTimeout, resolveWithin, applyMutantToSource });
+      const options = { worktree: dir, relFilePath: 'value.mjs', source, mutants, timeout: 5 };
+      const testCmd = 'node --input-type=module -e "import { value } from \'./value.mjs\'; if(value !== 5) process.exit(1)"';
+      expect(await spawnWithTimeout({ command: '/bin/sh', args: ['-c', testCmd], cwd: dir, timeout: 5000 }))
+        .toMatchObject({ exitCode: 0, timedOut: false });
+      const strong = await run({ ...options, testCmd });
+      expect(mutants.length).toBeGreaterThan(0);
+      expect(strong).toEqual([]);
+      expect(readFileSync(file, 'utf8')).toBe(source);
+      const weak = await run({ ...options, testCmd: 'true' });
+      expect(weak).toEqual(mutants);
+      expect(weak[0]).toBe(mutants[0]);
+      expect(readFileSync(file, 'utf8')).toBe(source);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('preserves custom mutant identity and process arguments across mixed outcomes', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'goal-mutation-custom-'));
+    try {
+      const file = join(dir, 'value.txt');
+      writeFileSync(file, 'original');
+      const mutants = [{ replacement: 'survivor' }, { replacement: 'killed' }, { replacement: 'also-survives' }];
+      const seen: string[] = [];
+      const run = physicalGoal.createGoalMutationRunner({ resolveWithin,
+        applyMutantToSource: (_source: string, mutant: { replacement: string }) => mutant.replacement,
+        spawnWithTimeout: async options => {
+          expect(options).toEqual({ command: '/bin/sh', args: ['-c', 'custom test'], cwd: dir, timeout: 1000 });
+          const text = readFileSync(file, 'utf8');
+          seen.push(text);
+          return { exitCode: text === 'killed' ? 1 : 0, stdout: '', stderr: '', timedOut: false };
+        } });
+      const survivors = await run({ worktree: dir, relFilePath: 'value.txt', source: 'original',
+        mutants, testCmd: 'custom test', timeout: 0 });
+      expect(seen).toEqual(mutants.map(mutant => mutant.replacement));
+      expect(survivors).toEqual([mutants[0], mutants[2]]);
+      expect(survivors[0]).toBe(mutants[0]);
+      expect(survivors[1]).toBe(mutants[2]);
+      expect(readFileSync(file, 'utf8')).toBe('original');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('restores source when applying a later mutant throws', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'goal-mutation-apply-'));
+    try {
+      const file = join(dir, 'value.txt');
+      writeFileSync(file, 'original');
+      const run = physicalGoal.createGoalMutationRunner({ resolveWithin,
+        applyMutantToSource: (_source: string, mutant: number) => {
+          if (mutant === 2) throw new Error('invalid mutation');
+          return 'mutated';
+        },
+        spawnWithTimeout: async () => ({ exitCode: 0, stdout: '', stderr: '', timedOut: false }) });
+      await expect(run({ worktree: dir, relFilePath: 'value.txt', source: 'original',
+        mutants: [1, 2], testCmd: 'ignored', timeout: 1 })).rejects.toThrow('invalid mutation');
+      expect(readFileSync(file, 'utf8')).toBe('original');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('does not count a timed-out process as a survivor, even with exit zero', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'goal-mutation-timeout-'));
+    try {
+      const source = 'x + y';
+      const file = join(dir, 'value.js');
+      writeFileSync(file, source);
+      const run = physicalGoal.createGoalMutationRunner({ resolveWithin, applyMutantToSource,
+        spawnWithTimeout: async () => ({ exitCode: 0, stdout: '', stderr: '', timedOut: true }) });
+      expect(await run({ worktree: dir, relFilePath: 'value.js', source,
+        mutants: generateMutants(source, [1]), testCmd: 'ignored', timeout: 1 })).toEqual([]);
+      expect(readFileSync(file, 'utf8')).toBe(source);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('restores source after a process error and rejects path escape before mutation', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'goal-mutation-failure-'));
+    try {
+      const source = 'x + y';
+      const file = join(dir, 'value.js');
+      writeFileSync(file, source);
+      let calls = 0;
+      const run = physicalGoal.createGoalMutationRunner({ resolveWithin, applyMutantToSource,
+        spawnWithTimeout: async () => { calls++; throw new Error('process unavailable'); } });
+      const options = { worktree: dir, relFilePath: 'value.js', source,
+        mutants: generateMutants(source, [1]), testCmd: 'true', timeout: 1 };
+      await expect(run(options)).rejects.toThrow('process unavailable');
+      expect(calls).toBe(1);
+      expect(readFileSync(file, 'utf8')).toBe(source);
+      await expect(run({ ...options, relFilePath: '../escape.js' })).rejects.toThrow();
+      expect(calls).toBe(1);
+      expect(readFileSync(file, 'utf8')).toBe(source);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+});
 
 describe('mutation-witness — generateMutants', () => {
   const src = [

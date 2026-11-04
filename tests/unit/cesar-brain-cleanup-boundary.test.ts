@@ -1,0 +1,817 @@
+// Cleanup failure can land while the brain awaits its context-budget gate or
+// session acquisition (telemetry handoff, auto-compaction, recovery). The
+// router's outer guard cannot retract an adapter launch the brain already made,
+// so the brain itself must re-check the entry and current sessions at each of
+// those boundaries and refuse replacement work.
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { startChatSession, ToolRegistry, tracker } from '@kernlang/agon-core';
+import { handleCesarBrain } from '../../packages/cli/src/cesar/brain.js';
+import { markSessionCleanupFailed, sessionCleanupFailed } from '../../packages/cli/src/cesar/session-health.js';
+import { pushSteering } from '../../packages/cli/src/cesar/steering.js';
+import { beginCesarTurn, transitionCesarTurn } from '../../packages/cli/src/cesar/turn-runtime.js';
+import { initializeProcessSurfaceAuthority, disposeProcessSurfaceAuthority } from '../../packages/cli/src/surface-authority-runtime.js';
+import { currentInvocationOwnerAvailable } from '@kernlang/agon-kernel';
+
+const { budget, ensure, backend } = vi.hoisted(() => ({ budget: vi.fn(), ensure: vi.fn(), backend: vi.fn() }));
+vi.mock('../../packages/cli/src/cesar/context-budget.js', async original => {
+  const real = await original<typeof import('../../packages/cli/src/cesar/context-budget.js')>();
+  return { ...real, enforceContextBudget: budget };
+});
+vi.mock('../../packages/cli/src/cesar/session.js', async original => {
+  const real = await original<typeof import('../../packages/cli/src/cesar/session.js')>();
+  return { ...real, ensureCesarSession: ensure, resolveCesarBackend: backend, buildCesarSystemPrompt: () => 'fixture system prompt' };
+});
+
+const CLEANUP_WARNING = expect.objectContaining({ type: 'warning', message: expect.stringContaining('Session cleanup previously failed') });
+
+function createDeferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: Error) => void;
+  const promise = new Promise<T>((done, fail) => { resolve = done; reject = fail; });
+  return { promise, resolve, reject };
+}
+
+function createFixtureSession(engineId = 'fixture') {
+  return {
+    alive: true,
+    engineId,
+    close: vi.fn(),
+    send: vi.fn(async function* () { yield { type: 'done', content: 'end_turn' }; }),
+  } as any;
+}
+
+function createFixtureContext(session: unknown) {
+  const ctx: any = {
+    config: { cesarEngine: 'fixture', cesarToolTimeline: false },
+    chatSession: startChatSession(),
+    cesarSession: session,
+    adapter: { dispatch: vi.fn().mockResolvedValue({ stdout: 'fixture fallback answer', stderr: '' }) },
+    registry: { get: vi.fn(() => ({ id: 'fixture' })) },
+    activeEngines: () => ['fixture'],
+    setActiveAbort: vi.fn(),
+  };
+  ctx.setCesarSession = vi.fn((value: unknown) => { ctx.cesarSession = value; });
+  return ctx;
+}
+
+function expectRefusedTurn(ctx: any, dispatch: ReturnType<typeof vi.fn>, outcome: any) {
+  expect(outcome).toMatchObject({ terminalState: 'failed', decisionReason: 'session-cleanup-failed', delegated: false, responded: false });
+  expect(ctx.adapter.dispatch).not.toHaveBeenCalled();
+  expect(dispatch.mock.calls.filter(([event]) => event?.type === 'warning' && String(event.message).includes('Session cleanup previously failed'))).toHaveLength(1);
+  expect(dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'spinner-update' }));
+  expect(dispatch).toHaveBeenLastCalledWith({ type: 'spinner-stop' });
+  expect(ctx.cesar.busy).toBe(false);
+  expect(ctx.cesar.abortSignal).toBeNull();
+  expect(ctx.setActiveAbort).toHaveBeenLastCalledWith(null);
+  expect(ctx.chatSession.messages).toEqual([]);
+}
+
+afterEach(() => vi.restoreAllMocks());
+beforeEach(() => {
+  budget.mockReset().mockResolvedValue({ proceed: true, compacted: false });
+  ensure.mockReset().mockRejectedValue(new Error('fixture acquisition must not run'));
+  backend.mockReset().mockReturnValue({ backend: 'cli', engine: { id: 'fixture' } });
+});
+
+describe('modular brain entry scope', () => {
+  it.each([false, true])('binds direct brain entry and rejects a queued successor after host replacement=%s', async replace => {
+    const root = mkdtempSync(join(tmpdir(), 'agon-brain-scope-'));
+    const session = createFixtureSession();
+    const ctx = createFixtureContext(session);
+    const dispatch = vi.fn();
+    const seen: Array<boolean | undefined> = [];
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await initializeProcessSurfaceAuthority(root);
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      ensure.mockResolvedValue(session);
+      session.send.mockImplementation(async function* () {
+        await Promise.resolve();
+        seen.push(currentInvocationOwnerAvailable('agon.ratings'));
+        if (seen.length === 1) ctx.cesar.queue = { input: 'queued successor', dispatch, images: [] };
+        yield { type: 'text', content: 'Fixture answer complete.' };
+        yield { type: 'done', content: 'end_turn' };
+      });
+      await handleCesarBrain('first turn', dispatch, ctx, []);
+      expect(seen).toEqual([true]);
+      expect(ctx.setActiveAbort).toHaveBeenLastCalledWith(null);
+      expect(currentInvocationOwnerAvailable('agon.ratings')).toBeUndefined();
+      if (replace) {
+        await disposeProcessSurfaceAuthority();
+        await initializeProcessSurfaceAuthority(root);
+        ctx.cesar.busy = true;
+      }
+      await vi.advanceTimersByTimeAsync(100);
+      if (!replace) expect(error).not.toHaveBeenCalled();
+      await vi.waitFor(() => expect(seen).toEqual(replace ? [true] : [true, true]));
+      if (replace) {
+        expect(error).toHaveBeenCalledWith(expect.stringContaining('disposed or replaced'));
+        expect(ctx.cesar.busy).toBe(true);
+      }
+    } finally {
+      vi.useRealTimers();
+      await disposeProcessSurfaceAuthority();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('owning workflow admission', () => {
+  it.each(['cancelled', 'disabled'])('rejects a %s parent before acquiring a session', async reason => {
+    const ctx = createFixtureContext(createFixtureSession());
+    const dispatch = vi.fn();
+    const parent = new AbortController();
+    if (reason === 'cancelled') parent.abort(new Error('Parent cancelled'));
+    const assertOwnerAvailable = () => {
+      if (reason === 'disabled') throw new Error('Owner disabled');
+    };
+    await expect(handleCesarBrain('prompt', dispatch, ctx, [], parent.signal, assertOwnerAvailable))
+      .rejects.toThrow(reason === 'cancelled' ? 'Parent cancelled' : 'Owner disabled');
+    expect(ensure).not.toHaveBeenCalled();
+    expect(ctx.adapter.dispatch).not.toHaveBeenCalled();
+    expect(ctx.chatSession.messages).toEqual([]);
+    expect(ctx.setActiveAbort).not.toHaveBeenCalled();
+  });
+
+  it.each(['budget', 'acquisition'].flatMap(boundary => ['resolved', 'rejected'].flatMap(result =>
+    ['disabled', 'cancelled'].map(reason => ({ boundary, result, reason })),
+  )))('refuses $reason ownership after $boundary is $result', async ({ boundary, result, reason }) => {
+    const original = createFixtureSession();
+    const ctx = createFixtureContext(original);
+    const dispatch = vi.fn();
+    const parent = new AbortController();
+    let disabled = false;
+    const pendingBoundary = createDeferred<any>();
+    if (boundary === 'budget') budget.mockReturnValue(pendingBoundary.promise);
+    else ensure.mockReturnValue(pendingBoundary.promise);
+    const pending = handleCesarBrain('prompt', dispatch, ctx, [], parent.signal, () => {
+      if (disabled) throw new Error('Owner disabled');
+    });
+    const rejected = expect(pending).rejects.toThrow(reason === 'disabled' ? 'Owner disabled' : 'Parent cancelled');
+    await vi.waitFor(() => expect(boundary === 'budget' ? budget : ensure).toHaveBeenCalledOnce());
+    if (reason === 'disabled') disabled = true;
+    else parent.abort(new Error('Parent cancelled'));
+    if (result === 'rejected') pendingBoundary.reject(new Error('fixture boundary failed'));
+    else pendingBoundary.resolve(boundary === 'budget' ? { proceed: true, compacted: false } : original);
+    await rejected;
+    expect(original.send).not.toHaveBeenCalled();
+    expect(ctx.adapter.dispatch).not.toHaveBeenCalled();
+    expect(ctx.chatSession.messages).toEqual([]);
+    expect(ctx.cesar.busy).toBe(false);
+    expect(ctx.setActiveAbort).not.toHaveBeenCalled();
+    if (boundary === 'budget') expect(ensure).not.toHaveBeenCalled();
+  });
+
+  it.each(['disabled', 'cancelled'])('rejects a fallback result after its owner is %s but retains usage', async reason => {
+    const ctx = createFixtureContext(createFixtureSession());
+    const dispatch = vi.fn();
+    const parent = new AbortController();
+    let disabled = false;
+    const result = createDeferred<any>();
+    const record = vi.spyOn(tracker, 'record').mockImplementation(() => {});
+    ctx.adapter.dispatch.mockReturnValue(result.promise);
+    const pending = handleCesarBrain('prompt', dispatch, ctx, [], parent.signal, () => {
+      if (disabled) throw new Error('Owner disabled');
+    });
+    const rejected = expect(pending).rejects.toThrow(reason === 'disabled' ? 'Owner disabled' : 'Parent cancelled');
+    await vi.waitFor(() => expect(ctx.adapter.dispatch).toHaveBeenCalledOnce());
+    if (reason === 'disabled') disabled = true;
+    else parent.abort(new Error('Parent cancelled'));
+    const usage = { inputTokens: 7, outputTokens: 6, totalTokens: 13 };
+    result.resolve({ stdout: 'late answer', stderr: '', usage });
+    await rejected;
+    expect(record).toHaveBeenCalledExactlyOnceWith('fixture', { usage });
+    expect(dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'engine-block' }));
+    expect(ctx.chatSession.messages.map((message: any) => message.role)).toEqual(['user']);
+    expect(ctx.cesar.busy).toBe(false);
+    expect(ctx.setActiveAbort).not.toHaveBeenCalled();
+  });
+
+  it.each(['text', 'end'].flatMap(result => ['disabled', 'cancelled'].map(reason => ({ result, reason }))))(
+    'refuses a late stream $result after ownership is $reason', async ({ result, reason }) => {
+      const session = createFixtureSession();
+      const ctx = createFixtureContext(session);
+      const dispatch = vi.fn();
+      const parent = new AbortController();
+      const resume = createDeferred<void>();
+      let disabled = false;
+      session.send.mockImplementation(async function* () {
+        await resume.promise;
+        if (result === 'text') yield { type: 'text', content: 'LATE_OWNER_RESULT' };
+      });
+      ensure.mockResolvedValue(session);
+      const pending = handleCesarBrain('prompt', dispatch, ctx, [], parent.signal, () => {
+        if (disabled) throw new Error('Owner disabled');
+      });
+      await vi.waitFor(() => expect(session.send).toHaveBeenCalledOnce());
+      if (reason === 'disabled') disabled = true;
+      else parent.abort(new Error('Parent cancelled'));
+      resume.resolve();
+      expect(await pending).toMatchObject({ terminalState: 'cancelled', decisionReason: 'aborted', responded: false });
+      expect(session.send).toHaveBeenCalledOnce();
+      expect(JSON.stringify(dispatch.mock.calls)).not.toContain('LATE_OWNER_RESULT');
+      expect(ctx.chatSession.messages.some((message: any) => message.role === 'engine')).toBe(false);
+      expect(ctx.cesar.busy).toBe(false);
+      expect(ctx.setActiveAbort).not.toHaveBeenCalled();
+    },
+  );
+});
+
+describe('tool approval owner boundary', () => {
+  it.each(['eager', 'xml'].flatMap(route => ['healthy', 'disabled', 'cancelled', 'superseded', 'terminal'].map(reason => ({ route, reason }))))(
+    'checks $route authority after delayed approval ($reason)', async ({ route, reason }) => {
+      const session = createFixtureSession();
+      const ctx = createFixtureContext(session);
+      const parent = new AbortController();
+      let disabled = false;
+      const execute = vi.fn(async () => ({ ok: true, content: 'fixture result' }));
+      const registry = new ToolRegistry();
+      registry.register({
+        definition: { name: 'FixtureProbe', description: 'In-memory fixture only', inputSchema: {}, maxResultSizeChars: 1000, isReadOnly: true, isConcurrencySafe: false },
+        validate: () => null,
+        checkPermission: () => ({ behavior: 'ask', message: 'Approve fixture probe' }),
+        execute,
+      });
+      session.send.mockImplementationOnce(async function* () {
+        if (route === 'eager') yield { type: 'tool_call', content: 'FixtureProbe', metadata: { input: {}, status: 'running', toolCallId: 'owner-probe' } };
+        else yield { type: 'text', content: '<tool name="FixtureProbe">{}</tool>' };
+      }).mockImplementation(async function* () {
+        yield { type: 'text', content: 'Fixture probe complete.' };
+      });
+      ensure.mockImplementation(async () => { ctx.cesar.toolRegistry = registry; return session; });
+      const dispatch = vi.fn();
+      const pending = handleCesarBrain('read fixture', dispatch, ctx, [], parent.signal, () => {
+        if (disabled) throw new Error('Owner disabled');
+      });
+      const settled = pending.then(value => ({ value }), error => ({ error }));
+      await vi.waitFor(() => expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'permission-ask' })));
+      if (reason === 'disabled') disabled = true;
+      if (reason === 'cancelled') parent.abort(new Error('Parent cancelled'));
+      if (reason === 'superseded') beginCesarTurn(ctx.cesarRuntimeHost, 'replacement', 'cesar-brain');
+      if (reason === 'terminal') transitionCesarTurn(ctx.cesarRuntimeHost, ctx.cesarRuntimeHost.active.envelope, 'completed');
+      dispatch.mock.calls.find(([event]) => event.type === 'permission-ask')![0].resolve(true);
+      await settled;
+      expect(execute).toHaveBeenCalledTimes(reason === 'healthy' ? 1 : 0);
+      if (reason !== 'healthy') expect(session.send).toHaveBeenCalledOnce();
+      expect(ctx.cesar.busy).toBe(false);
+      expect(ctx.setActiveAbort).not.toHaveBeenCalled();
+    },
+  );
+});
+
+describe('MCP approval owner boundary', () => {
+  it.each(['healthy', 'disabled', 'cancelled', 'superseded', 'terminal'])('checks authority before writing a delayed MCP reply (%s)', async reason => {
+    const directory = mkdtempSync(join(tmpdir(), 'agon-mcp-owner-'));
+    const requestPath = join(directory, 'fixture-perm-owner.json');
+    const responsePath = join(directory, 'fixture-perm-owner-response.json');
+    const session = createFixtureSession();
+    const ctx = createFixtureContext(session);
+    const parent = new AbortController();
+    const resume = createDeferred<void>();
+    let disabled = false;
+    session.send.mockImplementation(async function* () {
+      await resume.promise;
+      yield { type: 'done', content: 'end_turn' };
+    });
+    ensure.mockImplementation(async () => {
+      ctx.cesar.mcpSignalPath = join(directory, 'fixture.json');
+      writeFileSync(requestPath, JSON.stringify({ type: 'permission-request', id: 'owner', tool: 'FixtureProbe', args: {}, timestamp: Date.now() }));
+      return session;
+    });
+    const dispatch = vi.fn();
+    const pending = handleCesarBrain('read fixture', dispatch, ctx, [], parent.signal, () => {
+      if (disabled) throw new Error('Owner disabled');
+    });
+    const settled = pending.then(value => ({ value }), error => ({ error }));
+    try {
+      await vi.waitFor(() => expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'permission-ask' })));
+      if (reason === 'disabled') disabled = true;
+      if (reason === 'cancelled') parent.abort(new Error('Parent cancelled'));
+      if (reason === 'superseded') beginCesarTurn(ctx.cesarRuntimeHost, 'replacement', 'cesar-brain');
+      if (reason === 'terminal') transitionCesarTurn(ctx.cesarRuntimeHost, ctx.cesarRuntimeHost.active.envelope, 'completed');
+      dispatch.mock.calls.find(([event]) => event.type === 'permission-ask')![0].resolve(true);
+      const response = JSON.parse(readFileSync(responsePath, 'utf8'));
+      expect(response).toMatchObject({ type: 'permission-response', id: 'owner', approved: reason === 'healthy' });
+      if (reason !== 'healthy') expect(response.reason).toContain('DENIED');
+    } finally {
+      parent.abort();
+      resume.resolve();
+      await settled;
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('budget-gate boundary', () => {
+  it.each(['resolved', 'rejected'])('refuses when the attached session fails during the gate (%s)', async outcome => {
+    const original = createFixtureSession();
+    const ctx = createFixtureContext(original);
+    const gate = createDeferred<{ proceed: boolean; compacted: boolean }>();
+    budget.mockReturnValue(gate.promise);
+    ensure.mockImplementation(async () => { throw new Error('Session cleanup previously failed. Restart Agon before retrying; the previous provider session may not have stopped.'); });
+    const dispatch = vi.fn();
+    const pending = handleCesarBrain('prompt', dispatch, ctx);
+    await vi.waitFor(() => expect(budget).toHaveBeenCalledOnce());
+    markSessionCleanupFailed(original);
+    if (outcome === 'rejected') gate.reject(new Error('fixture gate failure'));
+    else gate.resolve({ proceed: true, compacted: false });
+    expectRefusedTurn(ctx, dispatch, await pending);
+    expect(original.send).not.toHaveBeenCalled();
+  });
+
+  it.each(['detached', 'replaced'])('refuses when the entry session fails after being %s', async change => {
+    const original = createFixtureSession();
+    const replacement = createFixtureSession();
+    const ctx = createFixtureContext(original);
+    const gate = createDeferred<{ proceed: boolean; compacted: boolean }>();
+    budget.mockReturnValue(gate.promise);
+    ensure.mockImplementation(async () => replacement);
+    const dispatch = vi.fn();
+    const pending = handleCesarBrain('prompt', dispatch, ctx);
+    await vi.waitFor(() => expect(budget).toHaveBeenCalledOnce());
+    ctx.cesarSession = change === 'replaced' ? replacement : null;
+    markSessionCleanupFailed(original);
+    gate.resolve({ proceed: true, compacted: false });
+    expectRefusedTurn(ctx, dispatch, await pending);
+    expect(ensure).not.toHaveBeenCalled();
+    expect(replacement.send).not.toHaveBeenCalled();
+  });
+});
+
+describe('session-acquisition boundary', () => {
+  it.each([
+    ['original', 'resolved'], ['original', 'rejected'],
+    ['current', 'resolved'], ['current', 'rejected'],
+  ])('refuses when the %s session fails while acquisition is pending (%s)', async (target, outcome) => {
+    const original = createFixtureSession();
+    const replacement = createFixtureSession();
+    const ctx = createFixtureContext(original);
+    const acquisition = createDeferred<unknown>();
+    ensure.mockReturnValue(acquisition.promise);
+    const dispatch = vi.fn();
+    const pending = handleCesarBrain('prompt', dispatch, ctx);
+    await vi.waitFor(() => expect(ensure).toHaveBeenCalledOnce());
+    ctx.cesarSession = replacement;
+    markSessionCleanupFailed(target === 'original' ? original : replacement);
+    if (outcome === 'rejected') acquisition.reject(new Error('fixture acquisition failure'));
+    else acquisition.resolve(replacement);
+    expectRefusedTurn(ctx, dispatch, await pending);
+    expect(original.send).not.toHaveBeenCalled();
+    expect(replacement.send).not.toHaveBeenCalled();
+  });
+
+  it('refuses when acquisition fails to close a mismatched session', async () => {
+    const real = await vi.importActual<typeof import('../../packages/cli/src/cesar/session.js')>('../../packages/cli/src/cesar/session.js');
+    ensure.mockImplementation(real.ensureCesarSession);
+    const original = createFixtureSession('previous-engine');
+    original.close.mockImplementation(() => { throw new Error('fixture close failure'); });
+    const ctx = createFixtureContext(original);
+    const dispatch = vi.fn();
+    expectRefusedTurn(ctx, dispatch, await handleCesarBrain('prompt', dispatch, ctx));
+    expect(sessionCleanupFailed(original)).toBe(true);
+    expect(ctx.cesarSession).toBe(original);
+  });
+});
+
+describe('healthy fallback controls', () => {
+  it.each(['cli', 'api'])('still dispatches the %s fallback after an ordinary acquisition failure', async kind => {
+    backend.mockReturnValue({ backend: kind, engine: { id: 'fixture' } });
+    ensure.mockRejectedValue(new Error('fixture backend unavailable'));
+    const ctx = createFixtureContext(createFixtureSession());
+    const dispatch = vi.fn();
+    const outcome = await handleCesarBrain('prompt', dispatch, ctx);
+    expect(outcome).toMatchObject({ terminalState: 'completed', responded: true, delegated: false });
+    expect(ctx.adapter.dispatch).toHaveBeenCalledOnce();
+    expect(dispatch).not.toHaveBeenCalledWith(CLEANUP_WARNING);
+    const sessionError = expect.objectContaining({ type: 'spinner-update', message: expect.stringContaining('Cesar session error') });
+    if (kind === 'cli') expect(dispatch).toHaveBeenCalledWith(sessionError);
+    else expect(dispatch).not.toHaveBeenCalledWith(sessionError);
+    expect(ctx.chatSession.messages.map((message: any) => message.role)).toEqual(['user', 'engine']);
+    expect(ctx.cesar.busy).toBe(false);
+    expect(ctx.setActiveAbort).toHaveBeenLastCalledWith(null);
+  });
+
+  it('acquires a replacement after a healthy detachment during the gate', async () => {
+    const original = createFixtureSession();
+    const replacement = createFixtureSession();
+    const ctx = createFixtureContext(original);
+    const gate = createDeferred<{ proceed: boolean; compacted: boolean }>();
+    budget.mockReturnValue(gate.promise);
+    ensure.mockImplementation(async () => { ctx.cesarSession = replacement; return replacement; });
+    const dispatch = vi.fn();
+    const pending = handleCesarBrain('prompt', dispatch, ctx);
+    await vi.waitFor(() => expect(budget).toHaveBeenCalledOnce());
+    ctx.cesarSession = null;
+    gate.resolve({ proceed: true, compacted: true });
+    await pending;
+    expect(ensure).toHaveBeenCalledOnce();
+    expect(replacement.send).toHaveBeenCalled();
+    expect(dispatch).not.toHaveBeenCalledWith(CLEANUP_WARNING);
+    expect(ctx.cesar.busy).toBe(false);
+  });
+});
+
+describe('in-flight adapter fallback', () => {
+  it.each([
+    ['original', 'response'], ['original', 'empty'], ['original', 'rejection'],
+    ['current', 'response'], ['current', 'empty'], ['current', 'rejection'],
+    ['healthy', 'response'], ['healthy', 'empty'], ['healthy', 'rejection'],
+  ])('checks %s cleanup state after %s', async (target, result) => {
+    const original = createFixtureSession();
+    const replacement = createFixtureSession();
+    const ctx = createFixtureContext(original);
+    const fallback = createDeferred<{ stdout: string; stderr: string }>();
+    ctx.adapter.dispatch.mockReturnValue(fallback.promise);
+    const dispatch = vi.fn();
+    const pending = handleCesarBrain('prompt', dispatch, ctx);
+    await vi.waitFor(() => expect(ctx.adapter.dispatch).toHaveBeenCalledOnce());
+    ctx.cesarSession = replacement;
+    if (target !== 'healthy') markSessionCleanupFailed(target === 'original' ? original : replacement);
+    if (result === 'rejection') fallback.reject(new Error('fixture fallback rejected'));
+    else fallback.resolve({ stdout: result === 'response' ? 'late fixture answer' : '', stderr: '' });
+    const outcome = await pending;
+    if (target === 'healthy') {
+      expect(outcome.responded).toBe(result === 'response');
+      expect(dispatch).not.toHaveBeenCalledWith(CLEANUP_WARNING);
+      expect(ctx.chatSession.messages.map((message: any) => message.role))
+        .toEqual(result === 'response' ? ['user', 'engine'] : ['user']);
+    } else {
+      expect(outcome).toMatchObject({ terminalState: 'failed', decisionReason: 'session-cleanup-failed', responded: false, delegated: false });
+      expect(ctx.chatSession.messages.map((message: any) => message.role)).toEqual(['user']);
+      expect(dispatch).toHaveBeenCalledWith(CLEANUP_WARNING);
+      expect(dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'engine-block' }));
+      expect(dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'error' }));
+    }
+    expect(ctx.adapter.dispatch).toHaveBeenCalledOnce();
+    expect(dispatch).toHaveBeenLastCalledWith({ type: 'spinner-stop' });
+    expect(ctx.cesar.busy).toBe(false);
+    expect(ctx.cesar.abortSignal).toBeNull();
+    expect(ctx.setActiveAbort).toHaveBeenLastCalledWith(null);
+  });
+});
+
+describe('initial persistent stream cleanup boundary', () => {
+  it.each(['preview', 'text'].flatMap(prefix =>
+    ['text', 'empty', 'rejection'].map(result => [prefix, result]),
+  ))('finishes an existing %s pane after cleanup failure (%s)', async (prefix, result) => {
+    const session = createFixtureSession();
+    const ctx = createFixtureContext(session);
+    const ready = createDeferred<void>();
+    session.send.mockImplementation(async function* () {
+      yield { type: prefix, content: 'This fixture text was visible before cleanup failed.\n' };
+      await ready.promise;
+      if (result === 'text') yield { type: 'text', content: 'Must not appear.' };
+    });
+    ensure.mockImplementation(async () => { ctx.cesar.hasNativeTools = true; return session; });
+    const dispatch = vi.fn();
+    const pending = handleCesarBrain('hello', dispatch, ctx);
+    await vi.waitFor(() => expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({
+      type: prefix === 'preview' ? 'streaming-preview' : 'streaming-chunk',
+    })));
+    markSessionCleanupFailed(session);
+    if (result === 'rejection') ready.reject(new Error('fixture stream rejected'));
+    else ready.resolve();
+    expect(await pending).toMatchObject({ decisionReason: 'session-cleanup-failed', responded: false });
+    expect(dispatch).toHaveBeenCalledWith({ type: 'streaming-end', engineId: 'fixture' });
+    expect(dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ chunk: 'Must not appear.' }));
+    expect(ctx.chatSession.messages.filter((message: any) => message.role === 'engine')).toEqual([]);
+    expect(session.send).toHaveBeenCalledOnce();
+  });
+
+  it.each(['original', 'current', 'acquired', 'healthy'].flatMap(target =>
+    ['text', 'empty', 'rejection'].map(result => [target, result]),
+  ))('checks %s cleanup after pending stream %s', async (target, result) => {
+    const original = createFixtureSession();
+    const acquired = createFixtureSession();
+    const replacement = createFixtureSession();
+    const ctx = createFixtureContext(original);
+    const ready = createDeferred<void>();
+    const closed = vi.fn();
+    acquired.send.mockImplementation(async function* () {
+      try {
+        await ready.promise;
+        if (result === 'text') yield { type: 'text', content: 'A fixture answer.' };
+      } finally { closed(); }
+    });
+    ensure.mockResolvedValue(acquired);
+    const dispatch = vi.fn();
+    const pending = handleCesarBrain('hello', dispatch, ctx);
+    await vi.waitFor(() => expect(acquired.send).toHaveBeenCalledOnce());
+    ctx.cesarSession = replacement;
+    if (target !== 'healthy') {
+      const failedSession = target === 'original' ? original : target === 'current' ? replacement : acquired;
+      markSessionCleanupFailed(failedSession);
+    }
+    if (result === 'rejection') ready.reject(new Error('fixture stream rejected'));
+    else ready.resolve();
+    const outcome = await pending;
+    if (target === 'healthy') {
+      expect(dispatch).not.toHaveBeenCalledWith(CLEANUP_WARNING);
+      expect(outcome.responded).toBe(result === 'text');
+    } else {
+      expect(outcome).toMatchObject({ terminalState: 'failed', decisionReason: 'session-cleanup-failed', responded: false, delegated: false });
+      expect(dispatch).toHaveBeenCalledWith(CLEANUP_WARNING);
+      expect(dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'streaming-chunk' }));
+      expect(ctx.chatSession.messages.filter((message: any) => message.role === 'engine')).toEqual([]);
+    }
+    expect(closed).toHaveBeenCalledOnce();
+    expect(acquired.send).toHaveBeenCalledOnce();
+    expect(ctx.adapter.dispatch).not.toHaveBeenCalled();
+    expect(ctx.cesar.busy).toBe(false);
+    expect(ctx.setActiveAbort).toHaveBeenLastCalledWith(null);
+  });
+});
+
+describe('interactive continuation cleanup boundary', () => {
+  it.each(['original', 'current', 'acquired', 'healthy'].flatMap(target =>
+    ['resolved', 'rejected'].map(result => [target, result]),
+  ))('checks %s cleanup after a pending follow-up tool (%s)', async (target, result) => {
+    const original = createFixtureSession();
+    const acquired = createFixtureSession();
+    const replacement = createFixtureSession();
+    const ctx = createFixtureContext(original);
+    const ready = createDeferred<{ ok: boolean; content: string }>();
+    const execute = vi.fn(() => ready.promise);
+    const registry = new ToolRegistry();
+    registry.register({
+      definition: { name: 'FixtureProbe', description: 'In-memory fixture only', inputSchema: {}, maxResultSizeChars: 1000, isReadOnly: true, isConcurrencySafe: false },
+      validate: () => null,
+      checkPermission: () => ({ behavior: 'allow' }),
+      execute,
+    });
+    acquired.send.mockImplementationOnce(async function* () {
+      yield { type: 'text', content: 'Review scope ready. Shall I proceed?' };
+    }).mockImplementationOnce(async function* () {
+      yield { type: 'text', content: '<tool name="FixtureProbe">{}</tool>' };
+    }).mockImplementation(async function* () {
+      yield { type: 'text', content: 'Fixture tool result received.' };
+    });
+    ensure.mockImplementation(async () => { ctx.cesar.toolRegistry = registry; return acquired; });
+    const dispatch = vi.fn();
+    const pending = handleCesarBrain('review this implementation', dispatch, ctx);
+    const settled = pending.then(value => ({ value }), error => ({ error }));
+    await vi.waitFor(() => expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'question' })));
+    dispatch.mock.calls.find(([event]) => event.type === 'question')![0].resolve('y');
+    await vi.waitFor(() => expect(execute).toHaveBeenCalledOnce());
+    const savedMessages = [...ctx.chatSession.messages];
+    ctx.cesarSession = replacement;
+    if (target !== 'healthy') markSessionCleanupFailed(target === 'original' ? original : target === 'current' ? replacement : acquired);
+    if (result === 'rejected') ready.reject(new Error('fixture tool rejected'));
+    else ready.resolve({ ok: true, content: 'fixture result' });
+    const outcome = await settled;
+    if (target === 'healthy') {
+      expect(acquired.send).toHaveBeenCalledTimes(3);
+      expect(outcome).toMatchObject({ value: { responded: true } });
+      expect(dispatch).not.toHaveBeenCalledWith(CLEANUP_WARNING);
+    } else {
+      expect(acquired.send).toHaveBeenCalledTimes(2);
+      expect(outcome).toMatchObject({ value: { terminalState: 'failed', decisionReason: 'session-cleanup-failed' } });
+      expect(dispatch).toHaveBeenCalledWith(CLEANUP_WARNING);
+      expect(ctx.chatSession.messages).toEqual(savedMessages);
+    }
+    expect(execute).toHaveBeenCalledOnce();
+    expect(ctx.cesar.busy).toBe(false);
+    expect(ctx.setActiveAbort).toHaveBeenLastCalledWith(null);
+  });
+
+  const questions = {
+    ask: 'Pick a review scope. [ASK]{"question":"Which scope?","options":[{"label":"Local"},{"label":"Full"}]}[/ASK]',
+    fork: 'A) Local review\nB) Full review\nWhich scope?',
+    confirm: 'The review scope is ready. Shall I proceed?',
+  };
+  it.each((['ask', 'fork', 'confirm'] as const).flatMap(kind =>
+    ['original', 'current', 'acquired', 'healthy'].flatMap(target =>
+      ['text', 'empty', 'rejection'].map(result => [kind, target, result] as const),
+    ),
+  ))('checks %s running follow-up for %s cleanup (%s)', async (kind, target, result) => {
+    const original = createFixtureSession();
+    const acquired = createFixtureSession();
+    const replacement = createFixtureSession();
+    const ctx = createFixtureContext(original);
+    const ready = createDeferred<void>();
+    const closed = vi.fn();
+    acquired.send.mockImplementationOnce(async function* () {
+      yield { type: 'text', content: questions[kind] };
+    }).mockImplementation(async function* () {
+      try {
+        await ready.promise;
+        if (result === 'text') yield { type: 'text', content: 'Late follow-up answer.' };
+      } finally { closed(); }
+    });
+    ensure.mockResolvedValue(acquired);
+    const dispatch = vi.fn();
+    const pending = handleCesarBrain('review this implementation', dispatch, ctx);
+    // Observe errors immediately; a rejected provider must not create an
+    // unhandled-rejection race while the fixture waits for its send boundary.
+    const settled = pending.then(value => ({ value }), error => ({ error }));
+    await vi.waitFor(() => expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'question' })));
+    dispatch.mock.calls.find(([event]) => event.type === 'question')![0].resolve(kind === 'ask' ? '1' : kind === 'fork' ? 'a' : 'y');
+    await vi.waitFor(() => expect(acquired.send).toHaveBeenCalledTimes(2));
+    const savedMessages = [...ctx.chatSession.messages];
+    const eventCount = dispatch.mock.calls.length;
+    ctx.cesarSession = replacement;
+    if (target !== 'healthy') markSessionCleanupFailed(target === 'original' ? original : target === 'current' ? replacement : acquired);
+    if (result === 'rejection') ready.reject(new Error('fixture follow-up rejected'));
+    else ready.resolve();
+    const outcome = await settled;
+    if (target === 'healthy') {
+      expect(dispatch).not.toHaveBeenCalledWith(CLEANUP_WARNING);
+      if (result === 'rejection') expect(outcome).toMatchObject({ error: expect.objectContaining({ message: 'fixture follow-up rejected' }) });
+      else if (result === 'text') {
+        expect(outcome).toMatchObject({ value: { responded: true } });
+        expect(ctx.chatSession.messages.at(-1)).toMatchObject({ role: 'engine', content: 'Late follow-up answer.' });
+        const visible = dispatch.mock.calls.slice(eventCount)
+          .filter(([event]) => event.type === 'streaming-chunk')
+          .map(([event]) => event.chunk).join('');
+        expect(visible).toBe('Late follow-up answer.');
+      } else expect(outcome).toMatchObject({ value: { decisionReason: 'interactive-follow-up-incomplete' } });
+    } else {
+      expect(outcome).toMatchObject({ value: { terminalState: 'failed', decisionReason: 'session-cleanup-failed', delegated: false } });
+      expect(dispatch).toHaveBeenCalledWith(CLEANUP_WARNING);
+      expect(ctx.chatSession.messages).toEqual(savedMessages);
+      expect(dispatch.mock.calls.slice(eventCount).map(([event]) => event.type)).not.toContain('streaming-chunk');
+    }
+    expect(closed).toHaveBeenCalledOnce();
+    expect(acquired.send).toHaveBeenCalledTimes(2);
+    expect(ctx.adapter.dispatch).not.toHaveBeenCalled();
+    expect(ctx.cesar.busy).toBe(false);
+    expect(ctx.cesar.abortSignal).toBeNull();
+    expect(ctx.setActiveAbort).toHaveBeenLastCalledWith(null);
+  });
+  it.each((['ask', 'fork', 'confirm'] as const).flatMap(kind =>
+    ['original', 'current', 'acquired', 'healthy'].map(target => [kind, target] as const),
+  ))('checks cleanup after %s approval (%s)', async (kind, target) => {
+    const original = createFixtureSession();
+    const acquired = createFixtureSession();
+    const replacement = createFixtureSession();
+    const ctx = createFixtureContext(original);
+    acquired.send.mockImplementationOnce(async function* () {
+      yield { type: 'text', content: questions[kind] };
+      yield { type: 'done', content: 'end_turn' };
+    }).mockImplementation(async function* () {
+      yield { type: 'text', content: 'Fixture follow-up completed.' };
+      yield { type: 'done', content: 'end_turn' };
+    });
+    ensure.mockResolvedValue(acquired);
+    const dispatch = vi.fn();
+    const pending = handleCesarBrain('review this implementation', dispatch, ctx);
+    await vi.waitFor(() => expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'question' })));
+    const question = dispatch.mock.calls.find(([event]) => event.type === 'question')![0];
+    const savedMessages = [...ctx.chatSession.messages];
+    ctx.cesarSession = replacement;
+    if (target !== 'healthy') {
+      markSessionCleanupFailed(target === 'original' ? original : target === 'current' ? replacement : acquired);
+    }
+    question.resolve(kind === 'ask' ? '1' : kind === 'fork' ? 'a' : 'y');
+    const outcome = await pending;
+    if (target === 'healthy') {
+      expect(acquired.send).toHaveBeenCalledTimes(2);
+      expect(outcome.responded).toBe(true);
+      expect(dispatch).not.toHaveBeenCalledWith(CLEANUP_WARNING);
+    } else {
+      expect(acquired.send).toHaveBeenCalledOnce();
+      expect(outcome).toMatchObject({ terminalState: 'failed', decisionReason: 'session-cleanup-failed', delegated: false });
+      expect(dispatch).toHaveBeenCalledWith(CLEANUP_WARNING);
+      expect(ctx.chatSession.messages).toEqual(savedMessages);
+    }
+    expect(ctx.adapter.dispatch).not.toHaveBeenCalled();
+    expect(ctx.cesar.busy).toBe(false);
+    expect(ctx.setActiveAbort).toHaveBeenLastCalledWith(null);
+  });
+});
+
+describe('auto-compaction close', () => {
+  const realBudget = async () => (await vi.importActual<typeof import('../../packages/cli/src/cesar/context-budget.js')>('../../packages/cli/src/cesar/context-budget.js')).enforceContextBudget;
+  const tinyBudgetEngine = { id: 'fixture', sessionBudget: { contextWindow: 64 } };
+
+  it('marks a session whose close fails and keeps it attached', async () => {
+    const session = createFixtureSession();
+    session.close.mockImplementation(() => { throw new Error('fixture close failure'); });
+    const ctx = createFixtureContext(session);
+    const gate = await realBudget();
+    await expect(gate(ctx, session, tinyBudgetEngine, 'cli', vi.fn(), 'prompt')).rejects.toThrow('Session cleanup previously failed');
+    expect(sessionCleanupFailed(session)).toBe(true);
+    expect(ctx.setCesarSession).not.toHaveBeenCalled();
+    expect(ctx.cesarSession).toBe(session);
+  });
+
+  it('still detaches a session whose close succeeds', async () => {
+    const session = createFixtureSession();
+    const ctx = createFixtureContext(session);
+    const gate = await realBudget();
+    await gate(ctx, session, tinyBudgetEngine, 'cli', vi.fn(), 'prompt');
+    expect(session.close).toHaveBeenCalledOnce();
+    expect(ctx.setCesarSession).toHaveBeenCalledWith(null);
+    expect(sessionCleanupFailed(session)).toBe(false);
+  });
+});
+
+describe('tool-loop continuation stream cleanup boundary', () => {
+  it('does not execute tools from a continuation that streamed after cleanup failed', async () => {
+    const acquired = createFixtureSession();
+    const ctx = createFixtureContext(createFixtureSession());
+    const execute = vi.fn(async () => ({ ok: true, content: 'fixture result' }));
+    const registry = new ToolRegistry();
+    registry.register({
+      definition: { name: 'FixtureProbe', description: 'In-memory fixture only', inputSchema: {}, maxResultSizeChars: 1000, isReadOnly: true, isConcurrencySafe: false },
+      validate: () => null,
+      checkPermission: () => ({ behavior: 'allow' }),
+      execute,
+    } as any);
+    acquired.send.mockImplementationOnce(async function* () {
+      yield { type: 'text', content: 'Review scope ready. Shall I proceed?' };
+    }).mockImplementationOnce(async function* () {
+      yield { type: 'text', content: '<tool name="FixtureProbe">{}</tool>' };
+    }).mockImplementationOnce(async function* () {
+      markSessionCleanupFailed(acquired);
+      yield { type: 'text', content: 'Late output. <tool name="FixtureProbe">{"again":true}</tool>' };
+    }).mockImplementation(async function* () {
+      yield { type: 'text', content: 'Must not be requested.' };
+    });
+    ensure.mockImplementation(async () => { ctx.cesar.toolRegistry = registry; return acquired; });
+    const dispatch = vi.fn();
+    const pending = handleCesarBrain('review this implementation', dispatch, ctx);
+    const settled = pending.then(value => ({ value }), error => ({ error }));
+    await vi.waitFor(() => expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'question' })));
+    dispatch.mock.calls.find(([event]) => event.type === 'question')![0].resolve('y');
+    const outcome = await settled;
+    expect(outcome).toMatchObject({ value: { decisionReason: 'session-cleanup-failed' } });
+    expect(acquired.send).toHaveBeenCalledTimes(3);
+    const lateText = dispatch.mock.calls.some(([event]) => JSON.stringify(event ?? {}).includes('Late output.'));
+    expect({ toolRuns: execute.mock.calls.length, lateTextRendered: lateText }).toEqual({ toolRuns: 1, lateTextRendered: false });
+  });
+});
+
+describe('direct follow-up chunk cleanup boundary', () => {
+  it('never renders follow-up chunks that arrive after cleanup failed', async () => {
+    const acquired = createFixtureSession();
+    const ctx = createFixtureContext(createFixtureSession());
+    acquired.send.mockImplementationOnce(async function* () {
+      yield { type: 'text', content: 'The review scope is ready. Shall I proceed?' };
+      yield { type: 'done', content: 'end_turn' };
+    }).mockImplementationOnce(async function* () {
+      yield { type: 'text', content: 'Visible follow-up start.\n' };
+      markSessionCleanupFailed(acquired);
+      yield { type: 'text', content: `Must not appear. ${'late filler '.repeat(80)}` };
+      yield { type: 'done', content: 'end_turn' };
+    });
+    ensure.mockResolvedValue(acquired);
+    const dispatch = vi.fn();
+    const pending = handleCesarBrain('review this implementation', dispatch, ctx);
+    await vi.waitFor(() => expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'question' })));
+    dispatch.mock.calls.find(([event]) => event.type === 'question')![0].resolve('y');
+    expect(await pending).toMatchObject({ decisionReason: 'session-cleanup-failed' });
+    expect(dispatch.mock.calls.some(([event]) => JSON.stringify(event ?? {}).includes('Must not appear.'))).toBe(false);
+  });
+});
+
+// A forge judge (or any other caller) can close the brain's session while a
+// turn is mid-stream. The next provider send must refuse, not reuse it.
+describe('mid-turn send boundary', () => {
+  // A task-shaped input: chat-shaped prompts take the answer fast path, which
+  // never auto-continues.
+  const TASK = 'Investigate why the parser in src/app.ts drops trailing tokens and fix it.';
+  function createSteeringSession(onFirstSend: () => void) {
+    const session = createFixtureSession();
+    session.send = vi.fn(async function* () {
+      if (session.send.mock.calls.length === 1) {
+        onFirstSend();
+        pushSteering('fixture steering');
+        yield { type: 'text', content: 'Working on it.' };
+        yield { type: 'done', content: 'steering-yield' };
+        return;
+      }
+      yield { type: 'text', content: 'Continued.' };
+      yield { type: 'done', content: 'end_turn' };
+    });
+    return session;
+  }
+
+  it.each(['acquired', 'entry'])('refuses the continuation send after the %s session fails mid-turn', async target => {
+    const entry = createFixtureSession();
+    let acquired: any;
+    acquired = createSteeringSession(() => markSessionCleanupFailed(target === 'entry' ? entry : acquired));
+    const ctx = createFixtureContext(entry);
+    ensure.mockImplementation(async () => { ctx.cesarSession = acquired; return acquired; });
+    const dispatch = vi.fn();
+    await handleCesarBrain(TASK, dispatch, ctx);
+    expect(acquired.send).toHaveBeenCalledOnce();
+    expect(ctx.adapter.dispatch).not.toHaveBeenCalled();
+    expect(dispatch.mock.calls.filter(([event]) => event?.type === 'warning' && String(event.message).includes('Session cleanup previously failed'))).toHaveLength(1);
+    expect(ctx.cesar.busy).toBe(false);
+    expect(ctx.setActiveAbort).toHaveBeenLastCalledWith(null);
+  });
+
+  it('still delivers the continuation send for a healthy session', async () => {
+    const acquired = createSteeringSession(() => {});
+    const ctx = createFixtureContext(createFixtureSession());
+    ensure.mockImplementation(async () => { ctx.cesarSession = acquired; return acquired; });
+    const dispatch = vi.fn();
+    await handleCesarBrain(TASK, dispatch, ctx);
+    expect(acquired.send.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(dispatch).not.toHaveBeenCalledWith(CLEANUP_WARNING);
+  });
+});

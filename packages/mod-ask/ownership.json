@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "package": "@kernlang/agon-mod-ask",
+  "assignments": [
+    {
+      "category": "cliCommands",
+      "id": "ask",
+      "source": "packages/cli/src/lazy-commands.ts:315",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-ask",
+      "rule": "exact-user-surface"
+    }
+  ]
+}

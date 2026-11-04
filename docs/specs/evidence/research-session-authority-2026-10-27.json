@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "scope": "Research fallback session authority and cancellation, not full Research extraction",
+  "baseCommit": "a4e06dfb8869acd14fe4c90cc16a88abebeb3243",
+  "archiveRoot": "/Users/ra/dev/modular-agon-remediation",
+  "retention": "Do not delete archived evidence without Raphael's approval",
+  "sourceManifest": "research-session-authority-evidence-draft-20261027.json",
+  "evidence": [
+    {
+      "log": "research-session-authority-negative-rebuilt-20261027.log",
+      "sha256": "4817ade80cf27373c5aca5701cf9db3f875b9c5995de339aa2cc5cc3c519e15b",
+      "result": "Before repair: six intended failures and one enabled control passes"
+    },
+    {
+      "log": "research-session-stale-progress-negative-20261027.log",
+      "sha256": "c7bfc062b9f9afca87b8e05231a65d4aa8ba675b356e06f90e26d02c891c40e2",
+      "result": "Review finding reproduced: one intended failure and ten passes"
+    },
+    {
+      "log": "research-session-review-repair-20261027.log",
+      "sha256": "a96a3d26f9deb99a6401f7d3077b3ead1e4c30b2838ffab930c64ea032c12838",
+      "result": "32 focused tests, types, edited lint and re-export guard pass; zero providers"
+    },
+    {
+      "log": "research-session-native-bundled-20261027.log",
+      "sha256": "9c6484d9539955567324295f5af9337f2b5647cd12a3a1c7ac75ac1bde57e07f",
+      "result": "Four bundled-source native checks pass with real authority selector and thread wrapper; zero providers"
+    },
+    {
+      "log": "research-session-authority-full-gates-20261027.log",
+      "receipt": "research-session-authority-full-gates-20261027.receipt.json",
+      "sha256": "f4df5389ff2995981e06c5bb0f26946e8e7a692cdeabd1a7310c3a3ab6f516c0",
+      "result": "11968 tests pass, 7 skipped; 94 npm/npx checks pass; build, types, lint, re-export, generated surfaces, release-set and supply-chain gates pass; zero provider launches"
+    }
+  ],
+  "review": {
+    "packetSha256": "12815a8b6f3c058135cf22763fa72e939101595721bcbb99690f35a10333ed80",
+    "codexLogSha256": "9ee4189769a3ff8292fe5ed5a6d9498753c872c9f291c4eafd3ed8358396e03f",
+    "confirmedFinding": "Stale generation continued emitting progress",
+    "resolution": "Timer checks generation, aborts its local controller and clears progress without throwing from the timer callback",
+    "limits": "Review predates timer repair; locally verified afterward. Kimi returned no answer, not a pass"
+  },
+  "limits": [
+    "Clean committed replay pending; working-tree gates do not qualify a committed subject",
+    "Native authority probe bundles workspace source, not installed tarballs or shipped CLI",
+    "Enabled Cesar continuation and successful live-provider transport termination are not proven by the native probe",
+    "Initial stale-build collection failure and raw dist import failure are retained, not counted as negative controls",
+    "Research still has separate legacy and physical runtimes; full ownership convergence remains open",
+    "Other platforms, Node versions and original modular release acceptance remain open",
+    "Existing dependency advisories remain open; no dependency version changed",
+    "Global Agon and personal state untouched; OpenCode not invoked"
+  ]
+}

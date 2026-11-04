@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolveSidecarPython } from '../../packages/core/src/blocks/dedup-resolver.js';
-import { EXPECTED_SIDECARS, formatPythonSidecarInstallCommand } from '../../packages/cli/src/commands/doctor.js';
+import { diagnoseDedupPython, EXPECTED_SIDECARS, formatPythonSidecarInstallCommand } from '../../packages/cli/src/commands/doctor.js';
 import { cleanupTestAgonHome, setupTestAgonHome } from '../helpers/agon-home.js';
 
 let agonHome: string;
@@ -42,6 +42,18 @@ describe('resolveSidecarPython', () => {
 });
 
 describe('Python sidecar packaging and repair', () => {
+  it('runs the diagnostic subprocess and reports the physical history asset', () => {
+    const python = join(agonHome, 'python-stub');
+    writeFileSync(python, '#!/bin/sh\nexit 0\n');
+    chmodSync(python, 0o755);
+    process.env.AGON_PYTHON = python;
+
+    const result = diagnoseDedupPython();
+
+    expect(result.status).toBe('ok');
+    expect(result.detail).toContain(fileURLToPath(new URL('../../packages/support-persistence/python/history-search.py', import.meta.url)));
+  });
+
   it('checks the RAG embedder and publishes the managed installer', () => {
     expect(EXPECTED_SIDECARS).toContain('embedder.py');
     const packageJson = JSON.parse(readFileSync(new URL('../../packages/dedup/package.json', import.meta.url), 'utf8'));

@@ -1,8 +1,8 @@
-import { ensureAgonHome, createRunDir, writeRunStatus, appendMessage, resolveWorkingDir, discoverGate, spawnWithTimeout } from '@kernlang/agon-core';
+import { ensureAgonHome, createRunDir, writeRunStatus, appendMessage, resolveWorkingDir, spawnWithTimeout } from '@kernlang/agon-core';
 
 import type { RunStatus, RunStatusEngine } from '@kernlang/agon-core';
 
-import { runMutate, mutateVerdictLine } from '@kernlang/agon-forge';
+import { runMutate, mutateVerdictLine, discoverMutateGate, NO_GATE_DISCOVERED_MESSAGE } from '@kernlang/agon-forge';
 
 import { filterDefaultOrchestrationEngines } from './engine-filter.js';
 
@@ -223,10 +223,10 @@ export async function handleMutate(input: string, dispatch: Dispatch, ctx: Handl
 
     let testCmd = (args.test ?? '').trim();
     if (!testCmd) {
-      try { testCmd = discoverGate(cwd).command.trim(); } catch { testCmd = ''; }
+      testCmd = discoverMutateGate(cwd);
     }
     if (!testCmd) {
-      dispatch({ type: 'error', message: 'No test command discovered — pass `--test "<cmd>"`. Mutation testing needs a real suite to run per mutant; agon never guesses one.' });
+      dispatch({ type: 'error', message: NO_GATE_DISCOVERED_MESSAGE });
       return false;
     }
 

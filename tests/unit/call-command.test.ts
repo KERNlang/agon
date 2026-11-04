@@ -103,7 +103,7 @@ describe('agon call command mapping', () => {
       engineTimeout: '120',
       engines: 'codex',
     }).commands).toEqual([
-      ['think', 'Token bucket or sliding window?', '--strategy', 'reflexion', '--steps', '20', '--branches', '5', '--timeout', '120', '--engines', 'codex'],
+      ['think', 'Token bucket or sliding window?', '--strategy', 'reflexion', '--steps', '20', '--branches', '5', '--timeout', '120', '--engine', 'codex'],
     ]);
   });
 
@@ -125,6 +125,37 @@ describe('agon call command mapping', () => {
     ]);
   });
 
+  it('maps a single call-level --engines value to think\'s singular --engine flag', () => {
+    expect(buildCallCommands({
+      workflow: 'think',
+      input: 'decompose this',
+      engines: 'kimi',
+    }).commands).toEqual([
+      ['think', 'decompose this', '--engine', 'kimi'],
+    ]);
+  });
+
+  it('maps think --engine directly and rejects an ambiguous multi-engine reasoner roster', () => {
+    expect(buildCallCommands({
+      workflow: 'think',
+      input: 'decompose this',
+      engine: 'kimi',
+    }).commands).toEqual([
+      ['think', 'decompose this', '--engine', 'kimi'],
+    ]);
+    expect(() => buildCallCommands({
+      workflow: 'think',
+      input: 'decompose this',
+      engines: 'kimi,claude',
+    })).toThrow('agon call think accepts one reasoner');
+    expect(() => buildCallCommands({
+      workflow: 'think',
+      input: 'decompose this',
+      engine: 'kimi',
+      engines: 'claude',
+    })).toThrow('agon call think received conflicting engines');
+  });
+
   it('maps nero to the adversarial self-challenge bridge', () => {
     expect(buildCallCommands({
       workflow: 'nero',
@@ -136,6 +167,12 @@ describe('agon call command mapping', () => {
       engines: 'codex,agy',
     }).commands).toEqual([
       ['nero', 'Cache tokens in Redis', '--reasoning', 'Redis is fast and shared across workers', '--focus', 'invalidation', '--confidence', '80', '--timeout', '90', '--engines', 'codex,agy'],
+    ]);
+  });
+
+  it('forwards --engine to nero', () => {
+    expect(buildCallCommands({ workflow: 'nero', input: 'x', engine: 'codex' }).commands).toEqual([
+      ['nero', 'x', '--engine', 'codex'],
     ]);
   });
 

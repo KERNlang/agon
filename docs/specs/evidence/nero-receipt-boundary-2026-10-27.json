@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "status": "full and installed gates passed; exact committed replay pending",
+  "scope": "Retain completed Nero critique without repeating provider dispatch after receipt failure",
+  "baseCommit": "a4e06dfb8869acd14fe4c90cc16a88abebeb3243",
+  "archiveRoot": "/Users/ra/dev/modular-agon-remediation",
+  "retention": "Never delete archived evidence without Raphael's approval",
+  "sourceManifest": "nero-receipt-boundary-postreview-manifest-20261027.json",
+  "evidence": [
+    {
+      "log": "nero-receipt-boundary-negative2-20261027.log",
+      "sha256": "fdba2d37384a0c80afd40fa5715e8e7007af7ab3e4fbc9ef9c984178a3636c18",
+      "result": "Before repair: two expected failures, four passes; receipt failure dispatched four times instead of once"
+    },
+    {
+      "log": "nero-receipt-boundary-postreview-20261027.log",
+      "sha256": "fceccf774a86f64b761ee127dd4260b1b9d47e0debfe691d8c0008820697d52d",
+      "result": "67 focused tests, owner types, edited lint and diffcheck passed; zero provider launches"
+    },
+    {
+      "receipt": "nero-receipt-boundary-full-gates-20261027.receipt.json",
+      "log": "nero-receipt-boundary-full-gates-20261027.log",
+      "sha256": "8150b314b8a10e8ea9244f2c58e6e8dc50c5583a3d89a64868d7a1eec80948e7",
+      "result": "Build, types, lint, guards, generated docs, release-set, supply-chain, 11959 tests (7 skipped), 95 installed checks and diffcheck passed; zero provider launches"
+    }
+  ],
+  "review": {
+    "packet": "nero-receipt-boundary-review-input.txt",
+    "packetSha256": "86afd3c3bfc70a25f63912138fd0748345687b150abaad7edf6498e5bc525b46",
+    "codexLog": "nero-receipt-boundary-codex-review.log",
+    "codexLogSha256": "0065135a2ef1f611b80128b571a9834a3fe34ef006b990d27a11b91399da6c3d",
+    "result": "No concrete production regression; four assertion gaps verified and addressed by postreview tests",
+    "limits": "Kimi returned no answer; not counted as passing"
+  },
+  "limits": [
+    "Exact committed qualification pending",
+    "MCP returns the failure message, not the retained result",
+    "Nested Conquer consumes retained critique without propagating receipt failure",
+    "Interactive Nero still uses the legacy runtime",
+    "Independent from pending text-only repair",
+    "Aggregate modular acceptance and external release cells remain open",
+    "No OpenCode call or active/global Agon modification"
+  ]
+}

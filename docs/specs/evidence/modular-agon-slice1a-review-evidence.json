@@ -1,0 +1,214 @@
+{
+  "schemaVersion": 1,
+  "subjectHash": "sha256:cef6b1de783a173f6278e8e43b2501c8657d7731074a72c9c19a27d7bd81c631",
+  "disposition": "passed",
+  "runs": [
+    {
+      "engine": "ollama",
+      "status": "completed",
+      "artifacts": [
+        {
+          "path": "docs/specs/evidence/verification-logs/slice1a-lock-platform-final-review-ollama.txt",
+          "hash": "sha256:649ccc2245c82812a237b7b2d5a2a4d25dc5b3fca33e4bf4451975393e5d39db"
+        }
+      ]
+    },
+    {
+      "engine": "ollama-direct-qwen",
+      "status": "completed",
+      "artifacts": [
+        {
+          "path": "docs/specs/evidence/verification-logs/slice1a-lock-platform-final-review-qwen.txt",
+          "hash": "sha256:46c05ce7129d9bce5ad22d5a8c52c77537a1b3a19e0d75100a61496bbc3536af"
+        }
+      ]
+    },
+    {
+      "engine": "ollama",
+      "status": "completed",
+      "artifacts": [
+        {
+          "path": "docs/specs/evidence/verification-logs/slice1a-absolute-final-review-ollama.txt",
+          "hash": "sha256:134a455526af5d29fcd0ee4f3fda04c91e33e06bfded54870042a6b3b7c14fe9"
+        }
+      ]
+    },
+    {
+      "engine": "ollama-direct-qwen",
+      "status": "completed",
+      "artifacts": [
+        {
+          "path": "docs/specs/evidence/verification-logs/slice1a-absolute-final-review-qwen.txt",
+          "hash": "sha256:dda3092462eeab8c1d6e39da2f60a5c3d00152dd8e0d157cd37bdbc5030017e7"
+        }
+      ]
+    },
+    {
+      "engine": "ollama",
+      "status": "completed",
+      "artifacts": [
+        {
+          "path": "docs/specs/evidence/verification-logs/slice1a-exact-final-source-review-ollama.txt",
+          "hash": "sha256:9c52b532042a207cb662f1351ff8400d090e4b99244f095b31124f4a6dd82320"
+        }
+      ]
+    },
+    {
+      "engine": "ollama-direct-qwen",
+      "status": "completed",
+      "artifacts": [
+        {
+          "path": "docs/specs/evidence/verification-logs/slice1a-exact-final-source-review-qwen.txt",
+          "hash": "sha256:af35615dc54646fdac0c564fd3b0241e237fad77b61aeafba391cfef63bfd807"
+        }
+      ]
+    },
+    {
+      "engine": "ollama-direct-qwen",
+      "status": "completed",
+      "artifacts": [
+        {
+          "path": "docs/specs/evidence/verification-logs/slice1a-review-ollama-direct-qwen.txt",
+          "hash": "sha256:44a67ddfd59469b488a55a8be37d90c1769d4fb066bba708048ce94effeecf5f"
+        }
+      ]
+    },
+    {
+      "engine": "ollama",
+      "status": "completed",
+      "artifacts": [
+        {
+          "path": "docs/specs/evidence/verification-logs/slice1a-review-ollama.txt",
+          "hash": "sha256:3399efff0615c0f0efc69e15e8fc2998713585217de1d8041d5dbdda51b7eed6"
+        }
+      ]
+    },
+    {
+      "engine": "ollama-direct-qwen",
+      "status": "completed",
+      "artifacts": [
+        {
+          "path": "docs/specs/evidence/verification-logs/slice1a-final-review-ollama-direct-qwen.txt",
+          "hash": "sha256:9f2e67be1987ce5f4a361d08f93f2c2fae1b31a657e110180bea218db7f80d45"
+        }
+      ]
+    },
+    {
+      "engine": "ollama",
+      "status": "completed",
+      "artifacts": [
+        {
+          "path": "docs/specs/evidence/verification-logs/slice1a-final-review-ollama.txt",
+          "hash": "sha256:ba2c192e1186e2b15b04c6f4215ead833fc0f5ac98b0d0c1c455d194a097b9eb"
+        }
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "id": "final-npm10-lock-compatibility",
+      "status": "resolved",
+      "evidence": "Replaced the npm-version-sensitive vulnerable-range esbuild override with exact esbuild 0.28.2, regenerated the lock from a clean npm 10 graph, and proved clean installs plus zero-vulnerability audits on Darwin arm64/x64 and Linux arm64/x64."
+    },
+    {
+      "id": "final-review-build-recursion",
+      "status": "refuted",
+      "evidence": "build:cli:workspaces invokes explicit -w package targets, not the root build script. The build completed repeatedly in the master qualification and every final platform lane."
+    },
+    {
+      "id": "final-evidence-log-bound",
+      "status": "resolved",
+      "evidence": "Qualification logs are bounded to 2 MiB while preserving head, tail, original byte count, and full-output SHA-256; Unicode and minimum-budget negative controls execute."
+    },
+    {
+      "id": "final-subject-symlink-boundary",
+      "status": "resolved",
+      "evidence": "Subject hashing now rejects symbolic links and has an executable negative control, preventing traversal outside the reviewed tree."
+    },
+    {
+      "id": "final-review-artifact-stat-race",
+      "status": "resolved",
+      "evidence": "Artifact stat failures now produce a failed evidence verdict instead of escaping as an exception; broken-link evidence is tested."
+    },
+    {
+      "id": "final-tests-unit-generated-files",
+      "status": "resolved",
+      "evidence": "The direct tests/unit subject enumeration now excludes .tsbuildinfo and .orig files consistently with recursive enumeration."
+    },
+    {
+      "id": "final-buffer-global",
+      "status": "resolved",
+      "evidence": "Buffer is imported explicitly from node:buffer and the truncation self-test executes."
+    },
+    {
+      "id": "final-performance-global",
+      "status": "refuted",
+      "evidence": "Slice 1A requires Node >=22, where performance is a documented global; the qualification runner executes performance.now successfully on Node 22, 24, and 26 lanes."
+    },
+    {
+      "id": "final-byte-prefix-binary-search",
+      "status": "refuted",
+      "evidence": "The upper-mid invariant always advances low on success and lowers high on failure; the Unicode truncation negative control terminates and proves the byte ceiling."
+    },
+    {
+      "id": "final-git-glob-pathspec",
+      "status": "refuted",
+      "evidence": "A fresh repository reproduction and the committed qualification negative control both prove that git ls-files after -- honors :(glob)tests/unit/modular-* and finds modular-hidden.test.ts."
+    },
+    {
+      "id": "final-error-regex",
+      "status": "refuted",
+      "evidence": "The exact assertion executes in the qualification negative-control suite and matches the stable application-owned error text."
+    },
+    {
+      "id": "exact-final-asset-consumer-reference",
+      "status": "resolved",
+      "evidence": "Manifest and portable contract validation now reject assets naming a syntactically valid but nonexistent contribution; a runtime regression test proves the failure path."
+    },
+    {
+      "id": "exact-final-qwen-spread-rendering",
+      "status": "refuted",
+      "evidence": "The reviewer prompt renderer displayed [...pkg.dependencies] as [. ..pkg.dependencies]. The repository contains the valid spread token; node --check succeeds and all 77 contract tests execute."
+    },
+    {
+      "id": "review-registry-recursive-freeze",
+      "status": "resolved",
+      "evidence": "Replaced recursive graph traversal with iterative traversal and added a 20000-level regression test."
+    },
+    {
+      "id": "review-lock-optional-chain-trim",
+      "status": "refuted",
+      "evidence": "Optional chaining spans both indexed access and trim invocation; missing trust IDs produce undefined and enter the intended validation failure."
+    },
+    {
+      "id": "review-manifest-duplicate-context",
+      "status": "refuted",
+      "evidence": "Diagnostic richness is a maintainability suggestion, not an acceptance correctness defect; duplicate IDs are deterministically rejected."
+    },
+    {
+      "id": "review-lock-array-comparison",
+      "status": "refuted",
+      "evidence": "Both canonical ID arrays use the same ASCII comparator and constrained identifiers; numeric human ordering is irrelevant to set equality."
+    },
+    {
+      "id": "review-host-prerelease-policy",
+      "status": "refuted",
+      "evidence": "The frozen contract permits valid SemVer host versions and delegates prerelease compatibility to semver range satisfaction; stable-only hosts are not a requirement."
+    },
+    {
+      "id": "review-json-duplicate-parser",
+      "status": "refuted",
+      "evidence": "JSON.parse accepts duplicate keys and a reviver cannot observe overwritten duplicates. The scanner is followed by JSON.parse and has escaped-key and nested duplicate regression coverage."
+    },
+    {
+      "id": "final-review-valid-range-import",
+      "status": "refuted",
+      "evidence": "validRange is imported from semver in packages/mod-api/src/manifest.ts and preserved as an ESM import in the built chunk; 74 contract tests and external consumer compilation pass."
+    },
+    {
+      "id": "final-review-date-regex-diff-rendering",
+      "status": "refuted",
+      "evidence": "The reviewer explicitly marked this a low-confidence diff-view nit; authoritative generated schemas validate against fixtures and packaged-schema byte parity passes."
+    }
+  ]
+}

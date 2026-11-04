@@ -6,7 +6,7 @@ import { contentWidth, engineColor, RenderedSegments } from './rendering.js';
 
 import { parseMarkdownBlocks } from './markdown.js';
 
-import type { CesarPlan } from '@kernlang/agon-core';
+import type { CesarPlan } from '@kernlang/agon-mod-plan';
 
 const PlanProposalView = React.memo(function PlanProposalView({ plan, markdown, costEstimate, committed, selectedIndex, hideApproval }: { plan:CesarPlan; markdown?:string; costEstimate?:{ totalTokens: number; totalCostUsd: number; steps: { id: string; tokens: number; costUsd: number }[] } | null; committed?:boolean; selectedIndex?:number; hideApproval?:boolean }) {
   const steps = plan.steps ?? [];

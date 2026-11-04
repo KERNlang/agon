@@ -1,8 +1,8 @@
-import { isCurrentControlPlaneEnvelope, isCurrentCesarResponse, isTerminalTurnState, reduceTurnLifecycle } from '../../../core/src/sessions/turn-protocol.js';
+import { isCurrentControlPlaneEnvelope, isCurrentCesarResponse, isTerminalTurnState, reduceTurnLifecycle } from '@kernlang/agon-support-engine-runtime';
 
-import type { ControlPlaneEnvelopeV1, TurnLifecycleState, TurnLifecycleTransition } from '../../../core/src/sessions/turn-protocol.js';
+import type { ControlPlaneEnvelopeV1, TurnLifecycleState, TurnLifecycleTransition } from '@kernlang/agon-support-engine-runtime';
 
-import { appendControlPlaneEvent, recoverControlPlane } from '../../../core/src/sessions/control-plane-ledger.js';
+import { appendControlPlaneEvent, recoverControlPlane } from '@kernlang/agon-support-persistence';
 
 import type { CesarState } from '../handlers/types.js';
 
@@ -56,6 +56,8 @@ export function releaseCesarTurnHandles(state: any): void {
 }
 
 export interface CesarTurnRuntime {
+  /** Run-local authority. Never persisted or inherited by another turn. */
+  readonly assertOwnerAvailable?: () => void;
   envelope: ControlPlaneEnvelopeV1;
   state: TurnLifecycleState;
   latestResponseSeq: number;
@@ -137,7 +139,8 @@ export function resetStaleCesarTurnState(state: CesarState): void {
 /**
  * Claim one monotonic lease for a user turn. An older running producer is fenced before the new lease becomes active.
  */
-export function beginCesarTurn(host: CesarTurnRuntimeHost, turnId: string, producerId: string, attempt?: number): CesarTurnRuntime {
+export function beginCesarTurn(host: CesarTurnRuntimeHost, turnId: string, producerId: string, attempt?: number, assertOwnerAvailable?: () => void): CesarTurnRuntime {
+  assertOwnerAvailable?.();
   if (host.recoveryBlockedReason) {
     throw new Error(`cannot begin Cesar turn: ${host.recoveryBlockedReason}`);
   }
@@ -165,6 +168,7 @@ export function beginCesarTurn(host: CesarTurnRuntimeHost, turnId: string, produ
   };
   host.nextLeaseEpoch += 1;
   const runtime: CesarTurnRuntime = {
+    ...(assertOwnerAvailable ? { assertOwnerAvailable } : {}),
     envelope,
     state: 'running',
     latestResponseSeq: 0,

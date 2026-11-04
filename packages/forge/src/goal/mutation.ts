@@ -1,38 +1,11 @@
-import { writeFileSync } from 'node:fs';
-
 import { spawnWithTimeout, applyMutantToSource } from '@kernlang/agon-core';
-
-import type { Mutant } from '@kernlang/agon-core';
-
+import { createGoalMutationRunner } from '@kernlang/agon-mod-goal';
 import { resolveWithin } from './paths.js';
 
 export { generateMutants } from '@kernlang/agon-core';
-
 export type { Mutant } from '@kernlang/agon-core';
-
 export { applyMutantToSource };
 
-/**
- * Apply each mutant to the file, run the witness tests; a mutant whose tests still PASS survived (weak test). Restores the original file in finally. Single-file by design — the controller calls this once per changed file. Rejects relFilePath that escapes the worktree.
- */
-export async function mutationSurvivors(opts: {worktree:string, relFilePath:string, source:string, mutants:Mutant[], testCmd:string, timeout:number}): Promise<Mutant[]> {
-  const { worktree, relFilePath, source, mutants, testCmd, timeout } = opts;
-  const absPath = resolveWithin(worktree, relFilePath);
-  const survivors: Mutant[] = [];
-  try {
-    for (const mutant of mutants) {
-      writeFileSync(absPath, applyMutantToSource(source, mutant));
-      const res = await spawnWithTimeout({
-        command: '/bin/sh',
-        args: ['-c', testCmd],
-        cwd: worktree,
-        timeout: Math.max(1, timeout) * 1000,
-      });
-      // exit 0 => tests still passed on mutated (wrong) code => mutant survived.
-      if (res.exitCode === 0 && !res.timedOut) survivors.push(mutant);
-    }
-  } finally {
-    writeFileSync(absPath, source);
-  }
-  return survivors;
-}
+export const mutationSurvivors = createGoalMutationRunner({
+  spawnWithTimeout, applyMutantToSource, resolveWithin,
+});

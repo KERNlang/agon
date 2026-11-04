@@ -1,0 +1,18 @@
+```
+draft {
+  approach: "Introduce a zero-trust bootstrap layer that treats all inputs as untrusted, enforces immutable Git-object roots before any transform, and uses negative-control invariants to catch false-green state drift."
+  reasoning: "This works because it starts from a clean-slate invariant rather than patching legacy assumptions, making Git-object hashes the only accepted source-of-truth, and negative controls explicitly assert that known bad inputs fail fast."
+  tradeoffs: "slower first-run due to full bootstrap", "risk of orphaned legacy workflows that bypass the layer", "false negative if negative-control assertions are too weak"
+  confidence: 82
+  keyFiles: "bootstrap.ts", "transform-pipeline.ts", "negative-controls.ts"
+  steps {
+    1: "Write a bootstrap module that validates Git-object hashes before touching any source or legacy workflow."
+    2: "Insert a transform-stage boundary that only emits if its input root matches the commit hash exactly."
+    3: "Implement negative-control assertions that deliberately assert known-bad invariants to fail fast on contamination."
+    4: "Add a reproducible-review-evidence collector that captures the full pipeline state at each gate."
+    5: "Build a clean-checkout-replay that re-validates every gate from scratch to catch silent failures."
+    6: "Write a failure-diagnostics utility that turns negative-control failures into actionable diagnostic steps."
+    7: "Integrate the bootstrap layer into the existing build pipeline before acceptance-truth repair slices are introduced."
+  }
+}
+```

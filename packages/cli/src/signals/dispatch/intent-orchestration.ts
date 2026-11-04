@@ -1,9 +1,13 @@
 
-import { resolveWorkingDir, spawnWithTimeout } from '@kernlang/agon-core';
+import { resolveWorkingDir } from '@kernlang/agon-core';
+import { assertProcessSurfaceAvailable, captureProcessSurfaceAuthority, processSurfaceClient, withProcessSurfaceAuthority } from '../../surface-authority-runtime.js';
+import type { AgentContinuationResult } from '../../handlers/agent.js';
+import { runInJobAbortScope } from '../job-abort-scope.js';
+import { runPhysicalTuiContribution } from './intent-session.js';
 
 import { ENGINE_COLORS } from '../../blocks/output-format.js';
 
-import { handleForge, handleBrainstorm, handleCampfire, handleTribunal, handleThink, handleCouncil, handleSynthesis, handleNeroChallenge, handleResearch, handleChrome, handleConquer, handleBuild, handleReviewMany, handleSanitize, handleNaturalize, handleMutate, runAgentMode, runAgentTeam } from '../../handlers/index.js';
+import { handleForge, handleSynthesis, handleNeroChallenge, handleChrome, handleBuild, handleReviewMany, handleSanitize, handleNaturalize, handleMutate, runAgentMode, runAgentTeam } from '../../handlers/index.js';
 
 import { handleTeamTribunal } from '../../handlers/team-tribunal.js';
 
@@ -25,11 +29,35 @@ import { countTrackedUserTurns } from './utils.js';
 
 import { withThreadOutcome, buildBrainstormContinuationMessage, collectRecentEngineContext } from './delegation.js';
 
-import { absorbReviewResultIntoCesar, continueCesarAfterResult, runAgentJobWithAutoResume } from './cesar-router.js';
+import { absorbReviewResultIntoCesar, continueCesarAfterResult, runAgentJobWithAutoResume, runPhysicalCesarWorkflow } from './cesar-router.js';
 
 import { emitPostDispatch } from './utils.js';
 
 import { mutateCesarPrompt } from '../../blocks/mutate-render.js';
+
+function createAgentJobRunner(input: string, cb: DispatchCallbacks) {
+  // Solo, shadow and team execution share the Agent owner.
+  assertProcessSurfaceAvailable('tui', '/agent');
+  const assertSelected = captureProcessSurfaceAuthority();
+  const assertAvailable = (signal?: AbortSignal) => {
+    signal?.throwIfAborted();
+    assertSelected();
+    assertProcessSurfaceAvailable('tui', '/agent');
+  };
+  return (parentSignal: AbortSignal, run: (options: {
+    parentSignal: AbortSignal | undefined;
+    executionRefusal: () => string | undefined;
+  }) => Promise<AgentContinuationResult | null>) => withProcessSurfaceAuthority(parentSignal, assertAvailable, async signal => {
+    assertAvailable(signal);
+    const executionRefusal = () => {
+      try { assertAvailable(signal); return undefined; }
+      catch (error) { return error instanceof Error ? error.message : String(error); }
+    };
+    await runInJobAbortScope(signal ?? parentSignal, () =>
+      runAgentJobWithAutoResume(input, cb, () => run({ parentSignal: signal, executionRefusal }), () => assertAvailable(signal)));
+    assertAvailable(signal);
+  });
+}
 
 export async function dispatchOrchestrationIntent(intent: any, input: string, cb: DispatchCallbacks): Promise<DispatchResult | null> {
   switch (intent.type) {
@@ -51,16 +79,16 @@ export async function dispatchOrchestrationIntent(intent: any, input: string, cb
       const _bLabel = intent.question?.slice(0, 40) ?? 'brainstorm';
       const continuationEpoch = cb.ctx.inputEpoch ?? 0;
       const continuationUserTurns = countTrackedUserTurns(cb.ctx);
-      cb.runAsJob('brainstorm', _bLabel, withThreadOutcome(_bCwd, 'brainstorm', _bLabel, async () => {
+      cb.runAsJob('brainstorm', _bLabel, signal => withThreadOutcome(_bCwd, 'brainstorm', _bLabel, async () => {
         if (cb.eventBus) await cb.eventBus.emit('pre:brainstorm', { question: intent.question, cwd: _bCwd });
-        const bsR = await handleBrainstorm(intent.question, cb.dispatch, cb.ctx);
+        const bsR = await runPhysicalCesarWorkflow('brainstorm', { question: intent.question }, cb, signal);
         if (cb.eventBus) cb.eventBus.emit('post:brainstorm', { question: intent.question, cwd: _bCwd }).catch(() => {});
         if (bsR) {
           cb.dispatch({ type: 'info', message: 'Cesar absorbing brainstorm results…' });
           await continueCesarAfterResult(buildBrainstormContinuationMessage('Brainstorm complete', intent.question, bsR), cb, continuationEpoch, continuationUserTurns);
         }
         return bsR;
-      }, cb.ctx));
+      }, cb.ctx)());
       return { handled: true, ranAsJob: true };
     }
     case 'tribunal': {
@@ -68,13 +96,13 @@ export async function dispatchOrchestrationIntent(intent: any, input: string, cb
       const _tLabel = intent.question?.slice(0, 40) ?? 'tribunal';
       const continuationEpoch = cb.ctx.inputEpoch ?? 0;
       const continuationUserTurns = countTrackedUserTurns(cb.ctx);
-      cb.runAsJob('tribunal', _tLabel, withThreadOutcome(_tCwd, 'tribunal', _tLabel, async () => {
+      cb.runAsJob('tribunal', _tLabel, signal => withThreadOutcome(_tCwd, 'tribunal', _tLabel, async () => {
         if (cb.eventBus) await cb.eventBus.emit('pre:tribunal', { question: intent.question, mode: intent.tribunalMode, protocol: intent.tribunalProtocol, cwd: _tCwd });
-        await handleTribunal(intent.question, cb.dispatch, cb.ctx, intent.tribunalMode, intent.tribunalProtocol);
+        await runPhysicalCesarWorkflow('tribunal', { question: intent.question, mode: intent.tribunalMode ?? 'adversarial', protocol: intent.tribunalProtocol ?? 'auto' }, cb, signal, _tCwd);
         if (cb.eventBus) cb.eventBus.emit('post:tribunal', { question: intent.question, cwd: _tCwd }).catch(() => {});
         const chatContext = collectRecentEngineContext(cb.ctx, 12, 1500);
         if (chatContext) await continueCesarAfterResult(`Tribunal concluded on: "${(intent.question ?? '').slice(0, 200)}"\n\n${chatContext}\n\nSummarize the verdict and key takeaways.`, cb, continuationEpoch, continuationUserTurns);
-      }, cb.ctx));
+      }, cb.ctx)());
       return { handled: true, ranAsJob: true };
     }
     case 'campfire': {
@@ -82,13 +110,13 @@ export async function dispatchOrchestrationIntent(intent: any, input: string, cb
       const _cLabel = intent.topic?.slice(0, 40) ?? 'campfire';
       const continuationEpoch = cb.ctx.inputEpoch ?? 0;
       const continuationUserTurns = countTrackedUserTurns(cb.ctx);
-      cb.runAsJob('campfire', _cLabel, withThreadOutcome(_cCwd, 'campfire', _cLabel, async () => {
+      cb.runAsJob('campfire', _cLabel, signal => withThreadOutcome(_cCwd, 'campfire', _cLabel, async () => {
         if (cb.eventBus) await cb.eventBus.emit('pre:campfire', { topic: intent.topic, cwd: _cCwd });
-        await handleCampfire(intent.topic, cb.dispatch, cb.ctx);
+        await runPhysicalCesarWorkflow('campfire', { topic: intent.topic }, cb, signal, _cCwd);
         if (cb.eventBus) cb.eventBus.emit('post:campfire', { topic: intent.topic, cwd: _cCwd }).catch(() => {});
         const chatContext = collectRecentEngineContext(cb.ctx, 12, 1500);
         if (chatContext) await continueCesarAfterResult(`Campfire discussion on: "${(intent.topic ?? '').slice(0, 200)}"\n\n${chatContext}\n\nSummarize the key insights and any consensus reached.`, cb, continuationEpoch, continuationUserTurns);
-      }, cb.ctx));
+      }, cb.ctx)());
       return { handled: true, ranAsJob: true };
     }
     case 'think': {
@@ -97,11 +125,16 @@ export async function dispatchOrchestrationIntent(intent: any, input: string, cb
       const _thLabel = intent.input?.slice(0, 40) ?? 'think';
       const continuationEpoch = cb.ctx.inputEpoch ?? 0;
       const continuationUserTurns = countTrackedUserTurns(cb.ctx);
-      cb.runAsJob('think', _thLabel, withThreadOutcome(_thCwd, 'think', _thLabel, async () => {
-        await handleThink(intent.input, cb.dispatch, cb.ctx, { strategy: intent.strategy, steps: intent.steps });
+      const assertSelected = captureProcessSurfaceAuthority();
+      const record = processSurfaceClient('tui').assertAvailable('/think');
+      cb.runAsJob('think', _thLabel, signal => withThreadOutcome(_thCwd, 'think', _thLabel, async () => {
+        assertSelected();
+        await runPhysicalTuiContribution(record, intent, 'think', cb, signal, _thCwd);
+        signal.throwIfAborted();
+        assertSelected();
         const chatContext = collectRecentEngineContext(cb.ctx, 12, 2000);
         if (chatContext) await continueCesarAfterResult(`Think chain on: "${(intent.input ?? '').slice(0, 200)}"\n\n${chatContext}\n\nReview the reasoning, resolve any open questions, and take the next concrete step.`, cb, continuationEpoch, continuationUserTurns);
-      }, cb.ctx));
+      }, cb.ctx)());
       return { handled: true, ranAsJob: true };
     }
     case 'council': {
@@ -110,11 +143,16 @@ export async function dispatchOrchestrationIntent(intent: any, input: string, cb
       const _coLabel = intent.question?.slice(0, 40) ?? 'council';
       const continuationEpoch = cb.ctx.inputEpoch ?? 0;
       const continuationUserTurns = countTrackedUserTurns(cb.ctx);
-      cb.runAsJob('council', _coLabel, withThreadOutcome(_coCwd, 'council', _coLabel, async () => {
-        await handleCouncil(intent.question, cb.dispatch, cb.ctx);
+      const assertSelected = captureProcessSurfaceAuthority();
+      const record = processSurfaceClient('tui').assertAvailable('/council');
+      cb.runAsJob('council', _coLabel, signal => withThreadOutcome(_coCwd, 'council', _coLabel, async () => {
+        assertSelected();
+        await runPhysicalTuiContribution(record, intent, 'council', cb, signal, _coCwd);
+        signal.throwIfAborted();
+        assertSelected();
         const chatContext = collectRecentEngineContext(cb.ctx, 14, 1500);
         if (chatContext) await continueCesarAfterResult(`Council deliberated on: "${(intent.question ?? '').slice(0, 200)}"\n\n${chatContext}\n\nSummarize the chairman verdict and the strongest dissent, then recommend the next step.`, cb, continuationEpoch, continuationUserTurns);
-      }, cb.ctx));
+      }, cb.ctx)());
       return { handled: true, ranAsJob: true };
     }
     case 'chrome': {
@@ -133,15 +171,23 @@ export async function dispatchOrchestrationIntent(intent: any, input: string, cb
     }
     case 'research': {
       if (!intent.question?.trim()) { cb.dispatch({ type: 'warning', message: 'Usage: /research <question> [--count N] [--engine X]' }); return { handled: true, ranAsJob: false }; }
+      const assertSelected = captureProcessSurfaceAuthority();
+      const record = processSurfaceClient('tui').assertAvailable('/research');
       const _rsCwd = resolveWorkingDir();
       const _rsLabel = intent.question?.slice(0, 40) ?? 'research';
       const continuationEpoch = cb.ctx.inputEpoch ?? 0;
       const continuationUserTurns = countTrackedUserTurns(cb.ctx);
-      cb.runAsJob('research', _rsLabel, withThreadOutcome(_rsCwd, 'research', _rsLabel, async () => {
-        await handleResearch(intent.question, cb.dispatch, cb.ctx, { engine: intent.engineId, count: intent.count });
+      cb.runAsJob('research', _rsLabel, signal => withThreadOutcome(_rsCwd, 'research', _rsLabel, async () => {
+        signal.throwIfAborted();
+        assertSelected();
+        const { type: _type, _modSurface: _marker, engineId, ...request } = intent;
+        await runPhysicalTuiContribution(record, { ...request, question: intent.question, engine: intent.engine ?? engineId,
+          ...(intent.count !== undefined ? { count: String(intent.count) } : {}) }, 'research', cb, signal, _rsCwd);
+        signal.throwIfAborted();
+        assertSelected();
         const chatContext = collectRecentEngineContext(cb.ctx, 12, 2000);
         if (chatContext) await continueCesarAfterResult(`Research (keyless, web-grounded, cited) on: "${(intent.question ?? '').slice(0, 200)}"\n\n${chatContext}\n\nSummarize the findings WITH their citations, flag any unverified ones, then take the next concrete step.`, cb, continuationEpoch, continuationUserTurns);
-      }, cb.ctx));
+      }, cb.ctx)());
       return { handled: true, ranAsJob: true };
     }
     case 'conquer': {
@@ -151,24 +197,30 @@ export async function dispatchOrchestrationIntent(intent: any, input: string, cb
       const _cqLabel = intent.task?.slice(0, 40) ?? 'conquer';
       const cqEpoch = cb.ctx.inputEpoch ?? 0;
       const cqUserTurns = countTrackedUserTurns(cb.ctx);
-      cb.runAsJob('conquer', _cqLabel, withThreadOutcome(_cqCwd, 'conquer', _cqLabel, async () => {
-        await handleConquer(intent.task ?? '', cb.dispatch, cb.ctx, { gate: intent.gate, builder: intent.builder, engineIds: intent.engineIds, maxTurns: intent.maxTurns, gateTimeoutSec: intent.gateTimeout, maxHours: intent.maxHours, turnTimeoutSec: intent.turnTimeout });
+      cb.runAsJob('conquer', _cqLabel, signal => withThreadOutcome(_cqCwd, 'conquer', _cqLabel, async () => {
+        await runPhysicalCesarWorkflow('conquer', { task: intent.task, gate: intent.gate, builder: intent.builder, engineIds: intent.engineIds, maxTurns: intent.maxTurns, gateTimeout: intent.gateTimeout, maxHours: intent.maxHours, turnTimeout: intent.turnTimeout }, cb, signal, _cqCwd);
         const chatContext = collectRecentEngineContext(cb.ctx, 14, 1500);
         if (chatContext) await continueCesarAfterResult(`Conquer build on: "${(intent.task ?? '').slice(0, 200)}"\n\n${chatContext}\n\nSummarize what was built + the done-oracle outcome, and recommend the next step (review/merge or keep going).`, cb, cqEpoch, cqUserTurns);
-      }, cb.ctx));
+      }, cb.ctx)());
       return { handled: true, ranAsJob: true };
     }
     case 'synthesis': {
       if (!intent.input?.trim()) { cb.dispatch({ type: 'warning', message: 'Usage: /synthesis <task> [--swaps 2]' }); return { handled: true, ranAsJob: false }; }
+      const assertSelected = captureProcessSurfaceAuthority();
+      processSurfaceClient('tui').assertAvailable('/synthesis');
       const _syCwd = resolveWorkingDir();
       const _syLabel = intent.input?.slice(0, 40) ?? 'synthesis';
       const continuationEpoch = cb.ctx.inputEpoch ?? 0;
       const continuationUserTurns = countTrackedUserTurns(cb.ctx);
-      cb.runAsJob('synthesis', _syLabel, withThreadOutcome(_syCwd, 'synthesis', _syLabel, async () => {
-        await handleSynthesis(intent.input, cb.dispatch, cb.ctx, { swaps: intent.swaps });
+      cb.runAsJob('synthesis', _syLabel, signal => withThreadOutcome(_syCwd, 'synthesis', _syLabel, async () => {
+        signal.throwIfAborted();
+        assertSelected();
+        await handleSynthesis(intent.input, cb.dispatch, cb.ctx, { swaps: intent.swaps, judge: intent.judge, signal });
+        signal.throwIfAborted();
+        assertSelected();
         const chatContext = collectRecentEngineContext(cb.ctx, 12, 2000);
         if (chatContext) await continueCesarAfterResult(`Synthesis completed on: "${(intent.input ?? '').slice(0, 200)}"\n\n${chatContext}\n\nSummarize the winning artifact and take the next concrete step.`, cb, continuationEpoch, continuationUserTurns);
-      }, cb.ctx));
+      }, cb.ctx)());
       return { handled: true, ranAsJob: true };
     }
     case 'nero-challenge': {
@@ -207,11 +259,14 @@ export async function dispatchOrchestrationIntent(intent: any, input: string, cb
       const _tbLabel = intent.question?.slice(0, 40) ?? 'team-brainstorm';
       const continuationEpoch = cb.ctx.inputEpoch ?? 0;
       const continuationUserTurns = countTrackedUserTurns(cb.ctx);
-      cb.runAsJob('team-brainstorm', _tbLabel, withThreadOutcome(_tbCwd, 'team-brainstorm', _tbLabel, async () => {
-        await handleTeamBrainstorm(intent.question, cb.dispatch, cb.ctx, intent.membersPerSide);
+      cb.runAsJob('team-brainstorm', _tbLabel, signal => withThreadOutcome(_tbCwd, 'team-brainstorm', _tbLabel, async () => {
+        signal?.throwIfAborted();
+        const completed = await handleTeamBrainstorm(intent.question, cb.dispatch, cb.ctx, intent.membersPerSide, signal);
+        signal?.throwIfAborted();
+        if (!completed) return;
         const chatContext = collectRecentEngineContext(cb.ctx, 12, 1500);
         if (chatContext) await continueCesarAfterResult(`Team brainstorm completed on: "${(intent.question ?? '').slice(0, 200)}"\n\n${chatContext}\n\nSynthesize the winning approach into a concrete plan.`, cb, continuationEpoch, continuationUserTurns);
-      }, cb.ctx));
+      }, cb.ctx)());
       return { handled: true, ranAsJob: true };
     }
     case 'build':
@@ -265,6 +320,7 @@ export async function dispatchOrchestrationIntent(intent: any, input: string, cb
       // typed agent-routing + engine-switch events so the UI shows the
       // routing decision and transitions rather than a plain info message.
       const input = intent.input;
+      const runAgentJob = createAgentJobRunner(input, cb);
       const useTeam = shouldUseAgentTeam(input, cb.ctx);
       if (useTeam) {
         const teamEngines = cb.ctx.activeEngines().filter(id => {
@@ -276,9 +332,9 @@ export async function dispatchOrchestrationIntent(intent: any, input: string, cb
           engines: teamEngines,
           reason: 'complexity hint: multi-step-fanout — task pattern suggests cross-module work',
         });
-        cb.runAsJob('team-agent', input?.slice(0, 40) ?? 'team-agent', (signal) => runAgentJobWithAutoResume(input, cb, () => runAgentTeam(input, cb.dispatch, cb.ctx, {
+        cb.runAsJob('team-agent', input?.slice(0, 40) ?? 'team-agent', (signal) => runAgentJob(signal, options => runAgentTeam(input, cb.dispatch, cb.ctx, {
+          ...options,
           taskKind: 'edit',
-          parentSignal: signal,
         })));
       } else {
         // Phase D: check for a second API engine to run as a silent shadow.
@@ -302,12 +358,12 @@ export async function dispatchOrchestrationIntent(intent: any, input: string, cb
             foregroundEngineId: firstEngine,
             shadowEngineId: apiEngines[1],
           });
-          cb.runAsJob('agent', input?.slice(0, 40) ?? 'agent', (signal) => runAgentJobWithAutoResume(input, cb, () => runAgentTeam(input, cb.dispatch, cb.ctx, {
+          cb.runAsJob('agent', input?.slice(0, 40) ?? 'agent', (signal) => runAgentJob(signal, options => runAgentTeam(input, cb.dispatch, cb.ctx, {
+            ...options,
             engines: apiEngines.slice(0, 2),
             shadowMode: true,
             foregroundEngineId: firstEngine,
             taskKind: 'edit',
-            parentSignal: signal,
           })));
         } else {
           cb.dispatch({
@@ -316,7 +372,7 @@ export async function dispatchOrchestrationIntent(intent: any, input: string, cb
             engines: [firstEngine],
             reason: 'single engine — no shadow available',
           });
-          cb.runAsJob('agent', input?.slice(0, 40) ?? 'agent', (signal) => runAgentJobWithAutoResume(input, cb, () => runAgentMode(input, cb.dispatch, cb.ctx, { parentSignal: signal })));
+          cb.runAsJob('agent', input?.slice(0, 40) ?? 'agent', (signal) => runAgentJob(signal, options => runAgentMode(input, cb.dispatch, cb.ctx, options)));
         }
       }
       return { handled: true, ranAsJob: true };
@@ -324,22 +380,25 @@ export async function dispatchOrchestrationIntent(intent: any, input: string, cb
     case 'agent-solo': {
       // Explicit opt-out of shadow workers — always runs pure solo.
       const soloInput = intent.input;
+      const runAgentJob = createAgentJobRunner(soloInput, cb);
       cb.dispatch({ type: 'agent-routing', mode: 'solo', engines: [cb.ctx.activeEngines()[0] ?? 'default'], reason: 'explicit /agent-solo — shadow mode disabled' });
-      cb.runAsJob('agent', soloInput?.slice(0, 40) ?? 'agent', (signal) => runAgentJobWithAutoResume(soloInput, cb, () => runAgentMode(soloInput, cb.dispatch, cb.ctx, { maxTurns: intent.maxTurns, parentSignal: signal })));
+      cb.runAsJob('agent', soloInput?.slice(0, 40) ?? 'agent', (signal) => runAgentJob(signal, options => runAgentMode(soloInput, cb.dispatch, cb.ctx, { ...options, maxTurns: intent.maxTurns })));
       return { handled: true, ranAsJob: true };
     }
-    case 'team-agent':
-      cb.runAsJob('team-agent', intent.input?.slice(0, 40) ?? 'team-agent', (signal) => runAgentJobWithAutoResume(intent.input, cb, () => runAgentTeam(intent.input, cb.dispatch, cb.ctx, {
+    case 'team-agent': {
+      const runAgentJob = createAgentJobRunner(intent.input, cb);
+      cb.runAsJob('team-agent', intent.input?.slice(0, 40) ?? 'team-agent', (signal) => runAgentJob(signal, options => runAgentTeam(intent.input, cb.dispatch, cb.ctx, {
+        ...options,
         engines: intent.engines,
         taskKind: intent.taskKind,
         maxTurns: intent.maxTurns,
-        parentSignal: signal,
       })));
       return { handled: true, ranAsJob: true };
+    }
     case 'speculate': {
       const specInput = intent.input;
       const specLabel = specInput?.slice(0, 40) ?? 'speculate';
-      cb.runAsJob('speculate', specLabel, async () => {
+      cb.runAsJob('speculate', specLabel, async (signal) => {
         const cwd = resolveWorkingDir();
         const available = cb.ctx.activeEngines();
         // Resolve API engines — speculator needs API access for runApiAgentLoop.
@@ -375,6 +434,7 @@ export async function dispatchOrchestrationIntent(intent: any, input: string, cb
             members,
             prompt: specInput,
             cwd,
+            signal,
             timeoutSec: 120,
             thread,
             taskKeywords: specInput.split(/\s+/).slice(0, 8),
@@ -441,16 +501,16 @@ export async function dispatchOrchestrationIntent(intent: any, input: string, cb
       }
       const _gCwd = resolveWorkingDir();
       const _gLabel = _gInput.slice(0, 40);
-      // Spawn the CLI as a child process so the hours-long loop never blocks
-      // the REPL event loop. The durable source of truth is the goal journal
-      // (agon goal --status --id <slug>); we surface a tail on completion.
-      cb.runAsJob('goal', _gLabel, withThreadOutcome(_gCwd, 'goal', _gLabel, async () => {
-        cb.dispatch({ type: 'info', message: `goal: launched in the background — \`agon goal ${_gInput}\`. Check progress with /jobs, /focus, or \`agon goal --status\`.` });
-        const res = await spawnWithTimeout({ command: '/bin/sh', args: ['-c', `agon goal ${_gInput}`], cwd: _gCwd, timeout: 24 * 60 * 60 * 1000 });
-        const tail = (res.stdout || '').slice(-4000);
-        if (tail.trim()) cb.dispatch({ type: 'text', content: tail });
-        if (res.exitCode !== 0) throw new Error((res.stderr || `agon goal exited ${res.exitCode}`).slice(-1000));
-      }, cb.ctx));
+      const assertSelected = captureProcessSurfaceAuthority();
+      cb.runAsJob('goal', _gLabel, signal => withThreadOutcome(_gCwd, 'goal', _gLabel, async () => {
+        signal.throwIfAborted();
+        assertSelected();
+        const { parseGeneratedCommandLine } = await import('../../lazy-commands.js');
+        const request = await parseGeneratedCommandLine('goal', _gInput, _gCwd);
+        assertSelected();
+        cb.dispatch({ type: 'info', message: 'goal: running in the background. Check progress with /jobs, /focus, or /goal --status --id <slug>.' });
+        return runPhysicalCesarWorkflow('goal', request, cb, signal, _gCwd);
+      }, cb.ctx)());
       return { handled: true, ranAsJob: true };
     }
 

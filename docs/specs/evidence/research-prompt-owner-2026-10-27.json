@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "scope": "Research prompt ownership; both formats preserved, not full runtime extraction",
+  "baseCommit": "a4e06dfb8869acd14fe4c90cc16a88abebeb3243",
+  "archiveRoot": "/Users/ra/dev/modular-agon-remediation",
+  "retention": "Do not delete archived evidence without Raphael's approval",
+  "sourceManifest": "research-prompt-owner-evidence-draft-20261027.json",
+  "evidence": [
+    {
+      "log": "research-prompt-owner-negative-20261027.log",
+      "sha256": "bed5921b461ea0b77b60de36bad75a5c19e60a703304b9da93804a2fad2767f4",
+      "result": "Before extraction: one ownership failure, eleven behavior tests pass"
+    },
+    {
+      "log": "research-prompt-owner-boundaries-20261027.log",
+      "sha256": "30106470c917baedf29aa85b1b8874ab20f86c837ab7b9578792ae62effd8bf8",
+      "result": "Twelve focused tests, types, re-export guard and generated checks pass"
+    },
+    {
+      "log": "research-prompt-owner-full-gates-20261027.log",
+      "receipt": "research-prompt-owner-full-gates-20261027.receipt.json",
+      "sha256": "3d05fb3a15998425d440e22f57d296c6ae9296086fb28828c5645c7c1f3ef59d",
+      "result": "Build, types, lint, re-export/generated/release/supply-chain gates pass; 11958 tests pass, seven skipped; 98 npm/npx checks; zero provider launches"
+    }
+  ],
+  "review": {
+    "packetSha256": "7b3b88cd67907a695534f8af60dd123b1f37351436ea80a4e0507639e1139f3e",
+    "codexLogSha256": "4191a790b3dad4c52671063ba40e41601cf9970842affa749674121ff6f9a1e1",
+    "result": "No concrete regressions found; unchanged function bodies and boundary declarations verified against source",
+    "limits": "Review preceded packed execution. Kimi returned no answer and is not a passing review. Packed fixtures subsequently passed locally"
+  },
+  "limits": [
+    "Clean committed replay pending; working-tree gates do not qualify a committed subject",
+    "Native darwin-arm64 Node26 only; other platform and Node-version cells remain open",
+    "Research checks use installed tarballs; Forge compatibility identity uses compiled repository output, not a separately installed Forge package",
+    "First post-move test incorrectly compared source and compiled function instances; corrected test compares matching module instances without changing runtime",
+    "OSV reports 24 advisory instances across ten packages, including two critical; no external versions changed and no security pass claimed",
+    "Global Agon and personal state untouched; OpenCode not invoked"
+  ]
+}

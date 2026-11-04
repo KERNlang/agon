@@ -1,0 +1,222 @@
+{
+  "schemaVersion": 1,
+  "measuredAt": "2026-08-21T23:25:46.743Z",
+  "platform": "darwin-arm64",
+  "node": "v26.3.0",
+  "candidate": "f7eb451ab63f400d7e0ae7356698fc25097f3575",
+  "isolation": {
+    "agonHome": "temporary",
+    "userHome": "temporary",
+    "npmCache": "temporary"
+  },
+  "commands": [
+    {
+      "command": [
+        "node",
+        "packages/cli/dist/index.js",
+        "--version"
+      ],
+      "runs": 15,
+      "latencyMs": {
+        "min": 134.59945800000014,
+        "p50": 136.97220900000002,
+        "p95": 142.268625,
+        "max": 142.268625
+      },
+      "peakRssKb": {
+        "p50": 94208,
+        "p95": 96528,
+        "max": 96528
+      },
+      "maxOutputBytes": 6
+    },
+    {
+      "command": [
+        "node",
+        "packages/cli/dist/index.js",
+        "--help"
+      ],
+      "runs": 15,
+      "latencyMs": {
+        "min": 137.43212499999981,
+        "p50": 138.87170800000013,
+        "p95": 140.57124999999996,
+        "max": 140.57124999999996
+      },
+      "peakRssKb": {
+        "p50": 95344,
+        "p95": 97072,
+        "max": 97072
+      },
+      "maxOutputBytes": 19308
+    },
+    {
+      "command": [
+        "node",
+        "packages/cli/dist/index.js",
+        "forge",
+        "--help"
+      ],
+      "runs": 15,
+      "latencyMs": {
+        "min": 142.90520799999922,
+        "p50": 144.47254199999952,
+        "p95": 145.54150000000027,
+        "max": 145.54150000000027
+      },
+      "peakRssKb": {
+        "p50": 92832,
+        "p95": 98656,
+        "max": 98656
+      },
+      "maxOutputBytes": 4275
+    },
+    {
+      "command": [
+        "node",
+        "packages/cli/dist/index.js",
+        "doctor",
+        "--help"
+      ],
+      "runs": 15,
+      "latencyMs": {
+        "min": 137.88770899999963,
+        "p50": 139.77420800000073,
+        "p95": 146.30912499999977,
+        "max": 146.30912499999977
+      },
+      "peakRssKb": {
+        "p50": 92912,
+        "p95": 96160,
+        "max": 96160
+      },
+      "maxOutputBytes": 444
+    },
+    {
+      "command": [
+        "node",
+        "packages/cli/dist/index.js",
+        "models",
+        "--help"
+      ],
+      "runs": 15,
+      "latencyMs": {
+        "min": 137.7445830000015,
+        "p50": 139.12120800000048,
+        "p95": 141.92745899999863,
+        "max": 141.92745899999863
+      },
+      "peakRssKb": {
+        "p50": 93104,
+        "p95": 97216,
+        "max": 97216
+      },
+      "maxOutputBytes": 728
+    }
+  ],
+  "package": {
+    "filename": "kernlang-agon-0.2.5.tgz",
+    "packageSizeBytes": 1583931,
+    "unpackedSizeBytes": 7418502,
+    "fileCount": 197,
+    "pythonFiles": [
+      "py/agon-model-probe-wrapper.py",
+      "py/agon-tui-probe.py"
+    ],
+    "forbiddenArtifacts": []
+  },
+  "resolverGraph": {
+    "candidates": 1000,
+    "runs": 15,
+    "latencyMs": {
+      "p50": 9.573749999999563,
+      "p95": 23.336542000000918,
+      "max": 23.336542000000918
+    },
+    "maxObservedHeapDeltaBytes": 15399496
+  },
+  "representativeWorkflowSuite": {
+    "command": [
+      "vitest",
+      "run",
+      "tests/integration/workflow-pipeline-call.test.ts",
+      "tests/integration/workflow-pipeline-slash.test.ts",
+      "tests/integration/forge-e2e.test.ts",
+      "tests/unit/thinking.test.ts",
+      "tests/unit/tribunal-modes.test.ts",
+      "tests/unit/brainstorm-dedup.test.ts",
+      "tests/unit/review-roles.test.ts",
+      "tests/unit/rag-core.test.ts",
+      "tests/unit/rooms.test.ts",
+      "tests/unit/daemon-workflow-job.test.ts"
+    ],
+    "durationMs": 24902.899665999998,
+    "exitCode": 0,
+    "passed": true,
+    "summary": [
+      "Test Files  10 passed (10)",
+      "Tests  160 passed (160)"
+    ],
+    "outputTail": [
+      "stderr | tests/integration/forge-e2e.test.ts > Forge E2E > falls back to debate text when tribunal summary engine returns empty output",
+      "[agon] tribunal summary failed: tribunal summary returned empty response",
+      "",
+      "hint: Using 'master' as the name for the initial branch. This default branch name",
+      "hint: will change to \"main\" in Git 3.0. To configure the initial branch name",
+      "hint: to use in all of your new repositories, which will suppress this warning,",
+      "hint: call:",
+      "hint:",
+      "hint: \tgit config --global init.defaultBranch <name>",
+      "hint:",
+      "hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and",
+      "hint: 'development'. The just-created branch can be renamed via this command:",
+      "hint:",
+      "hint: \tgit branch -m <name>",
+      "hint:",
+      "hint: Disable this message with \"git config set advice.defaultBranchName false\"",
+      "",
+      "[agon] Cleaning up active git worktrees...",
+      "",
+      "[agon] Cleaning up active git worktrees..."
+    ]
+  },
+  "tuiTyping": {
+    "command": [
+      "node",
+      "scripts/perf/repl-typing-probe.mjs",
+      "--keys",
+      "30",
+      "--blocks",
+      "300",
+      "--delay",
+      "45"
+    ],
+    "exitCode": 0,
+    "passed": true,
+    "seededBlocks": 300,
+    "measuredKeystrokes": 30,
+    "latencyMs": {
+      "p50": 5.99,
+      "p95": 8.84,
+      "max": 9.98
+    },
+    "rendersPerKeystroke": {
+      "App": 0.03,
+      "ComposerView": 1,
+      "PromptTextInput": 1
+    },
+    "outputTail": [
+      "── REPL typing probe ────────────────────────────────",
+      "seeded blocks       : 300",
+      "keystrokes measured : 30 (requested 30)",
+      "live blocks (last)  : 6 of 301",
+      "renders / keystroke :",
+      "  App                0.03  (6 total incl. boot)",
+      "  ComposerView       1.00  (33 total incl. boot)",
+      "  PromptTextInput    1.00  (33 total incl. boot)",
+      "keystroke latency ms:",
+      "  p50 5.99  p95 8.84  max 9.98",
+      "─────────────────────────────────────────────────────"
+    ]
+  }
+}

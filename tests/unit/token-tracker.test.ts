@@ -1,7 +1,21 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { tracker, estimateTokens, estimateCost, estimateCostCacheAware, isFlatRateEngine } from '../../packages/core/src/signals/token-tracker.js';
+import { TokenTracker, tracker, estimateTokens, estimateCost, estimateCostCacheAware, isFlatRateEngine } from '../../packages/core/src/signals/token-tracker.js';
 
 describe('TokenTracker', () => {
+  it.each([
+    { promptTokens: Number.NaN }, { completionTokens: Number.POSITIVE_INFINITY },
+    { totalTokens: -1 }, { promptTokens: 1.5 }, { cachedInputTokens: -1 },
+    { cachedInputTokens: 101 }, { source: 'unknown' },
+  ])('rejects invalid reported usage without changing accounting: %j', invalid => {
+    const tracker = new TokenTracker();
+    const usage = { promptTokens: 100, completionTokens: 20, totalTokens: 120, source: 'sdk' as const };
+    tracker.record('fixture', { usage });
+    const before = tracker.getStats();
+    expect(() => tracker.record('fixture', { usage: { ...usage, ...invalid } as typeof usage }))
+      .toThrow('Invalid reported token usage');
+    expect(tracker.getStats()).toEqual(before);
+    expect(tracker.recent()).toHaveLength(1);
+  });
   beforeEach(() => {
     tracker.reset();
   });

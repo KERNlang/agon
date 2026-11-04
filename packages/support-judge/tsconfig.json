@@ -1,0 +1,31 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "outDir": "dist",
+    "rootDir": "src",
+    "baseUrl": ".",
+    "paths": {
+      "@kernlang/agon-kernel": [
+        "../mod-kernel/src/index.ts"
+      ]
+    },
+    "sourceMap": false,
+    "declarationMap": false,
+    "emitDeclarationOnly": true
+  },
+  "references": [
+    {
+      "path": "../mod-kernel"
+    },
+    {
+      "path": "../support-panel"
+    },
+    {
+      "path": "../support-verification"
+    }
+  ],
+  "include": [
+    "src"
+  ]
+}

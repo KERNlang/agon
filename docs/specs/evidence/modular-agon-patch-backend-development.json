@@ -1,0 +1,124 @@
+{
+  "schemaVersion": 1,
+  "kind": "development-increment-not-release-qualification",
+  "parentCommit": "99d141845a779df0786e3a84860b00fb9aeaa1d9",
+  "subjectKind": "git-index-blobs",
+  "subjects": [
+    {
+      "path": "packages/cli/release-channel.json",
+      "gitIndexBlob": "49be228e9656d15c802ac476eaad86973f146c25"
+    },
+    {
+      "path": "packages/core/src/blocks/patch-apply.ts",
+      "gitIndexBlob": "10a37e679671384323f6f64dc07186ce533d23de"
+    },
+    {
+      "path": "packages/core/src/blocks/patch-parser.ts",
+      "gitIndexBlob": "c1b9212580b31473667b167dc18e973c480cb933"
+    },
+    {
+      "path": "packages/core/src/utils/patch.ts",
+      "gitIndexBlob": "f1a4b4b87f90464129a51295b92295b0adbc48d6"
+    },
+    {
+      "path": "packages/support-worktree/src/index.ts",
+      "gitIndexBlob": "b8b47f8ba6154d31fb1bf4636378a0d518743b76"
+    },
+    {
+      "path": "packages/support-worktree/src/patch-apply.ts",
+      "gitIndexBlob": "4e0fb59a555c4162c6f97531a8cd8768cb168184"
+    },
+    {
+      "path": "packages/support-worktree/src/patch-content.ts",
+      "gitIndexBlob": "eca9ccffddc6b5a8057cdf0dbd045a507e67ee47"
+    },
+    {
+      "path": "packages/support-worktree/src/patch-parser.ts",
+      "gitIndexBlob": "c755abe6b212ef90a2a228e08f91f86c1bd8920d"
+    },
+    {
+      "path": "tests/unit/modular-patch-backend.test.ts",
+      "gitIndexBlob": "766e7a3fcfee28e9493c729097d05c24d3dca0dc"
+    }
+  ],
+  "steps": [
+    {
+      "id": "patch-owner-red-confirmed",
+      "expectedPassed": false,
+      "logSha256": "d094c9afbfd9f00e7864f31ba2c025c562925e6c509f4789a250abd4a4713ccb"
+    },
+    {
+      "id": "patch-support-build",
+      "expectedPassed": true,
+      "logSha256": "e8f5302fd95845e80255f23beb88db9de62aba16a2ae9cb6f787666fa79ad1cf"
+    },
+    {
+      "id": "patch-owner-full-build",
+      "expectedPassed": true,
+      "logSha256": "e6d62a424a7062207a7cfa8c4dc7b86118498e9a79796d4ceb9cff6c042c200a"
+    },
+    {
+      "id": "patch-owner-typecheck",
+      "expectedPassed": true,
+      "logSha256": "be1cf12bc2c9d30c2cc1484ecb5ad9f709e037352543b5aeaf93337177ed2a06"
+    },
+    {
+      "id": "patch-owner-lint",
+      "expectedPassed": true,
+      "logSha256": "248a3ac4633627e51a19d691de417a5f681d2685ca3c49ffbaa6ab883a50b6fd"
+    },
+    {
+      "id": "patch-owner-reexports",
+      "expectedPassed": true,
+      "logSha256": "de95be878ed3034819e11e168353c9f410a639a5c6304bc61e26718877a0291a"
+    },
+    {
+      "id": "patch-owner-final-focused",
+      "expectedPassed": true,
+      "logSha256": "e87ef73de0f94b1115c545b4cfe06264c2268db4af3feb7870f2e27637585e8d"
+    },
+    {
+      "id": "patch-owner-final-full-tests",
+      "expectedPassed": true,
+      "logSha256": "4775d45133712c8aca7d9ee657f90a0c2041aa7412c6d69be48d9e8b14aa50fe"
+    },
+    {
+      "id": "patch-owner-generated",
+      "expectedPassed": true,
+      "logSha256": "d4f6d6eaaf2a06407d8bd6ade8c7c197929f5d19226bf328f7c2c82ef5d6a829"
+    },
+    {
+      "id": "patch-owner-pack",
+      "expectedPassed": true,
+      "logSha256": "8d97225b7d56e8efcc45af7870f634ff469171d5fbb7e95ee690dfe5e1d2db95"
+    },
+    {
+      "id": "patch-owner-sbom",
+      "expectedPassed": true,
+      "logSha256": "f44576629da0ad72e310722e282906311403f9bbe01720732c92896dad0709e0"
+    },
+    {
+      "id": "patch-owner-npx",
+      "expectedPassed": true,
+      "logSha256": "40045ac44272f57e36e8b54e779c5b8e5273580723a297c93d4010e9f1d39464"
+    }
+  ],
+  "fullSuite": {
+    "passed": 6462,
+    "skipped": 6
+  },
+  "packageCount": 49,
+  "packedBytes": 1856239,
+  "npxChecks": 72,
+  "reviewArtifacts": [
+    "docs/specs/evidence/modular-agon-claude-patch-backend-review-input.json",
+    "docs/specs/evidence/modular-agon-claude-patch-backend-review.json"
+  ],
+  "notVerified": [
+    "clean committed release qualification",
+    "all remaining ownership and adapter removal",
+    "inherited backend defects listed in completion ledger",
+    "native platform matrix and live providers",
+    "publication and signing"
+  ]
+}

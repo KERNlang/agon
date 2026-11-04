@@ -18,6 +18,8 @@ export interface DispatchCallbacks {
   setModelPickerTitle?: (title:string) => void;
   setModelPickerCliGroups?: (groups:any[]) => void;
   setCesarPickerOpen: (open:boolean) => void;
+  setModPickerOpen?: (open:boolean) => void;
+  setModPickerView?: (view:any) => void;
   setChatSession: (session:ChatSession) => void;
   setLastUndoToken: (token:string|null) => void;
   askQuestion: (prompt:string) => Promise<string>;
@@ -58,8 +60,8 @@ export { absorbReviewResultIntoCesar, continueCesarAfterResult, runDelegatedJobT
 
 export { slashCommandForOrchestrationAction, announceCesarAutoOrchestration, withThreadOutcome, buildDelegatedContinuationPrompt, buildBrainstormContinuationMessage, collectRecentEngineContext, shouldAutoContinueDelegatedResult, extractExecutionSpec, ORCHESTRATION_ACTIONS } from './dispatch/delegation.js';
 
-export { isCesarPlanApprovalInput, isStrongCesarPlanApprovalInput, findPendingCesarPlan, findResumableCesarPlan, shouldApprovePendingCesarPlanInput, isCesarPlanResumeInput, isCesarPlanStatusInput, formatCesarPlanRuntimeStatus, buildResumePromptContext, skipCompletedSteps, askChoiceQuestion } from './dispatch/plan-queries.js';
+export { isCesarPlanApprovalInput, isStrongCesarPlanApprovalInput, findPendingCesarPlan, findResumableCesarPlan, shouldApprovePendingCesarPlanInput, isCesarPlanResumeInput, isCesarPlanStatusInput, formatCesarPlanRuntimeStatus, askChoiceQuestion } from './dispatch/plan-queries.js';
 
-export { resumeCesarPlan, approvePendingCesarPlan, cancelPendingCesarPlan, handleProposedCesarPlan, buildPlanCallbacks, failedPlanStepIsFallbackRetryable, preparePlanFallbackRetry, executeApprovedPlan, finalizePlanWithReviewGate } from './dispatch/plan-execution.js';
+export { resumeCesarPlan, approvePendingCesarPlan, cancelPendingCesarPlan, handleProposedCesarPlan, buildPlanCallbacks, executeApprovedPlan } from './dispatch/plan-execution.js';
 
 export { clearPersistedSessionContext, formatCesarRecoveryStatus, normalizeCesarActingFallbackMode, countTrackedUserTurns } from './dispatch/utils.js';

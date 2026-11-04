@@ -1,0 +1,32 @@
+**Concrete Gates Still Missing (≤ 500 words)**  
+
+1. **Git‑Object Staging Hash Verification**  
+   - *Gate*: Confirm that every Git object (commits, trees, blobs) referenced in the build artifact is **staged‑hashed** (i.e., its blob hash is included in an explicit staging commit).  
+   - *Reproducibility impact*: Without this gate, identical source trees could produce differing artifacts if a malicious or accidental commit is omitted from the staging set, creating a false‑green “identical” result.  
+
+2. **Clean Checkout + `npm ci` Re‑build**  
+   - *Gate*: Assert that the source tree has been re‑checked out from a clean working directory (no untracked or modified files) and that `npm ci` followed by a **full, independent build of the API & kernel** reproduces the same binaries and package lockfile.  
+   - *Reproducibility impact*: Skipping this gate allows hidden local modifications or cached node_modules to masquerade as a compliant build, leading to a false‑green verification that the artifact is reproducible.  
+
+3. **Independent API / Kernel Build Validation**  
+   - *Gate*: Build the public API and core kernel **from source** (using the same `NODE_ENV`, compiler flags, and dependency versions) *separately* from the test harness, ensuring that the compiled artifacts match the pre‑packaged binaries.  
+   - *Reproducibility impact*: Without separate verification, the build process might covertly use pre‑compiled caches or different environment variables, creating a false sense of fidelity.  
+
+4. **Negative Control Execution**  
+   - *Gate*: Run a suite of **negative test cases** (e.g., invalid inputs, malformed payloads, out‑of‑bounds values) against the full system to confirm that failures are handled deterministically and do not leak hidden state or expose privileged data.  
+   - *Reproducibility impact*: Absence of negative tests can hide non‑deterministic failures that would surface in downstream environments, falsely indicating stability.  
+
+5. **Package & Edge Count Compliance**  
+   - *Gate*: Verify that exactly **49 packages** are installed and that the dependency graph contains **144 unique edges** (including transitive dependencies).  
+   - *Reproducibility impact*: A mismatch could reveal injected or omitted packages that subtly alter runtime behavior, but the evidence set currently lacks an explicit count check, risking a false‑green compliance message.  
+
+6. **Frozen 160‑Workflow Oracle & Raw Envelopes**  
+   - *Gate*: Ensure the oracle repository and the accompanying **160 raw workflow envelopes** are **frozen** by hashing their contents and embedding the digests in a checksum file committed to the repo.  
+   - *Reproducibility impact*: Without this gate, a tampered oracle version may appear unchanged if the change is not reflected in a checksum, leading to a false‑green assumption that the oracle is unchanged.  
+
+7. **Source Contamination Detection**  
+   - *Gate*: Run a **source‑code contamination scan** (e.g., scanning for accidental inclusion of private keys, license violations, or copied snippets from third‑party code) and exclude any repo in which contamination is found.  
+   - *Reproducibility impact*: Contaminated code that is not caught can influence runtime behavior (e.g., hard‑coded secrets) and the test harness might still pass, creating a false‑green “secure” verdict.  
+
+**Summary**  
+The acceptance evidence currently documents many audit points (counts, frozen envelopes, etc.) but omits explicit gates that confirm source integrity, build reproducibility, and negative‑control coverage. Implementing these gates will eliminate false‑green outcomes and strengthen confidence in reproducibility.

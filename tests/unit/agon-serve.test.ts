@@ -151,13 +151,20 @@ describe('AgonServe — loopback HTTP bridge', () => {
     const reader = r.body!.getReader();
     const dec = new TextDecoder();
     let buf = '';
-    for (let i = 0; i < 8; i++) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buf += dec.decode(value);
-      if (buf.includes('echo:sse-probe')) break;
+    const timeout = setTimeout(() => ctrl.abort(), 2_000);
+    try {
+      while (!buf.includes('echo:sse-probe')) {
+        const chunk = await reader.read();
+        if (chunk.done) break;
+        buf += dec.decode(chunk.value, { stream: true });
+      }
+      buf += dec.decode();
+    } catch (error) {
+      if (!ctrl.signal.aborted) throw error;
+    } finally {
+      clearTimeout(timeout);
+      ctrl.abort();
     }
-    ctrl.abort();
     expect(buf).toContain('data:');
     expect(buf).toContain('"kind":"engine"');
     expect(buf).toContain('echo:sse-probe');

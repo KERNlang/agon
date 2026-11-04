@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "package": "@kernlang/agon-mod-team-forge",
+  "assignments": [
+    {
+      "category": "builtinCommandMetadata",
+      "id": "team-forge",
+      "source": "packages/core/src/blocks/builtin-commands.ts:18",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-team-forge",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cesarRoutes",
+      "id": "team-forge",
+      "source": "packages/cli/src/models/handler-types.ts:113",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-team-forge",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cesarRoutes",
+      "id": "teamforge",
+      "source": "packages/core/src/cesar/plan.ts:52",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-team-forge",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cliCommands",
+      "id": "team-forge",
+      "source": "packages/cli/src/lazy-commands.ts:291",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-team-forge",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "intentVariants",
+      "id": "team-forge",
+      "source": "packages/cli/src/signals/intent-types.ts:6",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-team-forge",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "tuiSlashCommands",
+      "id": "/team-forge",
+      "source": "packages/cli/src/signals/intent.ts:56",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-team-forge",
+      "rule": "exact-user-surface"
+    }
+  ]
+}

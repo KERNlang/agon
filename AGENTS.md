@@ -2,7 +2,7 @@
 
 > Any AI can join. They compete. You ship.
 
-Agon is a multi-AI orchestration framework. Registered engines compete via forge, debate via tribunal, and ideate via brainstorm. Cesar orchestrates from live capability, availability, confidence, and task evidence. Canonical cross-agent doctrine: `~/.claude/AGENTS.md`; Agon-specific global conventions: `~/.agon/AGON.md`.
+Agon is a multi-AI orchestration framework. Registered engines compete via forge, debate via tribunal, and ideate via brainstorm. Cesar orchestrates from live capability, availability, confidence, and task evidence. Canonical cross-agent doctrine: `~/.ai/AGENTS.md` (loaded by Cesar via `~/.agon/AGENTS.md`); Agon-specific global conventions: `~/.agon/AGON.md`.
 
 ## Using Agon From Codex
 
@@ -41,7 +41,7 @@ agon call <workflow> "<input>" [flags]
 
 Example workflows: `forge`, `brainstorm`, `synthesis`, `tribunal`, `campfire`, `pipeline`, `review`, `goal`, and `team-*`.
 
-When a workflow calls for the full roster, resolve every currently usable, non-excluded engine from the live registry at dispatch time. Do not encode a preferred model, fixed roster, vendor/version order, ratings-based review route, or fallback list in this file. Canonical selection and confidence rules live in `~/.claude/AGENTS.md`.
+When a workflow calls for the full roster, resolve every currently usable, non-excluded engine from the live registry at dispatch time. Do not encode a preferred model, fixed roster, vendor/version order, ratings-based review route, or fallback list in this file. Canonical selection and confidence rules live in `~/.ai/AGENTS.md`.
 
 ### Agon Mode Guide
 

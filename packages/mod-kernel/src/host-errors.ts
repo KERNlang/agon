@@ -1,0 +1,37 @@
+export class AgonError extends Error {
+  constructor(message: string) { super(message); this.name = 'AgonError' }
+}
+
+export class ConfigError extends AgonError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ConfigError';
+  }
+}
+
+export type DurableHostErrorCode =
+  | 'MOD_HOST_BUSY'
+  | 'MOD_FENCE_LOST'
+  | 'MOD_GENERATION_CORRUPT'
+  | 'MOD_POINTER_CORRUPT'
+  | 'MOD_RESTART_REQUIRED'
+  | 'MOD_MIGRATION_FAILED'
+  | 'MOD_TRANSACTION_FAILED'
+  | 'MOD_TRANSACTION_CONFLICT'
+  | 'MOD_SAFE_MODE';
+
+export class DurableHostError extends Error {
+  readonly code: DurableHostErrorCode;
+  readonly details: Readonly<Record<string, unknown>>;
+
+  constructor(code: DurableHostErrorCode, message: string, details: Readonly<Record<string, unknown>> = {}, options?: ErrorOptions) {
+    super(message, options);
+    this.name = 'DurableHostError';
+    this.code = code;
+    this.details = Object.freeze({ ...details });
+  }
+}
+
+export class SimulatedHostCrash extends Error {
+  constructor(readonly point: string) { super("simulated host crash at " + point); this.name = "SimulatedHostCrash"; }
+}

@@ -1,4 +1,5 @@
 import { defineCommand } from 'citty';
+import { readBrowserResponseError } from '@kernlang/agon-support-browser-bridge';
 
 import { ensureAgonHome, agonPath } from '@kernlang/agon-core';
 
@@ -228,7 +229,11 @@ export async function runDrive(opts: { prompt: string; sessionArg?: string; url?
     const sendBody: Record<string, unknown> = { input: opts.prompt, clientId };
     if (opts.engine) sendBody.engineId = opts.engine;
     const res = await fetch(`${base}/send`, { method: 'POST', headers: jsonHeaders, body: JSON.stringify(sendBody) });
-    if (!res.ok) { warn(`send failed (${res.status})`); process.exitCode = 2; failed = true; }
+    if (!res.ok) {
+      const guidance = await readBrowserResponseError(res, ctrl.signal);
+      warn(`send failed (${res.status})${guidance ? `: ${guidance}` : ''}`);
+      process.exitCode = 2; failed = true;
+    }
     else { result = (await res.json() as { result?: { reason?: string } }).result; }
   } catch (err) {
     warn(`the turn failed: ${err instanceof Error ? err.message : String(err)}`);

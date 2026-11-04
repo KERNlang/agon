@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { CESAR_STEP_TYPES } from '../../packages/core/src/cesar/plan.js';
-import { sanitizePlanSteps as sanitize } from '../../packages/core/src/cesar/plan-validation.js';
+import { CESAR_STEP_TYPES } from '@kernlang/agon-mod-plan';
+import { sanitizePlanSteps as sanitize } from '@kernlang/agon-core';
 
 // Regression coverage for the phantom-step crash: Cesar emitted plan steps with
 // no `type`/`description`, which flowed through verbatim, corrupted the plan

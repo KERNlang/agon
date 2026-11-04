@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "scope": "Top-level development logs, receipts, review packets, notes and reproduction helpers matching filenamePrefix; no nested worktrees, caches or installed dependencies.",
+  "filenamePrefix": "ratings-reset",
+  "warning": "Historical failures and review hypotheses are retained. Exported files may be sanitized; original receipt log hashes refer to original bytes, not sanitized bytes. This is not release acceptance.",
+  "archiveSha256": "8d4f1265c59b3742707e1b61be5e4832b81f604a06f48ebfbcb615a945c8c022",
+  "files": [
+    {
+      "originalRelativePath": "ratings-reset-cli-live.mjs",
+      "archivePath": "development-evidence/ratings-reset-cli-live.mjs",
+      "originalSha256": "ee430896bbfb669d5b306c0ade4a5c72bdcbe295b431902512627e29c144db9a",
+      "exportSha256": "ee430896bbfb669d5b306c0ade4a5c72bdcbe295b431902512627e29c144db9a",
+      "bytes": 3444,
+      "redactions": 0
+    }
+  ]
+}

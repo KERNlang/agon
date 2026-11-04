@@ -1,0 +1,19 @@
+{
+  "scope": "PR314 integration with merged PR312 and PR313, not full modular release acceptance",
+  "parents": ["8fee75e123806e7f9c4ddaae2285671558a57069", "f74cde179a5630c33612996eebd58e75c0d812d0"],
+  "testedDiffFromFirstParentSha256": "c8762b751f6243b0d20faf5c0af8611d712d3e5dd1748bf45c5943bd840e7f2c",
+  "indexAddedAfterTests": true,
+  "archiveRoot": "/Users/ra/dev/modular-agon-remediation",
+  "fullGate": {
+    "receipt": "nico-p314-main-integration-20261025.receipt.json",
+    "logSha256": "5a513124a605dae4d1a7ad537769481d1a3802e23d8475db8c2d17a09ed1280e",
+    "exitCode": 0,
+    "testsPassed": 11677,
+    "testsSkipped": 6,
+    "providerLaunches": 0
+  },
+  "reviewIndex": "docs/specs/evidence/postmerge-p314-truncation-repair-2026-10-25.json",
+  "integration": "Source and tests merged without conflicts. Only three generated release metadata files conflicted; all were regenerated from the combined build. Concurrent upstream merge 7bd95864c2c0aa4f0204e1cc4fa41d9dc572b25c has identical source and tests and will be retained in history.",
+  "supersedes": "The earlier PR314 index's pending main-integration requirement is satisfied by this receipt. Its focused review and negative controls remain valid.",
+  "limits": ["Publishing provenance remains external", "No active installation changed", "No full modular acceptance claim"]
+}

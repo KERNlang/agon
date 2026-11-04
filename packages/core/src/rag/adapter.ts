@@ -6,7 +6,7 @@ import type { RagChunk, RagManifest } from './types.js';
 
 import { loadRagIndexAt, saveRagIndexAt } from './store.js';
 
-import { withFileLock } from '../blocks/file-lock.js';
+import { withFileLock } from '@kernlang/agon-support-persistence';
 
 /**
  * Default maximum embedding dimensions advertised by the adapter. Factory callers may lower it for a deployment.

@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "scope": "AgentTeam result-reader ownership; not Agent runtime extraction",
+  "base": "700c867987567e3d427f4da906a3fed129c777b1",
+  "testedDiffSha256": "dc828b1cb9adb915cda6f7ba9adabcfb55a8ba33ee40b1f7e4c5cc2655c2faf7",
+  "evidenceRoot": "modular-agon-remediation",
+  "full": {
+    "receipt": "agent-result-owner-full-20261025.receipt.json",
+    "logSha256": "d3f24632c7be63d1b6ee882adc860c5a34fbdea3af2b83009ea71fb7d3ff5d30",
+    "passed": true,
+    "testsPassed": 11677,
+    "testsSkipped": 6,
+    "installedChecks": 85,
+    "providerLaunches": 0,
+    "seconds": 936.28
+  },
+  "negativeControl": {
+    "receipt": "agent-result-owner-negative-20261025.receipt.json",
+    "logSha256": "361789282df32dc6089b6077a60ba9ba8736d9d10c2dabbd873d59df434cab43",
+    "expectedFailures": 4,
+    "otherTestsPassed": 73
+  },
+  "focused": {
+    "receipt": "agent-result-owner-focused-built-20261025.receipt.json",
+    "logSha256": "914c77f26dc05f4d9caba3ac902b41685e11b7738da6ae60aede6b1eb1cc6eb2",
+    "testsPassed": 77
+  },
+  "retainedFailedAttempt": "agent-result-owner-focused-20261025.receipt.json",
+  "failedAttemptCause": "Bootstrap dynamically imported stale built packages; rebuilding the two changed packages made the unchanged tests pass",
+  "review": {
+    "packetSha256": "85dea59d7544d6266d723c36d18c3c0dd350188b54c9b1b478600a37f006eddf",
+    "codexReceipt": "agent-result-owner-codex-review.receipt.json",
+    "codexLogSha256": "ef12bf64da773a2aebeed76957b33e94f849ceb87954eeec0bcea46bfddc1f98",
+    "adjudication": "No introduced defect. Added actual payload rendering after durable Synthesis deactivation. Source tracing found no producer of owner-bound envelopes for these two transient return types; no fabricated historical-envelope path claimed.",
+    "kimiReceipt": "agent-result-owner-kimi-review.receipt.json",
+    "kimiStatus": "unavailable: no answer, not a passing review"
+  },
+  "mainIntegration": {
+    "headBeforeMerge": "a8c840f8470671ab2ac5d023d6f8ea81b09effb9",
+    "main": "01a10699fe2199bc50c16da516b455d1fb8b6941",
+    "reviewedSourcePatchSha256": "9fb2bffd1d04891bbd0a8aada3c62d4f5cb1cf18d38365ddfa8216a184512b15",
+    "testedDiffBeforeIndexSha256": "4a2c863568b555df816221a0d5fe426a77a21d2fb9ca0a1bac065e6cceca0c5b",
+    "receipt": "pr319-main-integration-gates-20261026.receipt.json",
+    "receiptSha256": "76f9a2d9a8aa829f62d05e9ad07358e8815c457b590876492f5ee95a70003004",
+    "logSha256": "65f5f889c004004abbdf0c66e528248d14e847a3563cf4ce289ceb2c3b9c07f1",
+    "passed": true,
+    "seconds": 945.348,
+    "testsPassed": 11832,
+    "testsSkipped": 7,
+    "testFilesPassed": 702,
+    "testFilesSkipped": 1,
+    "providerLaunches": 0,
+    "reviewedSourceUnchanged": true,
+    "exactCommittedQualification": "pending after merge commit; not claimed by this working-tree receipt"
+  },
+  "indexAddedAfterQualification": true,
+  "limits": ["No live providers", "npm provenance externally blocked", "Agent Core/CLI runtime extraction remains open", "No installation or promotion"]
+}

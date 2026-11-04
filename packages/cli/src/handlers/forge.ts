@@ -1,10 +1,12 @@
 import { join } from 'node:path';
 
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { applyPatchWithUndo, readPatchContent } from '@kernlang/agon-support-worktree';
+import { persistencePath } from '@kernlang/agon-support-persistence';
 
 import { execFileSync } from 'node:child_process';
 
-import { ensureAgonHome, RUNS_DIR, createPlan, approvePlan, startPlan, mergeStepResult, cancelPlan, failPlan, savePlan, scanProjectContext, getActiveWorkspace, snapshotWorkspace, snapshotPath, tracker, resolveWorkingDir, loadOrCreateActiveThread, applyPatchWithUndo, acquireApplyLock, releaseApplyLock, headChanged, branchChanged, headSha, currentBranch } from '@kernlang/agon-core';
+import { ensureAgonHome, RUNS_DIR, createPlan, approvePlan, startPlan, mergeStepResult, cancelPlan, failPlan, savePlan, scanProjectContext, getActiveWorkspace, snapshotWorkspace, snapshotPath, tracker, resolveWorkingDir, loadOrCreateActiveThread, acquireApplyLock, releaseApplyLock, headChanged, branchChanged, headSha, currentBranch } from '@kernlang/agon-core';
 
 import type { Plan, PlanStepInput, ApprovalLevel } from '@kernlang/agon-core';
 
@@ -25,6 +27,7 @@ import { recordRun, formatRunSummary } from '../telemetry/index.js';
 import { filterDefaultOrchestrationEngines } from './engine-filter.js';
 
 import { hostRegexTest, hostStringSet } from '../lib/kern-host.js';
+import { isExplicitApproval } from '../lib/explicit-approval.js';
 
 function handleForgeEvent(event: any, plan: Plan, engineStatus: Record<string,string>, dispatch: Dispatch, ctx: HandlerContext): Plan {
   if (ctx.currentPlan?.state === 'cancelled') return plan;
@@ -138,7 +141,7 @@ function handleForgeEvent(event: any, plan: Plan, engineStatus: Record<string,st
 /**
  * Auto-apply a winning forge patch to the working tree, guarded against the shared-checkout hazard: a HEAD/branch compare-and-swap (refuse if another session moved the ground since this run started) and an advisory apply-lock (refuse if another apply is in flight here). Both refusals return false so the caller falls back to manual /apply — the patch is never lost.
  */
-function applyForgePatchToWorkspace(winnerId: string, patchContent: string, dispatch: Dispatch, baseSha?: string|null, baseBranch?: string|null): boolean {
+function applyForgePatchToWorkspace(winnerId: string, patchContent: string, dispatch: Dispatch, baseSha?: string|null, baseBranch?: string|null, setLastUndoToken?: HandlerContext['setLastUndoToken']): boolean {
   if (!patchContent.trim()) {
     dispatch({ type: 'info', message: `Winner ${winnerId} produced an empty patch.` });
     return true;
@@ -166,16 +169,35 @@ function applyForgePatchToWorkspace(winnerId: string, patchContent: string, disp
     return false;
   }
   try {
-    const result = applyPatchWithUndo(cwd, patchContent);
+    const result = applyPatchWithUndo(cwd, patchContent, persistencePath('undo'));
     if (result.ok) {
+      if (result.undoToken) {
+        let registered = false;
+        try {
+          if (setLastUndoToken) {
+            setLastUndoToken(result.undoToken);
+            registered = true;
+          }
+        } catch {
+          // The patch is already applied. A host-state failure must not retry it.
+        }
+        dispatch(registered
+          ? { type: 'info', message: 'Undo available: /undo' }
+          : { type: 'warning', message: `Patch applied, but this host could not confirm undo-token registration (${result.undoToken}). The inverse patch remains stored. Check /undo availability before retrying.` });
+      }
       dispatch({ type: 'success', message: `Applied winner patch from ${winnerId}` });
-      if (result.undoToken) dispatch({ type: 'info', message: 'Undo available: /undo' });
       return true;
     }
     dispatch({ type: 'warning', message: `Winner patch not applied automatically: ${result.error ?? 'unknown error'}` });
     return false;
   } finally {
-    if (lock.sessionUUID) releaseApplyLock(cwd, lock.sessionUUID);
+    if (lock.sessionUUID) {
+      try {
+        releaseApplyLock(cwd, lock.sessionUUID);
+      } catch (err) {
+        dispatch({ type: 'warning', message: `Apply lock cleanup failed: ${err instanceof Error ? err.message : String(err)}. The patch outcome is unchanged. Check the lock before another apply.` });
+      }
+    }
   }
 }
 
@@ -624,8 +646,18 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
     
       const approvalLevel = (config.approvalLevel ?? 'plan') as ApprovalLevel;
       if (!skipPlanApproval && approvalLevel !== 'auto') {
-        const answer = await ctx.askQuestion('Approve plan? [Y/n]');
-        if (answer.trim().toLowerCase() === 'n') {
+        const pendingPlan = ctx.currentPlan;
+        const answer = await ctx.askQuestion('Approve plan? Type y or yes to approve.');
+        if (ctx.currentPlan !== pendingPlan || plan.state !== 'draft' || forgeAbort.signal.aborted) {
+          dispatch({ type: 'info', message: 'Forge plan changed while approval was pending. No forge started.' });
+          return null;
+        }
+        if (!answer.trim()) {
+          savePlan(plan);
+          dispatch({ type: 'info', message: 'Plan remains draft. Use /approve to approve it explicitly.' });
+          return null;
+        }
+        if (!isExplicitApproval(answer)) {
           plan = cancelPlan(plan);
           ctx.setCurrentPlan(plan);
           savePlan(plan);
@@ -858,14 +890,17 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
     // Convergence: if Cesar says merge best-of-breed, synthesize a converged patch
     if (judgment?.shouldConverge && judgment.convergencePlan.length > 0 && finalWinner) {
       dispatch({ type: 'info', message: 'Cesar recommends convergence — synthesizing best-of-breed…' });
-      const answer = await ctx.askQuestion('Converge best parts from all engines? [Y/n]');
-      if (answer.trim().toLowerCase() !== 'n') {
+      const answer = await ctx.askQuestion('Converge best parts from all engines? Type y or yes to approve.');
+      if (isExplicitApproval(answer)) {
+        let convergencePatchSelected = false;
         try {
           const convergedPath = await cesarConvergeForge(manifest, judgment, dispatch, ctx);
           if (convergedPath) {
+            const convergedContent = readPatchContent(convergedPath);
+            // After selection, an effect may have occurred. Do not apply another patch.
+            convergencePatchSelected = true;
             dispatch({ type: 'success', message: 'Convergence complete — merged patch ready' });
-            const convergedContent = readFileSync(convergedPath, 'utf-8');
-            const applied = applyForgePatchToWorkspace('convergence', convergedContent, dispatch, preflightHead, preflightBranch);
+            const applied = applyForgePatchToWorkspace('convergence', convergedContent, dispatch, preflightHead, preflightBranch, ctx.setLastUndoToken);
             if (!applied) dispatch({ type: 'patch-review' as any, winnerId: 'convergence', patchPath: convergedPath, patchContent: convergedContent });
     
             if ((ctx.config as any).sessionContinuity === true) {
@@ -938,6 +973,9 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
             }; // Early return — convergence handled everything
           }
         } catch (err) {
+          if (convergencePatchSelected) {
+            throw new Error(`Convergence handling stopped: ${err instanceof Error ? err.message : String(err)}. No winner fallback was applied. Inspect the workspace before retrying.`, { cause: err });
+          }
           dispatch({ type: 'warning', message: `Convergence failed: ${err instanceof Error ? err.message : String(err)}. Falling back to winner.` });
         }
       }
@@ -948,9 +986,11 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
       const patchPath = manifest.patches[finalWinner];
       dispatch({ type: 'info', message: `Patch: ${patchPath}` });
       if (patchPath) {
+        let patchRead = false;
         try {
-          const patchContent = readFileSync(patchPath, 'utf-8');
-          const applied = applyForgePatchToWorkspace(finalWinner, patchContent, dispatch, preflightHead, preflightBranch);
+          const patchContent = readPatchContent(patchPath);
+          patchRead = true;
+          const applied = applyForgePatchToWorkspace(finalWinner, patchContent, dispatch, preflightHead, preflightBranch, ctx.setLastUndoToken);
           if (!applied) dispatch({ type: 'patch-review' as any, winnerId: finalWinner, patchPath, patchContent });
     
           if ((ctx.config as any).sessionContinuity === true) {
@@ -970,7 +1010,11 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
             }
           }
         } catch (err) {
-          console.warn(`[agon] failed to read winning patch ${patchPath}: ${err instanceof Error ? err.message : String(err)}`);
+          const reason = err instanceof Error ? err.message : String(err);
+          console.warn(`[agon] winning patch handling failed for ${patchPath}: ${reason}`);
+          dispatch({ type: 'warning', message: patchRead
+            ? `Winning patch handling stopped: ${reason}. Inspect the workspace before retrying; the patch may already be applied.`
+            : `Winning patch could not be read and was not applied: ${reason}` });
         }
       }
     } else {
@@ -1057,4 +1101,3 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
     ctx.setActiveAbort(null);
   }
 }
-

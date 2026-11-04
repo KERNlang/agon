@@ -1,4 +1,4 @@
-import { streamText, generateText, jsonSchema } from 'ai';
+import { streamText, jsonSchema } from 'ai';
 
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 
@@ -8,6 +8,10 @@ import type { DispatchResult } from '../models/types.js';
 
 import { hostNowMs, hostUrlHost } from '../blocks/host-runtime.js';
 
+import { classifyApiFailure, type ApiFailure } from './failure-classify.js';
+
+import { startWallClock } from './wall-clock.js';
+
 export interface ApiConfig {
   baseUrl: string;
   apiKeyEnv: string;
@@ -16,6 +20,8 @@ export interface ApiConfig {
   format?: 'openai'|'anthropic';
   firstChunkTimeoutMs?: number;
   idleTimeoutMs?: number;
+  activityWindowMs?: number;
+  extendWhileActiveMaxSeconds?: number;
   firstChunkRetryCount?: number;
   firstChunkRetryBackoffMs?: number;
 }
@@ -270,8 +276,7 @@ export function convertMessagesForSdk(messages: Array<{role:string,content:any,t
 }
 
 export async function apiDispatch(config: ApiConfig, prompt: string, timeout: number, signal?: AbortSignal, systemPrompt?: string): Promise<DispatchResult> {
-  const model = buildModel(config);
-  if (!model) {
+  if (!buildModel(config)) {
     return {
       exitCode: 1,
       stdout: '',
@@ -280,50 +285,25 @@ export async function apiDispatch(config: ApiConfig, prompt: string, timeout: nu
       timedOut: false,
     };
   }
-
-  const startTime = Date.now();
-  const messages: Array<{role: 'system'|'user', content: string}> = [];
-  if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
-  messages.push({ role: 'user', content: prompt });
-
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeout * 1000);
-  if (signal) {
-    if (signal.aborted) { clearTimeout(timer); return { exitCode: 130, stdout: '', stderr: 'Aborted', durationMs: 0, timedOut: false }; }
-    signal.addEventListener('abort', () => controller.abort(), { once: true });
-  }
-
+  const gen = apiStreamDispatch(config, prompt, timeout, signal, systemPrompt);
   try {
-    const result = await generateText({
-      model,
-      messages,
-      maxOutputTokens: config.maxTokens ?? 4096,
-      abortSignal: controller.signal,
-      maxRetries: 5,
-    });
-    clearTimeout(timer);
-    const text = result.text || '';
-    const usage = result.usage ? {
-      promptTokens: result.usage.inputTokens ?? 0,
-      completionTokens: result.usage.outputTokens ?? 0,
-      totalTokens: (result.usage.inputTokens ?? 0) + (result.usage.outputTokens ?? 0),
-      cachedInputTokens: result.usage.cachedInputTokens ?? 0,
-      source: 'sdk' as const,
-    } : undefined;
-    return { exitCode: 0, stdout: text, stderr: '', durationMs: Date.now() - startTime, timedOut: false, usage };
-  } catch (err) {
-    clearTimeout(timer);
-    const durationMs = Date.now() - startTime;
-    if (err instanceof Error && err.name === 'AbortError') {
-      return { exitCode: signal?.aborted ? 130 : 124, stdout: '', stderr: 'Request timed out', durationMs, timedOut: !signal?.aborted };
+    while (true) {
+      const next = await gen.next();
+      if (next.done) return next.value;
     }
-    const isRateLimited = err instanceof Error && (
-      err.message.includes('429') || err.message.includes('rate') || err.name === 'AI_RetryError' || err.name === 'RetryError'
-    );
-    const exitCode = isRateLimited ? 2 : 1;
-    const prefix = isRateLimited ? 'API rate limited (retries exhausted)' : 'API request failed';
-    return { exitCode, stdout: '', stderr: `${prefix}: ${err instanceof Error ? err.message : String(err)}`, durationMs, timedOut: false };
+  } finally {
+    try { await gen.return(undefined as unknown as DispatchResult); } catch { /* best-effort disposal */ }
   }
+}
+
+function apiFailureResult(failure: ApiFailure, stdout: string, durationMs: number, genericPrefix: string): DispatchResult {
+  if (failure.kind === 'timeout') {
+    return { exitCode: 124, stdout, stderr: `Request timed out (${failure.message})`, durationMs, timedOut: true };
+  }
+  if (failure.kind === 'rate_limit') {
+    return { exitCode: 2, stdout, stderr: `API rate limited (retries exhausted): ${failure.message}`, durationMs, timedOut: false };
+  }
+  return { exitCode: 1, stdout, stderr: `${genericPrefix}: ${failure.message}`, durationMs, timedOut: false };
 }
 
 export async function* apiStreamDispatch(config: ApiConfig, prompt: string, timeout: number, signal?: AbortSignal, systemPrompt?: string): AsyncGenerator<string, DispatchResult, void> {
@@ -412,10 +392,16 @@ export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages:
 
   // Set up timeout + external abort
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeout * 1000);
+  const abortFromCaller = () => controller.abort();
+  const clock = startWallClock({
+    baseSeconds: timeout,
+    ceilingSeconds: config.extendWhileActiveMaxSeconds,
+    activityWindowMs: config.activityWindowMs ?? config.idleTimeoutMs ?? 90_000,
+    onExpire: () => controller.abort(),
+  });
   if (signal) {
-    if (signal.aborted) { clearTimeout(timer); return { exitCode: 130, stdout: '', stderr: 'Aborted', durationMs: 0, timedOut: false }; }
-    signal.addEventListener('abort', () => controller.abort(), { once: true });
+    if (signal.aborted) { clock.stop(); return { exitCode: 130, stdout: '', stderr: 'Aborted', durationMs: 0, timedOut: false }; }
+    signal.addEventListener('abort', abortFromCaller, { once: true });
   }
 
   let stdout = '';
@@ -504,7 +490,7 @@ export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages:
           // double-swallowed-error bug — see runReviewCore in review.kern,
           // which used to re-report this as "parse-failure: empty or unusable
           // response" instead of the real timeout).
-          clearTimeout(timer);
+          clock.stop();
           controller.abort();
           const reasoningCharsSoFar = capturedParts.filter((p) => p.kind === 'reasoning').reduce((n, p: any) => n + p.text.length, 0) + currentReasoningBuf.length;
           if (currentTextBuf) { capturedParts.push({ kind: 'text', text: currentTextBuf }); currentTextBuf = ''; }
@@ -526,6 +512,7 @@ export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages:
             durationMs: Date.now() - startTime,
             timedOut: true,
             parts: capturedParts,
+            ...clock.idleReport(),
           };
         }
         throw err;
@@ -536,8 +523,9 @@ export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages:
       chunkCount++;
 
       // Any productive event switches to tighter inter-chunk timeout
-      if (!gotFirstChunk && (part.type === 'text-delta' || part.type === 'reasoning-delta' || part.type === 'tool-call')) {
+      if (part.type === 'text-delta' || part.type === 'reasoning-delta' || part.type === 'tool-call') {
         gotFirstChunk = true;
+        clock.noteActivity();
       }
 
       switch (part.type) {
@@ -549,7 +537,7 @@ export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages:
           break;
         }
         case 'reasoning-delta': {
-          const text = (part as any).delta ?? '';
+          const text = (part as any).text ?? (part as any).delta ?? '';
           if (text) {
             currentReasoningBuf += text;
           }
@@ -591,7 +579,15 @@ export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages:
           if (hasProductiveOutput && isIgnorableAnthropicEmptyDeltaError(streamError, config)) {
             break;
           }
-          clearTimeout(timer);
+          clock.stop();
+          if (controller.signal.aborted) {
+            if (signal?.aborted) return { exitCode: 130, stdout, stderr: 'Aborted', durationMs: Date.now() - startTime, timedOut: false };
+            return { exitCode: 124, stdout, stderr: clock.timeoutMessage(), durationMs: Date.now() - startTime, timedOut: true, ...clock.report() };
+          }
+          const classified = classifyApiFailure(streamError);
+          if (classified.kind === 'timeout' || classified.kind === 'rate_limit') {
+            return apiFailureResult(classified, stdout, Date.now() - startTime, 'API stream failed');
+          }
           const errStr = String(streamError);
           // A 404/not-found before any output is almost always a wrong baseUrl
           // path or a wire-format mismatch (e.g. format='anthropic' on a host
@@ -623,7 +619,12 @@ export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages:
     if (currentTextBuf) capturedParts.push({ kind: 'text', text: currentTextBuf });
     if (currentReasoningBuf) capturedParts.push({ kind: 'reasoning', text: currentReasoningBuf });
 
-    clearTimeout(timer);
+    clock.stop();
+
+    if (controller.signal.aborted && finishReason === undefined) {
+      if (signal?.aborted) return { exitCode: 130, stdout, stderr: 'Aborted', durationMs: Date.now() - startTime, timedOut: false, parts: capturedParts };
+      return { exitCode: 124, stdout, stderr: clock.timeoutMessage(), durationMs: Date.now() - startTime, timedOut: true, parts: capturedParts, ...clock.report() };
+    }
 
     let usage: DispatchResult['usage'] = undefined;
     try {
@@ -638,22 +639,23 @@ export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages:
         };
       }
     } catch { /* usage tokens optional — extraction failure is non-critical */ }
-    return { exitCode: 0, stdout, stderr: '', durationMs: Date.now() - startTime, timedOut: false, usage, parts: capturedParts, finishReason };
+    return { exitCode: 0, stdout, stderr: '', durationMs: Date.now() - startTime, timedOut: false, usage, parts: capturedParts, finishReason, ...clock.extensionReport() };
   } catch (err) {
-    clearTimeout(timer);
+    clock.stop();
     const durationMs = Date.now() - startTime;
     if (err instanceof Error && err.name === 'AbortError') {
-      return { exitCode: signal?.aborted ? 130 : 124, stdout, stderr: 'Request timed out', durationMs, timedOut: !signal?.aborted };
+      if (signal?.aborted) return { exitCode: 130, stdout, stderr: 'Aborted', durationMs, timedOut: false };
+      return { exitCode: 124, stdout, stderr: clock.timeoutMessage(), durationMs, timedOut: true, ...clock.report() };
     }
-    const isRateLimited = err instanceof Error && (
-      err.message.includes('429') || err.message.includes('rate') || err.name === 'AI_RetryError' || err.name === 'RetryError'
-    );
-    const exitCode = isRateLimited ? 2 : 1;
-    const prefix = isRateLimited ? 'API rate limited (retries exhausted)' : 'API stream failed';
-    const baseMsg = `${prefix}: ${err instanceof Error ? err.message : String(err)}`;
+    const failure = classifyApiFailure(err);
+    const failed = apiFailureResult(failure, stdout, durationMs, 'API stream failed');
     // Anthropic-format on non-Anthropic host is a common misconfig — append a hint
     // so the user sees it in the error toast instead of silently falling back every turn.
-    const hint = stdout.length === 0 && !isRateLimited ? formatMismatchHint(config) : null;
-    return { exitCode, stdout, stderr: hint ? `${baseMsg}\n${hint}` : baseMsg, durationMs, timedOut: false };
+    const hint = stdout.length === 0 && failure.kind === 'error' ? formatMismatchHint(config) : null;
+    return hint ? { ...failed, stderr: `${failed.stderr}\n${hint}` } : failed;
+  } finally {
+    clock.stop();
+    signal?.removeEventListener('abort', abortFromCaller);
+    controller.abort();
   }
 }

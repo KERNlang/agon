@@ -1,0 +1,1296 @@
+command: ["npm","test"]
+exitCode: 0
+signal:
+error:
+
+> test
+> npm run test:ts
+
+
+> test:ts
+> node scripts/run-node22.mjs vitest run
+
+
+ RUN  v3.2.7 /Users/ra/dev/agon-modular-slice-1a
+
+ ✓ tests/unit/session-context.test.ts (7 tests) 490ms
+ ✓ tests/unit/worktree-lock.test.ts (7 tests) 718ms
+stdout | tests/unit/persistent-session.test.ts > persistent session streaming dedupe > prefers newer workspace conversation continuity over stale per-engine state when enabled
+[agon] conversation continuity: loaded 2 messages from claude
+
+ ✓ tests/unit/worktree-session.test.ts (14 tests) 1995ms
+   ✓ session worktrees > create / list / find / remove / prune > worktreePruneAll removes aged engine worktrees under .agon/agent-worktrees  895ms
+ ✓ tests/unit/process.test.ts (17 tests) 2549ms
+   ✓ spawnWithTimeout — Timeout > collects partial stdout before timeout  504ms
+   ✓ spawnWithTimeout — Timeout > force-kills processes that ignore SIGTERM  955ms
+   ✓ spawnWithTimeout — AbortSignal > collects partial output before abort  503ms
+ ✓ tests/unit/companion-dispatch.test.ts (13 tests) 2860ms
+   ✓ companionDispatch > kills a companion process that returns a result but ignores SIGTERM  854ms
+   ✓ companionDispatch > appends textOnlyArgs only when the dispatch sets textOnly  412ms
+ ✓ tests/unit/cli-model-probe.test.ts (15 tests) 2849ms
+   ✓ CLI live-model probe cache > buildCliModelGroups prefers the probed list over the static fallback for agy  393ms
+   ✓ CLI live-model probe cache > opencode group prefers the probed provider/model list (plain `opencode models`)  379ms
+   ✓ CLI live-model probe cache > labels CLI groups by engine (Antigravity, not Google) and carries effort levels  438ms
+   ✓ CLI live-model probe cache > CLI group effortLevels mirror engines/*.json (guards the hardcoded copy against drift)  695ms
+   ✓ CLI live-model probe cache > falls back to the static google list when no probe is cached  614ms
+ ✓ tests/integration/orchestration.test.ts (13 tests) 3120ms
+   ✓ Nero ↔ Cesar Confidence Transitions > CONFIDENCE_TIERS define correct escalation ladder  2769ms
+ ✓ tests/unit/file-lock.test.ts (16 tests) 2577ms
+   ✓ withFileLock > serializes RMW across real processes (no lost updates)  1490ms
+ ✓ tests/unit/runSyntaxCheck.test.ts (6 tests) 3038ms
+   ✓ runSyntaxCheck (forge quality) > returns clean when the changed file is valid TypeScript  456ms
+   ✓ runSyntaxCheck (forge quality) > flags invalid TypeScript with the file path  496ms
+   ✓ runSyntaxCheck (forge quality) > flags Python files where tree-sitter is forgiving but CPython is not  479ms
+   ✓ runSyntaxCheck (forge quality) > skips files with unknown extensions (no false positives)  481ms
+   ✓ runSyntaxCheck (forge quality) > returns clean when there are no changes at all  467ms
+   ✓ runSyntaxCheck (forge quality) > returns clean when the sidecar is disabled — no fabricated failures  659ms
+ ✓ tests/unit/mutate-sandbox.test.ts (39 tests) 3127ms
+   ✓ mutate sandbox — prebuilt output > leaves a COMMITTED (non-ignored) build directory alone — it belongs to HEAD  309ms
+   ✓ mutate sandbox — prebuilt output > leaves packages that are NOT being mutated fully hydrated  313ms
+   ✓ mutate sandbox — check-ignore is byte-exact > clears the prebuilt output of a package whose directory is non-ASCII  400ms
+ ✓ tests/unit/pty-brain.test.ts (38 tests) 4287ms
+   ✓ createPersistentSession — claude routing > routes claude to --print (stream-json) by DEFAULT (Anthropic no longer meters -p)  400ms
+   ✓ shouldUseClaudePty — claude identified by id OR binary (agrees with the other gates) > matches id="claude" or binary="claude"; never other engines; reads the same switch  317ms
+ ✓ tests/unit/review-seat-mode.test.ts (41 tests) 3409ms
+   ✓ runReviewCore surfaces the max_turns reason instead of "exit 1" > throws the named reason, not the generic exit code  939ms
+   ✓ runReviewCore surfaces the max_turns reason instead of "exit 1" > dispatches the review seat in review mode, prompt-borne (no native review target)  509ms
+   ✓ runReviewCore surfaces the max_turns reason instead of "exit 1" > a PROSE review that quotes a result envelope still passes as a success  375ms
+   ✓ runReviewCore surfaces the max_turns reason instead of "exit 1" > FAILS the seat when a terminal result envelope follows partial text  1191ms
+   ✓ runReviewCore surfaces the max_turns reason instead of "exit 1" > a clean stream with a SUCCESS result envelope still passes  371ms
+ ✓ tests/integration/daemon-survival.test.ts (3 tests) 3693ms
+   ✓ agond survival — the daemon outlives its launcher > submits the first job while starting an absent daemon  787ms
+   ✓ agond survival — the daemon outlives its launcher > survives the launching process exiting, serves over the socket, and a prompt lands in the ledger  1143ms
+   ✓ agond survival — the daemon outlives its launcher > daemon stop stays alive for its bounded poll and exits cleanly  1762ms
+ ✓ tests/unit/mutate.test.ts (42 tests) 3681ms
+   ✓ runMutate — hydrated sandbox > mutates uncommitted work in an isolated worktree and leaves the user tree untouched  2321ms
+   ✓ runMutate — hydrated sandbox > an abort AFTER the baseline is ok:false with an explicit error, never a silent success  1341ms
+stdout | tests/unit/guards-integration.test.ts > GuardPipeline integration — invariants mode > (a3) codex FIX 1: a cross-engine conversation handoff carries readPaths → engine B can Edit the path engine A read without a block
+[agon] conversation continuity: loaded 3 messages from engine-a
+
+ ✓ tests/unit/rooms-lock.test.ts (5 tests) 2165ms
+   ✓ withRoomLock — stale lock reclaim > does NOT steal a fresh lock with empty content (openSync/writeSync gap safety)  2043ms
+ ✓ tests/unit/guards-integration.test.ts (18 tests) 2774ms
+   ✓ GuardPipeline integration — invariants mode > (a) grounded-write: blocks an Edit to a never-read EXISTING path, passes after a Read; net-new Edit passes immediately  370ms
+   ✓ GuardPipeline integration — invariants mode > (c) DiagnosticRunner digest lands in the next dispatch context  805ms
+   ✓ GuardPipeline integration — invariants mode > (c2) codex 0.88: a digest drained at the LOOP-TOP refreshes the session verifier mirror → compaction carries the verifier line  747ms
+ ✓ tests/unit/eager-tool-exec.test.ts (9 tests) 1958ms
+   ✓ Eager Tool Execution > surfaces malformed streaming tool input as a retryable tool error  1741ms
+ ✓ tests/unit/rooms-waker-degrade.test.ts (2 tests) 2038ms
+   ✓ createRoomWaker — degradation paths > fs.watch throwing at creation → warns once and runs on the degraded poll interval  1022ms
+   ✓ createRoomWaker — degradation paths > watcher 'error' after creation → closes it, warns once, wakes waiters, degrades subsequent waits  1016ms
+ ✓ tests/integration/core-systems.test.ts (25 tests) 1548ms
+   ✓ Process Spawn > spawnWithTimeout respects timeout  520ms
+   ✓ Context Scanner > detects project type from directory  495ms
+ ✓ tests/unit/review-file-context.test.ts (12 tests) 4506ms
+   ✓ gatherReviewFileContext (repo grounding) > does not put NUL bytes from untracked binary files into review diffs  665ms
+   ✓ gatherReviewFileContext (repo grounding) > does not follow untracked symlinks outside the repo when synthesizing review diffs  594ms
+   ✓ gatherReviewFileContext (repo grounding) > explicit-base branch reviews do not trigger the self-diff fallback  1154ms
+   ✓ gatherReviewFileContext (repo grounding) > reviewing the branch you are ON auto-bases against the default branch instead of erroring  1467ms
+   ✓ gatherReviewFileContext (repo grounding) > keeps the loud error when on the default branch with no other base to anchor on  429ms
+ ✓ tests/unit/rag-adapter-conformance.test.ts (11 tests) 385ms
+ ✓ tests/unit/cesar-session.test.ts (47 tests) 3184ms
+   ✓ Cesar KERN context spine > prepares and stores one compiler-derived map before the engine list  558ms
+   ✓ Cesar KERN context spine > keeps startup best-effort for an empty map  812ms
+   ✓ Cesar KERN context spine > clears a stale map when a refresh fails  546ms
+   ✓ Cesar KERN context spine > renders a pre-primed map through the synchronous prompt path  691ms
+ ✓ tests/unit/adapter-api-fallback.test.ts (20 tests) 4894ms
+   ✓ CliAdapter.dispatch — api fallback gated on key presence (Finding 1) > binary missing + key SET → takes the api fallback (preserves the feature)  440ms
+   ✓ CliAdapter.dispatch — api fallback gated on key presence (Finding 1) > dispatchAgent uses the same API fallback selection  375ms
+   ✓ CliAdapter.dispatch — api fallback gated on key presence (Finding 1) > dispatchAgent carries structured history and vision into the API tool loop  405ms
+   ✓ CliAdapter.dispatch — api fallback gated on key presence (Finding 1) > dispatchAgent keeps partial output but returns failure when the API loop fails  441ms
+   ✓ CliAdapter.dispatch — api fallback gated on key presence (Finding 1) > dispatchAgentStream streams safe API-agent envelopes and returns a truthful terminal result  538ms
+   ✓ CliAdapter.dispatch — api fallback gated on key presence (Finding 1) > dispatchAgentStream carries structured history into the API tool loop  657ms
+   ✓ CliAdapter.dispatch — api fallback gated on key presence (Finding 1) > returns cancellation when the provider ignores an upstream abort  565ms
+   ✓ CliAdapter.dispatch — api fallback gated on key presence (Finding 1) > dispatchAgentStream preserves API-agent terminal status 0  355ms
+   ✓ CliAdapter.dispatch — api fallback gated on key presence (Finding 1) > dispatchAgentStream preserves API-agent terminal status 2  375ms
+ ✓ tests/unit/conquer-isolation.test.ts (2 tests) 1849ms
+   ✓ Conquer worktree isolation > keeps source WIP untouched while mutations land on a named branch  1149ms
+   ✓ Conquer worktree isolation > overlays installed dependencies and build artifacts for the gate  700ms
+ ✓ tests/integration/room-cli-exit.test.ts (1 test) 1430ms
+   ✓ room CLI exit semantics > exits nonzero when an operation is refused  1429ms
+ ✓ tests/unit/git-patch-applyability.test.ts (2 tests) 833ms
+   ✓ git patch applyability > keeps worktreeDiff patch output applyable when the last hunk has no file newline  485ms
+   ✓ git patch applyability > normalizes missing final patch newline before applying  347ms
+ ✓ tests/unit/context-scanner.test.ts (31 tests) 5222ms
+   ✓ context-scanner > scanProjectContext > returns non-empty string for a git repo  389ms
+   ✓ context-scanner > scanProjectContext > includes project name and branch  486ms
+   ✓ context-scanner > scanProjectContext > includes file tree  510ms
+   ✓ context-scanner > scanProjectContext > includes recent commits  399ms
+   ✓ context-scanner > scanProjectContext > appends extra context when provided  504ms
+   ✓ context-scanner > scanProjectContext > respects kern format  669ms
+   ✓ context-scanner > scanProjectContext > respects plain format (default)  559ms
+   ✓ context-scanner > scanProjectContext > caps output length at ~6000 chars for large repos  718ms
+ ✓ tests/unit/codebase-map.test.ts (17 tests) 483ms
+ ✓ tests/unit/review-mutate.test.ts (44 tests) 4724ms
+   ✓ runReviewMutation — advisory review hook > mutates the reviewed diff and writes mutation-report.json into the run dir  1401ms
+   ✓ agon mutate run() — end to end, no engines > runs the whole command body and emits ONLY the report on stdout under --json  2683ms
+   ✓ agon mutate run() — end to end, no engines > refuses contradictory flags before touching git, and keeps stdout JSON-clean  626ms
+ ✓ tests/unit/hooks.test.ts (8 tests) 1094ms
+   ✓ Hooks > runHook > respects timeout  1003ms
+ ✓ tests/unit/tool-permissions.test.ts (11 tests) 1010ms
+   ✓ tool-permissions > Read inline gate (createReadTool().checkPermission) > a persisted allow rule whitelists an outside repo without asking  305ms
+ ✓ tests/unit/context-thread.test.ts (38 tests) 601ms
+ ✓ tests/unit/native-loop-guards.test.ts (9 tests) 405ms
+ ✓ tests/integration/dispatch-metrics.test.ts (14 tests) 451ms
+   ✓ Timeout Isolation > determineWinner works with partial results after engine failure  401ms
+ ✓ tests/unit/diagnostic-runner.test.ts (31 tests | 1 skipped) 446ms
+ ✓ tests/unit/council.test.ts (24 tests) 531ms
+ ✓ tests/unit/engine-memory.test.ts (14 tests) 106ms
+ ✓ tests/unit/brainstorm-style.test.ts (8 tests) 372ms
+ ✓ tests/unit/workspace-grounding.test.ts (14 tests) 803ms
+   ✓ snapshotPath — plan snapshots without a matching bookmark > captures the real HEAD sha, branch, and clean dirty flag from a git repo  339ms
+ ✓ tests/unit/tool-hooks.test.ts (18 tests) 1156ms
+   ✓ runPreToolUseHooks > timeout proceeds (fail-open)  1001ms
+ ✓ tests/unit/worktree-pnpm-link.test.ts (4 tests) 168ms
+ ✓ tests/unit/review-dispatch-failure.test.ts (16 tests) 5945ms
+   ✓ runReviewCore surfaces real dispatch failures (Fix B) > throws with the real stderr when the STREAMING dispatch returns no text + a failed result  548ms
+   ✓ runReviewCore surfaces real dispatch failures (Fix B) > throws with the real stderr when the NON-STREAMING dispatch returns no text + a failed result  418ms
+   ✓ runReviewCore surfaces real dispatch failures (Fix B) > falls back to a generic exit-code message when the failed result carries no stderr  509ms
+   ✓ runReviewCore surfaces real dispatch failures (Fix B) > does NOT throw when the response is non-empty, even if exitCode is nonzero (a partial review is still useful)  375ms
+   ✓ runReviewCore surfaces real dispatch failures (Fix B) > normal success path is unaffected: exit 0 + parseable findings never throws  543ms
+   ✓ runReviewCore surfaces real dispatch failures (Fix B) > a genuine parse-failure (clean exit, unparseable short text) still reports parseFailed instead of throwing  651ms
+   ✓ runReviewCore names reasoning exhaustion (Fix C) > throws the reasoning-exhaustion message on a clean empty result with finishReason=length + reasoning-only parts  652ms
+   ✓ runReviewCore names reasoning exhaustion (Fix C) > throws on finishReason=length even when no structured parts were captured  453ms
+   ✓ runReviewCore names reasoning exhaustion (Fix C) > does NOT throw when reasoning parts coexist with real text output  391ms
+ ✓ tests/unit/rooms-unread-locks.test.ts (14 tests) 210ms
+ ✓ tests/unit/tribunal-protocols.test.ts (3 tests) 386ms
+ ✓ tests/integration/serve-conformance.test.ts (4 tests) 837ms
+queue not found: .kern-gaps/ ✓ tests/unit/goal-supervisor.test.ts (17 tests) 754ms
+stdout | tests/unit/serve-command.test.ts > agon serve — runtime wiring (integration) > runServe fails CLOSED (exit 2) when the port is in use — no crash, no hang, brain torn down
+[33m⚠[0m failed to start: listen EADDRINUSE: address already in use 127.0.0.1:61650
+
+ ✓ tests/unit/event-log.test.ts (23 tests) 305ms
+ ✓ packages/cli/src/lazy-commands.test.ts (14 tests) 1120ms
+   ✓ lazySubCommands — full parity with the real command modules > meta.name and meta.description are identical to each real command module's meta  1112ms
+ ✓ tests/unit/api-agent-loop.test.ts (26 tests) 581ms
+ ✓ tests/unit/persistent-session.test.ts (18 tests) 7666ms
+   ✓ persistent session streaming dedupe > threads the active turn and stable RPC id into companion approvals  577ms
+   ✓ persistent session streaming dedupe > starts clean by default even when persisted continuity exists  356ms
+   ✓ persistent session streaming dedupe > retries an empty completion before surfacing the empty-response error  1517ms
+   ✓ persistent session streaming dedupe > still surfaces the empty-response error after exhausting the CONFIGURED retries  4522ms
+ ✓ tests/unit/forge-handler.test.ts (4 tests) 826ms
+   ✓ handleForge > skips the internal plan approval prompt when already approved upstream  705ms
+ ✓ tests/unit/review-many-timeout.test.ts (1 test) 784ms
+   ✓ handleReviewMany hard timeout > returns a timeout result when one review engine ignores AbortSignal forever  784ms
+ ✓ tests/unit/goal-verify-oracle.test.ts (4 tests) 6703ms
+   ✓ witnessVerifyCommand — differential execution oracle > witnesses fail-on-base + pass-on-head for a command that executes the artifact  1155ms
+   ✓ witnessVerifyCommand — differential execution oracle > rejects a non-discriminating verify (passes on base too)  1047ms
+   ✓ witnessVerifyCommand — differential execution oracle > rejects when the implementation does not satisfy the oracle on head  1242ms
+   ✓ witnessVerifyCommand — differential execution oracle > does not count a base timeout as a valid fail-on-base  3258ms
+ ✓ tests/unit/session-acp-mcp.test.ts (2 tests) 422ms
+ ✓ tests/unit/serve-command.test.ts (18 tests) 942ms
+   ✓ agon serve process lifecycle > exits zero after the first SIGINT  487ms
+ ✓ tests/unit/config-prune.test.ts (1 test) 431ms
+   ✓ run pruning > does not delete fresh overflow run directories  431ms
+ ✓ tests/unit/cesar-routing.test.ts (24 tests) 599ms
+ ✓ tests/unit/read-dedupe.test.ts (10 tests) 852ms
+   ✓ Read dedupe — tier 1 (unchanged, still in context) > identical re-Read of an unchanged file → tier-1 stub; full bytes NOT re-fed  303ms
+ ✓ tests/unit/per-edit-checkpoints.test.ts (6 tests) 419ms
+ ✓ tests/unit/cesar-grounding.test.ts (6 tests) 406ms
+   ✓ cesar grounding — buildGroundingBlock > returns a cited evidence block when retrieval grounds  358ms
+ ✓ tests/unit/file-tracker.test.ts (3 tests) 295ms
+ ✓ tests/unit/rooms-mcp.test.ts (6 tests) 172ms
+ ✓ tests/unit/gate-runner.test.ts (33 tests) 427ms
+ ✓ tests/unit/rooms-work.test.ts (3 tests) 93ms
+ ✓ tests/unit/rooms-tasks.test.ts (19 tests) 134ms
+ ✓ tests/unit/review-cwd-isolation.test.ts (3 tests) 329ms
+ ✓ tests/unit/guard-strict-golden.test.ts (3 tests) 223ms
+ ✓ tests/unit/checker-discovery-repo-root.test.ts (8 tests) 59ms
+ ✓ tests/unit/rooms-tail.test.ts (10 tests) 121ms
+ ✓ tests/unit/context-thread-agent.test.ts (5 tests) 100ms
+ ✓ tests/unit/catalog-context-window.test.ts (17 tests) 36ms
+ ✓ tests/unit/agon-serve.test.ts (23 tests) 71ms
+ ✓ tests/unit/prompt-input-focus.test.ts (3 tests) 204ms
+ ✓ tests/unit/api-dispatch.test.ts (30 tests) 131ms
+ ✓ tests/unit/chat-store.test.ts (14 tests) 59ms
+ ✓ tests/unit/mutant-runner.test.ts (18 tests) 8672ms
+   ✓ runMutants — kill / survive > kills every mutant when the test asserts real values  499ms
+   ✓ runMutants — kill / survive > reports every mutant as a survivor when the only assertion is a tautology  487ms
+   ✓ runMutants — kill / survive > restores every touched file, byte for byte  858ms
+   ✓ runMutants — invalid mutants > marks a mutant invalid when the typecheck command rejects it, and excludes it from the score  418ms
+   ✓ runMutants — a mutant that cannot be placed is invalid, never a throw > grades a file-less mutant invalid and still runs the rest  1041ms
+   ✓ runMutants — a mutant that cannot be placed is invalid, never a throw > refuses to write through a symlink that leaves the sandbox  307ms
+   ✓ runMutants — a hang is a kill > classifies a timed-out mutant as timeout AND counts it as killed  1239ms
+   ✓ runMutants — budget > counts a mutant whose subprocess the budget cut as notRun, not as killed  2024ms
+   ✓ runMutants — per-mutant command ORDER > runs build → typecheck → test for every mutant, matching the baseline order  559ms
+   ✓ runMutants — per-mutant command ORDER > typechecks THIS mutant's build artifact, never the previous mutant's  353ms
+ ✓ tests/unit/ratings-purge.test.ts (12 tests) 48ms
+ ✓ tests/unit/permission-queue.test.ts (13 tests) 311ms
+ ✓ tests/unit/rag-core.test.ts (14 tests) 570ms
+ ✓ tests/unit/mcp-orchestration.test.ts (10 tests) 112ms
+ ✓ tests/unit/slash-picker-clamp.test.ts (3 tests) 354ms
+ ✓ tests/unit/dedup-python-resolver.test.ts (7 tests) 81ms
+ ✓ tests/unit/static-feed.test.ts (9 tests) 86ms
+ ✓ tests/unit/guard-pipeline.test.ts (59 tests) 28ms
+ ✓ tests/unit/composer-placeholder.test.ts (3 tests) 305ms
+ ✓ tests/unit/speculator-failure.test.ts (4 tests) 28ms
+ ✓ tests/unit/nero.test.ts (54 tests) 52ms
+ ✓ tests/integration/forge.test.ts (24 tests) 39ms
+ ✓ tests/unit/team-prompt-routing.test.ts (2 tests) 82ms
+ ✓ tests/unit/speculator-isolation.test.ts (1 test) 96ms
+ ✓ tests/unit/finalize-policy.test.ts (7 tests) 47ms
+ ✓ tests/unit/render-probe.test.ts (4 tests) 169ms
+ ✓ tests/unit/job-service.test.ts (11 tests) 49ms
+ ✓ tests/unit/terminal-frame.test.ts (5 tests) 102ms
+ ✓ tests/unit/git-error-detail.test.ts (2 tests) 95ms
+ ✓ tests/unit/config-memo.test.ts (8 tests) 66ms
+ ✓ tests/unit/update-check.test.ts (43 tests) 95ms
+ ✓ tests/unit/guard-telemetry.test.ts (53 tests) 117ms
+ ✓ tests/unit/session-store-v2.test.ts (15 tests) 166ms
+ ✓ tests/unit/agentic-brain-client.test.ts (129 tests) 49ms
+ ✓ tests/unit/verify-before-done-gate.test.ts (32 tests) 76ms
+ ✓ tests/unit/session-host.test.ts (9 tests) 63ms
+ ✓ tests/spec/modular-agon-contracts.test.ts (11 tests) 44ms
+ ✓ tests/unit/chat-session-rehydrate.test.ts (3 tests) 91ms
+ ✓ tests/unit/file-rail-hint.test.ts (2 tests) 69ms
+ ✓ tests/unit/cesar-stream-cost.test.ts (19 tests) 91ms
+ ✓ tests/unit/cesar-tool-observability.test.ts (20 tests) 68ms
+ ✓ tests/unit/brainstorm-dedup.test.ts (1 test) 53ms
+ ✓ tests/unit/approval-diff.test.ts (23 tests) 78ms
+ ✓ tests/unit/tool-execution.test.ts (19 tests) 58ms
+ ✓ tests/unit/daemon-command.test.ts (17 tests) 41ms
+ ✓ tests/unit/image.test.ts (47 tests) 146ms
+ ✓ tests/unit/engine-reliability-tool.test.ts (8 tests) 19ms
+ ✓ tests/unit/forge-fitness-inference.test.ts (11 tests) 94ms
+ ✓ tests/unit/agent-dispatch.test.ts (21 tests) 39ms
+ ✓ tests/unit/cesar-turn-runtime.test.ts (42 tests) 20ms
+ ✓ tests/unit/patch-apply.test.ts (4 tests) 17ms
+ ✓ tests/unit/delegate-ledger.test.ts (11 tests) 43ms
+ ✓ tests/integration/engine-config.test.ts (128 tests) 15ms
+ ✓ tests/unit/runs-store.test.ts (11 tests) 9169ms
+   ✓ runs-store — maybePrune (fs) > deletes old overflow files and writes a stamp  5781ms
+   ✓ runs-store — maybePrune (fs) > skips a second prune within the 1h cooldown (stamp gate)  1993ms
+   ✓ runs-store — maybePrune (fs) > serializes overlapping in-process prunes — only one runs  1359ms
+ ✓ tests/unit/engine-registry-binary-path.test.ts (9 tests) 82ms
+ ✓ tests/unit/call-command.test.ts (57 tests) 42ms
+ ✓ tests/unit/capability-authorization.test.ts (11 tests) 35ms
+ ✓ tests/unit/at-file-mentions.test.ts (45 tests) 109ms
+ ✓ tests/unit/rooms.test.ts (9 tests) 55ms
+ ✓ tests/unit/co-author-trailer.test.ts (17 tests) 26ms
+ ✓ tests/unit/transcript-row-cache.test.ts (22 tests) 153ms
+ ✓ tests/unit/permission-resolver.test.ts (85 tests) 56ms
+ ✓ tests/unit/control-plane-ledger.test.ts (5 tests) 96ms
+ ✓ tests/unit/rooms-auto.test.ts (11 tests) 66ms
+ ✓ tests/unit/event-bus.test.ts (9 tests) 17ms
+ ✓ tests/unit/results-formatter.test.ts (13 tests) 18ms
+ ✓ tests/unit/bang-run.test.ts (16 tests) 115ms
+ ✓ tests/unit/permission-rules.test.ts (48 tests) 36ms
+ ✓ tests/unit/atomic-writes.test.ts (3 tests) 12ms
+ ✓ tests/unit/agent-session.test.ts (14 tests) 12ms
+ ✓ tests/unit/cesar-task-execution-lease.test.ts (30 tests) 13ms
+stdout | tests/unit/browser-host.test.ts > browser-host — runBrowserHostInstall (writes manifest + state) > rejects a malformed --origin with exit 2 and writes nothing
+[33m⚠[0m --origin must be a chrome-extension origin like chrome-extension://<32-char id> (a–p). Got "not-an-origin".
+[2m[2m  Find the id at chrome://extensions (Developer mode → the Agon extension).[0m[0m
+
+stdout | tests/unit/browser-host.test.ts > browser-host — runBrowserHostInstall (writes manifest + state) > writes a com.kernlang.agon manifest pinned to the origin + records install state
+
+[1m[36m▸ agon browser-host — installed[0m
+[2m  [1morigin[0m    [36mchrome-extension://abcdefghijklmnopabcdefghijklmnop[0m[0m
+[2m  [1mlauncher[0m  [2m/private/var/folders/c4/_6ktcrg57m5_8kjcymvhn8fc0000gn/T/agon-bh-home-ycerpa/dist/browser-host.js[0m[0m
+[2m  [1mmanifest[0m  [2m/var/folders/c4/_6ktcrg57m5_8kjcymvhn8fc0000gn/T/agon-bh-install-PxrzGP/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.kernlang.agon.json[0m[0m
+[2m[0m
+[32m✔[0m Open the Agon side panel — it pairs automatically (no terminal, no token).
+[2m[2m  Re-run after `npm run build` / a global reinstall (dist is rebuilt without the exec bit).[0m[0m
+
+stdout | tests/unit/browser-host.test.ts > browser-host — runBrowserHostInstall (writes manifest + state) > unions AGON_EXTENSION_IDS with --origin, dedupes, and skips a malformed entry
+[33m⚠[0m ignoring malformed extension id/origin "not-a-valid-entry" (AGON_EXTENSION_IDS / config browserExtensionIds).
+
+[1m[36m▸ agon browser-host — installed[0m
+[2m  [1morigin[0m    [36mchrome-extension://abcdefghijklmnopabcdefghijklmnop, chrome-extension://ponmlkjihgfedcbaponmlkjihgfedcba[0m[0m
+[2m  [1mlauncher[0m  [2m/private/var/folders/c4/_6ktcrg57m5_8kjcymvhn8fc0000gn/T/agon-bh-multi-home-T0Cx6n/dist/browser-host.js[0m[0m
+[2m  [1mmanifest[0m  [2m/var/folders/c4/_6ktcrg57m5_8kjcymvhn8fc0000gn/T/agon-bh-multi-install-bb40Go/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.kernlang.agon.json[0m[0m
+[2m[0m
+[32m✔[0m Open the Agon side panel — it pairs automatically (no terminal, no token).
+[2m[2m  Re-run after `npm run build` / a global reinstall (dist is rebuilt without the exec bit).[0m[0m
+
+ ✓ tests/unit/browser-host.test.ts (49 tests) 18ms
+ ✓ tests/unit/review-router.test.ts (13 tests) 14ms
+ ✓ tests/unit/goal-journal.test.ts (22 tests) 11ms
+ ✓ tests/unit/save-memory-tool.test.ts (21 tests) 12ms
+ ✓ tests/unit/adapter-helpers.test.ts (25 tests) 29ms
+ ✓ tests/unit/todos-repro.test.ts (8 tests) 37ms
+ ✓ tests/unit/dispatch-routing.test.ts (36 tests) 63ms
+ ✓ tests/unit/tool-retrieve.test.ts (6 tests) 8ms
+ ✓ tests/unit/block-archive.test.ts (8 tests) 9ms
+ ✓ tests/unit/paths-containment.test.ts (7 tests) 14ms
+stdout | tests/unit/ext-command.test.ts > agon ext — runExtInstall (darwin only; CI on linux skips the FS write) > rejects a malformed --id with exit 2 and no files
+[33m⚠[0m Invalid extension id "not-a-valid-id" — a Chrome extension id is 32 characters a–p.
+
+stdout | tests/unit/ext-command.test.ts > agon ext — runExtInstall (darwin only; CI on linux skips the FS write) > writes an executable wrapper (with baked origin) + a manifest pinned to the custom id
+
+[1m[36m▸ agon ext — native host installed[0m
+[2m  [1mextension[0m  [36mchrome-extension://abcdefghijklmnopabcdefghijklmnop[0m[0m
+[2m  [1mwrapper[0m    [2m/var/folders/c4/_6ktcrg57m5_8kjcymvhn8fc0000gn/T/agon-ext-cmd-test-r3F0qY/native-host/agon-chrome-host[0m[0m
+[2m  [1mmanifest[0m   [2m/var/folders/c4/_6ktcrg57m5_8kjcymvhn8fc0000gn/T/agon-ext-install-Mtqg3D/Library/Application Support/Google/Chrome/NativeMessagingHosts/io.kern.agon.json[0m[0m
+[2m[0m
+[32m✔[0m Open the Agon side panel — it will auto-connect (no terminal, no token).
+[2m[2m  Re-run `agon ext install` if you switch Node version or move the global install.[0m[0m
+
+ ✓ tests/integration/workflow-plan-mode.test.ts (9 tests) 22ms
+stdout | tests/unit/ext-command.test.ts > agon ext — runExtInstall (darwin only; CI on linux skips the FS write) > unions AGON_EXTENSION_IDS with the installed id, dedupes, and skips a malformed entry
+[33m⚠[0m ignoring malformed extension id/origin "not-a-valid-entry" (AGON_EXTENSION_IDS / config browserExtensionIds).
+
+[1m[36m▸ agon ext — native host installed[0m
+[2m  [1mextension[0m  [36mchrome-extension://abcdefghijklmnopabcdefghijklmnop, chrome-extension://ponmlkjihgfedcbaponmlkjihgfedcba[0m[0m
+[2m  [1mwrapper[0m    [2m/var/folders/c4/_6ktcrg57m5_8kjcymvhn8fc0000gn/T/agon-ext-cmd-test-r3F0qY/native-host/agon-chrome-host[0m[0m
+[2m  [1mmanifest[0m   [2m/var/folders/c4/_6ktcrg57m5_8kjcymvhn8fc0000gn/T/agon-ext-multi-install-8KG3QP/Library/Application Support/Google/Chrome/NativeMessagingHosts/io.kern.agon.json[0m[0m
+[2m[0m
+[32m✔[0m Open the Agon side panel — it will auto-connect (no terminal, no token).
+[2m[2m  Re-run `agon ext install` if you switch Node version or move the global install.[0m[0m
+
+ ✓ tests/unit/ext-command.test.ts (20 tests) 14ms
+ ✓ packages/cli/src/agentic-brain-client.test.ts (3 tests) 15ms
+ ✓ tests/unit/modular-resolver.test.ts (8 tests) 13ms
+ ✓ tests/unit/cesar-brain.test.ts (117 tests) 25ms
+ ✓ tests/unit/intent.test.ts (100 tests) 12ms
+ ✓ tests/unit/modular-static-discovery.test.ts (3 tests) 23ms
+ ✓ tests/unit/workflow-compiler.test.ts (6 tests) 11ms
+ ✓ tests/unit/command-registry.test.ts (11 tests) 10ms
+ ✓ tests/unit/rich-text.test.ts (31 tests) 7ms
+ ✓ tests/unit/job-manager.test.ts (13 tests) 14ms
+ ✓ tests/unit/engine-activation.test.ts (21 tests) 9ms
+ ✓ tests/unit/file-history.test.ts (5 tests) 11ms
+ ✓ tests/unit/multi-edit-tool.test.ts (13 tests) 11ms
+ ✓ tests/unit/workflow-run-isolation.test.ts (6 tests) 10ms
+ ✓ tests/unit/image-dataurl.test.ts (8 tests) 9ms
+ ✓ packages/core/src/schemas/engine-schema.test.ts (22 tests) 7ms
+ ✓ tests/integration/workflow-pipeline-slash.test.ts (11 tests) 15ms
+ ✓ tests/unit/daemon-workflow-job.test.ts (17 tests) 16ms
+ ✓ tests/unit/plan-mode-executor.test.ts (5 tests) 12ms
+ ✓ tests/unit/cesar-plan.test.ts (17 tests) 7ms
+ ✓ tests/unit/vitals-signature.test.ts (6 tests) 9ms
+ ✓ tests/unit/web-fetch-tool.test.ts (20 tests) 8ms
+ ✓ tests/unit/cesar-memory.test.ts (3 tests) 9ms
+ ✓ tests/unit/agent-synthesis.test.ts (37 tests) 9ms
+ ✓ tests/unit/cesar-self-turn-approval.test.ts (12 tests) 9ms
+ ✓ tests/unit/sidechain-logger.test.ts (4 tests) 5ms
+ ✓ tests/unit/cesar-recap.test.ts (50 tests) 8ms
+ ✓ tests/unit/modular-lock.test.ts (2 tests) 8ms
+ ✓ tests/unit/modular-review-regressions.test.ts (4 tests) 8ms
+ ✓ tests/unit/modular-manifest.test.ts (6 tests) 8ms
+ ✓ tests/unit/modular-topology-invariant.test.ts (1 test) 8ms
+ ✓ tests/unit/conquer.test.ts (75 tests) 13ms
+ ✓ tests/unit/init-kern-probe.test.ts (7 tests) 11ms
+ ✓ tests/unit/cesar-mcp-path.test.ts (3 tests) 8ms
+ ✓ tests/unit/app-scroll.test.ts (59 tests) 18ms
+ ✓ tests/unit/modular-projection-parity.test.ts (4 tests) 9ms
+ ✓ tests/unit/compaction.test.ts (27 tests) 5ms
+ ✓ tests/unit/adapter-cli-path-parity.test.ts (10 tests) 11ms
+ ✓ tests/unit/markdown.test.ts (22 tests) 7ms
+ ✓ tests/unit/status-strip.test.ts (70 tests) 9ms
+ ✓ tests/unit/mutate-reflex.test.ts (13 tests) 7ms
+ ✓ tests/unit/cesar-ask-resume.test.ts (20 tests) 8ms
+ ✓ tests/unit/telemetry-poller.test.ts (3 tests) 5ms
+ ✓ tests/unit/api-dispatch-model-cache.test.ts (8 tests) 3ms
+ ✓ tests/unit/auto-approve-policy.test.ts (27 tests) 8ms
+ ✓ tests/unit/build-handler.test.ts (12 tests) 3ms
+ ✓ tests/unit/context-parts.test.ts (16 tests) 3ms
+ ✓ tests/unit/role-specialization.test.ts (6 tests) 7ms
+ ✓ tests/unit/consensus.test.ts (48 tests) 6ms
+ ✓ tests/unit/agent-state.test.ts (29 tests) 6ms
+ ✓ tests/unit/review-parser.test.ts (40 tests) 10ms
+ ✓ tests/unit/turn-state.test.ts (12 tests) 6ms
+ ✓ tests/unit/mcp-discovery.test.ts (9 tests) 5ms
+ ✓ tests/unit/headless-brain-client.test.ts (16 tests) 7ms
+ ✓ tests/unit/mutate-lens.test.ts (20 tests) 6ms
+ ✓ tests/unit/preflight-health-filter.test.ts (10 tests) 6ms
+ ✓ tests/unit/drive.test.ts (27 tests) 5ms
+ ✓ tests/unit/token-tracker.test.ts (13 tests) 4ms
+ ✓ tests/unit/chrome-bridge.test.ts (3 tests) 8ms
+ ✓ tests/unit/cesar-delegation-autonomy.test.ts (4 tests) 7ms
+ ✓ tests/unit/skill-loader.test.ts (12 tests) 7ms
+ ✓ tests/unit/naturalize.test.ts (23 tests) 8ms
+ ✓ tests/unit/agent-handler.test.ts (18 tests) 6ms
+ ✓ tests/unit/review-summary.test.ts (11 tests) 4ms
+ ✓ tests/unit/workflow-plugin-admission.test.ts (7 tests) 4ms
+ ✓ tests/unit/cesar-plan-control-signals.test.ts (3 tests) 4ms
+ ✓ tests/unit/workflow-flow-verification.test.ts (18 tests) 5ms
+ ✓ tests/unit/research-verifier.test.ts (18 tests) 5ms
+ ✓ tests/unit/research-router.test.ts (32 tests) 7ms
+ ✓ tests/unit/plan-view-totals.test.ts (4 tests) 6ms
+ ✓ tests/unit/forge-provenance.test.ts (3 tests) 6ms
+ ✓ tests/unit/app-input.test.ts (27 tests) 5ms
+ ✓ tests/unit/agentic-browser-policy.test.ts (10 tests) 7ms
+ ✓ tests/unit/cesar-confirmation-follow-up.test.ts (12 tests) 6ms
+ ✓ tests/unit/cesar-steering.test.ts (29 tests) 4ms
+ ✓ tests/unit/seat-dispatch.test.ts (14 tests) 4ms
+ ✓ tests/unit/metadata-forensics.test.ts (20 tests) 6ms
+ ✓ tests/unit/guard-evidence-keep-claim.test.ts (27 tests) 3ms
+ ✓ tests/unit/synthesis-judge-calibration.test.ts (8 tests) 6ms
+ ✓ tests/unit/oracle-redteam.test.ts (13 tests) 3ms
+ ✓ tests/unit/cesar-live-todos.test.ts (35 tests) 5ms
+ ✓ tests/unit/keyboard.test.ts (48 tests) 8ms
+ ✓ tests/unit/patch-parser.test.ts (15 tests) 3ms
+ ✓ tests/unit/arena-progress.test.ts (6 tests) 12ms
+ ✓ tests/integration/workflow-pipeline-call.test.ts (7 tests) 6ms
+ ✓ tests/unit/interrupt-redirect.test.ts (4 tests) 5ms
+ ✓ tests/unit/cesar-task-controller.test.ts (12 tests) 4ms
+ ✓ tests/unit/plan.test.ts (27 tests) 4ms
+ ✓ tests/unit/interrupt-quiet.test.ts (6 tests) 7ms
+ ✓ tests/unit/cesar-reliability.test.ts (7 tests) 3ms
+ ✓ tests/unit/goal-mutation.test.ts (11 tests) 5ms
+ ✓ tests/unit/first-chunk-retry-policy.test.ts (4 tests) 2ms
+ ✓ tests/unit/workflow-execution.test.ts (10 tests) 5ms
+ ✓ tests/unit/step-effect.test.ts (19 tests) 4ms
+ ✓ tests/unit/doctor-command.test.ts (10 tests) 4ms
+ ✓ tests/unit/modular-boundary.test.ts (3 tests) 4ms
+ ✓ tests/unit/plan-cost-estimator.test.ts (4 tests) 2ms
+ ✓ tests/unit/auto-router.test.ts (10 tests) 4ms
+ ✓ tests/unit/research.test.ts (11 tests) 5ms
+ ✓ tests/unit/tribunal-modes.test.ts (33 tests) 9ms
+ ✓ tests/unit/virtual-fs.test.ts (2 tests) 5ms
+ ✓ tests/unit/narration-fold.test.ts (15 tests) 4ms
+ ✓ tests/unit/cesar-turn-cost.test.ts (2 tests) 2ms
+ ✓ tests/unit/review-action.test.ts (10 tests) 5ms
+ ✓ tests/unit/dispatch-emit-post.test.ts (3 tests) 5ms
+ ✓ tests/unit/cesar-steering-yield-wiring.test.ts (11 tests) 4ms
+ ✓ tests/unit/output-batcher.test.ts (6 tests) 4ms
+ ✓ tests/unit/daemon-protocol.test.ts (37 tests) 4ms
+ ✓ tests/unit/text-forensics.test.ts (17 tests) 4ms
+ ✓ tests/unit/output-control-events.test.ts (6 tests) 4ms
+ ✓ tests/unit/thinking.test.ts (34 tests) 7ms
+ ✓ tests/unit/exploration-mode.test.ts (4 tests) 13ms
+ ✓ tests/unit/token-estimator.test.ts (23 tests) 3ms
+ ✓ tests/unit/tui-probe-tool.test.ts (5 tests | 1 skipped) 2ms
+ ✓ tests/unit/agent-event.test.ts (26 tests) 4ms
+ ✓ tests/unit/experience.test.ts (15 tests) 4ms
+ ✓ tests/unit/delegation-reflex.test.ts (15 tests) 4ms
+ ✓ tests/unit/goal-policy.test.ts (27 tests) 4ms
+ ✓ tests/unit/cesar-step-guards.test.ts (16 tests) 3ms
+ ✓ tests/unit/web-search-tool.test.ts (9 tests) 3ms
+ ✓ tests/unit/strip-reasoning.test.ts (24 tests) 4ms
+ ✓ tests/unit/tool-parser.test.ts (12 tests) 4ms
+ ✓ tests/unit/modular-registry.test.ts (4 tests) 4ms
+ ✓ tests/unit/mcp-job-tools.test.ts (4 tests) 3ms
+ ✓ tests/unit/plan-validation.test.ts (6 tests) 3ms
+ ✓ tests/unit/modular-package-graph.test.ts (2 tests) 4ms
+ ✓ tests/unit/syntax-validator-bridge.test.ts (8 tests) 6ms
+ ✓ tests/unit/cesar-council-tool.test.ts (4 tests) 4ms
+ ✓ tests/unit/rate-limit-detection.test.ts (5 tests) 4ms
+ ✓ tests/unit/goal-mutation-gate.test.ts (19 tests) 5ms
+ ✓ tests/unit/chat-handler-terminal.test.ts (3 tests) 4ms
+ ✓ tests/unit/mutant-generator.test.ts (11 tests) 3ms
+ ✓ tests/unit/pipeline.test.ts (7 tests) 5ms
+ ✓ tests/unit/brain-client.test.ts (21 tests) 4ms
+ ✓ tests/unit/job-command.test.ts (8 tests) 5ms
+ ✓ tests/unit/forge-judgment-parse.test.ts (10 tests) 4ms
+ ✓ tests/unit/semaphore.test.ts (6 tests) 3ms
+ ✓ tests/unit/forge-result-bundle.test.ts (3 tests) 4ms
+ ✓ tests/unit/clipboard.test.ts (5 tests) 3ms
+ ✓ tests/unit/stream-parser.test.ts (22 tests) 3ms
+ ✓ tests/unit/session-context-freshness.test.ts (4 tests) 3ms
+ ✓ tests/unit/engine-isolation.test.ts (16 tests) 3ms
+ ✓ tests/unit/ask-marker.test.ts (16 tests) 4ms
+ ✓ tests/unit/workflow-alias-policy.test.ts (3 tests) 3ms
+ ✓ tests/unit/banner-branding.test.ts (7 tests) 4ms
+ ✓ tests/unit/pr-link.test.ts (9 tests) 3ms
+ ✓ tests/unit/adapter-execution-plan.test.ts (21 tests) 4ms
+ ✓ tests/unit/daemon-job-router.test.ts (2 tests) 3ms
+ ✓ tests/unit/terminal-notify.test.ts (6 tests) 3ms
+ ✓ tests/unit/goal-breaker-window.test.ts (15 tests) 3ms
+ ✓ tests/unit/provider-normalization.test.ts (7 tests) 3ms
+ ✓ tests/unit/session-results.test.ts (4 tests) 2ms
+ ✓ tests/unit/context-thread-loose-eq.test.ts (4 tests) 2ms
+ ✓ tests/unit/engine-discover.test.ts (4 tests) 2ms
+ ✓ tests/unit/tool-repair.test.ts (10 tests) 3ms
+ ✓ tests/unit/workflow-graph.test.ts (2 tests) 3ms
+ ✓ tests/unit/stream-bridge.test.ts (5 tests) 3ms
+ ✓ tests/unit/job-abort-scope.test.ts (3 tests) 2ms
+ ✓ tests/unit/fork-options.test.ts (8 tests) 3ms
+ ✓ tests/unit/safe-text-input.test.ts (10 tests) 3ms
+ ✓ tests/unit/workflow-conformance.test.ts (2 tests) 2ms
+ ✓ tests/unit/health-check.test.ts (4 tests) 13405ms
+   ✓ forge pre-flight health check > probes agent-capable Kimi Code through dispatchAgent in a scratch cwd  502ms
+   ✓ forge pre-flight health check > filters out engines that fail the health probe  12521ms
+ ✓ tests/unit/code-buffer.test.ts (4 tests) 2ms
+ ✓ tests/unit/synth-plan.test.ts (10 tests) 8ms
+ ✓ tests/unit/workflow-registry.test.ts (3 tests) 3ms
+ ✓ tests/unit/prompt-caching.test.ts (8 tests) 2ms
+ ✓ tests/unit/output-format.test.ts (5 tests) 5ms
+ ✓ tests/unit/tool-loop.test.ts (1 test) 2ms
+ ✓ tests/integration/scoring.test.ts (19 tests) 3ms
+ ✓ tests/unit/pr-text.test.ts (10 tests) 3ms
+ ✓ tests/unit/extension-manifest.test.ts (9 tests) 3ms
+ ✓ tests/unit/goal-diff.test.ts (6 tests) 2ms
+ ✓ tests/unit/input-utils.test.ts (9 tests) 2ms
+ ✓ tests/unit/tool-bash-gui.test.ts (3 tests) 2ms
+ ✓ tests/unit/todo-write-tool.test.ts (7 tests) 2ms
+ ✓ tests/unit/turn-protocol.test.ts (6 tests) 2ms
+ ✓ tests/unit/attribution.test.ts (8 tests) 4ms
+ ✓ tests/unit/cesar-commit-turn-delegate.test.ts (6 tests) 4ms
+ ✓ tests/unit/pricing.test.ts (10 tests) 2ms
+ ✓ tests/unit/tribunal-scoring.test.ts (6 tests) 2ms
+ ✓ tests/unit/provider-key.test.ts (8 tests) 3ms
+ ✓ tests/unit/delegation-intercept.test.ts (11 tests) 2ms
+ ✓ tests/unit/persistent-session-envelope.test.ts (2 tests) 2ms
+ ✓ tests/unit/session-budget.test.ts (15 tests) 2ms
+ ✓ tests/unit/team-forge-results.test.ts (6 tests) 3ms
+ ✓ tests/unit/live-runtime.test.ts (3 tests) 2ms
+ ✓ tests/unit/normalize-base-url.test.ts (10 tests) 2ms
+ ✓ tests/unit/ask-command.test.ts (10 tests) 4ms
+ ✓ tests/unit/forge-finalize.test.ts (7 tests) 13826ms
+   ✓ forge validate dispatch routing > uses plain dispatch, not agent tools, for validate mode without required diff  2264ms
+   ✓ forge validate dispatch routing > still uses agent tools for validate mode when a diff is required  2297ms
+   ✓ caller-driven forge finalize > aborts in-flight stage2 engines when onResult requests finalize  2112ms
+   ✓ caller-driven forge finalize > preserves wait-for-all behavior when onResult is not provided (backwards-compat)  1804ms
+   ✓ caller-driven forge finalize > continues waiting for every engine when onResult returns "continue"  1742ms
+   ✓ caller-driven forge finalize > auto-finalizes stage2 when the M-of-N passing quorum is reached  1902ms
+   ✓ caller-driven forge finalize > treats earlyFinalizeCount=0 as an explicit disable (not "trigger on first")  1704ms
+ ✓ tests/unit/auth-failure-hint.test.ts (8 tests) 3ms
+ ✓ tests/unit/engine-health-classify.test.ts (9 tests) 2ms
+ ✓ tests/unit/context-budget.test.ts (4 tests) 4ms
+ ✓ tests/unit/tool-scheduler.test.ts (2 tests) 3ms
+ ✓ tests/unit/api-agent-loop-repair-args.test.ts (7 tests) 2ms
+ ✓ tests/unit/stable-input.test.ts (5 tests) 2ms
+ ✓ tests/unit/review-roles.test.ts (11 tests) 2ms
+ ✓ tests/unit/errors.test.ts (7 tests) 2ms
+ ✓ tests/unit/mode-docs-sync.test.ts (3 tests) 2ms
+ ✓ tests/unit/file-rail-time.test.ts (1 test) 2ms
+ ✓ tests/unit/attach-command.test.ts (6 tests) 2ms
+ ✓ tests/unit/pause-state.test.ts (5 tests) 2ms
+ ✓ packages/core/src/image-dimensions.test.ts (3 tests) 2ms
+ ✓ tests/unit/mode-rationale.test.ts (7 tests) 4ms
+ ✓ tests/unit/forge-timeout.test.ts (17 tests) 2ms
+ ✓ tests/unit/orchestration-engine-filter.test.ts (3 tests) 2ms
+ ✓ tests/unit/agent-team-error.test.ts (5 tests) 2ms
+ ✓ tests/unit/conquer-tool.test.ts (3 tests) 2ms
+ ✓ tests/unit/review-retry-policy.test.ts (3 tests) 1ms
+ ✓ tests/unit/intent-types.test.ts (2 tests) 2ms
+ ✓ tests/unit/strip-stream-json.test.ts (7 tests) 2ms
+ ↓ tests/integration/agy-probe-e2e.test.ts (4 tests | 4 skipped)
+ ✓ tests/unit/cesar-scoreboard.test.ts (3 tests) 3ms
+ ✓ tests/unit/workflow-tool-metadata.test.ts (3 tests) 2ms
+ ✓ tests/unit/login-command.test.ts (4 tests) 2ms
+ ✓ tests/unit/scout.test.ts (6 tests) 2ms
+ ✓ tests/unit/continuation-status.test.ts (3 tests) 2ms
+ ✓ tests/unit/team-forge-winner.test.ts (6 tests) 2ms
+ ✓ packages/adapter-cli/src/answer-channel.test.ts (5 tests) 2ms
+ ✓ tests/unit/prompt-text-input.test.ts (1 test) 1ms
+ ✓ tests/unit/review-paste-guard.test.ts (6 tests) 2ms
+ ✓ tests/unit/diff-line.test.ts (4 tests) 2ms
+ ✓ tests/unit/config-command.test.ts (3 tests) 2ms
+ ✓ tests/unit/provider-home.test.ts (1 test) 1ms
+ ✓ tests/unit/dashboard-ratings.test.ts (1 test) 2ms
+ ✓ tests/unit/update-command.test.ts (2 tests) 1ms
+ ✓ tests/unit/goal-oracle-jit.test.ts (14 tests) 15867ms
+   ✓ goal controller — JIT per-task oracle red-team > probes EVERY runnable task exactly once, incl. one whose deps unblock mid-run, and journals the clean pass  3214ms
+   ✓ goal controller — JIT per-task oracle red-team > does not re-probe the same task on a SAME-LAUNCH retry  2531ms
+   ✓ goal controller — JIT per-task oracle red-team > re-probes on the NEXT launch — a clean pass is never cached across launches  1937ms
+   ✓ goal controller — JIT per-task oracle red-team > strict + a gameable verify stops the launch at the offending task  308ms
+   ✓ goal controller — JIT per-task oracle red-team > probes by DEFAULT when oracleGate is omitted entirely  1681ms
+   ✓ goal controller — JIT per-task oracle red-team > never probes when the gate is explicitly off  891ms
+   ✓ goal controller — JIT per-task oracle red-team > warn + a gameable verify reports the hole and still forges the task  970ms
+   ✓ goal controller — JIT per-task oracle red-team > an INCONCLUSIVE probe (errored:true with no holes) is never a clean pass  1153ms
+   ✓ goal controller — JIT per-task oracle red-team > caps probe attempts per task per launch at 2, then forges UNPROBED and says so  1235ms
+   ✓ goal controller — JIT per-task oracle red-team > stops on budget when the PROBE exhausted it, instead of forging anyway  345ms
+   ✓ goal controller — JIT per-task oracle red-team > journals oracle-gate-skipped ONCE when the gate is on but no red-team callback was supplied  658ms
+   ✓ goal controller — JIT per-task oracle red-team > says nothing when the gate is off and no callback was supplied  326ms
+   ✓ goal controller — JIT per-task oracle red-team > a probe ERROR never aborts the run and leaves the task unmarked, so the next pick retries it  469ms
+ ✓ tests/unit/telemetry-fallback.test.ts (1 test) 16770ms
+   ✓ Telemetry fallback during forge > detects stall, logs to scoreboard, dispatches toast, and activates successor  16769ms
+ ✓ tests/integration/forge-e2e.test.ts (23 tests) 31534ms
+   ✓ Forge E2E > links dependencies into external worktrees while preserving workspace packages  1081ms
+   ✓ Forge E2E > runs the real forge loop and persists the winning manifest and patch  3888ms
+   ✓ Forge E2E > persists an initial manifest before dispatch work  1207ms
+   ✓ Forge E2E > still dispatches engines when the baseline fitness already passes  3207ms
+   ✓ Forge E2E > persists completed stage2 engine results while slower engines are still running  2832ms
+   ✓ Forge E2E > surfaces synthesis completion when critics return no structured critiques  2335ms
+   ✓ Forge E2E > routes API-only forge engines through the tool-using agent loop  2100ms
+   ✓ Forge E2E > captures patch changes generated by the fitness command  1432ms
+   ✓ Forge E2E > continues to challengers when the starter dispatch fails  1407ms
+   ✓ Forge E2E > does not retry a failed starter on an engine outside the active forge roster  1189ms
+   ✓ Forge E2E > continues challengers when one stage2 engine fails  1467ms
+   ✓ Forge E2E > clears engine pid when a stage2 dispatch throws after spawning  1416ms
+   ✓ Forge E2E > scores a timed-out engine when it left a valid candidate diff  2626ms
+   ✓ Forge E2E > bases forge worktrees on dirty tracked changes  1398ms
+   ✓ Forge E2E > persists a patch artifact for the winning team forge submission  1516ms
+   ✓ Forge E2E > routes API-only team forge implementers through the tool-using agent loop  1512ms
+   ✓ Forge E2E > runs multiline node -e fitness checks that contain markdown fences  307ms
+
+ Test Files  375 passed | 1 skipped (376)
+      Tests  5477 passed | 6 skipped (5483)
+   Start at  23:13:26
+   Duration  32.02s (transform 8.34s, setup 4.75s, collect 124.06s, tests 232.00s, environment 31ms, prepare 17.00s)
+
+
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+stderr | tests/unit/session-context.test.ts > SessionContext > recomputes on different cwd
+[agon] failed to stat /tmp/deck-nav-first/RunningChromeVersion: ENOENT: no such file or directory, stat '/tmp/deck-nav-first/RunningChromeVersion'
+[agon] failed to stat /tmp/deck-nav-first/SingletonCookie: ENOENT: no such file or directory, stat '/tmp/deck-nav-first/SingletonCookie'
+[agon] failed to stat /tmp/deck-nav-first/SingletonLock: ENOENT: no such file or directory, stat '/tmp/deck-nav-first/SingletonLock'
+[agon] failed to stat /tmp/deck-nav-fixed/RunningChromeVersion: ENOENT: no such file or directory, stat '/tmp/deck-nav-fixed/RunningChromeVersion'
+[agon] failed to stat /tmp/deck-nav-fixed/SingletonCookie: ENOENT: no such file or directory, stat '/tmp/deck-nav-fixed/SingletonCookie'
+[agon] failed to stat /tmp/deck-nav-fixed/SingletonLock: ENOENT: no such file or directory, stat '/tmp/deck-nav-fixed/SingletonLock'
+[agon] failed to stat /tmp/deck-nav-last/RunningChromeVersion: ENOENT: no such file or directory, stat '/tmp/deck-nav-last/RunningChromeVersion'
+[agon] failed to stat /tmp/deck-nav-last/SingletonCookie: ENOENT: no such file or directory, stat '/tmp/deck-nav-last/SingletonCookie'
+[agon] failed to stat /tmp/deck-nav-last/SingletonLock: ENOENT: no such file or directory, stat '/tmp/deck-nav-last/SingletonLock'
+[agon] failed to stat /tmp/giraffe-chrome-1/RunningChromeVersion: ENOENT: no such file or directory, stat '/tmp/giraffe-chrome-1/RunningChromeVersion'
+[agon] failed to stat /tmp/giraffe-chrome-1/SingletonCookie: ENOENT: no such file or directory, stat '/tmp/giraffe-chrome-1/SingletonCookie'
+[agon] failed to stat /tmp/giraffe-chrome-1/SingletonLock: ENOENT: no such file or directory, stat '/tmp/giraffe-chrome-1/SingletonLock'
+[agon] failed to stat /tmp/giraffe-chrome-a/RunningChromeVersion: ENOENT: no such file or directory, stat '/tmp/giraffe-chrome-a/RunningChromeVersion'
+[agon] failed to stat /tmp/giraffe-chrome-a/SingletonCookie: ENOENT: no such file or directory, stat '/tmp/giraffe-chrome-a/SingletonCookie'
+[agon] failed to stat /tmp/giraffe-chrome-a/SingletonLock: ENOENT: no such file or directory, stat '/tmp/giraffe-chrome-a/SingletonLock'
+[agon] failed to stat /tmp/giraffe-chrome-b/RunningChromeVersion: ENOENT: no such file or directory, stat '/tmp/giraffe-chrome-b/RunningChromeVersion'
+[agon] failed to stat /tmp/giraffe-chrome-b/SingletonCookie: ENOENT: no such file or directory, stat '/tmp/giraffe-chrome-b/SingletonCookie'
+[agon] failed to stat /tmp/giraffe-chrome-b/SingletonLock: ENOENT: no such file or directory, stat '/tmp/giraffe-chrome-b/SingletonLock'
+[agon] failed to stat /tmp/giraffe-chrome-c/RunningChromeVersion: ENOENT: no such file or directory, stat '/tmp/giraffe-chrome-c/RunningChromeVersion'
+[agon] failed to stat /tmp/giraffe-chrome-c/SingletonCookie: ENOENT: no such file or directory, stat '/tmp/giraffe-chrome-c/SingletonCookie'
+[agon] failed to stat /tmp/giraffe-chrome-c/SingletonLock: ENOENT: no such file or directory, stat '/tmp/giraffe-chrome-c/SingletonLock'
+[agon] failed to stat /tmp/giraffe-chrome-d/RunningChromeVersion: ENOENT: no such file or directory, stat '/tmp/giraffe-chrome-d/RunningChromeVersion'
+[agon] failed to stat /tmp/giraffe-chrome-d/SingletonCookie: ENOENT: no such file or directory, stat '/tmp/giraffe-chrome-d/SingletonCookie'
+[agon] failed to stat /tmp/giraffe-chrome-d/SingletonLock: ENOENT: no such file or directory, stat '/tmp/giraffe-chrome-d/SingletonLock'
+[agon] failed to stat /tmp/giraffe-chrome-e/RunningChromeVersion: ENOENT: no such file or directory, stat '/tmp/giraffe-chrome-e/RunningChromeVersion'
+[agon] failed to stat /tmp/giraffe-chrome-e/SingletonCookie: ENOENT: no such file or directory, stat '/tmp/giraffe-chrome-e/SingletonCookie'
+[agon] failed to stat /tmp/giraffe-chrome-e/SingletonLock: ENOENT: no such file or directory, stat '/tmp/giraffe-chrome-e/SingletonLock'
+[agon] failed to stat /tmp/giraffe-chrome-f/RunningChromeVersion: ENOENT: no such file or directory, stat '/tmp/giraffe-chrome-f/RunningChromeVersion'
+[agon] failed to stat /tmp/giraffe-chrome-f/SingletonCookie: ENOENT: no such file or directory, stat '/tmp/giraffe-chrome-f/SingletonCookie'
+[agon] failed to stat /tmp/giraffe-chrome-f/SingletonLock: ENOENT: no such file or directory, stat '/tmp/giraffe-chrome-f/SingletonLock'
+[agon] failed to stat /tmp/giraffe-chrome-g/RunningChromeVersion: ENOENT: no such file or directory, stat '/tmp/giraffe-chrome-g/RunningChromeVersion'
+[agon] failed to stat /tmp/giraffe-chrome-g/SingletonCookie: ENOENT: no such file or directory, stat '/tmp/giraffe-chrome-g/SingletonCookie'
+[agon] failed to stat /tmp/giraffe-chrome-g/SingletonLock: ENOENT: no such file or directory, stat '/tmp/giraffe-chrome-g/SingletonLock'
+[agon] failed to stat /tmp/giraffe-chrome-h/RunningChromeVersion: ENOENT: no such file or directory, stat '/tmp/giraffe-chrome-h/RunningChromeVersion'
+[agon] failed to stat /tmp/giraffe-chrome-h/SingletonCookie: ENOENT: no such file or directory, stat '/tmp/giraffe-chrome-h/SingletonCookie'
+[agon] failed to stat /tmp/giraffe-chrome-h/SingletonLock: ENOENT: no such file or directory, stat '/tmp/giraffe-chrome-h/SingletonLock'
+[agon] failed to stat /tmp/giraffe-confidence/RunningChromeVersion: ENOENT: no such file or directory, stat '/tmp/giraffe-confidence/RunningChromeVersion'
+[agon] failed to stat /tmp/giraffe-confidence/SingletonCookie: ENOENT: no such file or directory, stat '/tmp/giraffe-confidence/SingletonCookie'
+[agon] failed to stat /tmp/giraffe-confidence/SingletonLock: ENOENT: no such file or directory, stat '/tmp/giraffe-confidence/SingletonLock'
+[agon] failed to stat /tmp/giraffe-confidence-2a/RunningChromeVersion: ENOENT: no such file or directory, stat '/tmp/giraffe-confidence-2a/RunningChromeVersion'
+[agon] failed to stat /tmp/giraffe-confidence-2a/SingletonCookie: ENOENT: no such file or directory, stat '/tmp/giraffe-confidence-2a/SingletonCookie'
+[agon] failed to stat /tmp/giraffe-confidence-2a/SingletonLock: ENOENT: no such file or directory, stat '/tmp/giraffe-confidence-2a/SingletonLock'
+[agon] failed to stat /tmp/giraffe-confidence-2b/RunningChromeVersion: ENOENT: no such file or directory, stat '/tmp/giraffe-confidence-2b/RunningChromeVersion'
+[agon] failed to stat /tmp/giraffe-confidence-2b/SingletonCookie: ENOENT: no such file or directory, stat '/tmp/giraffe-confidence-2b/SingletonCookie'
+[agon] failed to stat /tmp/giraffe-confidence-2b/SingletonLock: ENOENT: no such file or directory, stat '/tmp/giraffe-confidence-2b/SingletonLock'
+[agon] failed to stat /tmp/giraffe-labels-a/RunningChromeVersion: ENOENT: no such file or directory, stat '/tmp/giraffe-labels-a/RunningChromeVersion'
+[agon] failed to stat /tmp/giraffe-labels-a/SingletonCookie: ENOENT: no such file or directory, stat '/tmp/giraffe-labels-a/SingletonCookie'
+[agon] failed to stat /tmp/giraffe-labels-a/SingletonLock: ENOENT: no such file or directory, stat '/tmp/giraffe-labels-a/SingletonLock'
+[agon] failed to stat /tmp/giraffe-labels-b/RunningChromeVersion: ENOENT: no such file or directory, stat '/tmp/giraffe-labels-b/RunningChromeVersion'
+[agon] failed to stat /tmp/giraffe-labels-b/SingletonCookie: ENOENT: no such file or directory, stat '/tmp/giraffe-labels-b/SingletonCookie'
+[agon] failed to stat /tmp/giraffe-labels-b/SingletonLock: ENOENT: no such file or directory, stat '/tmp/giraffe-labels-b/SingletonLock'
+[agon] failed to stat /tmp/giraffe-lanes-a/RunningChromeVersion: ENOENT: no such file or directory, stat '/tmp/giraffe-lanes-a/RunningChromeVersion'
+[agon] failed to stat /tmp/giraffe-lanes-a/SingletonCookie: ENOENT: no such file or directory, stat '/tmp/giraffe-lanes-a/SingletonCookie'
+[agon] failed to stat /tmp/giraffe-lanes-a/SingletonLock: ENOENT: no such file or directory, stat '/tmp/giraffe-lanes-a/SingletonLock'
+[agon] failed to stat /tmp/giraffe-lanes-b/RunningChromeVersion: ENOENT: no such file or directory, stat '/tmp/giraffe-lanes-b/RunningChromeVersion'
+[agon] failed to stat /tmp/giraffe-lanes-b/SingletonCookie: ENOENT: no such file or directory, stat '/tmp/giraffe-lanes-b/SingletonCookie'
+[agon] failed to stat /tmp/giraffe-lanes-b/SingletonLock: ENOENT: no such file or directory, stat '/tmp/giraffe-lanes-b/SingletonLock'
+[agon] failed to stat /tmp/giraffe-lanes-c/RunningChromeVersion: ENOENT: no such file or directory, stat '/tmp/giraffe-lanes-c/RunningChromeVersion'
+[agon] failed to stat /tmp/giraffe-lanes-c/SingletonCookie: ENOENT: no such file or directory, stat '/tmp/giraffe-lanes-c/SingletonCookie'
+[agon] failed to stat /tmp/giraffe-lanes-c/SingletonLock: ENOENT: no such file or directory, stat '/tmp/giraffe-lanes-c/SingletonLock'
+[agon] failed to stat /tmp/giraffe-lanes-d/RunningChromeVersion: ENOENT: no such file or directory, stat '/tmp/giraffe-lanes-d/RunningChromeVersion'
+[agon] failed to stat /tmp/giraffe-lanes-d/SingletonCookie: ENOENT: no such file or directory, stat '/tmp/giraffe-lanes-d/SingletonCookie'
+[agon] failed to stat /tmp/giraffe-lanes-d/SingletonLock: ENOENT: no such file or directory, stat '/tmp/giraffe-lanes-d/SingletonLock'
+[agon] failed to stat /tmp/giraffe-larger-text/RunningChromeVersion: ENOENT: no such file or directory, stat '/tmp/giraffe-larger-text/RunningChromeVersion'
+[agon] failed to stat /tmp/giraffe-larger-text/SingletonCookie: ENOENT: no such file or directory, stat '/tmp/giraffe-larger-text/SingletonCookie'
+[agon] failed to stat /tmp/giraffe-larger-text/SingletonLock: ENOENT: no such file or directory, stat '/tmp/giraffe-larger-text/SingletonLock'
+[agon] failed to stat /tmp/giraffe-slide-check/RunningChromeVersion: ENOENT: no such file or directory, stat '/tmp/giraffe-slide-check/RunningChromeVersion'
+[agon] failed to stat /tmp/giraffe-slide-check/SingletonCookie: ENOENT: no such file or directory, stat '/tmp/giraffe-slide-check/SingletonCookie'
+[agon] failed to stat /tmp/giraffe-slide-check/SingletonLock: ENOENT: no such file or directory, stat '/tmp/giraffe-slide-check/SingletonLock'
+[agon] failed to stat /tmp/giraffe-slide-check-2/RunningChromeVersion: ENOENT: no such file or directory, stat '/tmp/giraffe-slide-check-2/RunningChromeVersion'
+[agon] failed to stat /tmp/giraffe-slide-check-2/SingletonCookie: ENOENT: no such file or directory, stat '/tmp/giraffe-slide-check-2/SingletonCookie'
+[agon] failed to stat /tmp/giraffe-slide-check-2/SingletonLock: ENOENT: no such file or directory, stat '/tmp/giraffe-slide-check-2/SingletonLock'
+[agon] failed to stat /tmp/giraffe-slide-check-3/RunningChromeVersion: ENOENT: no such file or directory, stat '/tmp/giraffe-slide-check-3/RunningChromeVersion'
+[agon] failed to stat /tmp/giraffe-slide-check-3/SingletonCookie: ENOENT: no such file or directory, stat '/tmp/giraffe-slide-check-3/SingletonCookie'
+[agon] failed to stat /tmp/giraffe-slide-check-3/SingletonLock: ENOENT: no such file or directory, stat '/tmp/giraffe-slide-check-3/SingletonLock'
+[agon] failed to stat /tmp/giraffe-slide-check-4/RunningChromeVersion: ENOENT: no such file or directory, stat '/tmp/giraffe-slide-check-4/RunningChromeVersion'
+[agon] failed to stat /tmp/giraffe-slide-check-4/SingletonCookie: ENOENT: no such file or directory, stat '/tmp/giraffe-slide-check-4/SingletonCookie'
+[agon] failed to stat /tmp/giraffe-slide-check-4/SingletonLock: ENOENT: no such file or directory, stat '/tmp/giraffe-slide-check-4/SingletonLock'
+[agon] failed to stat /tmp/giraffe-slide-check-5a/RunningChromeVersion: ENOENT: no such file or directory, stat '/tmp/giraffe-slide-check-5a/RunningChromeVersion'
+[agon] failed to stat /tmp/giraffe-slide-check-5a/SingletonCookie: ENOENT: no such file or directory, stat '/tmp/giraffe-slide-check-5a/SingletonCookie'
+[agon] failed to stat /tmp/giraffe-slide-check-5a/SingletonLock: ENOENT: no such file or directory, stat '/tmp/giraffe-slide-check-5a/SingletonLock'
+[agon] failed to stat /tmp/giraffe-slide-check-5b/RunningChromeVersion: ENOENT: no such file or directory, stat '/tmp/giraffe-slide-check-5b/RunningChromeVersion'
+[agon] failed to stat /tmp/giraffe-slide-check-5b/SingletonCookie: ENOENT: no such file or directory, stat '/tmp/giraffe-slide-check-5b/SingletonCookie'
+[agon] failed to stat /tmp/giraffe-slide-check-5b/SingletonLock: ENOENT: no such file or directory, stat '/tmp/giraffe-slide-check-5b/SingletonLock'
+
+stderr | tests/unit/persistent-session.test.ts > persistent session streaming dedupe > threads the active turn and stable RPC id into companion approvals
+[cesar:companion] server request: item/commandExecution/requestApproval id=77
+
+stderr | tests/unit/worktree-session.test.ts > session worktrees > create / list / find / remove / prune > rm refuses to discard uncommitted changes unless --force
+[agon] worktree prune: skipping "feat/dirty" — it has uncommitted changes (pass --force to prune anyway).
+
+Preparing worktree (detached HEAD b20a833)
+Preparing worktree (detached HEAD b20a833)
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+stderr | tests/unit/mutate-sandbox.test.ts > mutate sandbox — a workspace name can never become a path traversal > drops an unsafe workspace name from the map instead of mapping it
+[agon] mutate: ignoring workspace package name "../.." in packages/evil — unsafe as a node_modules path
+
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+Preparing worktree (detached HEAD b20a833)
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+Preparing worktree (detached HEAD b20a833)
+stderr | tests/unit/health-check.test.ts > forge pre-flight health check > filters out engines that fail the health probe
+[agon] forge: skipping dead — health check failed (timeout after 45s)
+
+stderr | tests/integration/forge-e2e.test.ts > Forge E2E > runs the real forge loop and persists the winning manifest and patch
+[agon] syntax validator: tree-sitter or a grammar not installed — install with `npm run install:python -w packages/dedup`
+
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+stderr | tests/unit/mutate-sandbox.test.ts > mutate sandbox — the link boundary is canonical, and failures are counted > a mapped workspace package missing from the sandbox is refused, never linked to the repo copy
+[agon] mutate: 1 entry could not be linked (no symlink privilege, a locked path, or a refused target): @t/foo: the workspace package is missing from the sandbox — not linked to the repo copy — an incomplete node_modules usually shows up as a red baseline
+
+fatal: ref refs/remotes/origin/HEAD is not a symbolic ref
+fatal: Needed a single revision
+fatal: Needed a single revision
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+stderr | tests/unit/context-scanner.test.ts > context-scanner > scanProjectContext > handles non-git directory gracefully
+[agon] failed to stat /tmp/deck-nav-first/RunningChromeVersion: ENOENT: no such file or directory, stat '/tmp/deck-nav-first/RunningChromeVersion'
+[agon] failed to stat /tmp/deck-nav-first/SingletonCookie: ENOENT: no such file or directory, stat '/tmp/deck-nav-first/SingletonCookie'
+[agon] failed to stat /tmp/deck-nav-first/SingletonLock: ENOENT: no such file or directory, stat '/tmp/deck-nav-first/SingletonLock'
+[agon] failed to stat /tmp/deck-nav-fixed/RunningChromeVersion: ENOENT: no such file or directory, stat '/tmp/deck-nav-fixed/RunningChromeVersion'
+[agon] failed to stat /tmp/deck-nav-fixed/SingletonCookie: ENOENT: no such file or directory, stat '/tmp/deck-nav-fixed/SingletonCookie'
+[agon] failed to stat /tmp/deck-nav-fixed/SingletonLock: ENOENT: no such file or directory, stat '/tmp/deck-nav-fixed/SingletonLock'
+[agon] failed to stat /tmp/deck-nav-last/RunningChromeVersion: ENOENT: no such file or directory, stat '/tmp/deck-nav-last/RunningChromeVersion'
+[agon] failed to stat /tmp/deck-nav-last/SingletonCookie: ENOENT: no such file or directory, stat '/tmp/deck-nav-last/SingletonCookie'
+[agon] failed to stat /tmp/deck-nav-last/SingletonLock: ENOENT: no such file or directory, stat '/tmp/deck-nav-last/SingletonLock'
+[agon] failed to stat /tmp/giraffe-chrome-1/RunningChromeVersion: ENOENT: no such file or directory, stat '/tmp/giraffe-chrome-1/RunningChromeVersion'
+[agon] failed to stat /tmp/giraffe-chrome-1/SingletonCookie: ENOENT: no such file or directory, stat '/tmp/giraffe-chrome-1/SingletonCookie'
+[agon] failed to stat /tmp/giraffe-chrome-1/SingletonLock: ENOENT: no such file or directory, stat '/tmp/giraffe-chrome-1/SingletonLock'
+[agon] failed to stat /tmp/giraffe-chrome-a/RunningChromeVersion: ENOENT: no such file or directory, stat '/tmp/giraffe-chrome-a/RunningChromeVersion'
+[agon] failed to stat /tmp/giraffe-chrome-a/SingletonCookie: ENOENT: no such file or directory, stat '/tmp/giraffe-chrome-a/SingletonCookie'
+[agon] failed to stat /tmp/giraffe-chrome-a/SingletonLock: ENOENT: no such file or directory, stat '/tmp/giraffe-chrome-a/SingletonLock'
+[agon] failed to stat /tmp/giraffe-chrome-b/RunningChromeVersion: ENOENT: no such file or directory, stat '/tmp/giraffe-chrome-b/RunningChromeVersion'
+[agon] failed to stat /tmp/giraffe-chrome-b/SingletonCookie: ENOENT: no such file or directory, stat '/tmp/giraffe-chrome-b/SingletonCookie'
+[agon] failed to stat /tmp/giraffe-chrome-b/SingletonLock: ENOENT: no such file or directory, stat '/tmp/giraffe-chrome-b/SingletonLock'
+[agon] failed to stat /tmp/giraffe-chrome-c/RunningChromeVersion: ENOENT: no such file or directory, stat '/tmp/giraffe-chrome-c/RunningChromeVersion'
+[agon] failed to stat /tmp/giraffe-chrome-c/SingletonCookie: ENOENT: no such file or directory, stat '/tmp/giraffe-chrome-c/SingletonCookie'
+[agon] failed to stat /tmp/giraffe-chrome-c/SingletonLock: ENOENT: no such file or directory, stat '/tmp/giraffe-chrome-c/SingletonLock'
+[agon] failed to stat /tmp/giraffe-chrome-d/RunningChromeVersion: ENOENT: no such file or directory, stat '/tmp/giraffe-chrome-d/RunningChromeVersion'
+[agon] failed to stat /tmp/giraffe-chrome-d/SingletonCookie: ENOENT: no such file or directory, stat '/tmp/giraffe-chrome-d/SingletonCookie'
+[agon] failed to stat /tmp/giraffe-chrome-d/SingletonLock: ENOENT: no such file or directory, stat '/tmp/giraffe-chrome-d/SingletonLock'
+[agon] failed to stat /tmp/giraffe-chrome-e/RunningChromeVersion: ENOENT: no such file or directory, stat '/tmp/giraffe-chrome-e/RunningChromeVersion'
+[agon] failed to stat /tmp/giraffe-chrome-e/SingletonCookie: ENOENT: no such file or directory, stat '/tmp/giraffe-chrome-e/SingletonCookie'
+[agon] failed to stat /tmp/giraffe-chrome-e/SingletonLock: ENOENT: no such file or directory, stat '/tmp/giraffe-chrome-e/SingletonLock'
+[agon] failed to stat /tmp/giraffe-chrome-f/RunningChromeVersion: ENOENT: no such file or directory, stat '/tmp/giraffe-chrome-f/RunningChromeVersion'
+[agon] failed to stat /tmp/giraffe-chrome-f/SingletonCookie: ENOENT: no such file or directory, stat '/tmp/giraffe-chrome-f/SingletonCookie'
+[agon] failed to stat /tmp/giraffe-chrome-f/SingletonLock: ENOENT: no such file or directory, stat '/tmp/giraffe-chrome-f/SingletonLock'
+[agon] failed to stat /tmp/giraffe-chrome-g/RunningChromeVersion: ENOENT: no such file or directory, stat '/tmp/giraffe-chrome-g/RunningChromeVersion'
+[agon] failed to stat /tmp/giraffe-chrome-g/SingletonCookie: ENOENT: no such file or directory, stat '/tmp/giraffe-chrome-g/SingletonCookie'
+[agon] failed to stat /tmp/giraffe-chrome-g/SingletonLock: ENOENT: no such file or directory, stat '/tmp/giraffe-chrome-g/SingletonLock'
+[agon] failed to stat /tmp/giraffe-chrome-h/RunningChromeVersion: ENOENT: no such file or directory, stat '/tmp/giraffe-chrome-h/RunningChromeVersion'
+[agon] failed to stat /tmp/giraffe-chrome-h/SingletonCookie: ENOENT: no such file or directory, stat '/tmp/giraffe-chrome-h/SingletonCookie'
+[agon] failed to stat /tmp/giraffe-chrome-h/SingletonLock: ENOENT: no such file or directory, stat '/tmp/giraffe-chrome-h/SingletonLock'
+[agon] failed to stat /tmp/giraffe-confidence/RunningChromeVersion: ENOENT: no such file or directory, stat '/tmp/giraffe-confidence/RunningChromeVersion'
+[agon] failed to stat /tmp/giraffe-confidence/SingletonCookie: ENOENT: no such file or directory, stat '/tmp/giraffe-confidence/SingletonCookie'
+[agon] failed to stat /tmp/giraffe-confidence/SingletonLock: ENOENT: no such file or directory, stat '/tmp/giraffe-confidence/SingletonLock'
+[agon] failed to stat /tmp/giraffe-confidence-2a/RunningChromeVersion: ENOENT: no such file or directory, stat '/tmp/giraffe-confidence-2a/RunningChromeVersion'
+[agon] failed to stat /tmp/giraffe-confidence-2a/SingletonCookie: ENOENT: no such file or directory, stat '/tmp/giraffe-confidence-2a/SingletonCookie'
+[agon] failed to stat /tmp/giraffe-confidence-2a/SingletonLock: ENOENT: no such file or directory, stat '/tmp/giraffe-confidence-2a/SingletonLock'
+[agon] failed to stat /tmp/giraffe-confidence-2b/RunningChromeVersion: ENOENT: no such file or directory, stat '/tmp/giraffe-confidence-2b/RunningChromeVersion'
+[agon] failed to stat /tmp/giraffe-confidence-2b/SingletonCookie: ENOENT: no such file or directory, stat '/tmp/giraffe-confidence-2b/SingletonCookie'
+[agon] failed to stat /tmp/giraffe-confidence-2b/SingletonLock: ENOENT: no such file or directory, stat '/tmp/giraffe-confidence-2b/SingletonLock'
+[agon] failed to stat /tmp/giraffe-labels-a/RunningChromeVersion: ENOENT: no such file or directory, stat '/tmp/giraffe-labels-a/RunningChromeVersion'
+[agon] failed to stat /tmp/giraffe-labels-a/SingletonCookie: ENOENT: no such file or directory, stat '/tmp/giraffe-labels-a/SingletonCookie'
+[agon] failed to stat /tmp/giraffe-labels-a/SingletonLock: ENOENT: no such file or directory, stat '/tmp/giraffe-labels-a/SingletonLock'
+[agon] failed to stat /tmp/giraffe-labels-b/RunningChromeVersion: ENOENT: no such file or directory, stat '/tmp/giraffe-labels-b/RunningChromeVersion'
+[agon] failed to stat /tmp/giraffe-labels-b/SingletonCookie: ENOENT: no such file or directory, stat '/tmp/giraffe-labels-b/SingletonCookie'
+[agon] failed to stat /tmp/giraffe-labels-b/SingletonLock: ENOENT: no such file or directory, stat '/tmp/giraffe-labels-b/SingletonLock'
+[agon] failed to stat /tmp/giraffe-lanes-a/RunningChromeVersion: ENOENT: no such file or directory, stat '/tmp/giraffe-lanes-a/RunningChromeVersion'
+[agon] failed to stat /tmp/giraffe-lanes-a/SingletonCookie: ENOENT: no such file or directory, stat '/tmp/giraffe-lanes-a/SingletonCookie'
+[agon] failed to stat /tmp/giraffe-lanes-a/SingletonLock: ENOENT: no such file or directory, stat '/tmp/giraffe-lanes-a/SingletonLock'
+[agon] failed to stat /tmp/giraffe-lanes-b/RunningChromeVersion: ENOENT: no such file or directory, stat '/tmp/giraffe-lanes-b/RunningChromeVersion'
+[agon] failed to stat /tmp/giraffe-lanes-b/SingletonCookie: ENOENT: no such file or directory, stat '/tmp/giraffe-lanes-b/SingletonCookie'
+[agon] failed to stat /tmp/giraffe-lanes-b/SingletonLock: ENOENT: no such file or directory, stat '/tmp/giraffe-lanes-b/SingletonLock'
+[agon] failed to stat /tmp/giraffe-lanes-c/RunningChromeVersion: ENOENT: no such file or directory, stat '/tmp/giraffe-lanes-c/RunningChromeVersion'
+[agon] failed to stat /tmp/giraffe-lanes-c/SingletonCookie: ENOENT: no such file or directory, stat '/tmp/giraffe-lanes-c/SingletonCookie'
+[agon] failed to stat /tmp/giraffe-lanes-c/SingletonLock: ENOENT: no such file or directory, stat '/tmp/giraffe-lanes-c/SingletonLock'
+[agon] failed to stat /tmp/giraffe-lanes-d/RunningChromeVersion: ENOENT: no such file or directory, stat '/tmp/giraffe-lanes-d/RunningChromeVersion'
+[agon] failed to stat /tmp/giraffe-lanes-d/SingletonCookie: ENOENT: no such file or directory, stat '/tmp/giraffe-lanes-d/SingletonCookie'
+[agon] failed to stat /tmp/giraffe-lanes-d/SingletonLock: ENOENT: no such file or directory, stat '/tmp/giraffe-lanes-d/SingletonLock'
+[agon] failed to stat /tmp/giraffe-larger-text/RunningChromeVersion: ENOENT: no such file or directory, stat '/tmp/giraffe-larger-text/RunningChromeVersion'
+[agon] failed to stat /tmp/giraffe-larger-text/SingletonCookie: ENOENT: no such file or directory, stat '/tmp/giraffe-larger-text/SingletonCookie'
+[agon] failed to stat /tmp/giraffe-larger-text/SingletonLock: ENOENT: no such file or directory, stat '/tmp/giraffe-larger-text/SingletonLock'
+[agon] failed to stat /tmp/giraffe-slide-check/RunningChromeVersion: ENOENT: no such file or directory, stat '/tmp/giraffe-slide-check/RunningChromeVersion'
+[agon] failed to stat /tmp/giraffe-slide-check/SingletonCookie: ENOENT: no such file or directory, stat '/tmp/giraffe-slide-check/SingletonCookie'
+[agon] failed to stat /tmp/giraffe-slide-check/SingletonLock: ENOENT: no such file or directory, stat '/tmp/giraffe-slide-check/SingletonLock'
+[agon] failed to stat /tmp/giraffe-slide-check-2/RunningChromeVersion: ENOENT: no such file or directory, stat '/tmp/giraffe-slide-check-2/RunningChromeVersion'
+[agon] failed to stat /tmp/giraffe-slide-check-2/SingletonCookie: ENOENT: no such file or directory, stat '/tmp/giraffe-slide-check-2/SingletonCookie'
+[agon] failed to stat /tmp/giraffe-slide-check-2/SingletonLock: ENOENT: no such file or directory, stat '/tmp/giraffe-slide-check-2/SingletonLock'
+[agon] failed to stat /tmp/giraffe-slide-check-3/RunningChromeVersion: ENOENT: no such file or directory, stat '/tmp/giraffe-slide-check-3/RunningChromeVersion'
+[agon] failed to stat /tmp/giraffe-slide-check-3/SingletonCookie: ENOENT: no such file or directory, stat '/tmp/giraffe-slide-check-3/SingletonCookie'
+[agon] failed to stat /tmp/giraffe-slide-check-3/SingletonLock: ENOENT: no such file or directory, stat '/tmp/giraffe-slide-check-3/SingletonLock'
+[agon] failed to stat /tmp/giraffe-slide-check-4/RunningChromeVersion: ENOENT: no such file or directory, stat '/tmp/giraffe-slide-check-4/RunningChromeVersion'
+[agon] failed to stat /tmp/giraffe-slide-check-4/SingletonCookie: ENOENT: no such file or directory, stat '/tmp/giraffe-slide-check-4/SingletonCookie'
+[agon] failed to stat /tmp/giraffe-slide-check-4/SingletonLock: ENOENT: no such file or directory, stat '/tmp/giraffe-slide-check-4/SingletonLock'
+[agon] failed to stat /tmp/giraffe-slide-check-5a/RunningChromeVersion: ENOENT: no such file or directory, stat '/tmp/giraffe-slide-check-5a/RunningChromeVersion'
+[agon] failed to stat /tmp/giraffe-slide-check-5a/SingletonCookie: ENOENT: no such file or directory, stat '/tmp/giraffe-slide-check-5a/SingletonCookie'
+[agon] failed to stat /tmp/giraffe-slide-check-5a/SingletonLock: ENOENT: no such file or directory, stat '/tmp/giraffe-slide-check-5a/SingletonLock'
+[agon] failed to stat /tmp/giraffe-slide-check-5b/RunningChromeVersion: ENOENT: no such file or directory, stat '/tmp/giraffe-slide-check-5b/RunningChromeVersion'
+[agon] failed to stat /tmp/giraffe-slide-check-5b/SingletonCookie: ENOENT: no such file or directory, stat '/tmp/giraffe-slide-check-5b/SingletonCookie'
+[agon] failed to stat /tmp/giraffe-slide-check-5b/SingletonLock: ENOENT: no such file or directory, stat '/tmp/giraffe-slide-check-5b/SingletonLock'
+
+fatal: ref refs/remotes/origin/HEAD is not a symbolic ref
+fatal: Needed a single revision
+fatal: Needed a single revision
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+stderr | tests/unit/tool-hooks.test.ts > parseToolHooks > skips malformed entries (no command / non-object / bad list) fail-safe
+[agon] warning: ignoring preToolUse hook with no command: {"matcher":"Bash"}
+[agon] warning: ignoring malformed preToolUse hook entry: "string-entry"
+[agon] warning: ignoring preToolUse hook with no command: {"command":"   "}
+[agon] warning: hooks.postToolUse is not an array — ignoring
+
+stderr | tests/unit/cesar-session.test.ts > mode-aware RULE 1 — CONFIDENCE (guard mode invariants) > is a no-op (returns the prompt unchanged) when the strict RULE 1 text is absent — fail-safe to every-turn ceremony
+[agon] invariants RULE 1 rewrite failed — CESAR_SYSTEM_PROMPT drifted from CESAR_RULE_1_STRICT; serving strict confidence ceremony
+
+stderr | tests/unit/tool-hooks.test.ts > runPreToolUseHooks > nonzero-non-2 exit proceeds (fail-open) with a warning
+[agon] PreToolUse hook for Bash exited 7 — proceeding (fail-open)
+
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+stderr | tests/unit/context-thread.test.ts > ContextThread persistence > refuses files larger than 10MB (DoS guard)
+[agon] context-thread: failed to hydrate /var/folders/c4/_6ktcrg57m5_8kjcymvhn8fc0000gn/T/agon-test-context-thread-1787433213687-2c5juokdmn/threads/047796fc1ad5dad1/thread_1787433213688_327b6da3.json, starting fresh: Unexpected token 'x', "xxxxxxxxxx"... is not valid JSON
+
+stderr | tests/unit/brainstorm-style.test.ts > brainstorm divergent style > runBrainstorm style dispatch + synthesis prompt > defaults to divergent: synthesis keeps distinct directions and one closing recommendation
+[agon] brainstorm dedup unavailable: dedup-sidecar: fastembed not installed — install via `pip install -r packages/dedup/requirements.txt`
+
+stderr | tests/unit/brainstorm-style.test.ts > brainstorm divergent style > runBrainstorm style dispatch + synthesis prompt > grounded style restores the convergent synthesis prompt
+[agon] brainstorm dedup unavailable: dedup-sidecar: fastembed not installed — install via `pip install -r packages/dedup/requirements.txt`
+
+stderr | tests/unit/brainstorm-style.test.ts > brainstorm divergent style > runBrainstorm style dispatch + synthesis prompt > marks every seat and the synthesis dispatch textOnly so engines cannot burn the turn on tools
+[agon] brainstorm dedup unavailable: dedup-sidecar: fastembed not installed — install via `pip install -r packages/dedup/requirements.txt`
+
+stderr | tests/unit/tool-hooks.test.ts > runPreToolUseHooks > timeout proceeds (fail-open)
+[agon] PreToolUse hook for Bash timed out — proceeding (fail-open)
+
+stderr | tests/unit/workspace-grounding.test.ts > snapshotPath — plan snapshots without a matching bookmark > degrades gracefully to unknown/false placeholders for a non-git directory
+[agon] failed to get HEAD sha for /var/folders/c4/_6ktcrg57m5_8kjcymvhn8fc0000gn/T/agon-snap-plain-dQqGEh: git rev-parse failed: fatal: not a git repository (or any of the parent directories): .git
+
+stderr | tests/unit/tool-hooks.test.ts > runPostToolUseHooks > a failing post-hook is ignored (no throw, never blocks)
+[agon] PostToolUse hook for Bash exited 2 — ignored (post-hooks never block)
+
+stderr | tests/unit/tool-hooks.test.ts > executeToolCall hook integration > PostToolUse receives the tool_response and cannot block a successful call
+[agon] PostToolUse hook for Echo exited 2 — ignored (post-hooks never block)
+
+A --gate command is requiredstderr | tests/unit/api-agent-loop.test.ts > runApiAgentLoop > retries a transient API failure with backoff, then completes (same step)
+[agon] api-agent-loop: transient failure (Request timed out); reconnecting attempt 1/3 in 1ms
+
+stderr | tests/unit/api-agent-loop.test.ts > runApiAgentLoop > retries a transient API failure with backoff, then completes (same step)
+[agon] api-agent-loop: transient failure (429 rate limit exceeded — overloaded); reconnecting attempt 2/3 in 2ms
+
+stderr | tests/unit/api-agent-loop.test.ts > runApiAgentLoop > recomputes the per-step timeout on each reconnect (never stale/growing)
+[agon] api-agent-loop: transient failure (Request timed out); reconnecting attempt 1/3 in 5ms
+
+stderr | tests/unit/api-agent-loop.test.ts > runApiAgentLoop > recomputes the per-step timeout on each reconnect (never stale/growing)
+[agon] api-agent-loop: transient failure (Request timed out); reconnecting attempt 2/3 in 10ms
+
+stderr | tests/unit/api-agent-loop.test.ts > runApiAgentLoop > retries a transient failure inside a short total timeout when backoff fits
+[agon] api-agent-loop: transient failure (429 rate limit exceeded); reconnecting attempt 1/3 in 1ms
+
+stderr | tests/unit/serve-command.test.ts > agon serve — runtime wiring (integration) > runServe fails CLOSED (exit 2) when the port is in use — no crash, no hang, brain torn down
+[agon-serve] close: Server is not running.
+
+stderr | tests/unit/event-log.test.ts > event-log-tee — fire-and-forget bridge with failure latch > trips the disable-after-N latch on repeated deferred-flush (disk-write) failures
+[agon] event-log tee disabled after repeated failures
+
+stderr | tests/unit/forge-handler.test.ts > handleForge > skips the internal plan approval prompt when already approved upstream
+[agon] failed to read winning patch /tmp/winner.patch: ENOENT: no such file or directory, open '/tmp/winner.patch'
+
+stderr | tests/unit/session-acp-mcp.test.ts > createAcpSession mcpServers normalization > normalizes http entries (Record headers) and skips malformed entries
+[cesar:acp] process exited code=null
+
+stderr | tests/unit/forge-handler.test.ts > handleForge > uses Cesar to prepare missing forge fitness before falling back
+[agon] failed to read winning patch /tmp/winner.patch: ENOENT: no such file or directory, open '/tmp/winner.patch'
+
+stderr | ChildProcess.<anonymous> (/Users/ra/dev/agon-modular-slice-1a/packages/core/src/sessions/session-acp.ts:254:17)
+[cesar:acp] process exited code=null
+
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+stderr | tests/unit/api-dispatch.test.ts > apiStreamDispatchWithHistory idle-timeout contract (Fix A) > returns exitCode 124 + timedOut on an inter-chunk idle timeout, preserving partial stdout
+[agon] api-dispatch: inter-chunk idle timeout (0.05s) — breaking stream
+
+stderr | tests/unit/chat-store.test.ts > chat-store > returns null when resuming non-existent session
+[agon] failed to load chat session chat-nonexistent-999: ENOENT: no such file or directory, open '/var/folders/c4/_6ktcrg57m5_8kjcymvhn8fc0000gn/T/agon-test-chat-store-1787433216079-m6qs4o4r7jb/chats/chat-nonexistent-999.ndjson'
+
+stderr | tests/unit/api-dispatch.test.ts > apiStreamDispatchWithHistory idle-timeout contract (Fix A) > returns exitCode 124 + timedOut on a first-chunk idle timeout with no format-mismatch hint
+[agon] api-dispatch: first-chunk idle timeout (0.05s) — breaking stream
+
+stderr | tests/unit/speculator-failure.test.ts > Speculator structured agent failures > keeps member ordering deterministic and isolates callback failures
+[agon] speculator: onMemberComplete failed for fast: listener failed
+
+stderr | tests/unit/speculator-failure.test.ts > Speculator structured agent failures > keeps member ordering deterministic and isolates callback failures
+[agon] speculator: onMemberComplete failed for slow: listener failed
+
+stderr | tests/unit/speculator-isolation.test.ts > Speculator isolation fail-closed behavior > does not dispatch an isolated member in the shared cwd when worktree creation fails
+[agon] stashSnapshot: 131 untracked file(s) NOT included in agent base SHA. The first few: docs/specs/evidence/modular-agon-adversarial-adjudication.md, docs/specs/evidence/modular-agon-current-inventory.json, docs/specs/evidence/modular-agon-current-inventory.md. Agents will operate on tracked changes only — `git add` these files first if you need them in the agent's view.
+
+stderr | tests/unit/speculator-isolation.test.ts > Speculator isolation fail-closed behavior > does not dispatch an isolated member in the shared cwd when worktree creation fails
+[agon] speculator: failed to create worktree for unsafe-fallback: worktree unavailable
+
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+stderr | tests/unit/event-bus.test.ts > EventBus > handles listener errors without crashing
+[agon] event listener error (pre:test): boom
+
+stderr | tests/unit/permission-rules.test.ts > parsePermissionRuleSet fail-safe > non-array allow/deny collapse to empty
+[agon] warning: permissions.allow is not an array — ignoring
+[agon] warning: permissions.deny is not an array — ignoring
+
+stderr | tests/unit/permission-rules.test.ts > parsePermissionRuleSet fail-safe > skips malformed entries, keeps valid ones
+[agon] warning: ignoring malformed permission rule: ""
+[agon] warning: ignoring malformed permission rule: 7
+
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+stderr | tests/unit/health-check.test.ts > forge pre-flight health check > does not block forge when ALL engines fail the probe — returns a no-engines manifest
+[agon] forge: skipping d1 — health check failed (timeout after 45s)
+[agon] forge: skipping d2 — health check failed (timeout after 45s)
+
+stderr | tests/unit/telemetry-fallback.test.ts > Telemetry fallback during forge > detects stall, logs to scoreboard, dispatches toast, and activates successor
+[agon] syntax validator: tree-sitter or a grammar not installed — install with `npm run install:python -w packages/dedup`
+
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+stderr | tests/integration/forge-e2e.test.ts > Forge E2E > continues to challengers when the starter dispatch fails
+[agon] forge stage2: engine starter failed: starter unavailable
+
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+stderr | tests/integration/forge-e2e.test.ts > Forge E2E > does not retry a failed starter on an engine outside the active forge roster
+[agon] forge stage1: engine starter failed: starter unavailable
+
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+stderr | tests/integration/forge-e2e.test.ts > Forge E2E > continues challengers when one stage2 engine fails
+[agon] forge stage2: engine scout failed: scout crashed
+
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+stderr | tests/integration/forge-e2e.test.ts > Forge E2E > clears engine pid when a stage2 dispatch throws after spawning
+[agon] forge stage2: engine broken failed: engine crashed after spawn
+
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+stderr | tests/integration/forge-e2e.test.ts > Forge E2E > returns brainstorm drafts when final synthesis dispatch fails
+[agon] brainstorm synthesis (thinker) failed: synthesis failed
+
+stderr | tests/integration/forge-e2e.test.ts > Forge E2E > does not rank empty brainstorm replies as usable drafts
+[agon] brainstorm dispatch (empty) failed after 2 attempt(s): empty
+
+stderr | tests/integration/forge-e2e.test.ts > Forge E2E > does not rank empty brainstorm replies as usable drafts
+[agon] brainstorm panel degraded: empty empty → retry empty, dropped (1/2 responded)
+
+stderr | tests/integration/forge-e2e.test.ts > Forge E2E > fails honestly when every brainstorm seat is unusable
+[agon] brainstorm dispatch (empty-a) failed after 2 attempt(s): empty
+[agon] brainstorm dispatch (empty-b) failed after 2 attempt(s): empty
+
+stderr | tests/integration/forge-e2e.test.ts > Forge E2E > fails honestly when every brainstorm seat is unusable
+[agon] brainstorm panel degraded: empty-a empty → retry empty, dropped; empty-b empty → retry empty, dropped (0/2 responded)
+
+stderr | tests/integration/forge-e2e.test.ts > Forge E2E > falls back to debate text when tribunal summary engine returns empty output
+[agon] tribunal summary failed: tribunal summary returned empty response
+
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+
+[agon] Cleaning up active git worktrees...
+
+[agon] Cleaning up active git worktrees...

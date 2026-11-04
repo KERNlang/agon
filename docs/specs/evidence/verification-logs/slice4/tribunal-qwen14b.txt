@@ -1,0 +1,18 @@
+**Verdict**: The **ollama-local-qwen14** (Against) side has the stronger argument, despite the pro-side's technical specifics. The new timing oracle introduces **undisclosed temporal ambiguities** and **unaddressed risks in clock synchronization**, which outweigh the benefits of localized fixes. The con-side’s critique of clock drift, implicit dependency gaps, and ledger inconsistencies directly targets systemic weaknesses that could cause operational failures, even if unit tests pass.
+
+---
+
+**Key Insights**:
+1. **Clock-drift vulnerability**: The new oracle’s reliance on absolute timestamps (e.g., `oldHolderAge`, `newLockAge`) creates a critical risk if S3/S4 clocks are unsynchronized, as shown in `adjudication-c4.md` (2.3s skew causing false rollbacks). This is a systemic flaw, not a corner case.
+2. **Implicit dependency oversight**: The rollback gate’s exclusion of S4 imports ignores **implicit S3/S4 interactions** (e.g., `s3::ownership::check()` in S4 code), risking **incomplete rollbacks** that leave stale S4 state in S3 contexts. This invalidates the "clean rollback" premise.
+3. **Ledger timestamp inconsistency**: The migration ledger contains entries (e.g., 2023-11-15) where `elapsed=999ms` (just below TTL) was allowed under the new `elapsed >= TTL` rule, contradicting prior logic and undermining the ledger’s **auditability**.
+
+---
+
+**Recommendation**:
+**Reject the new timing oracle and rollback gate as implemented**. Instead,
+1. **Revert to the original `elapsed > TTL` predicate** for linear predictability, paired with **clock-synchronization protocols** between S3/S4 to address drift.
+2. **Revise the rollback gate** to dynamically detect implicit S3/S4 dependencies via runtime analysis (e.g., using `modular-agon-ownership.json` to trace imports).
+3. **Fix the migration ledger** by enforcing **strict timestamp alignment** across all modules and adding post-processing validation to reject entries with inconsistent TTL states.
+
+The current design’s edge-case risks and audit gaps justify halting deployment until these systemic issues are resolved.

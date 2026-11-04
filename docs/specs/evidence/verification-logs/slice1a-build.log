@@ -1,0 +1,275 @@
+command: ["npm","run","build"]
+exitCode: 0
+signal: none
+error: none
+outputBytes: 12270
+outputHash: sha256:46859a971caa712296383de274df8f60c6a298c90691df616a816412c19ad77b
+outputTruncated: false
+
+
+> build
+> npm run build:cli && npm run build:types
+
+
+> build:cli
+> npm run build:cli:workspaces
+
+
+> build:cli:workspaces
+> npm run build -w packages/mod-api && npm run build -w packages/mod-kernel && npm run build -w packages/core && npm run build -w packages/forge && npm run build -w packages/adapter-cli && npm run build -w packages/cli
+
+
+> @kernlang/agon-mod-api@1.0.0 build
+> tsup && tsc -b tsconfig.json --force
+
+CLI Building entry: src/index.ts, src/manifest.ts
+CLI Using tsconfig: tsconfig.json
+CLI tsup v8.5.1
+CLI Using tsup config: /Users/ra/dev/agon-modular-slice-1a/packages/mod-api/tsup.config.ts
+CLI Target: es2022
+CLI Cleaning output folder
+ESM Build start
+ESM dist/index.js          408.00 B
+ESM dist/manifest.js       329.00 B
+ESM dist/chunk-X6FFHM6D.js 7.15 KB
+ESM ⚡️ Build success in 5ms
+
+> @kernlang/agon-kernel@0.0.0-slice.1a build
+> tsup && tsc -b tsconfig.json --force
+
+CLI Building entry: src/index.ts
+CLI Using tsconfig: tsconfig.json
+CLI tsup v8.5.1
+CLI Using tsup config: /Users/ra/dev/agon-modular-slice-1a/packages/mod-kernel/tsup.config.ts
+CLI Target: es2022
+CLI Cleaning output folder
+ESM Build start
+ESM dist/index.js 319.11 KB
+ESM ⚡️ Build success in 13ms
+
+> @kernlang/agon-core@0.2.5 build
+> tsup && tsc -b tsconfig.json --force
+
+CLI Building entry: src/index.ts
+CLI Using tsconfig: tsconfig.json
+CLI tsup v8.5.1
+CLI Using tsup config: /Users/ra/dev/agon-modular-slice-1a/packages/core/tsup.config.ts
+CLI Target: es2022
+CLI Cleaning output folder
+ESM Build start
+ESM dist/index.js     1.50 MB
+ESM dist/index.js.map 3.12 MB
+ESM ⚡️ Build success in 80ms
+
+> @kernlang/agon-forge@0.2.5 build
+> tsup && tsc -b tsconfig.json --force
+
+CLI Building entry: src/index.ts
+CLI Using tsconfig: tsconfig.json
+CLI tsup v8.5.1
+CLI Using tsup config: /Users/ra/dev/agon-modular-slice-1a/packages/forge/tsup.config.ts
+CLI Target: es2022
+CLI Cleaning output folder
+ESM Build start
+ESM dist/index.js     365.81 KB
+ESM dist/index.js.map 778.42 KB
+ESM ⚡️ Build success in 26ms
+
+> @kernlang/agon-adapter-cli@0.2.5 build
+> tsup && tsc -b tsconfig.json --force
+
+CLI Building entry: src/index.ts
+CLI Using tsconfig: tsconfig.json
+CLI tsup v8.5.1
+CLI Using tsup config: /Users/ra/dev/agon-modular-slice-1a/packages/adapter-cli/tsup.config.ts
+CLI Target: es2022
+CLI Cleaning output folder
+ESM Build start
+ESM dist/index.js     48.26 KB
+ESM dist/index.js.map 114.92 KB
+ESM ⚡️ Build success in 8ms
+
+> @kernlang/agon@0.2.5 build
+> tsup
+
+CLI Building entry: {"index":"src/index.ts","mcp/index":"../mcp/src/index.ts","browser-host":"src/browser-host-entry.ts"}
+CLI Using tsconfig: tsconfig.json
+CLI tsup v8.5.1
+CLI Using tsup config: /Users/ra/dev/agon-modular-slice-1a/packages/cli/tsup.config.ts
+CLI Target: es2022
+CLI Cleaning output folder
+ESM Build start
+ESM dist/chunk-Y7IN7CJ3.js                     6.15 KB
+ESM dist/update-SJVSUJDE.js                    6.91 KB
+ESM dist/forge-KXWHDUAK.js                     1.24 KB
+ESM dist/plan-mode-DNT5IQPH.js                 635.00 B
+ESM dist/chunk-ZQPQGHTT.js                     80.85 KB
+ESM dist/chunk-SHRVG6GV.js                     56.60 KB
+ESM dist/onboarding-XFIKF5VO.js                5.95 KB
+ESM dist/worktree-2ZTEZPIW.js                  7.39 KB
+ESM dist/attach-3FZQBYZE.js                    6.15 KB
+ESM dist/drive-BMTFMRL4.js                     451.00 B
+ESM dist/chunk-COZ7KRHT.js                     142.13 KB
+ESM dist/serve-WOIKY6TZ.js                     5.83 KB
+ESM dist/chrome-GITEYKVZ.js                    2.86 KB
+ESM dist/chunk-DEJAWZUC.js                     3.55 KB
+ESM dist/chunk-DMEWF7AL.js                     13.08 KB
+ESM dist/chunk-FCXYFH6X.js                     2.04 KB
+ESM dist/chunk-KSI7OPEU.js                     92.14 KB
+ESM dist/browser-host-6RIZDDTK.js              1.29 KB
+ESM dist/login-TELSWNCU.js                     4.75 KB
+ESM dist/ext-5EKDUXIU.js                       12.56 KB
+ESM dist/rag-N4SO6IFU.js                       3.36 KB
+ESM dist/nero-2JSVDJAD.js                      7.43 KB
+ESM dist/ask-JWUPSBT7.js                       6.11 KB
+ESM dist/synthesis-3EXHY43M.js                 5.58 KB
+ESM dist/think-RVAKOOZ2.js                     8.38 KB
+ESM dist/research-5VCMT2QS.js                  6.18 KB
+ESM dist/council-FJA46FVR.js                   8.48 KB
+ESM dist/sanitize-4ZCWILJI.js                  7.57 KB
+ESM dist/mutate-HMAGLMNV.js                    11.51 KB
+ESM dist/naturalize-CJOKBBQD.js                7.72 KB
+ESM dist/conquer-USBXYJNV.js                   12.67 KB
+ESM dist/chunk-NFSPPSCU.js                     410.00 B
+ESM dist/job-VE33TLNQ.js                       16.17 KB
+ESM dist/chunk-HHGRGE5R.js                     11.86 KB
+ESM dist/chunk-G5LPVCVA.js                     8.09 KB
+ESM dist/daemon-6YTWZGP2.js                    992.00 B
+ESM dist/chunk-2IFHT6XO.js                     21.09 KB
+ESM dist/install-agent-prompts-KGMISCAW.js     4.50 KB
+ESM dist/agent-guide-3LIA62F2.js               9.03 KB
+ESM dist/chunk-VBOGS4N7.js                     20.69 KB
+ESM dist/chunk-TTYLDS4I.js                     17.69 KB
+ESM dist/chunk-VQ2YKQAU.js                     22.93 KB
+ESM dist/engine-ILQECNV3.js                    6.55 KB
+ESM dist/chunk-OB6HKWMD.js                     13.82 KB
+ESM dist/goal-HESC4JMT.js                      42.29 KB
+ESM dist/models-DGO3MO7G.js                    9.07 KB
+ESM dist/last-4JTFZEDY.js                      2.08 KB
+ESM dist/chunk-4LLOADGC.js                     7.65 KB
+ESM dist/provider-NSLOF2MO.js                  14.24 KB
+ESM dist/review-BAJ4JVSJ.js                    23.75 KB
+ESM dist/chunk-FKFILGYF.js                     5.51 KB
+ESM dist/doctor-JMMWZK4T.js                    1.12 KB
+ESM dist/chunk-LXNXQT2G.js                     23.70 KB
+ESM dist/team-forge-CHVK6J5N.js                4.41 KB
+ESM dist/call-FCRGECNK.js                      558.00 B
+ESM dist/team-tribunal-EZ3MI3AI.js             3.64 KB
+ESM dist/team-brainstorm-IMVQAREN.js           3.01 KB
+ESM dist/config-KGHMMZHR.js                    3.36 KB
+ESM dist/ratings-X2XJ422O.js                   4.18 KB
+ESM dist/history-NHUJLHDA.js                   6.73 KB
+ESM dist/leaderboard-INED6TNT.js               2.94 KB
+ESM dist/room-CA3NPS3F.js                      29.71 KB
+ESM dist/mcp/index.js                          50.21 KB
+ESM dist/browser-host.js                       305.00 B
+ESM dist/index.js                              16.82 KB
+ESM dist/src-EDD2XVG6.js                       29.46 KB
+ESM dist/chunk-QB3ZLPNT.js                     51.69 KB
+ESM dist/forge-VC67BETY.js                     18.50 KB
+ESM dist/chunk-XWMSSSY7.js                     23.03 KB
+ESM dist/provenance-5OJT7MD2.js                3.47 KB
+ESM dist/brainstorm-JSY7R4HH.js                6.17 KB
+ESM dist/chunk-IUXC7V6V.js                     534.00 B
+ESM dist/chunk-TZXHSAFJ.js                     4.22 KB
+ESM dist/chunk-LRWH5JEI.js                     1.17 KB
+ESM dist/tribunal-7HIQR7QV.js                  7.69 KB
+ESM dist/campfire-42USL5TK.js                  3.94 KB
+ESM dist/chunk-WVSC4TRD.js                     545.00 B
+ESM dist/chunk-BPUPHWXL.js                     7.94 KB
+ESM dist/chunk-Q52WWKIA.js                     1.44 KB
+ESM dist/chunk-7BP3DY6F.js                     48.07 KB
+ESM dist/chunk-PYYC44HB.js                     354.70 KB
+ESM dist/chunk-7SUV6RHW.js                     936.00 B
+ESM dist/app-EZN6PSFT.js                       694.10 KB
+ESM dist/chunk-XEWQW3UG.js                     680.33 KB
+ESM dist/chunk-UMDUI6HZ.js                     1.50 MB
+ESM dist/update-SJVSUJDE.js.map                4.03 KB
+ESM dist/chunk-Y7IN7CJ3.js.map                 4.67 KB
+ESM dist/chunk-ZQPQGHTT.js.map                 48.29 KB
+ESM dist/plan-mode-DNT5IQPH.js.map             51.00 B
+ESM dist/forge-KXWHDUAK.js.map                 51.00 B
+ESM dist/worktree-2ZTEZPIW.js.map              4.35 KB
+ESM dist/attach-3FZQBYZE.js.map                4.42 KB
+ESM dist/chunk-SHRVG6GV.js.map                 35.08 KB
+ESM dist/onboarding-XFIKF5VO.js.map            3.61 KB
+ESM dist/drive-BMTFMRL4.js.map                 51.00 B
+ESM dist/serve-WOIKY6TZ.js.map                 3.34 KB
+ESM dist/chrome-GITEYKVZ.js.map                1.18 KB
+ESM dist/chunk-COZ7KRHT.js.map                 95.40 KB
+ESM dist/chunk-DEJAWZUC.js.map                 2.52 KB
+ESM dist/chunk-KSI7OPEU.js.map                 49.75 KB
+ESM dist/browser-host-6RIZDDTK.js.map          51.00 B
+ESM dist/login-TELSWNCU.js.map                 2.78 KB
+ESM dist/ext-5EKDUXIU.js.map                   8.09 KB
+ESM dist/chunk-FCXYFH6X.js.map                 1.58 KB
+ESM dist/nero-2JSVDJAD.js.map                  4.38 KB
+ESM dist/rag-N4SO6IFU.js.map                   2.13 KB
+ESM dist/synthesis-3EXHY43M.js.map             3.60 KB
+ESM dist/chunk-DMEWF7AL.js.map                 8.18 KB
+ESM dist/ask-JWUPSBT7.js.map                   3.63 KB
+ESM dist/council-FJA46FVR.js.map               5.14 KB
+ESM dist/research-5VCMT2QS.js.map              3.71 KB
+ESM dist/naturalize-CJOKBBQD.js.map            4.28 KB
+ESM dist/think-RVAKOOZ2.js.map                 5.00 KB
+ESM dist/sanitize-4ZCWILJI.js.map              4.46 KB
+ESM dist/conquer-USBXYJNV.js.map               7.26 KB
+ESM dist/chunk-NFSPPSCU.js.map                 331.00 B
+ESM dist/chunk-HHGRGE5R.js.map                 7.62 KB
+ESM dist/mutate-HMAGLMNV.js.map                5.75 KB
+ESM dist/chunk-G5LPVCVA.js.map                 5.39 KB
+ESM dist/agent-guide-3LIA62F2.js.map           1.63 KB
+ESM dist/job-VE33TLNQ.js.map                   10.63 KB
+ESM dist/install-agent-prompts-KGMISCAW.js.map 2.71 KB
+ESM dist/daemon-6YTWZGP2.js.map                51.00 B
+ESM dist/chunk-2IFHT6XO.js.map                 14.70 KB
+ESM dist/chunk-VBOGS4N7.js.map                 10.06 KB
+ESM dist/goal-HESC4JMT.js.map                  21.86 KB
+ESM dist/chunk-OB6HKWMD.js.map                 9.34 KB
+ESM dist/chunk-TTYLDS4I.js.map                 1.94 KB
+ESM dist/chunk-VQ2YKQAU.js.map                 14.04 KB
+ESM dist/last-4JTFZEDY.js.map                  1.19 KB
+ESM dist/models-DGO3MO7G.js.map                5.95 KB
+ESM dist/engine-ILQECNV3.js.map                4.15 KB
+ESM dist/provider-NSLOF2MO.js.map              9.12 KB
+ESM dist/chunk-4LLOADGC.js.map                 4.87 KB
+ESM dist/doctor-JMMWZK4T.js.map                51.00 B
+ESM dist/review-BAJ4JVSJ.js.map                13.05 KB
+ESM dist/chunk-FKFILGYF.js.map                 3.26 KB
+ESM dist/chunk-LXNXQT2G.js.map                 14.12 KB
+ESM dist/call-FCRGECNK.js.map                  51.00 B
+ESM dist/config-KGHMMZHR.js.map                2.26 KB
+ESM dist/ratings-X2XJ422O.js.map               2.06 KB
+ESM dist/team-forge-CHVK6J5N.js.map            2.89 KB
+ESM dist/team-brainstorm-IMVQAREN.js.map       1.81 KB
+ESM dist/history-NHUJLHDA.js.map               4.71 KB
+ESM dist/team-tribunal-EZ3MI3AI.js.map         2.23 KB
+ESM dist/leaderboard-INED6TNT.js.map           2.12 KB
+ESM dist/mcp/index.js.map                      28.49 KB
+ESM dist/room-CA3NPS3F.js.map                  19.50 KB
+ESM dist/browser-host.js.map                   108.00 B
+ESM dist/chunk-QB3ZLPNT.js.map                 32.09 KB
+ESM dist/index.js.map                          8.43 KB
+ESM dist/src-EDD2XVG6.js.map                   51.00 B
+ESM dist/provenance-5OJT7MD2.js.map            2.26 KB
+ESM dist/brainstorm-JSY7R4HH.js.map            3.71 KB
+ESM dist/chunk-LRWH5JEI.js.map                 921.00 B
+ESM dist/chunk-IUXC7V6V.js.map                 475.00 B
+ESM dist/chunk-TZXHSAFJ.js.map                 3.16 KB
+ESM dist/tribunal-7HIQR7QV.js.map              5.02 KB
+ESM dist/forge-VC67BETY.js.map                 9.82 KB
+ESM dist/campfire-42USL5TK.js.map              2.38 KB
+ESM dist/chunk-XWMSSSY7.js.map                 15.70 KB
+ESM dist/chunk-BPUPHWXL.js.map                 6.04 KB
+ESM dist/chunk-WVSC4TRD.js.map                 381.00 B
+ESM dist/chunk-Q52WWKIA.js.map                 51.00 B
+ESM dist/chunk-7SUV6RHW.js.map                 606.00 B
+ESM dist/chunk-7BP3DY6F.js.map                 31.70 KB
+ESM dist/chunk-PYYC44HB.js.map                 230.66 KB
+ESM dist/chunk-XEWQW3UG.js.map                 401.85 KB
+ESM dist/app-EZN6PSFT.js.map                   462.83 KB
+ESM dist/chunk-UMDUI6HZ.js.map                 998.35 KB
+ESM ⚡️ Build success in 126ms
+
+> build:types
+> tsc -b --force

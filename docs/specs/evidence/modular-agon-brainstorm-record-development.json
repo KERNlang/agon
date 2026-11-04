@@ -1,0 +1,177 @@
+{
+  "schemaVersion": 1,
+  "kind": "development-increment-not-release-qualification",
+  "subjectKind": "git-index-blobs",
+  "parentCommit": "8adbca8985c06966d06278c09b6f3205f20a93fb",
+  "subjects": [
+    {
+      "path": "docs/specs/evidence/modular-agon-claude-brainstorm-record-review-input.json",
+      "gitIndexBlob": "18a5690296240d3a0072c93666bbfa512f353374"
+    },
+    {
+      "path": "docs/specs/evidence/modular-agon-claude-brainstorm-record-review.json",
+      "gitIndexBlob": "5a792ab357854f6757d0fd6ff4e99e700a357d75"
+    },
+    {
+      "path": "docs/specs/evidence/modular-agon-release-set.json",
+      "gitIndexBlob": "1f461551d98f53eb2d0494ef097abd6e8dcd2c0f"
+    },
+    {
+      "path": "docs/specs/evidence/modular-agon-sbom.cdx.json",
+      "gitIndexBlob": "840f0f7a1b8bde53a9b8606c814f8ac45449869a"
+    },
+    {
+      "path": "docs/specs/modular-agon-completion-progress.md",
+      "gitIndexBlob": "f70540b10a64f6ca26cd3dbb243b16f55ae9e17f"
+    },
+    {
+      "path": "packages/cli/release-channel.json",
+      "gitIndexBlob": "cde27245d0738a5cf2c9d49cb6fc306a33cbb8b0"
+    },
+    {
+      "path": "packages/cli/src/blocks/brainstorm-session-record.ts",
+      "gitIndexBlob": "5c9b510622a9b74ca69c9abed11dec9eb23c7a9b"
+    },
+    {
+      "path": "packages/mod-brainstorm/src/index.ts",
+      "gitIndexBlob": "eeafd935222114a51ec9e6197a0c6bdbcf0428a5"
+    },
+    {
+      "path": "packages/mod-brainstorm/src/session-record.ts",
+      "gitIndexBlob": "d60ab59ba3855d66369e63aba80be934feef1292"
+    },
+    {
+      "path": "scripts/spec/generate-modular-first-party-packages.mjs",
+      "gitIndexBlob": "516326446cfa887dc20f3fe481a75154af659776"
+    },
+    {
+      "path": "tests/unit/modular-brainstorm-session-record.test.ts",
+      "gitIndexBlob": "d2041408873f9c52e0de27e2496edf3b6b7074a9"
+    }
+  ],
+  "subjectSha256": "2aaaa770a6a908b0d59bdc260c1a6db5bda7f128e695c740acf45a9f8fa2dfb1",
+  "logs": [
+    {
+      "id": "brainstorm-record-owner-red",
+      "log": "brainstorm-record-owner-red.log",
+      "logSha256": "be1785f7c7dcb6257e585216f6193a6c80a6860f56bc228ef821f4521cb265b4",
+      "bytes": 2487,
+      "status": "negative-control"
+    },
+    {
+      "id": "brainstorm-binding-red",
+      "log": "brainstorm-binding-red.log",
+      "logSha256": "63b512c53cc0b5225f11904ad694a0a6ef5ff3ce109d344e02074299a4200d3e",
+      "bytes": 4377,
+      "status": "negative-control"
+    },
+    {
+      "id": "brainstorm-record-full",
+      "log": "brainstorm-record-full.log",
+      "logSha256": "7e075462e7c10e80f1ebad5a1d1ba41c1705337f84f90af6e5ffa76e30a275c9",
+      "bytes": 187609,
+      "status": "passed"
+    },
+    {
+      "id": "brainstorm-record-final-types",
+      "log": "brainstorm-record-final-types.log",
+      "logSha256": "be1cf12bc2c9d30c2cc1484ecb5ad9f709e037352543b5aeaf93337177ed2a06",
+      "bytes": 23,
+      "status": "passed"
+    },
+    {
+      "id": "brainstorm-record-types-build",
+      "log": "brainstorm-record-types-build.log",
+      "logSha256": "c064a3b18fec92ce7d983129316b8828c4db77c9755ca15dc162baae70283236",
+      "bytes": 492,
+      "status": "passed"
+    },
+    {
+      "id": "brainstorm-record-cli-build",
+      "log": "brainstorm-record-cli-build.log",
+      "logSha256": "49ef544f3079e23ff6d8a2749d5c0b9ffe2d556d39bf4356054487800e81e7ec",
+      "bytes": 8498,
+      "status": "passed"
+    },
+    {
+      "id": "brainstorm-record-lint",
+      "log": "brainstorm-record-lint.log",
+      "logSha256": "9c820387067890853fec62e80c935bed248b406c9576f6ea1336e7706eac1a68",
+      "bytes": 2123,
+      "status": "passed"
+    },
+    {
+      "id": "brainstorm-record-generated",
+      "log": "brainstorm-record-generated.log",
+      "logSha256": "d4f6d6eaaf2a06407d8bd6ade8c7c197929f5d19226bf328f7c2c82ef5d6a829",
+      "bytes": 47,
+      "status": "passed"
+    },
+    {
+      "id": "brainstorm-record-guard",
+      "log": "brainstorm-record-guard.log",
+      "logSha256": "de95be878ed3034819e11e168353c9f410a639a5c6304bc61e26718877a0291a",
+      "bytes": 130,
+      "status": "passed"
+    },
+    {
+      "id": "brainstorm-record-release",
+      "log": "brainstorm-record-release.log",
+      "logSha256": "c2955e75ff1da7954415e3674748cefd97e34f641030b319f3399817f7dcda07",
+      "bytes": 136,
+      "status": "passed"
+    },
+    {
+      "id": "brainstorm-record-supply",
+      "log": "brainstorm-record-supply.log",
+      "logSha256": "2c0a20a8822e092ec65a9021ef6fdb945e244e85e942c92ba20cd7376a8c14b1",
+      "bytes": 112,
+      "status": "passed"
+    },
+    {
+      "id": "brainstorm-record-supply-negative",
+      "log": "brainstorm-record-supply-negative.log",
+      "logSha256": "2c0a20a8822e092ec65a9021ef6fdb945e244e85e942c92ba20cd7376a8c14b1",
+      "bytes": 112,
+      "status": "passed"
+    },
+    {
+      "id": "brainstorm-record-npx",
+      "log": "brainstorm-record-npx.log",
+      "logSha256": "40045ac44272f57e36e8b54e779c5b8e5273580723a297c93d4010e9f1d39464",
+      "bytes": 202,
+      "status": "passed"
+    }
+  ],
+  "logRoot": "/tmp/agon-plan-check-ShdTwz",
+  "scope": "Physical Brainstorm session-record orchestration and narrow CLI effect bindings; A06 remains open.",
+  "verification": {
+    "testsPassed": 6626,
+    "testsSkipped": 6,
+    "testFilesPassed": 553,
+    "testFilesSkipped": 1,
+    "packages": 49,
+    "dependencyEdges": 151,
+    "artifacts": 50,
+    "packedBytes": 1870564,
+    "npxChecks": 72
+  },
+  "review": {
+    "route": "isolated candidate Agon ask claude",
+    "input": "docs/specs/evidence/modular-agon-claude-brainstorm-record-review-input.json",
+    "result": "docs/specs/evidence/modular-agon-claude-brainstorm-record-review.json",
+    "adjudications": "docs/specs/modular-agon-completion-progress.md",
+    "fixed": "Effects-spread binding regression reproduced and replaced with explicit forwarding closures. Payload order, timestamps, projection and typed public boundary tests added."
+  },
+  "limitations": [
+    "Not complete Brainstorm session/presentation extraction or adapter retirement.",
+    "Existing partial-write semantics remain non-atomic; receipt idempotency still needs host-effect work.",
+    "No clean committed pressure run for this new increment yet; 9c868c63 is the preceding qualified subject.",
+    "The intermediate readonly-output compile failure is not a production behavior regression."
+  ],
+  "safety": {
+    "globalAgonModified": false,
+    "personalStateModified": false,
+    "pushed": false
+  }
+}

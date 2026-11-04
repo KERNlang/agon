@@ -31,6 +31,7 @@ export default tseslint.config(
   },
   {
     files: ['packages/*/src/**/*.ts', 'packages/*/src/**/*.tsx'],
+    ignores: ['packages/*/src/**/*.test.ts', 'packages/*/src/**/*.test.tsx'],
     extends: [tseslint.configs.base],
     languageOptions: {
       parserOptions: {
@@ -72,7 +73,13 @@ export default tseslint.config(
     // with type-aware rules would error out per file. Listing them explicitly
     // (rather than leaving them to match nothing) is the point: an unmatched
     // file is silently unlinted.
-    files: ['tests/**/*.ts', 'tests/**/*.tsx', '*.ts'],
+    files: [
+      'tests/**/*.ts',
+      'tests/**/*.tsx',
+      'packages/*/src/**/*.test.ts',
+      'packages/*/src/**/*.test.tsx',
+      '*.ts',
+    ],
     extends: [tseslint.configs.base],
     rules: {
       'no-fallthrough': 'error',

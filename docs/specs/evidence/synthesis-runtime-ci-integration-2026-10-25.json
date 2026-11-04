@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "scope": "PR317 integration of the merged CI supply-chain gate",
+  "firstParent": "07db85afe811d8bf6f48a8b18bdca0c240d7c975",
+  "mergedMain": "700c867987567e3d427f4da906a3fed129c777b1",
+  "testedDiffSha256": "9d7dcd5be9b0e9745d663cb1411f95a29132fae7c8b53455d5460c1047dc0dce",
+  "evidenceRoot": "modular-agon-remediation",
+  "receipt": "synthesis-runtime-ci-main-integration-20261025.receipt.json",
+  "log": "synthesis-runtime-ci-main-integration-20261025.log",
+  "logSha256": "d68c6d2e26880505c9eca5e7f09b5d4d76efbc38d59a5e7480b064cb01ab2976",
+  "passed": true,
+  "testPassed": 11702,
+  "testSkipped": 6,
+  "installedChecks": 87,
+  "providerLaunches": 0,
+  "durationSeconds": 959.134,
+  "gates": ["build", "release-set", "supply-chain", "typecheck", "tests", "lint", "reexports", "supply-chain-negative-controls", "offline-npx", "diff-check"],
+  "indexAddedAfterQualification": true,
+  "limits": ["Independent GitHub approval and CI required on the pushed head", "No live-provider run", "npm provenance externally blocked", "Physical Synthesis and session cutover remain separate"]
+}

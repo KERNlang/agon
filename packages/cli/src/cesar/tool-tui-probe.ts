@@ -5,19 +5,20 @@ import { join, dirname } from 'node:path';
 import { existsSync } from 'node:fs';
 
 import { spawnWithTimeout } from '@kernlang/agon-core';
+import { resolveTuiProbeScript } from '@kernlang/agon-support-verification';
 
 import type { ToolDefinition, ToolHandler, ToolContext, ToolResult, PermissionDecision } from '@kernlang/agon-core';
 
 export const TUI_PROBE_INPUT_SAFELIST: readonly string[] = ['/help', '/status', '/todos', '/plans', '/checkpoints'] as const;
 
 /**
- * Locate py/agon-tui-probe.py and dist/index.js relative to this compiled module. PACKAGED layout: tsup bundles this module into a flat chunk directly under <pkg>/dist/, so the package root is ONE level up. Dev/vitest layout: <pkg>/src/cesar/ → two levels up. All candidates probed with existsSync, mirroring resolveModelProbeScript's walk in agon-core.
+ * Resolve the owned script first. Keep CLI binary discovery and legacy script fallback.
  */
 export function resolveTuiProbePaths(): { script: string|null, agonBin: string|null } {
   const here = dirname(fileURLToPath(import.meta.url));
   // Candidate package roots, shallowest first: dist/<tsup-chunk>.js → pkg root (PACKAGED layout — tsup emits flat chunks directly under dist/; agon-review blocking finding); src/cesar → pkg root (vitest/dev layout); then two deeper fallbacks. Every candidate is probed with existsSync, so a miss just falls through.
   const roots = [join(here, '..'), join(here, '..', '..'), join(here, '..', '..', '..'), join(here, '..', '..', '..', '..')];
-  let script = null as string | null;
+  let script = resolveTuiProbeScript();
   let agonBin = null as string | null;
   for (const root of roots) {
     const s = join(root, 'py', 'agon-tui-probe.py');
@@ -73,7 +74,7 @@ export function createTuiProbeTool(): ToolHandler {
   const execute = async (input: Record<string, unknown>, _ctx: ToolContext): Promise<ToolResult> => {
     const { script, agonBin } = resolveTuiProbePaths();
     if (!script) {
-      return { ok: false, content: '', error: 'TuiProbe: py/agon-tui-probe.py not found relative to the agon package.' };
+      return { ok: false, content: '', error: 'TuiProbe: agon-tui-probe.py not found in support-verification or the legacy CLI package.' };
     }
     if (!agonBin) {
       return { ok: false, content: '', error: 'TuiProbe: agon dist/index.js not found — build the package first (npm run build).' };

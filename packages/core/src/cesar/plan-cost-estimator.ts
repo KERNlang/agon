@@ -1,43 +1,11 @@
+/** A20 Plan host binding (KL-011). Retire with the shared legacy host.
+ * Plan owns runtime composition and history. Core supplies pricing and warnings. */
+import { createPlanRuntime, PlanCostEstimator as PhysicalPlanCostEstimator } from '@kernlang/agon-mod-plan';
 import { estimateCost } from '../signals/token-tracker.js';
-
-export interface CostEstimate {
-  tokens: number;
-  costUsd: number;
+export type { CostEstimate } from '@kernlang/agon-mod-plan';
+export class PlanCostEstimator extends PhysicalPlanCostEstimator {
+  constructor() { super(estimateCost); }
 }
-
-export class PlanCostEstimator {
-  private history: { type: string, tokens: number, costUsd: number }[] = [];
-
-  estimate(stepType: string, engines: string[]): CostEstimate {
-    const typeHistory = this.history.filter((h) => h.type === stepType);
-    if (typeHistory.length >= 2) {
-      const avgTokens = Math.round((typeHistory.reduce((s, h) => s + h.tokens, 0) / typeHistory.length));
-      const avgCost = typeHistory.reduce((s, h) => s + h.costUsd, 0) / typeHistory.length;
-      return { tokens: avgTokens, costUsd: avgCost };
-    }
-    const DEFAULTS: Record<string, number> = { self: 2000, delegate: 5000, brainstorm: 8000, campfire: 6000, tribunal: 10000, forge: 15000, teamforge: 20000, pipeline: 30000, review: 4000, agent: 12000, "team-agent": 25000 };
-    const perEngine = DEFAULTS[stepType] ?? 5000;
-    const engineCount = Math.max(engines.length, 1);
-    const tokens = perEngine * engineCount;
-    const costPerEngine = engines[0] ? estimateCost(engines[0], perEngine) : estimateCost('claude', perEngine);
-    const costUsd = costPerEngine * engineCount;
-    return { tokens: tokens, costUsd: costUsd };
-  }
-
-  recordStepCompletion(stepType: string, actualTokens: number, actualCostUsd: number): void {
-    this.history.push({ type: stepType, tokens: actualTokens, costUsd: actualCostUsd });
-    const typeEntries = this.history.filter((h) => h.type === stepType);
-    if (typeEntries.length > 50) {
-      const oldest = this.history.findIndex((h) => h.type === stepType);
-      if (oldest >= 0) {
-        this.history.splice(oldest, 1);
-      }
-    }
-  }
-
-  reset(): void {
-    this.history = [];
-  }
-}
-
 export const planCostEstimator = new PlanCostEstimator();
+export const { sanitizePlanSteps, executePlan } = createPlanRuntime(planCostEstimator,
+  (type, error) => console.warn(`[plan] estimation history update failed (${type}):`, error));

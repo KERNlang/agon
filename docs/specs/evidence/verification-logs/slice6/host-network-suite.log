@@ -1,0 +1,21 @@
+
+ RUN  v3.2.7 /Users/ra/dev/agon-modular-implementation
+
+ ✓ tests/unit/rooms-work.test.ts (3 tests) 39ms
+ ✓ tests/unit/rooms-tail.test.ts (10 tests) 71ms
+ ✓ tests/unit/capability-authorization.test.ts (11 tests) 30ms
+ ✓ tests/unit/agon-serve.test.ts (23 tests) 60ms
+stdout | tests/unit/serve-command.test.ts > agon serve — runtime wiring (integration) > runServe fails CLOSED (exit 2) when the port is in use — no crash, no hang, brain torn down
+[33m⚠[0m failed to start: listen EADDRINUSE: address already in use 127.0.0.1:64245
+
+ ✓ tests/unit/serve-command.test.ts (18 tests) 581ms
+ ✓ tests/integration/serve-conformance.test.ts (4 tests) 797ms
+ ✓ tests/integration/daemon-survival.test.ts (3 tests) 1917ms
+   ✓ agond survival — the daemon outlives its launcher > submits the first job while starting an absent daemon  529ms
+   ✓ agond survival — the daemon outlives its launcher > survives the launching process exiting, serves over the socket, and a prompt lands in the ledger  614ms
+   ✓ agond survival — the daemon outlives its launcher > daemon stop stays alive for its bounded poll and exits cleanly  773ms
+
+ Test Files  7 passed (7)
+      Tests  72 passed (72)
+   Start at  22:22:32
+   Duration  2.28s (transform 798ms, setup 177ms, collect 3.87s, tests 3.49s, environment 1ms, prepare 252ms)

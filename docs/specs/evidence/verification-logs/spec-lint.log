@@ -1,0 +1,4 @@
+command: ["npx","eslint","scripts/spec","tests/spec","--max-warnings","0"]
+exitCode: 0
+signal:
+error:

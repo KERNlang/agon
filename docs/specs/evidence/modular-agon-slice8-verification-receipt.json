@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "qualification": "modular-agon-slice8-clean-checkout",
+  "slice": "S8",
+  "subject": {
+    "kind": "commit",
+    "hash": "sha256:6e9f8e13647f7bf2b1c3de7cc93796ec7f091c8a97fd7ab14158c5115cc277a6"
+  },
+  "status": "passed",
+  "completedAt": "2026-09-04T05:39:54.808Z",
+  "artifacts": [
+    {
+      "path": "docs/specs/evidence/verification-logs/slice8/final-commit-qualification.json",
+      "hash": "sha256:73ce68ca77fbeb6107f9776a47404ac3e821d985a0856b6a29acedc09a905b80"
+    }
+  ],
+  "coverage": {
+    "inventoryAssignments": 872,
+    "packages": 49,
+    "uniqueDependencyEdges": 144,
+    "physicalFirstPartyPackages": 36,
+    "generatedSurfaceEntries": 449,
+    "cliSurfaceEntries": 77,
+    "directTrustRuntimeTests": 76,
+    "legacyWorkflows": 160,
+    "rawEnvelopes": 7,
+    "transformStages": 4
+  },
+  "performance": {
+    "discoveryP95Ms": 23.96320800000001,
+    "authorityTenModsP95Ms": 0.07166600000005019,
+    "trustedBootstrapP95Ms": 638.563083,
+    "maxRssBytes": 211828736,
+    "passed": true
+  },
+  "cleanCheckoutSteps": [
+    "npm-ci",
+    "clean-build",
+    "slice8-behavioral-security",
+    "slice8-structural-drift-controls",
+    "runtime-version-drift",
+    "external-example-drift",
+    "folder-mod-cli-e2e",
+    "slice8-performance",
+    "typecheck",
+    "lint",
+    "full-suite",
+    "generated-artifacts",
+    "spec-consistency",
+    "roadmap-contract",
+    "legacy-oracle",
+    "oracle-negative-controls",
+    "final-ignored-source-contamination",
+    "final-clean-worktree"
+  ],
+  "reviewEvidence": {
+    "path": "docs/specs/evidence/modular-agon-slice8-review-evidence.json",
+    "passed": true
+  },
+  "contamination": {
+    "ignored": [],
+    "untracked": [],
+    "unstaged": []
+  },
+  "activeGlobalAgonModified": false,
+  "pushed": false
+}

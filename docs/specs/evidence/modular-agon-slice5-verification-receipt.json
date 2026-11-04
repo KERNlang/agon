@@ -1,0 +1,288 @@
+{
+  "schemaVersion": 1,
+  "qualification": "modular-agon-slice5-clean-checkout",
+  "subject": {
+    "kind": "commit",
+    "hash": "sha256:3082a8868151704f104d5e59aac1e3e764f0dd598341bfaea4e4e8173275a4a5",
+    "indexHash": "sha256:3082a8868151704f104d5e59aac1e3e764f0dd598341bfaea4e4e8173275a4a5",
+    "commitHash": "sha256:3082a8868151704f104d5e59aac1e3e764f0dd598341bfaea4e4e8173275a4a5",
+    "indexEqualsCommit": true
+  },
+  "contamination": {
+    "ignored": [],
+    "untracked": [],
+    "unstaged": []
+  },
+  "graph": {
+    "packages": 49,
+    "declaredEdges": 144,
+    "uniqueEdges": 144,
+    "duplicateEdges": []
+  },
+  "firstPartyPackages": 36,
+  "migration": {
+    "assignments": 341,
+    "counts": {
+      "packages": 36,
+      "assignments": 341,
+      "categories": {
+        "builtinCommandMetadata": 34,
+        "cesarRoutes": 45,
+        "cesarTools": 16,
+        "cliCommands": 50,
+        "configKeys": 9,
+        "emittedEvents": 9,
+        "generatedDocumentation": 1,
+        "intentVariants": 35,
+        "mcpTools": 28,
+        "resultAndEnvelopeTypes": 49,
+        "statePaths": 10,
+        "stateStoreModules": 9,
+        "tuiKeyboardActions": 4,
+        "tuiSlashCommands": 42
+      }
+    }
+  },
+  "performance": {
+    "schemaVersion": 1,
+    "slice": "S5",
+    "sampleCount": 25,
+    "coldImportMs": {
+      "median": 50.476791999999996,
+      "p95": 51.31233400000001,
+      "max": 52.158209,
+      "budgetP95": 750
+    },
+    "residentRssBytes": {
+      "median": 73842688,
+      "p95": 76103680,
+      "budgetP95": 134217728
+    },
+    "totalWorkspaceBytes": 2826379,
+    "passed": true
+  },
+  "reviewEvidence": {
+    "passed": true
+  },
+  "cleanCheckoutSteps": [
+    {
+      "id": "npm-ci",
+      "command": [
+        "npm",
+        "ci",
+        "--ignore-scripts"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "\nadded 429 packages, and audited 486 packages in 7s\n\n112 packages are looking for funding\n  run `npm fund` for details\n\nfound 0 vulnerabilities\nnpm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me\nnpm notice\nnpm notice New major version of npm available! 11.16.0 -> 12.0.2\nnpm notice Changelog: https://github.com/npm/cli/releases/tag/v12.0.2\nnpm notice To update run: npm install -g npm@12.0.2\nnpm notice\n"
+    },
+    {
+      "id": "support-packages",
+      "command": [
+        "npm",
+        "run",
+        "test:modular-support-packages"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "gon-support-persistence\",\n      \"filename\": \"kernlang-agon-support-persistence-0.0.0-slice.4.tgz\",\n      \"integrity\": \"sha512-7QBcs2/I0AR91HjZGCt0YiHNHfblAvUNt/cv1dCIvaBkEjlqUuj1IJqay5GA134qRQ6CWjdK9pLAdns/er09XQ==\",\n      \"shasum\": \"e8150a46f80578d05af5ebf7ba0a19391e6c794f\",\n      \"fileCount\": 23,\n      \"unpackedSize\": 154670\n    },\n    {\n      \"id\": \"@kernlang/agon-support-dedup\",\n      \"filename\": \"kernlang-agon-support-dedup-0.0.0-slice.4.tgz\",\n      \"integrity\": \"sha512-Vb4lZte56zTOnDboxlZg/wH+eMGWYehM9CZAki9hdaMAUcbMqwni/NaYYownE0D6K1UAFDkcIdZzFi4bl4iBhQ==\",\n      \"shasum\": \"bbbe339b9afc3ee1383bed49b631925f8f730d13\",\n      \"fileCount\": 11,\n      \"unpackedSize\": 30076\n    },\n    {\n      \"id\": \"@kernlang/agon-support-browser-bridge\",\n      \"filename\": \"kernlang-agon-support-browser-bridge-0.0.0-slice.4.tgz\",\n      \"integrity\": \"sha512-5+Fav/M+t2RZLHMWARo3+axfnSPVV1b7NttfOpAYypnZlNO8eXO/NttlEZdaEJMje9gnUh0aJ4JcAgR3DmilxQ==\",\n      \"shasum\": \"2256016f8845ba42af37736955897730bc84c29a\",\n      \"fileCount\": 6,\n      \"unpackedSize\": 18944\n    },\n    {\n      \"id\": \"@kernlang/agon-support-saas-api\",\n      \"filename\": \"kernlang-agon-support-saas-api-0.0.0-slice.4.tgz\",\n      \"integrity\": \"sha512-PWopRHyWiqapNpdBRZyofbFUmvEzH6Z8aqLqTaH5i6C8o4U72RA/eFkl1k6PQl6XUyKNDx3+LyU3B1/6U7rosw==\",\n      \"shasum\": \"eac79aa2ccd8011680a634c320e59e547397a35a\",\n      \"fileCount\": 9,\n      \"unpackedSize\": 2612\n    },\n    {\n      \"id\": \"@kernlang/agon-support-engine-catalog\",\n      \"filename\": \"kernlang-agon-support-engine-catalog-0.0.0-slice.4.tgz\",\n      \"integrity\": \"sha512-jero95P0zY2GrlWsqiActXKaMBH99rGwsXC9iK4A7omhLx700Nps6kxIPZCxhDY1aBkanLfjc5C4NvFvu9k+2w==\",\n      \"shasum\": \"8cef7962e24566743237dabf06a4e5665269c233\",\n      \"fileCount\": 7,\n      \"unpackedSize\": 39084\n    },\n    {\n      \"id\": \"@kernlang/agon-support-verification\",\n      \"filename\": \"kernlang-agon-support-verification-0.0.0-slice.4.tgz\",\n      \"integrity\": \"sha512-57SuvARsTqLS+hGsqnfUim8YiCSczg7kKRc4Vc8y9IAdHo3kjThcI1evtXNpkC7UlS0Kd05SbPScdMJIhvfXQw==\",\n      \"shasum\": \"eb82e02e2b174e4cd85b01f82c83f952f46ae536\",\n      \"fileCount\": 12,\n      \"unpackedSize\": 82157\n    },\n    {\n      \"id\": \"@kernlang/agon-support-panel\",\n      \"filename\": \"kernlang-agon-support-panel-0.0.0-slice.4.tgz\",\n      \"integrity\": \"sha512-UdxDMhC6WEQWrhsFmuNwKmzla8Zqy1k9ncY3wC9cvr0XaWXgQpYk9BwSRRKQNFspPsrGGbxV26kZCkmG37cBzQ==\",\n      \"shasum\": \"3389ac24c0db171e8e927a35d7b7791c088a6055\",\n      \"fileCount\": 6,\n      \"unpackedSize\": 17620\n    },\n    {\n      \"id\": \"@kernlang/agon-support-worktree\",\n      \"filename\": \"kernlang-agon-support-worktree-0.0.0-slice.4.tgz\",\n      \"integrity\": \"sha512-GdvXHjil2WEG7e9JPsyxjo2cR/2tWApkMkN4Z3de9HaaqCCZzqpA75SVjH3t8fHkORUs3thd6GkBh2ycW8hAzg==\",\n      \"shasum\": \"9eb75ade92ba380bc62b96ef05bc66c4140f7620\",\n      \"fileCount\": 7,\n      \"unpackedSize\": 24130\n    },\n    {\n      \"id\": \"@kernlang/agon-support-agent-runtime\",\n      \"filename\": \"kernlang-agon-support-agent-runtime-0.0.0-slice.4.tgz\",\n      \"integrity\": \"sha512-gf30DinsWoyQKY2105T791O3ZtCwHjZYvsVbhvxOJngEJRszomtnw9U7oLnFkAHQolB0dqfG1Gz1oFjc9QZmBg==\",\n      \"shasum\": \"663c526866c048983bc8621e549e7c2478f2e67b\",\n      \"fileCount\": 6,\n      \"unpackedSize\": 37563\n    },\n    {\n      \"id\": \"@kernlang/agon-support-judge\",\n      \"filename\": \"kernlang-agon-support-judge-0.0.0-slice.4.tgz\",\n      \"integrity\": \"sha512-Tq1OdsQZnYPVXAVaPuIE1ZPRY3jjofKVRTRj10vTzZKbTUUW2eEIdzlKLPz79h/d7GtTpjjSmcuEFwFI8QjIrw==\",\n      \"shasum\": \"0d91b0bb668ef9d3c1cd831a73b60c56e98def67\",\n      \"fileCount\": 6,\n      \"unpackedSize\": 20372\n    }\n  ]\n}\n\n RUN  v3.2.7 /private/var/folders/c4/_6ktcrg57m5_8kjcymvhn8fc0000gn/T/agon-modular-s5-commit-rEvoqI\n\n ✓ tests/unit/modular-support-runtime-isolation.test.ts (3 tests) 2ms\n ✓ tests/unit/modular-support-parity.test.ts (3 tests) 1ms\n\n Test Files  2 passed (2)\n      Tests  6 passed (6)\n   Start at  03:52:22\n   Duration  352ms (transform 92ms, setup 37ms, collect 168ms, tests 4ms, environment 0ms, prepare 61ms)\n\n"
+    },
+    {
+      "id": "support-boundaries",
+      "command": [
+        "npm",
+        "run",
+        "test:modular-boundaries"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "\n> test:modular-boundaries\n> node scripts/spec/verify-modular-support-boundaries.mjs --self-test && node scripts/spec/verify-modular-support-assets.mjs\n\nverified 11 support-package boundaries, 12 compatibility adapters, assets, and kernel uniqueness\nverified byte parity for 27 canonical/compatibility asset pairs\n"
+    },
+    {
+      "id": "support-api-compat",
+      "command": [
+        "npm",
+        "run",
+        "test:modular-api-compat"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "\n> test:modular-api-compat\n> node scripts/spec/verify-modular-support-api-compat.mjs\n\ncompiled pre-release contract revisions N-2 and N-1 and loaded 11 current runtime descriptors\n"
+    },
+    {
+      "id": "support-migration-ledger",
+      "command": [
+        "node",
+        "scripts/spec/generate-modular-support-migration-ledger.mjs",
+        "--check"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "{\n  \"packages\": 11,\n  \"sourceOccurrences\": 261,\n  \"counts\": {\n    \"byte-verified-compatibility-mirror\": 24,\n    \"compatibility-adapter\": 90,\n    \"compatibility-consumer\": 57,\n    \"physical-owner\": 90\n  }\n}\n"
+    },
+    {
+      "id": "foundation-mutation",
+      "command": [
+        "npm",
+        "run",
+        "test:modular-foundation-mutation"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "\n> test:modular-foundation-mutation\n> node scripts/spec/verify-modular-foundation-mutation.mjs\n\nkilled: generated-artifact drift mutant\nkilled: qualification/hash mutant set\nkilled: support dependency mutant\nkilled: manifest/resolver/registry/graph behavioral mutants\nall 4 targeted mutation classes were rejected\n"
+    },
+    {
+      "id": "first-party-generation",
+      "command": [
+        "npm",
+        "run",
+        "spec:modular-first-party:check"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "\n> spec:modular-first-party:check\n> node scripts/spec/generate-modular-first-party-packages.mjs --check && node scripts/spec/generate-modular-first-party-migration-ledger.mjs --check\n\nverified 36 first-party packages and 254 files\nS5 migration ledger verified: 36 packages, 341 assignments\n"
+    },
+    {
+      "id": "first-party-packages",
+      "command": [
+        "npm",
+        "run",
+        "test:modular-first-party"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "\n> test:modular-first-party\n> node scripts/spec/verify-modular-first-party-packages.mjs --self-test\n\nfirst-party package negative control passed\n{\n  \"packages\": 36,\n  \"occurrences\": 341,\n  \"contributions\": 313,\n  \"status\": \"passed\"\n}\n"
+    },
+    {
+      "id": "first-party-disable-matrix",
+      "command": [
+        "npm",
+        "run",
+        "test:modular-disable-matrix"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "\n> test:modular-disable-matrix\n> node scripts/spec/verify-modular-disable-matrix.mjs --self-test\n\nS5 disable-matrix negative control passed\n{\n  \"mods\": 36,\n  \"cases\": 36,\n  \"status\": \"passed\"\n}\n"
+    },
+    {
+      "id": "first-party-data-migrations",
+      "command": [
+        "npm",
+        "run",
+        "test:modular-package-data-migrations"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "\n> test:modular-package-data-migrations\n> node scripts/spec/verify-modular-package-data-migrations.mjs --self-test\n\nS5 data-migration negative control passed\n{\n  \"packages\": 36,\n  \"assignments\": 341,\n  \"persistedAssignments\": 86,\n  \"ragPhysicalOwner\": true,\n  \"status\": \"passed\"\n}\n"
+    },
+    {
+      "id": "first-party-rollback",
+      "command": [
+        "npm",
+        "run",
+        "test:modular-first-party-rollback"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "\n> test:modular-first-party-rollback\n> node scripts/spec/verify-modular-first-party-rollback.mjs && node scripts/spec/verify-modular-first-party-rollback.mjs --self-test\n\nverified retained qualified S4 rollback subject 8623efebc1c6 and S5 adapter re-entry\nS5 rollback negative control passed\nfatal: path 'docs/specs/evidence/modular-agon-slice4-verification-receipt.json' exists on disk, but not in '0000000000000000000000000000000000000000'\n"
+    },
+    {
+      "id": "typecheck",
+      "command": [
+        "npm",
+        "run",
+        "typecheck"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "\n> typecheck\n> tsc -b\n\n"
+    },
+    {
+      "id": "lint",
+      "command": [
+        "npm",
+        "run",
+        "lint"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "\n> lint\n> eslint . --max-warnings 0\n\n"
+    },
+    {
+      "id": "full-repository-suite",
+      "command": [
+        "npm",
+        "run",
+        "test:ts"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "efaultBranch <name>\nhint:\nhint: Names commonly chosen instead of 'master' are 'main', 'trunk' and\nhint: 'development'. The just-created branch can be renamed via this command:\nhint:\nhint: \tgit branch -m <name>\nhint:\nhint: Disable this message with \"git config set advice.defaultBranchName false\"\nhint: Using 'master' as the name for the initial branch. This default branch name\nhint: will change to \"main\" in Git 3.0. To configure the initial branch name\nhint: to use in all of your new repositories, which will suppress this warning,\nhint: call:\nhint:\nhint: \tgit config --global init.defaultBranch <name>\nhint:\nhint: Names commonly chosen instead of 'master' are 'main', 'trunk' and\nhint: 'development'. The just-created branch can be renamed via this command:\nhint:\nhint: \tgit branch -m <name>\nhint:\nhint: Disable this message with \"git config set advice.defaultBranchName false\"\nhint: Using 'master' as the name for the initial branch. This default branch name\nhint: will change to \"main\" in Git 3.0. To configure the initial branch name\nhint: to use in all of your new repositories, which will suppress this warning,\nhint: call:\nhint:\nhint: \tgit config --global init.defaultBranch <name>\nhint:\nhint: Names commonly chosen instead of 'master' are 'main', 'trunk' and\nhint: 'development'. The just-created branch can be renamed via this command:\nhint:\nhint: \tgit branch -m <name>\nhint:\nhint: Disable this message with \"git config set advice.defaultBranchName false\"\nhint: Using 'master' as the name for the initial branch. This default branch name\nhint: will change to \"main\" in Git 3.0. To configure the initial branch name\nhint: to use in all of your new repositories, which will suppress this warning,\nhint: call:\nhint:\nhint: \tgit config --global init.defaultBranch <name>\nhint:\nhint: Names commonly chosen instead of 'master' are 'main', 'trunk' and\nhint: 'development'. The just-created branch can be renamed via this command:\nhint:\nhint: \tgit branch -m <name>\nhint:\nhint: Disable this message with \"git config set advice.defaultBranchName false\"\nstderr | tests/integration/forge-e2e.test.ts > Forge E2E > returns brainstorm drafts when final synthesis dispatch fails\n[agon] brainstorm synthesis (thinker) failed: synthesis failed\n\nstderr | tests/integration/forge-e2e.test.ts > Forge E2E > does not rank empty brainstorm replies as usable drafts\n[agon] brainstorm dispatch (empty) failed after 2 attempt(s): empty\n\nstderr | tests/integration/forge-e2e.test.ts > Forge E2E > does not rank empty brainstorm replies as usable drafts\n[agon] brainstorm panel degraded: empty empty → retry empty, dropped (1/2 responded)\n\nstderr | tests/integration/forge-e2e.test.ts > Forge E2E > fails honestly when every brainstorm seat is unusable\n[agon] brainstorm dispatch (empty-a) failed after 2 attempt(s): empty\n[agon] brainstorm dispatch (empty-b) failed after 2 attempt(s): empty\n\nstderr | tests/integration/forge-e2e.test.ts > Forge E2E > fails honestly when every brainstorm seat is unusable\n[agon] brainstorm panel degraded: empty-a empty → retry empty, dropped; empty-b empty → retry empty, dropped (0/2 responded)\n\nstderr | tests/integration/forge-e2e.test.ts > Forge E2E > falls back to debate text when tribunal summary engine returns empty output\n[agon] tribunal summary failed: tribunal summary returned empty response\n\nhint: Using 'master' as the name for the initial branch. This default branch name\nhint: will change to \"main\" in Git 3.0. To configure the initial branch name\nhint: to use in all of your new repositories, which will suppress this warning,\nhint: call:\nhint:\nhint: \tgit config --global init.defaultBranch <name>\nhint:\nhint: Names commonly chosen instead of 'master' are 'main', 'trunk' and\nhint: 'development'. The just-created branch can be renamed via this command:\nhint:\nhint: \tgit branch -m <name>\nhint:\nhint: Disable this message with \"git config set advice.defaultBranchName false\"\n\n[agon] Cleaning up active git worktrees...\n\n[agon] Cleaning up active git worktrees...\n"
+    },
+    {
+      "id": "generated-artifacts",
+      "command": [
+        "npm",
+        "run",
+        "spec:modular-generated:check"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "\n> spec:modular-generated:check\n> node scripts/spec/verify-modular-generated-artifacts.mjs\n\nall modular generated artifacts are current\n"
+    },
+    {
+      "id": "spec-consistency",
+      "command": [
+        "node",
+        "scripts/spec/check-modular-agon-consistency.mjs"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "{\n  \"inventoryAssignments\": 863,\n  \"packages\": 49,\n  \"mods\": 36,\n  \"coverageCells\": 1480,\n  \"markdownFiles\": 13,\n  \"status\": \"passed\"\n}\n"
+    },
+    {
+      "id": "roadmap-contract",
+      "command": [
+        "node",
+        "scripts/spec/verify-modular-agon-roadmap.mjs"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "{\n  \"packages\": 49,\n  \"uniqueEdges\": 144,\n  \"legacyAssignments\": 863,\n  \"slices\": 9,\n  \"claims\": 10,\n  \"status\": \"passed\"\n}\n"
+    },
+    {
+      "id": "legacy-oracle",
+      "command": [
+        "npm",
+        "run",
+        "test:modular-legacy-oracle"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "\n> test:modular-legacy-oracle\n> node scripts/spec/verify-modular-legacy-oracle.mjs\n\n{\n  \"workflows\": 160,\n  \"rawEnvelopes\": 7,\n  \"transformStages\": 4,\n  \"status\": \"passed\"\n}\n"
+    },
+    {
+      "id": "legacy-oracle-negative-controls",
+      "command": [
+        "npm",
+        "run",
+        "test:modular-oracle-boundary"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "\n> test:modular-oracle-boundary\n> node scripts/spec/verify-modular-legacy-oracle-negative-controls.mjs\n\nLegacy oracle negative controls passed\n"
+    },
+    {
+      "id": "slice5-performance",
+      "command": [
+        "npm",
+        "run",
+        "perf:modular-slice5"
+      ],
+      "status": 0,
+      "passed": true,
+      "outputTail": "\n> perf:modular-slice5\n> node scripts/spec/measure-modular-slice5.mjs\n\n{\n  \"schemaVersion\": 1,\n  \"slice\": \"S5\",\n  \"sampleCount\": 25,\n  \"coldImportMs\": {\n    \"median\": 52.431875,\n    \"p95\": 54.589667000000006,\n    \"max\": 56.604084,\n    \"budgetP95\": 750\n  },\n  \"residentRssBytes\": {\n    \"median\": 72597504,\n    \"p95\": 72974336,\n    \"budgetP95\": 134217728\n  },\n  \"totalWorkspaceBytes\": 2818689,\n  \"passed\": true\n}\n"
+    }
+  ],
+  "passed": true
+}

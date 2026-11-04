@@ -1,0 +1,19 @@
+{
+  "mode": "brainstorm",
+  "startedAt": "2026-08-23T16:38:12.217Z",
+  "endedAt": "2026-08-23T16:42:31.441Z",
+  "engines": [
+    {
+      "id": "minimax-api",
+      "status": "ok",
+      "detail": "confidence=50"
+    },
+    {
+      "id": "zai-coding-plan-glm-5.2",
+      "status": "ok",
+      "detail": "confidence=78"
+    }
+  ],
+  "summary": "2/2 bid; winner=zai-coding-plan-glm-5.2; synthesis=completed; dedup=unavailable",
+  "ok": true
+}

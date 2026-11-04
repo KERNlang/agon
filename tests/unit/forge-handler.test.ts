@@ -1,4 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 const runForgeMock = vi.fn();
 const askQuestionMock = vi.fn();
@@ -9,6 +12,13 @@ const savePlanMock = vi.fn();
 const createPlanMock = vi.fn();
 const dispatchAgentMock = vi.fn();
 const dispatchAgentStreamMock = vi.fn();
+const judgeMock = vi.fn();
+const convergeMock = vi.fn();
+
+vi.mock('@kernlang/agon-support-worktree', async original => ({
+  ...await original<Record<string, unknown>>(),
+  applyPatchWithUndo: vi.fn(() => ({ ok: true, undoToken: 'undo-test' })),
+}));
 
 vi.mock('@kernlang/agon-forge', () => ({
   runForge: (...args: any[]) => runForgeMock(...args),
@@ -39,7 +49,13 @@ vi.mock('@kernlang/agon-core', async () => ({
   snapshotPath: vi.fn(() => ({ id: 'cwd', path: '/repo', headSha: 'abc', branch: 'main', dirty: false })),
   resolveWorkingDir: vi.fn(() => '/repo'),
   loadOrCreateActiveThread: vi.fn(() => ({ append: vi.fn(), save: vi.fn() })),
-  applyPatchWithUndo: vi.fn(() => ({ ok: true, undoToken: 'undo-test' })),
+  applyPatchWithUndo: vi.fn(() => { throw new Error('Legacy core patch binding must not run'); }),
+  headChanged: vi.fn(() => ({ changed: false })),
+  branchChanged: vi.fn(() => ({ changed: false })),
+  headSha: vi.fn(() => 'abc'),
+  currentBranch: vi.fn(() => 'main'),
+  acquireApplyLock: vi.fn(() => ({ acquired: true, sessionUUID: 'fixture-lock' })),
+  releaseApplyLock: vi.fn(),
   formatChatHistoryForPrompt: vi.fn(() => ''),
   formatChatContextForPrompt: vi.fn(() => ''),
   updateChatSummary: vi.fn(() => false),
@@ -48,6 +64,11 @@ vi.mock('@kernlang/agon-core', async () => ({
 vi.mock('../../packages/cli/src/cesar/brain.js', () => ({
   cesarJudgeForge: vi.fn(async () => null),
   cesarConvergeForge: vi.fn(async () => null),
+}));
+vi.mock('../../packages/cli/src/handlers/cesar-brain.js', () => ({
+  cesarJudgeForge: (...args: any[]) => judgeMock(...args),
+  cesarConvergeForge: (...args: any[]) => convergeMock(...args),
+  cesarReviewForgeOutcome: vi.fn(),
 }));
 
 vi.mock('../../packages/cli/src/models/session-results.js', () => ({
@@ -81,6 +102,117 @@ describe('handleForge', () => {
     dispatchAgentMock.mockResolvedValue({ stdout: 'done', diff: '', filesChanged: 0, diffLines: 0 });
   });
 
+  it.each([
+    ['available', false], ['missing', false], ['throws', false],
+    ['available', true], ['missing', true], ['throws', true],
+  ] as const)('hands off undo safely when host=%s and convergence=%s', async (host, convergence) => {
+    const { handleForge } = await import('../../packages/cli/src/handlers/forge.js');
+    const { applyPatchWithUndo } = await import('@kernlang/agon-support-worktree');
+    const { persistencePath } = await import('@kernlang/agon-support-persistence');
+    const root = mkdtempSync(join(tmpdir(), 'agon-forge-undo-'));
+    const path = join(root, 'winner.patch');
+    writeFileSync(path, 'fixture patch');
+    try {
+      runForgeMock.mockResolvedValue({ results: { codex: { pass: true, score: 91 } }, winner: 'codex', patches: { codex: path } });
+      if (convergence) {
+        runForgeMock.mockResolvedValue({ results: { codex: { pass: true }, fixture: { pass: true } }, winner: 'codex', patches: { codex: path } });
+        judgeMock.mockResolvedValue({ winner: 'codex', shouldConverge: true, convergencePlan: ['fixture'] });
+        convergeMock.mockResolvedValue(path);
+        askQuestionMock.mockResolvedValue('yes');
+      }
+      const setLastUndoToken = host === 'missing' ? undefined : vi.fn(() => {
+        if (host === 'throws') throw new Error('fixture host failure');
+      });
+      const ctx: any = { askQuestion: askQuestionMock, activeEngines: () => ['codex'],
+        config: { approvalLevel: 'plan', forgeEnableSynthesis: false }, registry: { get: vi.fn(() => ({})) },
+        adapter: {}, currentPlan: null, setCurrentPlan: setCurrentPlanMock, setActiveAbort: setActiveAbortMock,
+        chatSession: {}, cesarSession: convergence ? {} : null, setLastUndoToken };
+      await handleForge('fixture task', 'fixture fitness', dispatchMock, ctx, undefined, false, true);
+      expect(applyPatchWithUndo).toHaveBeenCalledWith('/repo', 'fixture patch', persistencePath('undo'));
+      expect(applyPatchWithUndo).toHaveBeenCalledTimes(1);
+      expect(convergeMock).toHaveBeenCalledTimes(convergence ? 1 : 0);
+      if (setLastUndoToken) expect(setLastUndoToken).toHaveBeenCalledExactlyOnceWith('undo-test');
+      const events = dispatchMock.mock.calls.map(([event]) => event);
+      expect(events.some(event => event.type === 'success' && event.message.includes('Applied winner'))).toBe(true);
+      expect(events.some(event => event.message === 'Undo available: /undo')).toBe(host === 'available');
+      if (host !== 'available') {
+        expect(events.some(event => event.type === 'warning' && event.message.includes('undo-test'))).toBe(true);
+      }
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
+  it.each(['lock-release', 'success-dispatch', 'plan-save'] as const)('does not apply the winner after convergence %s fails', async failure => {
+    const { handleForge } = await import('../../packages/cli/src/handlers/forge.js');
+    const { applyPatchWithUndo } = await import('@kernlang/agon-support-worktree');
+    const { releaseApplyLock } = await import('@kernlang/agon-core');
+    const root = mkdtempSync(join(tmpdir(), 'agon-forge-post-apply-'));
+    const winner = join(root, 'winner.patch');
+    const converged = join(root, 'converged.patch');
+    writeFileSync(winner, 'winner patch');
+    writeFileSync(converged, 'converged patch');
+    try {
+      runForgeMock.mockResolvedValue({ results: { codex: { pass: true }, second: { pass: true } }, winner: 'codex', patches: { codex: winner } });
+      judgeMock.mockResolvedValue({ winner: 'codex', shouldConverge: true, convergencePlan: ['fixture'] });
+      convergeMock.mockResolvedValue(converged);
+      askQuestionMock.mockResolvedValue('yes');
+      if (failure === 'lock-release') vi.mocked(releaseApplyLock).mockImplementationOnce(() => { throw new Error('fixture cleanup'); });
+      dispatchMock.mockImplementation(event => {
+        if (failure === 'success-dispatch' && event.type === 'success' && event.message.includes('Applied winner')) throw new Error('fixture dispatch');
+        if (failure === 'plan-save' && event.message === 'Convergence complete — merged patch ready') {
+          savePlanMock.mockImplementationOnce(() => { throw new Error('fixture plan save'); });
+        }
+      });
+      const ctx: any = { askQuestion: askQuestionMock, activeEngines: () => ['codex'],
+        config: { approvalLevel: 'plan', forgeEnableSynthesis: false }, registry: { get: vi.fn(() => ({})) },
+        adapter: {}, currentPlan: null, setCurrentPlan: setCurrentPlanMock, setActiveAbort: setActiveAbortMock,
+        chatSession: {}, cesarSession: {}, setLastUndoToken: vi.fn() };
+      const result = handleForge('fixture', 'fixture fitness', dispatchMock, ctx, undefined, false, true);
+      if (failure === 'lock-release') await result;
+      else await expect(result).rejects.toThrow('fixture');
+      expect(applyPatchWithUndo).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(applyPatchWithUndo).mock.calls[0]?.[1]).toBe('converged patch');
+      expect(dispatchMock.mock.calls.some(([event]) => event.message?.includes('Falling back to winner'))).toBe(false);
+    } finally {
+      dispatchMock.mockReset();
+      savePlanMock.mockReset();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    [false, false], [true, false], [false, true], [true, true],
+  ])('reads a shared artifact with convergence=%s empty=%s', async (convergence, empty) => {
+    const { handleForge } = await import('../../packages/cli/src/handlers/forge.js');
+    const { applyPatchWithUndo } = await import('@kernlang/agon-support-worktree');
+    const root = mkdtempSync(join(tmpdir(), 'agon-forge-decode-'));
+    const path = join(root, 'candidate.patch');
+    writeFileSync(path, empty ? Buffer.alloc(0) : Buffer.from([0xff]));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      runForgeMock.mockResolvedValue({ results: { codex: { pass: true }, ...(convergence ? { second: { pass: true } } : {}) },
+        winner: 'codex', patches: { codex: path } });
+      judgeMock.mockResolvedValue({ winner: 'codex', shouldConverge: true, convergencePlan: ['fixture'] });
+      convergeMock.mockResolvedValue(path);
+      askQuestionMock.mockResolvedValue('yes');
+      const ctx: any = { askQuestion: askQuestionMock, activeEngines: () => ['codex'],
+        config: { approvalLevel: 'plan', forgeEnableSynthesis: false }, registry: { get: vi.fn(() => ({})) },
+        adapter: {}, currentPlan: null, setCurrentPlan: setCurrentPlanMock, setActiveAbort: setActiveAbortMock,
+        chatSession: {}, cesarSession: convergence ? {} : null };
+      await handleForge('fixture', 'fixture fitness', dispatchMock, ctx, undefined, false, true);
+      expect(applyPatchWithUndo).not.toHaveBeenCalled();
+      const events = dispatchMock.mock.calls.map(([event]) => event);
+      if (empty) expect(events.some(event => event.message?.includes('produced an empty patch'))).toBe(true);
+      else {
+        expect(events.some(event => event.message?.includes('UTF-8'))).toBe(true);
+        expect(events.some(event => event.message === 'Convergence complete — merged patch ready')).toBe(false);
+        expect(events.some(event => event.type === 'patch-review')).toBe(false);
+      }
+    } finally {
+      warn.mockRestore();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('skips the internal plan approval prompt when already approved upstream', async () => {
     const { handleForge } = await import('../../packages/cli/src/handlers/forge.js');
 
@@ -101,6 +233,123 @@ describe('handleForge', () => {
 
     expect(askQuestionMock).not.toHaveBeenCalledWith('Approve plan? [Y/n]');
     expect(runForgeMock).toHaveBeenCalled();
+  });
+
+  it.each(['', ' ', 'no', 'cancel', 'yikes', 'yes please'])('refuses build and forge execution for %j', async answer => {
+    const { handleForge } = await import('../../packages/cli/src/handlers/forge.js');
+    const { handleBuild } = await import('../../packages/cli/src/handlers/build.js');
+    askQuestionMock.mockResolvedValue(answer);
+    const ctx: any = {
+      askQuestion: askQuestionMock, activeEngines: () => ['codex'],
+      config: { approvalLevel: 'plan', forgeEnableSynthesis: false, forgeFixedStarter: 'codex' },
+      registry: { get: vi.fn(() => ({ timeout: 60 })), agentCapableIds: () => ['codex'] },
+      adapter: { dispatchAgent: dispatchAgentMock }, currentPlan: null,
+      setCurrentPlan: setCurrentPlanMock, setActiveAbort: setActiveAbortMock,
+      chatSession: { messages: [] }, cesarSession: null,
+    };
+    await handleBuild('fix fixture', dispatchMock, ctx);
+    await handleForge('fix fixture', 'npm test', dispatchMock, ctx);
+    expect(askQuestionMock).toHaveBeenCalledTimes(2);
+    expect(dispatchAgentMock).not.toHaveBeenCalled();
+    expect(runForgeMock).not.toHaveBeenCalled();
+    if (!answer.trim()) {
+      expect(savePlanMock).toHaveBeenCalledTimes(2);
+      expect(savePlanMock.mock.calls.every(([plan]) => plan.state === 'draft')).toBe(true);
+      expect(setCurrentPlanMock.mock.calls.every(([plan]) => plan.state === 'draft')).toBe(true);
+    } else {
+      expect(savePlanMock).toHaveBeenCalledTimes(2);
+      expect(savePlanMock.mock.calls.every(([plan]) => plan.state === 'cancelled')).toBe(true);
+    }
+  });
+
+  it.each(['y', ' YES '])('accepts explicit build and forge approval %j', async answer => {
+    const { handleForge } = await import('../../packages/cli/src/handlers/forge.js');
+    const { handleBuild } = await import('../../packages/cli/src/handlers/build.js');
+    askQuestionMock.mockResolvedValue(answer);
+    const ctx: any = {
+      askQuestion: askQuestionMock, activeEngines: () => ['codex'],
+      config: { approvalLevel: 'plan', forgeEnableSynthesis: false, forgeFixedStarter: 'codex' },
+      registry: { get: vi.fn(() => ({ timeout: 60 })), agentCapableIds: () => ['codex'] },
+      adapter: { dispatchAgent: dispatchAgentMock }, currentPlan: null,
+      setCurrentPlan: setCurrentPlanMock, setActiveAbort: setActiveAbortMock,
+      chatSession: { messages: [] }, cesarSession: null,
+    };
+    await handleBuild('fix fixture', dispatchMock, ctx);
+    await handleForge('fix fixture', 'npm test', dispatchMock, ctx);
+    expect(dispatchAgentMock).toHaveBeenCalledOnce();
+    expect(runForgeMock).toHaveBeenCalledOnce();
+  });
+
+  it.each(['build', 'forge'].flatMap(kind => ['', 'y', 'n'].flatMap(answer =>
+    ['cancel', 'replace', 'mutate'].map(change => [kind, answer, change]))))(
+    'does not revive a stale %s draft after answer %j and %s', async (kind, answer, change) => {
+    const { handleBuild } = await import('../../packages/cli/src/handlers/build.js');
+    const { handleForge } = await import('../../packages/cli/src/handlers/forge.js');
+    let showQuestion!: () => void;
+    let answerQuestion!: (value: string) => void;
+    const shown = new Promise<void>(resolve => { showQuestion = resolve; });
+    const pendingAnswer = new Promise<string>(resolve => { answerQuestion = resolve; });
+    askQuestionMock.mockImplementation(() => { showQuestion(); return pendingAnswer; });
+    const ctx: any = {
+      askQuestion: askQuestionMock, activeEngines: () => ['codex'],
+      config: { approvalLevel: 'plan', forgeEnableSynthesis: false, forgeFixedStarter: 'codex' },
+      registry: { get: vi.fn(() => ({ timeout: 60 })), agentCapableIds: () => ['codex'] },
+      adapter: { dispatchAgent: dispatchAgentMock }, currentPlan: null,
+      setCurrentPlan: (plan: unknown) => { ctx.currentPlan = plan; },
+      setActiveAbort: setActiveAbortMock, chatSession: { messages: [] }, cesarSession: null,
+    };
+    const pending = kind === 'build'
+      ? handleBuild('fixture', dispatchMock, ctx)
+      : handleForge('fixture', 'npm test', dispatchMock, ctx);
+    await shown;
+    const changed = change === 'mutate' ? ctx.currentPlan : { ...ctx.currentPlan };
+    if (change === 'replace') changed.id = 'replacement-draft';
+    else changed.state = 'cancelled';
+    ctx.currentPlan = changed;
+    answerQuestion(answer);
+    await pending;
+    expect(ctx.currentPlan).toBe(changed);
+    expect(savePlanMock).not.toHaveBeenCalled();
+    expect(dispatchAgentMock).not.toHaveBeenCalled();
+    expect(runForgeMock).not.toHaveBeenCalled();
+  });
+
+  it.each(['auto', 'upstream', 'existing'])('preserves the %s approval route', async route => {
+    const { handleForge } = await import('../../packages/cli/src/handlers/forge.js');
+    const { handleBuild } = await import('../../packages/cli/src/handlers/build.js');
+    askQuestionMock.mockImplementation(() => { throw new Error('Unexpected approval question'); });
+    const ctx: any = {
+      askQuestion: askQuestionMock, activeEngines: () => ['codex'],
+      config: { approvalLevel: route === 'auto' ? 'auto' : 'plan', forgeEnableSynthesis: false, forgeFixedStarter: 'codex' },
+      registry: { get: vi.fn(() => ({ timeout: 60 })), agentCapableIds: () => ['codex'] },
+      adapter: { dispatchAgent: dispatchAgentMock }, currentPlan: null,
+      setCurrentPlan: setCurrentPlanMock, setActiveAbort: setActiveAbortMock,
+      chatSession: { messages: [] }, cesarSession: null,
+    };
+    const existing = route === 'existing' ? { ...createPlanMock(), state: 'approved' } : undefined;
+    await handleBuild('fixture', dispatchMock, ctx, existing, route === 'upstream');
+    await handleForge('fixture', 'npm test', dispatchMock, ctx, existing, false, route === 'upstream');
+    expect(askQuestionMock).not.toHaveBeenCalled();
+    expect(dispatchAgentMock).toHaveBeenCalledOnce();
+    expect(runForgeMock).toHaveBeenCalledOnce();
+  });
+
+  it.each(['', 'no', 'cancel', 'yes please', 'y', ' YES '])('requires explicit convergence approval %j', async answer => {
+    const { handleForge } = await import('../../packages/cli/src/handlers/forge.js');
+    askQuestionMock.mockResolvedValue(answer);
+    judgeMock.mockResolvedValue({ winner: 'codex', shouldConverge: true, convergencePlan: ['fixture'] });
+    convergeMock.mockResolvedValue(null);
+    runForgeMock.mockResolvedValue({ results: { codex: { pass: true }, fixture: { pass: true } }, winner: 'codex', patches: {} });
+    const ctx: any = {
+      askQuestion: askQuestionMock, activeEngines: () => ['codex'],
+      config: { approvalLevel: 'plan', forgeEnableSynthesis: false },
+      registry: { get: vi.fn(() => ({})) }, adapter: {}, currentPlan: null,
+      setCurrentPlan: setCurrentPlanMock, setActiveAbort: setActiveAbortMock,
+      chatSession: {}, cesarSession: {},
+    };
+    await handleForge('fixture', 'npm test', dispatchMock, ctx, undefined, false, true);
+    expect(askQuestionMock).toHaveBeenCalledOnce();
+    expect(convergeMock).toHaveBeenCalledTimes(['y', ' YES '].includes(answer) ? 1 : 0);
   });
 
   it('uses Cesar to prepare missing forge fitness before falling back', async () => {

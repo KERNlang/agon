@@ -17,10 +17,10 @@ vi.mock('../../packages/core/src/blocks/git.js', async () => {
 });
 
 // Mock spawnWithTimeout so runPostSynthesisFitnessCheck tests don't actually
-// spawn subprocesses. Must preserve the other exports from process.js.
-vi.mock('../../packages/core/src/blocks/process.js', async () => {
-  const actual = await vi.importActual<typeof import('../../packages/core/src/blocks/process.js')>(
-    '../../packages/core/src/blocks/process.js',
+// spawn subprocesses. Preserve the other shared runtime exports.
+vi.mock('@kernlang/agon-support-engine-runtime', async () => {
+  const actual = await vi.importActual<typeof import('@kernlang/agon-support-engine-runtime')>(
+    '@kernlang/agon-support-engine-runtime',
   );
   return {
     ...actual,
@@ -40,6 +40,20 @@ import type { AgentSynthesisLoser } from '../../packages/core/src/cesar/agent-sy
 import { runApiAgentLoop } from '../../packages/core/src/api/agent-loop.js';
 import { worktreeChangedDiff } from '../../packages/core/src/blocks/git.js';
 import { spawnWithTimeout } from '../../packages/core/src/blocks/process.js';
+import * as physicalAgent from '@kernlang/agon-mod-agent';
+import * as physicalForge from '@kernlang/agon-mod-forge';
+
+it('uses the physical Forge owner for post-synthesis fitness', () => {
+  expect(Reflect.get(physicalForge, 'runPostSynthesisFitnessCheck')).toBe(runPostSynthesisFitnessCheck);
+});
+
+it.each([
+  ['buildAgentSynthesisPrompt', buildAgentSynthesisPrompt],
+  ['buildAgentInvestigateSynthesisPrompt', buildAgentInvestigateSynthesisPrompt],
+  ['detectSynthesisInsightMention', detectSynthesisInsightMention],
+] as const)('uses the physical Agent owner for %s', (name, compatibilityExport) => {
+  expect(Reflect.get(physicalAgent, name)).toBe(compatibilityExport);
+});
 
 const mockRun = runApiAgentLoop as unknown as ReturnType<typeof vi.fn>;
 const mockDiff = worktreeChangedDiff as unknown as ReturnType<typeof vi.fn>;
@@ -64,6 +78,72 @@ const baseOpts = {
   baseSha: 'abc123',
   timeout: 60,
 } as const;
+
+it.each(['edit', 'investigate'] as const)('runs %s refinement through the public Agent package', async kind => {
+  const calls: string[] = [];
+  const controller = new AbortController();
+  const executionRefusal = () => undefined;
+  const onChunk = vi.fn();
+  const runtime: physicalAgent.AgentSynthesisRuntime = {
+    runApiAgentLoop: vi.fn(async options => {
+      calls.push('api');
+      expect(options).toMatchObject({ cwd: baseOpts.winnerWorktreePath, timeout: baseOpts.timeout,
+        signal: controller.signal, executionRefusal, onChunk, systemPrompt: 'fixture rules' });
+      expect(options.maxSteps).toBe(kind === 'edit' ? 6 : 4);
+      return { response: 'refined report', toolCalls: 0, steps: 1, toolOutcomes: [] };
+    }),
+    recordApiLoopDispatch: vi.fn((engine, mode, outcomes) => {
+      calls.push('ledger');
+      expect([engine, mode, outcomes]).toEqual([baseOpts.winnerEngineId, 'synthesis', []]);
+    }),
+    worktreeChangedDiff: vi.fn((cwd, baseSha) => {
+      calls.push('diff');
+      expect([cwd, baseSha]).toEqual([baseOpts.winnerWorktreePath, baseOpts.baseSha]);
+      return 'refined patch';
+    }),
+  };
+  const options = { ...baseOpts, losers: [loser('other')], winnerCwd: baseOpts.winnerWorktreePath,
+    winnerResponse: 'original report', signal: controller.signal, executionRefusal, onChunk,
+    systemPrompt: 'fixture rules' };
+  const result = kind === 'edit'
+    ? await physicalAgent.runAgentTeamSynthesis(options, runtime)
+    : await physicalAgent.runAgentInvestigateSynthesis(options, runtime);
+  expect(result).toEqual(kind === 'edit'
+    ? { ok: true, synthesizedDiff: 'refined patch', changed: true, error: null, responseExcerpt: 'refined report', skipped: false }
+    : { ok: true, report: 'refined report', error: null, skipped: false });
+  expect(calls).toEqual(kind === 'edit' ? ['api', 'ledger', 'diff'] : ['api', 'ledger']);
+});
+
+it.each(['edit', 'investigate'])('preserves execution authority through %s synthesis', async kind => {
+  const executionRefusal = () => undefined;
+  mockRun.mockResolvedValue({ response: 'done', toolCalls: 0, steps: 1 });
+  mockDiff.mockReturnValue(baseOpts.winnerDiff);
+  const opts = { ...baseOpts, executionRefusal, losers: [loser('other')],
+    winnerCwd: baseOpts.winnerWorktreePath, winnerResponse: 'original' };
+  await (kind === 'edit' ? runAgentTeamSynthesis : runAgentInvestigateSynthesis)(opts);
+  expect(mockRun.mock.calls[0][0].executionRefusal).toBe(executionRefusal);
+});
+
+it.each(['before', 'during', 'cancelled', 'broken-check', 'healthy'])(
+  'guards post-synthesis fitness: %s', async phase => {
+    let refused = phase === 'before';
+    const abort = new AbortController();
+    if (phase === 'cancelled') abort.abort();
+    mockSpawn.mockImplementation(async () => { if (phase === 'during') refused = true; return { exitCode: 0 }; });
+    const result = await runPostSynthesisFitnessCheck({ worktreePath: '/fixture', fitnessCmd: 'fixture-test',
+      signal: abort.signal,
+      executionRefusal: () => {
+        if (phase === 'broken-check') throw new Error('private fixture detail');
+        return refused ? 'fixture disabled' : undefined;
+      },
+    });
+    expect(result.passed).toBe(phase === 'healthy');
+    expect(mockSpawn).toHaveBeenCalledTimes(['healthy', 'during'].includes(phase) ? 1 : 0);
+    if (phase !== 'healthy') expect(result.error).toBeTruthy();
+    if (phase === 'before' || phase === 'during') expect(result.error).toBe('fixture disabled');
+    if (phase === 'broken-check') expect(result.error).not.toContain('private fixture detail');
+  },
+);
 
 describe('buildAgentSynthesisPrompt — prompt-injection defense', () => {
   it('wraps loser content in untrusted_data blocks', () => {

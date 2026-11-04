@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { planSynthesis } from '../../packages/forge/src/synth-plan.js';
 import type { SynthCandidate } from '../../packages/forge/src/synth-plan.js';
+import { planSynthesis as ownedPlanSynthesis } from '@kernlang/agon-mod-forge';
 
 // planSynthesis is the PURE decision layer for forge's always-on synthesis pass:
 // given the forge winner, every candidate (pass/score/whether its patch adds a
@@ -21,6 +22,9 @@ const panel: SynthCandidate[] = [
 ];
 
 describe('planSynthesis — synthEngine selection', () => {
+  it('uses one physical owner through the legacy public import', () => {
+    expect(planSynthesis).toBe(ownedPlanSynthesis);
+  });
   it('uses the configured synthesizer engine when provided', () => {
     const p = planSynthesis({ forgeWinner: 'zai', candidates: panel, configuredSynthEngine: 'cesar', requireTests: false, alwaysSynthesize: true });
     expect(p.synthEngine).toBe('cesar');
@@ -34,6 +38,14 @@ describe('planSynthesis — synthEngine selection', () => {
 });
 
 describe('planSynthesis — constraint-aware base patch', () => {
+  it('preserves equal-score candidate order and leaves its input unchanged', () => {
+    const candidates = panel.map(candidate => Object.freeze({ ...candidate }));
+    const before = JSON.stringify(candidates);
+    Object.freeze(candidates);
+    const result = planSynthesis({ forgeWinner: 'zai', candidates, requireTests: true, alwaysSynthesize: true });
+    expect(result.basePatchEngine).toBe('codex');
+    expect(JSON.stringify(candidates)).toBe(before);
+  });
   it('refines the forge winner when requireTests is off', () => {
     const p = planSynthesis({ forgeWinner: 'zai', candidates: panel, requireTests: false, alwaysSynthesize: true });
     expect(p.basePatchEngine).toBe('zai');

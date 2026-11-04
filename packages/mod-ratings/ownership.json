@@ -1,0 +1,86 @@
+{
+  "schemaVersion": 1,
+  "package": "@kernlang/agon-mod-ratings",
+  "assignments": [
+    {
+      "category": "builtinCommandMetadata",
+      "id": "leaderboard",
+      "source": "packages/core/src/blocks/builtin-commands.ts:54",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-ratings",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cliCommands",
+      "id": "leaderboard",
+      "source": "packages/cli/src/lazy-commands.ts:294",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-ratings",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cliCommands",
+      "id": "ratings",
+      "source": "packages/cli/src/lazy-commands.ts:296",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-ratings",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "cliCommands",
+      "id": "ratings purge-unknown",
+      "source": "packages/cli/src/commands/ratings.ts:18",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-ratings",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "intentVariants",
+      "id": "leaderboard",
+      "source": "packages/cli/src/signals/intent-types.ts:8",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-ratings",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "resultAndEnvelopeTypes",
+      "id": "RatingRecord",
+      "source": "packages/core/src/models/types.ts:55",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-ratings",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "statePaths",
+      "id": "ratings.json",
+      "source": "packages/core/src/signals/ratings-maintenance.ts:121",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-ratings",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "statePaths",
+      "id": "runs",
+      "source": "packages/core/src/signals/ratings-maintenance.ts:93",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-ratings",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "stateStoreModules",
+      "id": "packages/core/src/signals/ratings-maintenance.ts",
+      "source": "packages/core/src/signals/ratings-maintenance.ts",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-ratings",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "tuiSlashCommands",
+      "id": "/leaderboard",
+      "source": "packages/cli/src/signals/intent.ts:56",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-ratings",
+      "rule": "exact-user-surface"
+    }
+  ]
+}

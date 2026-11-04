@@ -1,4 +1,7 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { createDaemonController, type DaemonControllerHost } from '@kernlang/agon-mod-jobs';
+import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import { join } from 'node:path';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync, existsSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -176,5 +179,182 @@ describe('agon daemon — command registration', () => {
     expect(daemonCommand?.args?.action?.type).toBe('positional');
     expect(daemonCommand?.args?.foreground?.type).toBe('boolean');
     expect(typeof daemonCommand?.run).toBe('function');
+  });
+});
+
+describe('Jobs daemon controller host boundary', () => {
+  function fixture(name: string) {
+    const directory = join(home, name);
+    const text = (value: string) => value;
+    const host: DaemonControllerHost = {
+      daemonDirectory: () => directory,
+      ensureHome: vi.fn(),
+      runServer: vi.fn(async () => {}),
+      ping: vi.fn(async () => null),
+      shutdown: vi.fn(async () => null),
+      spawn: vi.fn(() => { throw new Error('Unexpected daemon spawn'); }),
+      output: {
+        header: vi.fn(), info: vi.fn(), success: vi.fn(), warn: vi.fn(),
+        bold: text, dim: text, green: text, cyan: text, yellow: text, red: text,
+      },
+    };
+    return { host, controller: createDaemonController(host) };
+  }
+
+  it('keeps independent controller files and callbacks separate', async () => {
+    const first = fixture('first');
+    const second = fixture('second');
+    first.controller.writePidFile({ pid: process.pid, sessionId: 'first', startedAt: 'first' });
+    expect(second.controller.readPidFile()).toBeNull();
+    second.controller.writePidFile({ pid: process.pid, sessionId: 'second', startedAt: 'second' });
+    expect(first.controller.readPidFile()?.sessionId).toBe('first');
+    expect(second.controller.readPidFile()?.sessionId).toBe('second');
+    await first.controller.probeDaemon();
+    expect(first.host.ping).toHaveBeenCalledOnce();
+    expect(second.host.ping).not.toHaveBeenCalled();
+  });
+
+  it('retains the previous complete PID record when publication fails during write', () => {
+    const { controller } = fixture('atomic-publication');
+    const original = { pid: process.pid, sessionId: 'original', startedAt: 'original' };
+    controller.writePidFile(original);
+    const write = fs.writeFileSync;
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const failWrite = vi.spyOn(fs, 'writeFileSync').mockImplementation((path, _data, options) => {
+      write(path, '', options);
+      throw new Error('injected write failure after opening file');
+    });
+    syncBuiltinESMExports();
+    try {
+      controller.writePidFile({ ...original, sessionId: 'replacement' });
+      expect(failWrite).toHaveBeenCalledOnce();
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('injected write failure'));
+      expect(controller.readPidFile()).toEqual(original);
+      expect(fs.readdirSync(controller.daemonDir())).toEqual(['agond.pid']);
+    } finally {
+      failWrite.mockRestore();
+      warn.mockRestore();
+      syncBuiltinESMExports();
+    }
+  });
+
+  it('preserves ownership published while a socket probe is pending', async () => {
+    const { host, controller } = fixture('probe-publication');
+    mkdirSync(controller.daemonDir(), { recursive: true });
+    writeFileSync(controller.socketPath(), 'old socket');
+    vi.mocked(host.ping).mockImplementation(async () => {
+      controller.writePidFile({ pid: process.pid, sessionId: 'new-owner', startedAt: 'new' });
+      fs.renameSync(controller.socketPath(), join(controller.daemonDir(), 'old.sock'));
+      writeFileSync(controller.socketPath(), 'new socket');
+      return null;
+    });
+    const probe = await controller.probeDaemon();
+    expect(probe.staleCleaned).toBe(false);
+    expect(probe.hung).toBe(true);
+    expect(controller.readPidFile()?.sessionId).toBe('new-owner');
+    expect(fs.readFileSync(controller.socketPath(), 'utf8')).toBe('new socket');
+  });
+
+  it('does not unlink a responding socket because its PID record is stale', async () => {
+    const { host, controller } = fixture('stale-pid-live-socket');
+    controller.writePidFile({ pid: 2_147_480_000, sessionId: 'old', startedAt: 'old' });
+    writeFileSync(controller.socketPath(), 'live socket');
+    vi.mocked(host.ping).mockResolvedValue({ type: 'pong', sessionId: 'new', uptime: 1 });
+    const probe = await controller.probeDaemon();
+    expect(probe).toEqual({ live: true, sessionId: 'new', staleCleaned: false });
+    expect(controller.readPidFile()?.sessionId).toBe('old');
+    expect(fs.readFileSync(controller.socketPath(), 'utf8')).toBe('live socket');
+  });
+
+  it('reports no daemon when another controller completes cleanup during the probe', async () => {
+    const { host, controller } = fixture('probe-removed');
+    controller.writePidFile({ pid: 2_147_480_000, sessionId: 'old', startedAt: 'old' });
+    writeFileSync(controller.socketPath(), 'socket');
+    vi.mocked(host.ping).mockImplementation(async () => {
+      rmSync(controller.pidFilePath());
+      rmSync(controller.socketPath());
+      return null;
+    });
+    expect(await controller.probeDaemon()).toEqual({ live: false, staleCleaned: false });
+  });
+
+  it.each(['replaced', 'removed'])('does not signal after ownership is %s during shutdown', async change => {
+    const { host, controller } = fixture(`stop-${change}`);
+    controller.writePidFile({ pid: process.pid, sessionId: 'old', startedAt: 'old' });
+    writeFileSync(controller.socketPath(), 'socket');
+    vi.mocked(host.shutdown).mockImplementation(async () => {
+      if (change === 'replaced') controller.writePidFile({ pid: process.pid, sessionId: 'new', startedAt: 'new' });
+      else rmSync(controller.pidFilePath());
+      return null;
+    });
+    const kill = vi.spyOn(process, 'kill').mockReturnValue(true);
+    try {
+      await controller.stopDaemon();
+      expect(kill.mock.calls.filter(([, signal]) => signal !== 0)).toEqual([]);
+      expect(fs.readFileSync(controller.socketPath(), 'utf8')).toBe('socket');
+      expect(host.output.warn).toHaveBeenCalledWith(expect.stringContaining('ownership changed'));
+    } finally { kill.mockRestore(); }
+  });
+
+  it('preserves replacement files after an acknowledged shutdown', async () => {
+    const { host, controller } = fixture('stop-ack-replacement');
+    controller.writePidFile({ pid: 2_147_480_000, sessionId: 'old', startedAt: 'old' });
+    writeFileSync(controller.socketPath(), 'old socket');
+    vi.mocked(host.shutdown).mockImplementation(async () => {
+      controller.writePidFile({ pid: process.pid, sessionId: 'new', startedAt: 'new' });
+      writeFileSync(controller.socketPath(), 'new socket');
+      return { type: 'bye' };
+    });
+    await controller.stopDaemon();
+    expect(controller.readPidFile()?.sessionId).toBe('new');
+    expect(fs.readFileSync(controller.socketPath(), 'utf8')).toBe('new socket');
+    expect(host.output.success).not.toHaveBeenCalled();
+  });
+
+  it('removes unchanged dead ownership files on stop', async () => {
+    const { controller } = fixture('stop-stale');
+    controller.writePidFile({ pid: 2_147_480_000, sessionId: 'old', startedAt: 'old' });
+    writeFileSync(controller.socketPath(), 'stale socket');
+    await controller.stopDaemon();
+    expect(existsSync(controller.pidFilePath())).toBe(false);
+    expect(existsSync(controller.socketPath())).toBe(false);
+  });
+
+  it.each(['probeDaemon', 'stopDaemon'] as const)('%s reports failed stale cleanup instead of success', async operation => {
+    const { host, controller } = fixture(`cleanup-failed-${operation}`);
+    controller.writePidFile({ pid: 2_147_480_000, sessionId: 'old', startedAt: 'old' });
+    mkdirSync(controller.socketPath());
+    await expect(controller[operation]()).rejects.toThrow();
+    expect(fs.statSync(controller.socketPath()).isDirectory()).toBe(true);
+    expect(host.output.success).not.toHaveBeenCalled();
+  });
+
+  it('awaits the foreground host and propagates its failure without spawning', async () => {
+    const { host, controller } = fixture('foreground');
+    let rejectServer!: (error: Error) => void;
+    const server = new Promise<void>((_resolve, reject) => { rejectServer = reject; });
+    vi.mocked(host.runServer).mockReturnValue(server);
+    let settled = false;
+    const launch = controller.startDaemon(true).finally(() => { settled = true; });
+    const rejected = expect(launch).rejects.toThrow('server fixture failure');
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    expect(host.ensureHome).toHaveBeenCalledOnce();
+    expect(host.runServer).toHaveBeenCalledOnce();
+    rejectServer(new Error('server fixture failure'));
+    await rejected;
+    expect(host.spawn).not.toHaveBeenCalled();
+  });
+
+  it.each([true, false])('refuses a live process before spawning when answering=%s', async answering => {
+    const { host, controller } = fixture('existing');
+    controller.writePidFile({ pid: process.pid, sessionId: 'existing', startedAt: '' });
+    if (answering) vi.mocked(host.ping).mockResolvedValue({ type: 'pong', sessionId: 'existing', uptime: 1 });
+    await controller.startDaemon(false);
+    expect(host.spawn).not.toHaveBeenCalled();
+    expect(host.output.warn).toHaveBeenCalledWith(answering
+      ? 'A daemon is already running.'
+      : 'A daemon process is alive but not answering its socket.');
+    expect(controller.readPidFile()?.sessionId).toBe('existing');
   });
 });

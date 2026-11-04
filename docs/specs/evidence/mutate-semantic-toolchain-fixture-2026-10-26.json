@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "scope": "Isolate the semantic target-selection fixture from the host JVM toolchain; no production behavior change",
+  "base": "01a10699fe2199bc50c16da516b455d1fb8b6941",
+  "testPatchSha256": "35f4036b5f298a05d9f163be0639f2f582f4e1610f796647337f833eaa5e29ef",
+  "verification": {
+    "originalWithSlowHostCompiler": "Expected failure at the unchanged 60000ms test deadline",
+    "originalWithFastHostCompiler": "Passed",
+    "fixedWithSlowHostCompiler": "Six tests passed; host Gradle never invoked",
+    "compilerContracts": "103 tests passed, including real shell invocation counts, baseline failure and invalid-mutant classification",
+    "providerLaunches": 0,
+    "fullRepositoryGates": "Build, types, lint and re-export guard passed; full suite passed 11832 tests with seven skipped and zero provider launches",
+    "fullSuiteReceipt": "mutate-semantic-fixture-suite-20261026.receipt.json",
+    "fullSuiteReceiptSha256": "8448b077bb9cebbec0c4277c934b46d3c1ba015f60f9be8a68322a7215410513",
+    "fullSuiteLogSha256": "1b49a48d824269f082a3a54de0480bd673ffe6807466db14562b96131c6431d3",
+    "additionalReleaseCheck": "Failed local archive-identity comparison on Node26/npm11; all49 package payloads and manifests equal main. Canonical Node22.22.0/npm10.9.4 reproduction remains open. Generated churn excluded from this test-only fix.",
+    "failedReleaseAttemptReceipt": "mutate-semantic-fixture-full-20261026.receipt.json",
+    "failedReleaseAttemptReceiptSha256": "b754c0ec991fd6c5d52e14769d857d2ca9356949148d75c8f47a859a7747d3aa",
+    "cleanCommittedQualification": "Pending"
+  },
+  "review": {
+    "route": "Isolated Agon source packet",
+    "packetSha256": "5a2509e86c0030c00a1768313f2acc0f0add81362cc8c442571d2f2b30bd1a1b",
+    "codex": "No blocking findings; compiler invocation coverage independently verified in existing runner tests",
+    "kimi": "Unavailable; returned no answer, not a passing review"
+  },
+  "limits": [
+    "Controlled reproduction proves host-compiler sensitivity, not the exact cause of the GitHub Gradle stall",
+    "Fixture does not qualify real Kotlin compilation",
+    "Original modular release acceptance remains open"
+  ],
+  "archive": {
+    "location": "durable operator archive: modular-agon-remediation, outside Git worktrees",
+    "retention": "Never delete without Raphael approval",
+    "artifacts": [
+      { "path": "gradle-timeout-probe/receipt.json", "sha256": "45b983178a1c6cc7549e59150ffcf3eef94cb4957683d49bd245e5ad708dcb19" },
+      { "path": "gradle-timeout-probe/fast-control/receipt.json", "sha256": "d717641ca2c31998ab08823c72d9e047c7648e9f466fe69b54069f6a57c6dafb" },
+      { "path": "gradle-timeout-probe/fixed-control/receipt.json", "sha256": "03af40be1ea89efcbf17839ad4786800a67640d3944c96f8307269679f0959f7" },
+      { "path": "gradle-timeout-probe/compiler-contracts/receipt.json", "sha256": "c03ccaca00662e25f47e621ad745a66ec095a17d6429d907ddf813b0aafa08da" },
+      { "path": "mutate-semantic-toolchain-fixture-codex-review.receipt.json", "sha256": "db706dc91cb299b3f2ba2deb19e4ff27e3b14b737196d2dfa649fb8eac676216" },
+      { "path": "mutate-semantic-toolchain-fixture-kimi-review.receipt.json", "sha256": "efb7c03bd131d871e6b0c17a547d90b0a45df1ba8695ed900a3458ed1edfb5a6" }
+    ]
+  }
+}

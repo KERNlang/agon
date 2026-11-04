@@ -1,0 +1,251 @@
+I'll examine the staged code to conduct the adversarial review. Let me start by exploring the repository structure and the specific commit.
+
+Now let me read the critical security files in parallel:
+
+Now let me read the remaining critical security files:
+
+Let me check the test files and a few more critical files:
+
+Now let me examine the helper for manifests and a few more key patterns:
+
+---
+
+# Adversarial Acceptance Review — Attacker 1 (Security / TOCTOU / Revocation / Cancellation / Cleanup / Surface Reachability / Portability / False-Green Evidence / User Recovery)
+
+## Attack Surface Summary
+
+After a thorough read of all 50+ kernel source files, I identify **2 concrete blockers**, **5 high-severity hardening gaps**, and **4 medium/low suggestions**. I separate these clearly.
+
+---
+
+### BLOCKER 1 — Worker service-call pending map has no host-side timeout; DoS via indefinite hang
+
+**What breaks:** In `third-party-worker.ts:30-53`, every outbound service call (`permissions.check`, `state.read`, `engines.dispatch`, `receipts.record`, `logger.*`) created by a third-party mod creates a promise entry in `pending` keyed by a monotonically increasing `host:N` id. The `pending` map is only cleaned when the worker responds. There is **no timeout on service calls from host → worker → host round-trips**. The worker-runner (`third-party-worker-runner.mjs:11-16`) sends a `service` message and awaits the response forever.
+
+A malicious mod can issue an unbounded number of `permissions.check()` or `state.read()` calls during its 300-second invocation window. Each call creates a `pending` entry with a resolve/reject/callback. If the host-side service call hangs (e.g., `engines.dispatch` doing a slow LLM call), those entries accumulate. At 10k pending service calls × ~500 bytes each ≈ 5MB of pure map overhead, which scales linearly with invocation time.
+
+**Under what conditions:** A third-party mod calls any host service (`permissions.check`, `state.write`, `state.read`, `engines.dispatch`) in a tight loop while the host-side service is slow or hung. Even without cooperation from the host side, the map growth is proportional to call count × response latency.
+
+**Severity:** HIGH (denial-of-service via memory exhaustion within the 300s invocation window, not critical because the 300s timeout on the invocation itself eventually kills the worker).
+
+**Minimal discriminating test:**
+```typescript
+it('bounds service pending map under service call flood', async () => {
+  // Host-side service delays 100ms per call
+  let serviceCalls = 0;
+  const slowServices = { /* services with 100ms delay */ };
+  // Mod calls permissions.check 1000 times concurrently
+  const worker = await createIsolatedThirdPartyMod({ ... });
+  // After invocation, verify pending map is empty and memory is bounded
+  // (The existing test infrastructure should verify pending.size === 0 after dispose)
+});
+```
+
+---
+
+### BLOCKER 2 — `applyResumable` trust path materializes without re-verifying revocation
+
+**What breaks:** `transactional-authority.ts:117-134` `applyResumable()` re-runs `recover()` then checks if the record file already exists. If it does, it compares the stored record against the planned record **using `sha256Canonical(storedDecision) !== sha256Canonical(plannedDecision)`** at line 127. But it **strips `sequence` from both sides** before comparing. This means the resumed path returns `recovered-committed` without ever re-evaluating whether the authority has been **revoked** in the interim.
+
+The `folder-mod-manager.ts:129-143` `approve()` calls `applyResumable` for each plan in sequence. If the trust plan succeeds but a revocation occurs before the grant plan is applied, the grant plan is applied normally (since it's a new write). But if the trust plan itself was interrupted mid-flight and a revocation was applied in the meantime, the resumable path silently returns `recovered-committed` without checking revocation.
+
+**Under what conditions:** Two CLI commands: (1) `agon folder-mod approve <mod>` starts writing trust, crashes after journal write but before record file. (2) `agon folder-mod revoke <mod>` runs and revokes the trust. (3) `agon folder-mod approve <mod>` reruns the same command → `applyResumable` finds the record file exists and returns `recovered-committed` without checking revocation.
+
+**Severity:** HIGH (authority state inconsistency — a revoked trust appears committed).
+
+**Minimal discriminating test:**
+```typescript
+it('applyResumable re-verifies revocation after crash recovery', async () => {
+  const service = new TransactionalTrustGrantService(root);
+  const plan = service.store.previewTrust({ ...trusted plan... });
+  // Inject fault: crash after journal, before record write
+  const crashService = new TransactionalTrustGrantService(root, { fault: 'after-authority-journal' });
+  await expect(crashService.apply(plan, approval)).rejects.toThrow();
+  // Now revoke
+  const revokePlan = service.store.previewTrust({ ...revoked plan... });
+  await service.apply(revokePlan, revokeApproval);
+  // Resumable should NOT return recovered-committed for the original plan
+  await expect(service.applyResumable(plan, approval)).rejects.toThrow(/revok/);
+});
+```
+
+---
+
+### HIGH 1 — Snapshot TOCTOU between inspection and copy
+
+**What breaks:** `folder-mod-snapshot.ts:53-56` calls `inspectFolderMod` to get the current content hash, then immediately calls `walkBoundedPackage` and `copyNoFollow` to copy files. Between the inspection hash check (line 54) and the first `copyNoFollow` call (line 63), an attacker can:
+1. Replace a file with a different file (same size, different content)
+2. `copyNoFollow` re-opens the file with `O_NOFOLLOW` and re-checks symlink components, but the content could be a different regular file with the same inode on a tmpfs-based filesystem (unlikely but possible with hardlinks).
+
+The `readExactBounded` call reads the stat-observed bytes, so content changes that don't alter size would be detected by the final hash comparison at line 73. However, the **window between inspection and copy** is not atomic.
+
+**Under what conditions:** Concurrent modification of the mod source directory during `createFolderModSnapshot`. The snapshot code is designed for single-user local folder mods, so this requires either a malicious co-process or a filesystem that allows concurrent modification (NFS with caching, Docker bind mounts).
+
+**Severity:** MEDIUM (the final hash comparison catches most races, but the non-atomic window is wider than necessary).
+
+**Minimal discriminating test:**
+```typescript
+it('snapshot detects concurrent file replacement during copy phase', async () => {
+  // Write a valid mod to a temp dir
+  // Start snapshot in a slow worker
+  // Replace a file with same-size different-content bytes
+  // Snapshot should fail with "snapshot does not match inspected bytes"
+});
+```
+
+---
+
+### HIGH 2 — Worker abort gap: 50ms cooperative window allows in-flight side effects
+
+**What breaks:** `third-party-worker.ts:43-44` sends a `cancel` message, then waits 50ms before `terminate()`. During those 50ms, the worker-runner (`third-party-worker-runner.mjs:79`) receives the cancel and calls `controller.abort()`. But the mod's invocation handler may have already started a host service call (e.g., `engines.dispatch` or `state.write`). That service call is **not cancelled** — only the worker-side AbortController is aborted. The host-side service call continues to completion, writing state or dispatching an engine, even though the invocation is conceptually cancelled.
+
+**Under what conditions:** A third-party mod calls `engines.dispatch()` immediately before returning, then observes its signal is aborted. The host-side dispatch continues because the cancel only propagates to the worker's AbortController, not to the host service call.
+
+**Severity:** MEDIUM (the host-side service call will eventually complete or timeout; the 300s invocation timeout is the ultimate bound).
+
+**Minimal discriminating test:**
+```typescript
+it('abort cancels worker invocation but not already-dispatched host services', async () => {
+  // Mod that calls engines.dispatch then awaits signal
+  // Abort the signal after dispatch starts
+  // Verify the worker is terminated within 50ms
+  // Verify the host-side engines.dispatch is NOT cancelled (it runs to completion)
+  // This documents the current behavior as a known limitation
+});
+```
+
+---
+
+### HIGH 3 — Lifecycle rollback does not validate target generation before pointer switch
+
+**What breaks:** `host-rollback.ts:30-37` validates the target generation and reads the current pointer, but if the current pointer is to a **corrupted generation** (the `current` pointer is `null` after a failed boot), the rollback writes a new pointer to the target generation. However, `rollbackGeneration` only validates the target generation's manifest — it does not verify that the target's **installed-index** and **desired-state** files are internally consistent. This means a rollback can point to a generation with inconsistent installed-index/desired-state, causing the next boot to load a generation that appears valid but has stale or corrupted state files.
+
+**Under what conditions:** A generation was committed (pointer written) but the installed-index or desired-state atomic writes failed. The generation directory has a valid generation.json but inconsistent installed-index.json.
+
+**Severity:** HIGH (silent state corruption that survives reboot; requires manual operator recovery).
+
+**Minimal discriminating test:**
+```typescript
+it('rollback refuses if target generation has inconsistent installed-index', async () => {
+  // Commit generation 1 with all files valid
+  // Commit generation 2 with pointer written but installed-index corrupted
+  // Rollback to generation 1
+  // Verify generation 1's installed-index is validated before pointer switch
+  // (Currently, host-rollback does NOT re-validate installed-index)
+});
+```
+
+---
+
+### HIGH 4 — Capability wrapper grants wildcard resources without scope enforcement
+
+**What breaks:** `third-party-activation.ts:60-73` `wrapServices` checks permissions by matching `permissionKey(capability, resources)`. A grant for `state.read` with resources `["user-settings"]` creates key `["state.read",["user-settings"]]`. A permission declaration with resources `["*"]` creates key `["state.read",["*"]]`. These **do not match** (correct). But if a mod declares resources `["*"]` AND the user explicitly grants `state.read` with resources `["*"]`, the mod gets universal state access. The `state.read` handler at line 90-91 calls `requireCapability('state.read', key)` where `key` is the specific state key being read. The `decision` function (line 72) checks if the permission `capability === capability && resources.includes(resource)`, where `resources` is `["*"]` and `resource` is the specific key — `"*".includes("user-settings")` is `true` in JavaScript.
+
+**Under what conditions:** A user grants `state.read` with resources `["*"]` during the approval flow. The preview UI should clearly show this is a wildcard grant, but the code itself does not warn or refuse.
+
+**Severity:** MEDIUM (the user explicitly approves, but the UI should make wildcard implications visible).
+
+**Minimal discriminating test:**
+```typescript
+it('wildcard resource grant provides universal access to that capability', async () => {
+  const grant = parseGrantRecord({ ...capability: 'state.read', resources: ['*'], decision: 'allow' ... });
+  const decision = await wrappedServices.permissions.check('state.read', 'any-key');
+  expect(decision).toBe('allow');
+});
+```
+
+---
+
+### HIGH 5 — Writer lock stale recovery double-read is not atomic
+
+**What breaks:** `writer-lock.ts:87-115` `recoverStale()` reads the lock record twice (lines 101, 105) and compares them with `JSON.stringify`. Between the two reads, another process could:
+1. Write a new lock file after the original was deleted by a concurrent recovery attempt
+2. The second read returns a different record, causing the recovery to abort
+
+However, the `reclaimPath` mechanism (line 93) acts as a lock: the first recovery process creates `${path}.reclaim`, which prevents a second recovery process from proceeding (line 95-98). So this is actually safe against concurrent recovery, but **not safe against the original process's heartbeat** — if the original process is alive and writing heartbeats, the two reads could diverge, which is the intended behavior.
+
+**Under what conditions:** The original process is alive and heartbeating between the two reads. This is the correct rejection path.
+
+**Severity:** LOW (correct behavior, not a real vulnerability).
+
+---
+
+### MEDIUM 1 — External activation `enabled()` reads all records on every call
+
+**What breaks:** `external-activation-state.ts:221-225` `enabled()` calls `read()` which reads ALL activation records from disk. `folder-mod-manager.ts:168` `activate()` calls `isEnabled(candidate)` which calls `enabled()`. This is O(n) in the number of activation records for every mod activation. With 100+ folder mods, each activation involves reading 100+ JSON files.
+
+**Under what conditions:** A user with 50+ folder mods boots the system. Each mod activation reads 50+ activation records.
+
+**Severity:** LOW (performance, not security; 50 files × 1KB each = 50KB read, fast on SSD).
+
+**Minimal discriminating test:**
+```typescript
+it('enabled() does not degrade with 100 activation records', async () => {
+  // Write 100 activation records to disk
+  // Measure time for enabled() on the last one
+  // Verify < 100ms on any modern hardware
+});
+```
+
+---
+
+### MEDIUM 2 — `assertHostGeneration` races with concurrent pointer updates
+
+**What breaks:** `durable-host.ts:591-599` `assertHostGeneration()` reads the pointer and checks if the loaded generation matches. But between `readCurrentPointer()` and the actual dispatch, another transaction could change the pointer. The generation lease system (`generation-leases.ts`) exists to prevent this, but `assertHostGeneration` is called **outside** the lease system — it's a standalone check.
+
+**Under what conditions:** Two transactions run concurrently: one updates the generation pointer, the other dispatches a capability. The `assertHostGeneration` check passes, but by the time the capability reaches the mod, the generation has changed.
+
+**Severity:** LOW (the writer lock serializes lifecycle transactions; concurrent dispatch + lifecycle is the only case, and the writer lock prevents that).
+
+---
+
+### MEDIUM 3 — `atomicWrite` parent directory sync may not flush on some Linux filesystems
+
+**What breaks:** `host-io.ts:52-65` `atomicWrite()` writes to a temp file, syncs it, renames it, then syncs the parent directory. On ext4 without `data=journal`, `fsync` on the parent directory may not guarantee durability of the rename. The `syncDirectory` call uses `fsync` on the directory fd, which is correct for POSIX, but some Linux kernel versions have known bugs where `fsync` on directories doesn't flush rename operations.
+
+**Under what conditions:** Linux ext4 with `data=writeback` or `data=ordered` (the default) — `fsync` on directory should be sufficient. This is a theoretical concern for edge-case kernel versions.
+
+**Severity:** LOW (POSIX-compliant systems handle this correctly; the risk is limited to non-compliant kernels).
+
+---
+
+### MEDIUM 4 — Grant revocation does not invalidate in-flight invocations
+
+**What breaks:** `third-party-activation.ts:62-73` `wrapServices` re-reads authority before each capability check (`readAuthority` callback). But the `engines.dispatch` wrapper (line 94-99) does `requireCapability` then calls `capabilityRuntime.dispatchEngine`. If the grant is revoked between `requireCapability` (which returns 'allow') and the completion of `dispatchEngine`, the engine call proceeds with a revoked grant.
+
+**Under what conditions:** Grant revocation occurs mid-invocation while the mod is executing an engine dispatch. The `readAuthority` callback re-reads, but only at the start of each `decision()` call.
+
+**Severity:** LOW (the invocation completes; revocation affects the next invocation, which is the documented behavior per `folder-mod-manager.ts:126`).
+
+---
+
+### FALSE-GREEN EVIDENCE CHECK
+
+The proposal claims all tests pass. I verified:
+
+1. **Trust authority tests** (`tests/unit/modular-trust-authority.test.ts`): Tests cover exact-artifact trust, optional denial, explicit-dev-path invalidation, invalid provenance, immutable persistence, and forged record shapes. **Gap: no test for `applyResumable` revocation interaction (Blocker 2).**
+
+2. **Adversarial discovery tests** (`tests/unit/modular-adversarial-discovery.test.ts`): Tests cover dangerous JSON keys, depth limits, and key limits. **Gap: no test for TOCTOU between inspection and snapshot copy (High 1).**
+
+3. **Worker thread tests**: Not found in the test file search. The `third-party-worker.ts` has no dedicated unit tests. **Gap: no test for service pending map bounds (Blocker 1) or 50ms abort gap (High 2).**
+
+4. **Lifecycle rollback tests**: Not found. The `host-rollback.ts` has no dedicated test. **Gap: no test for target generation consistency validation (High 3).**
+
+**Confidence:** HIGH for Blockers 1-2 (direct code path analysis); MEDIUM for High 1-5 (requires filesystem-level testing); LOW for Medium 1-4 (edge cases unlikely in practice).
+
+---
+
+### SUMMARY TABLE
+
+| # | Category | Severity | Description | Discriminating Test |
+|---|----------|----------|-------------|-------------------|
+| B1 | Security/DoS | HIGH | Worker service pending map has no host-side timeout | Flood service calls, verify map bounded |
+| B2 | Revocation | HIGH | `applyResumable` does not re-verify revocation | Crash + revoke + resume, verify rejection |
+| H1 | TOCTOU | MEDIUM | Snapshot inspection-to-copy is non-atomic | Concurrent file replacement during snapshot |
+| H2 | Cancellation | MEDIUM | 50ms abort gap allows host-side side effects | Abort after dispatch starts, verify dispatch completes |
+| H3 | Recovery | HIGH | Rollback does not validate target generation consistency | Corrupt installed-index, verify rollback refusal |
+| H4 | Security | MEDIUM | Wildcard resource grant gives universal access | Grant `["*"]`, verify all keys accessible |
+| M1 | Scalability | LOW | `enabled()` is O(n) in activation records | 100 records, verify < 100ms |
+| M2 | TOCTOU | LOW | `assertHostGeneration` outside lease system | Concurrent lifecycle + dispatch |
+| M3 | Portability | LOW | `fsync` on dir may not flush renames on edge kernels | Theoretical; no discriminating test possible |
+| M4 | Revocation | LOW | Grant revocation does not cancel in-flight calls | Document as accepted limitation |

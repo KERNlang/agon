@@ -10,17 +10,37 @@ import { buildCommand, checkEnvVars, resolveModel, stripStreamJson, usesStreamJs
 
 import { AgentStreamQueue, buildApiAgentContext, cancelledApiAgentResult, createLinkedAbortController, encodeAgentStreamText, normalizeApiAgentOutcome, normalizeDispatchOptions, planEngineExecution } from './execution-plan.js';
 
+import { identifyEngine, withDispatchIdentity } from './engine-identity.js';
+
 export class CliAdapter implements EngineAdapter {
   private registry: EngineRegistry;
 
   constructor(registry: EngineRegistry) {
     this.registry = registry;
-    this.dispatch = this.dispatch.bind(this);
+    this.identify = this.identify.bind(this);
+    this.dispatch = withDispatchIdentity(this.dispatch.bind(this), this.identify);
     this.dispatchStream = this.dispatchStream.bind(this);
-    this.dispatchAgent = this.dispatchAgent.bind(this);
+    this.dispatchAgent = withDispatchIdentity(this.dispatchAgent.bind(this), this.identify);
     this.dispatchAgentStream = this.dispatchAgentStream.bind(this);
     this.isAvailable = this.isAvailable.bind(this);
     this.getVersion = this.getVersion.bind(this);
+  }
+
+  private persistApiAgentOutcome(result: ApiAgentResult, options: DispatchOptions): ReturnType<typeof normalizeApiAgentOutcome> {
+    const outcome = normalizeApiAgentOutcome(result);
+    // Classify the provider result, not paths from local filesystem errors.
+    recordDispatchHealth(options.engine.id, outcome);
+    try {
+      const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
+      mkdirSync(dirname(outputPath), { recursive: true });
+      writeFileSync(outputPath, outcome.stdout);
+      return outcome;
+    } catch (error) {
+      // A local artifact failure must not discard usage already billed upstream.
+      const detail = error instanceof Error ? error.message : String(error);
+      return { ...outcome, exitCode: outcome.exitCode || 1,
+        stderr: [outcome.stderr, `Could not write API agent output artifact: ${detail}`].filter(Boolean).join('\n') };
+    }
   }
 
   async dispatch(options: DispatchOptions): Promise<DispatchResult> {
@@ -39,7 +59,7 @@ export class CliAdapter implements EngineAdapter {
         // Inject project context for API engines so they know the codebase
         // Uses sessionContext cache — avoids redundant git spawns when handleChat already gathered context
         let sysPrompt = options.systemPrompt;
-        if (!sysPrompt || !sysPrompt.includes('PROJECT CONTEXT')) {
+        if (options.includeProjectContext !== false && (!sysPrompt || !sysPrompt.includes('PROJECT CONTEXT'))) {
           const projectCtx = sessionContext.get(options.cwd || resolveWorkingDir());
           if (projectCtx) {
             sysPrompt = [sysPrompt ?? '', `## PROJECT CONTEXT\n${projectCtx}`].filter(Boolean).join('\n\n');
@@ -52,6 +72,8 @@ export class CliAdapter implements EngineAdapter {
         // VISION: splice a browser screenshot into the thread's last user turn so a vision-capable API engine (kimi/minimax) actually SEES the page. Vision = engineSupportsVision (declared capability OR models.dev catalog attachment); attachVisionToMessages is a no-op when the engine has neither (e.g. zai-coding silently ignores images) or there are no images, so non-vision turns are byte-identical.
         const apiMessages = (baseMessages && options.images && options.images.length) ? attachVisionToMessages(baseMessages, options.images.map((i) => i.path), engineSupportsVision(options.engine)) : baseMessages;
         const result = apiMessages ? (await apiDispatchToolsHistory(apiConfig, apiMessages, options.timeout, options.signal, options.tools, sysPrompt)) : ((options.tools && options.tools.length) ? (await apiDispatchTools(apiConfig, options.prompt, options.timeout, options.signal, options.tools, sysPrompt)) : (await apiDispatch(apiConfig, options.prompt, options.timeout, options.signal, sysPrompt)));
+        // An aborted invocation cannot publish a late provider result.
+        options.signal?.throwIfAborted();
         const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
         mkdirSync(dirname(outputPath), { recursive: true });
         writeFileSync(outputPath, result.stdout);
@@ -287,12 +309,8 @@ export class CliAdapter implements EngineAdapter {
       const baselineDiff = readOnlyDiff(agentContext.cwd);
       const result = await runApiAgentLoop({ api: apiConfig, prompt: options.prompt, systemPrompt: agentContext.systemPrompt, historyMessages: agentContext.historyMessages, cwd: agentContext.cwd, timeout: options.timeout, signal: options.signal, maxSteps: 200, permissionMode: options.permissionMode, allowedCommands: options.allowedCommands, toolPermissions: options.toolPermissions, onPermissionAsk: options.onApproval, onTodos: options.onTodos });
       const change = captureNewAgentDiff(baselineDiff, agentContext.cwd);
-      const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
-      mkdirSync(dirname(outputPath), { recursive: true });
-      writeFileSync(outputPath, result.response);
       // Normalize the API tool loop into the same truthful terminal contract as CLI execution. Partial stdout and worktree changes survive failure/timeout/cancel.
-      const outcome = normalizeApiAgentOutcome(result);
-      recordDispatchHealth(options.engine.id, outcome);
+      const outcome = this.persistApiAgentOutcome(result, options);
       return { ...outcome, durationMs: nowMs() - startTime, ...change };
     }
     if (execution.backend === 'missing') {
@@ -451,12 +469,8 @@ export class CliAdapter implements EngineAdapter {
           if (fallback) yield encodeAgentStreamText(fallback, 'final');
         }
 
-        const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
-        mkdirSync(dirname(outputPath), { recursive: true });
-        writeFileSync(outputPath, agentResult.response ?? '');
-        const outcome = normalizeApiAgentOutcome(agentResult);
+        const outcome = this.persistApiAgentOutcome(agentResult, options);
         const change = captureNewAgentDiff(baselineDiff, cwd);
-        recordDispatchHealth(options.engine.id, outcome);
         return { ...outcome, durationMs: nowMs() - startedAt, ...change };
       } finally {
         streamAbort.dispose(); queue.dispose();
@@ -530,6 +544,10 @@ export class CliAdapter implements EngineAdapter {
     const change = captureNewAgentDiff(baselineDiff, options.cwd);
     recordDispatchHealth(options.engine.id, result);
     return { ...result, ...change };
+  }
+
+  identify(engine: EngineDefinition, cwd?: string): Promise<string|null> {
+    return identifyEngine(this.registry, engine, cwd);
   }
 
   async isAvailable(engine: EngineDefinition): Promise<boolean> {

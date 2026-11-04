@@ -1,0 +1,48 @@
+command: ["npm","run","test:modular-slice1a"]
+exitCode: 0
+signal: none
+error: none
+outputBytes: 1789
+outputHash: sha256:634ead395dec6c0e9370c09b6dc098ee78fc88a02199d629a2238ec3ba5db730
+outputTruncated: false
+
+
+> test:modular-slice1a
+> npm run spec:modular-projections:check && npm run spec:modular-package-graph:check && npm run spec:modular-pack && node scripts/run-node22.mjs vitest run tests/unit/modular-*.test.ts tests/spec/modular-agon-contracts.test.ts
+
+
+> spec:modular-projections:check
+> node scripts/spec/generate-modular-agon-compat-projections.mjs --check
+
+
+> spec:modular-package-graph:check
+> node scripts/spec/generate-modular-agon-package-graph.mjs --check
+
+
+> spec:modular-pack
+> node scripts/spec/verify-modular-slice1a-pack.mjs
+
+@kernlang/agon-mod-api: 19 files, 9010 packed bytes, 70370 unpacked bytes
+@kernlang/agon-kernel: 11 files, 44303 packed bytes, 682318 unpacked bytes
+packaged schemas match frozen authoritative schemas
+external compile-only Mod API fixture: passed
+
+ RUN  v3.2.7 /Users/ra/dev/agon-modular-slice-1a
+
+ ✓ tests/unit/modular-boundary.test.ts (3 tests) 3ms
+ ✓ tests/unit/modular-package-graph.test.ts (2 tests) 4ms
+ ✓ tests/unit/modular-manifest.test.ts (15 tests) 9ms
+ ✓ tests/unit/modular-static-discovery.test.ts (7 tests) 20ms
+ ✓ tests/spec/modular-agon-contracts.test.ts (13 tests) 42ms
+ ✓ tests/unit/modular-registry.test.ts (9 tests) 5ms
+ ✓ tests/unit/modular-topology-invariant.test.ts (1 test) 8ms
+ ✓ tests/unit/modular-projection-parity.test.ts (4 tests) 8ms
+ ✓ tests/unit/modular-lock.test.ts (3 tests) 10ms
+ ✓ tests/unit/modular-review-regressions.test.ts (5 tests) 16ms
+ ✓ tests/unit/modular-resolver.test.ts (15 tests) 670ms
+   ✓ Modular Agon deterministic resolver > bounds hostile unsatisfiable search with a typed error  436ms
+
+ Test Files  11 passed (11)
+      Tests  77 passed (77)
+   Start at  15:23:06
+   Duration  1.11s (transform 292ms, setup 160ms, collect 1.24s, tests 796ms, environment 1ms, prepare 382ms)

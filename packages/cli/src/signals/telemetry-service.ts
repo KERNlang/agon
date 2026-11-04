@@ -52,7 +52,7 @@ export class TelemetryService {
   private sampleIntervalMs: number;
   private stallThresholdMs: number;
   private networkProbeUrl: string;
-  private samplerTask: Promise<void>|null;
+  private samplerController: AbortController|null;
   private recentFallbacks: {from:string,to:string,reason:string,at:number}[];
   private pidusageLoader: Promise<any>|null;
 
@@ -70,7 +70,7 @@ export class TelemetryService {
     this.subscribers = new Set();
     this.stalledIds = new Set();
     this.running = false;
-    this.samplerTask = null;
+    this.samplerController = null;
     this.recentFallbacks = [];
     this.pidusageLoader = null;
     const now = Date.now();
@@ -92,17 +92,20 @@ export class TelemetryService {
   start(): void {
     if (this.running) return;
     this.running = true;
-    this.samplerTask = (async () => {
-      const stream = this.sampler();
-      while (this.running) {
-        const next = await stream.next();
-        if (next.done) break;
+    const controller = new AbortController();
+    this.samplerController = controller;
+    void this.sampleUntilStopped(controller.signal).catch(() => {}).finally(() => {
+      if (this.samplerController === controller) {
+        this.running = false;
+        this.samplerController = null;
       }
-    })().catch(() => {});
+    });
   }
 
   stop(): void {
     this.running = false;
+    this.samplerController?.abort();
+    this.samplerController = null;
   }
 
   isRunning(): boolean {
@@ -127,18 +130,18 @@ export class TelemetryService {
       return this.getSnapshot();
     }
     const snap = await this.collectSnapshot();
-    this.publish(snap);
+    if (snap) this.publish(snap);
     return this.getSnapshot();
   }
 
-  private async *sampler(): AsyncGenerator<TelemetrySnapshot, void, void> {
-    while (this.running) {
+  private async sampleUntilStopped(signal: AbortSignal): Promise<void> {
+    while (!signal.aborted) {
       if (!(this.opts.isPaused && this.opts.isPaused())) {
-        const snap = await this.collectSnapshot();
-        this.publish(snap);
-        yield snap;
+        const snap = await this.collectSnapshot(signal);
+        if (signal.aborted) return;
+        if (snap) this.publish(snap);
       }
-      await this.sleep(this.sampleIntervalMs);
+      await this.sleep(this.sampleIntervalMs, signal);
     }
   }
 
@@ -150,25 +153,28 @@ export class TelemetryService {
     }
   }
 
-  private async collectSnapshot(): Promise<TelemetrySnapshot> {
+  private async collectSnapshot(signal?: AbortSignal): Promise<TelemetrySnapshot|null> {
     const ids = this.opts.registry.listIds();
     const assignmentMap = this.buildAssignmentMap();
     const nextVitals: EngineVitals[] = [];
     for (const id of ids) {
       const prior = this.vitals.get(id) ?? createEngineVitals(id, { state: 'idle' as EngineVitalState });
       const assignment = assignmentMap.get(id);
-      let sampled = await this.sampleOneEngine(id, prior, assignment);
+      let sampled = await this.sampleOneEngine(id, prior, assignment, signal);
+      if (signal?.aborted) return null;
       const wasStalled = this.stalledIds.has(id);
       const isStalled = sampled.state === 'stalled';
       if (isStalled && !wasStalled) {
         this.stalledIds.add(id);
         this.emitEvent('engine:stall-detected', { source: 'telemetry-service', engineId: id, at: hostNowMs(), stallDurationMs: sampled.stallDurationMs ?? 0 });
+        if (signal?.aborted) return null;
         const candidate = this.pickFallbackCandidate(id);
         if (candidate) {
           const reason = `stall>${this.stallThresholdMs}ms`;
           sampled = { ...sampled, state: 'fallback' as EngineVitalState, fallbackTo: candidate, fallbackReason: reason };
           this.recentFallbacks = [...this.recentFallbacks.slice(-7), { from: id, to: candidate, reason: reason, at: hostNowMs() }];
           this.emitEvent('engine:fallback', { source: 'telemetry-service', from: id, to: candidate, reason: reason, at: hostNowMs() });
+          if (signal?.aborted) return null;
         }
       } else if (!isStalled && wasStalled) {
         this.stalledIds.delete(id);
@@ -188,7 +194,7 @@ export class TelemetryService {
     return snapshot;
   }
 
-  private async sampleOneEngine(engineId: string, prior: EngineVitals, assignment?: string): Promise<EngineVitals> {
+  private async sampleOneEngine(engineId: string, prior: EngineVitals, assignment?: string, signal?: AbortSignal): Promise<EngineVitals> {
     let engine: any = null;
     try { engine = this.opts.registry.get(engineId); }
     catch { engine = null; }
@@ -196,7 +202,9 @@ export class TelemetryService {
     const now = Date.now();
     const pid = this.resolvePid(engineId);
     const pidStats = await this.readPidusage(pid);
+    if (signal?.aborted) return prior;
     const net = await this.sampleNetwork(engine);
+    if (signal?.aborted) return prior;
 
     const hasBinary = !!(engine?.binary && this.opts.registry.findBinary(engine));
     const hasApiKey = !!(engine?.api?.apiKeyEnv && process.env[engine.api.apiKeyEnv]);
@@ -230,7 +238,8 @@ export class TelemetryService {
         ? (assignment ? assignment : hasBinary ? 'cli ready' : hasApiKey ? 'api reachable' : 'ready')
         : (quarantined ? `${healthRecord!.status} this session` : 'missing binary/API key'),
       taskDetail: detailParts.length > 0 ? detailParts.join(' - ') : undefined,
-      lastHeartbeatAt: heartbeatOk ? now : prior.lastHeartbeatAt,
+      lastHeartbeatAt: heartbeatOk || (assignment && (prior.state === 'idle' || prior.state === 'offline'))
+        ? now : prior.lastHeartbeatAt,
     };
 
     let merged = updateEngineVitals(prior, partial);
@@ -314,10 +323,11 @@ export class TelemetryService {
     const pidMap = this.opts.getActiveEnginePids ? this.opts.getActiveEnginePids() : undefined;
     const mapped = Number(pidMap?.get(engineId) ?? 0);
     if (Number.isFinite(mapped) && mapped > 0) return mapped;
-    return process.pid;
+    return 0; // Unknown engine PID is not evidence about the Agon host process.
   }
 
   private async readPidusage(pid: number): Promise<{ok:boolean,cpuPercent?:number,rssBytes?:number}> {
+    if (!Number.isSafeInteger(pid) || pid <= 0) return { ok: false };
     try {
       const pidusage = await this.loadPidusage();
       if (!pidusage) {
@@ -414,8 +424,17 @@ export class TelemetryService {
     this.opts.eventBus.emit(event, data).catch(() => { });
   }
 
-  private sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+  private sleep(ms: number, signal: AbortSignal): Promise<void> {
+    if (signal.aborted) return Promise.resolve();
+    return new Promise((resolve) => {
+      const finish = () => {
+        clearTimeout(timer);
+        signal.removeEventListener('abort', finish);
+        resolve();
+      };
+      const timer = setTimeout(finish, ms);
+      signal.addEventListener('abort', finish, { once: true });
+    });
   }
 
   private totalSystemMemory(): number {

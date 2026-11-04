@@ -1,0 +1,118 @@
+{
+  "schemaVersion": 1,
+  "package": "@kernlang/agon-mod-rooms",
+  "assignments": [
+    {
+      "category": "cliCommands",
+      "id": "room",
+      "source": "packages/cli/src/lazy-commands.ts:297",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-rooms",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "mcpTools",
+      "id": "RoomJoin",
+      "source": "packages/mcp/src/rooms.ts:8",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-rooms",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "mcpTools",
+      "id": "RoomLeave",
+      "source": "packages/mcp/src/rooms.ts:14",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-rooms",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "mcpTools",
+      "id": "RoomList",
+      "source": "packages/mcp/src/rooms.ts:15",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-rooms",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "mcpTools",
+      "id": "RoomLock",
+      "source": "packages/mcp/src/rooms.ts:12",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-rooms",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "mcpTools",
+      "id": "RoomPost",
+      "source": "packages/mcp/src/rooms.ts:9",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-rooms",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "mcpTools",
+      "id": "RoomRead",
+      "source": "packages/mcp/src/rooms.ts:10",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-rooms",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "mcpTools",
+      "id": "RoomRelease",
+      "source": "packages/mcp/src/rooms.ts:13",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-rooms",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "mcpTools",
+      "id": "RoomWho",
+      "source": "packages/mcp/src/rooms.ts:11",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-rooms",
+      "rule": "exact-user-surface"
+    },
+    {
+      "category": "resultAndEnvelopeTypes",
+      "id": "RoomEvent",
+      "source": "packages/core/src/rooms/types.ts:10",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-rooms",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "stateStoreModules",
+      "id": "packages/core/src/rooms/leases.ts",
+      "source": "packages/core/src/rooms/leases.ts",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-rooms",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "stateStoreModules",
+      "id": "packages/core/src/rooms/presence.ts",
+      "source": "packages/core/src/rooms/presence.ts",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-rooms",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "stateStoreModules",
+      "id": "packages/core/src/rooms/store.ts",
+      "source": "packages/core/src/rooms/store.ts",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-rooms",
+      "rule": "semantic-source-rule"
+    },
+    {
+      "category": "stateStoreModules",
+      "id": "packages/core/src/rooms/tail.ts",
+      "source": "packages/core/src/rooms/tail.ts",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-rooms",
+      "rule": "semantic-source-rule"
+    }
+  ]
+}

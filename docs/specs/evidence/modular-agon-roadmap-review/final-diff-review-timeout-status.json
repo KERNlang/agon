@@ -1,0 +1,21 @@
+{
+  "mode": "review",
+  "label": "modular-roadmap-local-final",
+  "startedAt": "2026-08-23T16:50:06.444Z",
+  "endedAt": "2026-08-23T17:00:06.454Z",
+  "engines": [
+    {
+      "id": "qwopus",
+      "status": "timeout",
+      "durationMs": 600008,
+      "detail": "exceeded 600s per-engine timeout",
+      "outputPath": "/tmp/modular-agon-spec.nLtfrv/runs/review-1787503806445-7pami7-modular-roadmap-local-final/qwopus-output.txt"
+    }
+  ],
+  "requested": [
+    "qwopus"
+  ],
+  "timeoutSec": 600,
+  "summary": "0/1 reviewed cleanly; qwopus: timeout",
+  "ok": false
+}

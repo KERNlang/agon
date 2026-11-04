@@ -1,10 +1,14 @@
-import type { SessionBudget, PersistentSession, ChatSession } from '@kernlang/agon-core';
+import type { PersistentSession, ChatSession } from '@kernlang/agon-core';
+import type { SessionBudget } from '@kernlang/agon-support-engine-runtime';
 
-import { estimateSessionTokens, checkSessionBudget, budgetRatioPct, updateChatSummary } from '@kernlang/agon-core';
+import { updateChatSummary } from '@kernlang/agon-core';
+import { estimateSessionTokens, checkSessionBudget, budgetRatioPct } from '@kernlang/agon-support-engine-runtime';
 
 import type { Dispatch, HandlerContext } from '../handlers/types.js';
 
 import { buildCesarSystemPrompt } from './session.js';
+
+import { closeAndDetachSession } from './session-health.js';
 
 export interface BudgetGateResult {
   proceed: boolean;
@@ -110,8 +114,13 @@ export async function enforceContextBudget(ctx: HandlerContext, session: Persist
   const doCompactReboot = (): boolean => {
     let folded = false;
     try { if (ctx.chatSession) folded = updateChatSummary(ctx.chatSession); } catch { /* best-effort fold */ }
-    try { session?.close?.(); } catch { /* best-effort */ }
-    try { ctx.setCesarSession(null); } catch { /* best-effort */ }
+    // A failed close is not best-effort: rebooting would launch a replacement
+    // beside a provider that may still run. Throw so the brain refuses the turn.
+    if (typeof session?.close === 'function') {
+      closeAndDetachSession(session, () => ctx.setCesarSession(null));
+    } else {
+      ctx.setCesarSession(null);
+    }
     try { ctx.cesarMemory?.clearSession?.(); } catch { /* best-effort */ }
     // ensureCesarSession resets budgetWarned when it boots the fresh session.
     return folded;

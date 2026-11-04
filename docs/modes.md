@@ -1,7 +1,87 @@
-<!-- GENERATED — do not edit directly. Source: packages/cli/src/commands/agent-guide-text.ts (agentGuideMarkdown) · Regenerate: npm run docs:modes -->
+<!-- GENERATED from the selected owner-tagged registry by @kernlang/agon-mod-routing-docs. Edit only the named handwritten region. Regenerate: npm run docs:modes -->
 
 # Agon modes — what exists and when to use what
 
+## Selected CLI projection
+
+- `agent-guide` — agon.routing-docs
+- `ask` — agon.ask
+- `attach` — agon.kernel
+- `brainstorm` — agon.brainstorm
+- `browser-host` — agon.browser
+- `browser-host install` — agon.browser
+- `browser-host status` — agon.browser
+- `browser-host stop` — agon.browser
+- `browser-host uninstall` — agon.browser
+- `call` — agon.kernel
+- `campfire` — agon.campfire
+- `chrome` — agon.browser
+- `config` — agon.kernel
+- `conquer` — agon.conquer
+- `council` — agon.council
+- `daemon` — agon.jobs
+- `doctor` — agon.kernel
+- `drive` — agon.browser
+- `engine` — agon.kernel
+- `ext` — agon.browser
+- `ext install` — agon.browser
+- `ext native-host` — agon.browser
+- `forge` — agon.forge
+- `goal` — agon.goal
+- `history` — agon.history
+- `install-agent-prompts` — agon.routing-docs
+- `job` — agon.jobs
+- `job cancel` — agon.jobs
+- `job events` — agon.jobs
+- `job list` — agon.jobs
+- `job result` — agon.jobs
+- `job status` — agon.jobs
+- `job submit` — agon.jobs
+- `last` — agon.history
+- `leaderboard` — agon.ratings
+- `login` — agon.kernel
+- `mod approve` — agon.kernel
+- `mod disable` — agon.kernel
+- `mod enable` — agon.kernel
+- `mod inspect` — agon.kernel
+- `mod list` — agon.kernel
+- `mod recover` — agon.kernel
+- `mod revoke` — agon.kernel
+- `mod trust` — agon.kernel
+- `mod untrust` — agon.kernel
+- `models` — agon.kernel
+- `models add` — agon.kernel
+- `models auto` — agon.kernel
+- `models disable` — agon.kernel
+- `models enable` — agon.kernel
+- `models hide` — agon.kernel
+- `models list` — agon.kernel
+- `models remove` — agon.kernel
+- `models set` — agon.kernel
+- `mutate` — agon.mutate
+- `naturalize` — agon.naturalize
+- `nero` — agon.nero
+- `provenance` — agon.provenance
+- `provider` — agon.kernel
+- `rag` — agon.rag
+- `ratings` — agon.ratings
+- `ratings purge-unknown` — agon.ratings
+- `ratings reset` — agon.ratings: Preview or reset per-discipline ratings with a backup
+- `research` — agon.research
+- `review` — agon.review
+- `room` — agon.rooms
+- `sanitize` — agon.sanitize
+- `serve` — agon.browser
+- `synthesis` — agon.synthesis
+- `team-brainstorm` — agon.team-brainstorm
+- `team-forge` — agon.team-forge
+- `team-tribunal` — agon.team-tribunal
+- `think` — agon.think
+- `tribunal` — agon.tribunal
+- `update` — agon.kernel
+- `worktree` — agon.worktrees
+
+<!-- BEGIN HANDWRITTEN: mode-guide -->
 # How to call Agon
 
 Agon orchestrates multiple AI engines. Call it from your shell with your normal Bash/exec tool — there is no MCP and nothing to load.
@@ -19,7 +99,7 @@ Run it inside the git repo you are working on.
 - `agon research "<question>" [--count N] [--engine <id>]` — keyless, web-grounded, CITED research. Agon (not the model) discovers sources via first-party endpoints that need NO API key — npm registry, GitHub repo search, MDN, IETF/RFC datatracker, Stack Overflow, Wikipedia — WebFetches them, an engine drafts an answer grounded ONLY in that content with inline [n] citations, and Agon then re-fetches and VERIFIES every citation (rejecting dead/redirected/mismatched URLs). Use it to look up a library/repo/spec/Q&A/encyclopedic fact and get an answer with sources you can trust. A truly-general web query (no keyless lane) reports that rather than guessing.
 - `agon chrome "<task>"` (machine: `agon call chrome "<task>" [--auto-approve] [--engine <id>]`) — drive the USER's own browser to research or check a page design (navigate / read / screenshot / click / type). Reuses a running agon (serve/REPL) the side panel is attached to, else embeds a transient bridge just for the run. Read-only page tools need no approval; add `--auto-approve` so a non-interactive caller can perform page-changing actions (without it they're denied). Requires the Agon browser extension with its side panel open + attached; with no panel attached the brain answers in text only.
 - `agon review <uncommitted|branch:NAME|commit:SHA|range:BASE...TARGET> --primary-engine <id> [--risk auto|low|medium|high]` — non-interactive code review with automatic, deterministic breadth: low selects one independent adapter, medium two distinct independent adapters, and high the complete live usable panel. Sensitive diff evidence can only raise risk; an omitted primary widens to high. `--engine`/`--engines` remain strict manual overrides.
-- `agon mutate [<path>] [--diff <base>] [--test "<cmd>"] [--build "<cmd>"] [--semantic] [--lens <focus>] [--json]` — mutation testing as a TEST-STRENGTH oracle: it answers *"which of my tests are fake?"*. Agon mutates the target lines (your changed lines by default) inside a disposable git worktree, re-runs the suite once per mutant, and reports every **survivor** — wrong code your tests still called green. Two mutant sources. The calibrated mechanical operator set is the DEFAULT and costs nothing — no engine is dispatched and no source leaves the machine. `--semantic` adds an AI panel on top, where each roster engine proposes a realistic bug it thinks your tests would miss; that sends your changed source to every panel engine and spends 1-2 dispatches each, so it is opt-in (`--mechanical-only` is the explicit spelling of the default). `--lens <focus>` steers that panel at one bug family and IMPLIES `--semantic` — presets `security`, `privacy`, `perf`, `ratelimit`, `concurrency`; anything else is used verbatim as free text. A hang counts as a kill; mutants that do not typecheck are excluded. Advisory only — the exit code reflects whether the RUN worked, never how weak the suite is. **Monorepos / prebuilt packages:** a test that imports the package by name runs against `dist`, not your source, so pass `--build "npm run build -w packages/<x>"` (or the project's build) to rebuild the mutated package before each run — a 0% score with every mutant surviving is almost always this, not a weak suite. Also available as `agon review --mutate`.
+- `agon mutate [<path>] [--diff <base>] [--test "<cmd>"] [--build "<cmd>"] [--semantic] [--lens <focus>] [--json]` — mutation testing as a TEST-STRENGTH oracle: it answers *"which of my tests are fake?"*. Agon mutates the target lines (your changed lines by default) inside a disposable git worktree, re-runs the suite once per mutant, and reports every **survivor** — wrong code your tests still called green. Two mutant sources. The calibrated mechanical operator set is the DEFAULT and costs nothing — no engine is dispatched and no source leaves the machine. `--semantic` adds an AI panel on top, where each roster engine proposes a realistic bug it thinks your tests would miss; that sends your changed source to every panel engine and spends 1-2 dispatches each, so it is opt-in (`--mechanical-only` is the explicit spelling of the default). `--lens <focus>` steers that panel at one bug family and IMPLIES `--semantic` — presets `security`, `privacy`, `perf`, `ratelimit`, `concurrency`; anything else is used verbatim as free text. Mechanical operators cover JS/TS, Python, Go, Rust, Java, Kotlin, C#, Ruby and C/C++ (C/C++ has no default compile check, so it runs only with `--build` or `--typecheck`). A hang counts as a kill; mutants that do not typecheck are excluded, and a killed mutant in a compiled language (or Python) is re-checked with its compile-only check (`go test -run ^$`, `cargo test --no-run`, `py_compile`, …) so a compile failure is invalid, not a kill — `--typecheck` overrides that check. Advisory only — the exit code reflects whether the RUN worked, never how weak the suite is. **Monorepos / prebuilt packages:** a test that imports the package by name runs against `dist`, not your source, so pass `--build "npm run build -w packages/<x>"` (or the project's build) to rebuild the mutated package before each run — a 0% score with every mutant surviving is almost always this, not a weak suite. Also available as `agon review --mutate`.
 - `agon goal "<intent>" --queue <dir|.jsonl> --gate "<test cmd>"` — autonomous controller: drives a task queue to completion unattended, looping build -> witness -> gate -> review (panel + judge) -> fix -> commit per task on a goal/ branch. Bound it with `--max-hours`/`--budget`; `--push` pushes each task. Long-running (designed for 8-24h).
 - `agon conquer "<task>" --gate "<test cmd>"` — supervised-autonomous BUILD of an OPEN-ENDED task. Cesar drives a pluggable builder CLI (codex/claude/agy) in agent mode turn by turn; when the builder hits a fork it asks and Cesar convenes the cheapest sufficient consult (nero/tribunal/brainstorm/council) and feeds back a compact verdict; when it claims done, a layered done-oracle runs (the `--gate` command + diff acceptance-drift + a nero falsification round) and it STOPS at a HUMAN merge gate — it never auto-merges to main. Every run gets a persistent isolated `conquer/*` branch/worktree from `HEAD`, so source-checkout WIP is not touched or included. The open-ended sibling to `goal`: use `conquer` when you CANNOT write a clean discriminating oracle up front (build a whole tool), `goal` when you can. Bound it with `--max-turns`/`--max-hours`.
 
@@ -43,6 +123,7 @@ These two modes only optimize to make your test (`-t` for forge) or gate/verify 
 - Coverage over tolerance: add enough cases that wrong variants die on their own; never loosen a gate or tolerance to force a pass.
 - Red-team your own oracle first: run `agon nero "<the test/gate I wrote>" --reasoning "is this gameable?"`, or hand one engine the test + signature and ask it to write a subtly-wrong impl that still passes. If it can, the oracle has a hole — add a killer case and repeat until it cannot.
 - goal only: pre-flight with `--dryRun`; each queued task verify must be RED-at-base for the right reason while `--gate` is green at base; keep mutation scoped to the verify (match `--witnessCmd` to the same narrow command). `--oracle-gate` AUTOMATES the red-team and is ON by default (`warn`; `off` opts out, `strict` stops the run when a gameable verify is found — probed per task, per launch, so a strict stop can land mid-run): just before each task is forged, the panel tries to make the verify of THAT task PASS with a cheating impl, so a non-discriminating oracle is caught up front instead of dead-looping the run. Probed once per task per launch and never cached across launches — the panel is stochastic, and a verify that unblocks mid-run is probed the moment its task becomes runnable. A probe that ERRORS is not a pass: it is journaled as `oracle-gate-error`, the task stays unprobed and the next pick retries it, capped at two attempts per task per launch (past that the task is forged unprobed, loudly).
+- goal mutation on C/C++: pass `--mutate-typecheck "<cmd>"` or `--mutate-build "<cmd>"` (a C/C++ task without one parks at once); the command replaces every default compile check, so in a mixed diff it must cover all its languages. Mutants that do not compile are excluded from grading.
 
 ## Common flags
 - `--engines <id,id,...>` — explicitly limit which registered engines compete
@@ -74,3 +155,4 @@ The direct `agon <mode>` commands stream human output. For JSONL lifecycle + out
 Escalation ladder for decisions — pick the CHEAPEST rung that fits the stakes: `nero` (one adversary attacks your decision) -> `tribunal` (two-sided debate) -> `council` (whole panel in roles + a chair) -> `conquer` (a whole supervised build, not one decision).
 
 Run `agon <mode> --help` for the full flag list.
+<!-- END HANDWRITTEN: mode-guide -->

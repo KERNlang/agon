@@ -4,6 +4,20 @@ import {
   normalizeSessionChunk, buildApiTurnEvents, estimatedUsage, unavailableUsage,
 } from '../../packages/core/src/models/agent-event.js';
 import type { RawSessionChunk } from '../../packages/core/src/models/agent-event.js';
+import * as agent from '@kernlang/agon-mod-agent';
+import { readFileSync } from 'node:fs';
+
+it('keeps Core event exports bound to the physical Agent owner', () => {
+  const helpers = { makeAssistantChunk, makeToolCall, makeTurnComplete, makeError,
+    normalizeSessionChunk, buildApiTurnEvents, estimatedUsage, unavailableUsage };
+  for (const [name, helper] of Object.entries(helpers)) {
+    expect(typeof helper, name).toBe('function');
+    expect(agent[name as keyof typeof helpers], name).toBe(helper);
+  }
+  const compatibility = readFileSync(new URL('../../packages/core/src/models/agent-event.ts', import.meta.url), 'utf8');
+  expect(compatibility).toContain("from '@kernlang/agon-mod-agent'");
+  expect(compatibility).not.toMatch(/\b(?:function|class|interface|const)\b/);
+});
 
 describe('agent-event constructors', () => {
   it('makeAssistantChunk produces the correct shape', () => {

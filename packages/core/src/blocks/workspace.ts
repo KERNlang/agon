@@ -1,112 +1,54 @@
-import { readFileSync, writeFileSync, renameSync } from 'node:fs';
+import { resolve } from 'node:path';
 
-import { join, resolve, basename } from 'node:path';
+import {
+  addWorkspaceBookmark,
+  getActiveWorkspaceBookmark,
+  listWorkspaceBookmarks,
+  removeWorkspaceBookmark,
+  switchWorkspaceBookmark,
+  type WorkspaceBookmark,
+  type WorkspaceBookmarkRuntime,
+  type WorkspaceState,
+} from '@kernlang/agon-support-worktree';
 
-import { homedir } from 'node:os';
-
-import { ensureAgonHome } from '../signals/config.js';
-
-import { isKernProject } from './context-scanner.js';
+import { ensureAgonHome, getAgonHome } from '../signals/config.js';
 
 import { headSha, currentBranch, isDirty } from './git.js';
 
 import type { WorkspaceSnapshot } from './plan.js';
 
-import { hostNowMs, hostPrettyJson } from './host-runtime.js';
+export type Workspace = WorkspaceBookmark;
+export type { WorkspaceState };
 
-export interface Workspace {
-  id: string;
-  path: string;
-  name: string;
-  isKern: boolean;
-  addedAt: number;
-}
-
-export interface WorkspaceState {
-  workspaces: Workspace[];
-  active: string;
-}
-
-function getWorkspacesPath(): string {
-  const override = process.env.AGON_HOME?.trim();
-  const home = override ? resolve(override) : join(homedir(), '.agon');
-  return join(home, 'workspaces.json');
-}
-
-function loadState(): WorkspaceState {
-  const WORKSPACES_PATH = getWorkspacesPath();
-  ensureAgonHome();
-  try { return JSON.parse(readFileSync(WORKSPACES_PATH, 'utf-8')) as WorkspaceState; }
-  catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-      console.warn(`[agon] workspace state corrupted, resetting to defaults: ${err instanceof Error ? err.message : String(err)}`);
-    }
-    return { workspaces: [], active: '' };
-  }
-}
-
-function saveState(state: WorkspaceState): void {
-  const WORKSPACES_PATH = getWorkspacesPath();
-  const tmpPath = WORKSPACES_PATH + '.tmp';
-  writeFileSync(tmpPath, hostPrettyJson(state) + '\n');
-  renameSync(tmpPath, WORKSPACES_PATH);
-}
+const bookmarkRuntime: WorkspaceBookmarkRuntime = Object.freeze({
+  getAgonHome,
+  ensureAgonHome,
+  now: Date.now,
+});
 
 export function addWorkspace(rawPath: string): Workspace {
-  const path = resolve(rawPath);
-  const state = loadState();
-  const existing = state.workspaces.find((w) => w.path === path);
-  if (existing) {
-    return existing;
-  }
-  const id = basename(path).toLowerCase().replace(/[^a-z0-9-]/g, '-');
-  const name = basename(path);
-  const ws: Workspace = { id: id, path: path, name: name, isKern: isKernProject(path), addedAt: hostNowMs() };
-  state.workspaces.push(ws);
-  if (state.workspaces.length === 1) {
-    state.active = ws.id;
-  }
-  saveState(state);
-  return ws;
+  return addWorkspaceBookmark(rawPath, bookmarkRuntime);
 }
 
 export function removeWorkspace(idOrPath: string): boolean {
-  const state = loadState();
-  const idx = state.workspaces.findIndex((w) => w.id === idOrPath || w.path === resolve(idOrPath));
-  if (idx === -1) {
-    return false;
-  }
-  const removed = state.workspaces.splice(idx, 1)[0];
-  if (state.active === removed.id) {
-    state.active = state.workspaces[0]?.id ?? '';
-  }
-  saveState(state);
-  return true;
+  return removeWorkspaceBookmark(idOrPath, bookmarkRuntime);
 }
 
 export function listWorkspaces(): Workspace[] {
-  return loadState().workspaces;
+  return listWorkspaceBookmarks(bookmarkRuntime);
 }
 
 export function getActiveWorkspace(): Workspace|null {
-  const state = loadState();
-  return state.workspaces.find((w) => w.id === state.active) ?? null;
+  return getActiveWorkspaceBookmark(bookmarkRuntime);
 }
 
 export function switchWorkspace(idOrPath: string): Workspace|null {
-  const state = loadState();
-  const ws = state.workspaces.find((w) => w.id === idOrPath || w.path === resolve(idOrPath) || w.name === idOrPath);
-  if (!ws) {
-    return null;
-  }
-  state.active = ws.id;
-  saveState(state);
-  return ws;
+  return switchWorkspaceBookmark(idOrPath, bookmarkRuntime);
 }
 
 export function getWorkspace(idOrPath: string): Workspace|null {
-  const state = loadState();
-  return state.workspaces.find((w) => w.id === idOrPath || w.path === resolve(idOrPath) || w.name === idOrPath) ?? null;
+  const resolved = resolve(idOrPath);
+  return listWorkspaceBookmarks(bookmarkRuntime).find((workspace) => workspace.id === idOrPath || workspace.path === resolved || workspace.name === idOrPath) ?? null;
 }
 
 /**
@@ -168,14 +110,10 @@ export function resolveWorkingDir(): string {
  * Registers/updates a workspace BOOKMARK for cwd (persisted to workspaces.json) and marks it active for /workspace list's 'last used' indicator. Does NOT ground resolveWorkingDir() — callers that want session grounding must call setSessionRoot() separately. Kept for explicit bookmark flows; the CLI launch path no longer calls this (see setSessionRoot).
  */
 export function ensureCurrentWorkspace(cwd: string): Workspace {
-  const state = loadState();
   const path = resolve(cwd);
-  const existing = state.workspaces.find((w) => w.path === path);
+  const existing = listWorkspaceBookmarks(bookmarkRuntime).find((workspace) => workspace.path === path);
   if (existing) {
-    if (state.active !== existing.id) {
-      state.active = existing.id;
-      saveState(state);
-    }
+    switchWorkspaceBookmark(existing.id, bookmarkRuntime);
     return existing;
   }
   return addWorkspace(cwd);

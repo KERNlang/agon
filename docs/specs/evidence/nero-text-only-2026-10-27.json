@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "scope": "Restore Nero text-only dispatch on the initial attempt, retry and critic down-pass",
+  "baseCommit": "a4e06dfb8869acd14fe4c90cc16a88abebeb3243",
+  "archiveRoot": "/Users/ra/dev/modular-agon-remediation",
+  "retention": "Never delete archived evidence without Raphael's approval",
+  "sourceHashes": {
+    "packages/mod-nero/src/implementation.ts": "60568d8a5a0954a0dd5fcd9f6f354d2a400b084f28b0663b847b9b4482d6fc1a",
+    "packages/mod-nero/src/implementation.test.ts": "6ff8d5b330959ada8da4de61e987454f6be9aa396319606fe01f17ea26adb12b",
+    "scripts/spec/verify-modular-npx.mjs": "63df1778c5df43c2dec6226c6bff9cac434b4d2de823cc7a0ab1a924f4045765"
+  },
+  "evidence": [
+    { "file": "nero-text-only-negative-20261027.log", "sha256": "6ca32c3d1e5b928e288b766e582f58e0208ca95c7ce4a252b0c0f381afa4364a", "result": "Strengthened dispatch regression fails before repair; three other tests pass" },
+    { "file": "nero-text-only-focused-20261027.log", "sha256": "903e8da0c66ab7439b8a0ff367102b0dae42dbdb53625020d54dfbd3c059fd74", "result": "75 focused tests pass" },
+    { "file": "nero-text-only-types-20261027.log", "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "result": "Owner types, verifier syntax, edited lint and diffcheck pass; empty successful log" },
+    { "file": "nero-text-only-full-gates-20261027.receipt.json", "sha256": "4a4584de9043e078faea87b861a44fc5ab6e659b666f910061f5c496f311d016", "result": "Full gates pass; 11954 tests, 7 skipped, 95 installed checks, zero providers" },
+    { "file": "nero-text-only-full-gates-20261027.log", "sha256": "ac4e03c631c1d878f8bbf2981adc41d7fdc88a6930f5884b3c3fd6728aee57ea" }
+  ],
+  "review": {
+    "packet": "nero-text-only-review-input.txt",
+    "packetSha256": "914d7b30fd3f53ce2483e781d7012ea51e7cfe92655d7c2cf27c04eaac840888",
+    "codexLog": "nero-text-only-codex-review.log",
+    "codexLogSha256": "002207c8c8acfc5c3c14b93c930efc633c8a663b182c865c3012f13930c8328e",
+    "result": "No introduced regression; inherited receipt-retry defect reproduced and scoped separately",
+    "limits": "Kimi returned no answer, not a passing review"
+  },
+  "limits": [
+    "Exact committed replay pending; its later archived receipt must bind the resulting commit",
+    "Installed fake-service fixture proves option forwarding, not provider sandboxing",
+    "Interactive Nero still invokes the legacy Forge runtime",
+    "Receipt failure can repeat a successful dispatch; separate tracked repair",
+    "Aggregate acceptance, strict contamination and external platform evidence remain open",
+    "No OpenCode, active/global Agon or personal-state changes"
+  ]
+}

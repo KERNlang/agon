@@ -1,0 +1,13 @@
+command: ["node","scripts/spec/check-modular-agon-consistency.mjs"]
+exitCode: 0
+signal:
+error:
+
+{
+  "inventoryAssignments": 852,
+  "packages": 49,
+  "mods": 36,
+  "coverageCells": 1480,
+  "markdownFiles": 8,
+  "status": "passed"
+}

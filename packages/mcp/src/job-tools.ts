@@ -1,93 +1,31 @@
-import { spawn } from 'node:child_process';
-
 import { DEFAULT_AGON_CONFIG, loadConfig } from '@kernlang/agon-core';
+import { spawnWithTimeout } from '@kernlang/agon-support-engine-runtime';
 
 import type { AgonConfig } from '@kernlang/agon-core';
 
-export const JOB_TOOLS: Array<{name:string,description:string,inputSchema:Record<string,unknown>}> = [
-  { name: 'JobSubmit', description: 'Submit an allowlisted Agon workflow to the long-lived daemon and return immediately with its job id.', inputSchema: { type: 'object', properties: { kind: { type: 'string', description: 'Registered workflow kind, such as brainstorm, review, or forge.' }, payload: { type: 'object', description: 'Structured workflow payload. The daemon rejects unknown fields and never accepts shell or argv.' } }, required: ['kind', 'payload'] } },
-  { name: 'JobList', description: 'List autonomous jobs retained by the Agon daemon.', inputSchema: { type: 'object', properties: {} } },
-  { name: 'JobStatus', description: 'Get one autonomous job snapshot.', inputSchema: { type: 'object', properties: { jobId: { type: 'string' } }, required: ['jobId'] } },
-  { name: 'JobEvents', description: 'Replay bounded ordered events for one autonomous job after a sequence cursor.', inputSchema: { type: 'object', properties: { jobId: { type: 'string' }, afterSeq: { type: 'number', minimum: 0 }, limit: { type: 'number', minimum: 1 } }, required: ['jobId'] } },
-  { name: 'JobResult', description: 'Read the terminal result for one autonomous job without blocking.', inputSchema: { type: 'object', properties: { jobId: { type: 'string' } }, required: ['jobId'] } },
-  { name: 'JobCancel', description: 'Request idempotent cancellation of one autonomous job.', inputSchema: { type: 'object', properties: { jobId: { type: 'string' }, reason: { type: 'string' } }, required: ['jobId'] } },
-];
+import { buildMcpJobCommand } from '@kernlang/agon-mod-jobs';
+export { JOB_TOOLS, isJobTool, requiredString, optionalInteger, buildMcpJobCommand } from '@kernlang/agon-mod-jobs';
 
-export function isJobTool(name: string): boolean {
-  return JOB_TOOLS.some((tool) => tool.name === name);
-}
+type JobClientContext = { cwd?: string; signal?: AbortSignal };
 
-export function requiredString(value: unknown, label: string): string {
-  const normalized = typeof value === 'string' ? value.trim() : '';
-  if (!normalized) throw new Error(`${label} is required`);
-  return normalized;
-}
-
-export function optionalInteger(value: unknown, label: string, minimum: number): number|undefined {
-  if (value === undefined) return undefined;
-  if (!Number.isInteger(value) || Number(value) < minimum) throw new Error(`${label} must be an integer >= ${minimum}`);
-  return Number(value);
-}
-
-/**
- * Build a fixed agon-job client invocation. Only structured job fields are serialized; executable, shell, and argv are never accepted.
- */
-export function buildMcpJobCommand(name: string, args: Record<string,unknown>): string[] {
-  if (name === 'JobSubmit') {
-    const kind = requiredString(args.kind, 'kind');
-    const payload = args.payload;
-    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('payload must be an object');
-    return ['job', 'submit', kind, '--payload', JSON.stringify(payload), '--json'];
-  }
-  if (name === 'JobList') return ['job', 'list', '--json'];
-  const jobId = requiredString(args.jobId, 'jobId');
-  if (name === 'JobStatus') return ['job', 'status', jobId, '--json'];
-  if (name === 'JobResult') return ['job', 'result', jobId, '--json'];
-  if (name === 'JobCancel') {
-    const reason = typeof args.reason === 'string' && args.reason.trim() ? ['--reason', args.reason.trim()] : [];
-    return ['job', 'cancel', jobId, ...reason, '--json'];
-  }
-  if (name === 'JobEvents') {
-    const after = optionalInteger(args.afterSeq, 'afterSeq', 0);
-    const limit = optionalInteger(args.limit, 'limit', 1);
-    return ['job', 'events', jobId, ...(after === undefined ? [] : ['--after', String(after)]), ...(limit === undefined ? [] : ['--limit', String(limit)]), '--json'];
-  }
-  throw new Error(`Unknown job tool: ${name}`);
-}
-
-export async function runMcpJobCommand(args: string[]): Promise<string> {
+export async function runMcpJobCommand(args: string[], context: JobClientContext = {}): Promise<string> {
   const nodeScript = process.env.AGON_CLI_NODE_SCRIPT;
   const command = nodeScript ? process.execPath : (process.env.AGON_CLI_COMMAND || 'agon');
   const runArgs = nodeScript ? [nodeScript, ...args] : args;
-  const config = loadConfig(process.cwd()) as Required<AgonConfig>;
+  const cwd = context.cwd ?? process.cwd();
+  const config = loadConfig(cwd) as Required<AgonConfig>;
   const maxBytes = config.daemonFrameMaxBytes || DEFAULT_AGON_CONFIG.daemonFrameMaxBytes;
-  return await new Promise<string>((resolvePromise) => {
-    const child = spawn(command, runArgs, { cwd: process.cwd(), env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
-    const stdout: Buffer[] = [];
-    const stderr: Buffer[] = [];
-    let size = 0;
-    let overflow = false;
-    const collect = (target: Buffer[], chunk: Buffer | string): void => {
-      if (overflow) return;
-      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-      size += buffer.length;
-      if (size > maxBytes) { overflow = true; child.kill('SIGTERM'); return; }
-      target.push(buffer);
-    };
-    child.stdout?.on('data', (chunk) => collect(stdout, chunk));
-    child.stderr?.on('data', (chunk) => collect(stderr, chunk));
-    child.once('error', (error) => resolvePromise(JSON.stringify({ ok: false, error: error.message })));
-    child.once('close', (code, signal) => {
-      if (overflow) { resolvePromise(JSON.stringify({ ok: false, error: `job response exceeded ${maxBytes} bytes` })); return; }
-      const output = Buffer.concat(stdout).toString('utf8').trim();
-      const error = Buffer.concat(stderr).toString('utf8').trim();
-      if (code === 0 && output) { resolvePromise(output); return; }
-      resolvePromise(JSON.stringify({ ok: false, exitCode: code, signal, error: error || output || 'agon job client failed' }));
-    });
+  const result = await spawnWithTimeout({
+    command, args: runArgs, cwd, signal: context.signal,
+    // The client submits or reads jobs. It never waits for workflow completion.
+    timeout: 15_000, maxOutputBytes: maxBytes,
   });
+  const output = result.stdout.trim();
+  if (result.exitCode === 0 && (output || args[1] === 'events')) return output;
+  return JSON.stringify({ ok: false, exitCode: result.exitCode, error: result.stderr.trim() || output || (result.exitCode === 130 ? 'Aborted' : 'agon job client failed') });
 }
 
-export async function handleJobToolCall(name: string, args: Record<string,unknown>): Promise<string> {
-  try { return await runMcpJobCommand(buildMcpJobCommand(name, args)); }
+export async function handleJobToolCall(name: string, args: Record<string,unknown>, context: JobClientContext = {}): Promise<string> {
+  try { return await runMcpJobCommand(buildMcpJobCommand(name, args), context); }
   catch (error) { return JSON.stringify({ ok: false, error: error instanceof Error ? error.message : String(error) }); }
 }

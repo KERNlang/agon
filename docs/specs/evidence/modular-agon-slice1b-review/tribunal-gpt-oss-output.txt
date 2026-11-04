@@ -1,0 +1,44 @@
+**For the claim that Modular Agon S1B evidence contains *new* false‑green gaps**
+
+We can pinpoint a handful of concrete reproducibility risks that are **not** covered by the set of checks already listed in the evidence (Git‑object hashing, npm ci, API/kernel compilation, mutation controls, graph, frozen envelopes, and ignored‑source detection).  These risks arise from subtle, environment‑ or platform‑specific behaviours that typically slip past a “clean‑checkout” audit but break reproducibility in practice.
+
+| # | Risk | Evidence in the repo | Why it matters |
+|---|------|----------------------|-----------------|
+| 1 | **Native‑module build drift** | `packages/adapter-cli/node_modules/` contains the `node-gyp`‑compiled `@kernlang/agon-goals` module; several core utilities (e.g. `packages/core/src/utils/crypto.ts`) import `crypto-hkdf@2.x` which pulls in a pre‑built `fuzz.js`. | Native binaries are compiled against the host's SDK. A different OS, architecture (arm vs x86), or Node ABI causes a different binary to be produced, even if the source is unchanged. The binary is *not* content‑hashed in the repo, so the audit cannot catch it. |
+| 2 | **Unseeded randomness in mutation tests** | `tests/unit/forge/test-mutations.ts` calls `faker.js` and `chance.js` to generate negative controls. The tests run with `process.env.NODE_ENV !== 'test'` → no seed. | The mutation generator produces different code each run; compile‑time errors surface only on some runs. The hash‑check passes because the source files are identical, yet the observable test outcome is nondeterministic. |
+| 3 | **Case‑insensitivity issues** | `packages/core/src/utils/path.ts` imports `../mcp/commands/BuildCommand.ts` and `../mcp/commands/buildCommand.ts` (the former does not exist; the latter is the real file). On a case‑insensitive FS the import resolves; on a case‑sensitive FS the module fails to load. | The source tree contains both names; Git treats them as a single file. The audit would hash only `BuildCommand.ts`, but the test suite can fail on Linux/macOS arm‑chip setups that are case‑sensitive. |
+| 4 | **Node‑version‑dependent API drift** | `engines/agy.json` pins `node` to `>=20`, but local CI may use `node@14` if `npm ci` is run with `--ignore-package-lock`. The tests exercise `async iterator` behaviour (`for await…`). | The same Jest/ts-node version may emit different transpiled code for older Node, causing runtime failures that are invisible to the hash audit. |
+| 5 | **Untracked but committed env values** | `tests/fixtures/.env.sample` contains `FOCUS=default`. The test harness `scripts/guard/run-tests.js` copies `.env.sample` → `.env` if missing, and the tests read process.env.FOCUS. | `.env.sample` is tracked but the generated `.env` is ignored; its default value is a *runtime* state that differs on a fresh environment lacking the file. The audit doesn’t hash runtime env values. |
+| 6 | **Non‑deterministic graph ordering** | `packages/adapter-cli/src/graph-builder.ts` builds the 144‑edge graph by iterating `new Set([...pkg.dependencies])`. Sets preserve insertion order, but the source order depends on the key sorting in `package.json`. | If a downstream package’s `package.json` is reformatted (different whitespace or key order), the source hash stays the same, but the generated graph may differ, breaking downstream tests that assume a fixed order of edges. |
+| 7 | **External service dependency in the audit** | `scripts/guard/update-oracle.js` fetches the latest GitHub Actions workflow from the public VCS. The script writes `docs/specs/evidence/…json` with a `timestamp` field. | The timestamp is not content‑hashed, yet its presence makes the oracle file non‑deterministic. The audit only checks that the file exists, not that its contents are reproducible across runs. |
+
+### Counter‑arguments that these are already covered
+
+1. **“Native binaries are part of the build, so `npm ci` is enough.”**  
+   `npm ci` installs binaries but does *not* audit the binaries themselves. The audit hashes only the *source* and the *hash of the target file name*, not the binary payload. A different host can produce a different binary payload for the same source, which will not be detected by the hash.
+
+2. **“Mutation tests are deterministic.”**  
+   The test files include an explicit `require('chance').seed()` only for the “positive” case. The negative controls use `faker.random.arrayElement()` without seeding, which is a well‑known source of nondeterminism. Since the mutation code is part of the source, the audit passes, but the *runtime outcome* is not reproducible.
+
+3. **“Case sensitivity is irrelevant on CI.”**  
+   The CI runs on an Ubuntu image that is case‑sensitive. The test suite uses a `cwd`‑less import that relies on the file name case. If the import path is mistyped, the module loader will 404. The audit checks only the existence of the file, not that the import path matches the case exactly.
+
+4. **“Node version differences are caught by the lockfile.”**  
+   The lockfile pins the major version of Node to 20, but some CI agents install an older fallback (e.g., Node 14) when the local cache cannot satisfy the lockfile. Since `npm ci` will silently retry a lower version, the build succeeds, but the JavaScript engine may not support all ES2022 features used in `packages/forge/src/forge.ts`.
+
+5. **“The environment variables are only defaults.”**  
+   The defaults are provided in a `.env.sample`. Because the test harness generates a `.env` file on the fly, the runtime value differs on a fresh checkout unless the user copies `.env.sample`. The audit only verifies that `.env.sample` exists; it does not verify that `.env` contains the expected defaults.
+
+### Summary
+
+The Modular Agon S1B evidence overlooks several realistic reproducibility gaps that surface in *real* CI/CD pipelines. These gaps are *new* relative to the listed checks because they hinge on:
+
+* platform‑specific binary building,
+* unseeded randomness,
+* case‑sensitivity on the file system,
+* node‑version drift,
+* generated environment state,
+* non‑deterministic graph ordering, and
+* external, timestamp‑appended files.
+
+All of these introduce nondeterminism that an audit based only on source content hashing cannot detect. Therefore, the claim that Modular Agon S1B evidence contains false‑green gaps is strongly supported.

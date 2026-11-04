@@ -1,7 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createCesarToolRegistry } from '../../packages/cli/src/cesar/tools.js';
+import { disposeProcessSurfaceAuthority, initializeProcessSurfaceAuthority } from '../../packages/cli/src/surface-authority-runtime.js';
 import { executeToolCall } from '@kernlang/agon-core';
 import { extractDelegation, shouldStopAfterXmlToolCall } from '../../packages/cli/src/cesar/brain-helpers.js';
+
+beforeAll(() => initializeProcessSurfaceAuthority('/tmp/agon-cesar-council-authority'));
+afterAll(() => disposeProcessSurfaceAuthority());
 
 describe('Cesar native Council tool', () => {
   it('is available to the native tool loop as an optional signal tool', () => {
@@ -19,6 +23,16 @@ describe('Cesar native Council tool', () => {
       task: 'REST or GraphQL?',
     }));
     expect(shouldStopAfterXmlToolCall('Council')).toBe(true);
+  });
+
+  it('preserves Council seating options through a persisted handoff', () => {
+    const roles = ['security', 'delivery'];
+    const handoff = extractDelegation('Council', { question: 'Ship?', roles, chairman: 'alpha' });
+    roles.push('later mutation');
+    expect(JSON.parse(JSON.stringify(handoff))).toMatchObject({
+      action: 'council', task: 'Ship?', roles: ['security', 'delivery'], chairman: 'alpha',
+    });
+    expect(extractDelegation('Brainstorm', { question: 'Options?', roles, chairman: 'alpha' })).not.toHaveProperty('chairman');
   });
 });
 

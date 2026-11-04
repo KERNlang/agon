@@ -1,0 +1,35 @@
+import { validateManifest } from '@kernlang/agon-mod-api';
+import manifest from '../agon.mod.json' with { type: 'json' };
+import ownership from '../ownership.json' with { type: 'json' };
+
+export const MANIFEST = validateManifest(manifest);
+export const SOURCE_OCCURRENCES = Object.freeze(ownership.assignments);
+
+export const IMPLEMENTATION_KIND = 'physical' as const;
+export { createMod } from './implementation.js';
+export { createMod as default } from './implementation.js';
+export { runBrainstorm } from './implementation.js';
+export { createBrainstormWorkflow } from './workflow.js';
+export { createBrainstormRuntime } from './runtime.js';
+export type { BrainstormRuntimeServices } from './runtime.js';
+export type { BrainstormHostServices, BrainstormModServices } from './host.js';
+export { createBrainstormHostServices } from './host.js';
+export { createBrainstormEngineServices } from './host.js';
+export type { BrainstormEngineOptions, BrainstormEngineEffects } from './host.js';
+export type { BrainstormHostEffects } from './host.js';
+export type { BrainstormInvocationContext, BrainstormWorkflowEvent } from './host.js';
+export { createBrainstormCollector } from './collector.js';
+export type { BrainstormCollection, RankedBrainstormDraft, BrainstormCollectorServices } from './collector.js';
+export { createBrainstormScout } from './scout.js';
+export type { BrainstormScoutOptions, BrainstormScoutBid, BrainstormScoutServices } from './scout.js';
+export { createBrainstormScoring, structuralScore, scoutScore, assignStances, fallbackParse } from './policy.js';
+export type { BrainstormRatingHistory, ScoutScoreInput } from './policy.js';
+export type { BrainstormWorkflowOptions, BrainstormWorkflowServices, BrainstormDraft, BrainstormBid } from './workflow.js';
+export { createBrainstormSessionRecord } from './session-record.js';
+export { createBrainstormPresentation } from './presentation.js';
+export type { BrainstormPresentationHost, BrainstormPresentationEvent, BrainstormProgress } from './presentation.js';
+export type { BrainstormSessionEffects, BrainstormSessionResult } from './session-record.js';
+export { runBrainstormSession } from './session-workflow.js';
+export { parseBrainstormResult } from './result.js';
+export type { BrainstormResult } from './result.js';
+export type { BrainstormSessionHost, BrainstormSessionCommandResult, BrainstormSessionExecutionContext } from './session-workflow.js';

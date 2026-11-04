@@ -1,5 +1,49 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { EngineNotFoundError } from '../../packages/core/src/models/errors.js';
+
+it('preserves public host error identity and inheritance', async () => {
+  const compatibility = await import('../../packages/core/src/models/errors.js');
+  const kernel = await import('@kernlang/agon-kernel');
+  const runtime = await import('@kernlang/agon-support-engine-runtime');
+  const worktree = await import('@kernlang/agon-support-worktree');
+  const forge = await import('@kernlang/agon-mod-forge');
+  expect(kernel).toHaveProperty('AgonError', runtime.AgonError);
+  expect(compatibility.FitnessError).toBe(forge.FitnessError);
+  expect(kernel).toHaveProperty('ConfigError', compatibility.ConfigError);
+  for (const name of ['GitError', 'WorktreeError', 'PlanStateError'] as const) {
+    expect(worktree).toHaveProperty(name, compatibility[name]);
+  }
+  expect(new compatibility.ConfigError('invalid')).toBeInstanceOf(compatibility.AgonError);
+  expect(new compatibility.GitError('failed', 128)).toMatchObject({ name: 'GitError', message: 'failed', exitCode: 128 });
+  expect(new compatibility.WorktreeError('blocked')).toBeInstanceOf(compatibility.GitError);
+  expect(new compatibility.PlanStateError(['draft', 'approved'], 'running')).toMatchObject({
+    name: 'PlanStateError', expected: ['draft', 'approved'], actual: 'running',
+    message: 'Invalid plan state: expected draft | approved, got running',
+  });
+  for (const error of [new compatibility.GitError('failed'), new compatibility.WorktreeError('blocked'),
+    new compatibility.PlanStateError('draft', 'running'), new runtime.EngineNotFoundError('fixture'),
+    new runtime.EngineTimeoutError('fixture', 1000)]) {
+    expect(error).toBeInstanceOf(kernel.AgonError);
+  }
+});
+
+it('loads common configuration, Git and plan hosts without the Forge package', async () => {
+  vi.doMock('@kernlang/agon-mod-forge', () => { throw new Error('fixture Forge package unavailable'); });
+  vi.resetModules();
+  try {
+    const config = await import('../../packages/core/src/signals/config.js');
+    const git = await import('../../packages/core/src/blocks/git.js');
+    const plan = await import('../../packages/core/src/blocks/plan.js');
+    expect(config.loadConfig).toBeTypeOf('function');
+    expect(git.repoRoot).toBeTypeOf('function');
+    expect(plan.approvePlan).toBeTypeOf('function');
+    await expect(import('@kernlang/agon-mod-forge'))
+      .rejects.toMatchObject({ cause: { message: 'fixture Forge package unavailable' } });
+  } finally {
+    vi.doUnmock('@kernlang/agon-mod-forge');
+    vi.resetModules();
+  }
+});
 
 describe('EngineNotFoundError (mode vs engine, #2)', () => {
   it('hints that a known mode name is a command, not an engine', () => {

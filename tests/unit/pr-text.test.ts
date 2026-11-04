@@ -3,9 +3,16 @@
 // preamble), and fail-open dispatch (ok:false on any engine miss — the push
 // already succeeded, callers fall back to their template).
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import * as forgeOwner from '@kernlang/agon-mod-forge';
 
 import { buildPrTextPrompt, parsePrText, runPrText } from '../../packages/forge/src/index.js';
+
+it('uses the physical Forge owner for the PR prompt and parser', () => {
+  expect(forgeOwner).toHaveProperty('buildPrTextPrompt', buildPrTextPrompt);
+  expect(forgeOwner).toHaveProperty('parsePrText', parsePrText);
+  expect(forgeOwner).toHaveProperty('runPrText', expect.any(Function));
+});
 
 describe('buildPrTextPrompt', () => {
   it('includes intent, run facts, commits, diff and the TITLE: reply contract', () => {
@@ -60,6 +67,16 @@ describe('runPrText (fail-open dispatch)', () => {
   it('ok:true with parsed title/body on a clean reply', async () => {
     const res = await runPrText({ ...opts, adapter: adapterReturning('TITLE: feat: y\n\n## Summary\nok') } as any);
     expect(res).toEqual({ ok: true, title: 'feat: y', body: '## Summary\nok', engineId: 'fake' });
+  });
+
+  it('preserves the legacy dispatch context and cancellation signal', async () => {
+    const signal = new AbortController().signal;
+    const dispatch = vi.fn(async () => ({ stdout: 'TITLE: feat: y\n\nbody' }));
+    await runPrText({ ...opts, signal, adapter: { dispatch } } as any);
+    expect(dispatch).toHaveBeenCalledExactlyOnceWith({
+      engine: { id: 'fake' }, prompt: buildPrTextPrompt(opts), cwd: opts.cwd,
+      mode: 'exec', timeout: opts.timeout, outputDir: opts.outputDir, signal,
+    });
   });
 
   it('ok:false on an unparseable reply (caller falls back to its template)', async () => {

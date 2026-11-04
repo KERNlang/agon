@@ -5,6 +5,7 @@ import { toolPreviewWindow } from './app-tool-detail.js';
 import { parsePatchPreview } from '../blocks/engine-helpers.js';
 
 import { cleanEngineOutput } from '../blocks/markdown.js';
+import { literalPatchRows, patchPreviewRows, PATCH_PREVIEW_LABEL } from '../blocks/literal-patch.js';
 
 import { contentWidth } from '../blocks/rendering.js';
 
@@ -256,6 +257,7 @@ export function estimateOutputEventRows(event: OutputEvent, mode: string, toolOu
     case 'user-message':
       return Math.max(1, estimateWrappedRows(event.content, proseWidth));
     case 'engine-block':
+      if (event.format === 'diff') return literalPatchRows(PATCH_PREVIEW_LABEL, proseWidth).length + patchPreviewRows(event.content, proseWidth).length;
       return mode === 'chat'
         ? 2 + estimateWrappedRows(cleanEngineOutput(event.content), chatWidth)
         : 4 + estimateWrappedRows(cleanEngineOutput(event.content), engineWidth);

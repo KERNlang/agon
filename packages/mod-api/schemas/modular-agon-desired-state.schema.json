@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kernlang.dev/schemas/modular-agon-desired-state.schema.json",
+  "title": "Modular Agon desired state",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "revision", "previousHash", "updatedAt", "selected", "disabled", "constraints", "profile"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "revision": { "type": "integer", "minimum": 0 },
+    "previousHash": {
+      "oneOf": [
+        { "type": "null" },
+        { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }
+      ]
+    },
+    "updatedAt": { "type": "string", "format": "date-time" },
+    "selected": { "$ref": "#/$defs/modIds" },
+    "disabled": { "$ref": "#/$defs/modIds" },
+    "constraints": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/modId" },
+      "additionalProperties": { "type": "string", "minLength": 1 }
+    },
+    "profile": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "revision", "definitionHash", "selected", "disabled", "constraints", "settingsDefaults"],
+          "properties": {
+            "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+            "revision": { "type": "integer", "minimum": 0 },
+            "definitionHash": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+            "selected": { "$ref": "#/$defs/modIds" },
+            "disabled": { "$ref": "#/$defs/modIds" },
+            "constraints": {
+              "type": "object",
+              "propertyNames": { "$ref": "#/$defs/modId" },
+              "additionalProperties": { "type": "string", "minLength": 1 }
+            },
+            "settingsDefaults": {
+              "type": "object",
+              "propertyNames": { "$ref": "#/$defs/modId" },
+              "additionalProperties": true
+            }
+          }
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "modId": { "type": "string", "maxLength": 256, "pattern": "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)+$" },
+    "modIds": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/modId" } }
+  }
+}

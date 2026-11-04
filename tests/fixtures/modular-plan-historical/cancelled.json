@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "id": "0d9fa187-1026-4d3a-a201-d8fd850be3e1",
+  "createdAt": "2026-10-10T23:43:11.753Z",
+  "updatedAt": "2026-10-10T23:43:11.757Z",
+  "ownerModId": "agon.plan",
+  "ownerModVersion": "1.0.0",
+  "ownerContentHash": "sha256:65d7ed346d7e48e9a1156da2d8bb6f69e8a6f5e7e411a038e3c41b30a46dcb27",
+  "kernelVersion": "1.0.0",
+  "graphHash": "sha256:df8588e4fda0827c4d951c041060929ba2df1c8e0f143d49301402c28ea79b15",
+  "contributionId": "agon.plan.persisted-plan",
+  "sessionId": "fd783aec-0dfd-4c59-9c44-e1de71d32e35",
+  "traceId": "4ae9b285-aaf5-4207-ba75-69911b1ce3f0",
+  "payloadVersion": "1.0.0",
+  "payloadEncoding": "application/json",
+  "receiptIds": [],
+  "payload": {
+    "id": "cplan-343f75bf-0153-47ac-aa2b-b9c5fc11e02a",
+    "state": "cancelled",
+    "intent": "Synthetic historical Plan capture",
+    "steps": [
+      {
+        "id": "inspect",
+        "type": "self",
+        "description": "Inspect synthetic input",
+        "estimatedTokens": 10,
+        "estimatedCostUsd": 0.01,
+        "dependsOn": [],
+        "parallel": false,
+        "state": "cancelled"
+      },
+      {
+        "id": "review",
+        "type": "review",
+        "description": "Review synthetic input",
+        "dependsOn": [
+          "inspect"
+        ],
+        "estimatedTokens": 20,
+        "estimatedCostUsd": 0.02,
+        "parallel": false,
+        "state": "cancelled"
+      }
+    ],
+    "autoApprove": false,
+    "selfReview": true,
+    "createdAt": "2026-10-10T23:43:11.753Z",
+    "updatedAt": "2026-10-10T23:43:11.757Z",
+    "exitReason": "Synthetic cancellation"
+  },
+  "kind": "plan",
+  "status": "cancelled"
+}

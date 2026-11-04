@@ -14,6 +14,7 @@ export interface ExecutionPlan {
 }
 
 export interface NormalizedApiAgentOutcome {
+  usage?: ApiAgentResult['usage'];
   exitCode: number;
   stdout: string;
   stderr: string;
@@ -107,15 +108,16 @@ export function normalizeDispatchOptions(options: DispatchOptions): DispatchOpti
 }
 
 /**
- * Clone the complete API definition, then apply only per-dispatch model/token overrides.
+ * Clone the complete API definition, then apply only per-dispatch model/token/wall-clock-ceiling overrides.
  */
-export function buildApiDispatchConfig(engine: EngineDefinition, resolvedModel: string|null, maxTokens: number|undefined): ApiConfig {
+export function buildApiDispatchConfig(engine: EngineDefinition, resolvedModel: string|null, maxTokens: number|undefined, maxWallSeconds?: number): ApiConfig {
   if (!engine.api) {
     throw new Error(`Engine "${engine.id}" has no API configuration`);
   }
   const modelOverride = resolvedModel ? { model: resolvedModel } : {};
   const tokenOverride = (maxTokens && maxTokens > 0) ? { maxTokens: maxTokens } : {};
-  return { ...engine.api, ...modelOverride, ...tokenOverride };
+  const wallOverride = (maxWallSeconds && maxWallSeconds > 0) ? { extendWhileActiveMaxSeconds: maxWallSeconds } : {};
+  return { ...engine.api, ...modelOverride, ...tokenOverride, ...wallOverride };
 }
 
 /**
@@ -123,7 +125,7 @@ export function buildApiDispatchConfig(engine: EngineDefinition, resolvedModel: 
  */
 export function buildApiAgentContext(options: DispatchOptions): ApiAgentContext {
   const cwd = options.cwd || resolveWorkingDir();
-  const projectCtx = sessionContext.get(cwd);
+  const projectCtx = options.includeProjectContext === false ? '' : sessionContext.get(cwd);
   const systemPrompt = [
     options.systemPrompt ?? 'You are an AI coding assistant. Be direct and concise.',
     projectCtx ? `## PROJECT CONTEXT\n${projectCtx}` : '',
@@ -145,17 +147,18 @@ export function normalizeApiAgentOutcome(result: ApiAgentResult|null|undefined):
   }
   const stdout = result.response ?? '';
   const reason = result.errorReason ?? '';
-  const fault = (result.engineFault === true) ? { engineFault: true } : {};
+  const metadata = { ...(result.engineFault === true ? { engineFault: true } : {}),
+    ...(result.usage ? { usage: result.usage } : {}) };
   if (result.cancelled) {
-    return { exitCode: 130, stdout: stdout, stderr: reason || 'aborted', timedOut: false, ...fault };
+    return { exitCode: 130, stdout: stdout, stderr: reason || 'aborted', timedOut: false, ...metadata };
   }
   if (result.timedOut) {
-    return { exitCode: 124, stdout: stdout, stderr: reason || 'API agent timed out', timedOut: true, ...fault };
+    return { exitCode: 124, stdout: stdout, stderr: reason || 'API agent timed out', timedOut: true, ...metadata };
   }
   if (result.failed) {
-    return { exitCode: 1, stdout: stdout, stderr: reason || 'API agent execution failed', timedOut: false, ...fault };
+    return { exitCode: 1, stdout: stdout, stderr: reason || 'API agent execution failed', timedOut: false, ...metadata };
   }
-  return { exitCode: 0, stdout: stdout, stderr: '', timedOut: false, ...fault };
+  return { exitCode: 0, stdout: stdout, stderr: '', timedOut: false, ...metadata };
 }
 
 /**
@@ -177,7 +180,7 @@ export function planEngineExecution(options: DispatchOptions, binaryPath: string
     return { options: normalized, backend: 'cli', binaryPath: binaryPath };
   }
   if (normalized.engine.api && apiKeyAvailable) {
-    const apiConfig = buildApiDispatchConfig(normalized.engine, resolvedModel, normalized.maxTokens);
+    const apiConfig = buildApiDispatchConfig(normalized.engine, resolvedModel, normalized.maxTokens, normalized.maxWallSeconds);
     return { options: normalized, backend: 'api', binaryPath: null, apiConfig: apiConfig };
   }
   return { options: normalized, backend: 'missing', binaryPath: null };

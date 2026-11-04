@@ -1,0 +1,111 @@
+import { spawnSync } from 'node:child_process';
+
+import { extname } from 'node:path';
+
+
+
+export interface SyntaxValidatorInput {
+  path: string;
+  content: string;
+  language: string;
+}
+
+export interface SyntaxValidationError {
+  row: number;
+  column: number;
+  message: string;
+}
+
+export interface SyntaxValidatorResult {
+  path: string;
+  valid: boolean;
+  language: string;
+  errors: SyntaxValidationError[];
+  languageUnsupported: boolean | undefined;
+  grammarUnavailable: boolean | undefined;
+}
+
+/**
+ * Hard cap on the synchronous Python call. Cold tree-sitter import is ~200ms; batches of ≤50 files parse in well under 1s. 8s covers cold start + a worst-case batch.
+ */
+export const SYNTAX_VALIDATOR_TIMEOUT_MS: number = 8000;
+
+/**
+ * Set this env var to skip the sidecar (forces null = no validation). Useful for tests and CI.
+ */
+export const SYNTAX_VALIDATOR_DISABLE_ENV: string = "AGON_DISABLE_SYNTAX_VALIDATOR_SIDECAR";
+
+/**
+ * Extension → tree-sitter language id. Empty result = unsupported.
+ */
+export const EXT_TO_LANGUAGE: Record<string, string> = ({ '.ts': 'typescript', '.cts': 'typescript', '.mts': 'typescript', '.tsx': 'tsx', '.js': 'javascript', '.cjs': 'javascript', '.mjs': 'javascript', '.jsx': 'jsx', '.py': 'python', '.pyi': 'python', '.json': 'json' });
+
+/**
+ * Best-effort extension → language mapping. Returns '' for unknown extensions.
+ */
+export function detectLanguageFromPath(path: string): string {
+  const ext = extname(path).toLowerCase();
+  return EXT_TO_LANGUAGE[ext] ?? '';
+}
+
+/**
+ * Synchronous tree-sitter parse via the Python sidecar. Returns null on any sidecar failure — caller treats absence of validation as no signal (don't penalize).
+ */
+export interface SyntaxValidatorRuntime {
+  resolveSidecar(filename: string): string | null;
+  resolvePython(): string;
+}
+
+export function validateSyntaxWithRuntime(files: SyntaxValidatorInput[], runtime: SyntaxValidatorRuntime): SyntaxValidatorResult[] | null {
+  if (process.env[SYNTAX_VALIDATOR_DISABLE_ENV]) return null;
+  if (!files || files.length === 0) return [];
+
+  const sidecar = runtime.resolveSidecar('syntax-validator.py');
+  if (!sidecar) return null;
+
+  const python = runtime.resolvePython();
+
+  let result;
+  try {
+    result = spawnSync(python, [sidecar], {
+      input: JSON.stringify({ files }),
+      timeout: SYNTAX_VALIDATOR_TIMEOUT_MS,
+      encoding: 'utf-8',
+      maxBuffer: 16 * 1024 * 1024,
+    });
+  } catch {
+    return null;
+  }
+
+  // Exit 3 = at least one file used an unsupported language. Still
+  // produces valid stdout — treat as success.
+  if ((result.status !== 0 && result.status !== 3) || !result.stdout) {
+    if (result.status === 2 && !(globalThis as any).__agonSyntaxValidatorMissingWarned) {
+      console.warn('[agon] syntax validator: tree-sitter or a grammar not installed — install with `npm run install:python -w packages/dedup`');
+      (globalThis as any).__agonSyntaxValidatorMissingWarned = true;
+    }
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(result.stdout);
+    const results = parsed?.results;
+    if (!Array.isArray(results)) return null;
+    return results.map((r: any) => ({
+      path: String(r?.path ?? ''),
+      valid: r?.valid === true,
+      language: String(r?.language ?? ''),
+      errors: Array.isArray(r?.errors)
+        ? r.errors.map((e: any) => ({
+            row: Number(e?.row ?? 0),
+            column: Number(e?.column ?? 0),
+            message: String(e?.message ?? ''),
+          }))
+        : [],
+      languageUnsupported: r?.language_unsupported === true ? true : undefined,
+      grammarUnavailable: r?.grammar_unavailable === true ? true : undefined,
+    })) as SyntaxValidatorResult[];
+  } catch {
+    return null;
+  }
+}

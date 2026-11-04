@@ -1,0 +1,20 @@
+{
+  "mode": "ask",
+  "startedAt": "2026-08-23T18:24:40.227Z",
+  "endedAt": "2026-08-23T18:26:45.474Z",
+  "engines": [
+    {
+      "id": "ollama-direct-qwen",
+      "status": "ok",
+      "exitCode": 0,
+      "durationMs": 125208,
+      "detail": "exit=0"
+    }
+  ],
+  "summary": "ollama-direct-qwen answered",
+  "ok": true,
+  "requested": [
+    "ollama-direct-qwen"
+  ],
+  "timeoutSec": 300
+}

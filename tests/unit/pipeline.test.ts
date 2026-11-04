@@ -1,5 +1,9 @@
-import { describe, it, expect } from 'vitest';
+import { afterAll, beforeAll, describe, it, expect } from 'vitest';
 import { detectIntent, SLASH_COMMANDS } from '../../packages/cli/src/intent.js';
+import { disposeProcessSurfaceAuthority, initializeProcessSurfaceAuthority } from '../../packages/cli/src/surface-authority-runtime.js';
+
+beforeAll(() => initializeProcessSurfaceAuthority('/tmp/agon-pipeline-authority'));
+afterAll(() => disposeProcessSurfaceAuthority());
 
 describe('Pipeline', () => {
   describe('Intent Detection — /pipeline', () => {

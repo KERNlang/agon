@@ -1,0 +1,46 @@
+{
+  "scope": "Supply existing Node platform declarations to the strict external support API consumer probe; no runtime or dependency change",
+  "baseCommit": "26c026356a28dfd681aeacbc0e3aa2b4acd7c0d7",
+  "source": "scripts/spec/verify-modular-support-api-compat.mjs",
+  "sourceSha256": "2f3e4211ace4c93487a9b61e66aca2ee61fde2d37a3fdbf702365b2c42c16a36",
+  "archive": "/Users/ra/dev/modular-agon-remediation",
+  "receipts": [
+    {
+      "id": "api-probe-node-types-red-20261028",
+      "result": "Expected failure: original probe cannot resolve node:fs in the exported Dirent declaration",
+      "logSha256": "7549018827be59e5745d999fcb44f2d782c16b0abe76d23cefe6d77d007b928a"
+    },
+    {
+      "id": "api-probe-node-types-green-20261028",
+      "result": "Strict consumer compile and eleven runtime descriptor loads passed after the fixture correction",
+      "logSha256": "8620c738a9e8797636b1fa0f13282fb19b14d166153264fe20bdea0f3cc8d671"
+    },
+    {
+      "id": "api-probe-current-main-full-20261030",
+      "result": "Full build and typecheck passed; release preparation then failed because the temporary offline cache lacked archives. Tests had not started",
+      "logSha256": "aec8d3a2287537a25d20450f18ae1fe771de8e3dfaf4f8d32ea04e938730c07d"
+    },
+    {
+      "id": "restore-qualification-cache-20261030",
+      "result": "Copied 75 already-locked local archives into isolated storage; verified source SHA-512 and copied bytes; no downloads",
+      "logSha256": "4f1b321eab53a0d540fe5d2651944765569eb10ae773877369c6a17af8364bba"
+    },
+    {
+      "id": "api-probe-current-main-gates-20261030",
+      "result": "Release metadata generation, 12112 tests (7 skipped), lint, re-export guard and strict API compatibility passed; zero provider launches",
+      "logSha256": "a3a432d6d1ed01e8d3987451e17d63f1ea41d19c2df4faac97150a869409ef5b"
+    }
+  ],
+  "review": {
+    "engine": "codex",
+    "packetSha256": "1db5edd8249e338ec6574b5118fd9514e2732e6cb91b7c488f0e2207c6c0a87e",
+    "logSha256": "e47bf72e8cbe200f177a4ee60368f56c45e62eaca1edc2aee698a64c3bf61622",
+    "result": "No concrete defect found. Reviewed source and relevant contracts unchanged by the subsequent main merges. Local red/green evidence verifies compilation independently"
+  },
+  "limits": [
+    "The consumer explicitly supplies Node declarations; automatic installation of @types/node by the kernel is not tested. skipLibCheck remains false.",
+    "N-1/N-2 are sampled pre-release contracts, not published historical package versions.",
+    "Qualification used Node 26.12.1/npm 11.20.0 and locally regenerated release metadata. All 49 package payload hashes match main; compressed archive identities differ. Generated metadata is not part of this source-only fix.",
+    "This is local verification, not a clean committed release receipt, installed-candidate acceptance or full modular acceptance. OpenCode was not used."
+  ]
+}

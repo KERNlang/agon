@@ -1,0 +1,6 @@
+command: ["node","scripts/spec/generate-modular-agon-schemas.mjs"]
+exitCode: 0
+signal:
+error:
+
+generated 12 schemas

@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "algorithm": "sha256",
+  "artifacts": [
+    { "path": "brainstorm-glm-output.txt", "hash": "8b69016bf0651f75bbf973c34295aae75586c7922203d6fbea946364185eca0c" },
+    { "path": "brainstorm-status.json", "hash": "a84062912716de2466993b3dcfe12bde176a137ce117a65222493dfd491fa1ba" },
+    { "path": "final-accessibility-review.txt", "hash": "dd5e51e4310c481ed3247690014e5c4de165baa5ea574830a87a4608175330ed" },
+    { "path": "final-data-migration-finding.txt", "hash": "8a077ca75ea016a84cfc60a705939792fad3595990040f4dc1242ac4a1af6353" },
+    { "path": "final-diff-review-timeout-status.json", "hash": "c03e93e7678c4e873cc28ab48da208696c15a6f502a92d0d1f54a736fa810583" },
+    { "path": "final-observability-review.txt", "hash": "957ed7f937f7fe18e30cd016bc7008b412c141f23cfb024316268ae78fc15c02" },
+    { "path": "final-performance-finding.txt", "hash": "3c779789dd8ac83f5ac60f24719301a6fe60e5c1eed3fbbbd7ee871523325558" },
+    { "path": "tribunal-glm-output.txt", "hash": "f00cbe15dd634d213ac9ee30a5621d0cc0bf17a625db54f6e3d4efbd52b64c44" },
+    { "path": "tribunal-minimax-output.txt", "hash": "53c429d1ab63001f69397b13ac856d48cf449abbd96001cb2dc2137e0502a767" },
+    { "path": "tribunal-status.json", "hash": "d5c2c8e382e416ceb406eefefbadfddcaf0c5fb4eae0fd94b0fd6ee2e35be306" }
+  ]
+}

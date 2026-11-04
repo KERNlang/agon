@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 1,
+  "scope": "Research citation policy ownership; not full modular acceptance",
+  "baseCommit": "a4e06dfb8869acd14fe4c90cc16a88abebeb3243",
+  "archiveRoot": "/Users/ra/dev/modular-agon-remediation",
+  "archiveRetention": "Do not delete without Raphael's explicit approval",
+  "owner": "@kernlang/agon-mod-research",
+  "implementation": "packages/mod-research/src/citation-policy.ts",
+  "publicEntry": "@kernlang/agon-mod-research/citation-policy",
+  "compatibility": {
+    "source": "packages/core/src/tools/research-verifier.ts",
+    "policyBodies": "Moved unchanged from the base commit",
+    "networkOwner": "Core remains responsible for probeCitation and verifyCitations",
+    "physicalResearchResult": "Existing narrower grounded-result representation remains unchanged",
+    "minimalInstall": "CLI bundles pure helpers without requiring Research runtime activation or installation"
+  },
+  "evidence": [
+    {
+      "receipt": "research-citation-cold-final-gates-20261027.receipt.json",
+      "result": "passed",
+      "scope": "Cold types before build, all three generated-source checks, release/SBOM refresh and self-tests, lint, reexports, 11959 tests passed/7 skipped and 98 installed checks",
+      "logSha256": "d9145da87dd09641256ebda9f526599cc8d52ab567832676278fb05dbefb11b3",
+      "providerLaunches": 0
+    },
+    {
+      "receipt": "research-citation-final-suite-20261027.receipt.json",
+      "result": "failed, correction verified narrowly; full rerun pending",
+      "scope": "11956 tests passed, 3 catalog-drift tests failed, 7 skipped; generated Research manifest hashes were stale",
+      "logSha256": "340acc64286b5c7a9cb279fd8e552ee2549c5140cf5b284a9107eaec93395798"
+    },
+    {
+      "receipt": "research-citation-catalog-control-20261027.receipt.json",
+      "result": "passed",
+      "scope": "Regenerated two Research owner hashes; catalog drift check and 15 surface/citation tests pass",
+      "logSha256": "8f69a8cf027e58daa6d34b8dca4a6dacec27738e3ba8fd9948eb81b22e0ace30"
+    },
+    {
+      "receipt": "research-citation-baseline-20261027.receipt.json",
+      "result": "passed",
+      "scope": "Clean base build, types, lint, re-export guard and full suite: 11954 passed, 7 skipped",
+      "logSha256": "1c61f39bf22a72aa98873b75a4e9067a334779fb74610dbb86f96172640075e6"
+    },
+    {
+      "receipt": "research-citation-owner-negative-path-20261027.receipt.json",
+      "result": "expected failure",
+      "scope": "Three missing-owner assertions failed before extraction; 19 tests passed",
+      "logSha256": "992a829ac628549f9a459cef28eb32fe1ac8dda1502beed7540c68677f2c67f4"
+    },
+    {
+      "receipt": "research-citation-packed-core-fixture-20261027.receipt.json",
+      "result": "failed, superseded",
+      "scope": "Packed Core compatibility passed; installed CLI exposed inlined Undici failure",
+      "logSha256": "69adc4e6752e0999f198dbc4ffd3010ee0778c2811c3c7bb652e835453d287bf"
+    },
+    {
+      "receipt": "research-citation-pack-boundary-20261027.receipt.json",
+      "result": "failed, superseded",
+      "scope": "Externalizing Research root broke minimal setup because Core required absent Research runtime",
+      "logSha256": "e74d96744de4981afd6f68fcb7b9930f4d1b2515818ead162bf68824e6706c81"
+    },
+    {
+      "receipt": "research-citation-pure-entry-20261027.receipt.json",
+      "result": "passed",
+      "scope": "Research/Core/CLI builds, types, 38 focused tests, release/SBOM generation and 98 installed qualification checks",
+      "logSha256": "2d5ad40241e9ca33958f3b8137e2b929ffeab8d92cdbfeae7b23faaa7825b86f",
+      "providerLaunches": 0
+    }
+  ],
+  "review": {
+    "packet": "research-citation-owner-review-input.txt",
+    "packetSha256": "e77774594c2391a2db6710a6689b594be9d57c8cb97ed1537f10798327b19a38",
+    "codexLogSha256": "8250aed45738ea67cd27cdafe4fd4f2dd32b393ec0d7cf3476a87e40f9eebfb6",
+    "snapshot": "Before the pure-subpath repair",
+    "adjudications": [
+      "Root coupling concern confirmed by minimal-install runtime failure; fixed with pure public subpath and verified by all 98 installed checks",
+      "Historical type coverage expanded to all four Core types, both assignment directions, and missing-finalUrl negative control",
+      "Physical grounded-result representation inspected and unchanged",
+      "Abort/SSRF test-strength concern concerns unchanged network implementation; this slice does not retire or certify that owner"
+    ],
+    "kimi": "Unavailable: exit 1, no answer; not a passing review",
+    "kimiLogSha256": "a4eebf5d7d44f5490f265ba973efba6a7b0a1712213a895f830b6440c27cdbff"
+  },
+  "limits": [
+    "Full final repository gates passed; exact clean committed-checkout qualification pending",
+    "Network and Research workflow ownership remain outside this slice",
+    "OSV reports 24 existing advisories across 10 dependencies; no external lock entries changed",
+    "Native platform, live-provider and publishing acceptance not established"
+  ]
+}

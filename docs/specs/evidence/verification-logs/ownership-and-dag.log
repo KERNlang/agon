@@ -1,0 +1,16 @@
+command: ["node","scripts/spec/generate-modular-agon-ownership.mjs"]
+exitCode: 0
+signal:
+error:
+
+{
+  "assignments": 852,
+  "byClass": {
+    "minimal-kernel-machinery": 357,
+    "hidden-shared-support-package": 148,
+    "user-toggleable-mod-package": 347
+  },
+  "packages": 49,
+  "dependencyEdges": 148,
+  "mods": 36
+}

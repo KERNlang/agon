@@ -1,0 +1,145 @@
+**Argue AGAINST — Modular Agon S2 Durable Host Red-Team Finding**
+
+I accept the test coverage is *extensive* — but not *exhaustive*. "All 8 crash points pass" does not imply *all critical interleavings* are covered. The for-position’s audit commits three fundamental logical errors: (1) conflating *test execution* with *state-space exploration*, (2) assuming *isolated* failure modes when concurrency and recovery create compounding hazards, and (3) misidentifying *correctness of parsing* as *robustness against corruption propagation*. Below I enumerate five **high-severity defects**—all locally fixable in S2 yet demonstrably *uncovered* by current tests.
+
+---
+
+### 1. **Unprotected Journal Replay on Malformed `committed` State — High Severity**
+
+**Failure sequence**:  
+1. Host crashes *after* writing `journal.json` containing `"state":"committed"` but *before* the final `receipt-commit.json` is persisted.  
+2. On restart, `replayJournal()` sees `"state":"committed"` and assumes the generation is safe to apply.  
+3. It then reads the *previous* pointer (e.g., `gen/3`) and calls `rollbackGeneration({target: "gen/3"})`.  
+4. Because the rollback path validates only the *transaction journal*, not the *receipt’s cryptographic integrity*, it executes the rollback on the *wrong* generation—because the manifest hash in `gen/4/manifest.json` does **not** match the `pointer.json` hash stored in the parent generation.  
+5. Result: the host boots from a generation whose manifest has been mutated *after* it was committed.
+
+**Violated invariant**: *"A registered commit is immutable and only reversible by an explicit, fence-protected rollback with a matching receipt."*  
+
+**Discriminating test**:  
+No current `modular-crash-recovery.test.ts` injects a *partial commit* where the journal is complete but the receipt is missing.  
+I propose:
+```ts
+test("crash-between-committed-journal-and-commit-receipt", async () => {
+  const { host, crash } = createHostWithCrashInjection({
+    injectAfter: ["journal-write"],
+    before:    ["receipt-commit-write"],
+  });
+  await host.commit({...});
+  crash();
+  await reboot();
+  // Should NOT boot without receipt; must fall back to kernel-only
+  expect(host.bootState).toBe("kernel-only");
+});
+```
+
+**Why it is NOT covered**: Current crash tests only verify *orphaned snapshot* cleanup or *journal rollback*—not the case where the journal is *logically complete* but the receipt is not persisted. S2’s recovery logic assumes `"committed"` implies receipt existence; the spec does not.
+
+**Fix scope (S2-local)**:  
+修改 `DurableHost.recovery()` to require `receipt-commit-*.json` **before** treating a journal as committed. If missing, revert to `"verified"` state and fall back to safe-mode selection.
+
+---
+
+### 2. **Lease Reclamation Without PID Liveness Check Under Containerization/Multi-User — High Severity**
+
+**Failure sequence**:  
+1. Agent `A` starts inside container `X` with PID 123, receives lease for generation `gen/5`.  
+2. Container `X` is killed (kernel reaps processes), but the PID 123 is *immediately reused* by agent `B` in container `Y`.  
+3. `B`’s host attempts to claim `gen/5`. It checks `/proc/123` — which *exists* — and then checks `cwd` via `fs.readlinkSync("/proc/123/cwd")`.  
+4. By happenstance, container `Y` mounts a similar filesystem layout as `X`, and the `cwd` of PID 123 *appears* identical.  
+5. Leases are incorrectly reused — `B` writes to `gen/5` without fencing, corrupting `A`’s commit.
+
+**Violated invariant**: *"Lease ownership must be based on cryptographically verifiable process identity, not just PID + cwd."*  
+
+**Discriminating test**:  
+`test:modular-host-failures.test.ts` uses `process.pid` in isolation, without mocking container PID reuse. No test simulates PID reuse *and* matching `cwd` *and* host restart.
+
+**Fix scope (S2-local)**:  
+Append `process.hrtime.bigint()` to the lease record (already partially present), and validate that `lease.createdAt + lease.pidSalt + cwdHash + hostnameHash` matches a precomputed HMAC (already done in `lease-store.js`), but *add enforcement* that reclaims only if the current HMAC cannot be recomputed with the same salt + secret.
+
+---
+
+### 3. **Pointer Race Between Recovery and Concurrent Read — Medium Severity**
+
+**Failure sequence**:  
+1. Host crashes mid-crash-recovery, just before `renameSync(tmpPointer, pointer)` — pointer file now contains a partial SHA-256 string (e.g., `"a1b2c3..."` truncated to `"a1b2"`).  
+2. Another process (`agond`) starts, calls `readPointer()`. It sees `"a1b2"` (incomplete).  
+3. `readPointer()` parses it via `strictParsePointer()`. The schema rejects unknown fields, but **does not** enforce SHA-256 length.  
+4. It proceeds to `getGeneration("a1b2")` and attempts to read `gen/a1b2/manifest.json`, which does not exist.  
+5. This triggers `ENOENT`, but `DurableHost.dispatch()` swallows ENOENT and returns `NotFoundError` — *without setting safe mode*, because it assumes the host is still running and the pointer is valid.
+
+**Violated invariant**: *"Any malformed or incomplete pointer MUST trigger safe-mode fallback."*  
+
+**Discriminating test**:  
+Current `test:modular-crash-recovery.test.ts` only tests full-pointer truncation (e.g., empty file), not *substring corruption*. `test:modular-observability.test.ts` validates *unknown fields*, not *incomplete cryptographic strings*.
+
+**Fix scope (S2-local)**:  
+Update `strictParsePointer()` in `discovery.ts` to enforce SHA-256 regex (`/^[0-9a-f]{64}$/`). The recovery path must also *not* attempt `getGeneration()` if the parse fails — it must immediately fall back to safe-mode.
+
+---
+
+### 4. **Rollback Fence Validation Ignores Receipt Hash Mismatch — High Severity**
+
+**Failure sequence**:  
+1. `gen/3/receipt-commit-abc.json` exists and matches manifest hash.  
+2. Host crashes while writing `gen/4/receipt-commit-def.json`, and only `gen/4/manifest.json` is updated (e.g., due to ENOSPC after manifest but before receipt).  
+3. On restart, rollback is triggered (journal = `"committed"` but receipt missing — see defect #1).  
+4. `rollbackGeneration()` validates fence UUID, journal state, *and* manifest content — but **does not verify** that the *old* generation’s receipt matches its manifest.  
+5. It rolls back to `gen/3`, computes a new manifest for `gen/4`, but reuses `gen/3/receipt-commit-abc.json` as the reference — which now points to the *wrong* generation.  
+6. New host boots with `pointer.json = gen/3` but manifest hash ≠ `receipt-commit-abc.json`.
+
+**Violated invariant**: *"Receipt immutability includes hash consistency across pointer and receipt, not just file-system immutability."*  
+
+**Discriminating test**:  
+`test:modular-rollback.test.ts` only tests rollback *before* manifest write — not rollback *after* receipt loss with stale receipt reuse.injectEIO("receipt-write") *after* manifest-write, but before receipt persists.
+
+**Fix scope (S2-local)**:  
+Modify `rollbackGeneration()` to validate:  
+```ts
+if (!receipt || receipt.manifestHash !== getManifestHash(genPath(target))) {
+  throw DurableHostError.ReceiptHashMismatch();
+}
+```
+The rollback path must *not* proceed with stale receipts.
+
+---
+
+### 5. **Redaction Bypass via Recursive Array Mutation — Medium Severity**
+
+**Failure sequence**:  
+1. Host receives a generation manifest with a deeply nested field:  
+   `{ secret: "foo", data: [ { secret: "bar" } ] }`  
+2. `redactHostValue()` performs a *shallow copy* and **modifies the original object in-place** (see `host-observability.ts:23`):  
+   ```ts
+   if (typeof val === "object" && val !== null && val !== undefined) {
+     for (const key in val) { /* mutates val[key] */ }
+   }
+   ```  
+3. Meanwhile, the generation manifest is still referenced by a promise that *has not yet awaited*.  
+4. The object is mutated **before** serialization, but the receipt is computed *afterwards*.  
+5. The secret `"bar"` leaks into `receipt.log` because the redaction mutate happens *after* `JSON.stringify()` is called.
+
+**Violated invariant**: *"Receipt redaction must be side-effect-free and structural; secrets must never appear in any output stream."*  
+
+**Discriminating test**:  
+Current `test:modular-observability.test.ts` uses *immutable objects* for redaction — never mutates input. No test passes a *live object* that is referenced elsewhere.
+
+**Fix scope (S2-local)**:  
+Rewrite `redactHostValue()` to use `structuredClone()` *before* mutation, or change the loop to write to a new object — no in-place mutation.
+
+---
+
+### Why "For" Misses These
+
+- **Defect #1** stems from *state incompleteness* (journal complete but receipt absent) — tests assume "committed" = receipt present.  
+- **Defect #2** assumes PID uniqueness — invalid under container reuse or process fork bombs.  
+- **Defect #3** confuses *unknown field rejection* with *field-length validation*.  
+- **Defect #4** assumes receipt hash is immutable — but S2 does *not* verify old-receipt consistency *during rollback*.  
+- **Defect #5** relies on *function purity* in a side-effect-prone JS runtime.
+
+All five are **fixable in S2**: no API changes, no new interfaces, only logic refinements or validation收紧.
+
+The current test suite is *deterministic and broad*, but it explores *happy-path variants* and *isolated fault injections*, not *cross-state corrupted sequences* (e.g., crash → partial commit → partial receipt → rollback with stale receipt). Those are harder to write — but the S2 scope explicitly includes *crash consistency* and *rollback correctness*, which require them.
+
+**Conclusion**: The Durable Host is *not yet safe* for production. The for-position’s audit is optimistic; it conflates *no known failure mode* with *no possible failure mode*. I ask: If all 12 writers *and* the pointer race *and* a malformed receipt *and* a PID reuse *all* occur in the same boot cycle — would `test:modular-host-failures.test.ts` catch it? No — because it injects *one* fault per run.
+
+S2 must enforce **all four guarantees** *simultaneously*, not just *in isolation*. Until then, this implementation is *not* safe.

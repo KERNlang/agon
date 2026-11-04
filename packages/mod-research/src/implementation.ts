@@ -5,7 +5,6 @@ import { parseAuthoritativeResults } from './response-policy.js';
 import { lookup } from "node:dns/promises";
 import type { LookupAddress } from "node:dns";
 import { BlockList, isIP } from "node:net";
-import { Agent, fetch as fetchPinned } from "undici";
 import { buildPrompt } from './prompt-policy.js';
 import type { Source } from './prompt-policy.js';
 export { buildPrompt } from './prompt-policy.js';
@@ -148,6 +147,7 @@ async function fetchBounded(url: string, signal: AbortSignal, max = 3500) {
   let current = validateUrl(url);
   if (!current) throw new Error("unsafe URL");
   const bounded = AbortSignal.any([signal, AbortSignal.timeout(15000)]);
+  const { Agent, fetch: fetchPinned } = await import("undici");
   for (let hop = 0; hop <= 5; hop++) {
     const pinned = await resolvePublicHost(current.hostname, lookup, bounded);
     const dispatcher = new Agent({

@@ -126,6 +126,7 @@
       "dist/store.d.ts",
       "dist/types.d.ts",
       "dist/grounding.d.ts",
+      "dist/embedding.d.ts",
       "ownership.json",
       "schemas/config.schema.json"
     ],

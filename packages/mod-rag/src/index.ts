@@ -10,5 +10,6 @@ export { createMod } from './implementation.js';
 export { createMod as default } from './implementation.js';
 export * from './store.js';
 export * from './grounding.js';
+export * from './embedding.js';
 export type * from './types.js';
 export { runRag, buildRagIndex, queryRag, collectCorpusFiles, chunkMarkdown } from './implementation.js';

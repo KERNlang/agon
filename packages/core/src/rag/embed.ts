@@ -1,65 +1,7 @@
-import { spawnSync } from 'node:child_process';
-
-import { resolveDedupSidecar, resolveSidecarPython } from '../blocks/dedup-resolver.js';
-
-/**
- * Generous: the FIRST run downloads the ~30MB MiniLM model into ~/.agon/cache/fastembed. Warm runs take seconds. Override with AGON_RAG_EMBED_TIMEOUT_MS.
- */
-export const RAG_EMBED_TIMEOUT_MS: number = 180000;
-
-/**
- * Embeddings JSON for a large docs corpus is a few MB; 64MB leaves slack.
- */
-export const RAG_EMBED_MAX_BUFFER: number = 64 * 1024 * 1024;
-
-export interface RagEmbedResult {
-  model: string;
-  dims: number;
-  vectors: number[][];
-}
-
-/**
- * Embed texts via the embedder.py sidecar. Returns null on ANY failure (no python, fastembed missing — sidecar exit 2 —, timeout, bad output); callers degrade gracefully and surface the install hint. Synchronous by design: used from CLI commands where the spawn IS the work.
- */
-export function embedTexts(texts: string[]): RagEmbedResult | null {
-  if (texts.length === 0) return null;
-  const sidecar = resolveDedupSidecar('embedder.py');
-  if (!sidecar) return null;
-  const python = resolveSidecarPython();
-  const timeout = Number(process.env.AGON_RAG_EMBED_TIMEOUT_MS) || RAG_EMBED_TIMEOUT_MS;
-  const input = texts.map((text, i) => JSON.stringify({ id: String(i), text })).join('\n') + '\n';
-  let result;
-  try {
-    result = spawnSync(python, [sidecar], {
-      input,
-      timeout,
-      encoding: 'utf-8',
-      maxBuffer: RAG_EMBED_MAX_BUFFER,
-    });
-  } catch {
-    return null;
-  }
-  if (result.error || result.status !== 0 || !result.stdout) return null;
-  try {
-    const parsed = JSON.parse(result.stdout) as {
-      model: string,
-      dims: number,
-      vectors: { id: string, vector: number[] }[],
-    };
-    if (!Array.isArray(parsed.vectors) || parsed.vectors.length !== texts.length) return null;
-    return {
-      model: parsed.model,
-      dims: parsed.dims,
-      vectors: parsed.vectors.map(v => v.vector),
-    };
-  } catch {
-    return null;
-  }
-}
-
-/**
- * One-line install hint surfaced when embedTexts returns null.
- */
-export function embedSidecarHint(): string {
-  return 'RAG embeddings need the python sidecar: pip install fastembed numpy (model downloads once into ~/.agon/cache/fastembed)';
-}
+export {
+  embedTexts,
+  embedSidecarHint,
+  RAG_EMBED_TIMEOUT_MS,
+  RAG_EMBED_MAX_BUFFER,
+} from '@kernlang/agon-mod-rag';
+export type { RagEmbedResult } from '@kernlang/agon-mod-rag';

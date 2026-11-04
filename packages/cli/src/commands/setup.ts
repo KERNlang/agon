@@ -145,7 +145,7 @@ function platform(): 'darwin-arm64' | 'darwin-x64' | 'linux-arm64' | 'linux-x64'
 }
 async function channel(): Promise<ReleaseChannel> {
   const parsed = JSON.parse(await readFile(new URL('../release-channel.json', import.meta.url), 'utf8')) as ReleaseChannel;
-  if (parsed.schemaVersion !== 1 || parsed.version !== VERSION || parsed.packages.length !== 49) throw new TypeError('bundled release channel is malformed');
+  if (parsed.schemaVersion !== 1 || parsed.version !== VERSION || parsed.packages.length !== 48) throw new TypeError('bundled release channel is malformed');
   return parsed;
 }
 async function locatorOverrides(release: ReleaseChannel): Promise<Readonly<Record<string, string>>> {

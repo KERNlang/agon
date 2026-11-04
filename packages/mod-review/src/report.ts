@@ -31,7 +31,7 @@ export interface ReviewReport {
   readonly warnings?: readonly string[];
   readonly runDir?: string;
   readonly panelHealth?: { readonly requested: number; readonly responded: number; readonly degraded: boolean };
-  readonly split?: { readonly batches: number; readonly files: number; readonly note: string; readonly details: readonly unknown[] };
+  readonly split?: { readonly batches: number; readonly files: number; readonly incomplete?: number; readonly note: string; readonly details: readonly unknown[] };
 }
 
 export function lineRegion(lines: string | undefined): { startLine: number; endLine: number } | undefined {
@@ -109,7 +109,8 @@ export function formatSummaryLine(report: ReviewReport): string {
   const ok = report.reviews.filter((seat) => seat.status === 'ok').length;
   const blocking = report.consensus ? `${report.consensus.blockers.length} blocking` : 'blocking unknown';
   const diff = report.diffSize ? `; diff ${report.diffSize.chars}/${report.diffSize.maxChars} chars` : '';
-  const split = report.split ? `; split into ${report.split.batches} batches, ${SPLIT_CAVEAT}` : '';
+  const incomplete = report.split?.incomplete ? `, ${report.split.incomplete} of ${report.split.batches} batches incomplete` : '';
+  const split = report.split ? `; split into ${report.split.batches} batches, ${SPLIT_CAVEAT}${incomplete}` : '';
   return `AGON_SUMMARY: ${ok}/${report.reviews.length} seats ok; ${blocking}${diff}${split}`;
 }
 

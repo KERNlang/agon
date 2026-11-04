@@ -1,5 +1,5 @@
 import type { CommandResult, InvocationContext, Json, ModServices } from '@kernlang/agon-mod-api';
-import { gitHeaderPath, redactSecretsDeep, redactSecretsPreservingLines, type ReviewTarget } from '@kernlang/agon-support-verification';
+import { gitHeaderPath, inferReviewRisk, redactSecretsDeep, redactSecretsPreservingLines, type ReviewRiskRequest, type ReviewTarget } from '@kernlang/agon-support-verification';
 import type { ConsensusReport } from './consensus.js';
 import { formatReport, formatSummaryLine, SPLIT_CAVEAT, type ReviewFormat, type ReviewReport } from './report.js';
 
@@ -60,6 +60,28 @@ function mergeConsensus(reports: readonly ConsensusReport[]): ConsensusReport | 
 
 export type ReviewBatchRunner = (target: ReviewTarget, input: Record<string, Json>) => Promise<CommandResult>;
 
+export const DEFAULT_MAX_BATCHES = 10;
+const RISK_REQUESTS: readonly string[] = ['auto', 'low', 'medium', 'high'];
+const chars = (value: number) => value.toLocaleString('en-US');
+
+function parseMaxBatches(raw: Json | undefined): number | string {
+  if (typeof raw !== 'string' || !raw.trim()) return DEFAULT_MAX_BATCHES;
+  const value = Number(raw.trim());
+  return Number.isSafeInteger(value) && value >= 1 ? value : '--max-batches must be a positive integer.';
+}
+
+function preflight(input: Record<string, Json>, batchCount: number, label: string): { error: string } | Record<string, never> {
+  if (input.mutate === true) {
+    return { error: `Refusing to review ${label} with --split --mutate: each batch would run its own mutation pass and the results would be lost from the merged report. Review with --split, then run agon mutate --diff <target> separately.` };
+  }
+  const maxBatches = parseMaxBatches(input['max-batches']);
+  if (typeof maxBatches === 'string') return { error: maxBatches };
+  if (batchCount > maxBatches) {
+    return { error: `Refusing to review ${label} with --split: it needs ${batchCount} batches, over the limit of ${maxBatches}, and each batch spends a full panel. Raise the limit with --max-batches ${batchCount} or review a smaller target.` };
+  }
+  return {};
+}
+
 export async function runSplitReview(
   target: ReviewTarget,
   limit: number,
@@ -74,6 +96,13 @@ export async function runSplitReview(
   if (oversized.length) return { exitCode: 1, stderr: `${oversizedFilesMessage(target.label, oversized, limit)}\n` };
 
   const batches = batchFiles(files, limit);
+  const refused = preflight(input, batches.length, target.label);
+  if ('error' in refused) return { exitCode: 1, stderr: `${refused.error}\n` };
+  const requestedRisk = (typeof input.risk === 'string' && input.risk.trim() ? input.risk.trim().toLowerCase() : 'auto');
+  if (!RISK_REQUESTS.includes(requestedRisk)) return { exitCode: 1, stderr: `Unknown review risk "${requestedRisk}". Use auto, low, medium, or high.\n` };
+  const wholeDiffRisk = inferReviewRisk(target.diff, requestedRisk as ReviewRiskRequest).final;
+  process.stderr.write(`agon review --split: ${batches.length} batches of at most ${chars(limit)} chars, each with the full routed panel\n`);
+
   const startedAtMs = Date.now();
   const deadlineSeconds = typeof input.deadline === 'string' && input.deadline.trim() ? Number(input.deadline) : undefined;
   const run = await services.runs?.start('review', typeof input.label === 'string' && input.label.trim() ? input.label.trim() : undefined, context);
@@ -81,45 +110,66 @@ export async function runSplitReview(
   const details: Array<Record<string, unknown>> = [];
   const warnings: string[] = [];
   let exitCode = 0;
+  let incomplete = 0;
+  let haltedBy: number | undefined;
+  const markIncomplete = (detail: Record<string, unknown>, status: 'failed' | 'skipped', reason: string, number: number) => {
+    detail.status = status;
+    detail.exitCode = 1;
+    detail.error = reason;
+    incomplete += 1;
+    warnings.push(`batch ${number}/${batches.length} was ${status === 'failed' ? 'not usably reviewed' : 'not reviewed'}: ${reason}`);
+  };
   for (const [index, batch] of batches.entries()) {
     const number = index + 1;
     const text = batch.map(file => file.text).join('');
     const remaining = deadlineSeconds === undefined ? undefined : Math.ceil(deadlineSeconds - (Date.now() - startedAtMs) / 1000);
     const detail: Record<string, unknown> = { batch: number, files: batch.map(file => file.path), chars: text.length };
     details.push(detail);
-    if (context.signal.aborted || (remaining !== undefined && remaining < 1)) {
-      detail.exitCode = 1;
-      detail.error = context.signal.aborted ? 'review was aborted before this batch' : 'review deadline passed before this batch';
-      warnings.push(`batch ${number}/${batches.length} was not reviewed: ${detail.error}`);
-      exitCode = Math.max(exitCode, 1);
+    if (haltedBy !== undefined) {
+      markIncomplete(detail, 'skipped', `batch ${haltedBy} produced no usable review, so remaining batches were not dispatched`, number);
       continue;
     }
-    const outcome = await runBatch(
-      { diff: text, label: `${target.label} (batch ${number}/${batches.length})`, maxDiffChars: limit },
-      { ...input, split: false, format: 'json', quiet: false, ...(remaining !== undefined ? { deadline: String(remaining) } : {}) },
-    );
-    exitCode = Math.max(exitCode, outcome.exitCode ?? 0);
-    detail.exitCode = outcome.exitCode ?? 0;
+    if (context.signal.aborted || (remaining !== undefined && remaining < 1)) {
+      markIncomplete(detail, 'skipped', context.signal.aborted ? 'review was aborted before this batch' : 'review deadline passed before this batch', number);
+      continue;
+    }
+    let outcome: CommandResult;
+    try {
+      outcome = await runBatch(
+        { diff: text, label: `${target.label} (batch ${number}/${batches.length})`, maxDiffChars: limit },
+        { ...input, split: false, format: 'json', quiet: false, risk: wholeDiffRisk, ...(remaining !== undefined ? { deadline: String(remaining) } : {}) },
+      );
+    } catch (error) {
+      markIncomplete(detail, 'failed', error instanceof Error ? error.message : String(error), number);
+      haltedBy = number;
+      continue;
+    }
+    detail.exitCode = outcome.exitCode;
     const report = outcome.result as BatchReport | undefined;
     if (report) {
       reports.push({ ...report, batch: number });
       if (report.runDir) detail.runDir = report.runDir;
-      if (report.mutation) detail.mutation = report.mutation;
       if (report.routing) detail.routing = report.routing;
       warnings.push(...(report.warnings ?? []).map(warning => `batch ${number}: ${warning}`));
     }
     if (outcome.exitCode === 1) {
-      const reason = outcome.stderr?.trim() || 'no reviewer produced evidence';
-      detail.error = reason;
-      warnings.push(`batch ${number}/${batches.length} did not produce a usable review: ${reason}`);
+      markIncomplete(detail, 'failed', outcome.stderr?.trim() || 'no reviewer produced evidence', number);
+      haltedBy = number;
+    } else {
+      detail.status = 'ok';
+      exitCode = Math.max(exitCode, outcome.exitCode);
     }
   }
+  if (incomplete) exitCode = 1;
 
-  const summaryLine = `split into ${batches.length} batches of at most ${limit.toLocaleString('en-US')} chars`;
+  const summaryLine = `split into ${batches.length} batches of at most ${chars(limit)} chars (${chars(target.diff.length)} chars total)`;
+  const incompleteNote = incomplete ? `${incomplete} of ${batches.length} batches incomplete` : undefined;
   const merged = {
     target: target.label,
-    diffSize: { chars: target.diff.length, maxChars: limit },
-    split: { batches: batches.length, files: files.length, note: `${summaryLine}; ${SPLIT_CAVEAT}`, details },
+    split: {
+      batches: batches.length, files: files.length, totalChars: target.diff.length, ...(incomplete ? { incomplete } : {}),
+      note: `${summaryLine}; ${SPLIT_CAVEAT}${incompleteNote ? `; ${incompleteNote}` : ''}`, details,
+    },
     engines: [...new Set(reports.flatMap(report => report.engines ?? []))],
     roles: Object.assign({}, ...reports.map(report => report.roles ?? {})) as Record<string, string>,
     reviews: reports.flatMap(report => (report.reviews ?? []).map(review => ({ ...review, batch: report.batch as number }))),
@@ -128,9 +178,9 @@ export async function runSplitReview(
     panelHealth: {
       requested: reports.reduce((sum, report) => sum + (report.panelHealth?.requested ?? 0), 0),
       responded: reports.reduce((sum, report) => sum + (report.panelHealth?.responded ?? 0), 0),
-      degraded: details.some(detail => detail.exitCode === 1) || reports.some(report => report.panelHealth?.degraded),
+      degraded: incomplete > 0 || reports.some(report => report.panelHealth?.degraded),
     },
-    warnings: [`${summaryLine}; ${SPLIT_CAVEAT}`, ...warnings],
+    warnings: [`${summaryLine}; ${SPLIT_CAVEAT}`, ...(incompleteNote ? [`${incompleteNote}; the verdict does not cover the whole diff`] : []), ...warnings],
     ...(run ? { runDir: run.path } : {}),
   };
   const report = redactSecretsDeep(merged);
@@ -141,7 +191,7 @@ export async function runSplitReview(
       mode: 'review', startedAt: run.startedAt, endedAt: new Date().toISOString(),
       engines: merged.reviews.map(review => ({ id: review.engineId, status: review.status, detail: review.error || null })),
       requested: merged.engines, timeoutSec: null,
-      summary: `${summaryLine}; ${merged.panelHealth.responded}/${merged.panelHealth.requested} seats produced machine-readable evidence`,
+      summary: `${summaryLine}; ${merged.panelHealth.responded}/${merged.panelHealth.requested} seats produced machine-readable evidence${incompleteNote ? `; ${incompleteNote}` : ''}`,
       ok: exitCode === 0,
     }, context);
   }

@@ -24,6 +24,18 @@ export interface PullRequestEffects {
   formatBody?(body: string): string;
 }
 
+const PR_TEXT_MAX_DIFF_LINES = 1200;
+
+/** PR prose is advisory, so it may draft from a prefix; the notice must reach the operator and the PR body. */
+export function capPrTextDiff(rawDiff: string): { diff: string; notice?: string } {
+  const lines = rawDiff.split('\n');
+  if (lines.length <= PR_TEXT_MAX_DIFF_LINES) return { diff: rawDiff };
+  return {
+    diff: `${lines.slice(0, PR_TEXT_MAX_DIFF_LINES).join('\n')}\n... (${lines.length - PR_TEXT_MAX_DIFF_LINES} more lines)`,
+    notice: `PR text was drafted from the first ${PR_TEXT_MAX_DIFF_LINES} of ${lines.length} diff lines.`,
+  };
+}
+
 /** Prepare a human merge handoff. Never publish a PR or retry a push. */
 export async function preparePullRequest(options: {
   title: string; body: string; context: string; intent: string; engineId: string;
@@ -37,14 +49,14 @@ export async function preparePullRequest(options: {
       const log = await effects.git(['log', '--oneline', `${options.remote}/${options.base}..HEAD`], 15_000);
       const diff = await effects.git(['diff', `${options.remote}/${options.base}...HEAD`], 30_000);
       const rawDiff = diff.exitCode === 0 && !diff.timedOut && !diff.aborted ? diff.stdout : '';
-      const lines = rawDiff.split('\n');
+      const { diff: cappedDiff, notice } = capPrTextDiff(rawDiff);
       const drafted = await effects.draft({
         engineId: options.engineId, intent: options.intent, context: options.context,
         commits: log.exitCode === 0 && !log.timedOut && !log.aborted ? log.stdout.trim() : '',
-        diff: lines.length > 1200 ? `${lines.slice(0, 1200).join('\n')}\n... (${lines.length - 1200} more lines)` : rawDiff,
+        diff: cappedDiff,
       });
       if (drafted.ok && drafted.title.trim() && drafted.body.trim()) {
-        title = drafted.title; body = drafted.body; usedTemplate = false;
+        title = drafted.title; body = notice ? `${drafted.body}\n\n> ${notice}` : drafted.body; usedTemplate = false;
       }
     } catch { /* Optional prose cannot invalidate a completed push. */ }
   }

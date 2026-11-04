@@ -56,10 +56,7 @@ export function buildTribunalPrompt(opts: {question:string;position:string;round
 }
 
 export function buildReviewPrompt(opts: {prompt:string;diff:string}): string {
-  const cappedDiff = opts.diff.length > 100_000
-    ? opts.diff.slice(0, 100_000) + '\n... [truncated]'
-    : opts.diff;
-  return `## REVIEW REQUEST\n${opts.prompt}\n\n## DIFF\n\`\`\`diff\n${cappedDiff}\n\`\`\``;
+  return `## REVIEW REQUEST\n${opts.prompt}\n\n## DIFF\n\`\`\`diff\n${opts.diff}\n\`\`\``;
 }
 
 export { buildForgePrompt, buildCritiquePrompt, buildSynthesisPrompt, buildForgePromptWithContext } from '@kernlang/agon-mod-forge';

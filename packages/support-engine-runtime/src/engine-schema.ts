@@ -9,7 +9,11 @@ import { z } from 'zod';
 
 export const EngineModeConfigSchema = z.object({
   args: z.array(z.string()),
-  stdin: z.boolean().optional(),
+  stdin: z.union([z.boolean(), z.object({
+    promptFlag: z.string().min(1).optional(),
+    args: z.array(z.string()).optional(),
+    envelope: z.literal('event-stream').optional(),
+  })]).optional(),
 });
 
 export const EngineModelConfigSchema = z.object({

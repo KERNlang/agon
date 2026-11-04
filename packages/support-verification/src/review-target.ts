@@ -15,7 +15,22 @@ export function reviewMaxDiffChars(config: unknown): number {
   return configured as number;
 }
 
-function gitHeaderPath(paths: string): string {
+const chars = (value: number) => value.toLocaleString('en-US');
+
+/** Why a gate must not decide on `text`, or null when `text` fits the limit. Callers treat a reason as not-passed. */
+export function overLimitReason(subject: string, text: string, limit: number): string | null {
+  if (text.length <= limit) return null;
+  return `${subject} is ${chars(text.length)} chars, over the reviewMaxDiffChars limit of ${chars(limit)}, so no reviewer judged it. Raise reviewMaxDiffChars in config or make the change smaller.`;
+}
+
+/** Only for advisory paths: the kept prefix plus a notice the caller must surface and record. */
+export function capAdvisoryDiff(diff: string, limit: number): { readonly diff: string; readonly notice?: string } {
+  if (diff.length <= limit) return { diff };
+  const notice = `Only the first ${chars(limit)} of ${chars(diff.length)} diff chars were used (reviewMaxDiffChars); the rest was not seen.`;
+  return { diff: `${diff.slice(0, limit)}\n... [truncated: ${notice}]`, notice };
+}
+
+export function gitHeaderPath(paths: string): string {
   return /^"?a\/(.+?)"? "?b\/\1"?$/.exec(paths)?.[1] ?? /.* "?b\/(.*?)"?$/.exec(paths)?.[1] ?? paths;
 }
 
@@ -32,10 +47,9 @@ function diffOverLimitMessage(label: string, diff: string, limit: number, overri
   const files = filesBeyond(diff, limit);
   const shown = files.slice(0, 10).join(', ');
   const more = files.length > 10 ? ` and ${files.length - 10} more` : '';
-  const chars = (value: number) => value.toLocaleString('en-US');
   return `Refusing to review ${label}: the diff is ${chars(diff.length)} chars, over the ${chars(limit)} limit, so reviewers would not fully see: ${shown || '(no file headers found)'}${more}. `
     + (overrideFlag ? `Raise the limit for this run with ${overrideFlag} ${diff.length}, set` : 'Set')
-    + ` reviewMaxDiffChars in config, or review a smaller target.`;
+    + ` reviewMaxDiffChars in config, review it in batches with agon review --split, or review a smaller target.`;
 }
 
 function assertSafeRef(value: string): void {

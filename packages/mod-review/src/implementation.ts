@@ -13,7 +13,7 @@ import type {
   Registrar,
 } from "@kernlang/agon-mod-api";
 import { join } from "node:path";
-import { redactSecretsDeep, redactSecretsPreservingLines, resolveReviewTarget, reviewMaxDiffChars } from "@kernlang/agon-support-verification";
+import { redactSecretsDeep, redactSecretsPreservingLines, resolveReviewTarget, reviewMaxDiffChars, type ReviewTarget } from "@kernlang/agon-support-verification";
 import { runMutationAssessment } from "@kernlang/agon-support-worktree";
 import { buildConsensus } from "./consensus.js";
 import { annotateExistingCode, existingCodeReader } from "./existing-code.js";
@@ -25,6 +25,7 @@ import {
 } from "./panel.js";
 import { assignSeatRoles, buildSeatPrompt, gatherReviewPromptContext } from "./prompt.js";
 import { runSeat } from "./seat.js";
+import { runSplitReview } from "./split.js";
 const schema = Object.freeze({
   type: "object",
   additionalProperties: true,
@@ -43,6 +44,8 @@ const schema = Object.freeze({
     format: { type: "string", default: "json" },
     maxParallel: { type: "string" },
     "max-diff-chars": { type: "string" },
+    split: { type: "boolean" },
+    "max-batches": { type: "string" },
     mutate: { type: "boolean" },
     "mutate-semantic": { type: "boolean" },
     "mutate-test": { type: "string" },
@@ -67,7 +70,9 @@ const cli = Object.freeze({
     label: "Human-readable suffix baked into the run dir name.",
     quiet: "Print only the run dir path and final summary on stdout (SARIF output is unaffected). Per-engine output is still written to <run-dir>/<engineId>-output.txt.",
     timeout: "Per-engine hard wall-clock timeout in seconds. When an engine exceeds it its dispatch is aborted and marked timeout; other engines are unaffected. Default: config.reviewTimeout or 420.",
-    "max-diff-chars": "Largest diff to review, in characters. Default: config.reviewMaxDiffChars or 100000. Over the limit, review refuses before spending anything and lists the files reviewers would miss; it never reviews part of a diff. Engines still have their own limits: prompts travel as a process argument and must fit each model's context, so a seat that cannot take the diff fails visibly.",
+    "max-diff-chars": "Largest diff to review, in characters. Default: config.reviewMaxDiffChars or 100000. Over the limit, review refuses before spending anything and lists the files reviewers would miss; it never reviews part of a diff. Engines still have their own limits: a CLI without stdin delivery takes its prompt as a process argument, and every prompt must fit the model's context, so a seat that cannot take the diff fails visibly.",
+    split: "When the diff is over the limit, review it in per-file batches at or under the limit with the normal panel, merge the findings into one report and exit 1 if any batch failed or was skipped (blockers stay in the report), else the worst batch result. Risk is resolved once from the whole diff for every batch. If a whole batch fails, the remaining batches are skipped. Cross-file issues between batches may be missed; the report says so. A single file over the limit still refuses, by name. Cannot be combined with --mutate: run agon mutate --diff <target> separately.",
+    "max-batches": "With --split: most batches to run (default 10). Each batch spends a full panel, so a plan over the limit refuses before any spend and names the batch count.",
     maxParallel: "Max engines to review concurrently. Default: all at once. Lower it (e.g. 2) if parallel API engines hit rate limits or first-chunk stalls.",
     mutate: "ADVISORY mutation pass after the consensus: mutate the reviewed diff in a disposable worktree, re-run the discovered test command per mutant, and list every SURVIVOR (wrong code the tests called green). Mechanical-only (zero engine spend) unless --mutate-semantic; artifacts land in <run-dir>/mutation/; never changes the review verdict or exit code.",
     "mutate-semantic": "With --mutate: also let the reviewing engines propose AI-semantic mutants — real engine spend, and your changed source is sent to each of them. Off by default, exactly like agon mutate.",
@@ -98,27 +103,36 @@ export async function runReview(
   raw: Json,
   context: Parameters<ModServices["engines"]["dispatch"]>[2],
   services: ModServices,
-  evidence: { readonly mutationEvidence?: string } = {},
+  evidence: { readonly mutationEvidence?: string; readonly batch?: ReviewTarget } = {},
 ): Promise<CommandResult> {
   const input = raw as Record<string, Json>;
   const format = parseReviewFormat(input.format);
   if (!format) return { exitCode: 1, stderr: 'Unknown review format. Use json, text, or sarif.\n' };
   const maxDiffChars = seconds(input["max-diff-chars"]);
   if (maxDiffChars === null) return { exitCode: 1, stderr: 'Review max-diff-chars must be a positive integer.\n' };
-  let target;
-  try {
-    target = resolveReviewTarget(
-      text(input.target) || "uncommitted",
-      context.cwd,
-      text(input.base) || undefined,
-      maxDiffChars ?? reviewMaxDiffChars(context.config),
-      "--max-diff-chars",
-    );
-  } catch (error) {
-    return {
-      exitCode: 1,
-      stderr: `${error instanceof Error ? error.message : String(error)}\n`,
-    };
+  let target = evidence.batch;
+  if (!target) {
+    try {
+      const limit = maxDiffChars ?? reviewMaxDiffChars(context.config);
+      const split = input.split === true;
+      const resolved = resolveReviewTarget(
+        text(input.target) || "uncommitted",
+        context.cwd,
+        text(input.base) || undefined,
+        split ? Number.POSITIVE_INFINITY : limit,
+        "--max-diff-chars",
+      );
+      if (split && resolved.diff.length > limit) {
+        return await runSplitReview(resolved, limit, input, format, context, services,
+          (batch, batchInput) => runReview(batchInput, context, services, { ...evidence, batch }));
+      }
+      target = { ...resolved, maxDiffChars: limit };
+    } catch (error) {
+      return {
+        exitCode: 1,
+        stderr: `${error instanceof Error ? error.message : String(error)}\n`,
+      };
+    }
   }
   const explicit = isExplicitPanel(input);
   let engines: string[] = [];

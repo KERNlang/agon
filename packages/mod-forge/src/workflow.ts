@@ -3,6 +3,7 @@ import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import type { DispatchResult, EngineAdapter, EngineDefinition, EngineIdentities, TaskClass } from '@kernlang/agon-support-engine-runtime';
 import { engineHealth, recordForgeOutcome, extractPatchFilePatterns, tapDispatchIdentities } from '@kernlang/agon-support-engine-runtime';
 import { determineWinner } from '@kernlang/agon-support-judge';
+import { reviewMaxDiffChars } from "@kernlang/agon-support-verification";
 import { healthCheckEngines, HEALTH_CHECK_DEFAULT_PROMPT } from '@kernlang/agon-support-panel';
 import type { PanelEngineRegistry } from '@kernlang/agon-support-panel';
 import { createSidechainLogger, currentInvocationOwnerAvailable } from '@kernlang/agon-kernel';
@@ -887,6 +888,7 @@ export function createForgeWorkflow<Registry extends ForgeWorkflowRegistry>(runt
                 timeout: synthesisTimeout,
                 fitnessTimeout: config.forgeFitnessTimeout,
                 maxCritiques: config.forgeMaxCritiques,
+                maxDiffChars: reviewMaxDiffChars(config),
                 repoRoot: root,
                 headSha: sha,
                 synthEngine: synthPlan.synthEngine,

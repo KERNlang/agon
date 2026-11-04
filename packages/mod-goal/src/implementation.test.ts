@@ -3266,6 +3266,44 @@ describe('physical goal mod', () => {
     expect((out.result as any).state.spentUsd).toBeCloseTo(0.1 + seats * 0.2 + (scenario.judge ? 0.3 : 0));
   });
 
+  const needsCheckFinding = (problem: string) => `<!--AGON_REVIEW_FINDINGS_v1-->\n\`\`\`json\n${JSON.stringify([{ file: 'first.txt', lines: '1', severity: 'blocking', blocking: true, confidence: 0.8, problem, minimalFix: 'none' }])}\n\`\`\``;
+
+  it('the adjudicator clears a review after seeing only the first 100K of a diff the configured limit allows', async () => {
+    const cwd = repo(); const h = harness({}, () => 0.1);
+    h.dispatch.mockImplementation(async (_id: string, prompt: string, invocation: any, options: any) => {
+      if (options.mode === 'agent') {
+        writeFileSync(join(invocation.cwd, 'first.txt'), `${'p'.repeat(150_000)}\nTAIL_OF_DIFF\n`);
+        return { exitCode: 0, stdout: 'done', stderr: '', timedOut: false, costUsd: 0.1 };
+      }
+      if (prompt.startsWith('Adjudicate')) return { exitCode: 0, stdout: '{"blocking":false,"reason":"seen all"}', stderr: '', timedOut: false, costUsd: 0.1 };
+      return { exitCode: 0, stdout: needsCheckFinding('claimed issue'), stderr: '', timedOut: false, costUsd: 0.1 };
+    });
+    await runGoal({ intent: 'large adjudication', gate: 'true', requireTests: false, engine: 'builder', reviewEngines: 'reviewer', judge: 'reviewer', maxAttempts: 1 },
+      { ...context(cwd), config: { reviewMaxDiffChars: 300_000 } }, h.services);
+    const adjudications = h.dispatch.mock.calls.map(call => call[1]).filter(prompt => prompt.startsWith('Adjudicate'));
+    expect(adjudications).toHaveLength(1);
+    expect(adjudications[0]).toContain('TAIL_OF_DIFF');
+  });
+
+  it('the adjudicator can clear a blocker from evidence cut mid-JSON instead of failing safe with the reason', async () => {
+    const cwd = repo(); const h = harness({}, () => 0.1);
+    h.dispatch.mockImplementation(async (_id: string, prompt: string, invocation: any, options: any) => {
+      if (options.mode === 'agent') {
+        writeFileSync(join(invocation.cwd, 'first.txt'), 'yes\n');
+        return { exitCode: 0, stdout: 'done', stderr: '', timedOut: false, costUsd: 0.1 };
+      }
+      if (prompt.startsWith('Adjudicate')) return { exitCode: 0, stdout: '{"blocking":false,"reason":"saw part"}', stderr: '', timedOut: false, costUsd: 0.1 };
+      return { exitCode: 0, stdout: needsCheckFinding('e'.repeat(60_000)), stderr: '', timedOut: false, costUsd: 0.1 };
+    });
+    const out = await runGoal({ intent: 'partial evidence', gate: 'true', requireTests: false, engine: 'builder', reviewEngines: 'reviewer', judge: 'reviewer', maxAttempts: 1 },
+      { ...context(cwd), config: { reviewMaxDiffChars: 40_000 } }, h.services);
+    expect(h.dispatch.mock.calls.some(call => call[1].startsWith('Adjudicate'))).toBe(false);
+    expect(out.exitCode).toBe(1);
+    const events = (out.result as any).state.events;
+    expect(events.find((entry: any) => entry.type === 'review-adjudication-failed').detail).toContain('reviewMaxDiffChars');
+    expect(events.find((entry: any) => entry.type === 'review-block').detail).toContain('reviewMaxDiffChars');
+  });
+
   it.each([
     { valid: true, exitCode: 0, timedOut: false },
     { valid: false, exitCode: 0, timedOut: false },

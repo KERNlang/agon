@@ -291,7 +291,7 @@ export function applyNonAgenticFraming(engine: EngineDefinition, mode: EngineMod
   return prompt;
 }
 
-export function buildCommand(engine: EngineDefinition, mode: EngineMode, prompt: string, cwd: string, timeout: number, binaryPath: string, images?: ImageAttachment[]): {command:string, args:string[]} {
+export function buildCommand(engine: EngineDefinition, mode: EngineMode, prompt: string, cwd: string, timeout: number, binaryPath: string, images?: ImageAttachment[]): {command:string, args:string[], promptArg:string} {
   const modeConfig = resolveModeConfig(engine, mode);
 
   if (!modeConfig) {
@@ -378,7 +378,7 @@ export function buildCommand(engine: EngineDefinition, mode: EngineMode, prompt:
     args.splice(insertAt, 0, ...imageArgs);
   }
 
-  return { command: binaryPath, args };
+  return { command: binaryPath, args, promptArg: effectivePrompt };
 }
 
 export function supportsAgentMode(engine: EngineDefinition): boolean {

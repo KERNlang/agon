@@ -42,6 +42,7 @@ export interface RunJudgeVerdict {
   engineId: string;
   blocking: boolean;
   unstructured: boolean;
+  notJudged?: string;
 }
 
 /**

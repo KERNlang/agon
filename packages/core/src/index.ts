@@ -55,7 +55,8 @@ export {
 export type { ApplyLockInfo, ApplyLockResult } from './blocks/worktree-lock.js';
 export { withFileLock } from '@kernlang/agon-support-persistence';
 export type { FileLockInfo } from '@kernlang/agon-support-persistence';
-export { spawnWithTimeout, spawnStream } from './blocks/process.js';
+export { spawnWithTimeout, spawnStream, planPromptDelivery, decodeEventStreamOutput } from './blocks/process.js';
+export { capAdvisoryDiff, reviewMaxDiffChars } from '@kernlang/agon-support-verification';
 export type { SpawnOptions } from './blocks/process.js';
 export {
   buildForgePrompt, buildCritiquePrompt, buildSynthesisPrompt,

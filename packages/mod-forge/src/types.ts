@@ -96,6 +96,7 @@ export interface DispatchMetric {
 }
 
 export interface ForgeManifest {
+  critiqueDiffNotice?: string;
   forgeId: string;
   forgeDir: string;
   task: string;

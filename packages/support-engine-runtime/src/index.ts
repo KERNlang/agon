@@ -16,6 +16,7 @@ export * from './engine-memory.js';
 export * from './auth-store.js';
 export * from './isolation.js';
 export * from './process.js';
+export * from './prompt-delivery.js';
 export * from './semaphore.js';
 export * from './model-probe-assets.js';
 export { DEFAULT_ENGINE_SETTINGS, normalizeEngineSettings } from './engine-settings.js';

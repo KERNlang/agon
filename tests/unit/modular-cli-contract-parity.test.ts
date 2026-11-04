@@ -209,6 +209,10 @@ describe('physical CLI contract parity', () => {
       expected.args.format = { type: 'string', required: false, aliases: [], default: 'json' };
       expect(expected.args).not.toHaveProperty('max-diff-chars');
       expected.args['max-diff-chars'] = { type: 'string', required: false, aliases: [] };
+      expect(expected.args).not.toHaveProperty('split');
+      expected.args.split = { type: 'boolean', required: false, aliases: [] };
+      expect(expected.args).not.toHaveProperty('max-batches');
+      expected.args['max-batches'] = { type: 'string', required: false, aliases: [] };
     }
     if (name === 'leaderboard' || name === 'ratings') {
       expect(expected.args).not.toHaveProperty('json');

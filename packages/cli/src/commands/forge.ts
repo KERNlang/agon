@@ -9,6 +9,7 @@ import type { EngineResult } from '@kernlang/agon-core';
 import { resolveBuiltinEnginesDir } from '../lib/engines-dir.js';
 
 import { createCliAdapter } from '@kernlang/agon-adapter-cli';
+import { overLimitReason, reviewMaxDiffChars } from '@kernlang/agon-support-verification';
 
 import { runForge } from '@kernlang/agon-forge';
 
@@ -337,7 +338,7 @@ export const forgeCommand: any = defineCommand({
     // unstructured-success fallback). Run to completion here (before the
     // quiet early-return) so orchestrated runs capture the verdict in
     // run-status.json; the human-readable block prints after the table.
-    let judgeResult: { engineId: string; blocking: boolean; unstructured: boolean; reviewOutput: string } | null = null;
+    let judgeResult: { engineId: string; blocking: boolean; unstructured: boolean; reviewOutput: string; notJudged?: string } | null = null;
     if (judgeEngine && manifest.winner) {
       const patchPath = (manifest.patches as Record<string, string>)[manifest.winner];
       let winnerDiff = '';
@@ -346,8 +347,10 @@ export const forgeCommand: any = defineCommand({
       } catch (err) {
         warn(`Judge: could not read winner patch (${err instanceof Error ? err.message : String(err)})`);
       }
-      if (winnerDiff.trim()) {
-        if (winnerDiff.length > 100_000) winnerDiff = winnerDiff.slice(0, 100_000) + '\n... [truncated — diff exceeds 100K chars]';
+      const notJudged = overLimitReason(`The winner patch of ${manifest.winner}`, winnerDiff, reviewMaxDiffChars(config));
+      if (notJudged) {
+        judgeResult = { engineId: judgeEngine, blocking: true, unstructured: false, reviewOutput: '', notJudged };
+      } else if (winnerDiff.trim()) {
         if (!quiet) info(`Judging winner (${manifest.winner}) with ${judgeEngine}…`);
         try {
           const r = await runReviewCore(winnerDiff, `forge winner ${manifest.winner}`, judgeEngine, { config, adapter, registry } as any);
@@ -405,7 +408,7 @@ export const forgeCommand: any = defineCommand({
       // ran. A win achieved by silently dropping engines is not "ok".
       ok: !!manifest.winner && engineStatuses.every((e) => e.status !== 'skipped'),
       judge: judgeResult
-        ? { engineId: judgeResult.engineId, blocking: judgeResult.blocking, unstructured: judgeResult.unstructured }
+        ? { engineId: judgeResult.engineId, blocking: judgeResult.blocking, unstructured: judgeResult.unstructured, ...(judgeResult.notJudged ? { notJudged: judgeResult.notJudged } : {}) }
         : undefined,
     };
     writeRunStatus(forgeDir, status);
@@ -478,7 +481,9 @@ export const forgeCommand: any = defineCommand({
       header(`Judge review — ${judgeResult.engineId}`);
       if (judgeResult.reviewOutput.trim()) console.log(judgeResult.reviewOutput.trim());
       console.log('');
-      if (judgeResult.blocking) {
+      if (judgeResult.notJudged) {
+        fail(`${icons().warning} Judge ${judgeResult.engineId} did not run, so treat the winner as NOT passed: ${judgeResult.notJudged}`);
+      } else if (judgeResult.blocking) {
         fail(`${icons().warning} Judge ${judgeResult.engineId} found BLOCKING issues — the winner has known holes the fitness spec didn't catch. Review above before shipping.`);
       } else if (judgeResult.unstructured) {
         warn(`Judge ${judgeResult.engineId} reviewed the winner but didn't emit a machine verdict — read the review above.`);

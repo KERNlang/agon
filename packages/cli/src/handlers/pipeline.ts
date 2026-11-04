@@ -2,6 +2,7 @@ import { join } from 'node:path';
 
 import { mkdirSync } from 'node:fs';
 
+import { overLimitReason, reviewMaxDiffChars } from '@kernlang/agon-support-verification';
 import { ensureAgonHome, RUNS_DIR, appendMessage, tracker, scanProjectContext, readOnlyDiff, diffLineCount, diffFileCount, buildCritiquePrompt, spawnWithTimeout, resolveWorkingDir, formatChatContextForPrompt, getCoreWorkflowRegistry, compileWorkflowSpec, verifyWorkflowExecutionPlanFlow, verifyWorkflowRunFlow, throwWorkflowConformance, createWorkflowRun, appendWorkflowPhaseEvent } from '@kernlang/agon-core';
 
 import type { WorkflowConformanceIssue, WorkflowPhaseEventType, WorkflowRun } from '@kernlang/agon-core';
@@ -301,6 +302,14 @@ export async function handlePipeline(input: string, dispatch: Dispatch, ctx: Han
       }
     
       if (!emitWorkflowPhase('review', 'started', iteration)) break;
+      const reviewRefusal = overLimitReason(`The iteration ${iteration} diff`, diff, reviewMaxDiffChars(ctx.config));
+      if (reviewRefusal) {
+        dispatch({ type: 'warning', message: reviewRefusal });
+        if (!emitWorkflowPhase('review', 'failed', iteration, 'diff-over-review-limit')) break;
+        terminalStatus = 'failed';
+        terminalReason = 'diff-over-review-limit';
+        break;
+      }
       dispatch({ type: 'spinner-start', message: `[${iteration}] ${activeReviewEngines.join(', ')} reviewing in parallel…`, color: 214 });
     
       const critiquePrompt = buildCritiquePrompt({

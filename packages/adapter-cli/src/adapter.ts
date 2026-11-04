@@ -4,9 +4,11 @@ import { join, dirname } from 'node:path';
 
 import type { ApiAgentResult, ApiConfig, EngineAdapter, EngineDefinition, DispatchOptions, DispatchResult, AgentDispatchResult } from '@kernlang/agon-core';
 
-import { EngineRegistry, spawnWithTimeout, spawnStream, EngineNotFoundError, readOnlyDiff, apiDispatch, apiDispatchTools, apiDispatchToolsHistory, attachVisionToMessages, apiStreamDispatch, companionDispatch, runHooks, hooksFailed, runApiAgentLoop, safeAgentVisibleText, sessionContext, resolveWorkingDir, engineSupportsVision } from '@kernlang/agon-core';
+import { EngineRegistry, spawnWithTimeout, spawnStream, decodeEventStreamOutput, EngineNotFoundError, readOnlyDiff, apiDispatch, apiDispatchTools, apiDispatchToolsHistory, attachVisionToMessages, apiStreamDispatch, companionDispatch, runHooks, hooksFailed, runApiAgentLoop, safeAgentVisibleText, sessionContext, resolveWorkingDir, engineSupportsVision } from '@kernlang/agon-core';
 
-import { buildCommand, checkEnvVars, resolveModel, stripStreamJson, usesStreamJson, recordDispatchHealth, shouldUseCompanionForAgent, shouldUseClaudePty, planClaudePtyDispatch, runClaudePtyDispatch, runClaudePtyStreamDispatch, resolveClaudePtyExtraArgs, computeEngineIsolation, hasEnvVar, nowMs, captureNewAgentDiff } from './adapter-helpers.js';
+import { checkEnvVars, resolveModel, stripStreamJson, usesStreamJson, recordDispatchHealth, shouldUseCompanionForAgent, shouldUseClaudePty, planClaudePtyDispatch, runClaudePtyDispatch, runClaudePtyStreamDispatch, resolveClaudePtyExtraArgs, computeEngineIsolation, hasEnvVar, nowMs, captureNewAgentDiff } from './adapter-helpers.js';
+
+import { planCliInvocation, promptRefusedResult } from './cli-invocation.js';
 
 import { AgentStreamQueue, buildApiAgentContext, cancelledApiAgentResult, createLinkedAbortController, encodeAgentStreamText, normalizeApiAgentOutcome, normalizeDispatchOptions, planEngineExecution } from './execution-plan.js';
 
@@ -129,27 +131,13 @@ export class CliAdapter implements EngineAdapter {
         return companionResult;
       }
     }
-    // Resolve system prompt for CLI: native flag if available, else prepend to prompt
-    let effectivePrompt = options.prompt;
-    const sysFlag = options.engine.systemPromptFlag;
-    if (options.systemPrompt && !sysFlag) {
-      // Engine has no native system prompt flag — prepend (same as PersistentSession first-turn)
-      effectivePrompt = `[System Instructions]\n${options.systemPrompt}\n\n[User Message]\n${options.prompt}`;
-    }
-    const { command, args } = buildCommand(options.engine, options.mode, effectivePrompt, options.cwd, options.timeout, binaryPath, options.images);
-    // Inject native system prompt flag if engine supports it (e.g. Claude --system-prompt)
-    if (options.systemPrompt && sysFlag) {
-      const promptIdx = args.indexOf(effectivePrompt);
-      const insertAt = (promptIdx >= 0) ? promptIdx : 0;
-      args.splice(insertAt, 0, sysFlag, options.systemPrompt);
-    }
-    // workspace-pure: prepend isolation flags (e.g. claude --strict-mcp-config) so they bind before the positional prompt.
-    if (iso.argsExtra.length > 0) {
-      args.unshift(...iso.argsExtra);
-    }
-    const result = await spawnWithTimeout({ command: command, args: args, cwd: options.cwd, timeout: options.timeout * 1000, signal: options.signal, onSpawn: options.onSpawn, env: iso.env });
+    const invocation = planCliInvocation(options, binaryPath, iso);
+    if (invocation.error) return promptRefusedResult(invocation.error);
+    const result = await spawnWithTimeout({ command: invocation.command, args: invocation.args, stdinInput: invocation.stdinInput, cwd: options.cwd, timeout: options.timeout * 1000, signal: options.signal, onSpawn: options.onSpawn, env: iso.env });
     // Strip NDJSON system/hook messages from stream-json engines (Claude)
-    if (usesStreamJson(options.engine) && result.stdout.includes('{"type":')) {
+    if (invocation.eventStreamOutput) {
+      result.stdout = decodeEventStreamOutput(result.stdout);
+    } else if (usesStreamJson(options.engine) && result.stdout.includes('{"type":')) {
       result.stdout = stripStreamJson(result.stdout);
     }
     const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
@@ -224,30 +212,11 @@ export class CliAdapter implements EngineAdapter {
     }
     const binaryPath = execution.binaryPath as string;
 
-    // Resolve system prompt for CLI: native flag if available, else prepend
-    let effectivePrompt = options.prompt;
-    const sysFlag = options.engine.systemPromptFlag;
-    if (options.systemPrompt && !sysFlag) {
-      effectivePrompt = `[System Instructions]\n${options.systemPrompt}\n\n[User Message]\n${options.prompt}`;
-    }
-
-    const { command, args } = buildCommand(
-      options.engine, options.mode, effectivePrompt,
-      options.cwd, options.timeout, binaryPath, options.images,
-    );
-
-    // Inject native system prompt flag if supported
-    if (options.systemPrompt && sysFlag) {
-      const promptIdx = args.indexOf(effectivePrompt);
-      const insertAt = promptIdx >= 0 ? promptIdx : 0;
-      args.splice(insertAt, 0, sysFlag, options.systemPrompt);
-    }
-
-    // workspace-pure: prepend isolation flags (e.g. claude --strict-mcp-config).
-    if (iso.argsExtra.length > 0) args.unshift(...iso.argsExtra);
+    const invocation = planCliInvocation(options, binaryPath, iso);
+    if (invocation.error) return promptRefusedResult(invocation.error);
 
     const gen = spawnStream({
-      command, args,
+      command: invocation.command, args: invocation.args, stdinInput: invocation.stdinInput,
       cwd: options.cwd,
       timeout: options.timeout * 1000,
       signal: options.signal,
@@ -262,7 +231,11 @@ export class CliAdapter implements EngineAdapter {
         result = value;
         break;
       }
-      yield value;
+      if (!invocation.eventStreamOutput) yield value;
+    }
+    if (invocation.eventStreamOutput) {
+      result.stdout = decodeEventStreamOutput(result.stdout);
+      if (result.stdout) yield result.stdout;
     }
 
     const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
@@ -336,27 +309,15 @@ export class CliAdapter implements EngineAdapter {
         return { ...companionResult, ...change };
       }
     }
-    // Resolve system prompt for direct CLI agent dispatch. Forge relies on
-    // this path for Claude/Gemini because their one-shot companion wrappers
-    // are not equivalent to their persistent Cesar sessions.
-    let effectivePrompt = options.prompt;
-    const sysFlag = options.engine.systemPromptFlag;
-    if (options.systemPrompt && !sysFlag) {
-      effectivePrompt = `[System Instructions]\n${options.systemPrompt}\n\n[User Message]\n${options.prompt}`;
-    }
-    const { command, args } = buildCommand(options.engine, options.mode, effectivePrompt, options.cwd, options.timeout, binaryPath, options.images);
-    if (options.systemPrompt && sysFlag) {
-      const promptIdx = args.indexOf(effectivePrompt);
-      const insertAt = (promptIdx >= 0) ? promptIdx : 0;
-      args.splice(insertAt, 0, sysFlag, options.systemPrompt);
-    }
-    // workspace-pure: prepend isolation flags (e.g. claude --strict-mcp-config).
-    if (iso.argsExtra.length > 0) {
-      args.unshift(...iso.argsExtra);
-    }
-    const result = await spawnWithTimeout({ command: command, args: args, cwd: options.cwd, timeout: options.timeout * 1000, signal: options.signal, onSpawn: options.onSpawn, env: iso.env });
+    // Forge relies on this direct CLI path for Claude/Gemini because their one-shot
+    // companion wrappers are not equivalent to their persistent Cesar sessions.
+    const invocation = planCliInvocation(options, binaryPath, iso);
+    if (invocation.error) return { ...promptRefusedResult(invocation.error), ...captureNewAgentDiff(baselineDiff, options.cwd) };
+    const result = await spawnWithTimeout({ command: invocation.command, args: invocation.args, stdinInput: invocation.stdinInput, cwd: options.cwd, timeout: options.timeout * 1000, signal: options.signal, onSpawn: options.onSpawn, env: iso.env });
     // Strip NDJSON system/hook messages from stream-json engines (Claude)
-    if (usesStreamJson(options.engine) && result.stdout.includes('{"type":')) {
+    if (invocation.eventStreamOutput) {
+      result.stdout = decodeEventStreamOutput(result.stdout);
+    } else if (usesStreamJson(options.engine) && result.stdout.includes('{"type":')) {
       result.stdout = stripStreamJson(result.stdout);
     }
     const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
@@ -492,34 +453,14 @@ export class CliAdapter implements EngineAdapter {
       throw new EngineNotFoundError(options.engine.id, envError);
     }
 
-    // Resolve system prompt for direct CLI agent dispatch: native flag if the
-    // engine has one, else prepend. Identical to dispatchAgent — a caller's
-    // systemPrompt must not silently vanish just because it streamed.
-    let effectivePrompt = options.prompt;
-    const sysFlag = options.engine.systemPromptFlag;
-    if (options.systemPrompt && !sysFlag) {
-      effectivePrompt = `[System Instructions]\n${options.systemPrompt}\n\n[User Message]\n${options.prompt}`;
-    }
-
-    const { command, args } = buildCommand(
-      options.engine, options.mode, effectivePrompt,
-      options.cwd, options.timeout, binaryPath, options.images,
-    );
-
-    if (options.systemPrompt && sysFlag) {
-      const promptIdx = args.indexOf(effectivePrompt);
-      const insertAt = (promptIdx >= 0) ? promptIdx : 0;
-      args.splice(insertAt, 0, sysFlag, options.systemPrompt);
-    }
+    const invocation = planCliInvocation(options, binaryPath, iso);
 
     // Capture baseline before agent runs
     const baselineDiff = readOnlyDiff(options.cwd);
-
-    // workspace-pure: prepend isolation flags (e.g. claude --strict-mcp-config).
-    if (iso.argsExtra.length > 0) args.unshift(...iso.argsExtra);
+    if (invocation.error) return { ...promptRefusedResult(invocation.error), ...captureNewAgentDiff(baselineDiff, options.cwd) };
 
     const gen = spawnStream({
-      command, args,
+      command: invocation.command, args: invocation.args, stdinInput: invocation.stdinInput,
       cwd: options.cwd,
       timeout: options.timeout * 1000,
       signal: options.signal,
@@ -534,7 +475,11 @@ export class CliAdapter implements EngineAdapter {
         result = value;
         break;
       }
-      yield value;
+      if (!invocation.eventStreamOutput) yield value;
+    }
+    if (invocation.eventStreamOutput) {
+      result.stdout = decodeEventStreamOutput(result.stdout);
+      if (result.stdout) yield result.stdout;
     }
 
     const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);

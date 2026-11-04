@@ -72,10 +72,10 @@
         "@kernlang/agon-support-engine-runtime"
       ],
       "sourceLocator": "@kernlang/agon-support-verification@1.0.0",
-      "integrity": "sha512-YMt0VK4B3DB5VQ56Ncb9WD8NsOI+7LUUBy05/0OkVcO5tgn72DKn2RgL9uVvyFLoAQ/3Pl68LjNq9DXRkoorow==",
-      "contentHash": "sha256:32a5bdb0df0d483b6c27eb994d4fd8b0870b843700860f1b4a736f67928f07e9",
+      "integrity": "sha512-pRf8mHOGPfkiBetR7dGPLCd4lIxgQJ+MI2uTqJ+YiYusjkztaRlaNPL+CLTl/HCBMVl7v8qXEMo75W6bWRpnvQ==",
+      "contentHash": "sha256:b50699edd051ff1d1ffb04d8d911fbdce3c87c8577a6dc3e14f3bbb56341edd1",
       "manifestHash": "sha256:328be978f63e2a273282905e0f01ea9c9597f4610ec3e9b6338d16f3e7b6fb7e",
-      "payloadHash": "sha256:d5f54f7995f19e7d17125dce1f2260cda0f023c3d5006e8da300cf6132def4cb"
+      "payloadHash": "sha256:583ce092a220ac7e1b35fe4558dc07d30c4a5506491a91b22bd6aad1e15dc685"
     },
     {
       "id": "@kernlang/agon-support-worktree",
@@ -2013,7 +2013,7 @@
         "peerDependencies": {
           "@kernlang/agon-kernel": ">=0.0.0-0 <2"
         },
-        "integrity": "sha512-YMt0VK4B3DB5VQ56Ncb9WD8NsOI+7LUUBy05/0OkVcO5tgn72DKn2RgL9uVvyFLoAQ/3Pl68LjNq9DXRkoorow==",
+        "integrity": "sha512-pRf8mHOGPfkiBetR7dGPLCd4lIxgQJ+MI2uTqJ+YiYusjkztaRlaNPL+CLTl/HCBMVl7v8qXEMo75W6bWRpnvQ==",
         "resolved": "https://registry.npmjs.org/@kernlang/agon-support-verification/-/agon-support-verification-1.0.0.tgz"
       },
       "node_modules/@kernlang/agon-support-worktree": {

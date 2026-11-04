@@ -28,22 +28,22 @@ describe('physical Ask failure diagnostics', () => {
     const result = await runPhysicalAsk({ engineId: 'fixture', exitCode: 2, stdout: '',
       stderr: `  ${detail}  `, timedOut });
     expect(result).toEqual({ exitCode: 1, stderr: `${timedOut
-      ? 'fixture timed out after 7s' : 'fixture exited 2 with no answer'}\n${'x'.repeat(500)}\n` });
+      ? 'fixture timed out after 7s' : 'fixture exited 2 with no answer'}\n${'x'.repeat(500)}\nAGON_SUMMARY: 0/1 succeeded; fixture: ${timedOut ? 'timeout' : 'error'}\n` });
   });
 
   it.each([null, 42, '', '   '])('keeps the summary without invalid or blank detail: %j', async stderr => {
     expect(await runPhysicalAsk({ engineId: 'fixture', exitCode: 2, stdout: '', stderr }))
-      .toEqual({ exitCode: 1, stderr: 'fixture exited 2 with no answer\n' });
+      .toEqual({ exitCode: 1, stderr: 'fixture exited 2 with no answer\nAGON_SUMMARY: 0/1 succeeded; fixture: error\n' });
   });
 
   it('trims both ends of a short provider diagnostic', async () => {
     expect(await runPhysicalAsk({ engineId: 'fixture', exitCode: 2, stdout: '', stderr: '  diagnostic  ' }))
-      .toEqual({ exitCode: 1, stderr: 'fixture exited 2 with no answer\ndiagnostic\n' });
+      .toEqual({ exitCode: 1, stderr: 'fixture exited 2 with no answer\ndiagnostic\nAGON_SUMMARY: 0/1 succeeded; fixture: error\n' });
   });
 
   it('keeps successful output free of provider diagnostics', async () => {
     expect(await runPhysicalAsk({ engineId: 'fixture', exitCode: 0, stdout: '  Answer  ', stderr: 'provider notice' }))
-      .toEqual({ exitCode: 0, stdout: 'Answer\n' });
+      .toEqual({ exitCode: 0, stdout: 'Answer\n', stderr: 'AGON_SUMMARY: 1/1 succeeded\n' });
   });
 });
 

@@ -394,7 +394,6 @@
         "packages/core/src/models/types.ts:86",
         "packages/core/src/models/types.ts:87",
         "packages/core/src/models/types.ts:89",
-        "packages/core/src/models/types.ts:90",
         "packages/core/src/models/types.ts:91",
         "packages/core/src/models/types.ts:92",
         "packages/core/src/models/types.ts:94",
@@ -2129,6 +2128,7 @@
         "packages/core/src/models/types.ts:241",
         "packages/core/src/models/types.ts:342",
         "packages/core/src/models/types.ts:75",
+        "packages/core/src/models/types.ts:90",
         "packages/mcp/src/agon-orchestration.ts:24"
       ],
       "migrationOrder": 40,

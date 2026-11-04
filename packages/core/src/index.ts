@@ -246,7 +246,7 @@ export type {
   WorkflowConformanceIssue, WorkflowConformanceCode, WorkflowPluginSpec,
   WorkflowPluginAdmissionOptions, WorkflowPluginAdmissionResult,
 } from './workflows/specs.js';
-export { apiDispatch, apiDispatchTools, apiDispatchToolsHistory, apiStreamDispatch, apiStreamDispatchWithHistory } from './api/dispatch.js';
+export { apiDispatch, apiDispatchTools, apiDispatchToolsHistory, apiStreamDispatch, apiStreamDispatchWithHistory } from './api/dispatch-lazy.js';
 export type { ApiConfig } from './api/dispatch.js';
 export { companionDispatch, companionUsesNativeReview } from './sessions/companion-dispatch.js';
 export type { CompanionResult } from './sessions/companion-dispatch.js';

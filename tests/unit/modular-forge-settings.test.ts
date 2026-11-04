@@ -728,7 +728,7 @@ describe('Forge configuration ownership', () => {
   });
 
   it.each([
-    ['review', () => import('../../packages/mod-review/src/index.js'), { autoReviewAfterImpl: true, goalReviewEngines: [], reviewMaxDiffChars: 100000 }],
+    ['review', () => import('../../packages/mod-review/src/index.js'), { autoReviewAfterImpl: true, goalReviewEngines: [], reviewFileContext: true, reviewMaxDiffChars: 100000 }],
     ['agent', () => import('../../packages/mod-agent/src/index.js'), { cesarAgenticContinuationLimit: 12 }],
     ['mutate', () => import('../../packages/mod-mutate/src/index.js'), { cesarMutateReflex: true }],
     ['synthesis', () => import('../../packages/mod-synthesis/src/index.js'), { skillSynthesisThreshold: 3 }],

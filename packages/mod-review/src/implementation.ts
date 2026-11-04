@@ -462,7 +462,7 @@ export const createMod: AgonModFactory = (services) =>
             }),
           }),
         );
-      for (const id of ["configKeys:0007", "configKeys:0087"])
+      for (const id of ["configKeys:0007", "configKeys:0087", "configKeys:0110"])
         d.push(
           registrar.config(id, configSchema),
         );

@@ -19,6 +19,7 @@ export const LEGACY_MOD_SETTING_OWNERS = Object.freeze({
   "ratingJudging": "agon.ratings",
   "ratingMinBallots": "agon.ratings",
   "ratingStaleHorizonDays": "agon.ratings",
+  "reviewFileContext": "agon.review",
   "reviewMaxDiffChars": "agon.review",
   "skillSynthesisThreshold": "agon.synthesis"
 } as const);

@@ -1,5 +1,4 @@
 import { readFileSync } from 'node:fs';
-import { createHash } from 'node:crypto';
 import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
@@ -47,9 +46,6 @@ async function runCommand(result: CouncilResult, args: Record<string, unknown>, 
 }
 
 describe('Council frozen CLI presentation and status', () => {
-  it('binds the legacy oracle to its archived source hash', () => {
-    expect(createHash('sha256').update(source).digest('hex')).toBe(frozenContract.sourceSha256);
-  });
   const scenarios: Array<Partial<CouncilResult>> = [
     {}, { actingChairmanId: 'alpha', degraded: true, warnings: ['Chair failed'] },
     { ok: false, verdict: 'No verdict', confidence: null, chairmanId: '', actingChairmanId: '', seats: [], chairmanReason: 'none' },

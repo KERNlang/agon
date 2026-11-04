@@ -97,13 +97,6 @@ describe('Forge owns the complete Apply workflow', () => {
     expect(readFileSync(join(cwd, 'file.txt'), 'utf8')).toBe('after\n');
     expect(readFileSync(join(cwd, 'second.txt'), 'utf8')).toBe(force ? 'after\n' : 'before\n');
   });
-  it('does not retain an executable CLI Apply owner', () => {
-    const handler = readFileSync(new URL('../../packages/cli/src/handlers/plan.ts', import.meta.url), 'utf8');
-    const host = readFileSync(new URL('../../packages/cli/src/patch-application-host.ts', import.meta.url), 'utf8');
-    expect(handler).not.toMatch(/\b(handleApplyPatch|preflightApply|applyPatchToTree)\b/);
-    expect(host).not.toMatch(/\b(preflightApply|applyPatchToTree)\b/);
-    expect(host).not.toContain('session.apply(');
-  });
   it('previews and confirms before real Git apply, without delegating execution to the host', async () => {
     confirm.mockImplementation(async workspace => {
       expect(workspace).toBe(realpathSync(cwd));

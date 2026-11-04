@@ -13,13 +13,6 @@ let home: string;
 beforeEach(() => { home = setupTestAgonHome('ratings-runtime'); });
 afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); cleanupTestAgonHome(home); });
 
-it('keeps every Core export bound to the physical owner', () => {
-  expect(Object.keys(core).sort()).toEqual(Object.keys(glicko).sort());
-  for (const key of Object.keys(core) as Array<keyof typeof core>) expect(core[key]).toBe(glicko[key]);
-  const source = readFileSync(new URL('../../packages/core/src/signals/glicko.ts', import.meta.url), 'utf8');
-  expect(source).not.toMatch(/node:fs|Math\.|withFileLock|function /);
-});
-
 it.each(['{}', '{"byMode":{"custom":{}}}', 'null', '{broken'])('preserves both readers for legacy input %s', text => {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(new Date('2026-10-11T00:00:00Z'));

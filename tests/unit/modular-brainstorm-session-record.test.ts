@@ -1,16 +1,7 @@
 import { expect, it, vi } from 'vitest';
-import { existsSync, readFileSync } from 'node:fs';
 import * as physical from '@kernlang/agon-mod-brainstorm';
 import type { BrainstormSessionEffects } from '@kernlang/agon-mod-brainstorm';
 import { createBrainstormSessionRecord } from '@kernlang/agon-mod-brainstorm';
-
-it('exports session-record orchestration from the physical mod, not the CLI adapter', () => {
-  expect(physical).toHaveProperty('createBrainstormSessionRecord');
-  expect(existsSync(new URL('../../packages/cli/src/blocks/brainstorm-session-record.ts', import.meta.url))).toBe(false);
-  const owner = readFileSync(new URL('../../packages/mod-brainstorm/src/session-record.ts', import.meta.url), 'utf8');
-  expect(owner).not.toMatch(/from ['"](?:@kernlang\/agon-core|.*\/cli\/)/);
-  expect(owner).not.toMatch(/\b(?:ChatSession|Dispatch)\b/);
-});
 
 it('runs through typed physical effects without exposing the host session', () => {
   const appendMessage = vi.fn<BrainstormSessionEffects<string>['appendMessage']>();

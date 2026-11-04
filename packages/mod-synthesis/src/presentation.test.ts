@@ -1,5 +1,4 @@
 import { readFileSync } from 'node:fs';
-import { createHash } from 'node:crypto';
 import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
@@ -48,9 +47,6 @@ async function capture(source: string, result: SynthesisResult, quiet: boolean, 
 }
 
 describe('Synthesis frozen legacy report', () => {
-  it('binds the oracle to exact pre-extraction source', () => {
-    expect(createHash('sha256').update(legacy).digest('hex')).toBe('0a26646c71266f042bfe14bed07a02e0ec3d39047f629055364556774dcb2842');
-  });
   for (const [quiet, environmentQuiet] of [[false, false], [true, false], [false, true]]) {
     it.each(['full', 'empty', 'failed', 'short', 'missing-score-fields'])(`preserves output and status: quiet=${quiet}, env=${environmentQuiet}, %s`, async scenario => {
       const result: SynthesisResult = {

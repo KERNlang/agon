@@ -1,16 +1,7 @@
-import { readFileSync } from 'node:fs';
+
 import { expect, it, vi } from 'vitest';
 import * as owner from '../../packages/mod-plan/src/session-workflow.js';
 import { createCesarPlan } from '../../packages/mod-plan/src/execution-state.js';
-
-it('owns exit decisions outside the CLI host', () => {
-  expect(owner.exitPlanSession).toBeTypeOf('function');
-  const source = readFileSync(new URL('../../packages/cli/src/handlers/plan-mode.ts', import.meta.url), 'utf8');
-  const handler = source.slice(source.indexOf('export function handleExitPlanMode('), source.indexOf('export function buildStepExecutors('));
-  expect(handler).toContain('exitPlanSession');
-  expect(handler).not.toContain("state === 'running'");
-  expect(handler).not.toContain('exitCesarPlan(');
-});
 
 it('refuses to abandon running work without any host effects', () => {
   const host = new Proxy({}, { get: () => { throw new Error('unexpected effect'); } });

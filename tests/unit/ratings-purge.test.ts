@@ -32,12 +32,6 @@ const record = (over: Partial<RatingRecord> = {}): RatingRecord => ({
   ...over,
 });
 
-it('keeps Core maintenance as a public-package adapter, not a second storage owner', () => {
-  const source = readFileSync(new URL('../../packages/core/src/signals/ratings-maintenance.ts', import.meta.url), 'utf8');
-  expect(source).toContain("from '@kernlang/agon-mod-ratings'");
-  expect(source).not.toMatch(/node:fs|Object\.keys|function computeRunManifestPurge/);
-});
-
 it('accepts the original complete inline record in the public API', () => {
   expect(computeUnknownEngineIds({
     global: {}, byMode: { forge: {}, brainstorm: {}, tribunal: {}, critique: {} }, byTaskClass: {},

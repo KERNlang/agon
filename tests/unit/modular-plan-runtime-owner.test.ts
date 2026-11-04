@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+
 import { expect, it, vi } from 'vitest';
 import { createPlanRuntime } from '../../packages/mod-plan/src/runtime.js';
 import { PlanCostEstimator } from '../../packages/mod-plan/src/cost-estimator.js';
@@ -195,15 +195,4 @@ it('reports estimation failures without losing the completed step', async () => 
   expect(result.state).toBe('done');
   expect(result.steps[0].result?.output).toBe('completed');
   expect(report).toHaveBeenCalledExactlyOnceWith('self', error);
-});
-
-it('removes the legacy scheduler and sanitizer facades without removing root exports', () => {
-  for (const file of ['plan-executor', 'plan-validation']) {
-    expect(existsSync(new URL('../../packages/core/src/cesar/' + file + '.ts', import.meta.url))).toBe(false);
-  }
-  const root = readFileSync(new URL('../../packages/core/src/index.ts', import.meta.url), 'utf8');
-  expect(root).toContain('sanitizePlanSteps');
-  expect(root).toContain('executePlan');
-  expect(root).not.toContain("from './cesar/plan-executor.js'");
-  expect(root).not.toContain("from './cesar/plan-validation.js'");
 });

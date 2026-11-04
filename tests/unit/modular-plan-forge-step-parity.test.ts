@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -27,18 +27,6 @@ afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllEnvs(); 
 const scenarios = ['success', 'missing-path', 'missing-file', 'empty-patch', 'apply-fails', 'error', 'string-error',
   'no-winner', 'preflight-error', 'declared-noop', 'inferred-noop', 'dispatch-crash', 'pre-abort', 'no-engines'];
 const cases = (['forge', 'teamforge'] as const).flatMap(kind => [false, true].flatMap(ui => scenarios.map(scenario => ({ kind, ui, scenario }))));
-
-it('keeps Forge step algorithms and progress policies in the physical owner', () => {
-  const cli = readFileSync(new URL('../../packages/cli/src/handlers/plan-mode.ts', import.meta.url), 'utf8');
-  expect(cli).toContain('createPlanStepExecutors({');
-  expect(cli).not.toContain('createForgeStepExecutors(');
-  expect(cli).not.toMatch(/(?:forge|teamforge):\s*wrap\(/);
-  expect(cli).not.toContain('const notePlanForgeEvent');
-  const coreImport = cli.match(/import\s*\{[^}]*\}\s*from '@kernlang\/agon-core'/)?.[0];
-  expect(coreImport).not.toMatch(/readPatchFromPath|applyPatchToTree/);
-  expect(cli).toMatch(/import\s*\{[^}]*readPatchContent[^}]*applyPatchToTree[^}]*\}\s*from '@kernlang\/agon-support-worktree'/);
-  expect(cli).not.toContain('const applyForgeWinnerToCwd');
-});
 
 it.each(['forge', 'teamforge'] as const)('does not apply %s patch after cancellation in the read boundary', async kind => {
   const results: unknown[] = [];

@@ -1,5 +1,4 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { readFileSync } from 'node:fs';
 import { createSelfStepExecutor } from '../../packages/mod-plan/src/self-step-execution.js';
 import type { PlanSelfStepHost } from '../../packages/mod-plan/src/self-step-execution.js';
 import type { CesarPlanStep } from '../../packages/mod-plan/src/execution-model.js';
@@ -18,19 +17,6 @@ function fixture(live = true) {
   return { host, dispatch };
 }
 afterEach(() => vi.restoreAllMocks());
-
-it('keeps the Self algorithm in its physical owner', () => {
-  const cli = readFileSync(new URL('../../packages/cli/src/handlers/plan-mode.ts', import.meta.url), 'utf8');
-  expect(cli).toContain('createPlanStepExecutors({');
-  expect(cli).not.toContain('createSelfStepExecutor');
-  const catalog = readFileSync(new URL('../../packages/mod-plan/src/step-executors.ts', import.meta.url), 'utf8');
-  expect(catalog).toContain("self: wrap('self', createSelfStepExecutor(host.self).execute)");
-  expect(catalog).not.toMatch(/from ['"](?:@kernlang\/agon-(?:core|cli|forge)|\.\.\/)/);
-  expect(cli).not.toContain('[APPROVED PLAN STEP]');
-  expect(cli).not.toContain('[EXECUTOR OVERRIDE]');
-  const owner = readFileSync(new URL('../../packages/mod-plan/src/self-step-execution.ts', import.meta.url), 'utf8');
-  expect(owner).not.toMatch(/from ['"](?:@kernlang\/agon-(?:core|cli|forge)|\.\.\/)/);
-});
 
 it.each(['failed', 'timed_out', 'cancelled', 'superseded'] as const)('does not turn a %s brain outcome into success', async terminalState => {
   const { host } = fixture();

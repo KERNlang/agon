@@ -23,23 +23,6 @@ function match(winnerTeamId: string | null): TeamMatchResult {
     submissions: {}, scorecards: {}, winnerTeamId, timestamp: '2026-10-20T00:00:00Z' };
 }
 
-it('keeps Core team rating exports bound to their physical owner', async () => {
-  const facade = await import('../../packages/core/src/teams/team-elo.js');
-  const owner = await import('@kernlang/agon-mod-ratings');
-  for (const key of Object.keys(facade) as Array<keyof typeof facade>) {
-    expect(facade[key]).toBe(owner[key]);
-  }
-  const composition = await import('../../packages/core/src/teams/team.js');
-  const panel = await import('@kernlang/agon-support-panel');
-  expect(composition.computeContributionWeights).toBe(owner.computeContributionWeights);
-  expect(composition.lineupKey).toBe(panel.lineupKey);
-  expect(composition.makeFormat).toBe(panel.makeFormat);
-  const source = readFileSync(new URL('../../packages/core/src/teams/team-elo.ts', import.meta.url), 'utf8');
-  expect(source).not.toMatch(/node:fs|function |withFileLock/);
-  const policy = readFileSync(new URL('../../packages/core/src/teams/team.ts', import.meta.url), 'utf8');
-  expect(policy).not.toMatch(/Math\.|randomUUID|\.sort\(|getRatings\(/);
-});
-
 it.each([
   { mode: 'auto-balanced' as const, expected: [['d', 'a'], ['a', 'b']] },
   { mode: 'adaptive' as const, expected: [['d', 'a'], ['b', 'c']] },

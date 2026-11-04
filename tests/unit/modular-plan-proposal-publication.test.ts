@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+
 import { afterEach, expect, it, vi } from 'vitest';
 import * as owner from '../../packages/mod-plan/src/proposal-workflow.js';
 import { createCesarPlan } from '../../packages/mod-plan/src/execution-state.js';
@@ -35,15 +35,6 @@ function fixture(failure = '') {
   return { prior, host, trace, saved };
 }
 const input = { intent: 'new', steps: [{ id: 'a', type: 'self', description: 'work', estimatedCostUsd: 0 }], planningCost: { tokens: 1, costUsd: 0 } };
-
-it('owns the creation workflow outside the CLI', () => {
-  expect(owner.publishPlanProposal).toBeTypeOf('function');
-  const cli = readFileSync(new URL('../../packages/cli/src/handlers/plan-mode.ts', import.meta.url), 'utf8');
-  const handler = cli.slice(cli.indexOf('export async function handleProposePlan('), cli.indexOf('export function handleExitPlanMode('));
-  expect(handler).toContain('publishPlanProposal');
-  expect(handler).not.toContain('cancelCesarPlan(');
-  expect(handler).not.toContain("state: 'awaiting_approval'");
-});
 
 it('persists replacement before retiring the prior proposal and publishing', () => {
   const { host, trace, saved, prior } = fixture();

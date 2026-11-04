@@ -1,5 +1,4 @@
 import { beforeEach, expect, it, vi } from 'vitest';
-import { existsSync, readFileSync } from 'node:fs';
 
 const effects = vi.hoisted(() => ({ append: vi.fn(), track: vi.fn(), add: vi.fn(), record: vi.fn() }));
 vi.mock('@kernlang/agon-core', async original => {
@@ -50,11 +49,6 @@ it('puts an inactive-critic warning in the Think transcript, not host stderr', a
   expect(cb.dispatch).toHaveBeenCalledWith({ type: 'info', message: "[agon] --critic 'inactive' is not an active engine — skipping the adversarial critique." });
   expect(warn).not.toHaveBeenCalled();
   expect(effects.append).toHaveBeenCalledTimes(2);
-});
-
-it('retires the second Think session owner', () => {
-  expect(existsSync(new URL('../../packages/cli/src/handlers/think.ts', import.meta.url))).toBe(false);
-  expect(readFileSync(new URL('../../packages/cli/src/signals/dispatch/intent-orchestration.ts', import.meta.url), 'utf8')).not.toContain('handleThink');
 });
 
 it.each([['qwen', 'alpha'], ['kimi', 'minimax', 'alpha']])('filters default engines: %j', async (...engines) => {

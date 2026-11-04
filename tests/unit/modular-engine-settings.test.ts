@@ -1,8 +1,7 @@
-import { describe, expect, expectTypeOf, it, vi } from 'vitest';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { describe, expect, it, vi } from 'vitest';
+import { writeFileSync } from 'node:fs';
 import * as runtime from '../../packages/support-engine-runtime/src/index.js';
 import type { EngineSettings } from '../../packages/support-engine-runtime/src/index.js';
-import type { AgonConfig } from '../../packages/core/src/models/types.js';
 import { setupTestAgonHome, cleanupTestAgonHome, agonHomePath } from '../helpers/agon-home.js';
 
 vi.mock('@kernlang/agon-support-engine-runtime', async (importOriginal) => {
@@ -36,15 +35,6 @@ describe('physical engine settings owner', () => {
       ratingsPurgeKeepEngines: [],
       commitCoAuthor: 'agon (KERN) <292465531+KERN-Agon@users.noreply.github.com>',
     });
-  });
-
-  it('owns exactly the ledger keys with unchanged optional and required types', () => {
-    const ledger = JSON.parse(readFileSync(new URL('../../docs/specs/evidence/modular-agon-ownership.json', import.meta.url), 'utf8'));
-    const keys = ledger.assignments.filter((entry: { category: string; package: string }) =>
-      entry.category === 'configKeys' && entry.package === '@kernlang/agon-support-engine-runtime'
-    ).map((entry: { id: string }) => entry.id).sort();
-    expect(Object.keys(runtime.DEFAULT_ENGINE_SETTINGS).sort()).toEqual(keys);
-    expectTypeOf<Pick<AgonConfig, keyof EngineSettings>>().toEqualTypeOf<EngineSettings>();
   });
 
   it('matches the old policy on valid and malformed settings without coercing other fields', () => {

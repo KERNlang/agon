@@ -12,6 +12,10 @@ name: Release
 # Node built-ins from scripts/release. A re-run resumes a half-failed publish, because
 # publish-if-new skips versions already on npm with identical bytes.
 #
+# Who may release is enforced by required reviewers on the npm-release environment, which
+# the repository owner must configure: a tagged commit can edit this workflow, so no check
+# inside it can restrict who releases.
+#
 # Requires an NPM_TOKEN secret on the npm-release environment, with rights to create
 # and publish @kernlang/* packages. Set the NPM_PROVENANCE variable to false to publish
 # without provenance attestations.
@@ -126,18 +130,24 @@ jobs:
 
   # main is branch-protected, so the version bump arrives as a PR. Publishing already
   # succeeded by this point, so a failure here never fails the release.
-  sync-main:
+  #
+  # Repository and dependency code run only in prepare-sync, which holds no write token.
+  # sync-main starts on a fresh runner and applies the patch as data, so nothing the build
+  # could leave behind (GITHUB_ENV, GITHUB_PATH, .git/hooks) executes next to the token.
+  prepare-sync:
     needs: publish
     runs-on: ubuntu-latest
     continue-on-error: true
     permissions:
-      contents: write
-      pull-requests: write
+      contents: read
+    outputs:
+      changed: ${{ steps.patch.outputs.changed }}
     steps:
       - name: Checkout main
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           ref: main
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
@@ -148,23 +158,73 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Open version sync PR
+      - name: Prepare version sync
+        run: node scripts/release/prepare.mjs "${GITHUB_REF_NAME}"
+
+      - name: Capture version sync patch
+        id: patch
+        run: |
+          git add -u -- packages scripts/spec docs/specs/evidence package-lock.json
+          git diff --cached --binary > "${RUNNER_TEMP}/version-sync.patch"
+          if [ -s "${RUNNER_TEMP}/version-sync.patch" ]; then
+            echo "changed=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "main already at ${GITHUB_REF_NAME}; nothing to sync."
+            echo "changed=false" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Upload version sync patch
+        if: steps.patch.outputs.changed == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: version-sync-patch
+          path: ${{ runner.temp }}/version-sync.patch
+          if-no-files-found: error
+          retention-days: 7
+
+  sync-main:
+    needs: prepare-sync
+    if: needs.prepare-sync.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Download version sync patch
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: version-sync-patch
+          path: ${{ runner.temp }}/version-sync
+
+      - name: Commit version sync
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -B "release/sync-v${VERSION}"
+          git apply --include='packages/*' --include='scripts/spec/*' --include='docs/specs/evidence/*' --include='package-lock.json' "${RUNNER_TEMP}/version-sync/version-sync.patch"
+          git add -u -- packages scripts/spec docs/specs/evidence package-lock.json
+          git commit -m "chore(release): @kernlang/agon ${VERSION} (lockstep) [skip ci]"
+
+      - name: Push and open version sync PR
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           BRANCH="release/sync-v${VERSION}"
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git checkout -B "${BRANCH}"
-          node scripts/release/prepare.mjs "${VERSION}"
-          git add -u -- packages scripts/spec docs/specs/evidence package-lock.json
-          if git diff --cached --quiet; then
-            echo "main already at ${VERSION}; nothing to sync."
-            exit 0
-          fi
-          git commit -m "chore(release): @kernlang/agon ${VERSION} (lockstep) [skip ci]"
-          git push -f origin "${BRANCH}"
+          BASIC_AUTH="$(printf 'x-access-token:%s' "${GITHUB_TOKEN}" | base64 -w0)"
+          echo "::add-mask::${BASIC_AUTH}"
+          GIT_CONFIG_COUNT=1 \
+          GIT_CONFIG_KEY_0="http.https://github.com/.extraheader" \
+          GIT_CONFIG_VALUE_0="AUTHORIZATION: basic ${BASIC_AUTH}" \
+            git push -f origin "${BRANCH}"
           curl -sS -X POST \
             -H "Authorization: Bearer ${GITHUB_TOKEN}" \
             -H "Accept: application/vnd.github+json" \

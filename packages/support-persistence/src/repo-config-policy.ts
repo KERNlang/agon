@@ -148,6 +148,7 @@ export const REPO_CONFIG_POLICY: Readonly<Record<keyof AgonConfig, ConfigScope>>
 
 const PRINTABLE_KEY = /^[A-Za-z][A-Za-z0-9_.-]{0,63}$/;
 const MAX_NAMED_KEYS = 40;
+const MAX_WARNED_FILES = 1000;
 const warnedFiles = new Set<string>();
 
 function isRepoKey(key: string): key is keyof AgonConfig {
@@ -192,6 +193,7 @@ export function projectRepoConfigLayer(raw: unknown): RepoConfigProjection {
  */
 export function warnIgnoredRepoConfigKeys(path: string | null | undefined, ignored: readonly string[]): void {
   if (!path || ignored.length === 0 || warnedFiles.has(path)) return;
+  if (warnedFiles.size >= MAX_WARNED_FILES) warnedFiles.clear();
   warnedFiles.add(path);
   const named = ignored.filter(key => PRINTABLE_KEY.test(key)).slice(0, MAX_NAMED_KEYS);
   const others = ignored.length - named.length;

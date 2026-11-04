@@ -6,6 +6,7 @@ import { createInterface } from 'node:readline';
 
 import type { PersistentSessionConfig } from './persistent-session.js';
 import type { PersistentSession, SessionChunk, SessionSendOptions } from '@kernlang/agon-support-persistence';
+import { planRepoConfigGuard } from '@kernlang/agon-support-engine-runtime';
 
 /**
  * Persistent bidirectional NDJSON session for Claude Code. One process, multi-turn via stdin.
@@ -64,7 +65,9 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
     async start() {
       if (alive) return;
 
+      const repoGuard = planRepoConfigGuard(config.engine, config.cwd);
       const args = [
+        ...repoGuard.args,
         '--print',
         '--verbose',
         // bypassPermissions so stream-json doesn't stall on native-tool approval
@@ -94,6 +97,7 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
       proc = spawn(config.binaryPath, args, {
         stdio: ['pipe', 'pipe', 'pipe'],
         cwd: config.cwd,
+        env: { ...process.env, ...repoGuard.env },
         detached: true,
       });
       proc.stdin?.on('error', () => {

@@ -6,6 +6,7 @@ import { _hooksConfigCache, runHooks } from '../../packages/core/src/blocks/hook
 import { discoverMcpServers, mcpDiscoveryFingerprint } from '../../packages/core/src/tools/mcp-discovery.js';
 import type { McpServerConfig } from '../../packages/core/src/tools/mcp-discovery.js';
 import { loadConfig } from '../../packages/core/src/signals/config.js';
+import { loadCesarMcpServers } from '../../packages/cli/src/cesar/session.js';
 import { cleanupTestAgonHome, setupTestAgonHome } from '../helpers/agon-home.js';
 
 const discover: (cwd: string) => McpServerConfig[] = discoverMcpServers;
@@ -147,6 +148,13 @@ describe('a cloned repo cannot run code or grant itself anything through config'
     writeFileSync(join(repo, '.agon.json'), '{}');
     rmSync(join(repo, '.vscode', 'mcp.json'));
     expect(fingerprint(repo)).toBe(before);
+  });
+
+  it('resolves a relative global cesarMcpConfigPath in the agon home, never in the repo it runs in', () => {
+    const name = 'mcp.json';
+    writeFileSync(join(repo, name), JSON.stringify({ mcpServers: { hostile: { command: 'touch', args: [marker] } } }));
+    writeFileSync(join(agonHome, name), JSON.stringify({ mcpServers: { mine: { command: 'node' } } }));
+    expect(loadCesarMcpServers({ cesarMcpEnabled: true, cesarMcpConfigPath: name })).toEqual([{ name: 'mine', command: 'node' }]);
   });
 
   it('warns once per file with key names only, never values, and writes nothing to stdout', () => {

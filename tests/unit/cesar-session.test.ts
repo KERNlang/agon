@@ -333,29 +333,9 @@ describe('cesar MCP session config', () => {
     const servers = loadCesarMcpServers({
       cesarMcpEnabled: false,
       cesarMcpConfigPath: join(dir, 'missing.json'),
-    }, dir);
+    });
 
     expect(servers).toBeUndefined();
-  });
-
-  it('loads MCP config from a relative JSON path', () => {
-    const dir = makeTempDir('mcp-relative');
-    const configPath = join(dir, '.vscode');
-    mkdirSync(configPath, { recursive: true });
-    writeFileSync(join(configPath, 'mcp.json'), JSON.stringify({
-      mcpServers: {
-        github: { command: 'npx', args: ['-y', '@modelcontextprotocol/server-github'] },
-      },
-    }));
-
-    const servers = loadCesarMcpServers({
-      cesarMcpEnabled: true,
-      cesarMcpConfigPath: '.vscode/mcp.json',
-    }, dir);
-
-    expect(servers).toEqual([
-      { name: 'github', command: 'npx', args: ['-y', '@modelcontextprotocol/server-github'] },
-    ]);
   });
 
   it('throws when enabled config contains no servers', () => {
@@ -366,7 +346,7 @@ describe('cesar MCP session config', () => {
     expect(() => loadCesarMcpServers({
       cesarMcpEnabled: true,
       cesarMcpConfigPath: file,
-    }, dir)).toThrow(/No MCP servers found/);
+    })).toThrow(/No MCP servers found/);
   });
 
   it('allows MCP for companion CLI protocols including Codex jsonrpc', () => {

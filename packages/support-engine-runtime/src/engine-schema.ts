@@ -134,6 +134,7 @@ export const IsolationHintsSchema = z.object({
   setupHint: z.string().optional(),
   loginArgs: z.array(z.string()).optional(),
   supportsProjectMcp: z.boolean().optional(),
+  repoConfigGuard: z.object({ args: z.array(z.string()), env: z.record(z.string(), z.string()).optional() }).optional(),
 });
 
 // Proactive context-window budget. MUST be modelled here or Zod silently strips

@@ -144,6 +144,9 @@ export async function refreshProbedCliModels(engineId: string, binary: string, l
   const cmd = (listCmd && listCmd.length > 0) ? listCmd : ['__pty:/model'];
   const first = cmd[0];
   try {
+    // This drives the engine's interactive TUI and presses Enter blind, so it must not run in a working directory that may be a hostile clone.
+    const neutralCwd = getCacheDir();
+    mkdirSync(neutralCwd, { recursive: true });
     let models: ProbedModel[] = [];
     if (first.startsWith('__pty:')) {
       const script = resolveModelProbeScript();
@@ -153,7 +156,7 @@ export async function refreshProbedCliModels(engineId: string, binary: string, l
       const result = await spawnWithTimeout({
         command: pythonBin ?? 'python3',
         args: wrapper ? [wrapper, script, binary, slash] : [script, binary, slash],
-        cwd: process.cwd(),
+        cwd: neutralCwd,
         timeout: 45000,
       });
       if (result.exitCode !== 0) { dbg(`pty probe exited ${result.exitCode}`); return false; }
@@ -166,7 +169,7 @@ export async function refreshProbedCliModels(engineId: string, binary: string, l
       const result = await spawnWithTimeout({
         command: binary,
         args: cmd,
-        cwd: process.cwd(),
+        cwd: neutralCwd,
         timeout: 20000,
       });
       if (result.timedOut || !result.stdout.trim()) { dbg('list subcommand timed out or empty'); return false; }

@@ -118,7 +118,7 @@ export class CliAdapter implements EngineAdapter {
       // DROPS opts.prompt entirely, so the seat would review the working tree
       // instead of the diff it was asked about (and find nothing on a clean tree).
       // Undefined means prompt-borne: native working-tree review is opt-in only.
-      const companionResult = await companionDispatch({ config: options.engine.companion, binaryPath: binaryPath, prompt: options.prompt, cwd: options.cwd, timeout: options.timeout, mode: (options.mode === 'agent') ? 'agent' : ((options.mode === 'review') ? 'review' : 'exec'), reviewTarget: options.reviewTarget, model: resolveModel(options.engine, options.cwd) ?? undefined, signal: options.signal, systemPrompt: options.systemPrompt, textOnly: options.textOnly, env: iso.env });
+      const companionResult = await companionDispatch({ config: options.engine.companion, binaryPath: binaryPath, prompt: options.prompt, cwd: options.cwd, timeout: options.timeout, mode: (options.mode === 'agent') ? 'agent' : ((options.mode === 'review') ? 'review' : 'exec'), reviewTarget: options.reviewTarget, model: resolveModel(options.engine, options.cwd) ?? undefined, signal: options.signal, systemPrompt: options.systemPrompt, textOnly: options.textOnly, env: iso.env, extraArgs: iso.repoGuardArgs });
       // Exit code 2 = companion not available, fall through to CLI spawn
       // Also fall through if companion returned empty output (stream-json capture failure)
       if (companionResult.exitCode !== 2 && companionResult.stdout.trim()) {
@@ -326,7 +326,7 @@ export class CliAdapter implements EngineAdapter {
     const baselineDiff = readOnlyDiff(options.cwd);
     // Try companion protocol first
     if (options.engine.companion && shouldUseCompanionForAgent(options.engine)) {
-      const companionResult = await companionDispatch({ config: options.engine.companion, binaryPath: binaryPath, prompt: options.prompt, cwd: options.cwd, timeout: options.timeout, mode: 'agent', model: resolveModel(options.engine, options.cwd) ?? undefined, signal: options.signal, systemPrompt: options.systemPrompt, env: iso.env, onApproval: options.onApproval });
+      const companionResult = await companionDispatch({ config: options.engine.companion, binaryPath: binaryPath, prompt: options.prompt, cwd: options.cwd, timeout: options.timeout, mode: 'agent', model: resolveModel(options.engine, options.cwd) ?? undefined, signal: options.signal, systemPrompt: options.systemPrompt, env: iso.env, extraArgs: iso.repoGuardArgs, onApproval: options.onApproval });
       if (companionResult.exitCode !== 2 && companionResult.stdout.trim()) {
         const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
         mkdirSync(dirname(outputPath), { recursive: true });

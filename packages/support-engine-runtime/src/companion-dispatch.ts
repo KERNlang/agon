@@ -36,7 +36,7 @@ export function companionUsesNativeReview(mode: 'exec'|'review'|'agent', reviewT
   return mode === 'review' && reviewTarget === 'uncommittedChanges';
 }
 
-export async function companionDispatch(opts: {config:CompanionConfig, binaryPath:string, prompt:string, cwd:string, timeout:number, mode:'exec'|'review'|'agent', reviewTarget?:'uncommittedChanges', model?:string, signal?:AbortSignal, systemPrompt?:string, textOnly?:boolean, env?:Record<string,string>, onApproval?:(tool:string, command:string, reason?:string)=>Promise<boolean|string>}): Promise<DispatchResult> {
+export async function companionDispatch(opts: {extraArgs?:string[], config:CompanionConfig, binaryPath:string, prompt:string, cwd:string, timeout:number, mode:'exec'|'review'|'agent', reviewTarget?:'uncommittedChanges', model?:string, signal?:AbortSignal, systemPrompt?:string, textOnly?:boolean, env?:Record<string,string>, onApproval?:(tool:string, command:string, reason?:string)=>Promise<boolean|string>}): Promise<DispatchResult> {
   if (opts.config.protocol !== 'jsonrpc' && opts.config.protocol !== 'acp' && opts.config.protocol !== 'stream-json') {
     return { exitCode: 2, stdout: '', stderr: `Protocol "${opts.config.protocol}" not supported for one-shot dispatch`, durationMs: 0, timedOut: false };
   }
@@ -71,8 +71,8 @@ export async function companionDispatch(opts: {config:CompanionConfig, binaryPat
   // opts.cwd (the worktree). Falls back to spawn-cwd only for servers that
   // honor it (no cwdArg).
   const serverArgs = opts.config.cwdArg
-    ? [...opts.config.serverCmd, opts.config.cwdArg, opts.cwd]
-    : [...opts.config.serverCmd];
+    ? [...(opts.extraArgs ?? []), ...opts.config.serverCmd, opts.config.cwdArg, opts.cwd]
+    : [...(opts.extraArgs ?? []), ...opts.config.serverCmd];
   // stream-json has no in-band system-prompt channel — without the flag the
   // caller's systemPrompt (seat stances, "do NOT use tools") is silently dropped.
   // ACP/JSONRPC forward the systemPrompt in-band (session/new, thread/start),

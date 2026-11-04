@@ -1307,7 +1307,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
     if (resolution.decision === 'deny') {
       logApproval('denied', `resolver.${resolution.stage}`, resolution.reason);
       if (resolution.stage === 'deny-rule') {
-        return `DENIED: ${agonTool}${agonTool === 'Bash' ? ` (${command})` : ''} is blocked by a deny rule in .agon.json permissions. Do not retry this — choose a different approach or ask the user to amend the rule.`;
+        return `DENIED: ${agonTool}${agonTool === 'Bash' ? ` (${command})` : ''} is blocked by a deny rule in the permissions config. Do not retry this — choose a different approach or ask the user to amend the rule.`;
       }
       return false;
     }
@@ -1434,7 +1434,7 @@ export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unkn
   return normalizeNamedRecord(raw);
 }
 
-export function loadCesarMcpServers(config: any, cwd: string): Array<Record<string,unknown>>|undefined {
+export function loadCesarMcpServers(config: any): Array<Record<string,unknown>>|undefined {
   if (!(config as any).cesarMcpEnabled) return undefined;
 
   const rawPath = String((config as any).cesarMcpConfigPath ?? '').trim();
@@ -1442,7 +1442,7 @@ export function loadCesarMcpServers(config: any, cwd: string): Array<Record<stri
     throw new Error('Cesar MCP is enabled but cesarMcpConfigPath is empty');
   }
 
-  const resolvedPath = isAbsolute(rawPath) ? rawPath : resolve(cwd, rawPath);
+  const resolvedPath = resolveCesarMcpConfigPath(rawPath);
   let parsed: unknown;
   try {
     parsed = JSON.parse(readFileSync(resolvedPath, 'utf-8'));
@@ -1475,13 +1475,19 @@ export function mcpConfigFingerprint(config: any): string {
   let mtime = '';
   if (enabled && configPath) {
     try {
-      const resolvedPath = isAbsolute(configPath) ? configPath : resolve(resolveWorkingDir(), configPath);
-      mtime = String(statSync(resolvedPath).mtimeMs);
+      mtime = String(statSync(resolveCesarMcpConfigPath(configPath)).mtimeMs);
     } catch { /* file may not exist yet */ }
   }
-  // Also include auto-discovery fingerprint — detects changes to ~/.claude/settings.json, .vscode/mcp.json, etc.
-  const discoveryFp = mcpDiscoveryFingerprint(resolveWorkingDir());
+  // Also include auto-discovery fingerprint — detects changes to ~/.claude/settings.json and settings.local.json
+  const discoveryFp = mcpDiscoveryFingerprint();
   return `${enabled}:${configPath}:${mtime}:${discoveryFp}`;
+}
+
+/**
+ * A relative path means the agon home, never the working directory: the file it names starts processes, and the working directory may be a hostile clone.
+ */
+function resolveCesarMcpConfigPath(configPath: string): string {
+  return isAbsolute(configPath) ? configPath : resolve(getAgonHome(), configPath);
 }
 
 /**
@@ -1619,10 +1625,10 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
   let mcpServers: Array<Record<string, unknown>> | undefined;
   if (canUseCesarMcp(engine, binaryPath)) {
     // Manual config (cesarMcpEnabled + cesarMcpConfigPath)
-    mcpServers = loadCesarMcpServers(config, cwd);
+    mcpServers = loadCesarMcpServers(config);
     if (!mcpServers || mcpServers.length === 0) {
-      // Auto-discover from ~/.claude/settings.json, .vscode/mcp.json, .agon.json, etc.
-      const discovered = discoverMcpServers(cwd);
+      // Auto-discover from global ~/.claude settings only; repo files are never read
+      const discovered = discoverMcpServers();
       if (discovered.length > 0) {
         mcpServers = mcpServersToWireFormat(discovered);
       }

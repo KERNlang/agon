@@ -185,7 +185,7 @@ export async function executeToolCall(call: ToolCall, ctx: ToolContext, registry
     }
   }
 
-  // Phase 2.5: PreToolUse hooks (.agon.json hooks.preToolUse) — fail-safe.
+  // Phase 2.5: PreToolUse hooks (global config hooks.preToolUse) — fail-safe.
   // Runs AFTER the permission gate, BEFORE execution, for EVERY path that
   // reaches executeToolCall (API native, XML loop, eager). Exit 2 blocks
   // with stderr as the engine-visible refusal; timeout / spawn failure /

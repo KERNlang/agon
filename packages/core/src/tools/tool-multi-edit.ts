@@ -114,12 +114,12 @@ export function createMultiEditTool(): ToolHandler {
     const relCanonical = relative(canonicalCwd, canonicalPath);
     const outsideCwd = relCanonical.startsWith('..') || resolve(canonicalCwd, relCanonical) !== canonicalPath;
 
-    // CC-parity allow/deny rules (.agon.json permissions): deny FIRST, allow
+    // CC-parity allow/deny rules (config permissions): deny FIRST, allow
     // before any ask. F3 path-aware (../ / symlink escapes resolved first).
     if ((ctx as any).permissionRules) {
       const ruleDecision = evaluateFilePathRules('MultiEdit', input.file_path as string, ctx.cwd, (ctx as any).permissionRules);
       if (ruleDecision === 'deny') {
-        return { behavior: 'deny', message: `${PERMISSION_DENIED_MESSAGE}: MultiEdit ${filePath} blocked by a deny rule in .agon.json permissions`, reason: 'permission_rule_deny' };
+        return { behavior: 'deny', message: `${PERMISSION_DENIED_MESSAGE}: MultiEdit ${filePath} blocked by a deny rule in the permissions config`, reason: 'permission_rule_deny' };
       }
       // deny-all kill-switch outranks an allow RULE (only rule-DENY sits above it).
       if (ruleDecision === 'allow' && ctx.permissionMode !== 'deny-all') {

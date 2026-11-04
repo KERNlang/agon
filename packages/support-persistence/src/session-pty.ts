@@ -7,8 +7,11 @@ function looseEq(a: unknown, b: unknown): boolean {
 
 import { existsSync, readFileSync, rmSync } from 'node:fs';
 
+import { planRepoConfigGuard } from '@kernlang/agon-support-engine-runtime';
+import type { EngineDefinition } from '@kernlang/agon-support-engine-runtime';
+
 export interface PtySessionConfig {
-  engine: { id: string };
+  engine: Pick<EngineDefinition, 'id' | 'isolationHints'>;
   cwd: string;
   systemPrompt?: string;
   mcpServers?: Array<Record<string, unknown>>;
@@ -130,8 +133,10 @@ export function createPtySession(config: PtySessionConfig): PtyPersistentSession
   // wedged TUI.
   const TURN_TIMEOUT_MS = 15 * 60 * 1000;
 
+  const repoGuard = planRepoConfigGuard(config.engine, config.cwd);
+
   function buildExtraArgv(): string[] {
-    const args: string[] = [];
+    const args: string[] = [...repoGuard.args];
     // Inject the Agon-configured MCP servers (incl. agon-orchestration) the same
     // way the --print path does, then lock to ONLY these (--strict-mcp-config).
     if (config.mcpServers && config.mcpServers.length > 0) {
@@ -201,6 +206,7 @@ export function createPtySession(config: PtySessionConfig): PtyPersistentSession
       claudeSession = await mod.ClaudeCliSession.spawn({
         mode: 'agent',
         cwd: config.cwd,
+        env: repoGuard.env,
         extraArgv: buildExtraArgv(),
         daemonTimeoutMs: 60_000,
       });

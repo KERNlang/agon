@@ -805,9 +805,21 @@ Global configuration — engine selection, model preferences, and telemetry sett
 
 ### Engine isolation
 
-Dispatched engines run **workspace-pure** by default. They still see the repository's own project context — `AGENTS.md` / `CLAUDE.md` and `.mcp.json` in the working directory — but not your *personal* layer: global `~/.claude/CLAUDE.md`, Claude Code plugins and hooks, and user-level MCP servers are stripped (each engine gets a clean config dir seeded with only its auth file, so dispatch stays logged in). That keeps a forge race or review panel fair — every engine competes on the same project context instead of one of them borrowing your private toolchain — and keeps your hooks from firing inside a worker.
+Dispatched engines run **workspace-pure** by default. They still see the repository's own instructions — `AGENTS.md` / `CLAUDE.md` in the working directory — but not your *personal* layer: global `~/.claude/CLAUDE.md`, Claude Code plugins and hooks, and user-level MCP servers are stripped (each engine gets a clean config dir seeded with only its auth file, so dispatch stays logged in). That keeps a forge race or review panel fair — every engine competes on the same project context instead of one of them borrowing your private toolchain — and keeps your hooks from firing inside a worker.
 
 Opt out for a single run with `--impure` (or `--isolation inherit`); make it permanent with `agon config set engineIsolation inherit`. `--pure` forces isolation back on. If an engine's clean config dir isn't authenticated yet, agon falls back to `inherit` for that dispatch rather than breaking the run, and prints the one-time login hint.
+
+### What a repository's config can do
+
+Opening a repository never grants it anything. `.agon.json` and `.agon.local.json` are both treated as untrusted, because either can be committed.
+
+- **Can set:** `commitCoAuthor`, `projectContext` and `contextFormat`, and add `permissions.deny` rules. Deny rules union with yours, so a repo can tighten and can never widen or wipe a global deny.
+- **Cannot set:** everything else, including `hooks`, `permissions.allow`, permission and approval modes, `allowedCommands`, `toolPermissions`, MCP settings, engine and model selection, `engineIsolation`, `mods`, and Forge and review tuning. Unknown keys are dropped too.
+- **MCP:** Agon's auto-discovery reads only your global `~/.claude` settings; `.vscode/mcp.json`, `.cursor/mcp.json` and `mcpServers` in `.agon.json` are ignored. `/mcp connect <name>` still works, because you ran it.
+
+Ignored keys get one warning per file on stderr, by name only. To apply one, move it to `~/.agon/config.json`.
+
+**The remaining limit:** this covers Agon's own config. Agon also dispatches third-party engine CLIs, and each of those reads its own repository config under its vendor's rules. Only the `claude` launches are verified closed: Agon starts them so that a repository's `.claude/` settings (hooks, env, permissions, skills, agents, commands) and its `.mcp.json` servers do not load, while its `CLAUDE.md` still does. Other engines are not closed. Codex, for example, started an MCP server from a repository's `.codex/config.toml` when the user's own Codex config trusted a parent directory of that repository. Until you have checked an engine yourself, do not dispatch it in a repository you do not trust.
 
 ### Commit attribution & PR text
 

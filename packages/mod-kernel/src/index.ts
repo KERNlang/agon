@@ -3,7 +3,7 @@ export { validatePersistedEnvelope } from '@kernlang/agon-mod-api';
 export { parseArtifactLeaseIdentity } from './host-contracts.js';
 export type { Json, PersistedEnvelope } from '@kernlang/agon-mod-api';
 export { createScopedConfigStore } from './scoped-config-store.js';
-export type { ConfigMemoEntry, ScopedConfigStoreOptions } from './scoped-config-store.js';
+export type { ConfigMemoEntry, ScopedConfigSources, ScopedConfigStoreOptions } from './scoped-config-store.js';
 export { readGenerationConfiguration, readSelectedGenerationConfigurationSync } from './configuration-migration.js';
 export { LEGACY_MOD_SETTING_OWNERS } from './legacy-config-assignments.generated.js';
 export type { GenerationConfiguration } from './configuration-migration.js';

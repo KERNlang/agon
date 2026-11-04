@@ -72,6 +72,7 @@ export interface EngineDefinition {
   isolationHints?: {
     configEnv?: string; strictMcpArgs?: string[]; personalPaths?: string[]; authFiles?: string[];
     authMarker?: string; setupHint?: string; loginArgs?: string[]; supportsProjectMcp?: boolean;
+    repoConfigGuard?: { args: string[]; env?: Record<string, string> };
   };
 }
 export interface DispatchOptions {

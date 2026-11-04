@@ -43,6 +43,7 @@ AGON-GOAL-DESIGN.md
 scripts/guard/engine-pool-rfc.md
 .agon/
 .agon.local.json
+.claude/security-audits/
 .CLAUDE.md
 .CLAUDE
 .Agent.md

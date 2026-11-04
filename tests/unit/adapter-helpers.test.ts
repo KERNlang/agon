@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync, existsSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, mkdirSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { engineHealth } from '@kernlang/agon-core';
+import { engineHealth, EngineRegistry } from '@kernlang/agon-core';
+import { CliAdapter } from '../../packages/adapter-cli/src/adapter.js';
 import { shouldUseCompanionForAgent, buildCommand, resolveArgs, computeEngineIsolation, resolveClaudePtyExtraArgs, answerChannelMode, fileChannelInstruction, readAnswerChannelFile, setupFileAnswerChannel, createStringSet, rewriteFalseSuccessAuthInPlace, recordDispatchHealth } from '../../packages/adapter-cli/src/adapter-helpers.js';
 
 describe('adapter helper routing', () => {
@@ -109,6 +110,57 @@ describe('cwd templating (worktree isolation)', () => {
 // file creds, and computes `authenticated` from the on-disk authMarker — the
 // actual runtime path. Hermetic: AGON_HOME (→ agonPath('pure', id)) and the
 // engine's real config home are both redirected to temp dirs.
+describe('claude launches in a hostile repository', () => {
+  const home = process.env.AGON_HOME;
+  const configDir = process.env.CLAUDE_CONFIG_DIR;
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'agon-claude-launch-'));
+    mkdirSync(join(dir, 'records'));
+    mkdirSync(join(dir, 'repo'));
+    process.env.AGON_HOME = join(dir, 'home');
+    process.env.AGON_LAUNCH_RECORDS = join(dir, 'records');
+    delete process.env.AGON_CLAUDE_PTY;
+    delete process.env.CLAUDE_CONFIG_DIR;
+  });
+  afterEach(() => {
+    if (home === undefined) delete process.env.AGON_HOME; else process.env.AGON_HOME = home;
+    delete process.env.AGON_LAUNCH_RECORDS;
+    if (configDir !== undefined) process.env.CLAUDE_CONFIG_DIR = configDir;
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('never lets exec, review, agent or companion launches load repo hooks, settings or MCP servers, even without a clean config dir', async () => {
+    const stub = join(dir, 'claude');
+    writeFileSync(stub, '#!/bin/sh\nf=$(mktemp "$AGON_LAUNCH_RECORDS/XXXXXX")\nprintf "%s\\n" "$CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD" "$CLAUDE_CONFIG_DIR" "$@" > "$f"\n');
+    chmodSync(stub, 0o755);
+    const engine = { ...JSON.parse(readFileSync(join(process.cwd(), 'engines', 'claude.json'), 'utf-8')), binary: stub };
+    const cwd = realpathSync(join(dir, 'repo'));
+    const adapter = new CliAdapter(new EngineRegistry());
+    const prompt = 'the positional prompt';
+    const options = { engine, prompt, cwd, timeout: 20, outputDir: join(dir, 'out') };
+
+    await adapter.dispatch({ ...options, mode: 'exec' } as any);
+    await adapter.dispatch({ ...options, mode: 'review' } as any);
+    await adapter.dispatchAgent({ ...options, mode: 'agent' } as any);
+
+    const launches = readdirSync(join(dir, 'records')).map((name) => readFileSync(join(dir, 'records', name), 'utf-8').split('\n').slice(0, -1));
+    const direct = launches.filter((launch) => launch.at(-1) === prompt);
+    const companion = launches.filter((launch) => launch.includes('--input-format'));
+    expect(direct).toHaveLength(3);
+    expect(companion).toHaveLength(2);
+    expect(direct.some((launch) => launch.includes('--dangerously-skip-permissions'))).toBe(true);
+    for (const [flagEnv, configDir, ...argv] of launches) {
+      expect(flagEnv).toBe('1');
+      expect(configDir).toBe('');
+      expect(argv[argv.indexOf('--setting-sources') + 1]).toBe('user');
+      expect(argv[argv.indexOf('--add-dir') + 1]).toBe(cwd);
+      expect(argv.indexOf('--add-dir')).toBeLessThan(argv.indexOf('--setting-sources'));
+    }
+  });
+});
+
 describe('computeEngineIsolation (auth-gated clean-dir materialisation)', () => {
   let agonHome: string;
   let codexRealHome: string;

@@ -126,22 +126,13 @@ describe('Kernel configuration storage', () => {
     ['flat', 'historical', 'current'].flatMap(local =>
       ['flat', 'historical', 'current'].map(privateLocal => [global, local, privateLocal] as const))))
     ('preserves Forge synthesis scope precedence: %s/%s/%s', async (...spellings) => {
-      home = setupTestAgonHome('forge-settings-owner-precedence');
-      const project = join(home, 'project'); mkdirSync(project);
-      const paths = [join(home, 'config.json'), join(project, '.agon.json'), join(project, '.agon.local.json')];
       const layers = spellings.map((spelling, index) => {
         const values = { forgeEnableSynthesis: index === 1, forgeSynthesisTimeout: index + 1 };
         return spelling === 'flat' ? values : { mods: { [spelling === 'historical' ? 'agon.synthesis' : 'agon.forge']: values } };
       });
-      const bytes = layers.map(layer => JSON.stringify(layer));
-      paths.forEach((path, index) => writeFileSync(path, bytes[index]));
-      const core = await import('../../packages/core/src/signals/config.js');
-      const result = core.loadConfig(project);
-      expect(result.forgeEnableSynthesis).toBe(false);
-      expect(result.forgeSynthesisTimeout).toBe(3);
-      expect(kernel.selectModSettings(result, 'agon.forge')).toMatchObject({ forgeEnableSynthesis: false, forgeSynthesisTimeout: 3 });
-      expect(kernel.selectModSettings(core.loadConfig(), 'agon.forge')).toMatchObject({ forgeEnableSynthesis: false, forgeSynthesisTimeout: 1 });
-      paths.forEach((path, index) => expect(readFileSync(path, 'utf8')).toBe(bytes[index]));
+      const select = (...scopes: object[]) => kernel.selectModSettings({ mods: kernel.mergeLegacyModSettingsLayers(kernel.LEGACY_MOD_SETTING_OWNERS, ...scopes) }, 'agon.forge');
+      expect(select(...layers)).toMatchObject({ forgeEnableSynthesis: false, forgeSynthesisTimeout: 3 });
+      expect(select(layers[0])).toMatchObject({ forgeEnableSynthesis: false, forgeSynthesisTimeout: 1 });
     });
 
   it('prefers current Forge values over historical and flat spellings without rewriting source', async () => {
@@ -188,26 +179,16 @@ describe('Kernel configuration storage', () => {
 
   it.each([null, [], false].flatMap(replacement => ['agon.synthesis', 'agon.forge'].map(origin => [replacement, origin] as const)))
     ('does not revive Forge values discarded by a historical namespace replacement: %j from %s', async (replacement, origin) => {
-    home = setupTestAgonHome('forge-settings-owner-replacement');
-    const project = join(home, 'project'); mkdirSync(project);
-    const paths = [join(home, 'config.json'), join(project, '.agon.json'), join(project, '.agon.local.json')];
     const layers = [
       { mods: { 'agon.forge': { forgeFitnessTimeout: 17 },
         [origin]: { ...(origin === 'agon.forge' ? { forgeFitnessTimeout: 17 } : {}), forgeEnableSynthesis: true, forgeSynthesisTimeout: 19 } } },
       { forgeEnableSynthesis: true, forgeSynthesisTimeout: 7, mods: { 'agon.synthesis': replacement } },
       { mods: { 'agon.synthesis': { skillSynthesisThreshold: 5 } } },
     ];
-    const bytes = layers.map(layer => JSON.stringify(layer));
-    paths.forEach((path, index) => writeFileSync(path, bytes[index]));
-    const core = await import('../../packages/core/src/signals/config.js');
-    const result = core.loadConfig(project);
-    expect(result.forgeEnableSynthesis).toBe(false);
-    expect(result.forgeSynthesisTimeout).toBe(300);
-    const selected = kernel.selectModSettings(result, 'agon.forge');
+    const selected = kernel.selectModSettings({ mods: kernel.mergeLegacyModSettingsLayers(kernel.LEGACY_MOD_SETTING_OWNERS, ...layers) }, 'agon.forge');
     expect(selected.forgeFitnessTimeout).toBe(17);
     expect(selected).not.toHaveProperty('forgeEnableSynthesis');
     expect(selected).not.toHaveProperty('forgeSynthesisTimeout');
-    paths.forEach((path, index) => expect(readFileSync(path, 'utf8')).toBe(bytes[index]));
   });
 
   it('preserves a malformed inactive namespace during an unrelated write', async () => {
@@ -219,34 +200,21 @@ describe('Kernel configuration storage', () => {
     expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual({ mods: { 'agon.forge': 'future-format' }, forgeFitnessTimeout: 7, debug: true });
   });
   it.each([null, [], false])('does not revive aliases discarded by namespace replacement: %j', async (replacement) => {
-    home = setupTestAgonHome('settings-alias-replacement');
-    const project = join(home, 'project'); mkdirSync(project);
-    writeFileSync(join(home, 'config.json'), JSON.stringify({ mods: { 'agon.forge': { forgeFitnessTimeout: 10 } } }));
-    writeFileSync(join(project, '.agon.json'), JSON.stringify({ mods: { 'agon.forge': replacement } }));
-    writeFileSync(join(project, '.agon.local.json'), JSON.stringify({ mods: { 'agon.forge': { autoReviewAfterForge: false } } }));
-    const core = await import('../../packages/core/src/signals/config.js');
-    const config = core.loadConfig(project);
-    expect(kernel.selectModSettings(config, 'agon.forge')).toEqual({ autoReviewAfterForge: false });
-    expect(config.forgeFitnessTimeout).toBe(120);
-    expect(config.autoReviewAfterForge).toBe(false);
+    const mods = kernel.mergeLegacyModSettingsLayers(kernel.LEGACY_MOD_SETTING_OWNERS,
+      { mods: { 'agon.forge': { forgeFitnessTimeout: 10 } } },
+      { mods: { 'agon.forge': replacement } },
+      { mods: { 'agon.forge': { autoReviewAfterForge: false } } });
+    expect(kernel.selectModSettings({ mods }, 'agon.forge')).toEqual({ autoReviewAfterForge: false });
   });
   it.each([
     [false, false, false], [false, false, true], [false, true, false], [false, true, true],
     [true, false, false], [true, false, true], [true, true, false], [true, true, true],
   ])('keeps scope precedence across namespace spellings %j/%j/%j', async (...namespaced) => {
-    home = setupTestAgonHome('settings-alias-precedence');
-    const project = join(home, 'project'); mkdirSync(project);
-    const paths = [join(home, 'config.json'), join(project, '.agon.json'), join(project, '.agon.local.json')];
     const layers = namespaced.map((useNamespace, index) => useNamespace
       ? { mods: { 'agon.forge': { forgeFitnessTimeout: index + 1 } } }
       : { forgeFitnessTimeout: index + 1 });
-    paths.forEach((path, index) => writeFileSync(path, JSON.stringify(layers[index])));
-    const core = await import('../../packages/core/src/signals/config.js');
-    const result = core.loadConfig(project);
-    expect(result.forgeFitnessTimeout).toBe(3);
-    expect(kernel.selectModSettings(result, 'agon.forge').forgeFitnessTimeout).toBe(3);
-    expect(core.loadConfig().forgeFitnessTimeout).toBe(1);
-    paths.forEach((path, index) => expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual(layers[index]));
+    const mods = kernel.mergeLegacyModSettingsLayers(kernel.LEGACY_MOD_SETTING_OWNERS, ...layers);
+    expect(kernel.selectModSettings({ mods }, 'agon.forge').forgeFitnessTimeout).toBe(3);
   });
 
   it('prefers an explicit namespace within its scope and preserves false, zero and unknown values', async () => {
@@ -488,26 +456,16 @@ describe('Kernel configuration storage', () => {
     expect(policy).toHaveBeenCalledTimes(2);
   });
 
-  it('merges mod namespaces and owner fields across all three config layers', async () => {
-    home = setupTestAgonHome('mod-settings-layers');
-    const project = join(home, 'project');
-    mkdirSync(project);
-    const core = await import('../../packages/core/src/signals/config.js');
+  it('merges mod namespaces and owner fields across all three config layers', () => {
     const layers = [
-      { debug: false, mods: { 'example.one': { first: 1, shared: 'global', nested: { original: true } }, 'example.two': { retained: true } } },
-      { debug: true, mods: { 'example.one': { second: 2, shared: 'project', nested: { replacement: true } } } },
-      { debug: false, mods: { 'example.one': { shared: 'private' }, 'example.unknown': { retained: 'unknown' } } },
+      { mods: { 'example.one': { first: 1, shared: 'global', nested: { original: true } }, 'example.two': { retained: true } } },
+      { mods: { 'example.one': { second: 2, shared: 'project', nested: { replacement: true } } } },
+      { mods: { 'example.one': { shared: 'private' }, 'example.unknown': { retained: 'unknown' } } },
     ];
-    const paths = [join(home, 'config.json'), join(project, '.agon.json'), join(project, '.agon.local.json')];
-    paths.forEach((path, index) => writeFileSync(path, JSON.stringify(layers[index])));
-    core.invalidateConfigCache();
-    const loaded = core.loadConfig(project);
-    expect(loaded.debug).toBe(false);
-    expect(kernel.selectModSettings(loaded, 'example.one')).toEqual({ first: 1, second: 2, shared: 'private', nested: { replacement: true } });
-    expect(kernel.selectModSettings(loaded, 'example.two')).toEqual({ retained: true });
-    expect(kernel.selectModSettings(loaded, 'example.unknown')).toEqual({ retained: 'unknown' });
-    expect(kernel.selectModSettings(core.loadConfig(), 'example.one')).toEqual(layers[0].mods['example.one']);
-    paths.forEach((path, index) => expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual(layers[index]));
+    const mods = { mods: kernel.mergeModSettingsLayers(...layers) };
+    expect(kernel.selectModSettings(mods, 'example.one')).toEqual({ first: 1, second: 2, shared: 'private', nested: { replacement: true } });
+    expect(kernel.selectModSettings(mods, 'example.two')).toEqual({ retained: true });
+    expect(kernel.selectModSettings(mods, 'example.unknown')).toEqual({ retained: 'unknown' });
   });
 
   it('retains unknown values without applying them and rejects malformed namespace maps', () => {

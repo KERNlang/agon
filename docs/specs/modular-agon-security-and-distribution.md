@@ -243,16 +243,17 @@ settings. Trust and grants are machine/user-owned and cannot be supplied by repo
 
 ### Repository
 
-May provide settings only for mods already enabled by the user-global desired
-state. It cannot request, enable, disable, install, approve, or grant a mod; grant
-secrets; broaden filesystem/network access; or remove a global deny merely by
-being opened.
+Inert. `.agon.json` may set only the keys marked `repo` in
+`packages/support-persistence/src/repo-config-policy.ts`, and may add
+`permissions.deny` rules. It cannot configure, request, enable, disable, install,
+approve, or grant a mod; grant secrets; run hooks; broaden filesystem/network
+access; or remove a global deny merely by being opened.
 
 ### Private repository override
 
-`.agon.local.json` remains the strongest personal settings layer and is
-gitignored. It may change personal per-project settings for an already-enabled
-mod, but cannot select one or change trust/permissions.
+`.agon.local.json` can be committed too, so it gets the same treatment as
+`.agon.json` and is applied after it. It cannot select a mod or change
+trust/permissions beyond adding deny rules.
 
 ### Merge rules
 
@@ -268,9 +269,9 @@ mod, but cannot select one or change trust/permissions.
 
 - Personal executable mods belong under `$AGON_HOME/mods` or another explicit
   user source, never in first-party package directories.
-- Repo-private settings for already-enabled mods belong in `.agon.local.json`.
-  Executable/declarative mod code remains in a user-global source or an explicitly
-  selected development path, never an auto-discovered repo directory.
+- Mod settings belong in the user-global config. Executable/declarative mod code
+  remains in a user-global source or an explicitly selected development path,
+  never an auto-discovered repo directory.
 - Existing personal engines, `local-buddy-engines`, worktrees, auth, ratings, and
   history are migration inputs, not cleanup targets.
 - Setup and uninstall preview exact paths. Broad globs and home-directory deletes

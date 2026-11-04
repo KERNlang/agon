@@ -162,7 +162,7 @@ export type {
 } from '@kernlang/agon-support-persistence';
 export { safeAgentVisibleText } from './api/agent-visible.js';
 // ── Engine dispatch isolation ──
-export { resolveIsolationMode, planEngineIsolation, isValidIsolationMode, ISOLATION_MODES } from './signals/isolation.js';
+export { resolveIsolationMode, planEngineIsolation, planRepoConfigGuard, isValidIsolationMode, ISOLATION_MODES } from './signals/isolation.js';
 export type { EngineIsolationPlan } from './signals/isolation.js';
 // ── Tool System ──
 export type { ToolResult, ToolContext, ToolHandler, ToolDefinition, ToolCall, ToolCallResult, PermissionDecision, FileState as ToolFileState, ParsedPermissionRule, PermissionRuleSet, ToolHookDef, ParsedToolHooks } from './models/tool-types.js';

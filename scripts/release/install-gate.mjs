@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
-import { lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { parseArgs } from 'node:util';
@@ -9,13 +10,14 @@ import { INDEPENDENT_PACKAGES, LAUNCHER, REPO_ROOT, isFamilyPackage } from './re
 const { values } = parseArgs({ options: {
   tarballs: { type: 'string' },
   only: { type: 'string' },
+  substitute: { type: 'string' },
   'keep-work': { type: 'boolean', default: false },
 } });
-if (!values.tarballs) throw new Error('usage: install-gate.mjs --tarballs <dir> [--only a,b] [--keep-work]');
+if (!values.tarballs) throw new Error('usage: install-gate.mjs --tarballs <dir> [--only a,b] [--substitute name=npm-spec] [--keep-work]');
 
 const FAKE_ENGINE_ID = 'release-gate-fixture';
 const FAKE_ENGINE_MARKER = 'RELEASE_GATE_FIXTURE_OK';
-const CREDENTIAL_ENV = /(_API_KEY|_TOKEN|_SECRET|_AUTH|PASSWORD)$/i;
+const INHERITED_ENV = ['PATH', 'TMPDIR', 'TEMP', 'TMP', 'LANG', 'LC_ALL'];
 
 const tarballDir = resolve(values.tarballs);
 const manifest = JSON.parse(readFileSync(join(tarballDir, 'release-manifest.json'), 'utf8'));
@@ -23,6 +25,8 @@ const only = values.only ? new Set(values.only.split(',')) : null;
 const entries = manifest.packages.filter(({ name }) => !only || only.has(name));
 const launcher = entries.find(({ name }) => name === LAUNCHER);
 if (!launcher) throw new Error(`${LAUNCHER} is not among the tarballs under test`);
+// Negative control only: installs one package from elsewhere, which must turn the gate RED.
+const [substituteName, substituteSpec] = values.substitute?.split('=') ?? [];
 
 const work = mkdtempSync(join(process.env.RELEASE_GATE_TMP ?? tmpdir(), 'agon-install-gate-'));
 const prefix = join(work, 'consumer');
@@ -36,9 +40,8 @@ function check(id, passed, detail = '') {
 }
 
 function isolatedEnv() {
-  const env = Object.fromEntries(Object.entries(process.env)
-    .filter(([key]) => !CREDENTIAL_ENV.test(key) && !key.startsWith('npm_') && !key.startsWith('NODE_') && !key.startsWith('AGON_')));
-  return { ...env, HOME: home, USERPROFILE: home, AGON_HOME: join(home, '.agon'),
+  const inherited = Object.fromEntries(INHERITED_ENV.filter((key) => process.env[key] !== undefined).map((key) => [key, process.env[key]]));
+  return { ...inherited, HOME: home, USERPROFILE: home, AGON_HOME: join(home, '.agon'),
     AGON_MODULAR_HOST_ROOT: join(home, 'modular-host'), XDG_CONFIG_HOME: join(home, 'config'),
     XDG_CACHE_HOME: join(home, 'cache'), XDG_DATA_HOME: join(home, 'data'), CI: '1', NO_COLOR: '1' };
 }
@@ -49,25 +52,69 @@ function agon(args, timeout = 120_000) {
   });
 }
 
-function runAgonCheck(id, args, expected) {
+function runAgonCheck(id, args, findMissing) {
   const result = agon(args);
-  const output = `${result.stdout}${result.stderr}`;
-  const missing = expected.filter((text) => !output.includes(text));
+  const missing = findMissing(result);
   const passed = result.status === 0 && missing.length === 0;
   check(id, passed, `exit=${result.status}${missing.length ? ` missing=${JSON.stringify(missing)}` : ''}`);
-  if (!passed) console.log(output.slice(-1500));
-  return output;
+  if (!passed) console.log(`${result.stdout}${result.stderr}`.slice(-1500));
+}
+
+const contains = (...texts) => ({ stdout, stderr }) => texts.filter((text) => !`${stdout}${stderr}`.includes(text));
+// consola prefixes plain output with [log] when CI is set.
+const printsExactly = (text) => ({ stdout }) => (stdout.trim().replace(/^\[log\] /, '') === text ? [] : [text]);
+const listsCommands = (...commands) => ({ stdout }) => commands.filter((command) => !new RegExp(`^\\s*\`?${command}\`?\\s`, 'm').test(stdout));
+
+function integrityOf(path) {
+  return `sha512-${createHash('sha512').update(readFileSync(path)).digest('base64')}`;
+}
+
+function filesIn(root, relative = '') {
+  return readdirSync(join(root, relative), { withFileTypes: true }).flatMap((entry) => {
+    const path = relative ? `${relative}/${entry.name}` : entry.name;
+    if (!entry.isDirectory()) return [path];
+    return path === 'node_modules' ? [] : filesIn(root, path);
+  });
+}
+
+function installedFamilyPackages(nodeModules) {
+  if (!existsSync(nodeModules)) return [];
+  return readdirSync(nodeModules).filter((name) => !name.startsWith('.')).flatMap((name) => {
+    const names = name.startsWith('@') ? readdirSync(join(nodeModules, name)).map((inner) => `${name}/${inner}`) : [name];
+    return names.flatMap((packageName) => {
+      const directory = join(nodeModules, packageName);
+      const nested = installedFamilyPackages(join(directory, 'node_modules'));
+      return isFamilyPackage(packageName) ? [{ name: packageName, directory }, ...nested] : nested;
+    });
+  });
+}
+
+function differenceFromTarball({ name, directory }) {
+  const entry = entries.find((candidate) => candidate.name === name);
+  if (!entry) return `${name} has no release tarball`;
+  if (lstatSync(directory).isSymbolicLink()) return `${name} is a symlink`;
+  const unpacked = mkdtempSync(join(work, 'unpacked-'));
+  const extracted = spawnSync('tar', ['-xzf', join(tarballDir, entry.filename), '-C', unpacked], { env: isolatedEnv() });
+  if (extracted.status !== 0) return `${name} tarball does not extract`;
+  const packed = join(unpacked, 'package');
+  const packedFiles = filesIn(packed).sort();
+  const installedFiles = filesIn(directory).sort();
+  const changed = [...new Set([...packedFiles, ...installedFiles])].filter((path) => !packedFiles.includes(path)
+    || !installedFiles.includes(path) || !readFileSync(join(packed, path)).equals(readFileSync(join(directory, path))));
+  return changed.length ? `${name} differs at ${changed.slice(0, 3).join(' ')}` : null;
 }
 
 function installConsumer() {
   mkdirSync(prefix, { recursive: true });
   mkdirSync(home, { recursive: true });
-  const specFor = ({ filename }) => `file:${join(tarballDir, filename)}`;
+  const specFor = ({ name, filename }) => (name === substituteName ? substituteSpec : `file:${join(tarballDir, filename)}`);
   writeFileSync(join(prefix, 'package.json'), `${JSON.stringify({
     name: 'agon-release-gate-consumer', version: '0.0.0', private: true,
     dependencies: { [LAUNCHER]: specFor(launcher) },
     overrides: Object.fromEntries(entries.filter(({ name }) => name !== LAUNCHER).map((entry) => [entry.name, specFor(entry)])),
   }, null, 2)}\n`);
+  const unapproved = entries.filter(({ filename, integrity }) => integrityOf(join(tarballDir, filename)) !== integrity).map(({ name }) => name);
+  check('every tarball matches its manifest integrity', unapproved.length === 0, unapproved.join(','));
   const installed = spawnSync('npm', ['install', '--no-audit', '--no-fund', '--registry=https://registry.npmjs.org/'], {
     cwd: prefix, encoding: 'utf8', timeout: 15 * 60_000, maxBuffer: 64 * 1024 * 1024,
     env: { ...isolatedEnv(), npm_config_cache: join(work, 'npm-cache') },
@@ -86,13 +133,17 @@ function checkInstalledGraph() {
   check('agon resolves outside the repository', !agonBin.startsWith(`${realpathSync(REPO_ROOT)}${sep}`), agonBin);
 
   const lock = JSON.parse(readFileSync(join(prefix, 'package-lock.json'), 'utf8')).packages;
-  const fromTarball = new Set(entries.map(({ name }) => name));
-  const fromRegistry = Object.entries(lock)
-    .filter(([path, entry]) => {
+  const fromElsewhere = Object.entries(lock)
+    .filter(([path, locked]) => {
       const name = path.split('node_modules/').at(-1);
-      return isFamilyPackage(name) && !fromTarball.has(name) && !String(entry.resolved ?? '').startsWith('file:');
+      if (!isFamilyPackage(name)) return false;
+      const packed = entries.find((entry) => entry.name === name);
+      return !packed || !String(locked.resolved ?? '').startsWith('file:') || locked.integrity !== packed.integrity;
     }).map(([path]) => path);
-  check('every first-party package comes from a release tarball', fromRegistry.length === 0, fromRegistry.join(','));
+  check('every first-party package comes from a release tarball', fromElsewhere.length === 0, fromElsewhere.join(','));
+
+  const differing = installedFamilyPackages(join(prefix, 'node_modules')).map(differenceFromTarball).filter(Boolean);
+  check('every installed first-party package holds the packed bytes', differing.length === 0, differing.join('; '));
 
   const launcherManifest = JSON.parse(readFileSync(join(prefix, 'node_modules/@kernlang/agon/package.json'), 'utf8'));
   const declared = { ...launcherManifest.dependencies, ...launcherManifest.optionalDependencies };
@@ -122,17 +173,40 @@ function writeFakeEngine() {
   }));
 }
 
+function updatePlanProblems(plan) {
+  if (plan?.status !== 'planned' || !plan.lifecycle) return ['status is not planned'];
+  const { version } = launcher;
+  const { lifecycle } = plan;
+  const problems = [];
+  if (plan.launcherSpec !== `${LAUNCHER}@${version}`) problems.push(`launcherSpec ${plan.launcherSpec}`);
+  for (const [field, value] of [['kernelVersion', lifecycle.kernelVersion], ['apiVersion', lifecycle.apiVersion], ['launcher.version', lifecycle.launcher?.version]]) {
+    if (value !== version) problems.push(`${field} ${value}`);
+  }
+  if (!lifecycle.planHash) problems.push('no planHash');
+  if (lifecycle.missing?.length !== 0) problems.push(`missing ${lifecycle.missing}`);
+  const planned = lifecycle.packages ?? [];
+  if (planned.length === 0 || planned.length !== lifecycle.requestedPackageIds?.length || planned.length !== lifecycle.lock?.packages?.length) {
+    problems.push('package, request and lock counts disagree');
+  }
+  for (const { id, version: plannedVersion, integrity } of planned) {
+    const packed = entries.find(({ name }) => name === id);
+    if (packed?.version !== plannedVersion || packed?.integrity !== integrity) problems.push(`${id} is not the packed artifact`);
+  }
+  return problems;
+}
+
 function checkCommands() {
-  runAgonCheck('agon --version', ['--version'], [launcher.version]);
-  runAgonCheck('agon --help', ['--help'], ['forge', 'review', 'mod']);
+  runAgonCheck('agon --version', ['--version'], printsExactly(launcher.version));
+  runAgonCheck('agon --help', ['--help'], listsCommands('forge', 'review', 'ask', 'update'));
   writeFakeEngine();
-  runAgonCheck('agon engine list', ['engine', 'list'], [FAKE_ENGINE_ID]);
-  runAgonCheck('agon mod list', ['mod', 'list'], ['[enabled] Ask', '[enabled] Forge', '[enabled] Review']);
-  runAgonCheck('agon ask via fake engine', ['ask', FAKE_ENGINE_ID, 'release gate question', '--timeout', '30'], [FAKE_ENGINE_MARKER]);
+  runAgonCheck('agon engine list', ['engine', 'list'], contains(FAKE_ENGINE_ID));
+  runAgonCheck('agon mod list', ['mod', 'list'], contains('[enabled] Ask', '[enabled] Forge', '[enabled] Review'));
+  runAgonCheck('agon ask via fake engine', ['ask', FAKE_ENGINE_ID, 'release gate question', '--timeout', '30'], printsExactly(FAKE_ENGINE_MARKER));
   const plan = agon(['update', '--plan'], 300_000);
   let planned = null;
   try { planned = JSON.parse(plan.stdout); } catch { planned = null; }
-  const planPassed = check('agon update --plan', plan.status === 0 && planned?.status === 'planned', `exit=${plan.status}`);
+  const planProblems = updatePlanProblems(planned);
+  const planPassed = check('agon update --plan', plan.status === 0 && planProblems.length === 0, `exit=${plan.status}${planProblems.length ? ` problems=${JSON.stringify(planProblems)}` : ''}`);
   if (!planPassed) console.log(`${plan.stdout}${plan.stderr}`.slice(-1500));
 }
 

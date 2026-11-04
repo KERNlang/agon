@@ -6795,38 +6795,6 @@
     },
     {
       "category": "pythonAndNativeComponents",
-      "id": "packages/saas-api/src/__init__.py",
-      "source": "packages/saas-api/src/__init__.py",
-      "class": "hidden-shared-support-package",
-      "package": "@kernlang/agon-support-saas-api",
-      "rule": "saas-source-rule"
-    },
-    {
-      "category": "pythonAndNativeComponents",
-      "id": "packages/saas-api/src/health.py",
-      "source": "packages/saas-api/src/health.py",
-      "class": "hidden-shared-support-package",
-      "package": "@kernlang/agon-support-saas-api",
-      "rule": "saas-source-rule"
-    },
-    {
-      "category": "pythonAndNativeComponents",
-      "id": "packages/saas-api/src/routes/__init__.py",
-      "source": "packages/saas-api/src/routes/__init__.py",
-      "class": "hidden-shared-support-package",
-      "package": "@kernlang/agon-support-saas-api",
-      "rule": "saas-source-rule"
-    },
-    {
-      "category": "pythonAndNativeComponents",
-      "id": "packages/saas-api/src/routes/get_health.py",
-      "source": "packages/saas-api/src/routes/get_health.py",
-      "class": "hidden-shared-support-package",
-      "package": "@kernlang/agon-support-saas-api",
-      "rule": "saas-source-rule"
-    },
-    {
-      "category": "pythonAndNativeComponents",
       "id": "packages/support-dedup/python/classifier.py",
       "source": "packages/support-dedup/python/classifier.py",
       "class": "hidden-shared-support-package",
@@ -6871,38 +6839,6 @@
       "source": "packages/support-persistence/python/history-search.py",
       "class": "hidden-shared-support-package",
       "package": "@kernlang/agon-support-persistence",
-      "rule": "physical-support-owner"
-    },
-    {
-      "category": "pythonAndNativeComponents",
-      "id": "packages/support-saas-api/python/__init__.py",
-      "source": "packages/support-saas-api/python/__init__.py",
-      "class": "hidden-shared-support-package",
-      "package": "@kernlang/agon-support-saas-api",
-      "rule": "physical-support-owner"
-    },
-    {
-      "category": "pythonAndNativeComponents",
-      "id": "packages/support-saas-api/python/health.py",
-      "source": "packages/support-saas-api/python/health.py",
-      "class": "hidden-shared-support-package",
-      "package": "@kernlang/agon-support-saas-api",
-      "rule": "physical-support-owner"
-    },
-    {
-      "category": "pythonAndNativeComponents",
-      "id": "packages/support-saas-api/python/routes/__init__.py",
-      "source": "packages/support-saas-api/python/routes/__init__.py",
-      "class": "hidden-shared-support-package",
-      "package": "@kernlang/agon-support-saas-api",
-      "rule": "physical-support-owner"
-    },
-    {
-      "category": "pythonAndNativeComponents",
-      "id": "packages/support-saas-api/python/routes/get_health.py",
-      "source": "packages/support-saas-api/python/routes/get_health.py",
-      "class": "hidden-shared-support-package",
-      "package": "@kernlang/agon-support-saas-api",
       "rule": "physical-support-owner"
     },
     {

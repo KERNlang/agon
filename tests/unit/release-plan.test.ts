@@ -11,7 +11,7 @@ const workspace = (name: string, dependencies: string[] = [], isPrivate = false)
 describe('release publish order', () => {
   it('publishes the launcher last so a half-failed release never moves latest onto an uninstallable graph', () => {
     const names = (orderForPublish(readWorkspaces()) as Workspace[]).map(({ manifest }) => manifest.name);
-    expect(names).toHaveLength(51);
+    expect(names).toHaveLength(50);
     expect(names.at(-1)).toBe('@kernlang/agon');
     expect(names.indexOf('@kernlang/agon-mod-api')).toBeLessThan(names.indexOf('@kernlang/agon-kernel'));
     expect(names).not.toContain('@kernlang/agon-core');

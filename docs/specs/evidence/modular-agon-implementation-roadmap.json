@@ -621,39 +621,6 @@
       ]
     },
     {
-      "id": "@kernlang/agon-support-saas-api",
-      "class": "hidden-shared-support-package",
-      "owner": "@kernlang/agon-support-saas-api",
-      "dependencies": [
-        "@kernlang/agon-kernel"
-      ],
-      "publicBoundary": "kernel-injected capability interface; no direct third-party import",
-      "privateBoundary": "package-internal implementation; consumers may not import legacy paths after cutover",
-      "extractionSources": [
-        "packages/saas-api/src/__init__.py",
-        "packages/saas-api/src/health.py",
-        "packages/saas-api/src/routes/__init__.py",
-        "packages/saas-api/src/routes/get_health.py",
-        "packages/support-saas-api/python/__init__.py",
-        "packages/support-saas-api/python/health.py",
-        "packages/support-saas-api/python/routes/__init__.py",
-        "packages/support-saas-api/python/routes/get_health.py"
-      ],
-      "migrationOrder": 6,
-      "migrationSlice": "S4",
-      "compatibilityAdapter": "legacy callers receive the same capability through a kernel-owned adapter until all dependants move",
-      "killList": [
-        "KL-004",
-        "KL-007"
-      ],
-      "acceptanceEvidence": [
-        "PKG-13-BOUNDARY",
-        "PKG-13-PARITY",
-        "PKG-13-PACK",
-        "PKG-13-DISABLED"
-      ]
-    },
-    {
       "id": "@kernlang/agon-mod-ask",
       "class": "user-toggleable-mod-package",
       "owner": "@kernlang/agon-mod-ask",

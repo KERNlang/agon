@@ -40,7 +40,7 @@ export default defineConfig({
     '@kernlang/agon-support-dedup', '@kernlang/agon-support-engine-catalog',
     '@kernlang/agon-support-engine-runtime', '@kernlang/agon-support-judge',
     '@kernlang/agon-support-panel', '@kernlang/agon-support-persistence',
-    '@kernlang/agon-support-saas-api', '@kernlang/agon-support-verification',
+    '@kernlang/agon-support-verification',
     '@kernlang/agon-support-worktree',
     '@huggingface/transformers', 'onnxruntime-node',
     'ink', 'react', 'ink-text-input', 'ink-spinner', 'ink-select-input',

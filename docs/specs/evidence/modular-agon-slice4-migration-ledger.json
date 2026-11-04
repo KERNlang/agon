@@ -2,13 +2,13 @@
   "schemaVersion": 1,
   "slice": "S4",
   "semantics": "Roadmap extractionSources are ownership occurrences. Whole modules move when they are support implementation; UI/mod consumers remain narrow compatibility consumers until S5/S6.",
-  "packages": 11,
-  "sourceOccurrences": 261,
+  "packages": 10,
+  "sourceOccurrences": 253,
   "counts": {
-    "byte-verified-compatibility-mirror": 24,
+    "byte-verified-compatibility-mirror": 20,
     "compatibility-adapter": 102,
     "compatibility-consumer": 41,
-    "physical-owner": 90,
+    "physical-owner": 86,
     "retired-adapter": 4
   },
   "sourceRelocations": [
@@ -2176,110 +2176,6 @@
       "evidence": [
         "S4-ASSET-PARITY",
         "S4-PACK"
-      ]
-    },
-    {
-      "owner": "@kernlang/agon-support-saas-api",
-      "source": "packages/saas-api/src/__init__.py",
-      "disposition": "byte-verified-compatibility-mirror",
-      "destination": [
-        "python/"
-      ],
-      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
-      "evidence": [
-        "S4-ASSET-PARITY",
-        "S4-PACK"
-      ]
-    },
-    {
-      "owner": "@kernlang/agon-support-saas-api",
-      "source": "packages/saas-api/src/health.py",
-      "disposition": "byte-verified-compatibility-mirror",
-      "destination": [
-        "python/"
-      ],
-      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
-      "evidence": [
-        "S4-ASSET-PARITY",
-        "S4-PACK"
-      ]
-    },
-    {
-      "owner": "@kernlang/agon-support-saas-api",
-      "source": "packages/saas-api/src/routes/__init__.py",
-      "disposition": "byte-verified-compatibility-mirror",
-      "destination": [
-        "python/"
-      ],
-      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
-      "evidence": [
-        "S4-ASSET-PARITY",
-        "S4-PACK"
-      ]
-    },
-    {
-      "owner": "@kernlang/agon-support-saas-api",
-      "source": "packages/saas-api/src/routes/get_health.py",
-      "disposition": "byte-verified-compatibility-mirror",
-      "destination": [
-        "python/"
-      ],
-      "removalCondition": "remove legacy path only after its consuming mod/surface or installer is cut over and its kill-list gate passes",
-      "evidence": [
-        "S4-ASSET-PARITY",
-        "S4-PACK"
-      ]
-    },
-    {
-      "owner": "@kernlang/agon-support-saas-api",
-      "source": "packages/support-saas-api/python/__init__.py",
-      "disposition": "physical-owner",
-      "destination": [
-        "python/"
-      ],
-      "removalCondition": null,
-      "evidence": [
-        "S4-BOUNDARY",
-        "S4-PARITY"
-      ]
-    },
-    {
-      "owner": "@kernlang/agon-support-saas-api",
-      "source": "packages/support-saas-api/python/health.py",
-      "disposition": "physical-owner",
-      "destination": [
-        "python/"
-      ],
-      "removalCondition": null,
-      "evidence": [
-        "S4-BOUNDARY",
-        "S4-PARITY"
-      ]
-    },
-    {
-      "owner": "@kernlang/agon-support-saas-api",
-      "source": "packages/support-saas-api/python/routes/__init__.py",
-      "disposition": "physical-owner",
-      "destination": [
-        "python/"
-      ],
-      "removalCondition": null,
-      "evidence": [
-        "S4-BOUNDARY",
-        "S4-PARITY"
-      ]
-    },
-    {
-      "owner": "@kernlang/agon-support-saas-api",
-      "source": "packages/support-saas-api/python/routes/get_health.py",
-      "disposition": "physical-owner",
-      "destination": [
-        "python/"
-      ],
-      "removalCondition": null,
-      "evidence": [
-        "S4-BOUNDARY",
-        "S4-PARITY"
       ]
     },
     {

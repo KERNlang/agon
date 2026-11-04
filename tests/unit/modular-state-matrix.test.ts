@@ -67,13 +67,12 @@ describe('full first-party activation matrix', () => {
     }
   });
 
-  it('keeps hidden support implicit, excludes unused SaaS support, and exposes immutable maps', () => {
+  it('keeps hidden support implicit and exposes immutable maps', () => {
     const catalog = createFirstPartyModCatalog();
     const full = createFullCompatDesiredState(catalog, NOW);
     const plan = planDesiredStateChange(catalog, full, { kind: 'enable', id: 'agon.ask' }, NOW);
     expect(plan.effective).toHaveLength(36);
     expect(plan.effectivePackages).toHaveLength(48);
-    expect(plan.effectivePackages).not.toContain('@kernlang/agon-support-saas-api');
     expect((catalog.modsById as Map<string, unknown>).set).toBeUndefined();
     expect((catalog.packagesById as Map<string, unknown>).clear).toBeUndefined();
   });

@@ -7,7 +7,7 @@ import { pathToFileURL } from 'node:url';
 const root = resolve(import.meta.dirname, '../..');
 const temp = mkdtempSync(join(tmpdir(), 'agon-s4-api-compat-'));
 const packages = [
-  'engine-runtime', 'persistence', 'dedup', 'browser-bridge', 'saas-api',
+  'engine-runtime', 'persistence', 'dedup', 'browser-bridge',
   'engine-catalog', 'verification', 'panel', 'worktree', 'agent-runtime', 'judge',
 ];
 

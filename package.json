@@ -16,7 +16,6 @@
     "packages/support-persistence",
     "packages/support-dedup",
     "packages/support-browser-bridge",
-    "packages/support-saas-api",
     "packages/support-engine-catalog",
     "packages/support-verification",
     "packages/support-panel",

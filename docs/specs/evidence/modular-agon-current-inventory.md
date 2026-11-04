@@ -19,7 +19,7 @@
 | statePaths | 38 |
 | stateStoreModules | 38 |
 | staticAssets | 18 |
-| pythonAndNativeComponents | 27 |
+| pythonAndNativeComponents | 19 |
 | generatedDocumentation | 3 |
 
 Canonical machine-readable evidence: [docs/specs/evidence/modular-agon-current-inventory.json](./evidence/modular-agon-current-inventory.json).

@@ -26,10 +26,10 @@ it.each([[3, true], [1, true], [3, false], [0, false]] as const)(
       isSourceBearingPath: () => false,
       hashReviewSubject: () => 'sha256:fixture',
       validateSliceReview: () => ({ passed: false }),
-      validateDependencyGraph: () => ({ duplicateEdges: [], uniqueEdges: 158 }),
+      validateDependencyGraph: () => ({ duplicateEdges: [], uniqueEdges: 157 }),
       readFileSync: (path: string) => {
-        if (path.endsWith('package-map.json')) return JSON.stringify({ packages: Array.from({ length: 49 }, (_, i) => ({ class: i < 36 ? 'user-toggleable-mod-package' : 'support' })) });
-        if (path.endsWith('ownership.json')) return JSON.stringify({ assignments: Array(872).fill(null) });
+        if (path.endsWith('package-map.json')) return JSON.stringify({ packages: Array.from({ length: 48 }, (_, i) => ({ class: i < 36 ? 'user-toggleable-mod-package' : 'support' })) });
+        if (path.endsWith('ownership.json')) return JSON.stringify({ assignments: Array(864).fill(null) });
         if (path.endsWith('release-set.json')) return JSON.stringify({ artifactCount: releaseArtifactCount });
         if (path.endsWith('physical-cutover.json')) return JSON.stringify({ counts: { physical: 36 } });
         if (path.endsWith('platform-matrix.json')) return JSON.stringify({ summary: { passed, externallyBlocked: 12 - passed, failed: 0 } });
@@ -106,11 +106,11 @@ it.each([
     isSourceBearingPath: () => false,
     hashReviewSubject: () => 'sha256:fixture',
     validateSliceReview: () => ({ passed: true }),
-    validateDependencyGraph: () => ({ duplicateEdges: [], uniqueEdges: 158 }),
+    validateDependencyGraph: () => ({ duplicateEdges: [], uniqueEdges: 157 }),
     loadEvidencePasses,
     readFileSync: (path: string) => {
-      if (path.endsWith('package-map.json')) return JSON.stringify({ packages: Array.from({ length: 49 }, (_, i) => ({ class: i < 36 ? 'user-toggleable-mod-package' : 'support' })) });
-      if (path.endsWith('ownership.json')) return JSON.stringify({ assignments: Array(872).fill(null) });
+      if (path.endsWith('package-map.json')) return JSON.stringify({ packages: Array.from({ length: 48 }, (_, i) => ({ class: i < 36 ? 'user-toggleable-mod-package' : 'support' })) });
+      if (path.endsWith('ownership.json')) return JSON.stringify({ assignments: Array(864).fill(null) });
       if (path.endsWith('release-set.json')) return JSON.stringify({ artifactCount: releaseArtifactCount
         + (fault === 'release-missing' ? -1 : fault === 'release-extra' ? 1 : 0) });
       if (path.endsWith('physical-cutover.json')) return JSON.stringify({ counts: { physical: 36 } });

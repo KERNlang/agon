@@ -30,7 +30,6 @@ const packages = [
   { id: '@kernlang/agon-support-agent-runtime', class: SUPPORT, defaultEnabled: true, dependencies: ['@kernlang/agon-support-engine-runtime', '@kernlang/agon-support-persistence', '@kernlang/agon-support-verification'] },
   { id: '@kernlang/agon-support-dedup', class: SUPPORT, defaultEnabled: true, dependencies: ['@kernlang/agon-kernel'] },
   { id: '@kernlang/agon-support-browser-bridge', class: SUPPORT, defaultEnabled: true, dependencies: ['@kernlang/agon-kernel'] },
-  { id: '@kernlang/agon-support-saas-api', class: SUPPORT, defaultEnabled: false, dependencies: ['@kernlang/agon-kernel'] },
 ];
 
 const mods = {
@@ -171,7 +170,6 @@ function assignmentFor(category, item) {
   }
   if (/dedup/i.test(raw) || /dedup/i.test(source)) return { class: SUPPORT, package: '@kernlang/agon-support-dedup', rule: 'dedup-support-rule' };
   if (/browser|chrome|native-host/i.test(raw) || /bridge|browser-host/i.test(source)) return { class: SUPPORT, package: '@kernlang/agon-support-browser-bridge', rule: 'browser-support-rule' };
-  if (/packages\/saas-api/.test(source) || /packages\/saas-api/.test(raw)) return { class: SUPPORT, package: '@kernlang/agon-support-saas-api', rule: 'saas-source-rule' };
   if (frozenKernelDefaults.has(semanticKey(category, item))) {
     return { class: KERNEL, package: '@kernlang/agon-kernel', rule: 'kernel-contract-default' };
   }

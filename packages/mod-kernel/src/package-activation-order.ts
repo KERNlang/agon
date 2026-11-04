@@ -4,7 +4,7 @@ import type { FirstPartySurfacePackage } from './activated-surface-generation.js
 export const HOST_PROVIDED_DEPENDENCY_IDS = Object.freeze([
   'agon.agent-runtime', 'agon.api', 'agon.browser-bridge', 'agon.dedup',
   'agon.engine-runtime', 'agon.judge', 'agon.panel', 'agon.persistence',
-  'agon.saas-api', 'agon.verification', 'agon.worktree',
+  'agon.verification', 'agon.worktree',
 ]);
 
 /** Topologically order physical packages while ignoring dependencies supplied by the host. */

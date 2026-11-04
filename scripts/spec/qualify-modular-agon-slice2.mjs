@@ -108,7 +108,7 @@ receipt.passed = noContamination
   && exactCommit
   && reviewEvidence.passed
   && graph.duplicateEdges.length === 0
-  && graph.uniqueEdges === 158
+  && graph.uniqueEdges === 157
   && performance.budgets.coldGreen === true
   && performance.budgets.rssGreen === true
   && steps.length > 0

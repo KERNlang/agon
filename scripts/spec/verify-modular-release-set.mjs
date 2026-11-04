@@ -156,7 +156,7 @@ async function dependencyPayloads(catalog) {
 }
 
 try {
-  if (map.packages.length !== 49 || releaseNames.size !== 49) fail('release set must contain 49 unique modular packages');
+  if (map.packages.length !== 48 || releaseNames.size !== 48) fail('release set must contain 48 unique modular packages');
   if (selfTest) {
     const record = map.packages.find(({ id }) => id === '@kernlang/agon-kernel');
     const pkg = JSON.parse(readFileSync(join(root, 'packages', directory(record.id), 'package.json'), 'utf8'));

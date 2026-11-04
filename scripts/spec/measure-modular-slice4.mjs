@@ -6,7 +6,7 @@ import { join, resolve } from 'node:path';
 const root = resolve(import.meta.dirname, '../..');
 const home = mkdtempSync(join(tmpdir(), 'agon-s4-perf-home-'));
 const names = [
-  'engine-runtime', 'persistence', 'dedup', 'browser-bridge', 'saas-api',
+  'engine-runtime', 'persistence', 'dedup', 'browser-bridge',
   'engine-catalog', 'verification', 'panel', 'worktree', 'agent-runtime', 'judge',
 ];
 

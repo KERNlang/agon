@@ -17,7 +17,7 @@ function percentile(values, quantile) {
 
 function hash(character) { return `sha256:${character.repeat(64)}`; }
 
-const packages = Array.from({ length: 49 }, (_, index) => ({
+const packages = Array.from({ length: 48 }, (_, index) => ({
   id: `agon.fixture-${String(index).padStart(2, '0')}`,
   version: '1.0.0',
   source: 'bundled',

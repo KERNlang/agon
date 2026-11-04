@@ -7,7 +7,7 @@ const root = resolve(import.meta.dirname, '../..');
 const npmCache = mkdtempSync(join(tmpdir(), 'agon-s4-npm-cache-'));
 process.on('exit', () => rmSync(npmCache, { recursive: true, force: true }));
 const names = [
-  'engine-runtime', 'persistence', 'dedup', 'browser-bridge', 'saas-api',
+  'engine-runtime', 'persistence', 'dedup', 'browser-bridge',
   'engine-catalog', 'verification', 'panel', 'worktree', 'agent-runtime', 'judge',
 ];
 const assets = {
@@ -15,7 +15,6 @@ const assets = {
   persistence: ['python/history-search.py'],
   dedup: ['python/classifier.py', 'python/embedder.py', 'python/syntax-validator.py'],
   verification: ['python/'],
-  'saas-api': ['python/'],
 };
 
 function run(command, args, cwd = root) {

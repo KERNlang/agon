@@ -116,9 +116,9 @@ receipt.passed = noContamination
   && exactCommit
   && reviewEvidence.passed
   && graph.duplicateEdges.length === 0
-  && graph.uniqueEdges === 158
+  && graph.uniqueEdges === 157
   && performance.passed === true
-  && migration.packages === 11
+  && migration.packages === 10
   && steps.length > 0
   && steps.every(({ passed }) => passed);
 console.log(JSON.stringify(receipt, null, 2));

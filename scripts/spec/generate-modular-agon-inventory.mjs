@@ -18,7 +18,7 @@ const rel = (value) => posix(relative(root, value));
 const frozenInventoryPath = join(evidenceDir, 'modular-agon-current-inventory.json');
 const canonicalFrozenInventoryPath = join(root, 'docs/specs/evidence/modular-agon-current-inventory.json');
 const canonicalFrozenInventoryMarkdownPath = join(root, 'docs/specs/evidence/modular-agon-current-inventory.md');
-const frozenCategoryHash = 'e19cc1b2d0686d9be2872999d3165196b2fc827683d8edca3bb746fd8d0c9772';
+const frozenCategoryHash = 'fe67e3bd446bd52749669b0120c3db5e6673f615518c13627ee4ec90ad4f4e60';
 const refreshFrozenBaseline = process.argv.includes('--refresh-frozen-baseline');
 const selfTest = process.argv.includes('--self-test');
 
@@ -34,7 +34,7 @@ function validateFrozenInventory(value) {
     if (!Array.isArray(entries)) throw new Error('frozen legacy inventory category is not an array');
     return sum + entries.length;
   }, 0);
-  if (assignments !== 872) throw new Error(`frozen legacy inventory must contain 872 assignments; got ${assignments}`);
+  if (assignments !== 864) throw new Error(`frozen legacy inventory must contain 864 assignments; got ${assignments}`);
   const actualHash = categoryHash(value.categories);
   if (actualHash !== frozenCategoryHash) {
     throw new Error(`frozen legacy inventory category hash mismatch: ${actualHash}`);
@@ -276,7 +276,7 @@ for (const file of ['packages/cli/package.json', 'packages/cli/tsup.config.ts', 
 }
 
 const nativeComponents = ['packages', 'scripts'].flatMap((dir) => walk(join(root, dir), (file) =>
-  !/__pycache__|\.pyc$/.test(file) && /\.(?:py|sh|node|c|cc|cpp|h|rs|wasm)$/.test(file),
+  !/__pycache__|\.pyc$|packages\/saas-api\//.test(file) && /\.(?:py|sh|node|c|cc|cpp|h|rs|wasm)$/.test(file),
 )).map((file) => ({
   id: rel(file), kind: extname(file).slice(1) || 'native', source: rel(file),
 }));

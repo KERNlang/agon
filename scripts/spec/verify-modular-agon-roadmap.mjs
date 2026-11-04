@@ -28,7 +28,7 @@ const kernelRelocations = [{
   implementationPaths: ['packages/mod-kernel/src/sidechain-logger.ts'],
 }];
 for (const relocation of kernelRelocations) check(existsSync(`${root}/${relocation.removalEvidence}`), `missing kernel relocation evidence: ${relocation.source}`);
-check(roadmap.packages.length === 49 && byId.size === 49, 'roadmap must contain 49 unique packages');
+check(roadmap.packages.length === 48 && byId.size === 48, 'roadmap must contain 48 unique packages');
 for (const id of ids) check(byId.has(id), `roadmap misses ${id}`);
 const globalEdges = new Set();
 for (const pkg of roadmap.packages) {

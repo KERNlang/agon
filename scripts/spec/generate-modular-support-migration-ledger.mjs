@@ -18,7 +18,6 @@ const destinations = {
   '@kernlang/agon-support-agent-runtime': ['src/agent-loop.ts', 'src/agent-session.ts'],
   '@kernlang/agon-support-dedup': ['src/dedup-resolver.ts', 'src/task-classifier.ts', 'python/'],
   '@kernlang/agon-support-browser-bridge': ['src/syntax-validator-bridge.ts', 'src/browser-host.ts'],
-  '@kernlang/agon-support-saas-api': ['python/'],
 };
 
 function sourceFile(locator) {

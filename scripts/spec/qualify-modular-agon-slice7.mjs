@@ -120,9 +120,9 @@ receipt.passed = noContamination
   && exactCommit
   && reviewEvidence.passed
   && graph.duplicateEdges.length === 0
-  && graph.uniqueEdges === 158
+  && graph.uniqueEdges === 157
   && performance.passed === true
-  && inventoryAssignments === 872
+  && inventoryAssignments === 864
   && steps.length > 0
   && steps.every(({ passed }) => passed);
 console.log(JSON.stringify(receipt, null, 2));

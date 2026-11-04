@@ -1,14 +1,10 @@
 import { LAUNCHER } from './release-plan.mjs';
 
-const SAAS_SUPPORT = '@kernlang/agon-support-saas-api';
-const SAAS_REASON = 'no mod, profile or package depends on it, and setup --with accepts only mods';
-
-export const NOT_INSTALLED = new Map([[SAAS_SUPPORT, SAAS_REASON]]);
+export const NOT_INSTALLED = new Map();
 export const NOT_PINNED = new Map([[LAUNCHER, 'the channel ships inside the launcher tarball, so it cannot pin its own hash']]);
 export const NOT_IN_UPDATE_PLAN = new Map([
   [LAUNCHER, 'the plan records it under lifecycle.launcher'],
   ['@kernlang/agon-dedup', 'compatibility artifact installed by npm, never staged by the kernel'],
-  [SAAS_SUPPORT, SAAS_REASON],
 ]);
 
 export function setDifferences(label, actual, expected) {

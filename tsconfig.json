@@ -20,9 +20,6 @@
       "path": "packages/support-browser-bridge"
     },
     {
-      "path": "packages/support-saas-api"
-    },
-    {
       "path": "packages/support-engine-catalog"
     },
     {

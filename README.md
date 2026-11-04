@@ -34,6 +34,8 @@ npm install -g @kernlang/agon
 - [Ratings](#ratings)
 - [Cesar Routing](#cesar-routing)
 - [Configuration](#configuration)
+- [Mods](#mods)
+- [Updating](#updating)
 - [Architecture](#architecture)
 - [License](#license)
 
@@ -292,7 +294,8 @@ Performs an automated, multi-engine code review of your uncommitted changes, bra
 
 ```bash
 /review HEAD~1..HEAD
-agon review commit:HEAD                         # all active engines in parallel
+agon review commit:HEAD                         # author unknown, so the full usable panel
+agon review commit:HEAD --primary-engine claude # claude wrote it: risk-routed panel without claude
 agon review commit:HEAD --engine claude        # explicit single-reviewer fast path
 agon review commit:HEAD --engines claude,codex # explicit subset
 agon review branch:feat-x --base main        # feat-x's commits vs main, regardless of checkout
@@ -301,7 +304,11 @@ agon review range:main...feat-x              # fully explicit two-ref scope
 
 Diff scope is deliberate, never implicit: `--base <ref>` pins the base for `uncommitted`/`branch:` targets, and `range:BASE...TARGET` names both ends. One convenience: reviewing the branch you are currently **on** (where "branch vs itself" would be an empty diff) auto-bases against the repository's default branch — labelled `(auto-base)` in the run header so the scope is never silent. A failed reviewer seat (timeout / hard error) is auto-retried once at half the wall clock before it's reported — and every failure is named in the run summary, never silently folded into a smaller panel. The same retry + loud `panel degraded:` banner applies to brainstorm, tribunal, and council seats.
 
-Standard Review deliberately uses the full active panel even when the legacy `reviewDefaultEngine` preference is configured. Narrowing requires `--engine` or `--engines`. Explicit subsets are strict: an unknown, unavailable, or removed engine aborts the request instead of silently changing the committee.
+The panel comes from automatic risk routing (`--risk auto|low|medium|high`): low risk gets one independent reviewer, medium two, high the complete usable roster. Sensitive diffs can only raise the requested risk, and `--primary-engine` names the engine that wrote the diff so it is left out; omitting it widens to high. If the required reviewers are unavailable, the run stops with a routing shortfall instead of shrinking the panel. To choose reviewers yourself, use `--engine` or `--engines`, which bypass routing. Explicit subsets are strict: an unknown, unavailable, or removed engine aborts the request instead of silently changing the committee.
+
+**Big diffs are refused, never cut.** Over the limit (default 100,000 characters) review stops before spending anything and names the files reviewers would miss. Raise the limit for one run with `--max-diff-chars <n>`, or set `reviewMaxDiffChars` in config (REPL `/review` and plan review steps use the config value). Every report states the diff size and limit. Engines keep their own limits: prompts travel as a process argument and must fit each model's context, so a seat that cannot take the diff fails visibly.
+
+**Output and exit codes.** `--format text|json|sarif`; the default is text in a terminal and JSON when piped. Exit `0` means no blockers, `2` means blockers, `1` means the review could not run (an over-limit refusal included), so review works as a CI gate.
 
 #### Role-lens review
 
@@ -460,6 +467,9 @@ agon conquer "..." --push                           # on success, commit + push 
 - **Stops at a human merge gate.** conquer never auto-merges to main. By default it leaves the isolated branch and worktree for you to review; `--push` commits + pushes that branch, then prints an **engine-written PR title/body** (from the real branch diff) and a **prefilled GitHub PR link** (`…/compare/…?quick_pull=1&title=…&body=…`) — click it, the form is already filled, review + merge. No `gh` CLI or token needed. `--push` additionally **refuses protected branches** (`main`/`master` by default; override with `protectedPushBranches` in config) — if the worktree HEAD somehow resolves to one, the work stays committed locally for a human push. The done-oracle is irreducible for open-ended work, so the human merge gate is load-bearing — it holds the original product intent no automated layer can reconstruct.
 
 Also available as interactive `/conquer` in the REPL (with full CLI flag parity: `--max-turns`, `--gate-timeout`, `--max-hours`, `--timeout`) and `agon call conquer` for external CLIs.
+
+### Flow
+Node graphs where every AI step is a node. `agon flow validate <file>` type-checks a `.agon-flow.json` (subflows, ports, routes) without dispatching anything; add `--json` for the elaborated step DAG or the errors.
 
 ### Sanitize & Naturalize (watermark removal)
 
@@ -815,12 +825,32 @@ PR bodies agon writes end with the same line rendered with the **real AGON logo*
 - **Contributor-graph credit:** the default email is the [KERN-Agon](https://github.com/KERN-Agon) GitHub account's noreply address, so GitHub renders agon as a real co-author avatar on every commit it builds. To credit a different account, set `commitCoAuthor` to that bot's `<id>+<login>@users.noreply.github.com`.
 - **PR text:** after a `--push`, one engine call turns the branch's actual diff + commits into a clean PR title/body (Summary / Changes / Verification), printed in the terminal and baked into a prefilled GitHub compare link — clicking it opens the new-PR form already filled in. If the engine call misses, agon falls back to its templated digest; the push itself never depends on it.
 
+## Mods
+
+Agon's modes are built as mods. `agon mod list` shows every mod and its state, including folder mods you add under `~/.agon/mods`.
+
+Third-party code never activates by accident. `inspect` reads a folder mod without running it, `trust` and `approve` decide exactly which artifact and capabilities are allowed, and `enable` and `disable` apply an exact activation plan. `recover` handles interrupted changes, and `retention` and `purge` manage old artifacts. Run `agon mod <command> --help` for details.
+
+## Updating
+
+```bash
+agon update --check     # only check the registry
+agon update --plan      # print the exact update plan without applying it
+agon update             # stage, verify, and atomically select the release
+agon update --offline   # require a complete local npm cache, no network
+```
+
+An update never overwrites the running process.
+
 ## Architecture
 
 Agon is a plain TypeScript monorepo (ESM, Node >= 22):
 
 - `packages/core` — types, config, Glicko-2 + Team Elo scoring, Cesar routing, session state
 - `packages/cli` — the interactive REPL, Ink surfaces, command handlers
+- `packages/mod-kernel`, `packages/mod-api` — mod loading, trust, the generated command surface, and the API mods build on
+- `packages/mod-*` — one package per mode or feature (`mod-review`, `mod-forge`, `mod-goal`, `mod-flow`, …)
+- `packages/support-*` — shared runtime the mods use (engine runtime, persistence, verification, worktrees, …)
 - `packages/forge` — competitive worktree orchestration, fitness, M-of-N quorum finalize
 - `packages/adapter-cli` — CLI engine integrations
 - `packages/dedup` — Python sidecars for semantic features (history search via fastembed/MiniLM, tree-sitter syntax validation, task classifier, brainstorm paraphrase dedup). Bridged via JSON over stdin/stdout — Python is used where it is strictly better than a TS/JS port.

@@ -1,7 +1,7 @@
 /**
  * Elaborate-then-execute, phase one: turn a `.agon-flow.json` document into a
  * FLAT, TYPED step-DAG — or into node-id-addressed errors. Nothing here
- * dispatches an engine; flow-core deliberately has no adapter dependency, so
+ * dispatches an engine; this core deliberately has no adapter dependency, so
  * `agon flow validate` provably spends zero subscription tokens.
  */
 import { flowError, FlowValidationError, type ElaborationResult, type FlowError } from '../models/errors.js';

@@ -44,9 +44,6 @@
       "path": "packages/core"
     },
     {
-      "path": "packages/flow-core"
-    },
-    {
       "path": "packages/adapter-cli"
     },
     {

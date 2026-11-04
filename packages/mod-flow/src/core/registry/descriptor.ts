@@ -54,7 +54,7 @@ export type FlowValue =
   | FlowArtifactRef;
 
 // ── Services injected into execute() by the slice-2 runtime ───────────────
-// Declared STRUCTURALLY on purpose: flow-core must never import
+// Declared STRUCTURALLY on purpose: this core must never import
 // @kernlang/agon-adapter-cli (or any engine code), so `agon flow validate`
 // provably cannot dispatch an engine.
 

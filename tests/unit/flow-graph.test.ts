@@ -8,9 +8,9 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { CHAT_INPUT } from '../../packages/flow-core/src/index.js';
-import type { FlatEdge, FlatNode } from '../../packages/flow-core/src/elaborate/flatten.js';
-import { findDanglingEdges, topoSort } from '../../packages/flow-core/src/elaborate/graph.js';
+import { CHAT_INPUT } from '../../packages/mod-flow/src/core/index.js';
+import type { FlatEdge, FlatNode } from '../../packages/mod-flow/src/core/elaborate/flatten.js';
+import { findDanglingEdges, topoSort } from '../../packages/mod-flow/src/core/elaborate/graph.js';
 
 const FILE = '/flows/main.agon-flow.json';
 

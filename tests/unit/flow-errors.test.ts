@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { flowError, formatFlowError } from '../../packages/flow-core/src/index.js';
+import { flowError, formatFlowError } from '../../packages/mod-flow/src/core/index.js';
 
 describe('flowError', () => {
   it('carries port and file through when both are supplied', () => {

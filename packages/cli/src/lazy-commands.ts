@@ -300,10 +300,6 @@ const login = lazyCommand(() => import('./commands/login.js'), 'loginCommand', {
   name: 'login',
   description: "Log an engine's CLI into its clean workspace-pure config dir so dispatches stay authenticated without inheriting your personal Claude Code setup",
 });
-const flow = lazyCommand(() => import('./commands/flow.js'), 'flowCommand', {
-  name: 'flow',
-  description: 'Agon Flow — author and run node graphs where every AI step is a node. `agon flow validate <file>` type-checks a flow (subflows, ports, exclusive routes) before a single engine is dispatched.',
-}, { hasSubCommands: true });
 const update = lazyCommand(() => import('./commands/update.js'), 'updateCommand', {
   name: 'update',
   description: 'Stage, verify, and atomically select a Modular Agon release without overwriting the running process.',
@@ -330,7 +326,6 @@ const kernelLazyCommandImplementations: SubCommandsDef = {
   provider,
   config,
   call,
-  flow,
   attach,
   login,
   update,
@@ -344,7 +339,7 @@ export function createGeneratedLazySubCommands(available: ReadonlySet<string> = 
     .filter(([, command]) => available.has(String(((command as CommandDef).meta as CommandMeta).name))));
   for (const entry of processSurfaceCatalog('cli')) {
     if (!available.has(entry.publicId)) continue;
-    if (!entry.category.startsWith('external:') && !['daemon', 'job', 'ask', 'think', 'brainstorm', 'team-brainstorm', 'campfire', 'tribunal', 'team-tribunal', 'review', 'nero', 'council', 'synthesis', 'forge', 'team-forge', 'conquer', 'goal', 'sanitize', 'naturalize', 'mutate', 'rag', 'research', 'history', 'last', 'leaderboard', 'ratings', 'ratings purge-unknown', 'provenance', 'room', 'agent-guide', 'install-agent-prompts', 'worktree', 'wt', 'serve', 'drive', 'chrome', 'ext', 'ext install', 'ext native-host', 'browser-host', 'browser-host install', 'browser-host uninstall', 'browser-host status', 'browser-host stop'].includes(entry.publicId)) continue;
+    if (!entry.category.startsWith('external:') && !['daemon', 'job', 'ask', 'think', 'brainstorm', 'team-brainstorm', 'campfire', 'tribunal', 'team-tribunal', 'review', 'nero', 'council', 'synthesis', 'forge', 'team-forge', 'conquer', 'goal', 'sanitize', 'naturalize', 'mutate', 'rag', 'research', 'history', 'last', 'leaderboard', 'ratings', 'ratings purge-unknown', 'flow', 'provenance', 'room', 'agent-guide', 'install-agent-prompts', 'worktree', 'wt', 'serve', 'drive', 'chrome', 'ext', 'ext install', 'ext native-host', 'browser-host', 'browser-host install', 'browser-host uninstall', 'browser-host status', 'browser-host stop'].includes(entry.publicId)) continue;
     if (entry.publicId.includes(' ')) continue;
     if (commands[entry.publicId]) continue;
     const command = schemaGeneratedCommand(entry.publicId, entry.description);

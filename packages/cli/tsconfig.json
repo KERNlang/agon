@@ -16,7 +16,6 @@
     { "path": "../mod-rooms" },
     { "path": "../core" },
     { "path": "../forge" },
-    { "path": "../adapter-cli" },
-    { "path": "../flow-core" }
+    { "path": "../adapter-cli" }
   ]
 }

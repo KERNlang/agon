@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import {
   FLOW_SCHEMA_VERSION, canonicalize, checkRange, isUlid, parseFlowDocument,
   parseFlowJson, parsePortRef, parseSemver, satisfies, serializeFlow,
-} from '../../packages/flow-core/src/index.js';
+} from '../../packages/mod-flow/src/core/index.js';
 import { doc, edge, node, ulid } from '../helpers/flow-doc.js';
 
 const FIXTURES = join(import.meta.dirname, '..', 'fixtures', 'flow');

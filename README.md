@@ -119,6 +119,7 @@ Pick by the **shape** of the problem, not the topic:
 | Your own decision pressure-tested | **nero** | Adversarial self-challenge — the top-rated *critic* (by tribunal rating, not the best builder) attacks it and returns a verdict. |
 | A library/repo/spec/fact looked up with sources | **research** | Keyless, web-grounded, *cited* research — Agon discovers sources (npm/GitHub/MDN/IETF/Stack Overflow/Wikipedia, **no API key**), an engine drafts a grounded answer, and Agon **verifies every citation**. |
 | Your **own browser** driven to research / check a page | **chrome** | Drive your real browser (navigate / read / screenshot / click) from the REPL, the CLI, or Cesar — reuses a running agon the side panel is on, else embeds a transient bridge. Needs the Agon browser extension. |
+| A node-graph flow checked before anything runs | **flow** | `agon flow validate <file>` type-checks a `.agon-flow.json` (subflows, ports, exclusive routes) and dispatches no engine. Add `--json` for the elaborated step-DAG or the errors. |
 | Code built competitively against a test | **forge** | Engines race on the same task in isolated worktrees; the best test-passing patch is applied. |
 | The **first** passing solution, fast | **speculate** | N engines race; the first to pass the test wins and is applied immediately. |
 | A routine build with one engine | **pipeline** | Single-engine build → review → fix loop; no competition overhead. |

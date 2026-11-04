@@ -32,6 +32,7 @@
   "dependencies": {
     "@kernlang/agon-mod-api": "1.0.0",
     "@kernlang/agon-support-engine-runtime": "1.0.0",
-    "@kernlang/agon-support-persistence": "1.0.0"
+    "@kernlang/agon-support-persistence": "1.0.0",
+    "zod": "^4.3.6"
   }
 }

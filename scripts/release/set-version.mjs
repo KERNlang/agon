@@ -37,7 +37,6 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 // version of it, it does not bump or publish it.
 const PACKAGES = [
   'packages/core',
-  'packages/flow-core',
   'packages/forge',
   'packages/adapter-cli',
   'packages/cli',

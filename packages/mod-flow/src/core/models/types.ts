@@ -2,7 +2,7 @@
  * Agon Flow — canonical `.agon-flow.json` document model + elaborated step-DAG
  * model. Pure data types; no fs, no engine, no adapter.
  *
- * Spec: .claude/specs/agon-flow-phase1/spec.md (packages/flow-core §1-§2).
+ * Spec: .claude/specs/agon-flow-phase1/spec.md (flow core §1-§2).
  */
 
 /** Closed set of port VALUE types. No implicit coercion between any two. */
@@ -49,7 +49,7 @@ export interface JsonSchemaNode {
 
 // ── Document model ────────────────────────────────────────────────────────
 
-/** The schemaVersion this build of flow-core reads and writes. */
+/** The schemaVersion this build reads and writes. */
 export const FLOW_SCHEMA_VERSION = 1;
 
 export interface FlowPosition {

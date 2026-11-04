@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import {
   createMemoryFlowLoader, elaborateDocument, elaborateFlowFile, serializeFlow,
   type ElaboratedFlow, type ElaborationResult, type FlowDocument, type FlowErrorCode,
-} from '../../packages/flow-core/src/index.js';
+} from '../../packages/mod-flow/src/core/index.js';
 import { doc, edge, node, ulid } from '../helpers/flow-doc.js';
 
 const FIXTURES = join(import.meta.dirname, '..', 'fixtures', 'flow');

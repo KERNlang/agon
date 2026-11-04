@@ -3,7 +3,7 @@
  * Keeps every failing fixture readable inline instead of scattering a dozen
  * near-identical JSON files across tests/fixtures.
  */
-import type { FlowDocument, FlowEdge, FlowNode } from '../../packages/flow-core/src/index.js';
+import type { FlowDocument, FlowEdge, FlowNode } from '../../packages/mod-flow/src/core/index.js';
 
 const ULID_ALPHABET_RE = /^[0-9A-HJKMNP-TV-Z]{26}$/;
 

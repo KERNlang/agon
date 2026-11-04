@@ -1,5 +1,5 @@
 /**
- * @kernlang/agon-flow-core — Agon Flow schema, node registry and elaborator.
+ * Agon Flow schema, node registry and elaborator.
  *
  * Slice 1 (schema + elaborator + `agon flow validate`). The runtime, artifact
  * store and daemon job wiring land in slice 2; the `execute` interface and its

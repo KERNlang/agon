@@ -1,147 +1,168 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { spawn, spawnSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-// Every process-spawning entry point of node:child_process is wrapped so the
-// test can PROVE `agon flow validate` never dispatches an engine (spec
-// acceptance criterion: "zero engine dispatches occur").
-const spawnCalls = vi.hoisted(() => ({ count: 0, commands: [] as string[] }));
-vi.mock('node:child_process', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('node:child_process')>();
-  const wrap = <T extends (...args: any[]) => any>(fn: T): T => ((...args: any[]) => {
-    spawnCalls.count += 1;
-    spawnCalls.commands.push(String(args[0]));
-    return (fn as any)(...args);
-  }) as unknown as T;
-  return {
-    ...actual,
-    spawn: wrap(actual.spawn),
-    spawnSync: wrap(actual.spawnSync),
-    exec: wrap(actual.exec),
-    execSync: wrap(actual.execSync),
-    execFile: wrap(actual.execFile),
-    execFileSync: wrap(actual.execFileSync),
-    fork: wrap(actual.fork),
-  };
-});
-
-const { flowCommand, flowValidateCommand } = await import('../../packages/cli/src/commands/flow.js');
+const CLI = fileURLToPath(new URL('../../packages/cli/dist/index.js', import.meta.url));
 const FIXTURES = join(import.meta.dirname, '..', 'fixtures', 'flow');
 
-let out: string[];
 let tmp: string;
-let hardExits: Array<number | undefined>;
-const previousExitCode = process.exitCode;
+let env: NodeJS.ProcessEnv;
 
 beforeEach(() => {
-  out = [];
-  hardExits = [];
-  process.exitCode = undefined;
-  spawnCalls.count = 0;
-  spawnCalls.commands = [];
   tmp = mkdtempSync(join(tmpdir(), 'agon-flow-cmd-'));
-  vi.spyOn(process.stdout, 'write').mockImplementation((chunk: any) => {
-    out.push(String(chunk));
-    return true;
-  });
-  // blocks/output-format.ts renders through console.log; the JSON payload goes
-  // straight to stdout. Capture both so either shape can be asserted.
-  vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
-    out.push(`${args.map((arg) => String(arg)).join(' ')}\n`);
-  });
-  // A hard exit here would truncate a not-yet-flushed piped stdout write, so
-  // the command must never call it — record any call and assert it stays empty.
-  vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
-    hardExits.push(code);
-    return undefined as never;
-  }) as never);
+  const home = join(tmp, 'home');
+  mkdirSync(join(home, 'flows'), { recursive: true });
+  env = { ...process.env, HOME: home, AGON_HOME: home, AGON_MODULAR_HOST_ROOT: join(home, 'modular-host') };
 });
 
 afterEach(() => {
-  vi.restoreAllMocks();
-  process.exitCode = previousExitCode; // don't poison the test runner's exit code
   rmSync(tmp, { recursive: true, force: true });
 });
 
-async function run(args: Record<string, unknown>): Promise<void> {
-  await flowValidateCommand.run({ args, cmd: flowValidateCommand, rawArgs: [] });
+function agon(args: string[], options: { cwd?: string; env?: NodeJS.ProcessEnv } = {}) {
+  const result = spawnSync(process.execPath, [CLI, ...args], {
+    cwd: options.cwd ?? tmp,
+    encoding: 'utf-8',
+    timeout: 60_000,
+    env: options.env ?? env,
+  });
+  return { code: result.status, stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
 }
 
-describe('agon flow — command wiring', () => {
-  it('exposes `validate` as a subcommand of `flow`', () => {
-    expect(flowCommand.meta.name).toBe('flow');
-    expect(Object.keys(flowCommand.subCommands)).toEqual(['validate']);
-    expect(flowValidateCommand.args.file.required).toBe(true);
-  });
+function flowDocument(overrides: Record<string, unknown>) {
+  return {
+    schemaVersion: 1,
+    version: '1.0.0',
+    id: '01JBAD0000000000000000000B',
+    name: 'fixture',
+    params: [],
+    nodes: [],
+    edges: [],
+    outputs: [],
+    ...overrides,
+  };
+}
+
+const CHAT = '01JCHAT000000000000000000B';
+const SCAN = '01JSCAN000000000000000000B';
+const portMismatch = flowDocument({
+  nodes: [
+    { id: CHAT, type: 'chat-input', params: { paramKey: 'x' }, position: { x: 0, y: 0 } },
+    { id: SCAN, type: 'list-folder', params: {}, position: { x: 0, y: 0 } },
+  ],
+  edges: [{ from: `${CHAT}.text`, to: `${SCAN}.folder` }],
 });
 
-describe('agon flow validate', () => {
-  it('accepts the build-CV golden flow and emits the elaborated step-DAG as JSON', async () => {
-    await run({ file: join(FIXTURES, 'build-cv.agon-flow.json'), json: true });
-    const payload = JSON.parse(out.join(''));
-    expect(payload.ok).toBe(true);
-    expect(payload.flow.name).toBe('build-CV');
-    expect(payload.flow.steps.length).toBe(8);
-    expect(payload.flow.params.map((param: { key: string }) => param.key))
-      .toEqual(['experience', 'rubric', 'destination']);
-    expect(process.exitCode).toBeUndefined();
-    expect(hardExits).toEqual([]);
+describe('agon flow validate through the built CLI', () => {
+  it('reports a valid flow with its name, params and steps, from a relative path with spaces', () => {
+    const directory = join(tmp, 'my flows', 'nested');
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(join(directory, 'cv.agon-flow.json'), readFileSync(join(FIXTURES, 'build-cv.agon-flow.json')));
+    const result = agon(['flow', 'validate', join('nested', 'cv.agon-flow.json')], { cwd: join(tmp, 'my flows') });
+    expect(result.stderr).toBe('');
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain('build-CV v');
+    expect(result.stdout).toContain('experience');
+    expect(result.stdout).toMatch(/^Step\s/m);
   });
 
-  it('accepts the subflow golden flow with its namespaced params', async () => {
-    await run({ file: join(FIXTURES, 'cv-with-subflow.agon-flow.json'), json: true });
-    const payload = JSON.parse(out.join(''));
+  it('says no parameters for a flow that has none instead of an empty table', () => {
+    const file = join(tmp, 'empty.agon-flow.json');
+    writeFileSync(file, JSON.stringify(flowDocument({})));
+    const result = agon(['flow', 'validate', file]);
+    expect(result.stdout).toContain('no parameters');
+    expect(result.code).toBe(0);
+  });
+
+  it('emits the elaborated subflow params as JSON when --json precedes the file', () => {
+    const result = agon(['flow', 'validate', '--json', join(FIXTURES, 'cv-with-subflow.agon-flow.json')]);
+    const payload = JSON.parse(result.stdout);
+    expect(result.code).toBe(0);
     expect(payload.ok).toBe(true);
     expect(payload.flow.params.map((param: { key: string }) => param.key))
       .toContain('01JPSSBF000000000000000000.footer');
   });
 
-  it('prints a human report for a valid flow', async () => {
-    await run({ file: join(FIXTURES, 'sort-folder.agon-flow.json') });
-    const text = out.join('');
-    expect(text).toContain('sort-folder');
-    expect(text).toContain('valid');
-    expect(process.exitCode).toBeUndefined();
-    expect(hardExits).toEqual([]);
-  });
-
-  it('exits 1 with node-id-addressed errors for a bad flow', async () => {
+  it('exits 1 with node-addressed errors and JSON-only stdout for a bad, missing or malformed file', () => {
     const bad = join(tmp, 'bad.agon-flow.json');
-    writeFileSync(bad, JSON.stringify({
-      schemaVersion: 1,
-      version: '1.0.0',
-      id: '01JBAD0000000000000000000B',
-      name: 'bad',
-      params: [],
-      nodes: [
-        { id: '01JCHAT000000000000000000B', type: 'chat-input', params: { paramKey: 'x' }, position: { x: 0, y: 0 } },
-        { id: '01JSCAN000000000000000000B', type: 'list-folder', params: {}, position: { x: 0, y: 0 } },
-      ],
-      edges: [{ from: '01JCHAT000000000000000000B.text', to: '01JSCAN000000000000000000B.folder' }],
-      outputs: [],
-    }, null, 2));
+    writeFileSync(bad, JSON.stringify(portMismatch));
+    const malformed = join(tmp, 'malformed.agon-flow.json');
+    writeFileSync(malformed, '{ not json');
 
-    await run({ file: bad, json: true });
-    const payload = JSON.parse(out.join(''));
+    const invalid = agon(['flow', 'validate', bad, '--json']);
+    const payload = JSON.parse(invalid.stdout);
+    expect(invalid.code).toBe(1);
     expect(payload.ok).toBe(false);
-    expect(payload.errors[0].code).toBe('PORT_TYPE_MISMATCH');
-    expect(payload.errors[0].nodeId).toBe('01JSCAN000000000000000000B');
-    expect(process.exitCode).toBe(1);
-    expect(hardExits).toEqual([]);
+    expect(payload.errors[0]).toMatchObject({ code: 'PORT_TYPE_MISMATCH', nodeId: SCAN });
+
+    for (const file of [join(tmp, 'nope.agon-flow.json'), malformed]) {
+      const result = agon(['flow', 'validate', file, '--json']);
+      expect(result.code, file).toBe(1);
+      expect(JSON.parse(result.stdout).ok, file).toBe(false);
+    }
+
+    const human = agon(['flow', 'validate', bad]);
+    expect(human.code).toBe(1);
+    expect(human.stdout).toContain('PORT_TYPE_MISMATCH');
   });
 
-  it('exits 1 when the file does not exist', async () => {
-    await run({ file: join(tmp, 'nope.agon-flow.json'), json: true });
-    expect(JSON.parse(out.join('')).ok).toBe(false);
-    expect(process.exitCode).toBe(1);
-    expect(hardExits).toEqual([]);
+  it('does not truncate --json errors over 64 KB behind a slow pipe reader', async () => {
+    const nodes = Array.from({ length: 2_000 }, (_, index) => ({
+      id: `01JN${String(index).padStart(22, '0')}`,
+      type: 'no-such-node',
+      params: {},
+      position: { x: 0, y: 0 },
+    }));
+    const file = join(tmp, 'huge.agon-flow.json');
+    writeFileSync(file, JSON.stringify(flowDocument({ nodes })));
+
+    const child = spawn(process.execPath, [CLI, 'flow', 'validate', file, '--json'], {
+      cwd: tmp,
+      env,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    const chunks: Buffer[] = [];
+    const exited = new Promise<number | null>(resolve => child.once('close', resolve));
+    await new Promise(resolve => setTimeout(resolve, 2_000));
+    child.stdout.on('data', (chunk: Buffer) => chunks.push(chunk));
+
+    expect(await exited).toBe(1);
+    const stdout = Buffer.concat(chunks);
+    expect(stdout.length).toBeGreaterThan(64 * 1024);
+    expect(JSON.parse(stdout.toString('utf-8')).errors.length).toBe(nodes.length);
   });
 
-  it('spawns NO process for any of the above — validation is free', async () => {
-    await run({ file: join(FIXTURES, 'build-cv.agon-flow.json'), json: true });
-    await run({ file: join(FIXTURES, 'sort-folder.agon-flow.json'), json: true });
-    await run({ file: join(FIXTURES, 'cv-with-subflow.agon-flow.json'), json: true });
-    expect(spawnCalls.count, `spawned: ${spawnCalls.commands.join(', ')}`).toBe(0);
+  it('validates a flow with engine steps with no engine binary on PATH, so nothing is dispatched', () => {
+    const emptyBin = join(tmp, 'empty-bin');
+    mkdirSync(emptyBin);
+    const result = agon(
+      ['flow', 'validate', join(FIXTURES, 'build-cv.agon-flow.json'), '--json'],
+      { env: { ...env, PATH: emptyBin } },
+    );
+    const payload = JSON.parse(result.stdout);
+    expect(result.code).toBe(0);
+    expect(payload.flow.steps.some((step: { type: string }) => step.type === 'engine')).toBe(true);
+  });
+});
+
+describe('agon flow without a valid subcommand', () => {
+  it('prints usage for bare `agon flow` without reading telemetry or recording a receipt', () => {
+    writeFileSync(join(env.AGON_HOME!, 'flows', 'flow-canary.json'), JSON.stringify({ id: 'telemetry-canary' }));
+    const result = agon(['flow']);
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain('agon flow validate <file>');
+    expect(result.stdout).not.toContain('telemetry-canary');
+    expect(result.stdout).not.toContain('totalFlows');
+    expect(result.stdout).not.toContain('receiptId');
+    expect(readdirSync(env.AGON_HOME!, { recursive: true }).sort()).toEqual(['flows', join('flows', 'flow-canary.json')]);
+  });
+
+  it('exits non-zero on an unknown subcommand instead of falling through to the parent', () => {
+    const result = agon(['flow', 'bogus']);
+    expect(result.code).not.toBe(0);
+    expect(`${result.stdout}${result.stderr}`).toMatch(/unknown command/i);
   });
 });

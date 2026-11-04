@@ -6,9 +6,9 @@ import {
   APPROVAL, CHAT_INPUT, CHAT_OUTPUT, EXTRACT_STRUCTURED, IF_COMPARE, MOVE_FILE,
   NodeRegistry, PORT_VALUE_TYPES, SUBFLOW_NODE_TYPE, V1_NODE_CATALOG, WRITE_FILE,
   createDefaultNodeRegistry,
-} from '../../packages/flow-core/src/index.js';
+} from '../../packages/mod-flow/src/core/index.js';
 
-const FLOW_CORE_SRC = join(import.meta.dirname, '..', '..', 'packages', 'flow-core', 'src');
+const FLOW_CORE_SRC = join(import.meta.dirname, '..', '..', 'packages', 'mod-flow', 'src', 'core');
 
 function sourceFiles(dir: string): string[] {
   const out: string[] = [];
@@ -105,52 +105,20 @@ describe('v1 node catalog', () => {
   });
 });
 
-describe('flow-core stays engine-free (zero dispatches by construction)', () => {
+describe('flow core stays engine-free (zero dispatches by construction)', () => {
   const files = sourceFiles(FLOW_CORE_SRC);
 
   it('has sources to scan', () => {
     expect(files.length).toBeGreaterThan(5);
   });
 
-  it('imports no adapter, engine registry or process-spawning module', () => {
-    const forbidden = [
-      '@kernlang/agon-adapter-cli',
-      '@kernlang/agon-core',
-      '@kernlang/agon-forge',
-      'node:child_process',
-      'child_process',
-    ];
+  it('fails when an Agon package, engine or process module is imported under core', () => {
+    const allowed = new Set(['zod', 'node:fs', 'node:path']);
+    const importSpecifier = /^\s*(?:import|export)\s[^'";]*?from\s*['"]([^'"]+)['"]|^\s*import\s*['"]([^'"]+)['"]|\b(?:import|require)\(\s*['"]([^'"]+)['"]/gm;
     for (const file of files) {
-      const source = readFileSync(file, 'utf-8');
-      for (const specifier of forbidden) {
-        expect(source.includes(`'${specifier}'`), `${file} must not import ${specifier}`).toBe(false);
-      }
-    }
-  });
-
-  it('declares no runtime dependency on any agon package', () => {
-    const pkg = JSON.parse(readFileSync(join(FLOW_CORE_SRC, '..', 'package.json'), 'utf-8'));
-    const buckets = ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies'];
-    for (const bucket of buckets) {
-      const agon = Object.keys(pkg[bucket] ?? {}).filter((dep) => dep.startsWith('@kernlang/agon'));
-      expect(agon, `${bucket} must not pull in an agon package`).toEqual([]);
-    }
-    // zod (the schema binding) is the ONLY runtime dependency it may have.
-    expect(Object.keys(pkg.dependencies ?? {})).toEqual(['zod']);
-  });
-
-  it('declares every third-party module it imports', () => {
-    const pkg = JSON.parse(readFileSync(join(FLOW_CORE_SRC, '..', 'package.json'), 'utf-8'));
-    const declared = new Set(Object.keys(pkg.dependencies ?? {}));
-    for (const file of files) {
-      const source = readFileSync(file, 'utf-8');
-      for (const match of source.matchAll(/ from '([^']+)'/g)) {
-        const specifier = match[1];
-        if (specifier.startsWith('.') || specifier.startsWith('node:')) continue;
-        const name = specifier.startsWith('@')
-          ? specifier.split('/').slice(0, 2).join('/')
-          : specifier.split('/')[0];
-        expect(declared.has(name), `${file} imports undeclared "${name}"`).toBe(true);
+      for (const [, staticFrom, bare, dynamic] of readFileSync(file, 'utf-8').matchAll(importSpecifier)) {
+        const specifier = staticFrom ?? bare ?? dynamic;
+        expect(specifier.startsWith('.') || allowed.has(specifier), `${file} imports ${specifier}`).toBe(true);
       }
     }
   });

@@ -136,13 +136,12 @@ describe('lazySubCommands — full parity with the real command modules', () => 
     provider: [() => import('./commands/provider.js'), 'providerCommand'],
     config: [() => import('./commands/config.js'), 'configCommand'],
     call: [() => import('./commands/call.js'), 'callCommand'],
-    flow: [() => import('./commands/flow.js'), 'flowCommand'],
     attach: [() => import('./commands/attach.js'), 'attachCommand'],
     login: [() => import('./commands/login.js'), 'loginCommand'],
     update: [() => import('./commands/update.js'), 'updateCommand'],
   };
   const canonicalKeys = Object.keys(lazySubCommands).filter((k) => k !== 'wt' && k !== 'upgrade');
-  const physicalKeys = new Set(['daemon', 'job', 'ask', 'think', 'brainstorm', 'team-brainstorm', 'campfire', 'tribunal', 'team-tribunal', 'review', 'nero', 'council', 'synthesis', 'forge', 'team-forge', 'conquer', 'goal', 'sanitize', 'naturalize', 'mutate', 'rag', 'research', 'history', 'last', 'leaderboard', 'ratings', 'provenance', 'room', 'agent-guide', 'install-agent-prompts', 'worktree', 'serve', 'drive', 'chrome', 'ext', 'browser-host']);
+  const physicalKeys = new Set(['daemon', 'job', 'ask', 'think', 'brainstorm', 'team-brainstorm', 'campfire', 'tribunal', 'team-tribunal', 'review', 'nero', 'council', 'synthesis', 'forge', 'team-forge', 'conquer', 'goal', 'sanitize', 'naturalize', 'mutate', 'rag', 'research', 'history', 'last', 'leaderboard', 'ratings', 'flow', 'provenance', 'room', 'agent-guide', 'install-agent-prompts', 'worktree', 'serve', 'drive', 'chrome', 'ext', 'browser-host']);
   const legacyKeys = canonicalKeys.filter((key) => !physicalKeys.has(key));
 
   it('the loader table covers every canonical lazy key (completeness guard for the parity tests)', () => {

@@ -42,7 +42,8 @@ describe('generated surface cutover', () => {
 
   it('keeps CLI top-level exposure equal to the generated catalog', () => {
     const expected = FIRST_PARTY_SURFACE_CATALOG
-      .filter(({ category, source }) => category === 'cliCommands' && source.includes('/lazy-commands.ts:'))
+      .filter(({ category, source, publicId }) => (category === 'cliCommands' && source.includes('/lazy-commands.ts:'))
+        || (category === 'physicalCliCommands' && !publicId.includes(' ')))
       .map(({ publicId }) => publicId);
     expect(names(Object.keys(lazySubCommands))).toEqual(names(expected));
   });

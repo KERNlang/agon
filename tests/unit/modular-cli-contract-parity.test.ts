@@ -197,6 +197,10 @@ describe('physical CLI contract parity', () => {
       expected.args.tasks = { type: 'string', required: false, aliases: [] };
       expected.args.commit = { type: 'boolean', required: false, aliases: [], default: true };
       expected.args.supervisorRunId = { type: 'string', required: false, aliases: [] };
+      expect(expected.args).not.toHaveProperty('mutateBuild');
+      expect(expected.args).not.toHaveProperty('mutateTypecheck');
+      expected.args.mutateBuild = { type: 'string', required: false, aliases: [] };
+      expected.args.mutateTypecheck = { type: 'string', required: false, aliases: [] };
     }
     if (name === 'review') {
       expect(expected.args).not.toHaveProperty('deadline');

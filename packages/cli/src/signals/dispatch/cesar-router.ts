@@ -281,13 +281,17 @@ export async function resumeCesarAfterAgent(originalTask: string, launchInputEpo
   await routeWithCesar(prompt, [], cb);
 }
 
-export async function runAgentJobWithAutoResume(originalTask: string, cb: DispatchCallbacks, runner: ()=>Promise<AgentContinuationResult|null>): Promise<void> {
+export async function runAgentJobWithAutoResume(originalTask: string, cb: DispatchCallbacks, runner: ()=>Promise<AgentContinuationResult|null>, assertCurrent?: () => void): Promise<void> {
   const launchInputEpoch = cb.ctx.inputEpoch ?? 0;
   const launchUserTurns = countTrackedUserTurns(cb.ctx);
   try {
+    assertCurrent?.();
     const result = await runner();
+    assertCurrent?.();
     await resumeCesarAfterAgent(originalTask, launchInputEpoch, launchUserTurns, result, cb);
   } catch (error) {
+    // Revoked work must not start a continuation through another workflow.
+    assertCurrent?.();
     const message = error instanceof Error ? error.message : String(error);
     const failure: AgentContinuationResult = {
       kind: 'agent', status: 'failed', task: originalTask, taskKind: 'unknown',

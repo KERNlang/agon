@@ -35,7 +35,8 @@ if (!/^\d+\.\d+\.\d+$/.test(version)) {
   process.exit(1);
 }
 
-const write = (path, content) => { if (!dryRun) writeFileSync(path, content); };
+const writes = [];
+const log = [];
 
 for (const { directory, manifest } of readWorkspaces()) {
   const previous = manifest.version;
@@ -48,15 +49,15 @@ for (const { directory, manifest } of readWorkspaces()) {
       changes.push(`${name} ${range} -> ${version}`);
     }
   }
-  write(join(REPO_ROOT, directory, 'package.json'), `${JSON.stringify(manifest, null, 2)}\n`);
+  writes.push([join(REPO_ROOT, directory, 'package.json'), `${JSON.stringify(manifest, null, 2)}\n`]);
 
   const modManifestPath = join(REPO_ROOT, directory, 'agon.mod.json');
   if (existsSync(modManifestPath)) {
     const modManifest = JSON.parse(readFileSync(modManifestPath, 'utf8'));
     modManifest.version = version;
-    write(modManifestPath, `${JSON.stringify(modManifest, null, 2)}\n`);
+    writes.push([modManifestPath, `${JSON.stringify(modManifest, null, 2)}\n`]);
   }
-  console.log(`${manifest.name.padEnd(44)} ${previous} -> ${version}${changes.length ? ` [${changes.length} ranges]` : ''}`);
+  log.push(`${manifest.name.padEnd(44)} ${previous} -> ${version}${changes.length ? ` [${changes.length} ranges]` : ''}`);
 }
 
 for (const [relative, pattern] of LITERALS) {
@@ -66,8 +67,11 @@ for (const [relative, pattern] of LITERALS) {
     console.error(`error: version literal not found in ${relative}`);
     process.exit(1);
   }
-  write(path, source.replace(pattern, `$1${version}$2`));
-  console.log(`${relative} -> ${version}`);
+  writes.push([path, source.replace(pattern, `$1${version}$2`)]);
+  log.push(`${relative} -> ${version}`);
 }
+
+if (!dryRun) for (const [path, content] of writes) writeFileSync(path, content);
+for (const line of log) console.log(line);
 
 console.log(version);

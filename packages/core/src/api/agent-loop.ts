@@ -6,7 +6,7 @@ import {
   type ApiAgentResult,
 } from "@kernlang/agon-support-agent-runtime";
 
-import { apiStreamDispatchWithHistory } from "./dispatch.js";
+import { apiStreamDispatchWithHistory } from "./dispatch-lazy.js";
 import { safeAgentVisibleText } from "./agent-visible.js";
 import { getProjectFileStateCache } from "../blocks/file-state-cache.js";
 import { executeToolCall, ToolRegistry } from "../signals/tool-registry.js";

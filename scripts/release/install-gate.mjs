@@ -177,7 +177,7 @@ function writeFakeEngine() {
 
 function checkCommands() {
   runAgonCheck('agon --version', ['--version'], printsExactly(launcher.version));
-  runAgonCheck('agon --help', ['--help'], listsCommands('forge', 'review', 'ask', 'update'));
+  runAgonCheck('agon --help', ['--help'], listsCommands('forge', 'review', 'ask', 'update', 'mod', 'setup'));
   writeFakeEngine();
   runAgonCheck('agon engine list', ['engine', 'list'], contains(FAKE_ENGINE_ID));
   runAgonCheck('agon mod list', ['mod', 'list'], contains('[enabled] Ask', '[enabled] Forge', '[enabled] Review'));

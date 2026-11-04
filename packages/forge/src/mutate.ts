@@ -1,6 +1,6 @@
-import { readFileSync, writeFileSync, existsSync, lstatSync, mkdirSync, cpSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 
-import { join, dirname, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 
 import { tmpdir } from 'node:os';
 
@@ -10,9 +10,9 @@ import { execFileSync } from 'node:child_process';
 
 import type { EngineAdapter, EngineRegistry, Mutant, MutationReport } from '@kernlang/agon-core';
 
-import { generateMutants, runMutants, worktreeCreate, worktreeRemoveBestEffort, headSha, resolveWithinRoot } from '@kernlang/agon-core';
+import { generateMutants, runMutants, worktreeCreate, worktreeRemoveBestEffort, headSha } from '@kernlang/agon-core';
 
-import { compileChecksFor, explicitCheckNotice, filesNeedingExplicitCheck, profileFor } from '@kernlang/agon-support-worktree';
+import { compileChecksFor, copyUntrackedWork, explicitCheckNotice, filesNeedingExplicitCheck, profileFor } from '@kernlang/agon-support-worktree';
 
 import { resolveMutateTargets } from './mutate-targets.js';
 
@@ -64,16 +64,6 @@ export interface MutateResult {
   reportPath?: string;
   error?: string;
 }
-
-/**
- * Per-file ceiling on the untracked work copied into the sandbox (5 MiB). A stray recording or database dump must not turn hydration into a minutes-long copy; the skip is logged so the cause of a red baseline is never a mystery.
- */
-export const MAX_UNTRACKED_FILE_BYTES: number = 5242880;
-
-/**
- * Ceiling on how many untracked files are copied. Beyond this the working tree is not 'uncommitted work' any more, and hydration would dominate the run.
- */
-export const MAX_UNTRACKED_FILES: number = 2000;
 
 /**
  * Collapse mutants that produce the SAME mutated line in the same place — (file, line, after). First wins, so a semantic mutant placed ahead of the mechanical pool keeps its rationale. Pure.
@@ -146,33 +136,7 @@ function hydrateWorktree(repoRoot: string, worktree: string): number {
       throw new Error(`uncommitted changes could not be applied to the sandbox — commit/stash or pass \`--diff <base>\` (git apply: ${detail.slice(0, 300)})`);
     }
   }
-  let untracked: string[] = [];
-  try {
-    untracked = execFileSync('git', ['ls-files', '--others', '--exclude-standard'], { cwd: repoRoot, encoding: 'utf-8' })
-      .split('\n').map((s) => s.trim()).filter((s) => s.length > 0);
-  } catch { /* nothing untracked we can see — the patch already covered tracked work */ }
-  let copied = 0;
-  let skipped = 0;
-  for (const rel of untracked) {
-    if (copied >= MAX_UNTRACKED_FILES) { skipped += 1; continue; }
-    const src = join(repoRoot, rel);
-    let dst = '';
-    try { dst = resolveWithinRoot(worktree, rel); } catch { skipped += 1; continue; }
-    let size = 0;
-    try {
-      const st = lstatSync(src);
-      if (!st.isFile()) continue; // directories are implied, symlinks are not followed
-      size = st.size;
-    } catch { continue; }
-    if (size > MAX_UNTRACKED_FILE_BYTES) { skipped += 1; continue; }
-    try {
-      mkdirSync(dirname(dst), { recursive: true });
-      cpSync(src, dst);
-      copied += 1;
-    } catch { skipped += 1; }
-  }
-  if (skipped > 0) console.warn(`[agon] mutate: ${skipped} untracked file(s) were NOT copied into the sandbox (too large, too many, or unreadable)`);
-  return copied;
+  return copyUntrackedWork(repoRoot, worktree).copied;
 }
 
 /**

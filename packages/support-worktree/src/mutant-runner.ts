@@ -19,6 +19,7 @@ export interface MutantOutcome {
   durationMs: number;
   exitCode?: number;
   reason?: string;
+  invalidCause?: 'non-compiling'|'unplaceable';
 }
 
 /**
@@ -329,7 +330,7 @@ export async function runMutants(opts: RunMutantsOptions): Promise<MutationRepor
       if (unplaceable) {
         invalid += 1;
         const durationMs = Date.now() - t0;
-        outcomes.push({ mutant, status: 'invalid', durationMs, reason: unplaceable });
+        outcomes.push({ mutant, status: 'invalid', durationMs, reason: unplaceable, invalidCause: 'unplaceable' });
         opts.onProgress?.({ phase: 'mutant', index: i + 1, total: mutants.length, durationMs, mutantId: mutant.id, status: 'invalid' });
         continue;
       }
@@ -337,6 +338,7 @@ export async function runMutants(opts: RunMutantsOptions): Promise<MutationRepor
       let status: 'killed' | 'survived' | 'invalid' | 'timeout' = 'killed';
       let exitCode: number | undefined;
       let reason: string | undefined;
+      let invalidCause: MutantOutcome['invalidCause'];
       let cutByBudget = false;
       writeFileSync(abs, applyMutantToSource(original, mutant));
       try {
@@ -351,12 +353,12 @@ export async function runMutants(opts: RunMutantsOptions): Promise<MutationRepor
           const b = await sh(opts.buildCmd, buildTimeoutMs);
           // A mutant that breaks the build proves nothing about the tests.
           if (!b.res || b.budgetCut) cutByBudget = true;
-          else if (b.res.exitCode !== 0 || b.res.timedOut) { status = 'invalid'; exitCode = b.res.exitCode; reason = 'the mutated source does not build'; decided = true; }
+          else if (b.res.exitCode !== 0 || b.res.timedOut) { status = 'invalid'; exitCode = b.res.exitCode; reason = 'the mutated source does not build'; invalidCause = 'non-compiling'; decided = true; }
         }
         if (!cutByBudget && !decided && opts.typecheckCmd) {
           const tc = await sh(opts.typecheckCmd, typecheckTimeoutMs);
           if (!tc.res || tc.budgetCut) cutByBudget = true;
-          else if (tc.res.exitCode !== 0 || tc.res.timedOut) { status = 'invalid'; exitCode = tc.res.exitCode; reason = 'the mutated source does not typecheck'; decided = true; }
+          else if (tc.res.exitCode !== 0 || tc.res.timedOut) { status = 'invalid'; exitCode = tc.res.exitCode; reason = 'the mutated source does not typecheck'; invalidCause = 'non-compiling'; decided = true; }
         }
         if (!cutByBudget && !decided) {
           const res = await sh(testCmd, effTimeoutMs);
@@ -372,7 +374,7 @@ export async function runMutants(opts: RunMutantsOptions): Promise<MutationRepor
         if (checkTemplate) {
           const check = await sh(expandCompileCheck(checkTemplate, abs), checkTimeoutMs, checkEnv);
           if (!check.res || check.budgetCut) cutByBudget = true;
-          else if (check.res.exitCode !== 0 || check.res.timedOut) { status = 'invalid'; exitCode = check.res.exitCode; reason = 'the mutated source does not compile'; }
+          else if (check.res.exitCode !== 0 || check.res.timedOut) { status = 'invalid'; exitCode = check.res.exitCode; reason = 'the mutated source does not compile'; invalidCause = 'non-compiling'; }
         }
       } finally {
         // Restore immediately so mutants in different files never stack.
@@ -385,7 +387,7 @@ export async function runMutants(opts: RunMutantsOptions): Promise<MutationRepor
       if (cutByBudget) { budgetExhausted = !spawnFailure; notRun = mutants.length - i; break; }
 
       const durationMs = Date.now() - t0;
-      outcomes.push({ mutant, status, durationMs, exitCode, reason });
+      outcomes.push({ mutant, status, durationMs, exitCode, reason, ...(invalidCause ? { invalidCause } : {}) });
       if (status === 'survived') survived += 1;
       else if (status === 'invalid') invalid += 1;
       else if (status === 'timeout') { timeouts += 1; killed += 1; }

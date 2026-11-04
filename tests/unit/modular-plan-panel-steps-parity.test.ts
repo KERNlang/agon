@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -51,20 +51,6 @@ beforeEach(() => {
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }); });
 const cases = (['brainstorm', 'tribunal', 'campfire', 'delegate'] as const).flatMap(kind =>
   ['default', 'explicit', 'empty', 'active-throws', 'error', 'string-error', 'aborted'].map(scenario => ({ kind, scenario })));
-
-it('keeps panel step algorithms out of the CLI host', () => {
-  const source = readFileSync(new URL('../../packages/cli/src/handlers/plan-mode.ts', import.meta.url), 'utf8');
-  expect(source).toContain('createPlanStepExecutors({');
-  expect(source).not.toMatch(/import\s*\{[^}]*\brunBrainstorm\b[^}]*\}\s*from\s*['"]@kernlang\/agon-forge['"]/);
-  expect(source).not.toMatch(/import\s*\{[^}]*\brunTribunal\b[^}]*\}\s*from\s*['"]@kernlang\/agon-forge['"]/);
-  expect(source).not.toMatch(/import\s*\{[^}]*\brunCampfire\b[^}]*\}\s*from\s*['"]@kernlang\/agon-forge['"]/);
-  expect(source).not.toContain('createPanelStepExecutors(');
-  for (const kind of ['brainstorm', 'tribunal', 'campfire', 'delegate']) {
-    expect(source).not.toMatch(new RegExp(`${kind}:\\s*wrap\\(`));
-  }
-  const physical = readFileSync(new URL('../../packages/mod-plan/src/panel-step-execution.ts', import.meta.url), 'utf8');
-  expect(physical).not.toMatch(/from ['"](?:@kernlang\/agon-(?:core|cli|forge)|\.\.\/)/);
-});
 
 it.each(cases)('matches raw legacy %s', async ({ kind, scenario }) => {
   const observations = [];

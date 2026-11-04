@@ -30,6 +30,14 @@ function repo(): string {
 
 afterEach(() => vi.restoreAllMocks());
 
+function withoutForgeCleanupGrace(services: ForgeModServices): ForgeModServices {
+  const open = services.forge.open.bind(services.forge);
+  return { ...services, forge: { ...services.forge, open: async context => {
+    const opened = await open(context);
+    return { ...opened, effects: { ...opened.effects, cleanupGraceMs: 0 } };
+  } } };
+}
+
 function harness(hostOptions: Partial<Parameters<typeof createGoalHostServices>[0]> = {},
   implementationCost?: (engineId: string, tokens: number) => number,
   home = mkdtempSync(join(tmpdir(), 'agon-goal-home-'))) {
@@ -96,7 +104,7 @@ function harness(hostOptions: Partial<Parameters<typeof createGoalHostServices>[
     },
     engines: { listActive: vi.fn(async () => ['builder', 'reviewer']), dispatch },
   } as unknown as ModServices;
-  return { state, dispatch, finish, writeArtifact, services: withForgeHost(services, false, implementationCost), goal, worktrees, oracleEffects };
+  return { state, dispatch, finish, writeArtifact, services: withoutForgeCleanupGrace(withForgeHost(services, false, implementationCost)), goal, worktrees, oracleEffects };
 }
 
 const context = (cwd: string) => ({

@@ -1,8 +1,15 @@
 import { expect, it, vi } from 'vitest';
 import { planSessionHost, withPlanSession } from '@kernlang/agon-mod-plan';
 import type { PlanSessionActions } from '@kernlang/agon-mod-plan';
+import type { ModManifest, ModServices } from '@kernlang/agon-mod-api';
 
 const context = (invocationId: string) => ({ invocationId, cwd: '/fixture', platform: 'darwin-arm64' as const, signal: new AbortController().signal, config: {} });
+
+it('gives the Plan mod its session host, or plan approve and cancel have nothing to run on', async () => {
+  const { decorateCliFirstPartyServices } = await import('../../packages/cli/src/first-party-services.js');
+  const services = await decorateCliFirstPartyServices({ id: 'agon.plan' } as ModManifest, {} as ModServices);
+  expect(services.planSession).toBe(planSessionHost);
+});
 
 it('dispatches typed host actions inside the Plan scope and reports completion afterward', async () => {
   const calls: string[] = [];

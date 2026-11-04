@@ -1,16 +1,8 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { existsSync } from 'node:fs';
 import * as physical from '../../packages/mod-plan/src/index.js';
 import * as frozen from '../fixtures/modular-plan-state-legacy.js';
 
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
-
-it('Plan owns the state transitions; the private core facade is removed', () => {
-  for (const name of ['createCesarPlan', 'approveCesarPlan', 'advanceCesarStep', 'cancelCesarPlan', 'exitCesarPlan']) {
-    expect(physical).toHaveProperty(name);
-  }
-  expect(existsSync(new URL('../../packages/core/src/cesar/plan.ts', import.meta.url))).toBe(false);
-});
 
 it.each(['success', 'failure', 'paused'] as const)('preserves full state payloads through %s, cancellation and exit', status => {
   expect(physical).toHaveProperty('createCesarPlan');

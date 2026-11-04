@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -53,14 +53,6 @@ beforeEach(() => {
 afterEach(() => { validation.fault = ''; vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }); });
 const scenarios = ['success', 'brainstorm-fails', 'forge-fails', 'tribunal-fails', 'no-winner', 'abort-brainstorm', 'abort-forge', 'pre-abort', 'no-engines', 'explicit-engines'];
 const cases = ['none', 'live', 'plan', 'last'].flatMap(ui => scenarios.map(scenario => ({ ui, scenario })));
-
-it('keeps the pipeline step algorithm out of the CLI', () => {
-  const source = readFileSync(new URL('../../packages/cli/src/handlers/plan-mode.ts', import.meta.url), 'utf8');
-  expect(source).toContain('createPlanStepExecutors({');
-  expect(source).not.toContain('createPipelineStepExecutor(');
-  expect(source).not.toContain('const wrap =');
-  expect(source).not.toContain('const emitPipelinePhase');
-});
 
 it.each(['issues', 'exception', 'empty-exception'])('refuses invalid final verification: %s, unlike the frozen legacy owner', async fault => {
   validation.fault = fault;

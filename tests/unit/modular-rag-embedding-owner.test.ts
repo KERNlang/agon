@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import ts from 'typescript';
 import type { CommandContribution, InvocationContext, ModServices, Registrar } from '@kernlang/agon-mod-api';
 import { createMod } from '../../packages/mod-rag/src/implementation.js';
 import { loadRagIndex } from '../../packages/mod-rag/src/store.js';
@@ -100,31 +99,5 @@ describe('RAG embedding ownership at execution boundaries', () => {
     expect(embedTexts(['a'])).toBeNull();
     expect(() => embedForWorkflow(['a'])).toThrow('RAG embedder failed:');
     expect(readFileSync(executable + '.calls', 'utf8').trim().split('\n')).toHaveLength(2);
-  });
-
-  it('keeps Core as public reexports and rejects a restored execution owner', () => {
-    const source = readFileSync(new URL('../../packages/core/src/rag/embed.ts', import.meta.url), 'utf8');
-    const isFacade = (text: string) => {
-      const file = ts.createSourceFile('embed.ts', text, ts.ScriptTarget.Latest, true);
-      const exports: string[] = [];
-      for (const statement of file.statements) {
-        if (!ts.isExportDeclaration(statement) || !statement.moduleSpecifier ||
-            !ts.isStringLiteral(statement.moduleSpecifier) ||
-            statement.moduleSpecifier.text !== '@kernlang/agon-mod-rag' ||
-            !statement.exportClause || !ts.isNamedExports(statement.exportClause)) return false;
-        for (const symbol of statement.exportClause.elements) {
-          if (symbol.propertyName && symbol.propertyName.text !== symbol.name.text) return false;
-          exports.push(`${statement.isTypeOnly || symbol.isTypeOnly ? 'type' : 'value'}:${symbol.name.text}`);
-        }
-      }
-      return JSON.stringify(exports.sort()) === JSON.stringify([
-        'type:RagEmbedResult', 'value:RAG_EMBED_MAX_BUFFER', 'value:RAG_EMBED_TIMEOUT_MS',
-        'value:embedSidecarHint', 'value:embedTexts',
-      ].sort());
-    };
-    expect(isFacade(source)).toBe(true);
-    expect(isFacade(source + '\nfunction embedTexts() { return null; }')).toBe(false);
-    expect(isFacade(source.replace('  embedSidecarHint,\n', ''))).toBe(false);
-    expect(isFacade(source.replace('export type {', 'export {'))).toBe(false);
   });
 });

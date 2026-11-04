@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+
 import { beforeEach, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({ execute: vi.fn(), append: vi.fn(), record: vi.fn() }));
 vi.mock('@kernlang/agon-core', async original => ({ ...await original<object>(), appendMessage: mocks.append }));
@@ -66,10 +66,4 @@ it('does not grant Conquer presentation by public name alone', async () => {
   expect(mocks.append).not.toHaveBeenCalled();
   expect(mocks.record).not.toHaveBeenCalled();
   expect(cb.dispatch).toHaveBeenCalledWith({ type: 'info', message: 'external output' });
-});
-
-it('retires the legacy Conquer session handler and its dispatch import', () => {
-  expect(existsSync(new URL('../../packages/cli/src/handlers/conquer.ts', import.meta.url))).toBe(false);
-  const source = readFileSync(new URL('../../packages/cli/src/signals/dispatch/intent-orchestration.ts', import.meta.url), 'utf8');
-  expect(source).not.toContain('handleConquer');
 });

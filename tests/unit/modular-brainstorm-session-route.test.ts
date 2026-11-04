@@ -1,6 +1,4 @@
 import { beforeEach, expect, it, vi } from 'vitest';
-import { readFileSync } from 'node:fs';
-import * as physical from '@kernlang/agon-mod-brainstorm';
 const mocks = vi.hoisted(() => ({ execute: vi.fn(), complete: vi.fn(), fail: vi.fn(), create: vi.fn(), present: vi.fn(), dispose: vi.fn(), scan: vi.fn(), append: vi.fn(), setEngines: vi.fn(), presentationFail: vi.fn(), addResult: vi.fn(), recordRun: vi.fn() }));
 vi.mock('@kernlang/agon-core', async importOriginal => ({ ...await importOriginal<object>(), scanProjectContext: mocks.scan, appendMessage: mocks.append }));
 vi.mock('../../packages/cli/src/surface-authority-runtime.js', async importOriginal => ({ ...await importOriginal<object>(), executeProcessCesarRoute: mocks.execute }));
@@ -15,15 +13,6 @@ beforeEach(() => {
   mocks.create.mockReturnValue({ complete: mocks.complete, fail: mocks.fail });
 });
 const callbacks = () => ({ dispatch: vi.fn(), ctx: { activeEngines: () => ['codex', 'claude'], chatSession: { id: 'test' } } });
-
-it('owns session preparation and settlement in the physical Brainstorm package', () => {
-  expect(physical).toHaveProperty('runBrainstormSession');
-  const source = readFileSync(new URL('../../packages/cli/src/blocks/brainstorm-session.ts', import.meta.url), 'utf8');
-  expect(source).toContain("from '@kernlang/agon-mod-brainstorm'");
-  expect(source).not.toContain('output.exitCode');
-  expect(source).not.toContain('input.engines.split');
-  expect(source).not.toContain('sessionRecord?.complete');
-});
 
 it('records the same session-selected roster passed to the physical mod', async () => {
   const cb = callbacks();

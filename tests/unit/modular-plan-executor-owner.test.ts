@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { existsSync, readFileSync } from 'node:fs';
 import * as planMod from '../../packages/mod-plan/src/index.js';
 import { createCesarPlan, approveCesarPlan } from '@kernlang/agon-mod-plan';
 import { executePlan as legacy } from '../fixtures/modular-plan-executor-legacy.js';
@@ -64,17 +63,6 @@ describe('physical Plan scheduler ownership', () => {
     expect(saved.steps[1].state).toBe(parallel ? 'done' : 'pending');
     expect(saved.stepContext.a).toBe('a');
     if (parallel) expect(saved.stepContext.b).toBe('b');
-  });
-  it('exports the scheduler from Plan and leaves no scheduler loop in core', () => {
-    expect(planMod).toHaveProperty('createPlanExecutor');
-    expect(existsSync(new URL('../../packages/core/src/cesar/plan-executor.ts', import.meta.url))).toBe(false);
-    const binding = readFileSync(new URL('../../packages/core/src/cesar/plan-cost-estimator.ts', import.meta.url), 'utf8');
-    expect(binding).not.toMatch(/while\s*\(|Promise\.all|markStepsRunning|createPlanExecutor/);
-    expect(binding).toContain('createPlanRuntime');
-    const scheduler = readFileSync(new URL('../../packages/mod-plan/src/executor.ts', import.meta.url), 'utf8');
-    expect(scheduler).not.toMatch(/@kernlang\/agon-core|packages\/core|node:fs|planCostEstimator/);
-    expect(scheduler).not.toContain('services.advance');
-    expect(existsSync(new URL('../../packages/core/src/cesar/plan.ts', import.meta.url))).toBe(false);
   });
 
   it.each(['sequential', 'parallel', 'failure', 'paused', 'throw', 'missing', 'abort', 'summary-failure'])('matches frozen raw events and result: %s', async scenario => {

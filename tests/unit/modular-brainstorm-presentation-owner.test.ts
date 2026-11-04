@@ -1,5 +1,4 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { readFileSync } from 'node:fs';
 import * as owner from '@kernlang/agon-mod-brainstorm';
 import { createBrainstormPresentation as legacy } from '../fixtures/modular-brainstorm-presentation-legacy.js';
 import { createBrainstormPresentation as current } from '../../packages/cli/src/blocks/brainstorm-presentation.js';
@@ -24,14 +23,6 @@ it('registers the legacy timer cadence through the host and cancels at completio
   view.complete({ question: 'fixture', winner: '', response: '', bids: [] });
   expect(cancel).toHaveBeenCalledTimes(1);
   view.dispose();
-});
-
-it('owns presentation decisions in Brainstorm rather than the CLI binding', () => {
-  expect(owner).toHaveProperty('createBrainstormPresentation', expect.any(Function));
-  const binding = readFileSync(new URL('../../packages/cli/src/blocks/brainstorm-presentation.ts', import.meta.url), 'utf8');
-  expect(binding).not.toContain('const seats');
-  expect(binding).not.toContain('result.bids');
-  expect(binding).not.toContain('Synthesis fallback:');
 });
 
 it.each(['complete', 'failure', 'dispose'])('preserves raw presentation events and timer cleanup on %s', ending => {

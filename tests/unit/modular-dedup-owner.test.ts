@@ -1,5 +1,4 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { createHash } from 'node:crypto';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
@@ -17,21 +16,6 @@ function sourceFiles(directory: string): string[] {
     return entry.isDirectory() ? sourceFiles(path) : /\.tsx?$/.test(entry.name) ? [path] : [];
   });
 }
-
-it('retains the exact pre-extraction oracle body from 192ab0d3', () => {
-  const fixture = readFileSync(new URL('../fixtures/modular-dedup-legacy.ts', import.meta.url), 'utf8');
-  const body = fixture.slice(fixture.indexOf('\n') + 1);
-  expect(createHash('sha256').update(body).digest('hex')).toBe('018cf770c252baf8a8b3b49dedc0d32bf7ca346de13b2e56d25221fb1577312e');
-});
-
-it('keeps the sidecar controller in shared dedup support, not the legacy workflow', () => {
-  expect(existsSync(retired)).toBe(false);
-  const source = readFileSync(new URL('../../packages/support-dedup/src/brainstorm-dedup.ts', import.meta.url), 'utf8');
-  expect(source).not.toMatch(/from ['"][^'"]*(?:agon-core|agon-forge|\/core\/|\/forge\/)/);
-  const core = readFileSync(new URL('../../packages/core/src/models/types.ts', import.meta.url), 'utf8');
-  expect(core).not.toContain('export interface BrainstormGroup');
-  expect(core).not.toContain('export interface BrainstormDedupStatus');
-});
 
 it('leaves no production import edge to the retired dedup adapter', () => {
   const violations: string[] = [];

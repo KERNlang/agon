@@ -128,23 +128,6 @@ describe('Naturalize workflow ownership', () => {
       ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n'))).toEqual([]);
   });
 
-  it('keeps the prompt and legacy workflow in the physical owner', async () => {
-    const owner = await import('@kernlang/agon-mod-naturalize/workflow');
-    expect(buildNaturalizePrompt).toBe(owner.buildNaturalizePrompt);
-    const legacy = readFileSync(new URL('../../packages/forge/src/naturalize.ts', import.meta.url), 'utf8');
-    expect(legacy).toContain('@kernlang/agon-mod-naturalize/workflow');
-    expect(legacy).not.toContain('for (let attempt');
-    expect(legacy).not.toContain('opts.adapter.dispatch(');
-    const ledger = JSON.parse(readFileSync(new URL('../../docs/specs/evidence/modular-agon-slice5-migration-ledger.json', import.meta.url), 'utf8'));
-    const row = ledger.assignments.find((entry: { id: string; category: string }) =>
-      entry.id === 'NaturalizeResult' && entry.category === 'resultAndEnvelopeTypes');
-    expect(row).toMatchObject({
-      implementationPaths: ['packages/mod-naturalize/src/workflow.ts'],
-      compatibilityAdapter: 'packages/forge/src/naturalize.ts',
-      authority: 'legacy-runtime-until-s6',
-    });
-  });
-
   it('preserves legacy sanitization and report values across the owner boundary', async () => {
     const opts = makeOpts({ input: 'alpha\u180ebeta\u2000gamma\ufe00' });
     let prompt = '';

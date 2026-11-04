@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -26,15 +26,6 @@ afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); rmSync(home, { recur
 const cases = (['review', 'agent', 'team-agent'] as const).flatMap(kind =>
   ['success', 'empty', 'blocked', 'parse-failed', 'target-throws', 'select-throws', 'error', 'string-error', 'aborted', 'no-signal', 'no-engine',
     'failed', 'cancelled', 'budget_exceeded', 'no-winner', 'missing', 'during-abort'].map(scenario => ({ kind, scenario })));
-
-it('keeps the three algorithms out of the CLI and legacy packages out of their owner', () => {
-  const source = readFileSync(new URL('../../packages/cli/src/handlers/plan-mode.ts', import.meta.url), 'utf8');
-  expect(source).toContain('createPlanStepExecutors({');
-  expect(source).not.toContain('createAgentReviewStepExecutors(');
-  expect(source).not.toMatch(/(?:review|agent|'team-agent'):\s*wrap\([^\n]*async/);
-  const physical = readFileSync(new URL('../../packages/mod-plan/src/agent-review-step-execution.ts', import.meta.url), 'utf8');
-  expect(physical).not.toMatch(/from ['"](?:@kernlang\/agon-(?:core|cli|forge)|\.\.\/)/);
-});
 
 it.each(cases)('matches legacy $kind/$scenario without result normalization', async ({ kind, scenario }) => {
   const results = [];

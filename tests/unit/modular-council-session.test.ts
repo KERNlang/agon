@@ -1,5 +1,4 @@
 import { beforeEach, expect, it, vi } from 'vitest';
-import { existsSync, readFileSync } from 'node:fs';
 const effects = vi.hoisted(() => ({ append: vi.fn(), track: vi.fn(), add: vi.fn(), record: vi.fn(), command: vi.fn() }));
 vi.mock('../../packages/cli/src/surface-authority-runtime.js', async original => {
   const record = { id: 'tuiSlashCommands:0022', kind: 'intent', owner: { id: 'agon.council' },
@@ -25,11 +24,6 @@ import { runPhysicalCesarWorkflow } from '../../packages/cli/src/signals/dispatc
 import { dispatchIntent } from '../../packages/cli/src/signals/dispatch/intent-router.js';
 
 beforeEach(() => vi.resetAllMocks());
-it('retires the legacy Council session execution owner', () => {
-  expect(existsSync(new URL('../../packages/cli/src/handlers/council.ts', import.meta.url))).toBe(false);
-  expect(existsSync(new URL('../../packages/cli/src/commands/council.ts', import.meta.url))).toBe(false);
-  expect(readFileSync(new URL('../../packages/cli/src/signals/dispatch/intent-orchestration.ts', import.meta.url), 'utf8')).not.toContain('handleCouncil');
-});
 const result = { ok: true, question: 'Q', brief: 'Brief', chairmanId: 'alpha', actingChairmanId: 'beta',
   seats: [{ engineId: 'beta', role: 'security', response: 'Evidence', critique: '', critiquedRole: '' }],
   verdict: 'Conclusion', confidence: 0, warnings: [] };

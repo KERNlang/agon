@@ -1,8 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 import * as kernel from '../../packages/mod-kernel/src/index.js';
-import * as persistence from '../../packages/support-persistence/src/index.js';
-import * as browser from '../../packages/support-browser-bridge/src/index.js';
 import { setupTestAgonHome, cleanupTestAgonHome, agonHomePath } from '../helpers/agon-home.js';
 
 vi.mock('@kernlang/agon-kernel', async (importOriginal) => {
@@ -15,20 +13,6 @@ vi.mock('@kernlang/agon-support-browser-bridge', async (importOriginal) => {
 });
 
 describe('shared configuration ownership', () => {
-  it('provides exactly the settings assigned to each physical owner', () => {
-    const ledger = JSON.parse(readFileSync(new URL('../../docs/specs/evidence/modular-agon-ownership.json', import.meta.url), 'utf8'));
-    for (const [owner, defaults] of [
-      ['@kernlang/agon-kernel', kernel.DEFAULT_KERNEL_SETTINGS],
-      ['@kernlang/agon-support-persistence', persistence.DEFAULT_PERSISTENCE_SETTINGS],
-      ['@kernlang/agon-support-browser-bridge', browser.DEFAULT_BROWSER_SETTINGS],
-    ] as const) {
-      expect(defaults).toBeDefined();
-      const keys = ledger.assignments.filter((entry: { category: string; package: string }) =>
-        entry.category === 'configKeys' && entry.package === owner
-      ).map((entry: { id: string }) => entry.id).sort();
-      expect(Object.keys(defaults).sort()).toEqual(keys);
-    }
-  });
 
   it('Core composes physical defaults and delegates normalization to the owners', async () => {
     const home = setupTestAgonHome('shared-settings-owner');

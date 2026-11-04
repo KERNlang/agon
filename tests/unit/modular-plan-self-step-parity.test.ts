@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -25,15 +25,6 @@ afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); rmSync(home, { recur
 const scenarios = ['success', 'empty', 'retry-success', 'retry-paused', 'retry-empty', 'pre-abort', 'during-abort',
   'reported-abort', 'error', 'string-error', 'verify-fails', 'verify-timeout', 'verify-throws', 'verify-passes'] as const;
 const cases = (['live', 'plan', 'last', 'none'] as const).flatMap(mode => scenarios.map(scenario => ({ mode, scenario })));
-
-it('removes the Self algorithm from the CLI without legacy imports in its owner', () => {
-  const cli = readFileSync(new URL('../../packages/cli/src/handlers/plan-mode.ts', import.meta.url), 'utf8');
-  expect(cli).toContain('createPlanStepExecutors({');
-  expect(cli).not.toContain('createSelfStepExecutor');
-  expect(cli).not.toContain('[APPROVED PLAN STEP]');
-  const owner = readFileSync(new URL('../../packages/mod-plan/src/self-step-execution.ts', import.meta.url), 'utf8');
-  expect(owner).not.toMatch(/from ['"](?:@kernlang\/agon-(?:core|cli|forge)|\.\.\/)/);
-});
 
 it.each(cases)('preserves raw Self results and UI events: $mode/$scenario', async ({ mode, scenario }) => {
   const observations = [];

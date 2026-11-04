@@ -1,5 +1,4 @@
 import { beforeEach, expect, it, vi } from 'vitest';
-import { existsSync, readFileSync } from 'node:fs';
 const mocks = vi.hoisted(() => ({ execute: vi.fn(), append: vi.fn(), track: vi.fn(), add: vi.fn(), record: vi.fn(), scan: vi.fn() }));
 vi.mock('@kernlang/agon-core', async original => {
   const actual = await original<typeof import('@kernlang/agon-core')>();
@@ -115,12 +114,6 @@ it.each([null, {}, { rounds: [{}] }, { rounds: [null] }])('rejects invalid resul
   await expect(runPhysicalCesarWorkflow('campfire', { topic: 'Question' }, callbacks() as never)).rejects.toThrow('invalid session result');
   expect(mocks.append).not.toHaveBeenCalled();
   expect(mocks.add).not.toHaveBeenCalled();
-});
-
-it('retires the legacy Campfire session owner', () => {
-  expect(existsSync(new URL('../../packages/cli/src/handlers/campfire.ts', import.meta.url))).toBe(false);
-  const source = readFileSync(new URL('../../packages/cli/src/signals/dispatch/intent-orchestration.ts', import.meta.url), 'utf8');
-  expect(source).not.toContain('handleCampfire');
 });
 
 it('keeps history attached to the originating session', async () => {

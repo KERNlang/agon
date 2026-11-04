@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto';
 
 import { existsSync, statSync } from 'node:fs';
 
-import { apiStreamDispatchWithHistory, apiDispatch } from '../api/dispatch.js';
+import { apiStreamDispatchWithHistory, apiDispatch } from '../api/dispatch-lazy.js';
 
 import { engineSupportsVision } from '../signals/models-registry.js';
 

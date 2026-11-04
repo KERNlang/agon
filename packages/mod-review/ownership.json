@@ -91,6 +91,14 @@
       "rule": "semantic-source-rule"
     },
     {
+      "category": "configKeys",
+      "id": "reviewFileContext",
+      "source": "packages/core/src/models/types.ts:90",
+      "class": "user-toggleable-mod-package",
+      "package": "@kernlang/agon-mod-review",
+      "rule": "semantic-source-rule"
+    },
+    {
       "category": "intentVariants",
       "id": "review",
       "source": "packages/cli/src/signals/intent-types.ts:42",

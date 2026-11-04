@@ -182,7 +182,7 @@ function expectedFiles(packageRecord) {
   // Jobs persists scheduler observations through its separate storage adapter.
   if (short === 'jobs') inferredPermissions.add('state.write');
   if (short === 'conquer') inferredPermissions.add('git.write');
-  const policyEntries = short === 'research' ? researchPolicyEntries : short === 'naturalize' ? ['lexical-policy'] : [];
+  const policyEntries = short === 'research' ? researchPolicyEntries : short === 'naturalize' ? ['lexical-policy', 'workflow'] : [];
   const physicalPackFiles = ['dist/implementation.d.ts', ...(policyEntries.length ? [...(short === 'research' ? ['dist/session-workflow.d.ts'] : []), ...policyEntries.flatMap((entry) => [`dist/${entry}.js`, `dist/${entry}.d.ts`])] : short === 'rag' ? ['dist/store.d.ts', 'dist/types.d.ts', 'dist/grounding.d.ts']
     : short === 'think' ? ['dist/thinking.d.ts', 'dist/runtime.d.ts', 'dist/host.d.ts', 'dist/presentation.d.ts', 'dist/session-workflow.d.ts']
     : short === 'council' ? ['dist/runtime.d.ts', 'dist/host.d.ts', 'dist/presentation.d.ts', 'dist/command.d.ts', 'dist/session-workflow.d.ts']

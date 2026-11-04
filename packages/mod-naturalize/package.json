@@ -13,6 +13,10 @@
       "types": "./dist/lexical-policy.d.ts",
       "import": "./dist/lexical-policy.js"
     },
+    "./workflow": {
+      "types": "./dist/workflow.d.ts",
+      "import": "./dist/workflow.js"
+    },
     "./manifest": "./agon.mod.json",
     "./ownership": "./ownership.json"
   },

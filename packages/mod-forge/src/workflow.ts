@@ -71,6 +71,7 @@ export interface ForgeWorkflowEffects<Registry extends ForgeWorkflowRegistry> {
     resultPath: string; payload: unknown; status: 'succeeded' | 'failed' | 'partial';
     idSeed: string; ownerModId: string; contributionId: string; createdAt?: string;
   }): string;
+  cleanupGraceMs?: number;
 }
 
 /** Construct a workflow without reading configuration or starting providers. */
@@ -80,6 +81,7 @@ export function createForgeWorkflow<Registry extends ForgeWorkflowRegistry>(runt
     worktreeRemoveBestEffort, worktreePruneOrphaned, assignForgeRoles,
     buildSpecializedPrompt, updateGlickoRanked, buildKernContextSpine, tracker,
     writeManifest, addToCorpus, writeVersionedResultEnvelope,
+    cleanupGraceMs = 1000,
   } = runtime;
   const { runBaseline, runStage1, runStage2 } = createForgeStages(runtime.stages);
   const { runSynthesis } = createForgeSynthesis(runtime.synthesis);
@@ -1095,7 +1097,7 @@ export function createForgeWorkflow<Registry extends ForgeWorkflowRegistry>(runt
         // here so SIGKILL has fired and most child processes have released
         // file handles before we start removing their worktrees. Worth the
         // extra wait on cleanup vs. cleanup failures from busy-dir errors.
-        try { await new Promise(resolve => setTimeout(resolve, 1000)); } catch { /* non-fatal */ }
+        try { await new Promise(resolve => setTimeout(resolve, cleanupGraceMs)); } catch { /* non-fatal */ }
         for (const wt of worktrees) {
           worktreeRemoveBestEffort(wt.repoRoot, wt.path);
         }

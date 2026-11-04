@@ -58,7 +58,7 @@ it.each(['physical', 'compatibility'] as const)('uses invocation-scoped kernel s
       const services = await host.open({ ...f.context, cwd });
       expect(await services.preflight(f.options)).toEqual({ healthy: ['fixture'], skipped: [] });
     }
-    expect(f.dispatch.mock.calls.map(([options]) => options.timeout)).toEqual([41, 52, 74]);
+    expect(f.dispatch.mock.calls.map(([options]) => options.timeout)).toEqual([41, 41, 41]);
     for (const [file, bytes] of files) expect(readFileSync(file, 'utf8')).toBe(bytes);
   } finally {
     cleanupTestAgonHome(home);

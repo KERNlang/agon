@@ -1,15 +1,22 @@
 import { describe, expect, it } from 'vitest';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { cleanupTestAgonHome, setupTestAgonHome } from '../helpers/agon-home.js';
 
 import { buildCallCommands, validateCallEngineRoster } from '../../packages/cli/src/commands/call.js';
 
 describe('agon call command mapping', () => {
-  it('rejects a singular engine that is hard-removed in project config', () => {
+  it('rejects a singular engine that is hard-removed in global config', () => {
+    const home = setupTestAgonHome('call-engine');
     const cwd = mkdtempSync(join(tmpdir(), 'agon-call-engine-'));
-    writeFileSync(join(cwd, '.agon.json'), JSON.stringify({ removedEngines: ['codex'] }));
-    expect(() => validateCallEngineRoster('codex', cwd)).toThrow(/hard-removed/i);
+    try {
+      writeFileSync(join(home, 'config.json'), JSON.stringify({ removedEngines: ['codex'] }));
+      expect(() => validateCallEngineRoster('codex', cwd)).toThrow(/hard-removed/i);
+    } finally {
+      cleanupTestAgonHome(home);
+      rmSync(cwd, { recursive: true, force: true });
+    }
   });
 
   it('maps tribunal to the live team tribunal bridge', () => {

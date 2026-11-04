@@ -809,6 +809,18 @@ Dispatched engines run **workspace-pure** by default. They still see the reposit
 
 Opt out for a single run with `--impure` (or `--isolation inherit`); make it permanent with `agon config set engineIsolation inherit`. `--pure` forces isolation back on. If an engine's clean config dir isn't authenticated yet, agon falls back to `inherit` for that dispatch rather than breaking the run, and prints the one-time login hint.
 
+### What a repository's config can do
+
+Opening a repository never grants it anything. `.agon.json` and `.agon.local.json` are both treated as untrusted, because either can be committed.
+
+- **Can set:** `commitCoAuthor`, `projectContext` and `contextFormat`, and add `permissions.deny` rules. Deny rules union with yours, so a repo can tighten and can never widen or wipe a global deny.
+- **Cannot set:** everything else, including `hooks`, `permissions.allow`, permission and approval modes, `allowedCommands`, `toolPermissions`, MCP settings, engine and model selection, `engineIsolation`, `mods`, and Forge and review tuning. Unknown keys are dropped too.
+- **MCP:** Agon's auto-discovery reads only your global `~/.claude` settings; `.vscode/mcp.json`, `.cursor/mcp.json` and `mcpServers` in `.agon.json` are ignored. `/mcp connect <name>` still works, because you ran it.
+
+Ignored keys get one warning per file on stderr, by name only. To apply one, move it to `~/.agon/config.json`.
+
+This limits Agon's own config. A dispatched engine CLI still reads its own project files, such as `.claude/settings.json` or `.mcp.json`, under that vendor's rules.
+
 ### Commit attribution & PR text
 
 Every commit agon itself creates (`conquer --push`, each `goal` task commit, the REPL's `/commit`) ends with a Claude-Code-style attribution block:

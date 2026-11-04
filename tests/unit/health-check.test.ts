@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { EngineRegistry } from '../../packages/core/src/signals/engine-registry.js';
 import { healthCheckEngine } from '../../packages/forge/src/health-check.js';
 import { runForge } from '../../packages/forge/src/forge.js';
+import { agonHomePath } from '../helpers/agon-home.js';
 
 const tempDirs: string[] = [];
 
@@ -22,7 +23,7 @@ function makeRepo(): string {
   tempDirs.push(dir);
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, 'README.md'), '# health-check test\n');
-  writeFileSync(join(dir, '.agon.json'), JSON.stringify({
+  writeFileSync(agonHomePath('config.json'), JSON.stringify({
     forgeRequireBaselineCheck: false,
     forgeEnableSynthesis: false,
     forgeDispatchTimeout: 30,

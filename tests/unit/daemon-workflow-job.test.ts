@@ -3,6 +3,7 @@ import { getEventListeners } from 'node:events';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { cleanupTestAgonHome, setupTestAgonHome } from '../helpers/agon-home.js';
 import { createDaemonWorkflowRuntime, emitChunks as physicalEmitChunks, runWorkflowCommand as physicalRunWorkflowCommand, daemonWorkflowKinds as physicalWorkflowKinds } from '@kernlang/agon-mod-jobs';
 
 import {
@@ -190,20 +191,25 @@ describe('daemon workflow jobs', () => {
   });
 
   it('enforces removed engines for singular --engine workflow options', () => {
+    const home = setupTestAgonHome('daemon-engine');
     const cwd = mkdtempSync(join(tmpdir(), 'agon-daemon-engine-'));
     try {
-      writeFileSync(join(cwd, '.agon.json'), JSON.stringify({ removedEngines: ['codex'] }));
+      writeFileSync(join(home, 'config.json'), JSON.stringify({ removedEngines: ['codex'] }));
       const plan = buildDaemonWorkflowPlan('review', { input: 'uncommitted', engine: 'codex', cwd });
       expect(() => validateDaemonWorkflowEngines(plan)).toThrow(/hard-removed/i);
-    } finally { rmSync(cwd, { recursive: true, force: true }); }
+    } finally {
+      cleanupTestAgonHome(home);
+      rmSync(cwd, { recursive: true, force: true });
+    }
   });
 
   it('keeps configuration and roster validation ahead of the daemon echo seam', async () => {
+    const home = setupTestAgonHome('daemon-resolve');
     const cwd = mkdtempSync(join(tmpdir(), 'agon-daemon-resolve-'));
     const previousEcho = process.env.AGON_DAEMON_ECHO;
     process.env.AGON_DAEMON_ECHO = '1';
     try {
-      writeFileSync(join(cwd, '.agon.json'), JSON.stringify({ removedEngines: ['codex'], jobLabelMaxChars: 3 }));
+      writeFileSync(join(home, 'config.json'), JSON.stringify({ removedEngines: ['codex'], jobLabelMaxChars: 3 }));
       expect(() => resolveDaemonWorkflowJob('review', { input: 'uncommitted', engine: 'codex', cwd })).toThrow(/hard-removed/i);
       expect(() => resolveDaemonWorkflowJob('review', { input: 'uncommitted', autoApprove: true, cwd })).toThrow(/autoApprove/i);
       const job = resolveDaemonWorkflowJob('review', { input: 'uncommitted', cwd });
@@ -215,6 +221,7 @@ describe('daemon workflow jobs', () => {
     } finally {
       if (previousEcho === undefined) delete process.env.AGON_DAEMON_ECHO;
       else process.env.AGON_DAEMON_ECHO = previousEcho;
+      cleanupTestAgonHome(home);
       rmSync(cwd, { recursive: true, force: true });
     }
   });

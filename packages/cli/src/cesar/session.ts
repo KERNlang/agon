@@ -1307,7 +1307,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
     if (resolution.decision === 'deny') {
       logApproval('denied', `resolver.${resolution.stage}`, resolution.reason);
       if (resolution.stage === 'deny-rule') {
-        return `DENIED: ${agonTool}${agonTool === 'Bash' ? ` (${command})` : ''} is blocked by a deny rule in .agon.json permissions. Do not retry this — choose a different approach or ask the user to amend the rule.`;
+        return `DENIED: ${agonTool}${agonTool === 'Bash' ? ` (${command})` : ''} is blocked by a deny rule in the permissions config. Do not retry this — choose a different approach or ask the user to amend the rule.`;
       }
       return false;
     }
@@ -1479,8 +1479,8 @@ export function mcpConfigFingerprint(config: any): string {
       mtime = String(statSync(resolvedPath).mtimeMs);
     } catch { /* file may not exist yet */ }
   }
-  // Also include auto-discovery fingerprint — detects changes to ~/.claude/settings.json, .vscode/mcp.json, etc.
-  const discoveryFp = mcpDiscoveryFingerprint(resolveWorkingDir());
+  // Also include auto-discovery fingerprint — detects changes to ~/.claude/settings.json and settings.local.json
+  const discoveryFp = mcpDiscoveryFingerprint();
   return `${enabled}:${configPath}:${mtime}:${discoveryFp}`;
 }
 
@@ -1621,8 +1621,8 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
     // Manual config (cesarMcpEnabled + cesarMcpConfigPath)
     mcpServers = loadCesarMcpServers(config, cwd);
     if (!mcpServers || mcpServers.length === 0) {
-      // Auto-discover from ~/.claude/settings.json, .vscode/mcp.json, .agon.json, etc.
-      const discovered = discoverMcpServers(cwd);
+      // Auto-discover from global ~/.claude settings only; repo files are never read
+      const discovered = discoverMcpServers();
       if (discovered.length > 0) {
         mcpServers = mcpServersToWireFormat(discovered);
       }

@@ -204,7 +204,7 @@ export function resolvePermissionDecision(request: PermissionResolutionRequest):
     }
   }
   
-  // Scoped rules (user-authored via Always / .agon.json, incl. session
+  // Scoped rules (user-authored via Always / ~/.agon/config.json, incl. session
   // rules) are the ONE allow source deliberately strong enough to cover a
   // lease boundary — that is the whole point of persisting Bash(git push:*).
   if (ruleDecision === 'allow') {

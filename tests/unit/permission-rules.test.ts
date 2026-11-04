@@ -133,12 +133,13 @@ describe('loadConfig merges permissions across scopes (deny from any scope wins)
     rmSync(cwd, { recursive: true, force: true });
   });
 
-  it('combines project + local allow/deny instead of replacing', () => {
+  it('unions deny from every scope and takes allow from the global scope only', () => {
+    writeFileSync(join(homeDir, 'config.json'), JSON.stringify({ permissions: { allow: ['Read'], deny: ['Bash(sudo:*)'] } }));
     writeFileSync(join(cwd, '.agon.json'), JSON.stringify({ permissions: { allow: ['Bash(npm test:*)'], deny: ['Write'] } }));
     writeFileSync(join(cwd, '.agon.local.json'), JSON.stringify({ permissions: { allow: ['Edit'], deny: ['Bash(rm:*)'] } }));
     const cfg = loadConfig(cwd) as any;
-    expect(cfg.permissions.allow.sort()).toEqual(['Bash(npm test:*)', 'Edit']);
-    expect(cfg.permissions.deny.sort()).toEqual(['Bash(rm:*)', 'Write']);
+    expect(cfg.permissions.allow).toEqual(['Read']);
+    expect(cfg.permissions.deny.sort()).toEqual(['Bash(rm:*)', 'Bash(sudo:*)', 'Write']);
   });
 
   it('absent permissions yields empty sets', () => {
@@ -153,7 +154,8 @@ describe('loadConfig merges permissions across scopes (deny from any scope wins)
   });
 
   it('end-to-end: a deny rule from .agon.json is honored by the rule engine', () => {
-    writeFileSync(join(cwd, '.agon.json'), JSON.stringify({ permissions: { allow: ['Bash(git diff:*)'], deny: ['Bash(rm:*)'] } }));
+    writeFileSync(join(homeDir, 'config.json'), JSON.stringify({ permissions: { allow: ['Bash(git diff:*)'] } }));
+    writeFileSync(join(cwd, '.agon.json'), JSON.stringify({ permissions: { deny: ['Bash(rm:*)'] } }));
     const cfg = loadConfig(cwd) as any;
     const ruleSet = parsePermissionRuleSet(cfg.permissions);
     expect(evaluatePermissionRules('Bash', 'rm -rf /', ruleSet)).toBe('deny');

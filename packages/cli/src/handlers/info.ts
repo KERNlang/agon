@@ -588,7 +588,7 @@ export function handlePermissions(dispatch: Dispatch, intent?: any): void {
   ];
   
   dispatch({ type: 'header', title: 'Permission Rules' });
-  dispatch({ type: 'text', content: 'Claude-Code-style allow/deny rules in .agon.json. deny ALWAYS wins over allow; an allow rule auto-approves, a deny rule refuses without prompting, everything else falls through to the normal ask flow.' });
+  dispatch({ type: 'text', content: 'Claude-Code-style allow/deny rules in ~/.agon/config.json. deny ALWAYS wins over allow; an allow rule auto-approves, a deny rule refuses without prompting, everything else falls through to the normal ask flow. A repository can only add deny rules: allow rules in its .agon.json or .agon.local.json are ignored.' });
   
   const rows: string[][] = [];
   for (const scope of scopes) {
@@ -599,7 +599,8 @@ export function handlePermissions(dispatch: Dispatch, intent?: any): void {
     }
     const allow = Array.isArray(p.allow) ? p.allow.filter((x: unknown) => typeof x === 'string') : [];
     const deny = Array.isArray(p.deny) ? p.deny.filter((x: unknown) => typeof x === 'string') : [];
-    rows.push([scope.label, scope.path, deny.length ? deny.join(', ') : '—', allow.length ? allow.join(', ') : '—']);
+    const allowCell = !allow.length ? '—' : scope.label === 'global' ? allow.join(', ') : `ignored (${allow.length})`;
+    rows.push([scope.label, scope.path, deny.length ? deny.join(', ') : '—', allowCell]);
   }
   dispatch({ type: 'table', headers: ['Scope', 'File', 'Deny (wins)', 'Allow'], rows });
   
@@ -609,7 +610,7 @@ export function handlePermissions(dispatch: Dispatch, intent?: any): void {
   const effAllow: string[] = Array.isArray(eff.allow) ? eff.allow : [];
   const effDeny: string[] = Array.isArray(eff.deny) ? eff.deny : [];
   if (effAllow.length === 0 && effDeny.length === 0) {
-    dispatch({ type: 'info', message: 'No permission rules configured. Add one with /permissions add allow "Bash(npm test:*)" or a "permissions" block in .agon.json.' });
+    dispatch({ type: 'info', message: 'No permission rules configured. Add one with /permissions add allow "Bash(npm test:*)" or a "permissions" block in ~/.agon/config.json.' });
   } else {
     dispatch({ type: 'text', content: `Effective (all scopes merged): ${effDeny.length} deny, ${effAllow.length} allow. Deny rules take precedence.` });
   }

@@ -90,7 +90,7 @@ export function createEditTool(): ToolHandler {
     const relCanonical = relative(canonicalCwd, canonicalPath);
     const outsideCwd = relCanonical.startsWith('..') || resolve(canonicalCwd, relCanonical) !== canonicalPath;
 
-    // CC-parity allow/deny rules (.agon.json permissions): deny FIRST — before
+    // CC-parity allow/deny rules (config permissions): deny FIRST — before
     // the agent-mode auto-allow below — and allow before any ask. This is the
     // gate on the API / XML tool-execution path (executeToolCall →
     // handler.checkPermission). F3 path-aware: `Edit(/etc:*)` blocks /etc/passwd
@@ -98,7 +98,7 @@ export function createEditTool(): ToolHandler {
     if ((ctx as any).permissionRules) {
       const ruleDecision = evaluateFilePathRules('Edit', input.file_path as string, ctx.cwd, (ctx as any).permissionRules);
       if (ruleDecision === 'deny') {
-        return { behavior: 'deny', message: `${PERMISSION_DENIED_MESSAGE}: Edit ${filePath} blocked by a deny rule in .agon.json permissions`, reason: 'permission_rule_deny' };
+        return { behavior: 'deny', message: `${PERMISSION_DENIED_MESSAGE}: Edit ${filePath} blocked by a deny rule in the permissions config`, reason: 'permission_rule_deny' };
       }
       // deny-all kill-switch outranks an allow RULE (only rule-DENY sits above it).
       if (ruleDecision === 'allow' && ctx.permissionMode !== 'deny-all') {

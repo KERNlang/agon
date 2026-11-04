@@ -18,7 +18,7 @@ function createRepo(label: string): string {
   git(repoDir, ['config', 'user.name', 'Agon Test']);
   git(repoDir, ['config', 'user.email', 'agon@example.com']);
   writeFileSync(join(repoDir, 'README.md'), '# Forge E2E\n');
-  writeFileSync(join(repoDir, '.agon.json'), JSON.stringify({
+  writeFileSync(agonHomePath('config.json'), JSON.stringify({
     forgeAutoAcceptScore: 101,
     forgeEnableSynthesis: false,
     forgeRequireBaselineCheck: false,
@@ -259,7 +259,7 @@ describe('Forge E2E', () => {
     const forgeDir = join(tmpdir(), `agon-forge-output-${Date.now()}-${Math.random().toString(36).slice(2)}`);
     const fakeNpx = createFakeNpx();
 
-    writeFileSync(join(repoDir, '.agon.json'), JSON.stringify({
+    writeFileSync(agonHomePath('config.json'), JSON.stringify({
       forgeAutoAcceptScore: 101,
       forgeEnableSynthesis: false,
       forgeRequireBaselineCheck: true,
@@ -363,15 +363,13 @@ describe('Forge E2E', () => {
     const repoDir = createRepo('synthesis-no-critiques');
     const forgeDir = join(tmpdir(), `agon-forge-output-${Date.now()}-${Math.random().toString(36).slice(2)}`);
     const fakeNpx = createFakeNpx();
-    writeFileSync(join(repoDir, '.agon.json'), JSON.stringify({
+    writeFileSync(agonHomePath('config.json'), JSON.stringify({
       forgeAutoAcceptScore: 101,
       forgeClearWinnerSpread: 8,
       forgeEnableSynthesis: true,
       forgeRequireBaselineCheck: false,
       ratingsEnabled: false,
     }, null, 2) + '\n');
-    git(repoDir, ['add', '.agon.json']);
-    git(repoDir, ['commit', '-m', 'enable synthesis']);
 
     const events: any[] = [];
     const adapter: EngineAdapter = {

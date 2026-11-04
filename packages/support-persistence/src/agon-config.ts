@@ -16,8 +16,9 @@ import type { AgonConfig } from './agon-config-settings.js';
 import { DEFAULT_AGON_CONFIG } from './agon-config-settings.js';
 import { LEGACY_MOD_SETTING_OWNERS } from './first-party-settings.generated.js';
 import { OPTIONAL_CONFIG_KEYS, type OptionalConfigKey } from './config-value.js';
+import { projectRepoConfigLayer, warnIgnoredRepoConfigKeys } from './repo-config-policy.js';
 
-import { ConfigError } from '@kernlang/agon-kernel';
+import { ConfigError, type ScopedConfigSources } from '@kernlang/agon-kernel';
 
 import { withFileLock } from './file-lock.js';
 
@@ -97,7 +98,11 @@ export function loadConfig(cwd?: string): Required<AgonConfig> {
   return config;
 }
 
-function mergeConfig(global: Partial<AgonConfig>, local: Partial<AgonConfig>, localPrivate: Partial<AgonConfig>): Required<AgonConfig> {
+function mergeConfig(global: Partial<AgonConfig>, rawLocal: Partial<AgonConfig>, rawLocalPrivate: Partial<AgonConfig>, sources?: ScopedConfigSources): Required<AgonConfig> {
+  const { layer: local, ignored: ignoredLocal } = projectRepoConfigLayer(rawLocal);
+  const { layer: localPrivate, ignored: ignoredPrivate } = projectRepoConfigLayer(rawLocalPrivate);
+  warnIgnoredRepoConfigKeys(sources?.localPath, ignoredLocal);
+  warnIgnoredRepoConfigKeys(sources?.privateLocalPath, ignoredPrivate);
   const merged = { ...DEFAULT_AGON_CONFIG, ...global, ...local, ...localPrivate } as Required<AgonConfig>;
   const mods = mergeLegacyModSettingsLayers(LEGACY_MOD_SETTING_OWNERS, global, local, localPrivate);
   if (mods !== undefined) {

@@ -406,14 +406,14 @@ The wizard presents capabilities and dependencies, not a wall of mode names:
 ## Scoped configuration and personal adaptations
 
 **DECIDED v1 precedence:** user-global desired activation is authoritative. Repo
-and private project files may configure already-enabled mods but do not
+and private project files are inert: they do not configure mods and do not
 participate in activation, package installation, trust, or permission grants.
 
-- Global config selects installed profile and user defaults.
-- Repo `.agon.json` may provide settings for an already-enabled mod; it cannot
-  request, enable, disable, install, or grant one.
-- `.agon.local.json` contains personal per-project settings and remains gitignored;
-  it also cannot change activation or trust.
+- Global config selects installed profile, mod settings, and user defaults.
+- Repo `.agon.json` may set only the keys marked `repo` in
+  `packages/support-persistence/src/repo-config-policy.ts` and add deny rules; it
+  cannot request, enable, disable, configure, install, or grant a mod.
+- `.agon.local.json` can be committed too, so the same limits apply to it.
 - User/private executable mods live under `$AGON_HOME/mods`, outside the repo.
 - Project directories are never auto-scanned for executable mods. An explicit
   development source/path can be selected and trusted through the user-global

@@ -20,7 +20,7 @@ const SECRET_PATTERNS = [
 ];
 
 // Placeholders (`/Users/you`, `/home/user`) are documentation, not leaks.
-const PERSONAL_PATH = /(?:(?<![\w.~-])\/(?:Users|home)|\b[a-z]:[\\/]+Users)[\\/]+(?!(?:you|user|name|me|runner|example|alice|bob|foo|test|dev|agent)\b)[a-z][a-z0-9._-]{2,}[\\/]/i;
+const PERSONAL_PATH = /(?:(?<![\w.~-])(?:\/mnt\/[a-z]|\/var|\/Volumes\/[^\\/\s"']+)?\/(?:Users|home)|\b[a-z]:[\\/]+Users)[\\/]+(?!(?:you|user|name|me|runner|example|alice|bob|foo|test|dev|agent)(?![a-z0-9._-]))[a-z][a-z0-9._-]{2,}(?![a-z0-9._-])/i;
 
 const ARCHIVE_EXTENSION = /\.(?:tgz|tar|gz|bz2|xz|zst|zip|7z|rar|jar|whl|vsix|asar)$/i;
 const ARCHIVE_SIGNATURES = ['\x1f\x8b', 'PK\x03\x04', 'PK\x05\x06', '7z\xbc\xaf\x27\x1c', 'BZh', '\xfd7zXZ\x00', 'Rar!\x1a\x07', '\x28\xb5\x2f\xfd'];

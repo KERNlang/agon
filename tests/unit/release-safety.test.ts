@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -47,6 +48,13 @@ describe('release leak check', () => {
     ['windows path', 'C:\\Users\\JaneDoe\\work\\x.js', 'x.js'],
     ['JSON-escaped windows path', '"D:\\\\Users\\\\janedoe\\\\x.js"', 'x.json'],
     ['windows path with forward slashes', 'c:/users/JaneDoe/work', 'notes.custom'],
+    ['username that only starts like a placeholder', '/home/alice.smith/x', 'x.js'],
+    ['dashed username that only starts like a placeholder', '/Users/dev-jane/x', 'x.js'],
+    ['dotted username after a placeholder word', '/home/test.x/y', 'x.js'],
+    ['WSL mount of a windows home', '/mnt/c/Users/janedoe/x', 'x.js'],
+    ['immutable-distro home', '/var/home/janedoe/x', 'x.js'],
+    ['mac volume home', '/Volumes/Data/Users/janedoe/x', 'x.js'],
+    ['home path with no trailing separator', 'cwd=/home/janedoe', 'x.js'],
     ['source map embedding the sources', '{"sourcesContent":["const key = 1"]}', 'dist/x.js.map'],
     ['unreadable source map', 'not json', 'dist/x.js.map'],
     ['dotenv file', 'A=1', '.env.production'],
@@ -61,6 +69,8 @@ describe('release leak check', () => {
     const harmless = [
     ['documented placeholder', '/Users/you/project and /home/runner/work and C:\\Users\\you\\x'],
     ['web route, not a home directory', 'https://example.com/users/janedoe/ and /api/Users/janedoe/'],
+    ['prefixed web route, not a home directory', '/api/users/foo/ and /mnt/data/users/foo/ and /v1/home/foo'],
+    ['placeholder with no trailing separator', 'cwd=/home/you and /Users/runner'],
     ['short sk- identifier', 'sk-abc and task-Ab3dEf6hIj9lMn2pQr5tUv8xYz1cFg4kNo7sWa0e'],
     ];
     for (const [label, text] of harmless) expect.soft(scanOne('dist/x.js', text), label).toEqual([]);
@@ -78,6 +88,51 @@ describe('release leak check', () => {
     ];
     for (const [label, path, bytes] of archives) expect.soft(scanOne(path, bytes).join(), label).toMatch(/nested archive/);
     expect.soft(scanOne('README.md', 'PK is a zip magic; see release.tgz and a.tar.gz')).toEqual([]);
+  });
+});
+
+describe('release version stamp', () => {
+  const LITERAL_FILES: Array<[string, string]> = [
+    ['packages/cli/src/index.ts', "name: 'agon', version: '0.0.1'"],
+    ['packages/cli/src/blocks/engine.tsx', "resolvePackageVersion('@kernlang/agon', '0.0.1')"],
+    ['packages/cli/src/commands/setup.ts', "const VERSION = '0.0.1'"],
+    ['packages/mod-kernel/src/runtime-version.ts', "AGON_RUNTIME_VERSION = '0.0.1'"],
+    ['packages/mod-api/src/version.ts', "AGON_MOD_API_VERSION = '0.0.1'"],
+    ['scripts/spec/generate-modular-first-party-packages.mjs', "const RELEASE_VERSION = '0.0.1'"],
+    ['scripts/spec/generate-modular-support-package-metadata.mjs', "const version = '0.0.1'"],
+  ];
+
+  function fixtureRepo(lastLiteral: string) {
+    const root = scratch();
+    const write = (path: string, content: string) => {
+      mkdirSync(dirname(join(root, path)), { recursive: true });
+      writeFileSync(join(root, path), content);
+    };
+    mkdirSync(join(root, 'scripts/release'), { recursive: true });
+    for (const script of ['set-version.mjs', 'release-plan.mjs']) {
+      copyFileSync(join(import.meta.dirname, '../../scripts/release', script), join(root, 'scripts/release', script));
+    }
+    write('package.json', JSON.stringify({ workspaces: ['packages/a'] }));
+    write('packages/a/package.json', JSON.stringify({ name: '@kernlang/agon-a', version: '0.0.1' }));
+    write('packages/a/agon.mod.json', JSON.stringify({ version: '0.0.1' }));
+    LITERAL_FILES.forEach(([path, literal], index) => write(path, index === LITERAL_FILES.length - 1 ? lastLiteral : literal));
+    const snapshot = () => ['packages/a/package.json', 'packages/a/agon.mod.json', ...LITERAL_FILES.map(([path]) => path)]
+      .map((path) => readFileSync(join(root, path), 'utf8'));
+    const stamp = () => spawnSync(process.execPath, [join(root, 'scripts/release/set-version.mjs'), '9.9.9'], { encoding: 'utf8' });
+    return { snapshot, stamp };
+  }
+
+  it('a version literal missing late in the list leaves zero files written, not a half-stamped tree', () => {
+    const broken = fixtureRepo('the literal was renamed');
+    const before = broken.snapshot();
+    const failed = broken.stamp();
+    expect(failed.status).toBe(1);
+    expect(failed.stderr).toMatch(/version literal not found/);
+    expect(broken.snapshot()).toEqual(before);
+
+    const valid = fixtureRepo(LITERAL_FILES.at(-1)![1]);
+    expect(valid.stamp().status).toBe(0);
+    expect(valid.snapshot().every((content) => content.includes('9.9.9'))).toBe(true);
   });
 });
 

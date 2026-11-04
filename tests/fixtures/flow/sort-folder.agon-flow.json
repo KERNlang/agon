@@ -1,0 +1,181 @@
+{
+  "description": "Classify a folder with an engine, branch on confidence, and move the files only after an explicit approval.",
+  "edges": [
+    {
+      "from": "01JSFFDR000000000000000000.folder",
+      "to": "01JSFSCAN00000000000000000.folder"
+    },
+    {
+      "from": "01JSFCHAT00000000000000000.text",
+      "to": "01JSFKND000000000000000000.prompt"
+    },
+    {
+      "from": "01JSFKND000000000000000000.text",
+      "to": "01JSFEXTRCT000000000000000.text"
+    },
+    {
+      "from": "01JSFEXTRCT000000000000000.json",
+      "to": "01JSFCMPARE000000000000000.in"
+    },
+    {
+      "from": "01JSFSCAN00000000000000000.fileset",
+      "to": "01JSFAPRV00000000000000000.in"
+    },
+    {
+      "from": "01JSFAPRV00000000000000000.out",
+      "to": "01JSFMVE000000000000000000.files"
+    },
+    {
+      "from": "01JSFFDR000000000000000000.folder",
+      "to": "01JSFMVE000000000000000000.folder"
+    },
+    {
+      "from": "01JSFCMPARE000000000000000.true",
+      "to": "01JSFRPRT00000000000000000.in"
+    },
+    {
+      "from": "01JSFCMPARE000000000000000.false",
+      "to": "01JSFRPRT00000000000000000.in"
+    }
+  ],
+  "id": "01JSFFRAME0000000000000000",
+  "name": "sort-folder",
+  "nodes": [
+    {
+      "id": "01JSFFDR000000000000000000",
+      "label": "Folder",
+      "params": {
+        "paramKey": "folder"
+      },
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "type": "folder-picker"
+    },
+    {
+      "id": "01JSFSCAN00000000000000000",
+      "label": "List",
+      "params": {
+        "glob": "*",
+        "recursive": false
+      },
+      "position": {
+        "x": 240,
+        "y": 0
+      },
+      "type": "list-folder"
+    },
+    {
+      "id": "01JSFCHAT00000000000000000",
+      "label": "Instructions",
+      "params": {
+        "paramKey": "instructions"
+      },
+      "position": {
+        "x": 0,
+        "y": 200
+      },
+      "type": "chat-input"
+    },
+    {
+      "id": "01JSFKND000000000000000000",
+      "label": "Classify",
+      "params": {
+        "engineId": "claude"
+      },
+      "position": {
+        "x": 240,
+        "y": 200
+      },
+      "type": "engine"
+    },
+    {
+      "id": "01JSFEXTRCT000000000000000",
+      "label": "Extract",
+      "params": {
+        "engineId": "claude",
+        "schema": {
+          "properties": {
+            "category": {
+              "type": "string"
+            },
+            "confidence": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "category",
+            "confidence"
+          ],
+          "type": "object"
+        }
+      },
+      "position": {
+        "x": 480,
+        "y": 200
+      },
+      "type": "extract-structured"
+    },
+    {
+      "id": "01JSFCMPARE000000000000000",
+      "label": "Confident?",
+      "params": {
+        "field": "confidence",
+        "operator": ">",
+        "threshold": 0.8
+      },
+      "position": {
+        "x": 720,
+        "y": 200
+      },
+      "type": "if-compare"
+    },
+    {
+      "id": "01JSFAPRV00000000000000000",
+      "label": "Approve moves",
+      "params": {
+        "message": "Move these files?",
+        "previewMode": "full"
+      },
+      "position": {
+        "x": 480,
+        "y": 0
+      },
+      "type": "approval"
+    },
+    {
+      "id": "01JSFMVE000000000000000000",
+      "label": "Move",
+      "params": {
+        "overwrite": "error"
+      },
+      "position": {
+        "x": 720,
+        "y": 0
+      },
+      "type": "move-file"
+    },
+    {
+      "id": "01JSFRPRT00000000000000000",
+      "label": "Report",
+      "params": {
+        "format": "markdown"
+      },
+      "position": {
+        "x": 960,
+        "y": 200
+      },
+      "type": "chat-output"
+    }
+  ],
+  "outputs": [
+    {
+      "from": "01JSFMVE000000000000000000.report",
+      "name": "report"
+    }
+  ],
+  "params": [],
+  "schemaVersion": 1,
+  "version": "1.0.0"
+}

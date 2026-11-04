@@ -243,8 +243,8 @@
         "range": "^19.2.0"
       }
     ],
-    "packedBytes": 1509296,
-    "unpackedBytes": 7052986,
+    "packedBytes": 1509635,
+    "unpackedBytes": 7055192,
     "fileCount": 140,
     "files": [
       {
@@ -256,11 +256,11 @@
         "size": 51
       },
       {
-        "path": "dist/app-Z36D3FWB.js",
+        "path": "dist/app-OINEH47U.js",
         "size": 379290
       },
       {
-        "path": "dist/app-Z36D3FWB.js.map",
+        "path": "dist/app-OINEH47U.js.map",
         "size": 253843
       },
       {
@@ -376,14 +376,6 @@
         "size": 15022
       },
       {
-        "path": "dist/chunk-BH4DA7YA.js",
-        "size": 14313
-      },
-      {
-        "path": "dist/chunk-BH4DA7YA.js.map",
-        "size": 9302
-      },
-      {
         "path": "dist/chunk-C4OUBIJA.js",
         "size": 294
       },
@@ -478,6 +470,14 @@
       {
         "path": "dist/chunk-L5OLLF6O.js.map",
         "size": 100495
+      },
+      {
+        "path": "dist/chunk-L7C46T5S.js",
+        "size": 14321
+      },
+      {
+        "path": "dist/chunk-L7C46T5S.js.map",
+        "size": 9307
       },
       {
         "path": "dist/chunk-LQI6FFN7.js",
@@ -680,11 +680,11 @@
         "size": 51
       },
       {
-        "path": "dist/lazy-commands-UTZG7SBG.js",
+        "path": "dist/lazy-commands-MDH2WNMD.js",
         "size": 393
       },
       {
-        "path": "dist/lazy-commands-UTZG7SBG.js.map",
+        "path": "dist/lazy-commands-MDH2WNMD.js.map",
         "size": 51
       },
       {
@@ -745,7 +745,7 @@
       },
       {
         "path": "dist/release-channel.json",
-        "size": 128194
+        "size": 128221
       },
       {
         "path": "dist/setup-65TY5RU5.js",
@@ -765,7 +765,7 @@
       },
       {
         "path": "dist/stable-launcher.js",
-        "size": 513763
+        "size": 515902
       },
       {
         "path": "dist/surface-authority-runtime-US3G5QTT.js",
@@ -805,13 +805,13 @@
       },
       {
         "path": "release-channel.json",
-        "size": 128194
+        "size": 128221
       }
     ],
-    "payloadHash": "sha256:b22fc672034cce3110de48fd6f8dd51db1fb8e6b390653af7908870d1a1fe88d",
-    "integrity": "sha512-RQZM8E4euK0TYy6Pq7VFZbkX/VTjTdHntNFDHtyaVAaB+xOjCan+Xzu0B50XdCTD3GuAcukdMa7evoT1ieiKIw==",
-    "shasum": "64161356bfc00d7b960c63e0c11120f7eb8b98b1",
-    "tarballHash": "sha256:97480bb628fdd16f1fa52c3f3063745d686b689516d50e580fa89a09f48c8ef5",
+    "payloadHash": "sha256:2654c8a0a81ca6a3888b73c5a11b096f4d311bc57a042b4dc622679bc7731588",
+    "integrity": "sha512-ouzV+vCD8fj4eNprQ1X0G1q57ZdPePXoxZ/rGYBZbQ1EZD7SS/YwcUYf6iLaFmE6tOzmB9D8jjO+8xgUJSCQ0g==",
+    "shasum": "0b0e2ff38defe7df62a242671fb87c145c74f357",
+    "tarballHash": "sha256:c6acb41cce7327a5b9e4f08ce04b8f3dccde59429cbfe1aa96f5e2b9ea31e495",
     "packageJsonHash": "sha256:28e901652911437b0e49a15bf3be184c09f24652c51bdf68ef3055b27494ced1"
   },
   "packages": [
@@ -826,8 +826,8 @@
         "@kernlang/agon-mod-api"
       ],
       "peerDependencies": {},
-      "packedBytes": 194684,
-      "unpackedBytes": 1591795,
+      "packedBytes": 195078,
+      "unpackedBytes": 1593934,
       "fileCount": 79,
       "files": [
         {
@@ -988,7 +988,7 @@
         },
         {
           "path": "dist/index.js",
-          "size": 1038014
+          "size": 1040153
         },
         {
           "path": "dist/json-schema-input.d.ts",
@@ -1147,10 +1147,10 @@
           "size": 548
         }
       ],
-      "payloadHash": "sha256:be439a949c10f461087badb551f0c9a72cce99ea3f72d7b1faa2a57ccb50cb74",
-      "integrity": "sha512-tK37DTzzLYYQ269hMWjbYnk9txif+SWXsxeUyTfVMpVFP8dHOQzUnxb2GNit76HBVAUi4VY20IAoKCH//wc/TQ==",
-      "shasum": "ab588820c07b8bb57f0bf9b987f89acbd17552e6",
-      "tarballHash": "sha256:91b4c702ff9b61878cb39a87584358535e536398269f17bd716eb8c38b8e27f5",
+      "payloadHash": "sha256:76bfd36c1ac0f01d4eb9fe2039982672cfdb1b9648b0b511482ba5e765c88958",
+      "integrity": "sha512-WF20QhFvtNJwpThgM8VGIpxcldz/qpwLA8KFhDVK3UgqtLlUljFtV4W6J7RbEUCqWS3Zj7piOT0oY+0+2w4IqA==",
+      "shasum": "f1da9221452b8c2767f1d005804de06ae9679ec9",
+      "tarballHash": "sha256:ecaece589f6395b1175b8f17ffedf2e540b0863ab98b402e562f583a13714b66",
       "packageJsonHash": "sha256:583381b00786c2729a1e32eb2d42f6324cb58df263378f0d0ad57a1401970f17",
       "manifestHash": "sha256:583381b00786c2729a1e32eb2d42f6324cb58df263378f0d0ad57a1401970f17"
     },
@@ -5070,13 +5070,77 @@
       "peerDependencies": {
         "@kernlang/agon-kernel": ">=0.0.0-0 <2"
       },
-      "packedBytes": 4169,
-      "unpackedBytes": 16162,
-      "fileCount": 8,
+      "packedBytes": 28622,
+      "unpackedBytes": 104858,
+      "fileCount": 25,
       "files": [
         {
           "path": "agon.mod.json",
-          "size": 2579
+          "size": 2754
+        },
+        {
+          "path": "dist/core/elaborate/bindings.d.ts",
+          "size": 1736
+        },
+        {
+          "path": "dist/core/elaborate/flatten.d.ts",
+          "size": 1500
+        },
+        {
+          "path": "dist/core/elaborate/graph.d.ts",
+          "size": 1189
+        },
+        {
+          "path": "dist/core/elaborate/index.d.ts",
+          "size": 1495
+        },
+        {
+          "path": "dist/core/elaborate/json-path.d.ts",
+          "size": 1032
+        },
+        {
+          "path": "dist/core/elaborate/loader.d.ts",
+          "size": 769
+        },
+        {
+          "path": "dist/core/elaborate/resolve.d.ts",
+          "size": 883
+        },
+        {
+          "path": "dist/core/elaborate/routes.d.ts",
+          "size": 1168
+        },
+        {
+          "path": "dist/core/index.d.ts",
+          "size": 2063
+        },
+        {
+          "path": "dist/core/models/errors.d.ts",
+          "size": 2683
+        },
+        {
+          "path": "dist/core/models/types.d.ts",
+          "size": 6426
+        },
+        {
+          "path": "dist/core/registry/catalog.d.ts",
+          "size": 1119
+        },
+        {
+          "path": "dist/core/registry/descriptor.d.ts",
+          "size": 4975
+        },
+        {
+          "path": "dist/core/schema/flow-schema.d.ts",
+          "size": 3398
+        },
+        {
+          "path": "dist/core/schema/semver.d.ts",
+          "size": 1129
+        },
+        {
+          "path": "dist/core/schema/serialize.d.ts",
+          "size": 898
         },
         {
           "path": "dist/implementation.d.ts",
@@ -5088,7 +5152,11 @@
         },
         {
           "path": "dist/index.js",
-          "size": 6096
+          "size": 61800
+        },
+        {
+          "path": "dist/validate-command.d.ts",
+          "size": 333
         },
         {
           "path": "LICENSE",
@@ -5100,19 +5168,19 @@
         },
         {
           "path": "package.json",
-          "size": 838
+          "size": 859
         },
         {
           "path": "schemas/config.schema.json",
           "size": 214
         }
       ],
-      "payloadHash": "sha256:8338527c8d50eaf1696dc5949b6abaebfcaeb9d7eb5b065c52a16bc99cc76135",
-      "integrity": "sha512-J5iuZpPTC6eCIJ4nC/22NKVMpqRQYnVr8RKQNg8zhw8CphS+61vHzsa0wsIcIlXheMrL013lgmfOQAas+HnUuA==",
-      "shasum": "f01da2ba97758e0e9149989b9d165075b38e4de4",
-      "tarballHash": "sha256:64244936f91a3f52913ebc42279047899ba6ef7c1866fc2d3905b9fc6e46254e",
-      "packageJsonHash": "sha256:c091b25c994af3b1861da2c0649bb2cadd57a969f23400ac46d469ec954d6fbc",
-      "manifestHash": "sha256:5c30f8d79409bc8ea7133e7b227d9d92c015500b02a1639a39e2cfa276e434f7"
+      "payloadHash": "sha256:3286bc87334535ca34fcbf6c68c38a28810bccf9b4c97c073d75dc47eef5b2b3",
+      "integrity": "sha512-UNqhrcwac4e4zucpw30Hyro+u9GDcTOW0IXnSvi64relzPyOM7fXMoaR3y2m31mjJQeLG8o3Ik0TGztws6Dskg==",
+      "shasum": "727dd703518269bc46ea5ab2726dfca0454cd162",
+      "tarballHash": "sha256:83a793ec05eea3d2dd935a932c4bcbe4d2d832e742ced0f56aa975e734df3f0b",
+      "packageJsonHash": "sha256:092e6c41da99566d218203983630956c527292553693b3d7183374ba92dfaf6a",
+      "manifestHash": "sha256:6a9c6056aa87fccbfc8558f7e6556015c9a8f29fb47f5b04326f8a266e19f8ea"
     },
     {
       "id": "@kernlang/agon-mod-memory",

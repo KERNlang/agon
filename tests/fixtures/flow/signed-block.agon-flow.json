@@ -1,0 +1,79 @@
+{
+  "description": "Reusable signature block: a signature, a footer and a locale rendered through one template.",
+  "edges": [
+    {
+      "from": "01JSBSGN000000000000000000.text",
+      "to": "01JSBTMP000000000000000000.text"
+    },
+    {
+      "from": "01JSBFT0000000000000000000.text",
+      "to": "01JSBTMP000000000000000000.text"
+    },
+    {
+      "from": "01JSBTAG000000000000000000.text",
+      "to": "01JSBTMP000000000000000000.text"
+    }
+  ],
+  "id": "01JSBFRAME0000000000000000",
+  "name": "signed-block",
+  "nodes": [
+    {
+      "id": "01JSBSGN000000000000000000",
+      "label": "Signature",
+      "params": {
+        "paramKey": "signature"
+      },
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "type": "chat-input"
+    },
+    {
+      "id": "01JSBFT0000000000000000000",
+      "label": "Footer",
+      "params": {
+        "paramKey": "footer"
+      },
+      "position": {
+        "x": 0,
+        "y": 120
+      },
+      "type": "chat-input"
+    },
+    {
+      "id": "01JSBTAG000000000000000000",
+      "label": "Locale",
+      "params": {
+        "default": "de-CH",
+        "paramKey": "locale"
+      },
+      "position": {
+        "x": 0,
+        "y": 240
+      },
+      "type": "chat-input"
+    },
+    {
+      "id": "01JSBTMP000000000000000000",
+      "label": "Render",
+      "params": {
+        "template": "{{signature}}\n{{footer}}\n{{locale}}"
+      },
+      "position": {
+        "x": 260,
+        "y": 120
+      },
+      "type": "template"
+    }
+  ],
+  "outputs": [
+    {
+      "from": "01JSBTMP000000000000000000.text",
+      "name": "block"
+    }
+  ],
+  "params": [],
+  "schemaVersion": 1,
+  "version": "1.2.0"
+}

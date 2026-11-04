@@ -10,10 +10,10 @@
         "@kernlang/agon-mod-api"
       ],
       "sourceLocator": "@kernlang/agon-kernel@1.0.0",
-      "integrity": "sha512-tK37DTzzLYYQ269hMWjbYnk9txif+SWXsxeUyTfVMpVFP8dHOQzUnxb2GNit76HBVAUi4VY20IAoKCH//wc/TQ==",
-      "contentHash": "sha256:91b4c702ff9b61878cb39a87584358535e536398269f17bd716eb8c38b8e27f5",
+      "integrity": "sha512-WF20QhFvtNJwpThgM8VGIpxcldz/qpwLA8KFhDVK3UgqtLlUljFtV4W6J7RbEUCqWS3Zj7piOT0oY+0+2w4IqA==",
+      "contentHash": "sha256:ecaece589f6395b1175b8f17ffedf2e540b0863ab98b402e562f583a13714b66",
       "manifestHash": "sha256:583381b00786c2729a1e32eb2d42f6324cb58df263378f0d0ad57a1401970f17",
-      "payloadHash": "sha256:be439a949c10f461087badb551f0c9a72cce99ea3f72d7b1faa2a57ccb50cb74"
+      "payloadHash": "sha256:76bfd36c1ac0f01d4eb9fe2039982672cfdb1b9648b0b511482ba5e765c88958"
     },
     {
       "id": "@kernlang/agon-mod-api",
@@ -839,10 +839,10 @@
         "agon.persistence"
       ],
       "sourceLocator": "@kernlang/agon-mod-flow@1.0.0",
-      "integrity": "sha512-J5iuZpPTC6eCIJ4nC/22NKVMpqRQYnVr8RKQNg8zhw8CphS+61vHzsa0wsIcIlXheMrL013lgmfOQAas+HnUuA==",
-      "contentHash": "sha256:64244936f91a3f52913ebc42279047899ba6ef7c1866fc2d3905b9fc6e46254e",
-      "manifestHash": "sha256:5c30f8d79409bc8ea7133e7b227d9d92c015500b02a1639a39e2cfa276e434f7",
-      "payloadHash": "sha256:8338527c8d50eaf1696dc5949b6abaebfcaeb9d7eb5b065c52a16bc99cc76135"
+      "integrity": "sha512-UNqhrcwac4e4zucpw30Hyro+u9GDcTOW0IXnSvi64relzPyOM7fXMoaR3y2m31mjJQeLG8o3Ik0TGztws6Dskg==",
+      "contentHash": "sha256:83a793ec05eea3d2dd935a932c4bcbe4d2d832e742ced0f56aa975e734df3f0b",
+      "manifestHash": "sha256:6a9c6056aa87fccbfc8558f7e6556015c9a8f29fb47f5b04326f8a266e19f8ea",
+      "payloadHash": "sha256:3286bc87334535ca34fcbf6c68c38a28810bccf9b4c97c073d75dc47eef5b2b3"
     },
     {
       "id": "@kernlang/agon-mod-memory",
@@ -950,8 +950,8 @@
     "README.md",
     "dist/agon-orchestration-3FHZ62KI.js",
     "dist/agon-orchestration-3FHZ62KI.js.map",
-    "dist/app-Z36D3FWB.js",
-    "dist/app-Z36D3FWB.js.map",
+    "dist/app-OINEH47U.js",
+    "dist/app-OINEH47U.js.map",
     "dist/attach-5USHRFDY.js",
     "dist/attach-5USHRFDY.js.map",
     "dist/browser-host.js",
@@ -980,8 +980,6 @@
     "dist/chunk-AX2RLTOL.js.map",
     "dist/chunk-BDT27QAC.js",
     "dist/chunk-BDT27QAC.js.map",
-    "dist/chunk-BH4DA7YA.js",
-    "dist/chunk-BH4DA7YA.js.map",
     "dist/chunk-C4OUBIJA.js",
     "dist/chunk-C4OUBIJA.js.map",
     "dist/chunk-CTSJ6SLK.js",
@@ -1006,6 +1004,8 @@
     "dist/chunk-K5JFSNLM.js.map",
     "dist/chunk-L5OLLF6O.js",
     "dist/chunk-L5OLLF6O.js.map",
+    "dist/chunk-L7C46T5S.js",
+    "dist/chunk-L7C46T5S.js.map",
     "dist/chunk-LQI6FFN7.js",
     "dist/chunk-LQI6FFN7.js.map",
     "dist/chunk-LRUN32H4.js",
@@ -1056,8 +1056,8 @@
     "dist/index.js.map",
     "dist/intent-skills-7IE7P5J6.js",
     "dist/intent-skills-7IE7P5J6.js.map",
-    "dist/lazy-commands-UTZG7SBG.js",
-    "dist/lazy-commands-UTZG7SBG.js.map",
+    "dist/lazy-commands-MDH2WNMD.js",
+    "dist/lazy-commands-MDH2WNMD.js.map",
     "dist/login-FTKMLMCW.js",
     "dist/login-FTKMLMCW.js.map",
     "dist/mcp/index.js",
@@ -1304,7 +1304,7 @@
           "@kernlang/agon-mod-api": "1.0.0",
           "semver": "^7.7.4"
         },
-        "integrity": "sha512-tK37DTzzLYYQ269hMWjbYnk9txif+SWXsxeUyTfVMpVFP8dHOQzUnxb2GNit76HBVAUi4VY20IAoKCH//wc/TQ==",
+        "integrity": "sha512-WF20QhFvtNJwpThgM8VGIpxcldz/qpwLA8KFhDVK3UgqtLlUljFtV4W6J7RbEUCqWS3Zj7piOT0oY+0+2w4IqA==",
         "resolved": "https://registry.npmjs.org/@kernlang/agon-kernel/-/agon-kernel-1.0.0.tgz"
       },
       "node_modules/@kernlang/agon-mod-agent": {
@@ -1438,12 +1438,13 @@
         "dependencies": {
           "@kernlang/agon-mod-api": "1.0.0",
           "@kernlang/agon-support-engine-runtime": "1.0.0",
-          "@kernlang/agon-support-persistence": "1.0.0"
+          "@kernlang/agon-support-persistence": "1.0.0",
+          "zod": "^4.3.6"
         },
         "peerDependencies": {
           "@kernlang/agon-kernel": ">=0.0.0-0 <2"
         },
-        "integrity": "sha512-J5iuZpPTC6eCIJ4nC/22NKVMpqRQYnVr8RKQNg8zhw8CphS+61vHzsa0wsIcIlXheMrL013lgmfOQAas+HnUuA==",
+        "integrity": "sha512-UNqhrcwac4e4zucpw30Hyro+u9GDcTOW0IXnSvi64relzPyOM7fXMoaR3y2m31mjJQeLG8o3Ik0TGztws6Dskg==",
         "resolved": "https://registry.npmjs.org/@kernlang/agon-mod-flow/-/agon-mod-flow-1.0.0.tgz"
       },
       "node_modules/@kernlang/agon-mod-forge": {

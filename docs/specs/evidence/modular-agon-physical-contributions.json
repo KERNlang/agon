@@ -15,6 +15,30 @@
       "source": "packages/mod-ratings/src/implementation.ts"
     },
     {
+      "surface": "cli",
+      "kind": "cli-command",
+      "manifestKind": "cliCommands",
+      "registryId": "physicalCliCommands:flow",
+      "publicId": "flow",
+      "category": "physicalCliCommands",
+      "package": "@kernlang/agon-mod-flow",
+      "ownerClass": "user-toggleable-mod-package",
+      "description": "Agon Flow — node graphs where every AI step is a node. `agon flow validate <file>` type-checks a flow (subflows, ports, exclusive routes) before a single engine is dispatched.",
+      "source": "packages/mod-flow/src/implementation.ts"
+    },
+    {
+      "surface": "cli",
+      "kind": "cli-command",
+      "manifestKind": "cliCommands",
+      "registryId": "physicalCliCommands:flow-validate",
+      "publicId": "flow validate",
+      "category": "physicalCliCommands",
+      "package": "@kernlang/agon-mod-flow",
+      "ownerClass": "user-toggleable-mod-package",
+      "description": "Type-check a .agon-flow.json (subflows, ports, routes) without dispatching anything",
+      "source": "packages/mod-flow/src/implementation.ts"
+    },
+    {
       "surface": "cesar",
       "kind": "plan-step",
       "manifestKind": "cesarTools",

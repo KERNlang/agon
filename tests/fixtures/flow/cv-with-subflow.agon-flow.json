@@ -1,0 +1,81 @@
+{
+  "description": "Drafts a CV and appends the reusable signed-block subflow.",
+  "edges": [
+    {
+      "from": "01JPSCHAT00000000000000000.text",
+      "to": "01JPSDRAFT0000000000000000.prompt"
+    },
+    {
+      "from": "01JPSDRAFT0000000000000000.text",
+      "to": "01JPSSBF000000000000000000.signature"
+    },
+    {
+      "from": "01JPSSBF000000000000000000.block",
+      "to": "01JPSRPRT00000000000000000.in"
+    }
+  ],
+  "id": "01JPSFRAME0000000000000000",
+  "name": "cv-with-signature",
+  "nodes": [
+    {
+      "id": "01JPSCHAT00000000000000000",
+      "label": "Experience",
+      "params": {
+        "paramKey": "experience"
+      },
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "type": "chat-input"
+    },
+    {
+      "id": "01JPSDRAFT0000000000000000",
+      "label": "Draft",
+      "params": {
+        "engineId": "codex"
+      },
+      "position": {
+        "x": 260,
+        "y": 0
+      },
+      "type": "engine"
+    },
+    {
+      "aliases": {
+        "01JPSSBF000000000000000000.locale": "locale"
+      },
+      "flow": "./signed-block.agon-flow.json",
+      "id": "01JPSSBF000000000000000000",
+      "label": "Signature",
+      "params": {},
+      "position": {
+        "x": 520,
+        "y": 0
+      },
+      "type": "subflow",
+      "version": "^1.2"
+    },
+    {
+      "id": "01JPSRPRT00000000000000000",
+      "label": "Result",
+      "params": {
+        "format": "markdown"
+      },
+      "position": {
+        "x": 780,
+        "y": 0
+      },
+      "type": "chat-output"
+    }
+  ],
+  "outputs": [
+    {
+      "from": "01JPSSBF000000000000000000.block",
+      "name": "block"
+    }
+  ],
+  "params": [],
+  "schemaVersion": 1,
+  "version": "1.0.0"
+}

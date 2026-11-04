@@ -230,6 +230,7 @@ function expectedFiles(packageRecord) {
 
   const dependencyVersions = Object.fromEntries(packageRecord.dependencies.map((dependency) => [dependency, packageVersion(dependency)]));
   if (short === 'research') dependencyVersions.undici = '^6.28.0';
+  if (short === 'flow') dependencyVersions.zod = '^4.3.6';
   const packageJson = {
     name: packageName,
     version: '1.0.0',

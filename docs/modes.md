@@ -26,6 +26,8 @@
 - `ext` — agon.browser
 - `ext install` — agon.browser
 - `ext native-host` — agon.browser
+- `flow` — agon.flow: Agon Flow — node graphs where every AI step is a node. `agon flow validate <file>` type-checks a flow (subflows, ports, exclusive routes) before a single engine is dispatched.
+- `flow validate` — agon.flow: Type-check a .agon-flow.json (subflows, ports, routes) without dispatching anything
 - `forge` — agon.forge
 - `goal` — agon.goal
 - `history` — agon.history

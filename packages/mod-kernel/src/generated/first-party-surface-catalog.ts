@@ -4078,6 +4078,52 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
   {
     "surface": "cli",
     "kind": "cli-command",
+    "registryId": "physicalCliCommands:flow",
+    "publicId": "flow",
+    "category": "physicalCliCommands",
+    "group": "user-toggleable-mod-package",
+    "source": "packages/mod-flow/src/implementation.ts",
+    "aliases": [],
+    "owner": {
+      "id": "agon.flow",
+      "version": "1.0.0",
+      "contentHash": "sha256:97c8f4972e5a72a006e55706bf448cb4b7c034051cde5dba809af863668b8e22"
+    },
+    "ownerClass": "user-toggleable-mod-package",
+    "description": "Agon Flow — node graphs where every AI step is a node. `agon flow validate <file>` type-checks a flow (subflows, ports, exclusive routes) before a single engine is dispatched.",
+    "accessibility": {
+      "label": "Agon Flow — node graphs where every AI step is a node. `agon flow validate <file>` type-checks a flow (subflows, ports, exclusive routes) before a single engine is dispatched.",
+      "fallbackText": "Agon Flow — node graphs where every AI step is a node. `agon flow validate <file>` type-checks a flow (subflows, ports, exclusive routes) before a single engine is dispatched.",
+      "keyboardAccessible": true,
+      "colorIndependent": true
+    }
+  },
+  {
+    "surface": "cli",
+    "kind": "cli-command",
+    "registryId": "physicalCliCommands:flow-validate",
+    "publicId": "flow validate",
+    "category": "physicalCliCommands",
+    "group": "user-toggleable-mod-package",
+    "source": "packages/mod-flow/src/implementation.ts",
+    "aliases": [],
+    "owner": {
+      "id": "agon.flow",
+      "version": "1.0.0",
+      "contentHash": "sha256:97c8f4972e5a72a006e55706bf448cb4b7c034051cde5dba809af863668b8e22"
+    },
+    "ownerClass": "user-toggleable-mod-package",
+    "description": "Type-check a .agon-flow.json (subflows, ports, routes) without dispatching anything",
+    "accessibility": {
+      "label": "Type-check a .agon-flow.json (subflows, ports, routes) without dispatching anything",
+      "fallbackText": "Type-check a .agon-flow.json (subflows, ports, routes) without dispatching anything",
+      "keyboardAccessible": true,
+      "colorIndependent": true
+    }
+  },
+  {
+    "surface": "cli",
+    "kind": "cli-command",
     "registryId": "physicalCliCommands:ratings-reset",
     "publicId": "ratings reset",
     "category": "physicalCliCommands",
@@ -5605,7 +5651,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.flow",
       "version": "1.0.0",
-      "contentHash": "sha256:ab58c41e569cf6d24c35d13468f8d111593a3845e16e60b357db9b6131795b6f"
+      "contentHash": "sha256:97c8f4972e5a72a006e55706bf448cb4b7c034051cde5dba809af863668b8e22"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "flow",
@@ -5628,7 +5674,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.flow",
       "version": "1.0.0",
-      "contentHash": "sha256:ab58c41e569cf6d24c35d13468f8d111593a3845e16e60b357db9b6131795b6f"
+      "contentHash": "sha256:97c8f4972e5a72a006e55706bf448cb4b7c034051cde5dba809af863668b8e22"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "flows",
@@ -7012,7 +7058,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.flow",
       "version": "1.0.0",
-      "contentHash": "sha256:ab58c41e569cf6d24c35d13468f8d111593a3845e16e60b357db9b6131795b6f"
+      "contentHash": "sha256:97c8f4972e5a72a006e55706bf448cb4b7c034051cde5dba809af863668b8e22"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "                        — log this session",
@@ -7035,7 +7081,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.flow",
       "version": "1.0.0",
-      "contentHash": "sha256:ab58c41e569cf6d24c35d13468f8d111593a3845e16e60b357db9b6131795b6f"
+      "contentHash": "sha256:97c8f4972e5a72a006e55706bf448cb4b7c034051cde5dba809af863668b8e22"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "                        — flow analytics dashboard",
@@ -9427,7 +9473,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.flow",
       "version": "1.0.0",
-      "contentHash": "sha256:ab58c41e569cf6d24c35d13468f8d111593a3845e16e60b357db9b6131795b6f"
+      "contentHash": "sha256:97c8f4972e5a72a006e55706bf448cb4b7c034051cde5dba809af863668b8e22"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "                        — log this session",
@@ -9450,7 +9496,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.flow",
       "version": "1.0.0",
-      "contentHash": "sha256:ab58c41e569cf6d24c35d13468f8d111593a3845e16e60b357db9b6131795b6f"
+      "contentHash": "sha256:97c8f4972e5a72a006e55706bf448cb4b7c034051cde5dba809af863668b8e22"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "                        — flow analytics dashboard",

@@ -35,7 +35,8 @@ export interface ManagedPackageArtifact {
   readonly dependencies: readonly string[];
   readonly lifecycleScripts: readonly string[];
   readonly available: boolean;
-  readonly provenance: 'verified' | 'unavailable' | 'failed';
+  /** `integrity-pinned`: bytes match the release channel's hashes; npm attestations were not checked. */
+  readonly provenance: 'verified' | 'integrity-pinned' | 'unavailable' | 'failed';
   readonly trustTier: 'first-party' | 'third-party';
   readonly manifest?: ModManifest;
   readonly linkedRealpath?: string;

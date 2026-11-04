@@ -210,7 +210,7 @@ function buildArtifacts(release: ReleaseChannel, packageIds: readonly string[], 
     if (!entry) throw new TypeError(`selected package is absent from release channel: ${id}`);
     const sourceLocator = overrides[id] ?? entry.sourceLocator;
     return Object.freeze({ ...entry, sourceLocator, source: localFile(sourceLocator) ? 'local-cache' as const : 'registry' as const,
-      lifecycleScripts: Object.freeze([]), available: true, provenance: 'verified' as const, trustTier: 'first-party' as const });
+      lifecycleScripts: Object.freeze([]), available: true, provenance: 'integrity-pinned' as const, trustTier: 'first-party' as const });
   });
 }
 function buildLock(artifacts: readonly ManagedPackageArtifact[], desiredState: unknown, release: ReleaseChannel) {

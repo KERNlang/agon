@@ -115,6 +115,28 @@ export function gateDefinitionFingerprint(cwd: string): string {
   return hash.digest('hex');
 }
 
+/**
+ * The session's pinned gate definition for cwd, pinning the current one on first use. A pin is never refreshed by a new turn, so an edit in one turn cannot become the next turn's baseline.
+ */
+export function pinnedGateDefinition(pins: Record<string, string>, cwd: string): string {
+  pins[cwd] ??= gateDefinitionFingerprint(cwd);
+  return pins[cwd];
+}
+
+function invokesGateCommand(command: string, gate: DiscoveredGate): boolean {
+  const normalized = command.trim().replace(/\s+/g, ' ');
+  return normalized === gate.command || (gate.command === 'npm run test' && normalized === 'npm test');
+}
+
+/**
+ * Re-pins only after the exact gate command completed through the normal Bash permission path, the one approval that may accept a changed definition.
+ */
+export function repinGateDefinitionAfterApprovedRun(pins: Record<string, string>, cwd: string, gate: DiscoveredGate, command: string, status: string): boolean {
+  if (!/^(?:done|ok|completed)$/i.test(status) || !invokesGateCommand(command, gate)) return false;
+  pins[cwd] = gateDefinitionFingerprint(cwd);
+  return true;
+}
+
 export function gateDefinitionChangeNotice(recordedDefinition: string | undefined, cwd: string): string | null {
   if (recordedDefinition === undefined || gateDefinitionFingerprint(cwd) === recordedDefinition) return null;
   return 'Gate definition changed during this turn (package.json scripts or task-runner file) — not auto-running it; the run needs normal Bash approval.';

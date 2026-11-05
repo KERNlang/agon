@@ -64,7 +64,7 @@ import { createTaskExecutionLease, isTaskFileMutationAction, isApprovedPermissio
 
 import { resolveAgonPermissionMode, resolvePermissionDecision, authorizeResolvedTaskAction } from './permission-resolver.js';
 
-import { shouldAutoRunGate, gateAutoRunTriggered, gateAutoRunPermitted, gateDefinitionChangeNotice, gateDefinitionFingerprint, gateAutoRunLimit, gateTimeoutMs, gateOutputTailChars, runDiscoveredGate, buildGateFailureMessage, buildGateSuccessNote } from './gate-runner.js';
+import { shouldAutoRunGate, gateAutoRunTriggered, gateAutoRunPermitted, gateDefinitionChangeNotice, pinnedGateDefinition, repinGateDefinitionAfterApprovedRun, gateAutoRunLimit, gateTimeoutMs, gateOutputTailChars, runDiscoveredGate, buildGateFailureMessage, buildGateSuccessNote } from './gate-runner.js';
 
 import { getSessionAllowList } from '../signals/output.js';
 
@@ -196,7 +196,8 @@ async function runCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerCont
       // skip-signal can waive it for the whole session, but re-discover each turn
       // so a newly-added test script / fitness: line is picked up live.
       const _gate = discoverGate(_turnCwd);
-      const _gateDefinition = gateDefinitionFingerprint(_turnCwd);
+      const _gateDefinitionPins: Record<string, string> = ctx.cesar ? (ctx.cesar.gateDefinitionPins ??= {}) : {};
+      pinnedGateDefinition(_gateDefinitionPins, _turnCwd);
       let _gateDefinitionNoticeShown = false;
       if (ctx.cesar) ctx.cesar.discoveredGate = _gate;
       // NB: a gate-less turn is NOT a permanent waiver — _shouldGateNudge already
@@ -303,6 +304,7 @@ async function runCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerCont
         if (isAgenticMutationOutcome(name, String(input ?? ''), status)) _successfulMutationCount++;
         if (isBashToolName(name) && _gate.matchers.length > 0) {
           const command = extractAgenticBashCommand(String(input ?? ''));
+          repinGateDefinitionAfterApprovedRun(_gateDefinitionPins, _turnCwd, _gate, command, status);
           if (bashRanGate(command, _gate.matchers)) {
             if (/^(?:done|ok|completed)$/i.test(status)) {
               _verificationPassed = true;
@@ -3007,7 +3009,8 @@ async function runCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerCont
             // Never burn a run re-checking identical work: after the first run,
             // require NEW successful mutations since the last harness execution.
             if (_gateAutoRuns > 0 && _successfulMutationCount <= _mutationsAtLastGateRun) return false;
-            const definitionNotice = gateDefinitionChangeNotice(_gateDefinition, _turnCwd);
+            const pinnedDefinition = pinnedGateDefinition(_gateDefinitionPins, _turnCwd);
+            const definitionNotice = gateDefinitionChangeNotice(pinnedDefinition, _turnCwd);
             if (definitionNotice && !_gateDefinitionNoticeShown) {
               _gateDefinitionNoticeShown = true;
               dispatch({ type: 'info', message: definitionNotice });
@@ -3019,7 +3022,7 @@ async function runCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerCont
               alreadyVerified: _verificationPassed,
               wroteWork: _successfulMutationCount > 0 || _toolsUsed.some((t: string) => isWriteToolName(t)),
               runsSoFar: _gateAutoRuns,
-              permitted: gateAutoRunPermitted(g.command, _turnCwd, config, _gateDefinition),
+              permitted: gateAutoRunPermitted(g.command, _turnCwd, config, pinnedDefinition),
             });
           };
           // Shared engine round-trip for harness-injected [SYSTEM] continuations

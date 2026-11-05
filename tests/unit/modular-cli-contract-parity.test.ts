@@ -222,6 +222,10 @@ describe('physical CLI contract parity', () => {
       expect(expected.args).not.toHaveProperty('format');
       expected.args.format = { type: 'string', required: false, aliases: [], default: 'json' };
     }
+    if (name === 'conquer') {
+      expect(expected.args).not.toHaveProperty('maxAdversaryRejections');
+      expected.args.maxAdversaryRejections = { type: 'string', required: false, aliases: [] };
+    }
     expect(contractDiff(actual, expected)).toEqual([]);
   });
 

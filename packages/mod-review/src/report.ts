@@ -25,7 +25,12 @@ interface TreeSummary {
   readonly stackedOn?: string;
   readonly error?: string;
   readonly blockers?: number;
+  readonly head?: string;
+  readonly base?: string;
+  readonly diffChars?: number;
 }
+
+const shortRef = (ref: string) => (/^[0-9a-f]{40,64}$/.test(ref) ? ref.slice(0, 8) : ref);
 
 interface TreePair {
   readonly trees: readonly string[];
@@ -54,6 +59,7 @@ export interface ReviewReport {
   readonly overlaps?: readonly TreePair[];
   readonly incomplete?: number;
   readonly contextFiles?: readonly string[];
+  readonly contextSkipped?: readonly { readonly path: string; readonly reason: string }[];
 }
 
 export function lineRegion(lines: string | undefined): { startLine: number; endLine: number } | undefined {
@@ -114,6 +120,8 @@ export function formatSarif(report: ReviewReport): string {
         ...(report.panelHealth ? { panelHealth: report.panelHealth } : {}),
         ...(report.split ? { split: report.split } : {}),
         ...(report.trees ? { trees: report.trees, conflicts: report.conflicts ?? [], overlaps: report.overlaps ?? [] } : {}),
+        ...(report.contextFiles ? { contextFiles: report.contextFiles } : {}),
+        ...(report.contextSkipped ? { contextSkipped: report.contextSkipped } : {}),
         degraded: Boolean(report.panelHealth?.degraded || report.consensus?.degraded),
         warnings: report.warnings ?? [],
       },
@@ -144,6 +152,9 @@ export function formatSummaryLine(report: ReviewReport): string {
 
 function treeLine(tree: TreeSummary): string {
   const notes = [
+    tree.head ? `head ${shortRef(tree.head)}` : '',
+    tree.base ? `base ${shortRef(tree.base)}` : '',
+    tree.diffChars !== undefined ? `${tree.diffChars.toLocaleString('en-US')} diff chars` : '',
     tree.sameAs ? `same diff as ${tree.sameAs}` : '',
     tree.stackedOn ? `stacked on ${tree.stackedOn}` : '',
     tree.blockers ? `${tree.blockers} blocking` : '',
@@ -166,6 +177,7 @@ export function formatText(report: ReviewReport, options: ReviewTextOptions = {}
     if (seat.status !== 'ok') lines.push(`  ${seat.engineId}${seat.tree ? ` [tree ${seat.tree}]` : ''}${seat.batch ? ` [batch ${seat.batch}]` : ''}: ${seat.status}${seat.error ? ` (${seat.error})` : ''}`);
   }
   if (report.contextFiles?.length) lines.push(`Context files sent (${report.contextFiles.length}):`, ...report.contextFiles.map((file) => `  ${file}`));
+  if (report.contextSkipped?.length) lines.push(`Context files skipped (${report.contextSkipped.length}):`, ...report.contextSkipped.map((item) => `  ${item.path} (${item.reason})`));
   if (report.trees) lines.push('Trees:', ...report.trees.map(treeLine), ...pairLines('Conflicts', report.conflicts), ...pairLines('Overlapping files', report.overlaps));
   const groups: Array<[string, readonly ConsensusFinding[]]> = consensus
     ? [['Blockers', consensus.blockers], ['Needs check', consensus.needsCheck], ['Speculative', consensus.speculative], ['Nits', consensus.nits]]

@@ -380,12 +380,20 @@ describe('REPL /review through the intent contribution', () => {
     const parsed = intent.parse(`/review alpha --worktree "${spaced}" --worktree=${other} --context 'ref notes.md' --max-trees 2`);
     expect(parsed).toMatchObject({ engineIds: ['alpha'], worktree: [spaced, other], context: ['ref notes.md'], 'max-trees': '2' });
     expect(validateContributionInput(intent.inputSchema, parsed)).toBeNull();
-    const out = await intent.run(parsed, context) as CommandResult;
+    const events: any[] = [];
+    let dispatchedAtFirstNotice = -1;
+    for await (const event of intent.run(parsed, context) as AsyncIterable<any>) {
+      if (event.type === 'progress' && dispatchedAtFirstNotice < 0) dispatchedAtFirstNotice = h.calls.length;
+      events.push(event);
+    }
+    expect(dispatchedAtFirstNotice).toBe(0);
+    expect(events.find(event => event.type === 'progress').message).toContain('ref notes.md');
+    const out = events.at(-1).result as CommandResult;
     expect(out.exitCode).toBe(0);
     expect(h.calls.map(call => call.cwd)).toEqual([spaced, other]);
     expect(h.calls.every(call => call.prompt.includes('REPL_REFERENCE'))).toBe(true);
     expect(out.stdout).toContain('Context files sent (1):\n  ref notes.md');
-    expect(out.stdout).toContain(`${other}: ok`);
+    expect(out.stdout).toContain(`${other}: ok (head `);
     expect(stderr.mock.calls.map(call => String(call[0]))).toEqual([]);
 
     for (const text of ['/review --split', '/review --worktree', '/review --worktree "unclosed', '/review -e alpha']) {
@@ -445,6 +453,64 @@ describe('--context through runReview', () => {
     expect(printed).toContain('docs/guide.md');
     expect(printed).toContain('docs/.npmrc (secret-named)');
     expect(printed).toContain('docs/logo.png (binary)');
+  });
+
+  it('sends an unprefixed API_KEY, TOKEN, PASSWORD, SECRET or PRIVATE_KEY value to reviewers, or redacts ordinary code that names one', async () => {
+    const root = dirtyRepo();
+    const values = ['API_KEY', 'TOKEN', 'PASSWORD', 'SECRET', 'PRIVATE_KEY', 'X_TOKEN'].map(name => [name, `${name.toLowerCase()}Val1234567890`] as const);
+    writeFileSync(join(root, 'settings.txt'), `${values.map(([name, value]) => `${name}=${value}`).join('\n')}\nconst TOKEN = getToken();\nexport const PASSWORD = input;\n`);
+    const { calls } = await review({ context: ['settings.txt'] }, root);
+    const prompt = calls[0]!.prompt.slice(calls[0]!.prompt.indexOf('## EXTRA CONTEXT'));
+    for (const [, value] of values) expect(prompt).not.toContain(value);
+    expect(prompt).toContain('const TOKEN = getToken();');
+    expect(prompt).toContain('export const PASSWORD = input;');
+  });
+
+  it('sends .NPMRC, deploy.PEM or SECRETS.JSON to reviewers because of their case', async () => {
+    const root = dirtyRepo();
+    mkdirSync(join(root, 'cfg'));
+    for (const name of ['.NPMRC', 'deploy.PEM', 'SECRETS.JSON']) writeFileSync(join(root, 'cfg', name), `CASE_LEAK_${name}\n`);
+    writeFileSync(join(root, 'cfg', 'keep.md'), 'KEEP\n');
+    git(root, 'add', 'cfg');
+    git(root, 'commit', '-m', 'cfg');
+    const { report, calls } = await review({ context: ['cfg'] }, root);
+    expect(calls[0]!.prompt).not.toContain('CASE_LEAK_');
+    expect(report.contextSkipped.map((item: any) => item.reason)).toEqual(['secret-named', 'secret-named', 'secret-named']);
+    const named = await review({ context: ['cfg/deploy.PEM'] }, root);
+    expect(named.out.stderr).toContain('secret-named');
+  });
+
+  it('reads every file before refusing an over-budget context, or reports bytes as chars and inflates the suggested limit', async () => {
+    const root = dirtyRepo();
+    writeFileSync(join(root, 'huge.md'), 'y'.repeat(1000));
+    writeFileSync(join(root, 'never-read.md'), 'z'.repeat(50));
+    const h = harness();
+    const out = await review({ context: ['huge.md', 'never-read.md'], 'context-max-chars': '10' }, root, h);
+    expect(out.out.exitCode).toBe(1);
+    expect(out.out.stderr).toContain('huge.md (1,000 bytes)');
+    expect(out.out.stderr).toContain('--context-max-chars 250');
+    expect(out.out.stderr).not.toContain('never-read.md');
+    expect(h.calls).toHaveLength(0);
+  });
+
+  it('loses the audit of what left the machine with --split, in SARIF or in text', async () => {
+    const root = dirtyRepo();
+    for (const name of ['b.ts', 'c.ts']) writeFileSync(join(root, name), `export const x = '${'y'.repeat(200)}';\n`);
+    mkdirSync(join(root, 'ref'));
+    writeFileSync(join(root, 'ref', 'note.md'), 'SPLIT_REFERENCE\n');
+    writeFileSync(join(root, 'ref', '.npmrc'), 'x\n');
+    git(root, 'add', 'ref');
+    git(root, 'commit', '-m', 'ref');
+    const { out, report, calls } = await review({ context: ['ref'], split: true, 'max-diff-chars': '400', format: 'sarif' }, root);
+    expect(calls.length).toBeGreaterThan(1);
+    expect(calls.every(call => call.prompt.includes('SPLIT_REFERENCE'))).toBe(true);
+    expect(report.contextFiles).toEqual(['ref/note.md']);
+    expect(report.contextSkipped).toEqual([{ path: 'ref/.npmrc', reason: 'secret-named' }]);
+    const properties = JSON.parse(out.stdout!).runs[0].properties;
+    expect(properties.contextFiles).toEqual(['ref/note.md']);
+    expect(properties.contextSkipped).toEqual(report.contextSkipped);
+    const text = await review({ context: ['ref'], format: 'text' }, root);
+    expect(text.out.stdout).toContain('Context files skipped (1):\n  ref/.npmrc (secret-named)');
   });
 
   it('sends a named secret, a symlink to one, a non-git directory or a missing path instead of refusing before spend', async () => {

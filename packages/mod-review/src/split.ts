@@ -1,6 +1,7 @@
 import type { CommandResult, InvocationContext, Json, ModServices } from '@kernlang/agon-mod-api';
 import { gitHeaderPath, inferReviewRisk, redactSecretsDeep, redactSecretsPreservingLines, type ReviewRiskRequest, type ReviewTarget } from '@kernlang/agon-support-verification';
 import type { ConsensusReport } from './consensus.js';
+import { extraContextReport, type ExtraContext } from './context-paths.js';
 import { formatReport, formatSummaryLine, SPLIT_CAVEAT, type ReviewFormat, type ReviewReport } from './report.js';
 
 interface FileDiff {
@@ -90,6 +91,7 @@ export async function runSplitReview(
   context: InvocationContext,
   services: ModServices,
   runBatch: ReviewBatchRunner,
+  extra?: ExtraContext,
 ): Promise<CommandResult> {
   const files = splitDiffByFile(target.diff);
   const oversized = files.filter(file => file.text.length > limit);
@@ -180,6 +182,7 @@ export async function runSplitReview(
       responded: reports.reduce((sum, report) => sum + (report.panelHealth?.responded ?? 0), 0),
       degraded: incomplete > 0 || reports.some(report => report.panelHealth?.degraded),
     },
+    ...extraContextReport(extra),
     warnings: [`${summaryLine}; ${SPLIT_CAVEAT}`, ...(incompleteNote ? [`${incompleteNote}; the verdict does not cover the whole diff`] : []), ...warnings],
     ...(run ? { runDir: run.path } : {}),
   };

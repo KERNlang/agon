@@ -3,26 +3,27 @@ import { createHash } from 'node:crypto';
 import { existsSync, realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { CommandResult, InvocationContext, Json, ModServices } from '@kernlang/agon-mod-api';
-import { redactSecretsDeep, resolveAutoReviewBase, resolveReviewTarget, reviewMaxDiffChars } from '@kernlang/agon-support-verification';
+import { redactSecretsDeep, resolveAutoReviewBase, resolveReviewTarget, REVIEW_TREE_FLAGS, reviewMaxDiffChars } from '@kernlang/agon-support-verification';
 import type { ConsensusReport } from './consensus.js';
 import { extraContextReport, loadExtraContext, positiveOption, repeatedPaths, stderrNotify, type ExtraContext, type ReviewNotify } from './context-paths.js';
 import { formatReport, formatSummaryLine, type ReviewFormat, type ReviewReport } from './report.js';
 import { mergeConsensus, splitDiffByFile } from './split.js';
 
-export const TREE_INPUT_PROPERTIES = Object.freeze({
-  worktree: { type: 'array', items: { type: 'string' } },
-  'all-worktrees': { type: 'boolean' },
-  'max-trees': { type: 'string' },
-  context: { type: 'array', items: { type: 'string' } },
-  'context-max-chars': { type: 'string' },
-});
+const INPUT_SCHEMA_BY_KIND = {
+  list: { type: 'array', items: { type: 'string' } },
+  switch: { type: 'boolean' },
+  value: { type: 'string' },
+} as const;
 
-export const TREE_REPEATED_OPTIONS = Object.freeze({ worktree: 'list', context: 'list' } as const);
+export const TREE_INPUT_PROPERTIES = Object.freeze(Object.fromEntries(REVIEW_TREE_FLAGS.map(flag => [flag.key, INPUT_SCHEMA_BY_KIND[flag.kind]])));
+
+export const TREE_REPEATED_OPTIONS: Readonly<Record<string, 'list'>> = Object.freeze(Object.fromEntries(
+  REVIEW_TREE_FLAGS.filter(flag => flag.kind === 'list').map(flag => [flag.key, 'list' as const])));
 
 export const TREE_DESCRIPTIONS = Object.freeze({
   worktree: 'Review this git work tree too; repeat for more. Each tree gets its own full routed review and findings merge into one report tagged with their tree. Relative paths resolve from the current directory. With no target, each tree is reviewed against its merge-base with the default branch, or against the nearest selected ancestor tree. Cannot be combined with --mutate.',
   'all-worktrees': 'Review every worktree of the current repo, locked ones included. Bare and prunable entries are left out and listed in the warnings. Cannot be combined with --mutate.',
-  'max-trees': 'Most trees to review with --worktree or --all-worktrees (default 8, or config reviewMaxTrees). Each tree spends a full panel, so more than this refuses before any spend. Empty and duplicate trees do not count.',
+  'max-trees': 'Most trees to review with --worktree or --all-worktrees (default 8, or config reviewMaxTrees). Each tree spends a full panel, so more than this refuses before any spend. Empty trees do not count, nor does a tree whose diff is identical to another tree in the same repo.',
   context: 'Send this file or directory to every reviewer as untrusted read-only reference; repeat for more. Relative paths resolve from the current directory. A directory must be in a git repo and sends tracked files only. Secret-named paths are refused by name and skipped inside a directory, binary files are skipped, and tokens are redacted. The exact file list goes to stderr and the report contextFiles.',
   'context-max-chars': 'Largest --context total, in characters (default 40000, or config reviewContextMaxChars). Over it, review refuses before spending and names the largest files; context is never truncated.',
 });
@@ -240,8 +241,9 @@ export async function runMultiTreeReview(
   context: InvocationContext,
   services: ModServices,
   runTree: TreeRunner,
-  notify: ReviewNotify = stderrNotify,
+  options: { readonly notify?: ReviewNotify; readonly extraContext?: ExtraContext } = {},
 ): Promise<CommandResult> {
+  const notify = options.notify ?? stderrNotify;
   const refuse = (message: string): CommandResult => ({ exitCode: 1, stderr: `${message}\n` });
   if (input.mutate === true) return refuse('Refusing to review several trees with --mutate: each tree would run its own mutation pass and the results would be lost from the merged report. Review the trees, then run agon mutate --diff <target> in each tree separately.');
   const config = context.config as Record<string, Json> | undefined;
@@ -256,7 +258,7 @@ export async function runMultiTreeReview(
 
   const selected = selectTrees(input, context.cwd);
   if ('error' in selected) return refuse(selected.error);
-  const extra = loadExtraContext(input, context, notify);
+  const extra = options.extraContext ?? loadExtraContext(input, context, notify);
   if (extra && 'error' in extra) return refuse(extra.error);
 
   const warnings = [...selected.warnings];

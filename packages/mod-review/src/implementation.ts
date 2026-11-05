@@ -10,6 +10,7 @@ import type {
   Dispose,
   Json,
   ModServices,
+  OutputEvent,
   Registrar,
 } from "@kernlang/agon-mod-api";
 import { join } from "node:path";
@@ -114,7 +115,7 @@ export async function runReview(
   const input = raw as Record<string, Json>;
   const format = parseReviewFormat(input.format);
   if (!format) return { exitCode: 1, stderr: 'Unknown review format. Use json, text, or sarif.\n' };
-  if (isMultiTreeInput(input)) return runMultiTreeReview(input, format, context, services, (treeInput, treeContext, extraContext) => runReview(treeInput, treeContext, services, { ...evidence, ...(extraContext ? { extraContext } : {}) }), evidence.notify);
+  if (isMultiTreeInput(input)) return runMultiTreeReview(input, format, context, services, (treeInput, treeContext, extraContext) => runReview(treeInput, treeContext, services, { ...evidence, ...(extraContext ? { extraContext } : {}) }), { ...(evidence.notify ? { notify: evidence.notify } : {}), ...(evidence.extraContext ? { extraContext: evidence.extraContext } : {}) });
   const extra = evidence.extraContext ?? loadExtraContext(input, context, evidence.notify);
   if (extra && "error" in extra) return { exitCode: 1, stderr: `${extra.error}\n` };
   const maxDiffChars = seconds(input["max-diff-chars"]);
@@ -133,7 +134,7 @@ export async function runReview(
       );
       if (split && resolved.diff.length > limit) {
         return await runSplitReview(resolved, limit, input, format, context, services,
-          (batch, batchInput) => runReview(batchInput, context, services, { ...evidence, ...(extra ? { extraContext: extra } : {}), batch }));
+          (batch, batchInput) => runReview(batchInput, context, services, { ...evidence, ...(extra ? { extraContext: extra } : {}), batch }), extra);
       }
       target = { ...resolved, maxDiffChars: limit };
     } catch (error) {
@@ -370,7 +371,16 @@ export const createMod: AgonModFactory = (services) =>
           run: (input, context) => {
             const parsed = input as Record<string, Json>;
             if (typeof parsed.parseError === 'string') return { exitCode: 1, stderr: `${parsed.parseError}\n` };
-            return runReview(reviewIntentInput(parsed), context, services, { notify: message => void services.logger?.info(message) });
+            const notify = (message: string) => void services.logger?.info(message);
+            if (!Array.isArray(parsed.context)) return runReview(reviewIntentInput(parsed), context, services, { notify });
+            return (async function* (): AsyncGenerator<OutputEvent> {
+              const reviewInput = reviewIntentInput(parsed);
+              const notices: string[] = [];
+              const extraContext = loadExtraContext(reviewInput, context, message => notices.push(message));
+              if (extraContext && "error" in extraContext) { yield { type: "result", result: { exitCode: 1, stderr: `${extraContext.error}\n` } }; return; }
+              for (const message of notices) yield { type: "progress", message };
+              yield { type: "result", result: await runReview(reviewInput, context, services, { notify, ...(extraContext ? { extraContext } : {}) }) };
+            })();
           },
         }),
       );

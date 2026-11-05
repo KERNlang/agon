@@ -45,7 +45,7 @@ it.each(['constructor', 'toString'])('does not inherit a repeat policy for %s', 
 });
 
 it.each([
-  { _: 'last' }, { intent: 'last' }, { missing: 'last' }, { enabled: 'last' }, { text: 'invalid' },
+  { _: 'last' }, { intent: 'last' }, { missing: 'last' }, { enabled: 'last' }, { text: 'invalid' }, { text: 'list' },
 ])('rejects invalid repeat policy %j before dispatch', async repeatedOptions => {
   state.goalProjection = { id: 'fixture', cli: { positionals: ['intent'], repeatedOptions } as CommandContribution['cli'],
     inputSchema: { type: 'object', properties: { _: { type: 'array' }, intent: { type: 'string' }, enabled: { type: 'boolean' }, text: { type: 'string' } } },

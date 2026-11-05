@@ -136,8 +136,8 @@ function projectParsedArguments(
 ): Record<string, Json> {
   const repeated = projection?.repeatedOptions ?? {};
   for (const [name, policy] of Object.entries(repeated)) {
-    if (name === '_' || projection?.positionals?.includes(name) || properties[name]?.type !== 'string'
-      || !['last', 'comma-separated'].includes(policy)) {
+    if (name === '_' || projection?.positionals?.includes(name) || properties[name]?.type !== (policy === 'list' ? 'array' : 'string')
+      || !['last', 'comma-separated', 'list'].includes(policy)) {
       throw new TypeError(`Invalid repeated string option policy: ${name}`);
     }
   }
@@ -145,6 +145,7 @@ function projectParsedArguments(
     .filter(([name, value]) => name in properties && value !== undefined)
     .map(([name, value]) => {
       const policy = Object.hasOwn(repeated, name) ? repeated[name] : undefined;
+      if (policy === 'list') return [name, Array.isArray(value) ? value : [value]];
       if ((policy === 'last' || policy === 'comma-separated') && Array.isArray(value) && value.length && value.every(item => typeof item === 'string')) {
         return [name, policy === 'last' ? value[value.length - 1] : value.join(',')];
       }

@@ -243,8 +243,8 @@
         "range": "^19.2.0"
       }
     ],
-    "packedBytes": 1542049,
-    "unpackedBytes": 7167542,
+    "packedBytes": 1542449,
+    "unpackedBytes": 7168674,
     "fileCount": 144,
     "files": [
       {
@@ -256,11 +256,11 @@
         "size": 51
       },
       {
-        "path": "dist/app-J7PU3SJD.js",
+        "path": "dist/app-2FOK4XIQ.js",
         "size": 383839
       },
       {
-        "path": "dist/app-J7PU3SJD.js.map",
+        "path": "dist/app-2FOK4XIQ.js.map",
         "size": 256938
       },
       {
@@ -296,6 +296,14 @@
         "size": 14490
       },
       {
+        "path": "dist/chunk-2YMQKZB5.js",
+        "size": 46752
+      },
+      {
+        "path": "dist/chunk-2YMQKZB5.js.map",
+        "size": 28851
+      },
+      {
         "path": "dist/chunk-37LCQRNC.js",
         "size": 714
       },
@@ -328,12 +336,12 @@
         "size": 33572
       },
       {
-        "path": "dist/chunk-6KELVQVK.js",
-        "size": 804200
+        "path": "dist/chunk-66NCUFI3.js",
+        "size": 302465
       },
       {
-        "path": "dist/chunk-6KELVQVK.js.map",
-        "size": 482642
+        "path": "dist/chunk-66NCUFI3.js.map",
+        "size": 196645
       },
       {
         "path": "dist/chunk-7N2RCQRK.js",
@@ -342,14 +350,6 @@
       {
         "path": "dist/chunk-7N2RCQRK.js.map",
         "size": 100403
-      },
-      {
-        "path": "dist/chunk-BG66HNEE.js",
-        "size": 54176
-      },
-      {
-        "path": "dist/chunk-BG66HNEE.js.map",
-        "size": 31808
       },
       {
         "path": "dist/chunk-BYQ4V5QP.js",
@@ -374,14 +374,6 @@
       {
         "path": "dist/chunk-C4OUBIJA.js.map",
         "size": 140
-      },
-      {
-        "path": "dist/chunk-CJ6EGUTA.js",
-        "size": 302465
-      },
-      {
-        "path": "dist/chunk-CJ6EGUTA.js.map",
-        "size": 196645
       },
       {
         "path": "dist/chunk-D5XB3WNT.js",
@@ -488,12 +480,12 @@
         "size": 58399
       },
       {
-        "path": "dist/chunk-O5UVF7KA.js",
-        "size": 46752
+        "path": "dist/chunk-NR3AY3WW.js",
+        "size": 804869
       },
       {
-        "path": "dist/chunk-O5UVF7KA.js.map",
-        "size": 28851
+        "path": "dist/chunk-NR3AY3WW.js.map",
+        "size": 483105
       },
       {
         "path": "dist/chunk-P5AQDCKT.js",
@@ -534,6 +526,14 @@
       {
         "path": "dist/chunk-VHQZDGYY.js.map",
         "size": 16640
+      },
+      {
+        "path": "dist/chunk-VHT33Z7L.js",
+        "size": 54176
+      },
+      {
+        "path": "dist/chunk-VHT33Z7L.js.map",
+        "size": 31808
       },
       {
         "path": "dist/chunk-W5JIOSDF.js",
@@ -672,11 +672,11 @@
         "size": 31636
       },
       {
-        "path": "dist/forge-KXJYNBJQ.js",
+        "path": "dist/forge-7OHJS4ME.js",
         "size": 1447
       },
       {
-        "path": "dist/forge-KXJYNBJQ.js.map",
+        "path": "dist/forge-7OHJS4ME.js.map",
         "size": 51
       },
       {
@@ -688,11 +688,11 @@
         "size": 4203
       },
       {
-        "path": "dist/intent-skills-LWPKFYKO.js",
+        "path": "dist/intent-skills-QFSCRV2E.js",
         "size": 981
       },
       {
-        "path": "dist/intent-skills-LWPKFYKO.js.map",
+        "path": "dist/intent-skills-QFSCRV2E.js.map",
         "size": 51
       },
       {
@@ -744,11 +744,11 @@
         "size": 3696
       },
       {
-        "path": "dist/plan-mode-BB4V5IWF.js",
+        "path": "dist/plan-mode-ONF4NOBJ.js",
         "size": 815
       },
       {
-        "path": "dist/plan-mode-BB4V5IWF.js.map",
+        "path": "dist/plan-mode-ONF4NOBJ.js.map",
         "size": 51
       },
       {
@@ -824,10 +824,10 @@
         "size": 127220
       }
     ],
-    "payloadHash": "sha256:a194256a51ed9a8bbb9c10fe5fd6a2c5987a3303c58101cbf2ae420e9bc13647",
-    "integrity": "sha512-ve6yKbDaH4GKqQfqNWgXVMIOVTaTgHM75hHHTA6HlWHc6kxwHVM+e1xJPX179otA/RH3M13AlNAiYAjBRfpn5Q==",
-    "shasum": "95867e154f590da5c31b15a6a46a0800f6fcb48e",
-    "tarballHash": "sha256:ba47b36c0bd6132817eca19c5655bdd05a8438fe298f0b665b6bc36a86da6701",
+    "payloadHash": "sha256:cb9748901af90d1dc2a976f51f48659a944f74c86eb66c611a7243404ceffb59",
+    "integrity": "sha512-AyOhdJkxl/8RX8ZX4ZdFbqgT10ws0IRBxONpKZjAzFdyYIX0apYAl9EqVr7L61CJ3CetpEPxbmDoG7j8RD3ZdA==",
+    "shasum": "eeb854c8e95a506bdf077c87d2a7e2978c80c63a",
+    "tarballHash": "sha256:5fd45f21077a2100430dde80657a3e6b780a75eaf1934a5edefa175a3a7aa6a6",
     "packageJsonHash": "sha256:bad1a80d2913b8d7e6d96279ea638c0c390ecb235dcf12dc9e1693ca6f9339b1"
   },
   "packages": [

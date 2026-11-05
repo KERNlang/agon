@@ -848,11 +848,17 @@ Third-party code never activates by accident. `inspect` reads a folder mod witho
 ```bash
 agon update --check     # only check the registry
 agon update --plan      # print the exact update plan without applying it
-agon update             # stage, verify, and atomically select the release
+agon update             # stage, verify, and atomically select the installed release
 agon update --offline   # require a complete local npm cache, no network
 ```
 
-An update never overwrites the running process.
+An update never overwrites the running process. `agon update` can only stage the release you have installed, so when npm has a newer version it prints the command and exits 1:
+
+```bash
+npm install -g @kernlang/agon@<version>
+```
+
+If you use a managed install from `agon setup`, run `agon update` afterwards.
 
 ## Architecture
 

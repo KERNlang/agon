@@ -115,7 +115,7 @@ import { loadSkills } from '@kernlang/agon-core';
 
 import { useStableInput } from '../stable-input.js';
 
-import { saveDismissedVersion } from '../services/update-check.js';
+import { newerReleaseInstruction, saveDismissedVersion } from '../services/update-check.js';
 
 import { bell, setWindowTitle } from '../lib/terminal-notify.js';
 
@@ -1264,7 +1264,7 @@ export function App() {
     const latest = info.latestVersion;
     const choices = [
       { key: 'later', label: 'Remind me next time' },
-      { key: 'update', label: `Update now (npm i -g @kernlang/agon@${latest})` },
+      { key: 'update', label: 'Show the update command' },
       { key: 'changelog', label: 'View changelog on GitHub' },
       { key: 'dismiss', label: `Don't ask for v${latest} again` },
     ];
@@ -1284,16 +1284,8 @@ export function App() {
       }
       if (ans === 'later') return; // keep banner; user can act later
       if (ans === 'update') {
-        // Hand off to the update command — implementation lives in
-        // commands/update.kern. Dynamic import so the route is lazy: the
-        // command module is only loaded when the user actually wants to
-        // update, and a missing/broken module never crashes app boot.
         setUpdateInfo(null);
-        import('../commands/update.js')
-          .then((m: any) => m.runUpdate(latest))
-          .catch((err: any) => {
-            console.error('[agon] failed to launch update:', err && err.message ? err.message : String(err));
-          });
+        dispatch({ type: 'info', message: newerReleaseInstruction(latest) });
         return;
       }
       if (ans === 'changelog') {

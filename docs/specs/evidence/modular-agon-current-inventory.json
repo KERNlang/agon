@@ -4383,26 +4383,6 @@
         "source": "packages/dedup/syntax-validator.py"
       },
       {
-        "id": "packages/saas-api/src/__init__.py",
-        "kind": "py",
-        "source": "packages/saas-api/src/__init__.py"
-      },
-      {
-        "id": "packages/saas-api/src/health.py",
-        "kind": "py",
-        "source": "packages/saas-api/src/health.py"
-      },
-      {
-        "id": "packages/saas-api/src/routes/__init__.py",
-        "kind": "py",
-        "source": "packages/saas-api/src/routes/__init__.py"
-      },
-      {
-        "id": "packages/saas-api/src/routes/get_health.py",
-        "kind": "py",
-        "source": "packages/saas-api/src/routes/get_health.py"
-      },
-      {
         "id": "packages/support-dedup/python/classifier.py",
         "kind": "py",
         "source": "packages/support-dedup/python/classifier.py"
@@ -4431,26 +4411,6 @@
         "id": "packages/support-persistence/python/history-search.py",
         "kind": "py",
         "source": "packages/support-persistence/python/history-search.py"
-      },
-      {
-        "id": "packages/support-saas-api/python/__init__.py",
-        "kind": "py",
-        "source": "packages/support-saas-api/python/__init__.py"
-      },
-      {
-        "id": "packages/support-saas-api/python/health.py",
-        "kind": "py",
-        "source": "packages/support-saas-api/python/health.py"
-      },
-      {
-        "id": "packages/support-saas-api/python/routes/__init__.py",
-        "kind": "py",
-        "source": "packages/support-saas-api/python/routes/__init__.py"
-      },
-      {
-        "id": "packages/support-saas-api/python/routes/get_health.py",
-        "kind": "py",
-        "source": "packages/support-saas-api/python/routes/get_health.py"
       },
       {
         "id": "packages/support-verification/python/agon-tui-probe.py",

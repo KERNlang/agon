@@ -8,6 +8,7 @@ import { join } from 'node:path';
 
 import {
   FIRST_PARTY_SURFACE_CATALOG,
+  KERNEL_MANAGEMENT_SURFACE_CATALOG,
   AGON_RUNTIME_VERSION,
   DurableModHost,
   DurableHostError,
@@ -38,7 +39,7 @@ const compatibilityRuntime: GeneratedSurfaceRuntime = Object.freeze({
 let selector = new SurfaceGenerationSelector(new SurfaceGeneration({
   id: 'bootstrap:full-compat',
   mode: 'legacy-authoritative',
-  catalog: FIRST_PARTY_SURFACE_CATALOG,
+  catalog: [...FIRST_PARTY_SURFACE_CATALOG, ...KERNEL_MANAGEMENT_SURFACE_CATALOG],
   runtime: compatibilityRuntime,
 }));
 let boot: FirstPartySurfaceBoot | undefined;

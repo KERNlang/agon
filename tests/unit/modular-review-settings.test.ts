@@ -18,6 +18,6 @@ it('reviewFileContext=false reaches the review mod instead of being dropped by n
   const project = mkdtempSync(join(tmpdir(), 'agon-review-settings-project-'));
   dirs.push(home, project);
   process.env.AGON_HOME = home;
-  writeFileSync(join(project, '.agon.json'), JSON.stringify({ reviewFileContext: false }));
+  writeFileSync(join(home, 'config.json'), JSON.stringify({ reviewFileContext: false }));
   expect(selectModSettings(loadConfig(project), 'agon.review')).toMatchObject({ reviewFileContext: false });
 });

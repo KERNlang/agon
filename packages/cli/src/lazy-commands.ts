@@ -325,7 +325,7 @@ const update = lazyCommand(() => import('./commands/update.js'), 'updateCommand'
 });
 const mod = lazyCommand(() => import('./commands/mod.js'), 'modCommand', {
   name: 'mod',
-  description: 'Inspect and manage modular Agon packages',
+  description: 'Inspect, trust, grant, and activate modular Agon packages',
 }, { hasSubCommands: true });
 const setup = lazyCommand(() => import('./commands/setup.js'), 'setupCommand', {
   name: 'setup',

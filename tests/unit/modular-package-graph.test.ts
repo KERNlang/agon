@@ -243,7 +243,7 @@ describe('frozen first-party package graph', () => {
           contamination: {}, subjectKind: 'commit', indexHash: 'same', commitHash: 'same',
           reviewEvidence: { passed: true }, steps: [{ passed: true }],
           performance: { passed: true, budgets: { coldGreen: true, rssGreen: true, planGreen: true, groupedViewGreen: true } },
-          migration: { packages: 11, counts: { packages: 36, assignments: 348 } },
+          migration: { packages: 10, counts: { packages: 36, assignments: 348 } },
           behaviorAudit: { status: 'green' }, inventoryAssignments,
           coverage: {}, coveragePasses: () => true, freshPlatformPassed: true,
           freshPerformancePassed: true, performances: [{ passed: true }],
@@ -254,9 +254,9 @@ describe('frozen first-party package graph', () => {
     },
   );
 
-  it('contains the complete 49-package/158-edge target map without dangling dependencies', () => {
-    expect(FIRST_PARTY_PACKAGE_GRAPH.packages).toHaveLength(49);
-    expect(FIRST_PARTY_PACKAGE_GRAPH.dependencyEdges).toHaveLength(158);
+  it('contains the complete 48-package/157-edge target map without dangling dependencies', () => {
+    expect(FIRST_PARTY_PACKAGE_GRAPH.packages).toHaveLength(48);
+    expect(FIRST_PARTY_PACKAGE_GRAPH.dependencyEdges).toHaveLength(157);
     expect(FIRST_PARTY_PACKAGE_GRAPH.packages.find(({ id }) => id === '@kernlang/agon-support-persistence')?.dependencies)
       .toEqual(['@kernlang/agon-kernel', '@kernlang/agon-support-engine-runtime', '@kernlang/agon-support-browser-bridge']);
     expect(FIRST_PARTY_PACKAGE_GRAPH.dependencyEdges.filter(({ from, to }) =>
@@ -269,7 +269,7 @@ describe('frozen first-party package graph', () => {
       from === '@kernlang/agon-mod-plan' && to === '@kernlang/agon-support-worktree',
     )).toEqual([{ from: '@kernlang/agon-mod-plan', to: '@kernlang/agon-support-worktree', kind: 'hard' }]);
     const ids = new Set(FIRST_PARTY_PACKAGE_GRAPH.packages.map(({ id }) => id));
-    expect(ids.size).toBe(49);
+    expect(ids.size).toBe(48);
     for (const entry of FIRST_PARTY_PACKAGE_GRAPH.packages) {
       for (const dependency of entry.dependencies) expect(ids.has(dependency), `${entry.id} -> ${dependency}`).toBe(true);
     }

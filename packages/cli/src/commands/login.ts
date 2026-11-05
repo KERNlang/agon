@@ -123,7 +123,7 @@ export const loginCommand: any = defineCommand({
     console.log('');
 
     const env = { ...process.env, [plan.configEnv!]: plan.cleanConfigDir! };
-    const res = spawnSync(binary, plan.loginArgs!, { stdio: 'inherit', env });
+    const res = spawnSync(binary, plan.loginArgs!, { stdio: 'inherit', env, cwd: plan.cleanConfigDir! });
 
     console.log('');
     // spawnSync sets res.error (and leaves status null) when the process

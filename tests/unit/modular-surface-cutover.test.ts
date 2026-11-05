@@ -4,7 +4,7 @@ import { createGeneratedLazySubCommands, lazySubCommands } from '../../packages/
 import { createCesarToolRegistry } from '../../packages/cli/src/cesar/tools.js';
 import { createSlashCommands, createTuiSurfaceIds, detectIntent, SLASH_COMMANDS } from '../../packages/cli/src/signals/intent.js';
 import { listMcpTools } from '../../packages/mcp/src/agon-orchestration.js';
-import { FIRST_PARTY_SURFACE_CATALOG, SurfaceGeneration } from '../../packages/mod-kernel/src/index.js';
+import { FIRST_PARTY_SURFACE_CATALOG, KERNEL_MANAGEMENT_SURFACE_CATALOG, SurfaceGeneration } from '../../packages/mod-kernel/src/index.js';
 
 const names = (values: Iterable<string>) => [...values].sort();
 const runtime = Object.freeze({
@@ -45,12 +45,14 @@ describe('generated surface cutover', () => {
       .filter(({ category, source, publicId }) => (category === 'cliCommands' && source.includes('/lazy-commands.ts:'))
         || (category === 'physicalCliCommands' && !publicId.includes(' ')))
       .map(({ publicId }) => publicId);
-    expect(names(Object.keys(lazySubCommands))).toEqual(names(expected));
+    const kernelManagement = KERNEL_MANAGEMENT_SURFACE_CATALOG.filter(({ surface }) => surface === 'cli').map(({ publicId }) => publicId);
+    expect(names(Object.keys(lazySubCommands))).toEqual(names([...expected, ...kernelManagement]));
   });
 
   it('keeps TUI slash metadata equal to the generated catalog', () => {
     const expected = FIRST_PARTY_SURFACE_CATALOG.filter(({ category }) => category === 'tuiSlashCommands').map(({ publicId }) => publicId);
-    expect(names(SLASH_COMMANDS.map(({ cmd }) => cmd))).toEqual(names(expected));
+    const kernelManagement = KERNEL_MANAGEMENT_SURFACE_CATALOG.filter(({ surface }) => surface === 'tui').map(({ publicId }) => publicId);
+    expect(names(SLASH_COMMANDS.map(({ cmd }) => cmd))).toEqual(names([...expected, ...kernelManagement]));
   });
 
   it('keeps MCP listing equal to the generated catalog', () => {

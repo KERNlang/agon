@@ -95,6 +95,8 @@ export function isProtectedPushBranch(branch: string, config?: any): boolean {
 export interface ConquerCaps {
   maxTurns: number;
   maxWallClockMs: number;
+  /** Stop after this many gate-green rejections with a reproduced counterexample; 0 = only the other caps apply. */
+  maxAdversaryRejections?: number;
 }
 
 export interface ConquerState {
@@ -111,13 +113,18 @@ export interface ConquerTurn {
   detail: string;
 }
 
+export type ConquerStopReason = 'done' | 'cap-turns' | 'cap-time' | 'aborted' | 'builder-failed' | 'adversary-limit';
+
 export interface ConquerResult {
   ok: boolean;
   task: string;
   turnsUsed: number;
   consultsRun: number;
   done: boolean;
-  stopReason: 'done' | 'cap-turns' | 'cap-time' | 'aborted' | 'builder-failed';
+  stopReason: ConquerStopReason;
+  /** The final tree passed the gate and its last done-check still has a reproduced counterexample. */
+  adversaryUnsatisfied: boolean;
+  adversaryRejections: number;
   lastClaim: string;
   doneReason: string;
   transcript: string[];
@@ -219,7 +226,9 @@ export async function runConquerWorkflow(opts: ConquerWorkflowOptions, effects: 
   let lastAttackText = '';
   let lastCounterexample = '';
   let lastObserved = '';
-  let stopReason: 'done' | 'cap-turns' | 'cap-time' | 'aborted' | 'builder-failed' = 'cap-turns';
+  let stopReason: ConquerStopReason = 'cap-turns';
+  let adversaryRejections = 0;
+  let falsifiedTurn = 0;
 
   const emit = (n: number, action: 'build' | 'consult' | 'done-check' | 'stop', detail: string): void => {
     transcript.push(`[turn ${n}] ${action}: ${detail.slice(0, 240)}`);
@@ -269,6 +278,12 @@ export async function runConquerWorkflow(opts: ConquerWorkflowOptions, effects: 
       emit(state.turn, 'done-check', verdict.reason);
       if (opts.signal?.aborted || verdict.aborted) { stopReason = 'aborted'; break; }
       if (verdict.passed) { done = true; stopReason = 'done'; break; }
+      if (verdict.falsified) {
+        adversaryRejections += 1;
+        falsifiedTurn = state.turn;
+        const limit = caps.maxAdversaryRejections ?? 0;
+        if (limit > 0 && adversaryRejections >= limit) { stopReason = 'adversary-limit'; break; }
+      }
       // Feed back the VERIFIED counterexample (only when the re-run actually
       // reproduced — falsified) so the builder targets the exact failure. A rejected/
       // advisory counterexample is left for the human gate, not pitched as reproduced.
@@ -296,6 +311,7 @@ export async function runConquerWorkflow(opts: ConquerWorkflowOptions, effects: 
   return {
     ok: done, task: opts.task, turnsUsed: state.turn, consultsRun: state.consults,
     done, stopReason, lastClaim, doneReason, transcript, outputDir: opts.outputDir,
+    adversaryUnsatisfied: stopReason !== 'aborted' && falsifiedTurn > 0 && falsifiedTurn === state.turn, adversaryRejections,
     attackText: lastAttackText, counterexample: lastCounterexample, observed: lastObserved,
   };
 }

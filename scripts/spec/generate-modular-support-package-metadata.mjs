@@ -8,7 +8,6 @@ const packages = [
   ['persistence', ['engine-runtime', 'browser-bridge']],
   ['dedup', []],
   ['browser-bridge', []],
-  ['saas-api', []],
   ['engine-catalog', ['engine-runtime']],
   ['verification', ['engine-runtime', 'persistence']],
   ['panel', ['engine-runtime']],
@@ -28,7 +27,6 @@ const capabilities = {
   'agent-runtime': ['agent-loop', 'agent-session'],
   dedup: ['dedup-sidecars'],
   'browser-bridge': ['syntax-validation'],
-  'saas-api': ['saas-python-api'],
 };
 
 function canonical(value) {
@@ -52,11 +50,12 @@ for (const [name, dependencies] of packages) {
     version,
     private: false,
     license: 'MIT',
+    repository: { type: 'git', url: 'git+https://github.com/KERNlang/agon.git', directory: `packages/support-${name}` },
     type: 'module',
     exports: { '.': { types: './dist/index.d.ts', import: './dist/index.js' } },
     main: './dist/index.js',
     types: './dist/index.d.ts',
-    files: ['dist', 'LICENSE', ...(name === 'engine-runtime' ? ['engines', 'python', 'patches'] : []), ...(name === 'dedup' ? ['python'] : []), ...(name === 'saas-api' ? ['python'] : []), ...(name === 'verification' ? ['python'] : []), ...(name === 'persistence' ? ['python'] : [])],
+    files: ['dist', 'LICENSE', ...(name === 'engine-runtime' ? ['engines', 'python', 'patches'] : []), ...(name === 'dedup' ? ['python'] : []), ...(name === 'verification' ? ['python'] : []), ...(name === 'persistence' ? ['python'] : [])],
     sideEffects: false,
     scripts: { build: 'tsup && tsc -b tsconfig.json --force', typecheck: 'tsc --noEmit' },
     peerDependencies: { '@kernlang/agon-kernel': ['engine-catalog', 'engine-runtime', 'worktree'].includes(name) ? '>=1.0.0 <2' : '>=0.0.0-0 <2' },

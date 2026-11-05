@@ -9,7 +9,6 @@ export const SUPPORT_PACKAGE_IDS = Object.freeze([
   '@kernlang/agon-support-agent-runtime',
   '@kernlang/agon-support-dedup',
   '@kernlang/agon-support-browser-bridge',
-  '@kernlang/agon-support-saas-api',
 ] as const);
 
 export type SupportPackageId = typeof SUPPORT_PACKAGE_IDS[number];

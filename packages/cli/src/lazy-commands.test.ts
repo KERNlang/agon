@@ -58,6 +58,8 @@ const EXPECTED_COMMAND_NAMES = [
   'ext',
   'browser-host',
   'login',
+  'mod',
+  'setup',
   'update',
   'upgrade',
 ].sort();
@@ -88,7 +90,7 @@ describe('lazySubCommands', () => {
   });
 
   it('only commands with real nested subCommands expose a subCommands field', () => {
-    const withSubCommands = new Set(['models', 'ext', 'browser-host', 'ratings', 'job', 'flow']);
+    const withSubCommands = new Set(['models', 'ext', 'browser-host', 'ratings', 'job', 'flow', 'mod']);
     for (const [key, entry] of Object.entries(lazySubCommands)) {
       const canonical = key === 'wt' ? 'worktree' : key === 'upgrade' ? 'update' : key;
       const hasField = 'subCommands' in (entry as object) && (entry as { subCommands?: unknown }).subCommands !== undefined;
@@ -138,6 +140,8 @@ describe('lazySubCommands — full parity with the real command modules', () => 
     call: [() => import('./commands/call.js'), 'callCommand'],
     attach: [() => import('./commands/attach.js'), 'attachCommand'],
     login: [() => import('./commands/login.js'), 'loginCommand'],
+    mod: [() => import('./commands/mod.js'), 'modCommand'],
+    setup: [() => import('./commands/setup.js'), 'setupCommand'],
     update: [() => import('./commands/update.js'), 'updateCommand'],
   };
   const canonicalKeys = Object.keys(lazySubCommands).filter((k) => k !== 'wt' && k !== 'upgrade');

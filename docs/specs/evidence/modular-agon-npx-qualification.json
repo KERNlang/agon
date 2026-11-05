@@ -70,11 +70,6 @@
       "detail": "exit=0"
     },
     {
-      "id": "pack:@kernlang/agon-support-saas-api",
-      "passed": true,
-      "detail": "exit=0"
-    },
-    {
       "id": "pack:@kernlang/agon-mod-ask",
       "passed": true,
       "detail": "exit=0"

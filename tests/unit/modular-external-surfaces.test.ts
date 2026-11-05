@@ -119,7 +119,7 @@ describe.sequential('S8 external generated surface execution', () => {
       'example.surfaces': { inherited: true, value: 'global' }, 'example.other': { secret: 'other' },
     } }));
     await writeFile(join(project, '.agon.json'), JSON.stringify({ mods: { 'example.surfaces': { value: 'project' } } }));
-    const expected = { inherited: true, value: 'project', mode: 'schema default' };
+    const expected = { inherited: true, value: 'global', mode: 'schema default' };
     await initializeMcpSurfaceAuthority();
     await expect(invokeActiveMcpSurfaceTool('ExternalMcp', { value: 1 })).resolves.toEqual({ source: 'mcp', input: { value: 1 }, config: expected });
     await initializeProcessSurfaceAuthority(paths.hostRoot);

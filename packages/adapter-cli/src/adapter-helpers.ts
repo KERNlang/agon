@@ -1,6 +1,6 @@
 import type { EngineDefinition, EngineMode, EngineModeConfig, ImageAttachment, EngineIsolationPlan } from '@kernlang/agon-core';
 
-import { EngineNotFoundError, loadConfig, engineHealth, classifyDispatchFailure, resolveIsolationMode, planEngineIsolation, agonPath, claudeBrainUsesPty, readOnlyDiff, diffLineCount } from '@kernlang/agon-core';
+import { EngineNotFoundError, loadConfig, engineHealth, classifyDispatchFailure, resolveIsolationMode, planEngineIsolation, planRepoConfigGuard, agonPath, claudeBrainUsesPty, readOnlyDiff, diffLineCount } from '@kernlang/agon-core';
 
 import { statSync, mkdirSync, existsSync, copyFileSync, chmodSync, unlinkSync, readFileSync, mkdtempSync, rmSync } from 'node:fs';
 
@@ -75,9 +75,9 @@ function stampDispatchDepth(env?: Record<string,string>): Record<string,string> 
 }
 
 /**
- * Resolve + materialise workspace-pure isolation for ONE dispatch. Mode = per-dispatch option > AGON_ENGINE_ISOLATION env > config.engineIsolation > default workspace-pure. For an engine with a configEnv hint, points it at a STABLE clean per-engine config dir (~/.agon/pure/<id>, bounded on disk) seeded with ONLY the engine's auth file(s) — so the user's ~/.claude personal layer (global CLAUDE.md, plugins, hooks, user MCP) is dropped while dispatch stays AUTHENTICATED. If the clean dir / auth copy can't be set up, FALL BACK to inherit (return no env) rather than risk a broken-auth dispatch. Returns env OVERRIDES (the spawn merges them onto process.env) + extra CLI args. API-only / inherit / hint-less engines return no env and [] (already pure / opted out).
+ * Resolve + materialise workspace-pure isolation for ONE dispatch. Mode = per-dispatch option > AGON_ENGINE_ISOLATION env > config.engineIsolation > default workspace-pure. For an engine with a configEnv hint, points it at a STABLE clean per-engine config dir (~/.agon/pure/<id>, bounded on disk) seeded with ONLY the engine's auth file(s) — so the user's ~/.claude personal layer (global CLAUDE.md, plugins, hooks, user MCP) is dropped while dispatch stays AUTHENTICATED. If the clean dir / auth copy can't be set up, FALL BACK to inherit rather than risk a broken-auth dispatch. Returns env OVERRIDES (the spawn merges them onto process.env) + extra CLI args. Every return carries the engine's repoConfigGuard, inherit included; beyond that, API-only / inherit / hint-less engines return no env and [] (already pure / opted out).
  */
-export function computeEngineIsolation(engine: EngineDefinition, opts: {isolation?:string, cwd?:string}): {env?:Record<string,string>, argsExtra:string[], plan:EngineIsolationPlan} {
+export function computeEngineIsolation(engine: EngineDefinition, opts: {isolation?:string, cwd?:string}): {env?:Record<string,string>, argsExtra:string[], repoGuardArgs:string[], plan:EngineIsolationPlan} {
   const cfg = loadConfig(opts.cwd) as { engineIsolation?: string };
   const mode = resolveIsolationMode({
     option: opts.isolation,
@@ -85,15 +85,16 @@ export function computeEngineIsolation(engine: EngineDefinition, opts: {isolatio
     config: cfg.engineIsolation,
   });
   const hints = engine.isolationHints;
-  const inherit: { env?: Record<string, string>; argsExtra: string[]; plan: EngineIsolationPlan } = {
-    env: stampDispatchDepth(undefined),
-    argsExtra: [],
-    plan: { isolate: false, mode, engineId: engine.id, setEnv: {}, argsExtra: [], strippedPersonal: false },
-  };
+  const guard = planRepoConfigGuard(engine, opts.cwd);
+  const finish = (plan: EngineIsolationPlan) => ({
+    env: stampDispatchDepth({ ...guard.env, ...plan.setEnv }),
+    argsExtra: [...guard.args, ...plan.argsExtra],
+    repoGuardArgs: guard.args,
+    plan,
+  });
   if (mode === 'inherit' || !hints?.configEnv) {
     // inherit, or API/flag-only engine — let planEngineIsolation decide argsExtra (no config dir to seed).
-    const plan = planEngineIsolation(engine, mode, { cleanConfigDir: '' });
-    return { env: stampDispatchDepth(plan.isolate && Object.keys(plan.setEnv).length > 0 ? plan.setEnv : undefined), argsExtra: plan.argsExtra, plan };
+    return finish(planEngineIsolation(engine, mode, { cleanConfigDir: '' }));
   }
   const cleanConfigDir = agonPath('pure', engine.id);
   try {
@@ -122,7 +123,7 @@ export function computeEngineIsolation(engine: EngineDefinition, opts: {isolatio
   } catch {
     // Could not set up the clean dir / copy auth — do NOT risk an unauthenticated
     // or broken dispatch; fall back to inheriting the real config for this call.
-    return inherit;
+    return finish({ isolate: false, mode, engineId: engine.id, setEnv: {}, argsExtra: [], strippedPersonal: false });
   }
   // Detection gate: isolate ONLY when the clean dir is actually authenticated
   // (its authMarker exists on disk) — for claude that means a one-time
@@ -137,8 +138,7 @@ export function computeEngineIsolation(engine: EngineDefinition, opts: {isolatio
   // an auth-status probe on every dispatch.)
   const marker = hints.authMarker?.trim();
   const authenticated = marker ? existsSync(join(cleanConfigDir, basename(marker))) : true;
-  const plan = planEngineIsolation(engine, mode, { cleanConfigDir, authenticated });
-  return { env: stampDispatchDepth(plan.isolate && Object.keys(plan.setEnv).length > 0 ? plan.setEnv : undefined), argsExtra: plan.argsExtra, plan };
+  return finish(planEngineIsolation(engine, mode, { cleanConfigDir, authenticated }));
 }
 
 export function resolveArgs(template: string[], vars: Record<string,string>): string[] {
@@ -187,7 +187,7 @@ export function resolveEffort(engine: EngineDefinition, cwd?: string): string|nu
  * Launch flags (model + reasoning effort) to forward to the claude pty exec so the interactive subscription path honors an agon /models pick, exactly like the --print fallback. Returns [] when nothing is explicitly configured → defers to claude's own config (resilient if a probe/flag changes).
  */
 export function resolveClaudePtyExtraArgs(engine: EngineDefinition, cwd?: string): string[] {
-  const out: string[] = [];
+  const out: string[] = [...planRepoConfigGuard(engine, cwd).args];
   const model = resolveModel(engine, cwd);
   if (model && engine.model?.flag) out.push(engine.model.flag, model);
   const effort = resolveEffort(engine, cwd);
@@ -291,7 +291,7 @@ export function applyNonAgenticFraming(engine: EngineDefinition, mode: EngineMod
   return prompt;
 }
 
-export function buildCommand(engine: EngineDefinition, mode: EngineMode, prompt: string, cwd: string, timeout: number, binaryPath: string, images?: ImageAttachment[]): {command:string, args:string[]} {
+export function buildCommand(engine: EngineDefinition, mode: EngineMode, prompt: string, cwd: string, timeout: number, binaryPath: string, images?: ImageAttachment[]): {command:string, args:string[], promptArg:string} {
   const modeConfig = resolveModeConfig(engine, mode);
 
   if (!modeConfig) {
@@ -378,7 +378,7 @@ export function buildCommand(engine: EngineDefinition, mode: EngineMode, prompt:
     args.splice(insertAt, 0, ...imageArgs);
   }
 
-  return { command: binaryPath, args };
+  return { command: binaryPath, args, promptArg: effectivePrompt };
 }
 
 export function supportsAgentMode(engine: EngineDefinition): boolean {

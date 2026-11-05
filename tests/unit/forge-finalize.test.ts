@@ -9,7 +9,7 @@ import { runForge } from '../../packages/forge/src/forge.js';
 import { createForgeWorkflow } from '@kernlang/agon-mod-forge';
 import { createForgeWorkflowEffects, estimateCostCacheAware } from '@kernlang/agon-core';
 import * as kernel from '@kernlang/agon-kernel';
-import { setupTestAgonHome, cleanupTestAgonHome } from '../helpers/agon-home.js';
+import { setupTestAgonHome, cleanupTestAgonHome, agonHomePath } from '../helpers/agon-home.js';
 
 vi.mock('../../packages/forge/src/quality.js', () => ({
   runLint: vi.fn(async () => 0),
@@ -37,7 +37,7 @@ function makeRepo(): string {
   tempDirs.push(dir);
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, 'README.md'), '# Finalize test\n');
-  writeFileSync(join(dir, '.agon.json'), JSON.stringify({
+  writeFileSync(agonHomePath('config.json'), JSON.stringify({
     forgeRequireBaselineCheck: false,
     forgeEnableSynthesis: false,
     forgeDispatchTimeout: 480,
@@ -622,7 +622,7 @@ describe('caller-driven forge finalize', () => {
     process.env.AGON_FINALIZE_TEST_KEY = 'test';
     const repoDir = makeRepo();
     // Tight quorum config: 3 passing engines triggers auto-finalize.
-    writeFileSync(join(repoDir, '.agon.json'), JSON.stringify({
+    writeFileSync(agonHomePath('config.json'), JSON.stringify({
       forgeRequireBaselineCheck: false,
       forgeEnableSynthesis: false,
       forgeDispatchTimeout: 480,

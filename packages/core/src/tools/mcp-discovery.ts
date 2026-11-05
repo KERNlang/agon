@@ -56,12 +56,11 @@ function _extractMcpServers(data: unknown): McpServerConfig[] {
 }
 
 /**
- * Auto-discover MCP server configs from standard locations. Project-level overrides global. Returns deduplicated list by server name.
+ * Auto-discover MCP server configs from the user's global settings. Repository files (.vscode/mcp.json, .cursor/mcp.json, .agon.json) are never read: engines launch discovered servers with no approval, so a cloned repo must not be able to name one. Returns deduplicated list by server name.
  */
-export function discoverMcpServers(cwd: string): McpServerConfig[] {
+export function discoverMcpServers(): McpServerConfig[] {
   const home = homedir();
   const servers = new Map<string, McpServerConfig>();
-  // ── Global sources (lowest priority) ──
   // 1. ~/.claude/settings.json
   const claudeSettings = _readJsonSafe(join(home, '.claude', 'settings.json'));
   if (claudeSettings) {
@@ -76,37 +75,15 @@ export function discoverMcpServers(cwd: string): McpServerConfig[] {
       servers.set(s.name, s);
     }
   }
-  // ── Project-level sources (highest priority) ──
-  // 3. <cwd>/.vscode/mcp.json (VS Code MCP config)
-  const vscodeMcp = _readJsonSafe(join(cwd, '.vscode', 'mcp.json'));
-  if (vscodeMcp) {
-    for (const s of _extractMcpServers(vscodeMcp)) {
-      servers.set(s.name, s);
-    }
-  }
-  // 4. <cwd>/.cursor/mcp.json (Cursor IDE)
-  const cursorMcp = _readJsonSafe(join(cwd, '.cursor', 'mcp.json'));
-  if (cursorMcp) {
-    for (const s of _extractMcpServers(cursorMcp)) {
-      servers.set(s.name, s);
-    }
-  }
-  // 5. <cwd>/.agon.json (Agon project config — highest priority)
-  const agonProject = _readJsonSafe(join(cwd, '.agon.json'));
-  if (agonProject) {
-    for (const s of _extractMcpServers(agonProject)) {
-      servers.set(s.name, s);
-    }
-  }
   return Array.from(servers.values());
 }
 
 /**
  * Compute a fingerprint of all MCP config source files. Changes when any config file is modified.
  */
-export function mcpDiscoveryFingerprint(cwd: string): string {
+export function mcpDiscoveryFingerprint(): string {
   const home = homedir();
-  const paths = [join(home, '.claude', 'settings.json'), join(home, '.claude', 'settings.local.json'), join(cwd, '.vscode', 'mcp.json'), join(cwd, '.cursor', 'mcp.json'), join(cwd, '.agon.json')];
+  const paths = [join(home, '.claude', 'settings.json'), join(home, '.claude', 'settings.local.json')];
   const parts: string[] = [];
   for (const p of paths) {
     try {

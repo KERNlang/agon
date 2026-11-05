@@ -1206,7 +1206,7 @@ try {
   checks.push({ id: 'first-run-result', passed: true, detail: 'installed generation 1 with 15-package closure' });
   const stable = join(home, 'bin', 'agon');
   const smoke = requireOk('persistent-launcher-before-cache-delete', run(stable, ['--version'], { cwd: scratch, env: { AGON_HOME: home } }));
-  if (!smoke.stdout.includes('1.0.0')) throw new Error('persistent launcher did not report version 1.0.0');
+  if (!smoke.stdout.includes(release.version)) throw new Error(`persistent launcher did not report version ${release.version}`);
   makeRemovable(ephemeral); rmSync(ephemeral, { recursive: true, force: true });
   checks.push({ id: 'ephemeral-cache-deleted', passed: !existsSync(ephemeral), detail: 'ephemeral npx hydration removed' });
   requireOk('persistent-launcher-after-cache-delete', run(stable, ['--version'], { cwd: scratch, env: { AGON_HOME: home } }));

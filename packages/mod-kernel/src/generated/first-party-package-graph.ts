@@ -106,14 +106,6 @@ export const FIRST_PARTY_PACKAGE_GRAPH = {
       ]
     },
     {
-      "id": "@kernlang/agon-support-saas-api",
-      "class": "hidden-shared-support-package",
-      "defaultEnabled": false,
-      "dependencies": [
-        "@kernlang/agon-kernel"
-      ]
-    },
-    {
       "id": "@kernlang/agon-mod-ask",
       "class": "user-toggleable-mod-package",
       "defaultEnabled": true,
@@ -601,11 +593,6 @@ export const FIRST_PARTY_PACKAGE_GRAPH = {
     },
     {
       "from": "@kernlang/agon-support-browser-bridge",
-      "to": "@kernlang/agon-kernel",
-      "kind": "hard"
-    },
-    {
-      "from": "@kernlang/agon-support-saas-api",
       "to": "@kernlang/agon-kernel",
       "kind": "hard"
     },

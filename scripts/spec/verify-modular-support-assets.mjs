@@ -18,7 +18,6 @@ function mirror(source, target, filter = () => true) {
 }
 
 mirror('engines', 'packages/support-engine-runtime/engines');
-mirror('packages/saas-api/src', 'packages/support-saas-api/python');
 for (const name of ['classifier.py', 'embedder.py', 'install-python.mjs', 'requirements.txt', 'sidecar.py', 'syntax-validator.py']) {
   pairs.push([join(root, 'packages/dedup', name), join(root, 'packages/support-dedup/python', name)]);
 }
@@ -28,7 +27,6 @@ pairs.push(
   [join(root, 'patches/@kernlang+agon-engines+0.1.3.patch'), join(root, 'packages/support-engine-runtime/patches/@kernlang+agon-engines+0.1.3.patch')],
   [join(root, 'packages/cli/py/agon-tui-probe.py'), join(root, 'packages/support-verification/python/agon-tui-probe.py')],
   [join(root, 'scripts/claude-tui-probe.py'), join(root, 'packages/support-verification/python/claude-tui-probe.py')],
-  [join(root, 'packages/saas-api/requirements.txt'), join(root, 'packages/support-saas-api/python/requirements.txt')],
 );
 
 for (const [source, target] of pairs) {

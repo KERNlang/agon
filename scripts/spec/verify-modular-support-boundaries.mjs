@@ -5,7 +5,7 @@ import ts from 'typescript';
 
 const root = resolve(import.meta.dirname, '../..');
 const supportNames = [
-  'engine-runtime', 'persistence', 'dedup', 'browser-bridge', 'saas-api',
+  'engine-runtime', 'persistence', 'dedup', 'browser-bridge',
   'engine-catalog', 'verification', 'panel', 'worktree', 'agent-runtime', 'judge',
 ];
 const supportPrefix = '@kernlang/agon-support-';
@@ -153,7 +153,6 @@ function inspect(definitions = expected) {
     ['packages/support-dedup/python/classifier.py', true],
     ['packages/support-dedup/python/embedder.py', true],
     ['packages/support-dedup/python/syntax-validator.py', true],
-    ['packages/support-saas-api/python/routes/get_health.py', true],
   ];
   for (const [path, shouldExist] of assetOwners) {
     if (existsSync(join(root, path)) !== shouldExist) errors.push(`${path}: expected exists=${shouldExist}`);

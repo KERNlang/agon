@@ -3,6 +3,11 @@
   "version": "1.0.0",
   "private": false,
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/KERNlang/agon.git",
+    "directory": "packages/support-worktree"
+  },
   "type": "module",
   "exports": {
     ".": {

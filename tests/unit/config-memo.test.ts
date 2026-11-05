@@ -55,11 +55,11 @@ describe('loadConfig() memoization', () => {
     const localPath = join(project, '.agon.json');
     writeFileSync(path, JSON.stringify({ mods: { 'agon.forge': { [key]: namespaced } } }));
     writeFileSync(localPath, JSON.stringify({ [key]: legacy }));
-    expect(loadConfig(project)).toMatchObject({ [key]: legacy, mods: { 'agon.forge': { [key]: legacy } } });
+    expect(loadConfig(project)).toMatchObject({ [key]: namespaced, mods: { 'agon.forge': { [key]: namespaced } } });
     writeFileSync(path, JSON.stringify({ [key]: legacy }));
     writeFileSync(localPath, JSON.stringify({ mods: { 'agon.forge': { [key]: namespaced } } }));
-    expect(loadConfig(project)).toMatchObject({ [key]: namespaced, mods: { 'agon.forge': { [key]: namespaced } } });
-    writeFileSync(join(project, '.agon.local.json'), JSON.stringify({ [key]: legacy }));
+    expect(loadConfig(project)).toMatchObject({ [key]: legacy, mods: { 'agon.forge': { [key]: legacy } } });
+    writeFileSync(join(project, '.agon.local.json'), JSON.stringify({ [key]: namespaced }));
     expect(loadConfig(project)).toMatchObject({ [key]: legacy, mods: { 'agon.forge': { [key]: legacy } } });
   });
 

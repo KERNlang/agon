@@ -116,9 +116,9 @@ const freshPlatformPassed = platformStep?.passed === true && platformStep.eviden
 const coverage = { packages: packageMap.packages.length, firstPartyMods: packageMap.packages.filter(({ class: kind }) => kind === 'user-toggleable-mod-package').length, ownershipAssignments: ownership.assignments.length,
   releaseArtifacts: release.artifactCount, physicalMods: physical.counts.physical, platformPassed: platform.summary.passed, platformExternallyBlocked: platform.summary.externallyBlocked,
   platformFailed: platform.summary.failed, measuredPerformanceSlices: performances.length };
-const coveragePasses = (candidate) => candidate.packages === 49 && candidate.firstPartyMods === 36 && candidate.ownershipAssignments === 872
-  // 49 modular packages, one launcher, and the dedup compatibility sidecars.
-  && candidate.releaseArtifacts === 51 && candidate.physicalMods === 36 && candidate.platformPassed === 3 && candidate.platformExternallyBlocked === 9
+const coveragePasses = (candidate) => candidate.packages === 48 && candidate.firstPartyMods === 36 && candidate.ownershipAssignments === 864
+  // 48 modular packages, one launcher, and the dedup compatibility sidecars.
+  && candidate.releaseArtifacts === 50 && candidate.physicalMods === 36 && candidate.platformPassed === 3 && candidate.platformExternallyBlocked === 9
   && candidate.platformFailed === 0 && candidate.measuredPerformanceSlices === 8;
 const performancePasses = (evidence) => {
   if (!evidence || typeof evidence !== 'object' || Array.isArray(evidence)) return false;
@@ -128,11 +128,11 @@ const performancePasses = (evidence) => {
 };
 if (process.argv.includes('--self-test')) {
   // Test the predicates without requiring a previous successful qualification.
-  const baseline = { packages: 49, firstPartyMods: 36, ownershipAssignments: 872,
-    releaseArtifacts: 51, physicalMods: 36, platformPassed: 3, platformExternallyBlocked: 9,
+  const baseline = { packages: 48, firstPartyMods: 36, ownershipAssignments: 864,
+    releaseArtifacts: 50, physicalMods: 36, platformPassed: 3, platformExternallyBlocked: 9,
     platformFailed: 0, measuredPerformanceSlices: 8 };
   if (!coveragePasses(baseline)) throw new Error('S9 coverage rejected valid fixture evidence');
-  for (const releaseArtifacts of [50, 52]) {
+  for (const releaseArtifacts of [49, 51]) {
     if (coveragePasses({ ...baseline, releaseArtifacts })) throw new Error('S9 coverage accepted a missing or extra release artifact');
   }
   if (coveragePasses({ ...baseline, platformPassed: 0, platformExternallyBlocked: 12 })) throw new Error('S9 coverage accepted an all-blocked platform matrix');
@@ -145,7 +145,7 @@ if (process.argv.includes('--self-test')) {
 }
 const receipt = { schemaVersion: 1, qualification: 'modular-agon-slice9-release-candidate', subject: { ...(subjectKind === 'index' ? indexSubject : commitSubject), hash: expectedHash, indexHash, commitHash, indexEqualsCommit: indexHash === commitHash }, contamination, graph, coverage, reviewEvidence, cleanCheckoutSteps: steps };
 receipt.passed = Object.values(contamination).every((paths) => paths.length === 0) && (subjectKind === 'index' || indexHash === commitHash) && reviewEvidence.passed
-  && graph.duplicateEdges.length === 0 && graph.uniqueEdges === 158 && coveragePasses(coverage) && freshPlatformPassed
+  && graph.duplicateEdges.length === 0 && graph.uniqueEdges === 157 && coveragePasses(coverage) && freshPlatformPassed
   && freshPerformancePassed && performances.every(performancePasses) && freshLoadPassed
   && steps.length > 0 && steps.every(({ passed }) => passed);
 console.log(JSON.stringify(receipt, null, 2));

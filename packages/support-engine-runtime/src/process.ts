@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { basename } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 
 import type { DispatchResult } from './types.js';
@@ -43,8 +44,30 @@ export interface SpawnOptions {
   timeout: number;
   env?: Record<string,string>;
   signal?: AbortSignal;
-  useStdin?: boolean;
+  stdinInput?: string;
   onSpawn?: (pid:number)=>void;
+}
+
+function spawnChild(opts: SpawnOptions) {
+  let child;
+  try {
+    child = spawn(opts.command, opts.args, {
+      cwd: opts.cwd,
+      env: { ...process.env, ...opts.env },
+      stdio: [opts.stdinInput === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
+      detached: true,
+    });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'E2BIG') throw error;
+    const bytes = opts.args.reduce((sum, arg) => sum + Buffer.byteLength(arg), 0);
+    throw new Error(`${basename(opts.command)} was not started: its ${bytes.toLocaleString('en-US')} bytes of process arguments exceed what this system allows.`);
+  }
+  if (opts.stdinInput !== undefined) {
+    // A CLI may exit before draining the prompt; its exit status reports that, not EPIPE.
+    child.stdin?.on('error', () => {});
+    child.stdin?.end(opts.stdinInput);
+  }
+  return child;
 }
 
 export interface CapturedProcessResult extends DispatchResult {
@@ -101,12 +124,7 @@ export async function spawnWithTimeout(opts: SpawnOptions & {
       resolve(outputExceeded ? { ...captured, exitCode: 1, stderr: `Process output exceeded ${opts.maxOutputBytes} bytes` } : captured);
     }
 
-    const child = spawn(opts.command, opts.args, {
-      cwd: opts.cwd,
-      env: { ...process.env, ...opts.env },
-      stdio: [opts.useStdin ? 'pipe' : 'ignore', 'pipe', 'pipe'],
-      detached: true,
-    });
+    const child = spawnChild(opts);
     const releaseOwnership = trackOwnedProcess(child.pid);
     if (child.pid && opts.onSpawn) opts.onSpawn(child.pid);
 
@@ -242,12 +260,7 @@ export async function* spawnStream(opts: SpawnOptions): AsyncGenerator<string, D
   let forceKillTimer: ReturnType<typeof setTimeout> | null = null;
   let forceFinishTimer: ReturnType<typeof setTimeout> | null = null;
 
-  const child = spawn(opts.command, opts.args, {
-    cwd: opts.cwd,
-    env: { ...process.env, ...opts.env },
-    stdio: [opts.useStdin ? 'pipe' : 'ignore', 'pipe', 'pipe'],
-    detached: true,
-  });
+  const child = spawnChild(opts);
   const releaseOwnership = trackOwnedProcess(child.pid);
   if (child.pid && opts.onSpawn) opts.onSpawn(child.pid);
 

@@ -1,3 +1,5 @@
+import { resolve } from 'node:path';
+
 import type { EngineDefinition } from './types.js';
 
 /**
@@ -33,6 +35,16 @@ export function resolveIsolationMode(opts: {option?:string, env?:string, config?
   const pick = (v: string | undefined): 'workspace-pure' | 'inherit' | null =>
     isValidIsolationMode(v) ? (v as 'workspace-pure' | 'inherit') : null;
   return pick(opts.option) ?? pick(opts.env) ?? pick(opts.config) ?? 'workspace-pure';
+}
+
+/**
+ * Flags and env that stop an engine CLI executing or trusting the config files of the repository it runs in. Independent of the isolation mode: an inherit dispatch runs in the same hostile repository, so every launch applies this. Declare it with any variadic flag before a single-value flag, so the positional prompt can never be swallowed.
+ */
+export function planRepoConfigGuard(engine: Pick<EngineDefinition, 'isolationHints'>, cwd?: string): { args: string[]; env: Record<string, string> } {
+  const guard = engine.isolationHints?.repoConfigGuard;
+  if (!guard) return { args: [], env: {} };
+  const dir = resolve(cwd?.trim() ? cwd : process.cwd());
+  return { args: guard.args.map((arg) => (arg === '{cwd}' ? dir : arg)), env: { ...guard.env } };
 }
 
 /**

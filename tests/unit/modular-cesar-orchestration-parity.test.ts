@@ -112,7 +112,7 @@ describe('physical Cesar orchestration tool parity', () => {
     }
   });
 
-  it('runs TUI Goal start, status and resume through real registry and storage', async () => {
+  it('routes TUI Goal dry run, status and resume through the real registry without writing goal state', async () => {
     const cwd = join(root, 'goal-repo'); mkdirSync(cwd);
     const git = (...args: string[]) => execFileSync('git', args, { cwd, stdio: 'pipe' });
     git('init', '-b', 'main'); git('config', 'user.name', 'Fixture'); git('config', 'user.email', 'fixture@example.invalid');
@@ -128,13 +128,12 @@ describe('physical Cesar orchestration tool parity', () => {
     };
     await invoke(`"TUI fixture" --cwd ${JSON.stringify(cwd)} --gate true --max-hours 2 --dry-run`);
     const store = new ModStateStore(join(root, 'host'), 'agon.goal');
-    const before = await store.read('goals/tui-fixture') as any;
-    expect(before.payload).toMatchObject({ intent: 'TUI fixture', maxHours: 2, gate: 'true', tasks: [expect.objectContaining({ attempts: 0 })] });
-    await invoke(`--status --id tui-fixture --cwd ${JSON.stringify(cwd)}`);
-    expect(await store.read('goals/tui-fixture')).toEqual(before);
-    await invoke(`--resume --id tui-fixture --cwd ${JSON.stringify(cwd)} --dry-run`);
-    expect((await store.read('goals/tui-fixture') as any).payload.tasks).toEqual(before.payload.tasks);
-    expect(events.filter(event => event.type === 'engine-block')).toHaveLength(3);
+    expect(await store.read('goals/tui-fixture')).toBeFalsy();
+    expect(git('branch', '--list', 'goal/*').toString().trim()).toBe('');
+    await expect(invoke(`--status --id tui-fixture --cwd ${JSON.stringify(cwd)}`)).rejects.toThrow(/No persisted goal/);
+    await expect(invoke(`--resume --id tui-fixture --cwd ${JSON.stringify(cwd)} --dry-run`)).rejects.toThrow();
+    expect(await store.read('goals/tui-fixture')).toBeFalsy();
+    expect(events.filter(event => event.type === 'engine-block')).toHaveLength(1);
   });
 
   it('keeps the host handoff schemas, effects, and no-prompt permission behavior', () => {

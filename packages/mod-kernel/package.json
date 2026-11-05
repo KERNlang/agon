@@ -1,6 +1,11 @@
 {
   "name": "@kernlang/agon-kernel",
   "version": "1.0.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/KERNlang/agon.git",
+    "directory": "packages/mod-kernel"
+  },
   "private": false,
   "type": "module",
   "exports": {
@@ -13,7 +18,8 @@
   "types": "./dist/index.d.ts",
   "files": [
     "dist",
-    "LICENSE"
+    "LICENSE",
+    "!dist/**/*.test.*"
   ],
   "sideEffects": false,
   "scripts": {

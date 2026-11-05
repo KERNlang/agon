@@ -2,6 +2,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import type { DispatchResult, EngineAdapter } from '@kernlang/agon-support-engine-runtime';
 import type { ForgeManifest, Critique, SynthesisResult, ForgeEventCallback, WorktreeEntry } from './types.js';
 import type { ForgeStageRegistry, ForgeStageRuntime } from './stages.js';
+import { capAdvisoryDiff, DEFAULT_REVIEW_MAX_DIFF_CHARS } from '@kernlang/agon-support-verification';
 import { FitnessError } from './errors.js';
 import { buildCritiquePrompt, buildSynthesisPrompt } from './prompts.js';
 import { buildStageContext, renderStageContext } from './stage-context.js';
@@ -45,7 +46,7 @@ export function createForgeSynthesis(runtime: ForgeSynthesisRuntime) {
   const { worktreeCreate, worktreeRemoveBestEffort, applyPatch } = runtime;
   const runFitness = (options: Parameters<typeof runOwnedFitness>[0]) => runOwnedFitness(options, runtime.fitness);
 
-  async function runSynthesis(opts: {manifest:ForgeManifest, winner:string, losers:string[], registry:ForgeStageRegistry, adapter:EngineAdapter, forgeDir:string, fitnessCmd:string, timeout:number, fitnessTimeout:number, maxCritiques:number, repoRoot:string, headSha:string, synthEngine?:string, worktrees?:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal,
+  async function runSynthesis(opts: {manifest:ForgeManifest, winner:string, losers:string[], registry:ForgeStageRegistry, adapter:EngineAdapter, forgeDir:string, fitnessCmd:string, timeout:number, fitnessTimeout:number, maxCritiques:number, maxDiffChars?:number, repoRoot:string, headSha:string, synthEngine?:string, worktrees?:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal,
     onDispatch?: (record: { engineId: string; prompt: string; result?: DispatchResult; error?: string; durationMs: number }) => void,
   }): Promise<SynthesisResult> {
     const { manifest, winner, losers, registry, adapter, forgeDir } = opts;
@@ -124,12 +125,18 @@ export function createForgeSynthesis(runtime: ForgeSynthesisRuntime) {
       } catch { /* best effort */ }
     }
 
+    const { diff: critiqueDiff, notice: critiqueDiffNotice } = capAdvisoryDiff(winnerPatch, opts.maxDiffChars ?? DEFAULT_REVIEW_MAX_DIFF_CHARS);
+    if (critiqueDiffNotice) {
+      console.warn(`[agon] synthesis critiques are partial: ${critiqueDiffNotice}`);
+      manifest.critiqueDiffNotice = critiqueDiffNotice;
+    }
+
     const critiquePromises = losers.map(async (loserId: string) => {
       opts.onEvent?.({ type: 'synthesis:critique', engineId: loserId });
       const engine = registry.get(loserId);
       let prompt = buildCritiquePrompt({
         winnerEngine: winner,
-        diff: winnerPatch,
+        diff: critiqueDiff,
         maxCritiques: opts.maxCritiques,
       });
 

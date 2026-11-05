@@ -300,7 +300,7 @@ describeMaybe('agond survival — the daemon outlives its launcher', () => {
       await expect(invokeActiveMcpSurfaceTool('JobStatus', { jobId: 'missing-job' })).rejects.toThrow(/not found/i);
       const otherWorkspace = join(home, 'other-workspace');
       mkdirSync(otherWorkspace);
-      writeFileSync(join(otherWorkspace, '.agon.json'), JSON.stringify({ removedEngines: ['codex'] }));
+      writeFileSync(join(home, 'config.json'), JSON.stringify({ removedEngines: ['codex'] }));
       const crossWorkspace = JSON.parse(await handleJobToolCall('JobSubmit', {
         kind: 'review', payload: { input: 'uncommitted', engine: 'codex' },
       }, { cwd: otherWorkspace }));

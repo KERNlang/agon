@@ -9,7 +9,7 @@ import * as engineRuntime from '@kernlang/agon-support-engine-runtime';
 import * as worktreeSupport from '@kernlang/agon-support-worktree';
 import type { ModServices } from '@kernlang/agon-mod-api';
 import type { ForgeModServices } from '@kernlang/agon-mod-forge';
-import { runGoal, runGoalSupervisor } from './implementation.js';
+import { createMod, runGoal, runGoalSupervisor } from './implementation.js';
 import { createGoalHostServices } from './host.js';
 import { createGoalJournalStore, createJournal, addTasks } from './journal.js';
 import { createSessionWorktree, findSessionWorktree, worktreePathFor, rehydrateSessionWorktree } from '@kernlang/agon-support-worktree';
@@ -112,7 +112,67 @@ const context = (cwd: string) => ({
   signal: new AbortController().signal, config: {},
 });
 
+const PREPARED = 'goal prepared before first task';
+
+/** Stop a real launch right after its durable setup, so a test can resume or inspect it. */
+async function prepareGoal(input: Record<string, unknown>, cwd: string, h: ReturnType<typeof harness>) {
+  vi.mocked(h.services.runs!.start).mockRejectedValueOnce(new Error(PREPARED));
+  await expect(runGoal({ ...input, dryRun: false } as any, context(cwd), h.services)).rejects.toThrow(PREPARED);
+}
+
+/** A supervised child that exits cleanly after setup, as a child with nothing left to do would. */
+async function runPreparedChild(input: Record<string, unknown>, cwd: string, h: ReturnType<typeof harness>) {
+  vi.mocked(h.services.runs!.start).mockReset();
+  vi.mocked(h.services.runs!.start).mockRejectedValueOnce(new Error(PREPARED));
+  try { return await runGoal(input as any, context(cwd), h.services); }
+  catch (error) {
+    if (error instanceof Error && error.message === PREPARED) return { exitCode: 0, stdout: '', stderr: '' };
+    throw error;
+  }
+}
+
 describe('physical goal mod', () => {
+  it('a redirected goal shows progress on stderr instead of looking hung, and stdout stays the final JSON', async () => {
+    const cwd = repo(); const h = harness();
+    const commands: Record<string, any> = {};
+    const registrar = new Proxy({}, { get: (_target, kind) => (surface: string, entry: any) => {
+      if (kind === 'command') commands[surface] = entry;
+      return () => undefined;
+    } });
+    await createMod(h.services as any).activate(registrar as any);
+    const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+    const out = await commands.cli.run({ intent: 'visible run', gate: 'true', requireTests: false, oracleGate: 'off', engine: 'builder', reviewEngines: 'reviewer' }, context(cwd));
+    const lines = stderr.mock.calls.map(call => String(call[0]));
+    stderr.mockRestore();
+    expect(lines.some(line => line.startsWith('[goal] task-start'))).toBe(true);
+    expect(lines.filter(line => line.startsWith('[goal] task-start'))).toHaveLength(1);
+    expect(JSON.parse(out.stdout).state.id).toBe('visible-run');
+  });
+
+  it('dry run leaves the repository without a branch, worktree or state, and does not block the real launch', async () => {
+    const cwd = repo(); const h = harness();
+    const snapshot = () => ['for-each-ref', 'worktree list --porcelain', 'status --porcelain --ignored']
+      .map(command => execFileSync('git', command.split(' '), { cwd, encoding: 'utf8' })).join('\n');
+    const before = snapshot();
+    const input = { intent: 'pure preview', gate: 'test -f base.txt && touch gate-ran-here', requireTests: false };
+    const out = await runGoal({ ...input, dryRun: true }, context(cwd), h.services);
+    expect(out.exitCode, out.stderr).toBe(0);
+    expect(snapshot()).toBe(before);
+    expect(out.result).toMatchObject({ dryRun: true, baseline: { exitCode: 0 }, state: { id: 'pure-preview', status: 'planned' } });
+    expect(existsSync(join(cwd, '.git', 'worktrees'))).toBe(false);
+    expect(h.services.state.write).not.toHaveBeenCalled();
+    expect(h.services.runs?.start).not.toHaveBeenCalled();
+    expect(existsSync(h.oracleEffects.path('goals', 'pure-preview'))).toBe(false);
+
+    const red = await runGoal({ ...input, gate: 'false', dryRun: true }, context(cwd), h.services);
+    expect(red.failure?.code).toBe('GOAL_BASELINE_RED');
+    expect(snapshot()).toBe(before);
+
+    const real = await runGoal({ ...input, gate: 'true', dryRun: false }, context(cwd), h.services);
+    expect(real.stderr ?? '').not.toContain('already exists');
+    expect(execFileSync('git', ['branch', '--list', 'goal/pure-preview'], { cwd, encoding: 'utf8' })).toContain('goal/pure-preview');
+  });
+
   it('does not create a fresh goal when explicit resume has no saved state', async () => {
     const cwd = repo(); const h = harness();
     const open = vi.spyOn(h.goal, 'open');
@@ -129,9 +189,9 @@ describe('physical goal mod', () => {
     const cwd = repo(); const h = harness();
     const input = { intent: 'retry policy', gate: 'true', engine: 'builder', reviewEngines: 'reviewer',
       oracleGate: 'off', requireTests: false };
-    expect((await runGoal({ ...input, maxAttempts: 1, dryRun: true }, context(cwd), h.services)).exitCode).toBe(0);
+    await prepareGoal({ ...input, maxAttempts: 1 }, cwd, h);
     if (kind === 'historical') delete h.state.get('goals/retry-policy').payload.maxAttempts;
-    else expect((await runGoal({ ...input, resume: true, maxAttempts: 2, dryRun: true }, context(cwd), h.services)).exitCode).toBe(0);
+    else await prepareGoal({ ...input, resume: true, maxAttempts: 2 }, cwd, h);
     h.dispatch.mockResolvedValue({ exitCode: 1, stdout: '', stderr: 'fixture implementation failure', timedOut: false });
     const resumed = await runGoal({ ...input, resume: true }, context(cwd), h.services);
     const expected = kind === 'historical' ? 3 : 2;
@@ -143,7 +203,7 @@ describe('physical goal mod', () => {
   it.each([null, '2', 0, -1, 1.5, 21])('rejects malformed saved attempt limit %j without dispatch', async maxAttempts => {
     const cwd = repo(); const h = harness();
     const input = { intent: 'bad retry policy', gate: 'true', engine: 'builder' };
-    expect((await runGoal({ ...input, dryRun: true }, context(cwd), h.services)).exitCode).toBe(0);
+    await prepareGoal(input, cwd, h);
     h.state.get('goals/bad-retry-policy').payload.maxAttempts = maxAttempts;
     const before = JSON.stringify(h.state.get('goals/bad-retry-policy'));
     const open = vi.spyOn(h.goal, 'open');
@@ -162,7 +222,7 @@ describe('physical goal mod', () => {
   it.each([[0, 1], [21, 20]])('persists the clamped saved attempt limit %i as %i', async (requested, expected) => {
     const cwd = repo(); const h = harness();
     const input = { intent: 'clamped retries', gate: 'true', dryRun: true };
-    expect((await runGoal({ ...input, maxAttempts: requested }, context(cwd), h.services)).exitCode).toBe(0);
+    await prepareGoal({ ...input, maxAttempts: requested }, cwd, h);
     const resumed = await runGoal({ ...input, resume: true }, context(cwd), h.services);
     expect(resumed.exitCode).toBe(0);
     expect((resumed.result as any).state.maxAttempts).toBe(expected);
@@ -187,8 +247,7 @@ describe('physical goal mod', () => {
     const cwd = repo(); const h = harness();
     const input = { intent: 'saved retry limit', gate: 'true', engine: 'builder', reviewEngines: 'reviewer',
       oracleGate: 'off', requireTests: false };
-    const first = await runGoal({ ...input, maxAttempts: 1, dryRun: true }, context(cwd), h.services);
-    expect(first.exitCode).toBe(0);
+    await prepareGoal({ ...input, maxAttempts: 1 }, cwd, h);
     h.dispatch.mockResolvedValue({ exitCode: 1, stdout: '', stderr: 'fixture implementation failure', timedOut: false });
     const resumed = await runGoal({ ...input, resume: true }, context(cwd), h.services);
     expect((resumed.result as any).state.tasks[0].attempts).toBe(1);
@@ -956,9 +1015,8 @@ describe('physical goal mod', () => {
 
   it.each(['unchanged', 'gate', 'missing', 'directory', 'record', 'null'] as const)('checks frozen gate evidence before resuming (%s)', async change => {
     const cwd = repo(); const h = harness();
-    const first = await runGoal({ intent: 'frozen gate', gate: 'test -f base.txt', requireTests: false, dryRun: true }, context(cwd), h.services);
-    expect(first.exitCode).toBe(0);
-    const frozen = (first.result as any).state.oracle;
+    await prepareGoal({ intent: 'frozen gate', gate: 'test -f base.txt', requireTests: false }, cwd, h);
+    const frozen = h.state.get('goals/frozen-gate').payload.oracle;
     expect(frozen).toMatchObject({ gate: 'test -f base.txt', files: [], hash: expect.any(String), dir: expect.any(String) });
     expect(readFileSync(join(frozen.dir, 'gate.txt'), 'utf8')).toBe('test -f base.txt');
     const originalHash = readFileSync(join(frozen.dir, 'hash.txt'), 'utf8');
@@ -1008,12 +1066,11 @@ describe('physical goal mod', () => {
       if (!failed && (value as any).payload?.oracle) { failed = true; throw new Error('temporary state write failure'); }
       return write(key, value);
     };
-    await expect(runGoal({ intent: 'snapshot write', gate: 'true', dryRun: true }, context(cwd), h.services))
+    await expect(runGoal({ intent: 'snapshot write', gate: 'true' }, context(cwd), h.services))
       .rejects.toThrow('temporary state write failure');
     expect(h.dispatch).not.toHaveBeenCalled();
     expect(readFileSync(h.oracleEffects.path('goals', 'snapshot-write', 'oracle', 'gate.txt'), 'utf8')).toBe('true');
-    const retry = await runGoal({ id: 'snapshot-write', resume: true, dryRun: true }, context(cwd), h.services);
-    expect(retry.exitCode).toBe(0);
+    await prepareGoal({ id: 'snapshot-write', resume: true }, cwd, h);
   });
 
   it.each(['host', 'lease', 'existing'] as const)('rejects pre-run Think before dispatch when %s is unavailable', async kind => {
@@ -1021,7 +1078,7 @@ describe('physical goal mod', () => {
       acquireWriter: async () => { throw new Error('lease denied'); },
     } : {});
     if (kind === 'existing') {
-      expect((await runGoal({ intent: 'think admission', gate: 'true', dryRun: true }, context(cwd), h.services)).exitCode).toBe(0);
+      await prepareGoal({ intent: 'think admission', gate: 'true' }, cwd, h);
     }
     const services = kind === 'host' ? { ...h.services, goal: undefined } : h.services;
     const result = await runGoal({ intent: 'think admission', gate: 'true', think: true }, context(cwd), services);
@@ -1045,8 +1102,8 @@ describe('physical goal mod', () => {
       h.state.set(key, structuredClone(value));
     });
     h.dispatch.mockImplementation(async () => { current = false; return { exitCode: 0, stdout: 'refined', stderr: '', timedOut: false }; });
-    await expect(runGoal({ intent: 'generation boundary', gate: 'true', think: phase === 'think',
-      dryRun: phase !== 'think' }, context(cwd), h.services)).rejects.toThrow('generation revoked');
+    await expect(runGoal({ intent: 'generation boundary', gate: 'true', think: phase === 'think' },
+      context(cwd), h.services)).rejects.toThrow('generation revoked');
     expect(write).toHaveBeenCalledTimes(phase === 'save' ? 0 : phase === 'capture' ? 1 : 2);
     expect(h.dispatch).toHaveBeenCalledTimes(phase === 'think' ? 1 : 0);
   });
@@ -1056,15 +1113,15 @@ describe('physical goal mod', () => {
     const h = harness({ oracleEffects: { ...seed.oracleEffects,
       ensureHome: () => { throw new Error('temporary oracle storage failure'); },
     } });
-    await expect(runGoal({ intent: 'oracle storage', gate: 'true', dryRun: true }, context(cwd), h.services))
+    await expect(runGoal({ intent: 'oracle storage', gate: 'true' }, context(cwd), h.services))
       .rejects.toThrow('temporary oracle storage failure');
     expect(h.dispatch).not.toHaveBeenCalled();
   });
 
   it.each(['save', 'release'] as const)('preserves oracle-invalid classification when rejection %s fails', async phase => {
     const cwd = repo(); const h = harness();
-    const first = await runGoal({ intent: 'rejection failure', gate: 'true', dryRun: true }, context(cwd), h.services);
-    const frozen = (first.result as any).state.oracle;
+    await prepareGoal({ intent: 'rejection failure', gate: 'true' }, cwd, h);
+    const frozen = h.state.get('goals/rejection-failure').payload.oracle;
     writeFileSync(join(frozen.dir, 'gate.txt'), 'changed');
     const write = h.services.state.write;
     h.services.state.write = async (key, value) => {
@@ -1131,8 +1188,8 @@ describe('physical goal mod', () => {
     const cwd = repo(); const h = harness();
     const snapshot = await h.goal.open(context(cwd)).verification!(async () => undefined)
       .snapshotOracle!({ goalId: 'orphan', gate: matching ? 'true' : 'false', files: [] });
-    const result = await runGoal({ intent: 'orphan', gate: 'true', dryRun: true }, context(cwd), h.services);
-    expect(result.exitCode).toBe(matching ? 0 : 1);
+    if (matching) await prepareGoal({ intent: 'orphan', gate: 'true' }, cwd, h);
+    else expect((await runGoal({ intent: 'orphan', gate: 'true' }, context(cwd), h.services)).exitCode).toBe(1);
     expect(readFileSync(join(snapshot.dir, 'gate.txt'), 'utf8')).toBe(snapshot.gate);
     expect(readFileSync(join(snapshot.dir, 'hash.txt'), 'utf8')).toBe(snapshot.hash);
     expect(h.dispatch).not.toHaveBeenCalled();
@@ -2579,9 +2636,9 @@ describe('physical goal mod', () => {
     const controller = new AbortController();
     const legacy = reason === 'legacy-cancel';
     if (legacy) {
-      await runGoal({ id: 'probe-attempt', intent: 'probe attempt', gate: 'true', dryRun: true,
+      await prepareGoal({ id: 'probe-attempt', intent: 'probe attempt', gate: 'true',
         tasks: [{ id: 'x', source: 'Implement proof', verify: 'test -f proof.txt' }],
-      }, context(cwd), h.services);
+      }, cwd, h);
       const prior = structuredClone(h.state.get('goals/probe-attempt'));
       prior.payload.tasks[0].attempts = 1;
       h.state.set('goals/probe-attempt', prior);
@@ -2957,16 +3014,16 @@ describe('physical goal mod', () => {
 
   it.each(['fresh', 'explicit', 'collision', 'lost-state'] as const)('separates supervised startup from recovery: %s', async kind => {
     const cwd = repo(); const h = harness();
-    const input = { id: 'supervised-identity', intent: 'supervised identity', gate: 'true', dryRun: true };
-    if (kind === 'collision') expect((await runGoal(input, context(cwd), h.services)).exitCode).toBe(0);
+    const input = { id: 'supervised-identity', intent: 'supervised identity', gate: 'true' };
+    if (kind === 'collision') await prepareGoal(input, cwd, h);
     vi.mocked(h.services.state.write).mockClear();
     let launches = 0;
     const runChild = vi.fn(async (args: readonly string[]) => {
       launches += 1;
       if (kind === 'lost-state' && launches === 1) return { exitCode: 137, outputTail: 'crashed before checkpoint' };
       const marker = args.indexOf('--supervisor-run-id');
-      const child = await runGoal({ ...input, resume: args.includes('--resume'),
-        ...(marker >= 0 ? { supervisorRunId: args[marker + 1] } : {}) }, context(cwd), h.services);
+      const child = await runPreparedChild({ ...input, resume: args.includes('--resume'),
+        ...(marker >= 0 ? { supervisorRunId: args[marker + 1] } : {}) }, cwd, h);
       if (kind === 'fresh' && launches === 1) {
         expect(child.exitCode).toBe(0);
         h.state.get('goals/supervised-identity').payload.spentUsd = 0.25;
@@ -3009,8 +3066,8 @@ describe('physical goal mod', () => {
 
   it.each(['acquisition', 'after-crash'] as const)('does not adopt a competing checkpoint during supervised %s', async phase => {
     const cwd = repo(); const h = harness();
-    const input = { id: 'shared-startup', intent: 'original run', gate: 'true', dryRun: true };
-    expect((await runGoal({ ...input, intent: 'competing run' }, context(cwd), h.services)).exitCode).toBe(0);
+    const input = { id: 'shared-startup', intent: 'original run', gate: 'true' };
+    await prepareGoal({ ...input, intent: 'competing run' }, cwd, h);
     const saved = JSON.stringify(h.state.get('goals/shared-startup'));
     vi.mocked(h.services.state.write).mockClear();
     if (phase === 'acquisition') vi.mocked(h.services.state.read).mockResolvedValueOnce(undefined);
@@ -3018,8 +3075,8 @@ describe('physical goal mod', () => {
     const runChild = vi.fn(async (args: readonly string[]) => {
       if (++launches === 1 && phase === 'after-crash') return { exitCode: 137, outputTail: 'crashed before checkpoint' };
       const marker = args.indexOf('--supervisor-run-id');
-      const child = await runGoal({ ...input, resume: args.includes('--resume'),
-        ...(marker >= 0 ? { supervisorRunId: args[marker + 1] } : {}) }, context(cwd), h.services);
+      const child = await runPreparedChild({ ...input, resume: args.includes('--resume'),
+        ...(marker >= 0 ? { supervisorRunId: args[marker + 1] } : {}) }, cwd, h);
       return { exitCode: child.exitCode, outputTail: child.stderr ?? child.stdout ?? '' };
     });
     const out = await runGoalSupervisor({ ...input, maxRestarts: 2 }, {
@@ -3264,6 +3321,44 @@ describe('physical goal mod', () => {
     }
     const seats = new Set(scenario.reviewers.split(',')).size;
     expect((out.result as any).state.spentUsd).toBeCloseTo(0.1 + seats * 0.2 + (scenario.judge ? 0.3 : 0));
+  });
+
+  const needsCheckFinding = (problem: string) => `<!--AGON_REVIEW_FINDINGS_v1-->\n\`\`\`json\n${JSON.stringify([{ file: 'first.txt', lines: '1', severity: 'blocking', blocking: true, confidence: 0.8, problem, minimalFix: 'none' }])}\n\`\`\``;
+
+  it('the adjudicator clears a review after seeing only the first 100K of a diff the configured limit allows', async () => {
+    const cwd = repo(); const h = harness({}, () => 0.1);
+    h.dispatch.mockImplementation(async (_id: string, prompt: string, invocation: any, options: any) => {
+      if (options.mode === 'agent') {
+        writeFileSync(join(invocation.cwd, 'first.txt'), `${'p'.repeat(150_000)}\nTAIL_OF_DIFF\n`);
+        return { exitCode: 0, stdout: 'done', stderr: '', timedOut: false, costUsd: 0.1 };
+      }
+      if (prompt.startsWith('Adjudicate')) return { exitCode: 0, stdout: '{"blocking":false,"reason":"seen all"}', stderr: '', timedOut: false, costUsd: 0.1 };
+      return { exitCode: 0, stdout: needsCheckFinding('claimed issue'), stderr: '', timedOut: false, costUsd: 0.1 };
+    });
+    await runGoal({ intent: 'large adjudication', gate: 'true', requireTests: false, engine: 'builder', reviewEngines: 'reviewer', judge: 'reviewer', maxAttempts: 1 },
+      { ...context(cwd), config: { reviewMaxDiffChars: 300_000 } }, h.services);
+    const adjudications = h.dispatch.mock.calls.map(call => call[1]).filter(prompt => prompt.startsWith('Adjudicate'));
+    expect(adjudications).toHaveLength(1);
+    expect(adjudications[0]).toContain('TAIL_OF_DIFF');
+  });
+
+  it('the adjudicator can clear a blocker from evidence cut mid-JSON instead of failing safe with the reason', async () => {
+    const cwd = repo(); const h = harness({}, () => 0.1);
+    h.dispatch.mockImplementation(async (_id: string, prompt: string, invocation: any, options: any) => {
+      if (options.mode === 'agent') {
+        writeFileSync(join(invocation.cwd, 'first.txt'), 'yes\n');
+        return { exitCode: 0, stdout: 'done', stderr: '', timedOut: false, costUsd: 0.1 };
+      }
+      if (prompt.startsWith('Adjudicate')) return { exitCode: 0, stdout: '{"blocking":false,"reason":"saw part"}', stderr: '', timedOut: false, costUsd: 0.1 };
+      return { exitCode: 0, stdout: needsCheckFinding('e'.repeat(60_000)), stderr: '', timedOut: false, costUsd: 0.1 };
+    });
+    const out = await runGoal({ intent: 'partial evidence', gate: 'true', requireTests: false, engine: 'builder', reviewEngines: 'reviewer', judge: 'reviewer', maxAttempts: 1 },
+      { ...context(cwd), config: { reviewMaxDiffChars: 40_000 } }, h.services);
+    expect(h.dispatch.mock.calls.some(call => call[1].startsWith('Adjudicate'))).toBe(false);
+    expect(out.exitCode).toBe(1);
+    const events = (out.result as any).state.events;
+    expect(events.find((entry: any) => entry.type === 'review-adjudication-failed').detail).toContain('reviewMaxDiffChars');
+    expect(events.find((entry: any) => entry.type === 'review-block').detail).toContain('reviewMaxDiffChars');
   });
 
   it.each([

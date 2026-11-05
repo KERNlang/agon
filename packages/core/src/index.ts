@@ -55,7 +55,8 @@ export {
 export type { ApplyLockInfo, ApplyLockResult } from './blocks/worktree-lock.js';
 export { withFileLock } from '@kernlang/agon-support-persistence';
 export type { FileLockInfo } from '@kernlang/agon-support-persistence';
-export { spawnWithTimeout, spawnStream } from './blocks/process.js';
+export { spawnWithTimeout, spawnStream, planPromptDelivery, decodeEventStreamOutput } from './blocks/process.js';
+export { capAdvisoryDiff, reviewMaxDiffChars } from '@kernlang/agon-support-verification';
 export type { SpawnOptions } from './blocks/process.js';
 export {
   buildForgePrompt, buildCritiquePrompt, buildSynthesisPrompt,
@@ -161,7 +162,7 @@ export type {
 } from '@kernlang/agon-support-persistence';
 export { safeAgentVisibleText } from './api/agent-visible.js';
 // ── Engine dispatch isolation ──
-export { resolveIsolationMode, planEngineIsolation, isValidIsolationMode, ISOLATION_MODES } from './signals/isolation.js';
+export { resolveIsolationMode, planEngineIsolation, planRepoConfigGuard, isValidIsolationMode, ISOLATION_MODES } from './signals/isolation.js';
 export type { EngineIsolationPlan } from './signals/isolation.js';
 // ── Tool System ──
 export type { ToolResult, ToolContext, ToolHandler, ToolDefinition, ToolCall, ToolCallResult, PermissionDecision, FileState as ToolFileState, ParsedPermissionRule, PermissionRuleSet, ToolHookDef, ParsedToolHooks } from './models/tool-types.js';

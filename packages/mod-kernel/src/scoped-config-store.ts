@@ -11,12 +11,17 @@ export interface ConfigMemoEntry<T> {
   result: T;
 }
 
+export interface ScopedConfigSources {
+  readonly localPath: string | null;
+  readonly privateLocalPath: string | null;
+}
+
 export interface ScopedConfigStoreOptions<T extends object> {
   globalPath(): string;
   readonly localName: string;
   readonly privateLocalName: string;
   /** The caller owns defaults, scope policy, and value normalization. */
-  merge(global: Partial<T>, local: Partial<T>, privateLocal: Partial<T>): T;
+  merge(global: Partial<T>, local: Partial<T>, privateLocal: Partial<T>, sources: ScopedConfigSources): T;
   /** Keep the existing synchronous cross-process lock at the host boundary. */
   withLock(path: string, action: () => void): void;
   /** Apply owner policy inside the lock, before the atomic write. */
@@ -90,7 +95,7 @@ export function createScopedConfigStore<T extends object>(options: ScopedConfigS
       return structuredClone(memo.result);
     }
     const [global, local, privateLocal] = sources.map((source, index) => parseConfigSource<Partial<T>>(paths[index], source.bytes) ?? {});
-    const result = options.merge(global, local, privateLocal);
+    const result = options.merge(global, local, privateLocal, { localPath, privateLocalPath: privatePath });
     const globalMtime = statMtimeOrZero(globalPath);
     const localMtime = localPath ? statMtimeOrZero(localPath) : 0;
     const localPrivateMtime = privatePath ? statMtimeOrZero(privatePath) : 0;

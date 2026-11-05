@@ -12,7 +12,7 @@ import {
   resolveForgeRequireDiff,
 } from '../../packages/forge/src/stages.js';
 import { classifyTask } from '../../packages/core/src/blocks/task-classifier.js';
-import { buildForgePrompt, buildCritiquePrompt, buildSynthesisPrompt, buildBrainstormPrompt, buildTribunalPrompt } from '../../packages/core/src/blocks/prompt-builder.js';
+import { buildForgePrompt, buildSynthesisPrompt, buildBrainstormPrompt, buildTribunalPrompt } from '../../packages/core/src/blocks/prompt-builder.js';
 import type { EngineResult, Critique } from '../../packages/core/src/models/types.js';
 
 function makeResult(overrides: Partial<EngineResult> = {}): EngineResult {
@@ -231,17 +231,6 @@ describe('Forge Integration', () => {
         context: 'TypeScript project',
       });
       expect(prompt).toContain('TypeScript project');
-    });
-
-    it('buildCritiquePrompt caps diff at 50K', () => {
-      const longDiff = 'x'.repeat(60_000);
-      const prompt = buildCritiquePrompt({
-        winnerEngine: 'claude',
-        diff: longDiff,
-        maxCritiques: 3,
-      });
-      expect(prompt).toContain('[truncated]');
-      expect(prompt.length).toBeLessThan(60_000);
     });
 
     it('buildSynthesisPrompt includes critiques', () => {

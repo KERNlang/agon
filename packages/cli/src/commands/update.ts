@@ -8,8 +8,8 @@ export const DEFAULT_UPDATE_PACKAGE = '@kernlang/agon';
 
 export async function runManagedUpdate(version: string | undefined, options: { plan?: boolean; offline?: boolean; cache?: string } = {}): Promise<number> {
   const requested = version?.trim() || 'latest';
-  if (requested !== 'latest' && requested !== '1.0.0') {
-    throw new Error(`This release candidate can transactionally update only to its bundled release set (1.0.0), not ${requested}.`);
+  if (requested !== 'latest' && requested !== VERSION) {
+    throw new Error(`This release can transactionally update only to its bundled release set (${VERSION}), not ${requested}.`);
   }
   await runManagedSetup({ plan: options.plan, offline: options.offline, cache: options.cache }, { preserveExistingState: true });
   return 0;

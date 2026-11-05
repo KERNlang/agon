@@ -43,6 +43,7 @@ AGON-GOAL-DESIGN.md
 scripts/guard/engine-pool-rfc.md
 .agon/
 .agon.local.json
+.claude/security-audits/
 .CLAUDE.md
 .CLAUDE
 .Agent.md
@@ -82,3 +83,4 @@ GO-LIVE-PLAN.local.md
 # Machine-local CLI cache (absolute user paths) - never track
 cache/
 .agon-goals/
+release-tarballs/

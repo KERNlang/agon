@@ -13,14 +13,14 @@ import { runConquerWorkflow } from './workflow.js';
 import { runBrainstorm } from '@kernlang/agon-mod-brainstorm';
 import type { BrainstormModServices } from '@kernlang/agon-mod-brainstorm';
 import{existsSync}from'node:fs';import type{AgonModFactory,CommandResult,Dispose,InvocationContext,Json,Registrar}from'@kernlang/agon-mod-api';import{runAgentTask}from'@kernlang/agon-mod-agent';import{runNero}from'@kernlang/agon-mod-nero';import{runTribunal}from'@kernlang/agon-mod-tribunal';import{runCouncil}from'@kernlang/agon-mod-council';import{runFitnessCommand}from'@kernlang/agon-support-verification';
-const schema=Object.freeze({type:'object',additionalProperties:true,properties:{task:{type:'string'},builder:{type:'string'},engines:{type:'string'},gate:{type:'string'},gateTimeout:{type:'string'},maxTurns:{type:'string'},timeout:{type:'string'},maxHours:{type:'string'},push:{type:'boolean'},label:{type:'string'},_:{type:'array',items:{type:'string'}}}})as Readonly<Record<string,Json>>;const cli=Object.freeze({positionals:['task'],aliases:{builder:'b',engines:'e',gate:'g'},descriptions:{task:'Task driven autonomously until the explicit gate passes', builder: "Builder engine (codex|claude|agy). Default: codex if active, else the first active engine.", engines: "Advisor pool for consults (comma-separated). Default: active orchestration engines minus the builder.", gate: "REQUIRED — the acceptance gate command (build/typecheck/lint/tests), e.g. \"npm run build && npm test\". This IS the done-oracle.", gateTimeout: "Per-gate timeout in seconds (default 1800).", maxTurns: "Max builder turns (default 40).", timeout: "Per-builder-turn timeout in seconds (default 600).", maxHours: "Wall-clock cap in hours (default: none).", push: "On success, commit and push the isolated conquer branch (prints a PR hint). Default: leave the isolated branch/worktree for review.", label: "Human-readable suffix baked into the run dir name." }});const text=(v:Json|undefined)=>typeof v==='string'?v.trim():'';
+const schema=Object.freeze({type:'object',additionalProperties:true,properties:{task:{type:'string'},builder:{type:'string'},engines:{type:'string'},gate:{type:'string'},gateTimeout:{type:'string'},maxTurns:{type:'string'},maxAdversaryRejections:{type:'string'},timeout:{type:'string'},maxHours:{type:'string'},push:{type:'boolean'},label:{type:'string'},_:{type:'array',items:{type:'string'}}}})as Readonly<Record<string,Json>>;const cli=Object.freeze({positionals:['task'],aliases:{builder:'b',engines:'e',gate:'g'},descriptions:{task:'Task driven autonomously until the explicit gate passes', builder: "Builder engine (codex|claude|agy). Default: codex if active, else the first active engine.", engines: "Advisor pool for consults (comma-separated). Default: active orchestration engines minus the builder.", gate: "REQUIRED — the acceptance gate command (build/typecheck/lint/tests), e.g. \"npm run build && npm test\". This IS the done-oracle.", gateTimeout: "Per-gate timeout in seconds (default 1800).", maxTurns: "Max builder turns (default 40).", maxAdversaryRejections: "Stop for human review after N gate-green rejections with a reproduced counterexample (default 3, or mods.agon.conquer.maxAdversaryRejections in config; 0 = only the other caps apply).", timeout: "Per-builder-turn timeout in seconds (default 600).", maxHours: "Wall-clock cap in hours (default: none).", push: "On success, commit and push the isolated conquer branch (prints a PR hint). Default: leave the isolated branch/worktree for review.", label: "Human-readable suffix baked into the run dir name." }});const text=(v:Json|undefined)=>typeof v==='string'?v.trim():'';
 const cesarSchema=Object.freeze({type:'object',additionalProperties:false,required:['task','gate'],properties:{task:{type:'string',minLength:1},gate:{type:'string',minLength:1},builder:{type:'string'},engines:{type:'array',items:{type:'string',minLength:1}},maxTurns:{type:'number'}}})as Readonly<Record<string,Json>>;
 const tuiSchema = Object.freeze({
   ...schema,
   properties: {
     ...(schema.properties as Record<string, Json>),
     engineIds: { type: 'array', items: { type: 'string' } },
-    maxTurns: { type: 'number' }, gateTimeout: { type: 'number' },
+    maxTurns: { type: 'number' }, maxAdversaryRejections: { type: 'number' }, gateTimeout: { type: 'number' },
     maxHours: { type: 'number' }, turnTimeout: { type: 'number' },
   },
 }) as Readonly<Record<string, Json>>;
@@ -34,7 +34,7 @@ function normalizeConquerInput(raw: Readonly<Record<string, Json | undefined>>):
   if (input.timeout === undefined && input.turnTimeout !== undefined) {
     input.timeout = input.turnTimeout;
   }
-  for (const key of ['maxTurns', 'gateTimeout', 'timeout', 'maxHours']) {
+  for (const key of ['maxTurns', 'maxAdversaryRejections', 'gateTimeout', 'timeout', 'maxHours']) {
     const value = input[key];
     if (typeof value !== 'number') continue;
     // Integer options must not become exponent notation before parseInt.
@@ -42,6 +42,13 @@ function normalizeConquerInput(raw: Readonly<Record<string, Json | undefined>>):
       ? BigInt(Math.trunc(value)).toString() : String(value);
   }
   return input;
+}
+const DEFAULT_MAX_ADVERSARY_REJECTIONS = 3;
+const ADVERSARY_UNSATISFIED_MESSAGE = 'Gate green, adversary unsatisfied: decide at the human merge gate whether the counterexample is in scope.';
+function adversaryRejectionLimit(raw: Json | undefined): number | undefined {
+  if (raw === undefined) return DEFAULT_MAX_ADVERSARY_REJECTIONS;
+  const parsed = typeof raw === 'number' || (typeof raw === 'string' && raw.trim() !== '') ? Number(raw) : NaN;
+  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : undefined;
 }
 export interface ConquerModServices extends BrainstormModServices {
   readonly conquer?: ConquerHostServices;
@@ -72,7 +79,7 @@ export async function runConquerTask(raw:Json,context:ConquerInvocationContext,s
   }
   if (!builder) return { exitCode: 1, stderr: 'Builder is not active: (none)\n' };
   advisors = [...new Set(advisors)].filter(id => id !== builder);
-  const maxTurns=Number.parseInt(String(input.maxTurns??'40'),10);if(Number.isNaN(maxTurns)||maxTurns<1)return{exitCode:1,stderr:`Invalid --max-turns: ${input.maxTurns}\n`};let maxHours=0;if(input.maxHours!==undefined&&String(input.maxHours).trim()!==''){maxHours=Number.parseFloat(String(input.maxHours));if(Number.isNaN(maxHours)||maxHours<0)return{exitCode:1,stderr:`Invalid --max-hours: ${input.maxHours}\n`};}const timeoutRaw=Number.parseInt(String(input.timeout??'600'),10);const timeout=Number.isFinite(timeoutRaw)&&timeoutRaw>0?String(input.timeout??'600'):'600';const gateTimeoutRaw=Number.parseInt(String(input.gateTimeout??'1800'),10);const gateTimeout=Number.isFinite(gateTimeoutRaw)&&gateTimeoutRaw>0?gateTimeoutRaw:1800;
+  const maxTurns=Number.parseInt(String(input.maxTurns??'40'),10);if(Number.isNaN(maxTurns)||maxTurns<1)return{exitCode:1,stderr:`Invalid --max-turns: ${input.maxTurns}\n`};const maxAdversaryRejections=adversaryRejectionLimit(input.maxAdversaryRejections??context.config?.maxAdversaryRejections);if(maxAdversaryRejections===undefined)return{exitCode:1,stderr:`Invalid maxAdversaryRejections: ${input.maxAdversaryRejections??context.config?.maxAdversaryRejections}\n`};let maxHours=0;if(input.maxHours!==undefined&&String(input.maxHours).trim()!==''){maxHours=Number.parseFloat(String(input.maxHours));if(Number.isNaN(maxHours)||maxHours<0)return{exitCode:1,stderr:`Invalid --max-hours: ${input.maxHours}\n`};}const timeoutRaw=Number.parseInt(String(input.timeout??'600'),10);const timeout=Number.isFinite(timeoutRaw)&&timeoutRaw>0?String(input.timeout??'600'):'600';const gateTimeoutRaw=Number.parseInt(String(input.gateTimeout??'1800'),10);const gateTimeout=Number.isFinite(gateTimeoutRaw)&&gateTimeoutRaw>0?gateTimeoutRaw:1800;
   if (!services.conquer || !services.runs) return { exitCode: 1, stderr: 'Conquer host capabilities are unavailable. Restart with a compatible modular host.\n' };
   const capabilities = await services.conquer.open(context);
   if (input.push === true) {
@@ -112,7 +119,7 @@ export async function runConquerTask(raw:Json,context:ConquerInvocationContext,s
     const buildContext = { ...nestedContext, cwd: retained.path };
     const workflow = await runConquerWorkflow({
       task, builderEngine: builder, outputDir: run.path, signal: context.signal,
-      caps: { maxTurns, maxWallClockMs: maxHours * 3_600_000 },
+      caps: { maxTurns, maxWallClockMs: maxHours * 3_600_000, maxAdversaryRejections },
       onTurn: turn => {
         // Keep cancelled-result persistence, but do not publish stale progress.
         if (!context.signal.aborted) notify({ type: 'conquer:turn', data: { ...turn } });
@@ -183,6 +190,7 @@ export async function runConquerTask(raw:Json,context:ConquerInvocationContext,s
     const status = context.signal.aborted || gateAborted ? 'cancelled'
       : workflow.stopReason === 'done' ? 'completed'
       : workflow.stopReason === 'builder-failed' ? 'builder_failed'
+      : workflow.adversaryUnsatisfied ? 'adversary_unsatisfied'
       : workflow.stopReason === 'cap-time' ? 'time_budget_exceeded' : 'turn_budget_exceeded';
     let publication: ConquerPublicationResult | undefined;
     let pullRequest: ConquerPullRequest | undefined;
@@ -254,6 +262,12 @@ export async function runConquerTask(raw:Json,context:ConquerInvocationContext,s
       result: { ...result, receiptId } as unknown as Json,
       failure: { code: 'CONQUER_PUBLICATION_FAILED', message: publication.message, retryable: false },
     };
+    if (status === 'adversary_unsatisfied') return {
+      exitCode: 1,
+      stderr: `${ADVERSARY_UNSATISFIED_MESSAGE} Receipt: ${receiptId}\nCounterexample: ${workflow.counterexample}${workflow.observed ? `\nObserved: ${workflow.observed}` : ''}\nNothing was merged. Work preserved on ${retained.branch} at ${retained.path}.\n`,
+      result: { ...result, receiptId } as unknown as Json,
+      failure: { code: 'CONQUER_ADVERSARY_UNSATISFIED', message: ADVERSARY_UNSATISFIED_MESSAGE, retryable: false },
+    };
     return {
       exitCode: 1, stderr: `Conquer stopped without satisfying completion requirements. Receipt: ${receiptId}\nWork preserved on ${retained.branch} at ${retained.path}.\n`,
       result: { ...result, receiptId } as unknown as Json,
@@ -316,6 +330,7 @@ function parseConquer(value: string) {
   };
   const integer = (raw: string) => Number.parseInt(raw, 10);
   const maxTurns = numeric('max-turns', integer, 1);
+  const maxAdversaryRejections = numeric('max-adversary-rejections', integer, 0);
   const gateTimeout = numeric('gate-timeout', integer, 1, 1800);
   const maxHours = numeric('max-hours', Number.parseFloat, 0);
   const turnTimeout = numeric('timeout', integer, 1, 600);
@@ -325,7 +340,7 @@ function parseConquer(value: string) {
   for (const range of consumed.sort((left, right) => right.start - left.start)) {
     rest = rest.slice(0, range.start) + ' ' + rest.slice(range.end);
   }
-  return { task: rest.replace(/\s+/g, ' ').trim(), gate, builder, engineIds, maxTurns, gateTimeout, maxHours, turnTimeout, ...(push ? { push } : {}) };
+  return { task: rest.replace(/\s+/g, ' ').trim(), gate, builder, engineIds, maxTurns, ...(maxAdversaryRejections === undefined ? {} : { maxAdversaryRejections }), gateTimeout, maxHours, turnTimeout, ...(push ? { push } : {}) };
 }
 export const createMod:AgonModFactory=services=>Object.freeze({apiVersion:'1'as const,async activate(registrar:Registrar):Promise<Dispose>{const d:Dispose[]=[];const command={description:'Supervised autonomous build in an isolated worktree with an explicit done oracle',inputSchema:schema,cli,run:(input:Json,context:InvocationContext)=>runConquerTask(input,context,services)};d.push(registrar.command('cli',{id:'cliCommands:0013',...command,
   run: (input, context) => runConquerCli(input, context, command.run, (services as ConquerModServices).conquer?.cliOutput),

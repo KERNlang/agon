@@ -26,11 +26,13 @@ import {
 import { assignSeatRoles, buildSeatPrompt, gatherReviewPromptContext } from "./prompt.js";
 import { runSeat } from "./seat.js";
 import { runSplitReview } from "./split.js";
+import { extraContextReport, loadExtraContext, type ExtraContext } from "./context-paths.js";
+import { isMultiTreeInput, runMultiTreeReview, TREE_DESCRIPTIONS, TREE_INPUT_PROPERTIES, TREE_REPEATED_OPTIONS } from "./trees.js";
 const schema = Object.freeze({
   type: "object",
   additionalProperties: true,
   properties: {
-    target: { type: "string", default: "uncommitted" },
+    target: { type: "string" },
     base: { type: "string" },
     engine: { type: "string" },
     engines: { type: "string" },
@@ -51,6 +53,7 @@ const schema = Object.freeze({
     "mutate-test": { type: "string" },
     "mutate-build": { type: "string" },
     "mutate-lens": { type: "string" },
+    ...TREE_INPUT_PROPERTIES,
     verbose: { type: "boolean" },
     _: { type: "array", items: { type: "string" } },
   },
@@ -59,8 +62,10 @@ const cli = Object.freeze({
   positionals: ["target"],
   aliases: { engines: "e", maxParallel: "p", verbose: "v" },
   ttyDefaults: { format: "text" },
+  repeatedOptions: TREE_REPEATED_OPTIONS,
   descriptions: {
-    target: "uncommitted, branch:NAME, commit:SHA, or range:BASE...TARGET",
+    ...TREE_DESCRIPTIONS,
+    target: "uncommitted (the default), branch:NAME, commit:SHA, or range:BASE...TARGET",
     base: "Explicit diff base ref. With \"uncommitted\": diff working tree vs BASE. With \"branch:NAME\": diff BASE...NAME (checkout-independent).",
     engine: "Use one specific engine and bypass automatic risk routing",
     engines: "Use a strict explicit engine subset and bypass automatic risk routing; invalid or unavailable entries abort rather than silently shrinking it",
@@ -103,11 +108,14 @@ export async function runReview(
   raw: Json,
   context: Parameters<ModServices["engines"]["dispatch"]>[2],
   services: ModServices,
-  evidence: { readonly mutationEvidence?: string; readonly batch?: ReviewTarget } = {},
+  evidence: { readonly mutationEvidence?: string; readonly batch?: ReviewTarget; readonly extraContext?: ExtraContext } = {},
 ): Promise<CommandResult> {
   const input = raw as Record<string, Json>;
   const format = parseReviewFormat(input.format);
   if (!format) return { exitCode: 1, stderr: 'Unknown review format. Use json, text, or sarif.\n' };
+  if (isMultiTreeInput(input)) return runMultiTreeReview(input, format, context, services, (treeInput, treeContext, extraContext) => runReview(treeInput, treeContext, services, { ...evidence, ...(extraContext ? { extraContext } : {}) }));
+  const extra = evidence.extraContext ?? loadExtraContext(input, context);
+  if (extra && "error" in extra) return { exitCode: 1, stderr: `${extra.error}\n` };
   const maxDiffChars = seconds(input["max-diff-chars"]);
   if (maxDiffChars === null) return { exitCode: 1, stderr: 'Review max-diff-chars must be a positive integer.\n' };
   let target = evidence.batch;
@@ -124,7 +132,7 @@ export async function runReview(
       );
       if (split && resolved.diff.length > limit) {
         return await runSplitReview(resolved, limit, input, format, context, services,
-          (batch, batchInput) => runReview(batchInput, context, services, { ...evidence, batch }));
+          (batch, batchInput) => runReview(batchInput, context, services, { ...evidence, ...(extra ? { extraContext: extra } : {}), batch }));
       }
       target = { ...resolved, maxDiffChars: limit };
     } catch (error) {
@@ -198,7 +206,7 @@ export async function runReview(
   const seats = await mapWithLimit(engines, maxParallel, (engineId) => runSeat({
       engineId,
       ...(roles.has(engineId) ? { role: roles.get(engineId) } : {}),
-      prompt: buildSeatPrompt({ label: target.label, diff, roleId: roles.get(engineId), mutationEvidence }, grounding),
+      prompt: buildSeatPrompt({ label: target.label, diff, roleId: roles.get(engineId), mutationEvidence, ...(extra ? { extraContext: extra.text } : {}) }, grounding),
       ...(seatTimeout !== undefined ? { timeoutSeconds: seatTimeout } : {}),
       ...(deadlineSeconds !== undefined ? { maxWallSeconds: deadlineSeconds } : {}),
       deadline,
@@ -236,6 +244,7 @@ export async function runReview(
     target: target.label,
     diffSize: { chars: target.diff.length, maxChars: target.maxDiffChars },
     ...(mutationEvidence ? { mutationEvidence } : {}),
+    ...extraContextReport(extra),
     engines,
     roles: Object.fromEntries(roles),
     ...(routed ? { routing: routingSummary(routed, manifestPath) } : {}),

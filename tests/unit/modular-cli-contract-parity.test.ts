@@ -213,6 +213,15 @@ describe('physical CLI contract parity', () => {
       expected.args.split = { type: 'boolean', required: false, aliases: [] };
       expect(expected.args).not.toHaveProperty('max-batches');
       expected.args['max-batches'] = { type: 'string', required: false, aliases: [] };
+      for (const flag of ['worktree', 'max-trees', 'context', 'context-max-chars']) {
+        expect(expected.args).not.toHaveProperty(flag);
+        expected.args[flag] = { type: 'string', required: false, aliases: [] };
+      }
+      expect(expected.args).not.toHaveProperty('all-worktrees');
+      expected.args['all-worktrees'] = { type: 'boolean', required: false, aliases: [] };
+      // Multi-tree review must tell an omitted target from an explicit `uncommitted`; runReview still defaults to it.
+      expect((expected.args.target as { default?: string }).default).toBe('uncommitted');
+      delete (expected.args.target as { default?: string }).default;
     }
     if (name === 'leaderboard' || name === 'ratings') {
       expect(expected.args).not.toHaveProperty('json');
@@ -227,6 +236,14 @@ describe('physical CLI contract parity', () => {
       expected.args.maxAdversaryRejections = { type: 'string', required: false, aliases: [] };
     }
     expect(contractDiff(actual, expected)).toEqual([]);
+  });
+
+  it('turns one review path into a bare string, splits one on a comma, or hides an omitted target behind a default', async () => {
+    const one = await parseGeneratedCommandLine('review', '--worktree ../one');
+    expect(one.worktree).toEqual(['../one']);
+    expect(one.target).toBeUndefined();
+    const repeated = await parseGeneratedCommandLine('review', 'branch:main --worktree "../with space" --worktree ../b,c --context docs --context "my notes.md"');
+    expect(repeated).toMatchObject({ target: 'branch:main', worktree: ['../with space', '../b,c'], context: ['docs', 'my notes.md'] });
   });
 
   it('executes a physical contribution through the generated command', async () => {

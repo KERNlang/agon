@@ -41,7 +41,7 @@ function oversizedFilesMessage(label: string, oversized: readonly FileDiff[], li
 
 type BatchReport = Record<string, unknown> & Partial<ReviewReport> & { findings?: unknown[]; engines?: string[]; roles?: Record<string, string> };
 
-function mergeConsensus(reports: readonly ConsensusReport[]): ConsensusReport | undefined {
+export function mergeConsensus(reports: readonly ConsensusReport[], unitLabel: (index: number) => string = index => `batch ${index + 1}`): ConsensusReport | undefined {
   if (!reports.length) return undefined;
   const all = <K extends 'findings' | 'verified' | 'needsCheck' | 'speculative' | 'nits' | 'blockers' | 'engineFailures'>(key: K) =>
     reports.flatMap(report => report[key] as unknown[]) as unknown as ConsensusReport[K];
@@ -53,7 +53,7 @@ function mergeConsensus(reports: readonly ConsensusReport[]): ConsensusReport | 
     okCount: reports.reduce((sum, report) => sum + report.okCount, 0),
     autoBlock,
     needsJudge: !autoBlock && reports.some(report => report.needsJudge),
-    summary: reports.map((report, index) => `batch ${index + 1}: ${report.summary}`).join(' | '),
+    summary: reports.map((report, index) => `${unitLabel(index)}: ${report.summary}`).join(' | '),
     degraded: reports.find(report => report.degraded)?.degraded,
   };
 }

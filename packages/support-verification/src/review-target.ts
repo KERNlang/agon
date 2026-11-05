@@ -61,7 +61,7 @@ function assertSafeRef(value: string): void {
 function resolveCommit(ref: string, cwd: string): string {
   assertSafeRef(ref);
   return execFileSync('git', ['rev-parse', '--verify', '--end-of-options', `${ref}^{commit}`],
-    { cwd, encoding: 'utf8' }).trim();
+    { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 }
 
 /**
@@ -82,7 +82,7 @@ function refResolvesToCommit(ref: string, cwd: string): boolean {
 export function resolveAutoReviewBase(cwd: string, branch: string): string|null {
   const branchName = (ref: string) => ref.replace(/^refs\/(?:heads|remotes)\//, '').replace(/^origin\//, '');
   try {
-    const sym = execFileSync('git', ['symbolic-ref', 'refs/remotes/origin/HEAD'], { cwd: cwd, encoding: 'utf-8' }).trim();
+    const sym = execFileSync('git', ['symbolic-ref', 'refs/remotes/origin/HEAD'], { cwd: cwd, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
     if (sym) {
       // origin/main
       const cand = sym.replace(/^refs\/remotes\//, '');

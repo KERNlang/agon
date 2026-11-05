@@ -35,6 +35,7 @@ export function formatTurnUndoReport(report: TurnUndoReport): { type: 'success' 
   }
   if (report.untrackedWrites.length > 0) lines.push({ type: 'warning', message: `  NOT reverted: edits the engine ran with its own tools: ${report.untrackedWrites.join(', ')}` });
   if (report.otherActivity.length > 0) lines.push({ type: 'warning', message: `  NOT reverted: ${report.otherActivity.join(', ')} may have changed files.` });
+  if (report.failedButChanged.length > 0) lines.push({ type: 'warning', message: `  An edit reported failure but still changed: ${report.failedButChanged.join(', ')}` });
   if (report.remainingTurns > 0) lines.push({ type: 'info', message: `  ${plural(report.remainingTurns, 'earlier turn')} can still be undone.` });
   return lines;
 }
@@ -88,14 +89,23 @@ async function undoNamedCheckpoint(snapshotId: string, cwd: string, cb: Dispatch
   cb.dispatch({ type: 'success', message: `Checkpoint ${snapshot.id} reverted (${plural(result.filesReverted, 'file')}).` });
 }
 
-function patchIsNewerThanTurn(token: string): boolean {
-  const turnChangedAt = latestUndoTurnChangeAt();
-  if (turnChangedAt === null) return true;
+function patchModifiedAt(token: string): number | null {
   try {
-    return statSync(persistencePath('undo', `${token}.patch`)).mtimeMs >= turnChangedAt;
+    return statSync(persistencePath('undo', `${token}.patch`)).mtimeMs;
   } catch {
-    return true;
+    return null;
   }
+}
+
+function undoPatchToken(token: string, cwd: string, cb: DispatchCallbacks): void {
+  const undone = undoPatch(cwd, token, persistencePath('undo'));
+  if (!undone.ok) {
+    cb.dispatch({ type: 'error', message: undone.error ?? 'Undo failed' });
+    return;
+  }
+  cb.setLastUndoToken(null);
+  cb.dispatch({ type: 'success', message: 'Patch reverted successfully.' });
+  if (undone.warning) cb.dispatch({ type: 'warning', message: undone.warning });
 }
 
 export async function handleUndo(snapshotId: string, cb: DispatchCallbacks): Promise<void> {
@@ -108,16 +118,18 @@ export async function handleUndo(snapshotId: string, cb: DispatchCallbacks): Pro
     await undoNamedCheckpoint(snapshotId, cwd, cb);
     return;
   }
-  if (cb.lastUndoToken && patchIsNewerThanTurn(cb.lastUndoToken)) {
-    const undone = undoPatch(cwd, cb.lastUndoToken, persistencePath('undo'));
-    if (undone.ok) {
-      cb.dispatch({ type: 'success', message: 'Patch reverted successfully.' });
+  const token = cb.lastUndoToken;
+  if (token) {
+    const patchAt = patchModifiedAt(token);
+    if (patchAt === null) {
       cb.setLastUndoToken(null);
-      if (undone.warning) cb.dispatch({ type: 'warning', message: undone.warning });
     } else {
-      cb.dispatch({ type: 'error', message: undone.error ?? 'Undo failed' });
+      const turnAt = latestUndoTurnChangeAt();
+      if (turnAt === null || patchAt >= turnAt) {
+        undoPatchToken(token, cwd, cb);
+        return;
+      }
     }
-    return;
   }
   undoTurnOrReportEmpty(cwd, cb);
 }

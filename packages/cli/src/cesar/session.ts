@@ -696,6 +696,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
   const cwd = resolveWorkingDir();
   const fsc = getProjectFileStateCache(cwd);
   const toolResultCache = new Map<string, string>();
+  let toolResultCacheGeneration = undoGeneration();
   const nativeToolErrorRetries = new Map<string, number>();
   const CACHEABLE_TOOLS = new Set(['Grep', 'Glob']);
   const explorationMode = ctx.explorationMode ?? false;
@@ -980,7 +981,11 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
     // Dedup stable discovery tools. Do not cache Read here: the Read tool
     // performs mtime-aware dedup itself and must run on explicit re-read so
     // Edit/Write snapshots refresh after a file changes.
-    const cacheKey = `${undoGeneration()}:${name}:${JSON.stringify(args)}`;
+    if (toolResultCacheGeneration !== undoGeneration()) {
+      toolResultCache.clear();
+      toolResultCacheGeneration = undoGeneration();
+    }
+    const cacheKey = `${name}:${JSON.stringify(args)}`;
     const cached = CACHEABLE_TOOLS.has(name) ? toolResultCache.get(cacheKey) : undefined;
     if (cached !== undefined) return cached;
 

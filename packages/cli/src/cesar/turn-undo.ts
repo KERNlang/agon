@@ -1,10 +1,11 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { chmodSync, closeSync, fchmodSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync, writeSync } from 'node:fs';
+import { chmodSync, closeSync, fchmodSync, fchownSync, fstatSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync, writeSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 
-import { agonPath, getProjectFileStateCache, hasRedirection, hasSubstitution, isReadOnlyCommand, loadConfig, resolveRulePath } from '@kernlang/agon-core';
+import { agonPath, getProjectFileStateCache, loadConfig, resolveRulePath } from '@kernlang/agon-core';
 import type { ToolContext, ToolHandler, ToolResult } from '@kernlang/agon-core';
 
+import { bashMayMutate } from './bash-read-only.js';
 import { isBashToolName, isWriteToolName } from './brain-helpers.js';
 import { mutatedPathFromToolArgs } from './mutate-reflex.js';
 
@@ -13,15 +14,16 @@ const DEFAULT_MAX_FILE_BYTES = 2 * 1024 * 1024;
 const DEFAULT_MAX_TOTAL_BYTES = 64 * 1024 * 1024;
 const DEFAULT_MAX_AGE_HOURS = 168;
 const BINARY_SNIFF_BYTES = 8192;
+const RETAINED_COMMAND_CHARS = 200;
 const FILE_MUTATION_TOOLS = new Set(['Edit', 'MultiEdit', 'Write']);
 const JOBS_THAT_DO_NOT_EDIT = new Set(['brainstorm', 'team-brainstorm', 'tribunal', 'team-tribunal', 'review', 'council', 'campfire', 'think', 'synthesis', 'speculate', 'research', 'nero', 'mutate', 'chrome']);
 
 type PreState =
   | { kind: 'absent' }
-  | { kind: 'file'; hash: string; mode: number }
+  | { kind: 'file'; hash: string; mode: number; uid: number; gid: number }
   | { kind: 'unavailable'; reason: string; signature: string };
 
-type DiskState = { kind: 'absent' } | { kind: 'file'; hash: string } | { kind: 'other' };
+type DiskState = { kind: 'absent' } | { kind: 'file'; hash: string; size: number; mode: number; uid: number; gid: number } | { kind: 'other' };
 
 interface TrackedFile {
   path: string;
@@ -29,7 +31,11 @@ interface TrackedFile {
   aliases: Set<string>;
   pre: PreState;
   post?: DiskState;
+  inflight: number;
+  failedButChanged: boolean;
 }
+
+interface ToolEventRecord { target: Set<string>; key: string }
 
 interface UndoTurn {
   cwd: string;
@@ -38,6 +44,7 @@ interface UndoTurn {
   bash: Set<string>;
   observedWrites: Set<string>;
   otherActivity: Set<string>;
+  toolEvents: Map<string, ToolEventRecord>;
 }
 
 interface UndoSession {
@@ -61,6 +68,7 @@ export interface TurnUndoReport {
   bashCommands: string[];
   untrackedWrites: string[];
   otherActivity: string[];
+  failedButChanged: string[];
   remainingTurns: number;
   droppedTurns: number;
 }
@@ -147,7 +155,15 @@ function storeBlob(hash: string, bytes: Buffer, cwd: string, current: UndoTurn):
   const { maxTotalBytes } = undoLimits(cwd);
   while (totalBlobBytes() + bytes.length > maxTotalBytes && session.turns[0] && session.turns[0] !== current) dropOldestTurn();
   if (totalBlobBytes() + bytes.length > maxTotalBytes) return false;
-  writeFileSync(join(ensureSessionDir(cwd), hash), bytes, { mode: 0o600, flag: 'wx' });
+  const dir = ensureSessionDir(cwd);
+  const temp = join(dir, `${hash}.${randomUUID()}.tmp`);
+  try {
+    writeFileSync(temp, bytes, { mode: 0o600, flag: 'wx' });
+    renameSync(temp, join(dir, hash));
+  } catch (error) {
+    rmSync(temp, { force: true });
+    throw error;
+  }
   session.blobs.set(hash, bytes.length);
   return true;
 }
@@ -164,7 +180,7 @@ function currentTurn(cwd: string): UndoTurn | null {
   if (top && !session.boundaryPending) return top;
   if (top && isEmptyTurn(top)) session.turns.pop();
   session.boundaryPending = false;
-  const turn: UndoTurn = { cwd: resolve(cwd), lastChangeAt: Date.now(), files: new Map(), bash: new Set(), observedWrites: new Set(), otherActivity: new Set() };
+  const turn: UndoTurn = { cwd: resolve(cwd), lastChangeAt: Date.now(), files: new Map(), bash: new Set(), observedWrites: new Set(), otherActivity: new Set(), toolEvents: new Map() };
   session.turns.push(turn);
   while (session.turns.length > maxTurns) dropOldestTurn();
   return turn;
@@ -191,17 +207,18 @@ function capturePreState(path: string, realPath: string, turn: UndoTurn): PreSta
     if (bytes.subarray(0, BINARY_SNIFF_BYTES).includes(0)) return unavailable('binary file');
     const hash = sha256(bytes);
     if (!storeBlob(hash, bytes, turn.cwd, turn)) return unavailable('undoMaxTotalBytes storage limit reached');
-    return { kind: 'file', hash, mode: stat.mode & 0o7777 };
+    return { kind: 'file', hash, mode: stat.mode & 0o7777, uid: stat.uid, gid: stat.gid };
   } catch (error) {
     return unavailable(`snapshot failed: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
-function readDiskState(realPath: string): DiskState {
+function readDiskState(realPath: string, expectedSize?: number): DiskState {
   try {
     const stat = lstatSync(realPath);
     if (!stat.isFile()) return { kind: 'other' };
-    return { kind: 'file', hash: sha256(readFileSync(realPath)) };
+    const hash = expectedSize !== undefined && expectedSize !== stat.size ? '' : sha256(readFileSync(realPath));
+    return { kind: 'file', hash, size: stat.size, mode: stat.mode & 0o7777, uid: stat.uid, gid: stat.gid };
   } catch (error: any) {
     return error?.code === 'ENOENT' || error?.code === 'ENOTDIR' ? { kind: 'absent' } : { kind: 'other' };
   }
@@ -209,12 +226,13 @@ function readDiskState(realPath: string): DiskState {
 
 function matchesPre(pre: PreState, state: DiskState): boolean {
   if (pre.kind === 'absent') return state.kind === 'absent';
-  return pre.kind === 'file' && state.kind === 'file' && state.hash === pre.hash;
+  return pre.kind === 'file' && state.kind === 'file' && state.hash === pre.hash && state.mode === pre.mode && state.uid === pre.uid && state.gid === pre.gid;
 }
 
-function sameDiskState(a: DiskState | undefined, b: DiskState): boolean {
-  if (!a || a.kind !== b.kind) return false;
-  return a.kind !== 'file' || a.hash === (b as { hash: string }).hash;
+function driftSince(post: DiskState, current: DiskState): string | null {
+  if (current.kind === 'absent') return post.kind === 'absent' ? null : 'deleted since the turn';
+  if (post.kind !== 'file' || current.kind !== 'file' || post.size !== current.size || post.hash !== current.hash) return 'changed since the turn';
+  return post.mode === current.mode && post.uid === current.uid && post.gid === current.gid ? null : 'permissions or owner changed since the turn';
 }
 
 interface PendingMutation { turn: UndoTurn; file: TrackedFile; first: boolean }
@@ -227,22 +245,34 @@ function beginFileMutation(rawPath: string, cwd: string): PendingMutation | null
   const existing = turn.files.get(realPath);
   if (existing) {
     existing.aliases.add(path);
+    existing.inflight += 1;
     return { turn, file: existing, first: false };
   }
-  const file: TrackedFile = { path, realPath, aliases: new Set([path]), pre: capturePreState(path, realPath, turn) };
+  const file: TrackedFile = { path, realPath, aliases: new Set([path]), pre: capturePreState(path, realPath, turn), inflight: 1, failedButChanged: false };
   turn.files.set(realPath, file);
   return { turn, file, first: true };
 }
 
+function forgetFile(turn: UndoTurn, file: TrackedFile): void {
+  turn.files.delete(file.realPath);
+  turn.observedWrites.delete(file.realPath);
+  for (const alias of file.aliases) turn.observedWrites.delete(alias);
+  releaseUnreferencedBlobs();
+}
+
 function finishFileMutation({ turn, file, first }: PendingMutation, ok: boolean): void {
+  file.inflight -= 1;
   if (file.pre.kind === 'unavailable') {
-    if (first && !ok && statSignature(file.realPath) === file.pre.signature) turn.files.delete(file.realPath);
+    const unchanged = statSignature(file.realPath) === file.pre.signature;
+    if (!ok && !unchanged) file.failedButChanged = true;
+    if (first && !ok && unchanged && file.inflight === 0) forgetFile(turn, file);
     return;
   }
   const state = readDiskState(file.realPath);
+  if (!ok && (file.post ? driftSince(file.post, state) !== null : !matchesPre(file.pre, state))) file.failedButChanged = true;
   file.post = state;
-  if (first && matchesPre(file.pre, state)) {
-    turn.files.delete(file.realPath);
+  if (file.inflight === 0 && matchesPre(file.pre, state)) {
+    forgetFile(turn, file);
     return;
   }
   turn.lastChangeAt = Date.now();
@@ -253,21 +283,29 @@ export function markUserTurnBoundary(): void {
   session.boundaryPending = true;
 }
 
-export function bashMayMutate(command: string): boolean {
-  const trimmed = command.trim();
-  if (!trimmed) return false;
-  return !isReadOnlyCommand(trimmed)
-    || hasRedirection(trimmed.replace(/\d*>>?\s*(?:\/dev\/null\b|&\d)/g, ''))
-    || hasSubstitution(trimmed)
-    || /\bfind\b[^|;&]*\s-(?:delete|exec|execdir|ok|okdir|fprint\w*|fls)\b/.test(trimmed);
+function recordToolEvent(turn: UndoTurn, id: string | undefined, target: Set<string>, key: string): void {
+  target.add(key);
+  turn.toolEvents.set(id ?? randomUUID(), { target, key });
+  turn.lastChangeAt = Date.now();
 }
 
-function noteBash(command: string, cwd: string): void {
+function turnHoldingToolEvent(id: string): UndoTurn | undefined {
+  return session.turns.find((turn) => turn.toolEvents.has(id));
+}
+
+function retractToolEvent(id: string): void {
+  const turn = turnHoldingToolEvent(id);
+  const event = turn?.toolEvents.get(id);
+  if (!turn || !event) return;
+  turn.toolEvents.delete(id);
+  const stillClaimed = [...turn.toolEvents.values()].some((other) => other.target === event.target && other.key === event.key);
+  if (!stillClaimed) event.target.delete(event.key);
+}
+
+function noteBash(command: string, cwd: string, id?: string): void {
   if (!bashMayMutate(command)) return;
   const turn = currentTurn(cwd);
-  if (!turn) return;
-  turn.bash.add(command.trim());
-  turn.lastChangeAt = Date.now();
+  if (turn) recordToolEvent(turn, id, turn.bash, command.trim().slice(0, RETAINED_COMMAND_CHARS));
 }
 
 export function noteUntrackedActivity(label: string, cwd: string): void {
@@ -281,19 +319,23 @@ export function noteDelegatedJob(type: string, cwd: string): void {
   if (!JOBS_THAT_DO_NOT_EDIT.has(type)) noteUntrackedActivity(`${type} job`, cwd);
 }
 
-export function noteTurnToolEvent(tool: string, status: string | undefined, input: string | undefined, args: Record<string, unknown> | undefined, cwd: string): void {
-  if (!session.tracking || status === 'error' || status === 'failed' || status === 'rejected') return;
-  if (isBashToolName(tool)) {
-    const command = typeof args?.command === 'string' ? args.command : input ?? '';
-    noteBash(command, cwd);
+export function noteTurnToolEvent(tool: string, status: string | undefined, input: string | undefined, args: Record<string, unknown> | undefined, cwd: string, toolCallId?: string): void {
+  if (!session.tracking) return;
+  const isBash = isBashToolName(tool);
+  if (!isBash && !isWriteToolName(tool)) return;
+  if (status === 'rejected' || (!isBash && (status === 'error' || status === 'failed'))) {
+    if (toolCallId) retractToolEvent(toolCallId);
     return;
   }
-  if (!isWriteToolName(tool)) return;
+  if (status === 'error' || status === 'failed' || (toolCallId && turnHoldingToolEvent(toolCallId))) return;
+  if (isBash) {
+    noteBash(typeof args?.command === 'string' ? args.command : input ?? '', cwd, toolCallId);
+    return;
+  }
   const turn = currentTurn(cwd);
   if (!turn) return;
   const path = mutatedPathFromToolArgs(tool, args);
-  turn.observedWrites.add(path ? resolve(cwd, path) : `(${tool})`);
-  turn.lastChangeAt = Date.now();
+  recordToolEvent(turn, toolCallId, turn.observedWrites, path ? resolve(cwd, path) : `(${tool})`);
 }
 
 export function withTurnUndo(handler: ToolHandler): ToolHandler {
@@ -328,14 +370,16 @@ export function withTurnUndo(handler: ToolHandler): ToolHandler {
   };
 }
 
-function restoreBytes(realPath: string, bytes: Buffer, mode: number): void {
+function restoreBytes(realPath: string, bytes: Buffer, pre: { mode: number; uid: number; gid: number }): void {
   const parent = dirname(realPath);
   const temp = join(parent, `.${basename(realPath)}.agon-undo-${randomUUID().slice(0, 8)}`);
   const fd = openSync(temp, 'wx', 0o600);
   try {
     try {
       writeSync(fd, bytes);
-      fchmodSync(fd, mode);
+      const created = fstatSync(fd);
+      if (created.uid !== pre.uid || created.gid !== pre.gid) fchownSync(fd, pre.uid, pre.gid);
+      fchmodSync(fd, pre.mode);
       fsyncSync(fd);
     } finally {
       closeSync(fd);
@@ -353,9 +397,10 @@ function restoreFile(file: TrackedFile, cwd: string): { outcome: 'restored' | 'r
   if (pre.kind === 'unavailable') return { refused: pre.reason };
   if (resolveRulePath(file.path, cwd) !== file.realPath) return { refused: 'path now resolves somewhere else (symlink changed)' };
   if (!file.post) return { refused: 'no verified state was recorded after the edit' };
-  const current = readDiskState(file.realPath);
+  const current = readDiskState(file.realPath, file.post.kind === 'file' ? file.post.size : undefined);
   if (current.kind === 'other') return { refused: 'no longer a regular file' };
-  if (!sameDiskState(file.post, current)) return { refused: current.kind === 'absent' ? 'deleted since the turn' : 'changed since the turn' };
+  const drift = driftSince(file.post, current);
+  if (drift) return { refused: drift };
   if (matchesPre(pre, current)) return { outcome: 'unchanged' };
   try {
     if (pre.kind === 'absent') {
@@ -364,7 +409,7 @@ function restoreFile(file: TrackedFile, cwd: string): { outcome: 'restored' | 'r
     }
     const bytes = session.dir ? readFileSync(join(session.dir, pre.hash)) : null;
     if (!bytes || sha256(bytes) !== pre.hash) return { refused: 'snapshot failed verification' };
-    restoreBytes(file.realPath, bytes, pre.mode);
+    restoreBytes(file.realPath, bytes, pre);
     return { outcome: 'restored' };
   } catch (error) {
     return { refused: `restore failed: ${error instanceof Error ? error.message : String(error)}` };
@@ -413,7 +458,7 @@ export function latestUndoTurnChangeAt(): number | null {
 
 export function undoLastTurn(cwd: string): TurnUndoReport {
   dropEmptyTopTurns();
-  const report: TurnUndoReport = { status: 'empty', cwd, restored: [], removed: [], refused: [], notUndoable: [], bashCommands: [], untrackedWrites: [], otherActivity: [], remainingTurns: 0, droppedTurns: session.droppedTurns };
+  const report: TurnUndoReport = { status: 'empty', cwd, restored: [], removed: [], refused: [], notUndoable: [], bashCommands: [], untrackedWrites: [], otherActivity: [], failedButChanged: [], remainingTurns: 0, droppedTurns: session.droppedTurns };
   const turn = session.turns[session.turns.length - 1];
   if (!turn) return report;
   if (turn.cwd !== resolve(cwd)) return { ...report, status: 'other-workspace', cwd: turn.cwd };
@@ -426,6 +471,7 @@ export function undoLastTurn(cwd: string): TurnUndoReport {
     knownPaths.add(file.realPath);
     for (const alias of file.aliases) knownPaths.add(alias);
     const shown = displayPath(file.path, turn.cwd);
+    if (file.failedButChanged) report.failedButChanged.push(shown);
     const result = restoreFile(file, turn.cwd);
     if ('refused' in result) {
       (file.pre.kind === 'unavailable' ? report.notUndoable : report.refused).push({ path: shown, reason: result.refused });

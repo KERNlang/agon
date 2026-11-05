@@ -653,8 +653,11 @@ export async function runHandleSubmit(opts: HandleSubmitDeps, value: QueuedInput
   const cb: DispatchCallbacks = {
     dispatch: opts.dispatch, ctx, commandRegistry: opts.commandRegistry, eventBus: opts.eventBus, loadedExtensions: opts.loadedExtensions, setWorkspacePath: opts.setWorkspacePath,
     runAsJob: (type: string, label: string, fn: (signal: AbortSignal) => Promise<void>) => {
-      noteDelegatedJob(type, resolveWorkingDir());
-      const job = opts.jobManager.run(type, label, (signal: AbortSignal) => runInJobAbortScope(signal, () => fn(signal)));
+      const jobCwd = resolveWorkingDir();
+      const job = opts.jobManager.run(type, label, (signal: AbortSignal) => {
+        noteDelegatedJob(type, jobCwd);
+        return runInJobAbortScope(signal, () => fn(signal));
+      });
       opts.chatStartTimeRef.current = Date.now();
       opts.setJobList([...opts.jobManager.list()]);
       opts.dispatch({ type: 'info', message: `${job.state === 'queued' ? 'Queued' : 'Started'} background job [${job.id}] ${type}: ${label || type}` } as any);

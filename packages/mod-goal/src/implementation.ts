@@ -36,6 +36,8 @@ import {
   unwrapPersistenceEnvelope,
 } from "@kernlang/agon-mod-plan";
 import { cliDescriptions } from "./cli-descriptions.js";
+import { runGoalDryRun } from './dry-run.js';
+import { createGoalProgress } from './progress.js';
 
 type Task = {
   id: string;
@@ -612,6 +614,11 @@ export async function runGoal(
   const configurationContext = { ...context,
     cwd: input.cwd ? resolve(context.cwd, String(input.cwd)) : context.cwd };
   const capabilities = services.goal.open(configurationContext);
+  if (input.dryRun === true) {
+    return runGoalDryRun({ id, intent, branch, gate, gateTimeout, maxAttempts, budgetUsd, maxHours, tasks,
+      resume: input.resume === true, baseSha: input.resume === true ? prior?.baseSha : undefined },
+    configurationContext, capabilities.assertCurrent);
+  }
   let lease: Awaited<ReturnType<typeof capabilities.acquire>>;
   try { lease = await capabilities.acquire(id); }
   catch (error) { return { exitCode: 1, stderr: `Cannot acquire Goal execution: ${error instanceof Error ? error.message : String(error)}\n` }; }
@@ -635,7 +642,7 @@ export async function runGoal(
     }
     const acceptedWorktree = worktree;
     const remote = String(input.remote ?? 'origin');
-    if (input.push === true && input.dryRun !== true) {
+    if (input.push === true) {
       if (input.commit === false) return { exitCode: 1, stderr: 'Goal --push requires task commits; remove commit=false.\n' };
       const permission = await services.permissions.check('git.write', worktree.repoRoot);
       await assertExecution();
@@ -666,7 +673,9 @@ export async function runGoal(
       if (capabilities.assertStateCurrent) capabilities.assertStateCurrent();
       else capabilities.assertCurrent();
     };
-    const save = async () => { await lease.assertOwned(); assertStateCurrent(); await persistGoal(services, state); };
+    const onProgress = (context as InvocationContext & { onProgress?: (line: string) => void }).onProgress;
+    const reportProgress = onProgress ? createGoalProgress(onProgress, prior?.events.at(-1)) : undefined;
+    const save = async () => { await lease.assertOwned(); assertStateCurrent(); await persistGoal(services, state); reportProgress?.(state.events); };
     try {
       if (input.resume === true && prior) {
         state = {
@@ -761,7 +770,7 @@ export async function runGoal(
           return { exitCode: 1, stderr: `${error instanceof Error ? error.message : String(error)}\n` };
         }
       };
-      if (input.think === true && input.resume !== true && input.dryRun !== true) {
+      if (input.think === true && input.resume !== true) {
         const engineFailure = await prepareEngines();
         if (engineFailure) return engineFailure;
         const strategy = String(input.thinkStrategy ?? "hypothesis").trim();
@@ -791,6 +800,7 @@ export async function runGoal(
       // Older state records task attempts only after a successful initial baseline.
       const verifiedBaseline = input.resume === true && prior &&
         (prior.baselineVerified === true || prior.tasks.some(task => task.attempts > 0));
+      if (!verifiedBaseline) onProgress?.(`[goal] checking the gate at base: ${gate}`);
       const baseline = verifiedBaseline ? null : await runFitnessCommand(
         gate,
         worktree.path,
@@ -815,20 +825,6 @@ export async function runGoal(
         id,
         { ...context, cwd: worktree.path },
       );
-      if (input.dryRun === true) {
-        const result = { state, baseline, runDir: run?.path ?? null };
-        if (run)
-          await services.runs?.finish(
-            run,
-            { mode: "goal", startedAt: run.startedAt, endedAt: new Date().toISOString(), engines: [], summary: `dry run; ${tasks.length} tasks`, ok: true },
-            { ...context, cwd: worktree.path },
-          );
-        return {
-          exitCode: 0,
-          stdout: `${JSON.stringify(result, null, 2)}\n`,
-          result: result as unknown as Json,
-        };
-      }
       const preparePublication = (task: Task) => {
         if (input.push === true && task.commit && !task.publication) {
           task.publication = { commit: task.commit, remote,
@@ -1842,7 +1838,8 @@ export const createMod: AgonModFactory = (services) =>
           description: command.description,
           inputSchema: cliSchema,
           cli,
-          run: command.run,
+          run: (input: Json, context: InvocationContext) => runGoal(input,
+            { ...context, onProgress: (line: string) => { process.stderr.write(`${line}\n`); } } as InvocationContext, services),
         }),
       );
       d.push(

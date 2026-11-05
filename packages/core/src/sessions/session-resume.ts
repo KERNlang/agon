@@ -1185,9 +1185,9 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
 
           // ── Status update so the UI shows activity during API tool loops ──
           if (step === 1) {
-            yield { type: 'status' as const, content: 'dispatching engine…' };
+            yield { type: 'status' as const, content: 'dispatching engine…', metadata: { kind: 'loop-step', step, budget } };
           } else {
-            yield { type: 'status' as const, content: `tool loop turn ${step}/${budget}…` };
+            yield { type: 'status' as const, content: `tool loop turn ${step}/${budget}…`, metadata: { kind: 'loop-step', step, budget } };
           }
 
           // Anchor for real-usage projection: messages at index >= this were
@@ -1543,7 +1543,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                 readSpinRecoveryFireId = null;
                 readSpinRecoveryCostMs = 0;
               }
-              yield { type: 'error' as const, content: 'Tool loop stopped: repeated read-only retry loop after recovery. The engine kept repeating reads instead of finishing, editing, or explaining the blocker.' };
+              yield { type: 'error' as const, content: 'Tool loop stopped: repeated read-only retry loop after recovery. The engine kept repeating reads instead of finishing, editing, or explaining the blocker.', metadata: { loopEnd: 'read_spin_stop' } };
               messageHistory.push({
                 role: 'assistant',
                 content: `${cleanText ? `${cleanText}\n` : ''}[Tool loop stopped — repeated read-only stale-edit retry before executing duplicate read-only calls]`,
@@ -1614,7 +1614,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                 }
                 if (stall.verdict.action === 'block') {
                   // Hard stop (consecutive≥8 or global≥12): end the turn.
-                  yield { type: 'error' as const, content: stall.verdict.feedback };
+                  yield { type: 'error' as const, content: stall.verdict.feedback, metadata: { loopEnd: 'stall_stop' } };
                   messageHistory.push({
                     role: 'assistant',
                     content: `${cleanText ? `${cleanText}\n` : ''}[Tool loop stopped — information-gain hard stop: too many consecutive zero-information read-only steps]`,
@@ -1844,7 +1844,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                   })), 0);
                   guardTracker.addGuardOverheadMs(performance.now() - wsT0);
                   const wsPaths = blockedPaths.join(', ');
-                  yield { type: 'error' as const, content: `Tool loop stopped: the engine kept re-issuing writes to unread file(s) ${wsPaths} instead of reading them first.` };
+                  yield { type: 'error' as const, content: `Tool loop stopped: the engine kept re-issuing writes to unread file(s) ${wsPaths} instead of reading them first.`, metadata: { loopEnd: 'write_spin_stop' } };
                   messageHistory.push({
                     role: 'assistant',
                     content: `${cleanText ? `${cleanText}\n` : ''}[Tool loop stopped — write-spin hard stop: the engine re-issued ungrounded writes to ${wsPaths} without reading them]`,
@@ -2310,7 +2310,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
               // ALL tools failed — shrink budget, count consecutive errors
               consecutiveErrors++;
               if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
-                yield { type: 'error' as const, content: `Tool loop circuit breaker: ${consecutiveErrors} consecutive steps with all tools failing. Stopping to avoid token waste.` };
+                yield { type: 'error' as const, content: `Tool loop circuit breaker: ${consecutiveErrors} consecutive steps with all tools failing. Stopping to avoid token waste.`, metadata: { loopEnd: 'tool_circuit_breaker' } };
                 messageHistory.push({ role: 'assistant', content: '[Tool loop stopped — repeated failures]' });
                 break;
               }
@@ -2634,7 +2634,8 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
         // (opts.shouldYield); every other exit keeps the historical
         // 'end_turn'. Consumers break on chunk.type === 'done' and treat the
         // content as an opaque stop reason, so the extra value is additive.
-        yield { type: 'done' as const, content: yieldedForCaller ? 'steering-yield' : 'end_turn' };
+        const loopEnd = yieldedForCaller ? 'steering_yield' : guardDoneNormally ? 'completed' : step >= budget ? 'step_budget' : 'stopped';
+        yield { type: 'done' as const, content: yieldedForCaller ? 'steering-yield' : 'end_turn', metadata: { loopEnd, step, budget } };
         return;
         } finally {
           // ── Phase-0 telemetry flush — EXACTLY ONCE on every exit path ──

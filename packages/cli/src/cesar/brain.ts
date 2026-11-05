@@ -81,6 +81,10 @@ import { consumeCesarPlanControlSignals } from './plan-control-signals.js';
 
 import { hostNowIso, hostWaitForInteractiveChoice } from '../lib/kern-host.js';
 
+import { createCesarTurnEndTracker } from './turn-end-log.js';
+
+import type { CesarTurnEndTracker } from './turn-end-log.js';
+
 export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input: string, response: string, cesarEngineId: string, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext, telemetry?: Record<string,unknown>, turnAlreadyCommitted?: boolean): Promise<CesarTurnOutcome> {
   // streaming-end commits a real stream OR (when only a speculative preview
   // draft sits on the pane) drops the draft without committing — safe no-op when
@@ -154,15 +158,21 @@ async function enterCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerCo
   const cancel = () => abort.abort(parentSignal?.reason);
   parentSignal?.addEventListener('abort', cancel, { once: true });
   if (parentSignal?.aborted) cancel();
+  const turnEnd = createCesarTurnEndTracker();
   try {
     abort.signal.throwIfAborted();
-    return await runCesarBrain(input, dispatch, ctx, images, abort, !parentSignal, assertOwnerAvailable);
+    const outcome = await runCesarBrain(input, dispatch, ctx, images, abort, !parentSignal, turnEnd, assertOwnerAvailable);
+    turnEnd.settle(outcome, abort.signal.aborted);
+    return outcome;
+  } catch (error) {
+    turnEnd.settleThrown(error, abort.signal.aborted);
+    throw error;
   } finally {
     parentSignal?.removeEventListener('abort', cancel);
   }
 }
 
-async function runCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images: ImageAttachment[] | undefined, abort: AbortController, ownsActiveAbort: boolean, assertOwnerAvailable?: () => void): Promise<CesarTurnOutcome> {
+async function runCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images: ImageAttachment[] | undefined, abort: AbortController, ownsActiveAbort: boolean, turnEnd: CesarTurnEndTracker, assertOwnerAvailable?: () => void): Promise<CesarTurnOutcome> {
   const assertHostCurrent = captureProcessSurfaceAuthority();
   let _runtimeHost: any = null;
   let _turnRuntime: any = null;
@@ -568,6 +578,7 @@ async function runCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerCont
         successfulMutations: _successfulMutationCount,
         failedTools: _failedToolCount,
       });
+      turnEnd.bindTelemetry(buildToolTelemetry);
 
       // Short follow-ups bypass escalation/delegation — they're conversation continuations
       const FOLLOWUP_RE = /^(still\??|and\??|go on|continue|yes|no|ok|why\??|how\??|what\??|really\??|more|details|explain|show me|huh\??|so\??|\?\??|y|n)$/i;
@@ -956,11 +967,13 @@ async function runCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerCont
             ...opts,
             controlPlane: nextCesarResponseSeq(_turnRuntime),
           });
+          turnEnd.beginSend();
           const _wrapped = async function* () {
             assertSendAvailable();
             for await (const chunk of _inner) {
               assertSendAvailable();
               _noteDoneChunk(chunk);
+              turnEnd.observe(chunk);
               yield chunk;
               assertSendAvailable();
             }
@@ -3396,6 +3409,7 @@ async function runCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerCont
             _prevToolCount = _toolsUsed.length;
           }
           if (_continuations >= MAX_CONTINUATIONS) {
+            turnEnd.noteContinuationCap();
             if (agenticAuto) {
               _agenticTaskState = 'budget_exhausted';
               _agenticTerminalReason = 'continuation_checkpoint';

@@ -190,3 +190,41 @@ fi
     expect(published(calls())).toEqual([`publish ${tarball} --access public --provenance`]);
   });
 });
+
+describe('release GitHub Release job', () => {
+  const workflow = readFileSync(new URL('../../.github/workflows/release.yml', import.meta.url), 'utf8');
+  const job = workflow.match(/^ {2}github-release:\n((?:(?: {3,}.*)?\n)+)/m)?.[1] ?? '';
+  const script = (job.match(/run: \|\n((?: {10}.*\n)+)/)?.[1] ?? '').replace(/^ {10}/gm, '');
+
+  function runJob(view: 'exists' | 'missing', create: 'ok' | 'fails' = 'ok') {
+    const dir = scratch();
+    const log = join(dir, 'gh.log');
+    writeFileSync(join(dir, 'gh'), `#!/bin/sh
+echo "$*" >> "${log}"
+if [ "$2" = view ]; then [ "${view}" = exists ]; exit $?; fi
+[ "${create}" = ok ]
+`);
+    chmodSync(join(dir, 'gh'), 0o755);
+    const result = spawnSync('bash', ['-e', '-c', script], {
+      env: { ...process.env, PATH: `${dir}:${originalPath}`, GITHUB_REF_NAME: 'v9.9.9' },
+    });
+    const creates = existsSync(log)
+      ? readFileSync(log, 'utf8').trim().split('\n').filter((call) => call.startsWith('release create'))
+      : [];
+    return { status: result.status, creates };
+  }
+
+  it('a publish that reaches npm leaves the Releases panel current, and never on a failed publish or over an existing Release', () => {
+    expect(job).toMatch(/^ {4}needs: publish$/m);
+    expect(job).toMatch(/^ {6}contents: write$/m);
+    expect(job).not.toMatch(/uses:|continue-on-error/);
+
+    expect(runJob('exists')).toEqual({ status: 0, creates: [] });
+
+    const created = runJob('missing');
+    expect(created.status).toBe(0);
+    expect(created.creates).toEqual(['release create v9.9.9 --verify-tag --title v9.9.9 --generate-notes']);
+
+    expect(runJob('missing', 'fails').status).not.toBe(0);
+  });
+});

@@ -354,6 +354,56 @@ describe('multi-tree review through runReview', () => {
   });
 });
 
+describe('REPL /review through the intent contribution', () => {
+  async function intentFor(h: ReturnType<typeof harness>) {
+    let intent: any;
+    const registrar = {
+      command: () => () => {}, tool: () => () => {}, planStep: () => () => {}, resultType: () => () => {}, config: () => () => {},
+      intent: (value: unknown) => { intent = value; return () => {}; },
+    } as unknown as Registrar;
+    await (await createMod(h.services)).activate(registrar, h.services);
+    return intent;
+  }
+
+  it('reads a flag or a spaced path as an engine name, splits a path on its comma, or scribbles on the live terminal', async () => {
+    const root = repo();
+    const spaced = addTree(root, 'repl-a', 'HEAD', 'with space,comma');
+    const other = addTree(root, 'repl-b');
+    writeFileSync(join(spaced, 'a.ts'), 'export const a = "repl a";\n');
+    writeFileSync(join(other, 'a.ts'), 'export const a = "repl b";\n');
+    writeFileSync(join(root, 'ref notes.md'), 'REPL_REFERENCE\n');
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const h = harness();
+    const intent = await intentFor(h);
+    const context = { invocationId: 'tui:i', cwd: root, platform: 'darwin-arm64', signal: new AbortController().signal, config: {} };
+
+    const parsed = intent.parse(`/review alpha --worktree "${spaced}" --worktree=${other} --context 'ref notes.md' --max-trees 2`);
+    expect(parsed).toMatchObject({ engineIds: ['alpha'], worktree: [spaced, other], context: ['ref notes.md'], 'max-trees': '2' });
+    expect(validateContributionInput(intent.inputSchema, parsed)).toBeNull();
+    const out = await intent.run(parsed, context) as CommandResult;
+    expect(out.exitCode).toBe(0);
+    expect(h.calls.map(call => call.cwd)).toEqual([spaced, other]);
+    expect(h.calls.every(call => call.prompt.includes('REPL_REFERENCE'))).toBe(true);
+    expect(out.stdout).toContain('Context files sent (1):\n  ref notes.md');
+    expect(out.stdout).toContain(`${other}: ok`);
+    expect(stderr.mock.calls.map(call => String(call[0]))).toEqual([]);
+
+    for (const text of ['/review --split', '/review --worktree', '/review --worktree "unclosed', '/review -e alpha']) {
+      const refused = intent.parse(text);
+      expect(refused.engineIds).toBeUndefined();
+      expect((await intent.run(refused, context) as CommandResult).exitCode).toBe(1);
+    }
+    expect(h.calls).toHaveLength(2);
+  });
+
+  it('changes what bare /review parses to', async () => {
+    const intent = await intentFor(harness());
+    expect(intent.parse('/review')).toEqual({});
+    expect(intent.parse('/cr with Codex,gemini branch:Main')).toEqual({ engineId: 'codex', engineIds: ['codex', 'gemini'], target: 'branch:Main' });
+    expect(intent.parse('/review roles security correctness')).toEqual({ type: 'review-role', roles: ['security', 'correctness'] });
+  });
+});
+
 describe('--context through runReview', () => {
   const token = `ghp_${'a1b2c3'.repeat(7)}`;
 

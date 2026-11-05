@@ -5,7 +5,7 @@ import { resolve } from 'node:path';
 import type { CommandResult, InvocationContext, Json, ModServices } from '@kernlang/agon-mod-api';
 import { redactSecretsDeep, resolveAutoReviewBase, resolveReviewTarget, reviewMaxDiffChars } from '@kernlang/agon-support-verification';
 import type { ConsensusReport } from './consensus.js';
-import { extraContextReport, loadExtraContext, positiveOption, repeatedPaths, type ExtraContext } from './context-paths.js';
+import { extraContextReport, loadExtraContext, positiveOption, repeatedPaths, stderrNotify, type ExtraContext, type ReviewNotify } from './context-paths.js';
 import { formatReport, formatSummaryLine, type ReviewFormat, type ReviewReport } from './report.js';
 import { mergeConsensus, splitDiffByFile } from './split.js';
 
@@ -240,6 +240,7 @@ export async function runMultiTreeReview(
   context: InvocationContext,
   services: ModServices,
   runTree: TreeRunner,
+  notify: ReviewNotify = stderrNotify,
 ): Promise<CommandResult> {
   const refuse = (message: string): CommandResult => ({ exitCode: 1, stderr: `${message}\n` });
   if (input.mutate === true) return refuse('Refusing to review several trees with --mutate: each tree would run its own mutation pass and the results would be lost from the merged report. Review the trees, then run agon mutate --diff <target> in each tree separately.');
@@ -255,7 +256,7 @@ export async function runMultiTreeReview(
 
   const selected = selectTrees(input, context.cwd);
   if ('error' in selected) return refuse(selected.error);
-  const extra = loadExtraContext(input, context);
+  const extra = loadExtraContext(input, context, notify);
   if (extra && 'error' in extra) return refuse(extra.error);
 
   const warnings = [...selected.warnings];
@@ -271,7 +272,7 @@ export async function runMultiTreeReview(
   }
   const { conflicts, overlaps } = crossCheck(plans, warnings);
 
-  process.stderr.write(`agon review: ${plans.length} tree(s) selected, ${reviewable.length} to review, each with the full routed panel\n`);
+  notify(`agon review: ${plans.length} tree(s) selected, ${reviewable.length} to review, each with the full routed panel\n`);
   const treeInput = Object.fromEntries(Object.entries(input).filter(([name]) => !TREE_FLAGS.includes(name)));
   const startedAtMs = Date.now();
   const run = await services.runs?.start('review', text(input.label) || undefined, context);

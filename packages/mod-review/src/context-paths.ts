@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { closeSync, openSync, readFileSync, readSync, realpathSync, statSync } from 'node:fs';
-import { basename, isAbsolute, join, relative, resolve } from 'node:path';
+import { isAbsolute, join, relative, resolve } from 'node:path';
 import type { InvocationContext, Json } from '@kernlang/agon-mod-api';
 import { isSecretPath, redactSecretsPreservingLines } from '@kernlang/agon-support-verification';
 
@@ -14,9 +14,9 @@ const DEFAULT_CONTEXT_MAX_CHARS = 40_000;
 const BINARY_PROBE_BYTES = 8_000;
 const MAX_BYTES_PER_CHAR = 4;
 const LARGEST_NAMED = 5;
-const SECRET_NAMES = /^(\.npmrc|\.pypirc|\.git-credentials|id_(rsa|dsa|ecdsa|ed25519)(\..*)?)$|\.env(\.|$)|^(credentials|secrets?)(\.|$)|\.(pem|key|p12|pfx|jks|keystore)$/;
 
-const isContextSecretPath = (path: string) => isSecretPath(path) || SECRET_NAMES.test(basename(path).toLowerCase());
+export type ReviewNotify = (message: string) => void;
+export const stderrNotify: ReviewNotify = message => { process.stderr.write(message); };
 
 export function positiveOption(raw: Json | undefined, configured: unknown, fallback: number, flag: string): number | { error: string } {
   const fromFlag = typeof raw === 'string' && raw.trim() !== '';
@@ -62,7 +62,7 @@ function trackedFiles(directory: string): { root: string; files: string[] } | nu
 }
 
 /** Reads `--context` once, before any spend: every refusal here means no engine was called. */
-export function loadExtraContext(input: Record<string, Json>, context: InvocationContext): ExtraContext | { error: string } | undefined {
+export function loadExtraContext(input: Record<string, Json>, context: InvocationContext, notify: ReviewNotify = stderrNotify): ExtraContext | { error: string } | undefined {
   const requested = repeatedPaths(input.context);
   if (!requested.length) return undefined;
   const config = context.config as Record<string, Json> | undefined;
@@ -88,7 +88,7 @@ export function loadExtraContext(input: Record<string, Json>, context: Invocatio
     let real: string;
     try { real = realpathSync(lexical); }
     catch { return { error: `--context path not found: ${raw}` }; }
-    if (isContextSecretPath(lexical) || isContextSecretPath(real)) return { error: `Refusing --context ${raw}: it is a secret-named path. Nothing was sent.` };
+    if (isSecretPath(lexical) || isSecretPath(real)) return { error: `Refusing --context ${raw}: it is a secret-named path. Nothing was sent.` };
     const stat = statSync(real);
     if (stat.isFile()) {
       try { take(display(lexical), real); }
@@ -101,12 +101,12 @@ export function loadExtraContext(input: Record<string, Json>, context: Invocatio
     if (!tracked.files.length) return { error: `Refusing --context ${raw}: the directory has no tracked files. Name the files instead.` };
     for (const file of tracked.files) {
       const path = display(join(lexical, file));
-      if (isContextSecretPath(file)) { skipped.push({ path, reason: 'secret-named' }); continue; }
+      if (isSecretPath(file)) { skipped.push({ path, reason: 'secret-named' }); continue; }
       try {
         const target = realpathSync(join(real, file));
         const inRepo = relative(tracked.root, target);
         if (inRepo.startsWith('..') || isAbsolute(inRepo)) skipped.push({ path, reason: 'symlink leaves the repo' });
-        else if (isContextSecretPath(target)) skipped.push({ path, reason: 'secret-named' });
+        else if (isSecretPath(target)) skipped.push({ path, reason: 'secret-named' });
         else if (!statSync(target).isFile()) skipped.push({ path, reason: 'not a regular file' });
         else take(path, target);
       } catch {
@@ -124,8 +124,8 @@ export function loadExtraContext(input: Record<string, Json>, context: Invocatio
   }
 
   const list = files.map(file => file.path);
-  process.stderr.write(`agon review --context: sending ${list.length} file(s) to every reviewer:\n${list.map(path => `  ${path}\n`).join('')}`);
-  if (skipped.length) process.stderr.write(`agon review --context: skipped ${skipped.length} file(s):\n${skipped.map(item => `  ${item.path} (${item.reason})\n`).join('')}`);
+  notify(`agon review --context: sending ${list.length} file(s) to every reviewer:\n${list.map(path => `  ${path}\n`).join('')}`);
+  if (skipped.length) notify(`agon review --context: skipped ${skipped.length} file(s):\n${skipped.map(item => `  ${item.path} (${item.reason})\n`).join('')}`);
   return {
     files: list,
     skipped,

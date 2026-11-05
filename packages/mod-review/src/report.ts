@@ -53,6 +53,7 @@ export interface ReviewReport {
   readonly conflicts?: readonly TreePair[];
   readonly overlaps?: readonly TreePair[];
   readonly incomplete?: number;
+  readonly contextFiles?: readonly string[];
 }
 
 export function lineRegion(lines: string | undefined): { startLine: number; endLine: number } | undefined {
@@ -164,6 +165,7 @@ export function formatText(report: ReviewReport, options: ReviewTextOptions = {}
   for (const seat of report.reviews) {
     if (seat.status !== 'ok') lines.push(`  ${seat.engineId}${seat.tree ? ` [tree ${seat.tree}]` : ''}${seat.batch ? ` [batch ${seat.batch}]` : ''}: ${seat.status}${seat.error ? ` (${seat.error})` : ''}`);
   }
+  if (report.contextFiles?.length) lines.push(`Context files sent (${report.contextFiles.length}):`, ...report.contextFiles.map((file) => `  ${file}`));
   if (report.trees) lines.push('Trees:', ...report.trees.map(treeLine), ...pairLines('Conflicts', report.conflicts), ...pairLines('Overlapping files', report.overlaps));
   const groups: Array<[string, readonly ConsensusFinding[]]> = consensus
     ? [['Blockers', consensus.blockers], ['Needs check', consensus.needsCheck], ['Speculative', consensus.speculative], ['Nits', consensus.nits]]

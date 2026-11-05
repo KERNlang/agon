@@ -26,7 +26,8 @@ import {
 import { assignSeatRoles, buildSeatPrompt, gatherReviewPromptContext } from "./prompt.js";
 import { runSeat } from "./seat.js";
 import { runSplitReview } from "./split.js";
-import { extraContextReport, loadExtraContext, type ExtraContext } from "./context-paths.js";
+import { extraContextReport, loadExtraContext, type ExtraContext, type ReviewNotify } from "./context-paths.js";
+import { parseReviewIntent, reviewIntentInput } from "./review-intent.js";
 import { isMultiTreeInput, runMultiTreeReview, TREE_DESCRIPTIONS, TREE_INPUT_PROPERTIES, TREE_REPEATED_OPTIONS } from "./trees.js";
 const schema = Object.freeze({
   type: "object",
@@ -108,13 +109,13 @@ export async function runReview(
   raw: Json,
   context: Parameters<ModServices["engines"]["dispatch"]>[2],
   services: ModServices,
-  evidence: { readonly mutationEvidence?: string; readonly batch?: ReviewTarget; readonly extraContext?: ExtraContext } = {},
+  evidence: { readonly mutationEvidence?: string; readonly batch?: ReviewTarget; readonly extraContext?: ExtraContext; readonly notify?: ReviewNotify } = {},
 ): Promise<CommandResult> {
   const input = raw as Record<string, Json>;
   const format = parseReviewFormat(input.format);
   if (!format) return { exitCode: 1, stderr: 'Unknown review format. Use json, text, or sarif.\n' };
-  if (isMultiTreeInput(input)) return runMultiTreeReview(input, format, context, services, (treeInput, treeContext, extraContext) => runReview(treeInput, treeContext, services, { ...evidence, ...(extraContext ? { extraContext } : {}) }));
-  const extra = evidence.extraContext ?? loadExtraContext(input, context);
+  if (isMultiTreeInput(input)) return runMultiTreeReview(input, format, context, services, (treeInput, treeContext, extraContext) => runReview(treeInput, treeContext, services, { ...evidence, ...(extraContext ? { extraContext } : {}) }), evidence.notify);
+  const extra = evidence.extraContext ?? loadExtraContext(input, context, evidence.notify);
   if (extra && "error" in extra) return { exitCode: 1, stderr: `${extra.error}\n` };
   const maxDiffChars = seconds(input["max-diff-chars"]);
   if (maxDiffChars === null) return { exitCode: 1, stderr: 'Review max-diff-chars must be a positive integer.\n' };
@@ -347,56 +348,6 @@ export async function runReview(
     result: report as unknown as Json,
   };
 }
-function parseReviewIntent(input: string) {
-  if (!/^\/(?:review|cr)(?:\s|$)/i.test(input)) return undefined;
-  const parts = input
-      .replace(/^\/(?:review|cr)\s*/i, "")
-      .split(/[\s,]+/)
-      .filter(Boolean),
-    knownRoles = new Set([
-      "security",
-      "correctness",
-      "dryness",
-      "performance",
-      "overall",
-    ]),
-    engineIds: string[] = [],
-    roles: string[] = [];
-  let target: string | undefined,
-    index = 0,
-    roleMode = false;
-  if (/^(?:role|roles)$/i.test(parts[0] ?? "")) {
-    roleMode = true;
-    index = 1;
-    while (index < parts.length && knownRoles.has(parts[index].toLowerCase()))
-      roles.push(parts[index++].toLowerCase());
-  }
-  for (; index < parts.length; index += 1) {
-    const part = parts[index],
-      lower = part.toLowerCase();
-    if (
-      ["and", "or", "plus", "with"].includes(lower) ||
-      ["it", "this", "that", "them", "changes", "diff"].includes(lower)
-    )
-      continue;
-    if (
-      lower === "uncommitted" ||
-      lower.startsWith("branch:") ||
-      lower.startsWith("commit:") ||
-      lower.startsWith("range:")
-    ) {
-      target ??= part;
-      continue;
-    }
-    if (!engineIds.includes(lower)) engineIds.push(lower);
-  }
-  return {
-    ...(roleMode ? { type: "review-role" } : {}),
-    ...(engineIds.length ? { engineId: engineIds[0], engineIds } : {}),
-    ...(target ? { target } : {}),
-    ...(roles.length ? { roles } : {}),
-  };
-}
 export const createMod: AgonModFactory = (services) =>
   Object.freeze({
     apiVersion: "1" as const,
@@ -418,12 +369,8 @@ export const createMod: AgonModFactory = (services) =>
           parse: parseReviewIntent,
           run: (input, context) => {
             const parsed = input as Record<string, Json>;
-            return runReview({
-              ...(typeof parsed.target === 'string' ? { target: parsed.target } : {}),
-              ...(Array.isArray(parsed.engineIds) ? { engines: parsed.engineIds.join(',') }
-                : typeof parsed.engineId === 'string' ? { engine: parsed.engineId } : {}),
-              ...(Array.isArray(parsed.roles) ? { roles: parsed.roles.join(',') } : {}),
-            }, context, services);
+            if (typeof parsed.parseError === 'string') return { exitCode: 1, stderr: `${parsed.parseError}\n` };
+            return runReview(reviewIntentInput(parsed), context, services, { notify: message => void services.logger?.info(message) });
           },
         }),
       );

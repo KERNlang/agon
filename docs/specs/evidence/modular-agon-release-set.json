@@ -243,8 +243,8 @@
         "range": "^19.2.0"
       }
     ],
-    "packedBytes": 1542188,
-    "unpackedBytes": 7168450,
+    "packedBytes": 1542049,
+    "unpackedBytes": 7167542,
     "fileCount": 144,
     "files": [
       {
@@ -256,11 +256,11 @@
         "size": 51
       },
       {
-        "path": "dist/app-SXWG6ZVR.js",
+        "path": "dist/app-J7PU3SJD.js",
         "size": 383839
       },
       {
-        "path": "dist/app-SXWG6ZVR.js.map",
+        "path": "dist/app-J7PU3SJD.js.map",
         "size": 256938
       },
       {
@@ -376,6 +376,14 @@
         "size": 140
       },
       {
+        "path": "dist/chunk-CJ6EGUTA.js",
+        "size": 302465
+      },
+      {
+        "path": "dist/chunk-CJ6EGUTA.js.map",
+        "size": 196645
+      },
+      {
         "path": "dist/chunk-D5XB3WNT.js",
         "size": 83942
       },
@@ -430,14 +438,6 @@
       {
         "path": "dist/chunk-FM7TEY2I.js.map",
         "size": 14380
-      },
-      {
-        "path": "dist/chunk-GE7NB7SZ.js",
-        "size": 302973
-      },
-      {
-        "path": "dist/chunk-GE7NB7SZ.js.map",
-        "size": 197045
       },
       {
         "path": "dist/chunk-HZQJ6MNN.js",
@@ -688,11 +688,11 @@
         "size": 4203
       },
       {
-        "path": "dist/intent-skills-TLVHT7UG.js",
+        "path": "dist/intent-skills-LWPKFYKO.js",
         "size": 981
       },
       {
-        "path": "dist/intent-skills-TLVHT7UG.js.map",
+        "path": "dist/intent-skills-LWPKFYKO.js.map",
         "size": 51
       },
       {
@@ -824,10 +824,10 @@
         "size": 127220
       }
     ],
-    "payloadHash": "sha256:a7876ca0f4695f0584412e329570d86a03d9e9d7798535fecb8cf3eaa2245cea",
-    "integrity": "sha512-y6i9TD34lZzcIbMNTtgB8/lr/X1WBR4SkynKKQrbfBQI3khquWDWlKUorGf9l2WXPTrVL1heh0QJz/mk+ZCSGw==",
-    "shasum": "a14e84825063a6294d4cd20bcaaa99fc84c683c8",
-    "tarballHash": "sha256:01e685561bfc353d059fe4bc5dbdc1b003b0d10b7e656edb75471017a36ac0d3",
+    "payloadHash": "sha256:a194256a51ed9a8bbb9c10fe5fd6a2c5987a3303c58101cbf2ae420e9bc13647",
+    "integrity": "sha512-ve6yKbDaH4GKqQfqNWgXVMIOVTaTgHM75hHHTA6HlWHc6kxwHVM+e1xJPX179otA/RH3M13AlNAiYAjBRfpn5Q==",
+    "shasum": "95867e154f590da5c31b15a6a46a0800f6fcb48e",
+    "tarballHash": "sha256:ba47b36c0bd6132817eca19c5655bdd05a8438fe298f0b665b6bc36a86da6701",
     "packageJsonHash": "sha256:bad1a80d2913b8d7e6d96279ea638c0c390ecb235dcf12dc9e1693ca6f9339b1"
   },
   "packages": [

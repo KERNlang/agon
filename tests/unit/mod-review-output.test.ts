@@ -195,6 +195,16 @@ describe('mod-review phase B review fixes', () => {
     expect(redactSecretsPreservingLines('GITHUB_TOKEN=abcd1234efgh5678')).toBe('[REDACTED-SECRET]');
   });
 
+  it('redacts ordinary code and prose in review prompts, or lets a real secret assignment through', () => {
+    const value = 'abcdef' + '1234567890';
+    const secrets = [`API_KEY=${value}`, `TOKEN: "${value}"`, `X_TOKEN=${value}`, `export PASSWORD=${value}`];
+    const ordinary = ['const TOKEN = getAccessToken();', 'TOKEN authenticationIsRequired', 'const SESSION_TOKEN = readSessionTokenFromVault(request);'];
+    for (const redact of [redactSecrets, redactSecretsPreservingLines]) {
+      for (const line of secrets) expect(redact(line)).not.toContain(value);
+      for (const line of ordinary) expect(redact(line)).toBe(line);
+    }
+  });
+
   it('refuses a symlink that resolves to a secret file', () => {
     const cwd = repo();
     writeFileSync(join(cwd, '.env'), 'X=1\n');

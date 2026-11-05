@@ -61,6 +61,18 @@ it.each(['initial', 'cli-retry', 'api-retry'])('publishes the exact proposal thr
   expect(runAsJob).not.toHaveBeenCalled();
 });
 
+it('does not silently re-run a turn the user cancelled with Esc', async () => {
+  backend.mockReturnValue({ backend: 'api', engine: { id: 'fixture' } });
+  brain.mockResolvedValue({ responded: false, delegated: false, terminalState: 'cancelled', decisionReason: 'aborted' });
+  const ctx = { config: {}, cesar: {}, adapter: { dispatch: vi.fn() }, activeEngines: () => [], chatSession: startChatSession() } as any;
+  const cb = { ctx, dispatch: vi.fn(), setActivePlan: vi.fn(), runAsJob: vi.fn(), setPendingImages: vi.fn() } as any;
+
+  await expect(routeWithCesar('prompt', [], cb)).resolves.toBe(false);
+
+  expect(brain).toHaveBeenCalledOnce();
+  expect(ctx.adapter.dispatch).not.toHaveBeenCalled();
+});
+
 it.each([
   ['recovered', 'original'], ['recovered', 'current'], ['recovered', 'healthy'],
   ['one-shot', 'original'], ['one-shot', 'current'], ['one-shot', 'healthy'],

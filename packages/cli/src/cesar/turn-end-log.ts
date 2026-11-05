@@ -106,6 +106,7 @@ export function createCesarTurnEndTracker(runsDir?: string): CesarTurnEndTracker
   let errorCount = 0;
   let lastError: unknown;
   let continuationCapHit = false;
+  let modelRetries = 0;
   let settled = false;
 
   const write = (input: Pick<CesarTurnEndInput, 'outcome' | 'threw' | 'aborted'>, thrown?: unknown): void => {
@@ -135,6 +136,7 @@ export function createCesarTurnEndTracker(runsDir?: string): CesarTurnEndTracker
           sends: sendCount,
           stepBudgetHits,
           errorCount,
+          modelRetries,
           errorKind: errorSource === undefined ? undefined : classifyApiFailure(errorSource).kind,
           error: errorSource === undefined ? undefined : summarizeErrorForLog(errorSource),
         },
@@ -155,6 +157,8 @@ export function createCesarTurnEndTracker(runsDir?: string): CesarTurnEndTracker
       if (chunk.type === 'status' && metadata.kind === 'loop-step') {
         sendStep = Math.max(sendStep, Number(metadata.step) || 0);
         budget = Number(metadata.budget) || budget;
+      } else if (chunk.type === 'status' && metadata.kind === 'model-retry') {
+        modelRetries = Math.max(modelRetries, Number(metadata.attempt) || 0);
       } else if (chunk.type === 'error') {
         errorCount++;
         lastError = chunk.content;

@@ -8,6 +8,10 @@ import { existsSync, statSync } from 'node:fs';
 
 import { apiStreamDispatchWithHistory, apiDispatch } from '../api/dispatch-lazy.js';
 
+import { abortableDelay, createModelCallRetryGate } from '../api/model-call-retry.js';
+
+import type { ModelRetryPlan } from '../api/model-call-retry.js';
+
 import { engineSupportsVision } from '../signals/models-registry.js';
 
 import { findSafeKeepStart, buildCompactionSummary, renderCompactionText, buildSummarizationContext, buildCompactionPrompt } from './compaction.js';
@@ -1093,6 +1097,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
           ? requestedFirstChunkBackoffMs
           : 1000;
         let hadTurnSideEffects = false;
+        const modelRetry = createModelCallRetryGate(config.engine.api, opts.signal);
         // One-shot emergency recovery: if a request fails with an overflow-shaped
         // error, hard-trim history once and retry the same step instead of
         // surfacing an empty response (the spin trigger). Token estimates can be
@@ -1162,6 +1167,9 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
           let fullResponse = '';
           let lastStderr = ''; // captured non-throwing error from the dispatch result
           let lastDispatchParts: any[] | undefined; // Structured parts from dispatch
+          let modelRetryPlan: ModelRetryPlan | null = null;
+          let lastModelFailure: any;
+          let failedAfterOutput = false;
 
           // ── P2 DiagnosticRunner: drain pending digests BEFORE this dispatch ──
           // Post-edit type/lint results that completed since the last iteration
@@ -1202,12 +1210,16 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
             guardAssembleRecorded = true;
           }
           const guardRoundTripStart = performance.now();
-          const gen = apiStreamDispatchWithHistory(config.engine.api, withImages(messageHistory), config.engine.timeout ?? 180, opts.signal, effectiveTools);
+          const gen = apiStreamDispatchWithHistory({ ...config.engine.api, sdkMaxRetries: 0 } as typeof config.engine.api, withImages(messageHistory), config.engine.timeout ?? 180, opts.signal, effectiveTools);
           try {
             while (true) {
               const { value, done } = await gen.next();
               if (done) {
                 const result = value as any;
+                lastModelFailure = result?.modelFailure;
+                modelRetryPlan = modelRetry.plan(lastModelFailure);
+                failedAfterOutput = lastModelFailure?.outputStarted === true
+                  || (fullResponse.length > 0 && Number(result?.exitCode) > 0 && result?.exitCode !== 130);
                 // Capture structured parts for smarter compaction
                 if (result?.parts && Array.isArray(result.parts)) {
                   lastDispatchParts = result.parts;
@@ -1243,10 +1255,11 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                   if (fullResponse.length === 0) {
                     // Don't surface yet — the empty-response block below decides
                     // whether to recover (overflow) or surface the error.
-                    if (!OVERFLOW_RE.test(lastStderr) || emergencyTrimmed) {
-                      yield { type: 'error' as const, content: result.stderr };
+                    const recovers = modelRetryPlan !== null || failedAfterOutput || (OVERFLOW_RE.test(lastStderr) && !emergencyTrimmed);
+                    if (!recovers) {
+                      yield { type: 'error' as const, ...modelRetry.finalError(result.stderr, lastModelFailure) };
                     }
-                  } else {
+                  } else if (!failedAfterOutput) {
                     console.warn(`[agon] API warning (response preserved): ${result.stderr.slice(0, 200)}`);
                   }
                 }
@@ -1270,7 +1283,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
               }
               if (step === 1) {
                 yield { type: 'error' as const, content: `API stream failed, retrying… (${err.message ?? String(err)})` };
-                await new Promise(r => setTimeout(r, 1000));
+                await abortableDelay(1000, opts.signal);
                 continue; // Retry the same step
               }
               // Don't kill session — preserve history for next turn. Disk
@@ -1294,6 +1307,25 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
             // Fall through to process fullResponse as if stream completed
           }
 
+          if (modelRetryPlan) {
+            yield* modelRetry.wait(modelRetryPlan);
+            if (opts.signal?.aborted) break;
+            step--;
+            continue;
+          }
+          if (failedAfterOutput) {
+            // Never retried: this call may already have emitted a tool call. Its
+            // markers are dropped unexecuted so history holds no dangling call.
+            const partialText = fullResponse.replace(/<tool\s+name="[^"]+">[\s\S]*?<\/tool>/g, '').trim();
+            if (partialText) messageHistory.push({ role: 'assistant', content: `${partialText}\n[Response cut off by a stream failure]` });
+            yield {
+              type: 'error' as const,
+              content: `Stream failed after output started, not retried: ${lastStderr}`,
+              metadata: { modelRetryFinal: true, outputStarted: true },
+            };
+            break;
+          }
+
           if (!fullResponse) {
             // Overflow returned as a non-throwing error (e.g. provider 400 in
             // stderr) → emergency-trim once and retry, same as the throw path.
@@ -1315,12 +1347,18 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                 firstChunkRetries++;
                 yield { type: 'status' as const, content: `first chunk timed out — safe retry ${firstChunkRetries}/${MAX_FIRST_CHUNK_RETRIES}…` };
                 if (FIRST_CHUNK_RETRY_BACKOFF_MS > 0) {
-                  await new Promise(r => setTimeout(r, FIRST_CHUNK_RETRY_BACKOFF_MS));
+                  await abortableDelay(FIRST_CHUNK_RETRY_BACKOFF_MS, opts.signal);
                 }
                 step--;
                 continue;
               }
               yield { type: 'error' as const, content: lastStderr };
+              break;
+            }
+            if (lastModelFailure) {
+              if (OVERFLOW_RE.test(lastStderr) && !emergencyTrimmed) {
+                yield { type: 'error' as const, content: `Engine context overflow could not be recovered: ${lastStderr.slice(0, 160)}`, metadata: { modelRetryFinal: true } };
+              }
               break;
             }
             // Empty response after successful stream: usually means the model returned
@@ -1334,7 +1372,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
             if (!opts.signal?.aborted && emptyResponseRetries < MAX_EMPTY_RETRIES) {
               emptyResponseRetries++;
               yield { type: 'status' as const, content: `engine returned empty — retrying (${emptyResponseRetries}/${MAX_EMPTY_RETRIES})…` };
-              await new Promise(r => setTimeout(r, Math.min(1500 * 2 ** (emptyResponseRetries - 1), 8000)));
+              await abortableDelay(Math.min(1500 * 2 ** (emptyResponseRetries - 1), 8000), opts.signal);
               step--; // retry the same step
               continue;
             }

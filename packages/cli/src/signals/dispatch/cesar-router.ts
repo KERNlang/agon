@@ -1247,7 +1247,7 @@ async function routeCesarTurn(input: string, images: ImageAttachment[], cb: Disp
       const localLabel = result.mode === 'self-nero' ? 'self + nero' : result.mode;
       cb.dispatch({ type: 'info', message: `Cesar → ${localLabel}` });
     }
-    if (result.responded) return false;
+    if (result.responded || result.terminalState === 'cancelled') return false;
   } catch (e) { console.warn(`[agon] dispatch: Cesar brain threw: ${e instanceof Error ? e.message : String(e)}`); }
   
   if (cleanupFailed()) return false;

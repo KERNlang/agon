@@ -959,6 +959,12 @@ async function runCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerCont
             throw error;
           }
         };
+        const _observeSendChunk = (chunk: any): void => {
+          turnEnd.observe(chunk);
+          if (chunk.type === 'status' && chunk.metadata?.kind === 'model-retry') {
+            dispatch({ type: 'spinner-start', message: `Cesar ${chunk.content}`, color });
+          }
+        };
         const _cesarSend = (opts: any) => {
           assertSendAvailable();
           const _inner = session.send({
@@ -973,7 +979,7 @@ async function runCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerCont
             for await (const chunk of _inner) {
               assertSendAvailable();
               _noteDoneChunk(chunk);
-              turnEnd.observe(chunk);
+              _observeSendChunk(chunk);
               yield chunk;
               assertSendAvailable();
             }
@@ -1661,7 +1667,7 @@ async function runCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerCont
               // skip its silent same-engine retry (which just re-hits the identical
               // 404) and go straight to acting-Cesar. Transient stream drops
               // (timeouts, 5xx, resets) are NOT matched here, so their retry stays.
-              const _deterministic = /\b(?:400|401|403|404)\b|not found|unauthorized|invalid api key|authentication|no such (?:route|endpoint)/i.test(_errFull);
+              const _deterministic = chunk.metadata?.modelRetryFinal === true || /\b(?:400|401|403|404)\b|not found|unauthorized|invalid api key|authentication|no such (?:route|endpoint)/i.test(_errFull);
               dispatch({ type: 'warning', message: `Cesar (${cesarEngineId}) stream error before any output: ${errBody}.${_deterministic ? ' Looks like an engine config/auth issue — check the engine with /engines.' : ' Try again or switch engine with /engine.'}` });
               // Drop a lingering speculative preview draft on the pre-stream-error
               // exit (firewall drops a draft-only entry without committing).

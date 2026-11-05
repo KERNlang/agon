@@ -582,7 +582,7 @@ it('does not blame the adversary at the cap when a later turn moved the tree aft
     stderr: '', durationMs: 1, timedOut: false, diff: '', diffLines: 0, filesChanged: 0 }));
   let builds = 0;
   const dispatch = vi.fn(async (_id, _prompt, context) => {
-    writeFileSync(join(context.cwd, 'feature.txt'), 'out-of-scope\n');
+    writeFileSync(join(context.cwd, 'feature.txt'), `in scope ${builds}\n`);
     return { exitCode: 0, stdout: builds++ === 0 ? 'CONQUER_DONE: feature is correct' : 'still looking', stderr: '', timedOut: false };
   });
   const services = withConquerHost({ conquer: adversaryHost(critic), logger: { debug: vi.fn() }, receipts: { record: vi.fn(async () => 'fixture') },

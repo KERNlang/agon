@@ -1225,7 +1225,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
               if (done) {
                 const result = value as any;
                 lastModelFailure = result?.modelFailure;
-                modelRetryPlan = modelRetry.plan(lastModelFailure);
+                modelRetryPlan = modelRetry.plan(lastModelFailure, Number(result?.durationMs) || 0);
                 failedAfterOutput = lastModelFailure?.outputStarted === true
                   || (fullResponse.length > 0 && Number(result?.exitCode) > 0 && result?.exitCode !== 130);
                 // Capture structured parts for smarter compaction

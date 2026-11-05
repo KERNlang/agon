@@ -193,6 +193,26 @@ describe('Cesar model-call retry against a real HTTP stub', () => {
     expect(ofType(second, 'error')[0]?.content).toMatch(/retry budget/);
   });
 
+  it('charges a slow first failure to the turn budget, so one per send cannot outrun the elapsed cap', async () => {
+    let failNext = false;
+    const baseUrl = await startStub((_req, res) => {
+      if (!failNext) return respondText(res, 'recovered');
+      failNext = false;
+      setTimeout(() => respondStatus(res, 500), 150);
+    });
+    const session = await sessionFor(baseUrl, { modelRetryMaxRetries: 500, modelRetryMaxElapsedMs: 400 });
+    const controlPlane = { turnId: 'turn-1' } as any;
+
+    const errors: string[] = [];
+    for (let send = 0; send < 5; send++) {
+      failNext = true;
+      const chunks = await collect(session.send({ message: `go ${send}`, controlPlane }));
+      errors.push(...ofType(chunks, 'error').map((c) => c.content));
+    }
+
+    expect(errors[0]).toMatch(/retry budget/);
+  });
+
   it('stops after the configured retries on a persistent 500 so one outage cannot retry forever', async () => {
     const baseUrl = await startStub((_req, res) => respondStatus(res, 500));
     const session = await sessionFor(baseUrl, { modelRetryMaxRetries: 2 });

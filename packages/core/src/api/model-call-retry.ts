@@ -150,7 +150,7 @@ export function createModelCallRetryGate(config: ModelRetryConfig | undefined, s
   };
 
   return {
-    plan(failure: ModelCallFailure | undefined): ModelRetryPlan | null {
+    plan(failure: ModelCallFailure | undefined, attemptMs = 0): ModelRetryPlan | null {
       refusal = undefined;
       if (!failure) {
         closeFailureSpan();
@@ -158,7 +158,7 @@ export function createModelCallRetryGate(config: ModelRetryConfig | undefined, s
         waitedMs = 0;
         return null;
       }
-      failingSince ??= Date.now();
+      failingSince ??= Date.now() - attemptMs;
       const spentMs = budget.spentMs + Date.now() - failingSince;
       const decision = decideModelCallRetry({ failure, retries, waitedMs, spentMs, policy });
       if (!decision.retry) {

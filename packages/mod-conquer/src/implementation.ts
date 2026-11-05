@@ -187,17 +187,10 @@ export async function runConquerTask(raw:Json,context:ConquerInvocationContext,s
     });
     capabilities.assertCurrent();
     const diff = readWorktreePatch(retained.path, source.baseSha);
-    // Later non-claim turns may have moved the tree since the last done-check.
-    let adversaryUnsatisfied = workflow.adversaryUnsatisfied;
-    if (!adversaryUnsatisfied && workflow.counterexample && (workflow.stopReason === 'cap-turns' || workflow.stopReason === 'cap-time')) {
-      const finalGate = await runFitnessCommand(gate, retained.path, gateTimeout, context.signal);
-      capabilities.assertCurrent();
-      adversaryUnsatisfied = finalGate.exitCode === 0 && !finalGate.timedOut && !finalGate.aborted;
-    }
     const status = context.signal.aborted || gateAborted ? 'cancelled'
       : workflow.stopReason === 'done' ? 'completed'
       : workflow.stopReason === 'builder-failed' ? 'builder_failed'
-      : adversaryUnsatisfied ? 'adversary_unsatisfied'
+      : workflow.adversaryUnsatisfied ? 'adversary_unsatisfied'
       : workflow.stopReason === 'cap-time' ? 'time_budget_exceeded' : 'turn_budget_exceeded';
     let publication: ConquerPublicationResult | undefined;
     let pullRequest: ConquerPullRequest | undefined;

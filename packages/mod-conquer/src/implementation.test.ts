@@ -546,8 +546,8 @@ it.each([
   { maxTurns: '12', config: {}, builds: 3, stopReason: 'adversary-limit' },
   { maxTurns: '12', config: { maxAdversaryRejections: 2 }, builds: 2, stopReason: 'adversary-limit' },
   { maxTurns: '2', config: {}, builds: 2, stopReason: 'cap-turns' },
-  { maxTurns: '2', config: {}, builds: 2, stopReason: 'cap-turns', rejections: 1 },
-])('stops a gate-green run the adversary keeps rejecting at the human gate instead of spending every turn: %j', async ({ maxTurns, config, builds, stopReason, rejections = builds }) => {
+])('stops a gate-green run the adversary keeps rejecting at the human gate instead of spending every turn: %j', async ({ maxTurns, config, builds, stopReason }) => {
+  const rejections = builds;
   const cwd = repo();
   const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd, encoding: 'utf8' });
   const critic = vi.fn(async () => ({ exitCode: 0, stdout: 'COUNTEREXAMPLE: grep -qx out-of-scope feature.txt\nOBSERVED: scope grew\nVERDICT: FLAWED',
@@ -574,6 +574,23 @@ it.each([
   expect(readFileSync(join(result.worktree.path, 'feature.txt'), 'utf8')).toBe('in scope\n');
   expect(existsSync(join(cwd, 'feature.txt'))).toBe(false);
   expect(execFileSync('git', ['rev-parse', 'HEAD'], { cwd, encoding: 'utf8' })).toBe(head);
+});
+
+it('does not blame the adversary at the cap when a later turn moved the tree after its rejection', async () => {
+  const cwd = repo();
+  const critic = vi.fn(async () => ({ exitCode: 0, stdout: 'COUNTEREXAMPLE: grep -qx out-of-scope feature.txt\nOBSERVED: scope grew\nVERDICT: FLAWED',
+    stderr: '', durationMs: 1, timedOut: false, diff: '', diffLines: 0, filesChanged: 0 }));
+  let builds = 0;
+  const dispatch = vi.fn(async (_id, _prompt, context) => {
+    writeFileSync(join(context.cwd, 'feature.txt'), 'out-of-scope\n');
+    return { exitCode: 0, stdout: builds++ === 0 ? 'CONQUER_DONE: feature is correct' : 'still looking', stderr: '', timedOut: false };
+  });
+  const services = withConquerHost({ conquer: adversaryHost(critic), logger: { debug: vi.fn() }, receipts: { record: vi.fn(async () => 'fixture') },
+    engines: { listActive: async () => ['builder', 'critic'], dispatch },
+  } as unknown as ModServices);
+  const out = await runConquerTaskImpl({ task: 'implement feature', gate: 'true', builder: 'builder', engines: 'critic', maxTurns: '2' },
+    { invocationId: 'moved-tree', cwd, platform: 'darwin-arm64', signal: new AbortController().signal, config: {} }, services);
+  expect(out).toMatchObject({ exitCode: 1, failure: { code: 'CONQUER_INCOMPLETE' }, result: { status: 'turn_budget_exceeded' } });
 });
 
 it('keeps rejecting a red gate up to the turn cap without running or blaming the adversary', async () => {

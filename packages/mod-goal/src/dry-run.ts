@@ -50,12 +50,19 @@ export async function runGoalDryRun(plan: GoalDryRunPlan, context: InvocationCon
   const root = mkdtempSync(join(tmpdir(), 'agon-goal-dry-run-'));
   try {
     const tree = join(root, 'tree');
-    git(root, ['clone', '--quiet', '--shared', '--no-checkout', '--', repoRoot, tree]);
-    git(tree, ['checkout', '--quiet', '--detach', baseSha]);
-    linkWorktreeNodeModules(repoRoot, tree);
-    hydrateWorktreeBuildArtifacts(repoRoot, tree);
+    try {
+      git(root, ['clone', '--quiet', '--shared', '--no-checkout', '--', repoRoot, tree]);
+      git(tree, ['checkout', '--quiet', '--detach', baseSha]);
+      linkWorktreeNodeModules(repoRoot, tree);
+      hydrateWorktreeBuildArtifacts(repoRoot, tree);
+    } catch (error) {
+      return { exitCode: 1, stderr: `Goal dry run could not prepare a private clone: ${error instanceof Error ? error.message : String(error)}\n` };
+    }
     const baseline = await runFitnessCommand(plan.gate, tree, plan.gateTimeout, context.signal);
     assertCurrent();
+    if (baseline.aborted) {
+      return { exitCode: 1, stderr: 'Goal dry run cancelled before the gate finished.\n' };
+    }
     if (baseline.exitCode !== 0 || baseline.timedOut) {
       return {
         exitCode: 1,

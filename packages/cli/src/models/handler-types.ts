@@ -202,6 +202,8 @@ export interface CesarState {
   discoveredGate?: DiscoveredGate | undefined;
   gateWaived?: boolean;
   gateNudgedClaim?: string | undefined;
+  /** Gate definition fingerprint per cwd, pinned once per session. */
+  gateDefinitionPins?: Record<string, string>;
 }
 
 export interface HandlerContext {

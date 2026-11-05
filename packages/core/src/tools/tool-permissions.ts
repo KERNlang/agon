@@ -13,7 +13,7 @@ export const DANGEROUS_COMMANDS: string[] = ['rm -rf /', 'rm -rf ~', 'rm -rf *',
 export const DANGEROUS_PREFIXES: string[] = ['sudo ', 'su ', 'doas '];
 
 
-export const READONLY_COMMANDS: Set<string> = new Set(['ls', 'cat', 'head', 'tail', 'less', 'more', 'wc', 'file', 'stat', 'pwd', 'echo', 'printf', 'date', 'which', 'whereis', 'type', 'find', 'grep', 'rg', 'ag', 'fd', 'fzf', 'git status', 'git log', 'git diff', 'git branch', 'git show', 'git blame', 'npm test', 'npm run test', 'npx vitest', 'npx tsc', 'node --version', 'npm --version', 'python --version', 'agon --help', 'agon config --help', 'agon config list', 'agon config get', 'tree', 'du', 'df']);
+export { READONLY_COMMANDS, isNonMutatingCommand, isReadOnlyCommand } from './tool-readonly-command.js';
 
 // ── Module: ShellParsing ──
 
@@ -25,36 +25,8 @@ export function extractBaseCommand(command: string): string {
   return stripShellWrappers(command).split(/[ \t\n\r\f\v]+/)[0] ?? '';
 }
 
-export function stripShellRedirections(command: string): string {
-  return command.replace(/[ \t\n\r\f\v]+[0-9]*(?:>>?|<<?)[ \t\n\r\f\v]*\S+/g, '').replace(/[ \t\n\r\f\v]+[0-9]*(?:>&|<&)[ \t\n\r\f\v]*\S+/g, '').trim();
-}
-
 export function isDangerousCommand(command: string): boolean {
   return ((lower) => DANGEROUS_COMMANDS.some((dangerous: string) => lower.includes(dangerous)) || DANGEROUS_PREFIXES.some((prefix: string) => lower.startsWith(prefix)))(command.toLowerCase().trim());
-}
-
-export function isReadOnlyCommand(command: string): boolean {
-  return ((readonlyCommand, commandSeparator) =>
-    ((readonlyCommand.includes('&&')
-      || readonlyCommand.includes('||')
-      || readonlyCommand.includes(commandSeparator)
-      || /&(?!&)/.test(readonlyCommand))
-      && !/^\|/.test(readonlyCommand))
-      ? readonlyCommand
-          .replace(/&&|\|\||&(?!&)/g, commandSeparator)
-          .split(commandSeparator)
-          .every((p: string) => p.trim() && isReadOnlyCommand(p.trim()))
-      : readonlyCommand.includes('|')
-        ? readonlyCommand
-            .split('|')
-            .map((p: string) => p.trim())
-            .every((p: string) => p && isReadOnlyCommand(p))
-        : [...READONLY_COMMANDS].some(
-            (safe: string) => readonlyCommand === safe || readonlyCommand.startsWith(safe + ' '),
-          ))(
-    stripShellRedirections(stripShellWrappers(command)).trim(),
-    String.fromCharCode(59),
-  );
 }
 
 

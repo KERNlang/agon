@@ -7,6 +7,7 @@ import type { CommandResult, InvocationContext, Json, ModServices } from '@kernl
 import { runReview } from '../../packages/mod-review/src/implementation.js';
 import { annotateExistingCode, existingCodeMatch, existingCodeReader } from '../../packages/mod-review/src/existing-code.js';
 import { formatSarif, lineRegion } from '../../packages/mod-review/src/report.js';
+import { gatherReviewFileContext } from '../../packages/support-verification/src/review-file-context.js';
 import { isSecretPath, redactSecrets, redactSecretsPreservingLines } from '../../packages/support-verification/src/secret-redaction.js';
 
 const TOKEN = `ghp_${'A1b2C3d4E5'.repeat(4)}`;
@@ -172,6 +173,17 @@ describe('mod-review existingCode', () => {
 });
 
 describe('mod-review phase B review fixes', () => {
+  it('gatherReviewFileContext leaks .npmrc, prod.env.backup and key files to reviewers from a diff, or starves them of source named like a secret', () => {
+    const cwd = repo();
+    const leaked = ['.npmrc', 'prod.env.backup', 'deploy.pem', 'id_ed25519', 'secrets.yaml'];
+    const kept = ['.env.example', 'key.ts', 'secrets.ts', 'credentials.ts', 'vite.env.d.ts', 'id_rsa.pub'];
+    for (const file of [...leaked, ...kept]) writeFileSync(join(cwd, file), `CONTENT_OF_${file}\n`);
+    const diff = [...leaked, ...kept].map(file => `diff --git a/${file} b/${file}\n`).join('');
+    const context = gatherReviewFileContext(diff, cwd);
+    for (const file of leaked) expect(context).not.toContain(`CONTENT_OF_${file}`);
+    for (const file of kept) expect(context).toContain(`CONTENT_OF_${file}`);
+  });
+
   it('blocks relative and backslash secret paths', () => {
     for (const path of ['.aws/credentials', './.ssh/id_rsa', 'home\\me\\.docker\\config.json', 'a/.env']) expect(isSecretPath(path)).toBe(true);
     expect(isSecretPath('src/credentials.ts')).toBe(false);

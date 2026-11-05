@@ -2,7 +2,7 @@ import type { ToolResult, ToolContext, ToolDefinition, PermissionDecision, ToolH
 
 import { spawnStream } from '../blocks/process.js';
 
-import { evaluateBashRules, hasShellControl, splitShellSegments } from './tool-permissions.js';
+import { evaluateBashRules, hasShellControl, isReadOnlyCommand, splitShellSegments } from './tool-permissions.js';
 
 import { PERMISSION_DENIED_MESSAGE } from '../signals/tool-registry.js';
 
@@ -108,9 +108,9 @@ export function createBashTool(): ToolHandler {
       const segLower = seg.trim().toLowerCase();
       return READONLY_COMMANDS.some((safe: string) => segLower === safe || segLower.startsWith(safe + ' '));
     };
-    const isReadOnly = hasShellControl(command)
+    const isReadOnly = isReadOnlyCommand(command) && (hasShellControl(command)
       ? splitShellSegments(command).every(isSegmentReadOnly)
-      : isSegmentReadOnly(lower);
+      : isSegmentReadOnly(lower));
 
     // Investigation mode: allow read-only commands, block mutating ones
     if ((_ctx as any).readOnlyMode) {

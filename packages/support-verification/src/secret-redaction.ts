@@ -21,6 +21,12 @@ export const SECRET_PATTERNS: RegExp[] = [
   /\bxox[baprs]-[0-9A-Za-z\-]{10,}\b/g,
   // Generic bearer tokens in env-like lines
   ENV_SECRET_PATTERN,
+  // Bearer tokens
+  /\bbearer\s+[A-Za-z0-9._~+/=-]{16,}/gi,
+  // JWTs
+  /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}(?:\.[A-Za-z0-9_-]+)?/g,
+  // Credentials embedded in a URL
+  /\b[a-z][a-z0-9+.-]*:\/\/[^\s/:@]+:[^\s/@]+@/gi,
   // Private key headers
   /-----BEGIN [A-Z ]+PRIVATE KEY-----[\s\S]+?-----END [A-Z ]+PRIVATE KEY-----/g,
 ] as RegExp[];

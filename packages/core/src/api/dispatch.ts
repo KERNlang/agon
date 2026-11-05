@@ -10,6 +10,8 @@ import { hostNowMs, hostUrlHost } from '../blocks/host-runtime.js';
 
 import { classifyApiFailure, type ApiFailure } from './failure-classify.js';
 
+import { describeModelCallFailure, isModelOutputPart } from './model-call-retry.js';
+
 import { startWallClock } from './wall-clock.js';
 
 export interface ApiConfig {
@@ -24,6 +26,7 @@ export interface ApiConfig {
   extendWhileActiveMaxSeconds?: number;
   firstChunkRetryCount?: number;
   firstChunkRetryBackoffMs?: number;
+  sdkMaxRetries?: number;
 }
 
 export const _modelCache: Map<string,{model:any, apiKey:string}> = new Map<string,{model:any, apiKey:string}>();
@@ -410,6 +413,7 @@ export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages:
   const capturedParts: Array<{kind:'text',text:string}|{kind:'reasoning',text:string}|{kind:'tool_call',toolName:string,toolCallId:string,args:Record<string,unknown>}> = [];
   let currentTextBuf = '';
   let currentReasoningBuf = '';
+  let outputStarted = false;
 
   try {
     const streamOpts: any = {
@@ -417,7 +421,7 @@ export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages:
       messages: coreMessages,
       maxOutputTokens: config.maxTokens ?? 4096,
       abortSignal: controller.signal,
-      maxRetries: 5,
+      maxRetries: config.sdkMaxRetries ?? 5,
     };
 
     if (tools && tools.length > 0) {
@@ -512,6 +516,7 @@ export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages:
             durationMs: Date.now() - startTime,
             timedOut: true,
             parts: capturedParts,
+            ...(outputStarted ? { modelFailure: { retryable: false, outputStarted } } : {}),
             ...clock.idleReport(),
           };
         }
@@ -521,6 +526,7 @@ export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages:
       if (iterResult.done) { iterDone = true; break; }
       const part = iterResult.value;
       chunkCount++;
+      if (isModelOutputPart(part.type)) outputStarted = true;
 
       // Any productive event switches to tighter inter-chunk timeout
       if (part.type === 'text-delta' || part.type === 'reasoning-delta' || part.type === 'tool-call') {
@@ -584,9 +590,10 @@ export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages:
             if (signal?.aborted) return { exitCode: 130, stdout, stderr: 'Aborted', durationMs: Date.now() - startTime, timedOut: false };
             return { exitCode: 124, stdout, stderr: clock.timeoutMessage(), durationMs: Date.now() - startTime, timedOut: true, ...clock.report() };
           }
+          const modelFailure = describeModelCallFailure(streamError, outputStarted);
           const classified = classifyApiFailure(streamError);
           if (classified.kind === 'timeout' || classified.kind === 'rate_limit') {
-            return apiFailureResult(classified, stdout, Date.now() - startTime, 'API stream failed');
+            return { ...apiFailureResult(classified, stdout, Date.now() - startTime, 'API stream failed'), modelFailure };
           }
           const errStr = String(streamError);
           // A 404/not-found before any output is almost always a wrong baseUrl
@@ -601,7 +608,7 @@ export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages:
           // "check /engines" hint instead. Do NOT broaden this to auth codes.
           const routingShaped = stdout.length === 0 && /\b404\b|not found|no such (?:route|endpoint)/i.test(errStr);
           const hint = routingShaped ? formatMismatchHint(config) : null;
-          return { exitCode: 1, stdout, stderr: hint ? `Stream error: ${errStr}\n${hint}` : `Stream error: ${errStr}`, durationMs: Date.now() - startTime, timedOut: false };
+          return { exitCode: 1, stdout, stderr: hint ? `Stream error: ${errStr}\n${hint}` : `Stream error: ${errStr}`, durationMs: Date.now() - startTime, timedOut: false, modelFailure };
         }
         case 'finish': {
           // AI SDK TextStreamPart: { type: 'finish', finishReason, totalUsage }.
@@ -648,7 +655,7 @@ export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages:
       return { exitCode: 124, stdout, stderr: clock.timeoutMessage(), durationMs, timedOut: true, ...clock.report() };
     }
     const failure = classifyApiFailure(err);
-    const failed = apiFailureResult(failure, stdout, durationMs, 'API stream failed');
+    const failed = { ...apiFailureResult(failure, stdout, durationMs, 'API stream failed'), modelFailure: describeModelCallFailure(err, outputStarted) };
     // Anthropic-format on non-Anthropic host is a common misconfig — append a hint
     // so the user sees it in the error toast instead of silently falling back every turn.
     const hint = stdout.length === 0 && failure.kind === 'error' ? formatMismatchHint(config) : null;

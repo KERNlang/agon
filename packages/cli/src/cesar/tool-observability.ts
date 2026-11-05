@@ -4,6 +4,8 @@ import { join } from 'node:path';
 
 import { RUNS_DIR, agonPath, isReadOnlyCommand } from '@kernlang/agon-core';
 
+import { redactSecrets } from '@kernlang/agon-support-verification';
+
 import { hostDateMs, hostNowIso, hostNowMs } from '../lib/kern-host.js';
 
 import { isBashToolName, isWriteToolName } from './brain-helpers.js';
@@ -23,7 +25,7 @@ export interface CesarApprovalLedgerRecord {
 
 export interface CesarToolTimelineRecord {
   turnId: string;
-  event: 'turn_start'|'turn_summary'|'tool_call'|'tool_result'|'approval_decision'|'xml_interrupt'|'steering_injected';
+  event: 'turn_start'|'turn_summary'|'turn_end'|'tool_call'|'tool_result'|'approval_decision'|'xml_interrupt'|'steering_injected';
   engineId?: string;
   cwd?: string;
   tool?: string;
@@ -92,6 +94,19 @@ export function classifyCesarToolEffect(tool: string|undefined, input: Record<st
 
 function looksSensitiveString(value: string): boolean {
   return /(?:secret|token|password|credential|api[_-]?key|private[_-]?key)[ \t\n\r\f\v]*[:=]/i.test(value) || /-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(value) || /\b(?:sk-[A-Za-z0-9_-]{16,}|ghp_[A-Za-z0-9_]{16,}|AKIA[0-9A-Z]{16})\b/.test(value);
+}
+
+const LOG_ONLY_SECRET_PATTERNS: RegExp[] = [
+  /\b(?:proxy-)?authorization\s*[:=]\s*[^\n,;]+/gi,
+  /\b(?:set-)?cookie\s*[:=]\s*[^\n]+/gi,
+  /([?&](?:api[_-]?key|key|token|access_token|secret|password)=)[^\s&]+/gi,
+];
+
+export function summarizeErrorForLog(error: unknown): string {
+  const text = error instanceof Error ? error.message : String(error ?? '');
+  if (looksSensitiveString(text)) return '[redacted]';
+  const scrubbed = LOG_ONLY_SECRET_PATTERNS.reduce((out, pattern) => out.replace(pattern, '[REDACTED-SECRET]'), redactSecrets(text));
+  return scrubbed.replace(/\s+/g, ' ').trim().slice(0, 200);
 }
 
 function summarizeCommandString(value: string): Record<string,unknown> {
@@ -326,6 +341,7 @@ export function replayCesarHarnessLogs(opts?: {runsDir?:string,turnId?:string,li
     events.sort((a, b) => eventTimeMs(a) - eventTimeMs(b));
     const start = events.find((e) => e.event === 'turn_start') ?? events[0] ?? {};
     const summary = events.find((e) => e.event === 'turn_summary')?.summary as Record<string, unknown> | undefined;
+    const turnEnd = events.find((e) => e.event === 'turn_end')?.summary as Record<string, unknown> | undefined;
     const toolEvents = events.filter((e) => e.event === 'tool_call' || e.event === 'tool_result');
     const interruptCount = events.filter((e) => e.event === 'xml_interrupt').length;
     const approvalsForTurn = approvalByTurn.get(turnId) ?? [];
@@ -348,7 +364,8 @@ export function replayCesarHarnessLogs(opts?: {runsDir?:string,turnId?:string,li
       ts: start.ts ?? lastEvent.ts,
       engineId: start.engineId ?? summary?.engineId,
       cwd: start.cwd,
-      durationMs: summary?.durationMs,
+      durationMs: summary?.durationMs ?? turnEnd?.durationMs,
+      turnEnd,
       eventCount: events.length,
       toolEventCount: toolEvents.length,
       toolCallCount: toolCallEvents.length,
@@ -388,6 +405,12 @@ export function replayCesarHarnessLogs(opts?: {runsDir?:string,turnId?:string,li
     // that each logged running+done would otherwise read as tools=2N.
     const distinctCalls = Math.max(Number(turn.toolCallCount ?? 0), Number(turn.toolResultCount ?? 0));
     lines.push(`  engine=${turn.engineId ?? 'unknown'} ${duration} events=${turn.eventCount} tools=${distinctCalls} approvals=${turn.approvalCount} xmlInterrupts=${turn.xmlInterrupts}`);
+    const ended = turn.turnEnd as Record<string, unknown> | undefined;
+    if (ended) {
+      const stepLimit = typeof ended.budget === 'number' ? `/${ended.budget}` : '';
+      const errorNote = ended.error ? ` error=${ended.errorKind}: ${ended.error}` : '';
+      lines.push(`  ended: ${ended.endReason} steps=${ended.steps}${stepLimit} sends=${ended.sends}${errorNote}`);
+    }
     const failedMutations = Number(turn.failedMutationCount ?? 0);
     lines.push(`  effects: ${turn.mutationCount ?? 0} mutating · ${turn.readOnlyCount ?? 0} read-only${failedMutations > 0 ? ` · ${failedMutations} failed mutation attempt(s)` : ''}`);
     lines.push(`  tools: ${tools}`);

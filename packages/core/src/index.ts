@@ -175,7 +175,7 @@ export { createReadTool, createEditTool, createMultiEditTool, createWriteTool, c
 export type { SearchResult, SearchRequest, ResearchIntent, CitationStatus, CitationProbe, CitationVerdict, CitationReport } from './tools.js';
 export { formatCesarPlanMarkdown } from '@kernlang/agon-mod-plan';
 export { generateToolPrompt, toolsToOpenAIFormat } from './tools/tool-prompt.js';
-export { parseToolCalls, toolCallsToApiFormat, formatToolResults, formatToolResult } from './tools/tool-parser.js';
+export { parseToolCalls, stripToolMarkup, toolCallsToApiFormat, formatToolResults, formatToolResult } from './tools/tool-parser.js';
 export type { ParsedToolCall, ParseResult } from './tools/tool-parser.js';
 export { discoverMcpServers, mcpDiscoveryFingerprint, mcpServersToWireFormat } from './tools/mcp-discovery.js';
 export type { McpServerConfig } from './tools/mcp-discovery.js';

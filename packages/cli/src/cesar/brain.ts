@@ -6,7 +6,7 @@ import { mkdirSync, appendFileSync, existsSync, readFileSync, unlinkSync, readdi
 
 import type { ImageAttachment, PersistentSession } from '@kernlang/agon-core';
 
-import { ensureAgonHome, RUNS_DIR, appendMessage, appendUserTurnIfAbsent, buildHistoryPrimedPrompt, tracker, resolveWorkingDir, ToolRegistry, getProjectFileStateCache, parseToolCalls, formatToolResults, runToolLoop, classifyTask, loadConfig, createStreamBridge, engineHealth, authLoginHint, discoverGate, bashRanGate, isGateSkipSignal, parsePermissionRuleSet, parseToolHooks, isReadOnlyCommand } from '@kernlang/agon-core';
+import { ensureAgonHome, RUNS_DIR, appendMessage, appendUserTurnIfAbsent, buildHistoryPrimedPrompt, tracker, resolveWorkingDir, ToolRegistry, getProjectFileStateCache, formatToolResults, classifyTask, loadConfig, createStreamBridge, engineHealth, authLoginHint, discoverGate, bashRanGate, isGateSkipSignal, parsePermissionRuleSet, parseToolHooks, isReadOnlyCommand } from '@kernlang/agon-core';
 
 import type { ToolContext, ToolCallResult } from '@kernlang/agon-core';
 
@@ -52,7 +52,7 @@ import { applyCesarSelfTurnApproval } from './self-turn-approval.js';
 
 import { approvalToolIsFileMutating, buildApprovalDiffPreview } from './approval-diff.js';
 
-import { createCesarTurnId, recordCesarApprovalDecision, recordCesarToolTimeline, recordCesarConfidence } from './tool-observability.js';
+import { recordCesarApprovalDecision, recordCesarToolTimeline, recordCesarConfidence } from './tool-observability.js';
 
 import { markSteeringTurn, drainSteering, releaseSteeringTurn, hasPendingSteering, formatSteeringIntoSend } from './steering.js';
 
@@ -80,6 +80,12 @@ import { createFollowUpDisplay } from './follow-up-display.js';
 import { consumeCesarPlanControlSignals } from './plan-control-signals.js';
 
 import { hostNowIso, hostWaitForInteractiveChoice } from '../lib/kern-host.js';
+
+import { classifyCesarStreamFailure, createStreamFailureGuard } from './stream-failure.js';
+
+import { createCesarTurnEndTracker } from './turn-end-log.js';
+
+import type { CesarTurnEndTracker } from './turn-end-log.js';
 
 export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input: string, response: string, cesarEngineId: string, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext, telemetry?: Record<string,unknown>, turnAlreadyCommitted?: boolean): Promise<CesarTurnOutcome> {
   // streaming-end commits a real stream OR (when only a speculative preview
@@ -154,16 +160,24 @@ async function enterCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerCo
   const cancel = () => abort.abort(parentSignal?.reason);
   parentSignal?.addEventListener('abort', cancel, { once: true });
   if (parentSignal?.aborted) cancel();
+  const turnEnd = createCesarTurnEndTracker();
   try {
     abort.signal.throwIfAborted();
-    return await runCesarBrain(input, dispatch, ctx, images, abort, !parentSignal, assertOwnerAvailable);
+    const outcome = await runCesarBrain(input, dispatch, ctx, images, abort, !parentSignal, turnEnd, assertOwnerAvailable);
+    turnEnd.settle(outcome, abort.signal.aborted);
+    return outcome;
+  } catch (error) {
+    turnEnd.settleThrown(error, abort.signal.aborted);
+    throw error;
   } finally {
     parentSignal?.removeEventListener('abort', cancel);
   }
 }
 
-async function runCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images: ImageAttachment[] | undefined, abort: AbortController, ownsActiveAbort: boolean, assertOwnerAvailable?: () => void): Promise<CesarTurnOutcome> {
+async function runCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images: ImageAttachment[] | undefined, abort: AbortController, ownsActiveAbort: boolean, turnEnd: CesarTurnEndTracker, assertOwnerAvailable?: () => void): Promise<CesarTurnOutcome> {
   const assertHostCurrent = captureProcessSurfaceAuthority();
+  const _streamFailure = createStreamFailureGuard();
+  const { parseToolCalls, runToolLoop } = _streamFailure;
   let _runtimeHost: any = null;
   let _turnRuntime: any = null;
   const assertExecutionAvailable = (): void => {
@@ -183,7 +197,7 @@ async function runCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerCont
   // Retain the entry session across awaits: detachment does not erase a failure.
   const _entrySession = ctx.cesarSession;
       const _turnStart = Date.now();
-      const _turnId = createCesarTurnId();
+      const _turnId = turnEnd.turnId;
       let _turnTerminalState: 'completed' | 'failed' | 'timed_out' = 'completed';
       let _timedOut = false;
       const _turnCwd = resolveWorkingDir();
@@ -568,6 +582,7 @@ async function runCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerCont
         successfulMutations: _successfulMutationCount,
         failedTools: _failedToolCount,
       });
+      turnEnd.bindTelemetry(buildToolTelemetry);
 
       // Short follow-ups bypass escalation/delegation — they're conversation continuations
       const FOLLOWUP_RE = /^(still\??|and\??|go on|continue|yes|no|ok|why\??|how\??|what\??|really\??|more|details|explain|show me|huh\??|so\??|\?\??|y|n)$/i;
@@ -948,6 +963,17 @@ async function runCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerCont
             throw error;
           }
         };
+        const _observeSendChunk = (chunk: any): void => {
+          turnEnd.observe(chunk);
+          if (_streamFailure.note(chunk)) {
+            _engineErrored = true;
+            _engineErrorMsg = String(chunk.content ?? '').slice(0, 300);
+          }
+          if (chunk.type === 'status' && chunk.metadata?.kind === 'model-retry') {
+            const message = `Cesar ${chunk.content}`;
+            dispatch(chunk.metadata.tick === 0 ? { type: 'spinner-start', message, color } : { type: 'spinner-update', message });
+          }
+        };
         const _cesarSend = (opts: any) => {
           assertSendAvailable();
           const _inner = session.send({
@@ -956,11 +982,13 @@ async function runCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerCont
             ...opts,
             controlPlane: nextCesarResponseSeq(_turnRuntime),
           });
+          turnEnd.beginSend();
           const _wrapped = async function* () {
             assertSendAvailable();
             for await (const chunk of _inner) {
               assertSendAvailable();
               _noteDoneChunk(chunk);
+              _observeSendChunk(chunk);
               yield chunk;
               assertSendAvailable();
             }
@@ -1648,8 +1676,9 @@ async function runCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerCont
               // skip its silent same-engine retry (which just re-hits the identical
               // 404) and go straight to acting-Cesar. Transient stream drops
               // (timeouts, 5xx, resets) are NOT matched here, so their retry stays.
-              const _deterministic = /\b(?:400|401|403|404)\b|not found|unauthorized|invalid api key|authentication|no such (?:route|endpoint)/i.test(_errFull);
-              dispatch({ type: 'warning', message: `Cesar (${cesarEngineId}) stream error before any output: ${errBody}.${_deterministic ? ' Looks like an engine config/auth issue — check the engine with /engines.' : ' Try again or switch engine with /engine.'}` });
+              const _failure = classifyCesarStreamFailure(_errFull, chunk.metadata);
+              const _deterministic = _failure.skipSameEngineRetry;
+              dispatch({ type: 'warning', message: `Cesar (${cesarEngineId}) stream error before any output: ${errBody}.${_failure.configShaped ? ' Looks like an engine config/auth issue — check the engine with /engines.' : ' Try again or switch engine with /engine.'}` });
               // Drop a lingering speculative preview draft on the pre-stream-error
               // exit (firewall drops a draft-only entry without committing).
               if (previewShown) dispatch({ type: 'streaming-end', engineId: cesarEngineId });
@@ -1873,16 +1902,14 @@ async function runCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerCont
           // safe no-op when no entry exists.
           if (previewShown) dispatch({ type: 'streaming-end', engineId: cesarEngineId });
           const elapsed = Math.round((Date.now() - _turnStart) / 1000);
-          if (elapsed >= cesarTimeout) {
-            _timedOut = true;
-            _turnTerminalState = 'timed_out';
+          if (_timedOut) {
             dispatch({ type: 'warning', message: `Cesar timed out after ${elapsed}s. Try a simpler question, or use /forge for complex tasks.` });
           }
           const abortOutcome = resolveCesarAbortOutcome(_timedOut, response.length > 0 || streaming || hadToolActivity);
           return { turnId: _turnId, mode: 'self', delegated: false, ...abortOutcome };
         }
 
-        response = response.trim();
+        response = _streamFailure.clean(response).trim();
 
         // Strip <think> blocks and internal markers
         response = response.replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
@@ -3396,6 +3423,7 @@ async function runCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerCont
             _prevToolCount = _toolsUsed.length;
           }
           if (_continuations >= MAX_CONTINUATIONS) {
+            turnEnd.noteContinuationCap();
             if (agenticAuto) {
               _agenticTaskState = 'budget_exhausted';
               _agenticTerminalReason = 'continuation_checkpoint';

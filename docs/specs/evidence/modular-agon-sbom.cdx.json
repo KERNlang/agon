@@ -1,7 +1,7 @@
 {
   "bomFormat": "CycloneDX",
   "specVersion": "1.6",
-  "serialNumber": "urn:uuid:c69f42c6-72b5-5716-8e45-fc481b54c43d",
+  "serialNumber": "urn:uuid:c9a081b7-5fec-5b70-8380-2bc1e55e133f",
   "version": 1,
   "metadata": {
     "component": {
@@ -38,7 +38,7 @@
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "40f9702aafdc178293de8bf06e9f24474d0a77e71d7d6712f91fdf9a5d2df39e"
+          "content": "01e685561bfc353d059fe4bc5dbdc1b003b0d10b7e656edb75471017a36ac0d3"
         }
       ],
       "licenses": [
@@ -51,7 +51,7 @@
       "properties": [
         {
           "name": "npm:integrity",
-          "value": "sha512-nqSoIoIODp1cY4H41C4auXUsM4JBsz6MfyjIGsfAuAx01d1Go6b84mWf4Tv8UNDNDwk+A/lPYRvaWpAesrmgDA=="
+          "value": "sha512-y6i9TD34lZzcIbMNTtgB8/lr/X1WBR4SkynKKQrbfBQI3khquWDWlKUorGf9l2WXPTrVL1heh0QJz/mk+ZCSGw=="
         },
         {
           "name": "agon:class",
@@ -68,7 +68,7 @@
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "bccbcd7b69d4e50f851c48d36cea7b9fafe05a4796a1609cf2ab9335c90e12f9"
+          "content": "454f7e2dd923a22835f742dfce1623275063b0269fe77aed4de1cf4399ec3764"
         }
       ],
       "licenses": [
@@ -81,7 +81,7 @@
       "properties": [
         {
           "name": "npm:integrity",
-          "value": "sha512-3Z1fXozUvMf1tdcRVkDbQJFg3SdTHQQdgmJW0VGKawyB3PNNWQdYw2fz2vIU5Ee2RNgEGjztNn/mPfvzCVOJ9g=="
+          "value": "sha512-o/RmGloWBUi7FJNjt0Eg9C7VK6Uqy283jmkBZmoNT074IgFNErFWY7e7g0Dl7uKKjdB+CsTReSEGw9vSY9LVmw=="
         },
         {
           "name": "agon:class",
@@ -188,7 +188,7 @@
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "6c75a6173d80cae6b2c7f0916455f88b6b5058939fb027ee7c1652b567c4f6ca"
+          "content": "2e0dd8a0a0b6a417e6a487a6bf1a3796435fea935fafc227a9c527d8918c74ea"
         }
       ],
       "licenses": [
@@ -201,7 +201,7 @@
       "properties": [
         {
           "name": "npm:integrity",
-          "value": "sha512-XCtWGX+FsLHh3TGOh8ybtk7UXOkTethRPT6cFCtZ4ItsrPxNPDadJ7VArvXv2w5x17d18jbQlGlwX4NN92ebrQ=="
+          "value": "sha512-aNYsmWhf5Pu24i+y+IUPsQdOA63n8ARQdrON3ZX5RH/tnS94GzubI8fMkhBSoen+YkTDq12TMI6IwpL9CjISRA=="
         },
         {
           "name": "agon:class",

@@ -279,6 +279,12 @@ describe('Intent Detection — Slash Commands', () => {
     expect(detectIntent('/elo').type).toBe('leaderboard');
   });
 
+  it('bare /undo parses without a checkpoint id, so it reverts the last turn and not a named snapshot', () => {
+    const bare = detectIntent('/undo');
+    expect(bare.type).toBe('undo');
+    if (bare.type === 'undo') expect(bare.snapshotId).toBeUndefined();
+  });
+
   it('/undo accepts an explicit checkpoint id', () => {
     const direct = detectIntent('/undo abc12345');
     expect(direct.type).toBe('undo');

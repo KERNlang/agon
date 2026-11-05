@@ -26,6 +26,8 @@ import type { GuardMode } from '@kernlang/agon-core';
 import type { HandlerContext } from '../handlers/types.js';
 
 import { createCesarToolRegistry } from './tools.js';
+
+import { undoGeneration } from './turn-undo.js';
 import { closeAndDetachSession, markSessionCleanupFailed, sessionCleanupFailed, SESSION_CLEANUP_FAILURE_MESSAGE } from './session-health.js';
 
 import { getSessionAllowList } from '../signals/output.js';
@@ -978,7 +980,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
     // Dedup stable discovery tools. Do not cache Read here: the Read tool
     // performs mtime-aware dedup itself and must run on explicit re-read so
     // Edit/Write snapshots refresh after a file changes.
-    const cacheKey = `${name}:${JSON.stringify(args)}`;
+    const cacheKey = `${undoGeneration()}:${name}:${JSON.stringify(args)}`;
     const cached = CACHEABLE_TOOLS.has(name) ? toolResultCache.get(cacheKey) : undefined;
     if (cached !== undefined) return cached;
 

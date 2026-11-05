@@ -31,6 +31,7 @@ import { setWindowTitle } from '../lib/terminal-notify.js';
 import { extractFileMentions } from '../signals/app-input.js';
 
 import { runInJobAbortScope } from '../signals/job-abort-scope.js';
+import { markUserTurnBoundary, noteDelegatedJob } from '../cesar/turn-undo.js';
 import { queuedInputText } from '../signals/queued-input.js';
 import type { QueuedInput } from '../signals/queued-input.js';
 
@@ -612,6 +613,7 @@ export async function runHandleSubmit(opts: HandleSubmitDeps, value: QueuedInput
     : buildMentionedFilesContext(input, resolveWorkingDir());
   let dispatchInput = mentionContext ? input + mentionContext : input;
   let intent = detectIntent(cleanInput || input, opts.commandRegistry);
+  markUserTurnBoundary();
   if (intent.type === 'status') {
     opts.setStatusDashboardOpen(true);
     opts.dispatch({ type: 'info', message: 'Status dashboard open. Press q or Esc to close.' } as any);
@@ -651,6 +653,7 @@ export async function runHandleSubmit(opts: HandleSubmitDeps, value: QueuedInput
   const cb: DispatchCallbacks = {
     dispatch: opts.dispatch, ctx, commandRegistry: opts.commandRegistry, eventBus: opts.eventBus, loadedExtensions: opts.loadedExtensions, setWorkspacePath: opts.setWorkspacePath,
     runAsJob: (type: string, label: string, fn: (signal: AbortSignal) => Promise<void>) => {
+      noteDelegatedJob(type, resolveWorkingDir());
       const job = opts.jobManager.run(type, label, (signal: AbortSignal) => runInJobAbortScope(signal, () => fn(signal)));
       opts.chatStartTimeRef.current = Date.now();
       opts.setJobList([...opts.jobManager.list()]);

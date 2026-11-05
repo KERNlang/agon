@@ -1,13 +1,13 @@
 
-import { resolveWorkingDir, listSnapshots, revertSnapshot, resumeChatSession, configSet, clearConversation } from '@kernlang/agon-core';
-import { undoPatch } from '@kernlang/agon-support-worktree';
+import { resolveWorkingDir, listSnapshots, resumeChatSession, configSet, clearConversation } from '@kernlang/agon-core';
 import { runSessionJobAction } from '@kernlang/agon-mod-jobs';
 import { assertProcessSurfaceAvailable } from '../../surface-authority-runtime.js';
-import { persistencePath } from '@kernlang/agon-support-persistence';
 
 import { icons } from '../icons.js';
 
 import { handleForge, handleChat } from '../../handlers/index.js';
+
+import { handleUndo } from '../../handlers/undo.js';
 
 import type { DispatchCallbacks, DispatchResult } from '../dispatch.js';
 
@@ -40,51 +40,10 @@ export async function dispatchMetaIntent(intent: any, input: string, cb: Dispatc
     }
   
     case 'undo': {
-      const cwd = resolveWorkingDir();
-      const snapshotId = String((intent as any).snapshotId ?? '').trim();
-      if (snapshotId) {
-        const snapshot = listSnapshots().find((entry: any) => String(entry?.id ?? '') === snapshotId);
-        if (!snapshot) {
-          cb.dispatch({ type: 'warning', message: `Checkpoint ${snapshotId} not found.` });
-          break;
-        }
-        if (String(snapshot.cwd ?? '') !== cwd) {
-          cb.dispatch({ type: 'warning', message: `Checkpoint ${snapshotId} belongs to a different workspace.` });
-          break;
-        }
-        const revertResult = revertSnapshot(snapshot.id);
-        if (revertResult.ok) {
-          cb.dispatch({ type: 'success', message: `Checkpoint ${snapshot.id} reverted (${revertResult.filesReverted} file${revertResult.filesReverted === 1 ? '' : 's'}).` });
-        } else {
-          cb.dispatch({ type: 'error', message: revertResult.error ?? 'Checkpoint undo failed' });
-        }
-        break;
-      }
-      if (cb.lastUndoToken) {
-        const undoResult = undoPatch(cwd, cb.lastUndoToken, persistencePath('undo'));
-        if (undoResult.ok) {
-          cb.dispatch({ type: 'success', message: 'Patch reverted successfully.' });
-          cb.setLastUndoToken(null);
-          if (undoResult.warning) cb.dispatch({ type: 'warning', message: undoResult.warning });
-        } else {
-          cb.dispatch({ type: 'error', message: undoResult.error ?? 'Undo failed' });
-        }
-        break;
-      }
-      const snapshot = listSnapshots().find((entry: any) => String(entry?.cwd ?? '') === cwd);
-      if (!snapshot) {
-        cb.dispatch({ type: 'warning', message: 'Nothing to undo. No forge patch or Cesar checkpoint found for this workspace.' });
-        break;
-      }
-      const revertResult = revertSnapshot(snapshot.id);
-      if (revertResult.ok) {
-        cb.dispatch({ type: 'success', message: `Checkpoint ${snapshot.id} reverted (${revertResult.filesReverted} file${revertResult.filesReverted === 1 ? '' : 's'}).` });
-      } else {
-        cb.dispatch({ type: 'error', message: revertResult.error ?? 'Checkpoint undo failed' });
-      }
+      await handleUndo(String((intent as any).snapshotId ?? '').trim(), cb);
       break;
     }
-  
+
     case 'checkpoints': {
       const cwd = resolveWorkingDir();
       const snapshots = listSnapshots().filter((entry: any) => String(entry?.cwd ?? '') === cwd).slice(0, 10);

@@ -31,6 +31,7 @@ import { ensureCesarSession, buildCesarSystemPrompt, resolveCesarBackend, render
 import { enforceContextBudget } from './context-budget.js';
 
 import { createCesarToolRegistry, createEagerToolContext, executeEagerTool } from './tools.js';
+import { consumeUndoNotice, noteTurnToolEvent } from './turn-undo.js';
 
 import { fireQuickNero, deactivateNero, promptDelegation } from './escalation.js';
 
@@ -314,6 +315,7 @@ async function runCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerCont
       const recordToolUse = (name: string, source: 'native'|'mcp'|'xml'|'eager'|'auto'|'signal', input?: string, status?: string, args?: Record<string, unknown>) => {
         const toolName = String(name || 'tool');
         noteToolOutcome(toolName, input, status);
+        noteTurnToolEvent(toolName, status, input, args, _turnCwd);
         if (isWriteToolName(toolName)) {
           const _writtenPath = mutatedPathFromToolArgs(toolName, args);
           if (_writtenPath) _turnWritePaths.add(_writtenPath);
@@ -977,6 +979,7 @@ async function runCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerCont
         _actualHasNativeTools = ctx.cesar!.hasNativeTools === true;
 
         const reviewFollowup = buildReviewFollowupPrompt(input, ctx);
+        reviewFollowup.prompt = consumeUndoNotice(reviewFollowup.prompt);
         let response = '';
         let streaming = false;
         let wasStreamed = false; // tracks if response was already shown via streaming chunks

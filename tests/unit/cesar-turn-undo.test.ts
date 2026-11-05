@@ -14,7 +14,8 @@ vi.mock('@kernlang/agon-core', async original => ({
 
 import { createCesarToolRegistry } from '../../packages/cli/src/cesar/tools.js';
 import { closeUndoSession, consumeUndoNotice, markUserTurnBoundary, noteTurnToolEvent } from '../../packages/cli/src/cesar/turn-undo.js';
-import { dispatchMetaIntent } from '../../packages/cli/src/signals/dispatch/intent-meta.js';
+import { dispatchIntent } from '../../packages/cli/src/signals/dispatch/intent-router.js';
+import { detectIntent } from '../../packages/cli/src/signals/intent.js';
 import { disposeProcessSurfaceAuthority, initializeProcessSurfaceAuthority } from '../../packages/cli/src/surface-authority-runtime.js';
 
 let home = '';
@@ -32,7 +33,9 @@ const write = async (file: string, content: string, registry = createCesarToolRe
 };
 const undo = async () => {
   const dispatch = vi.fn();
-  await dispatchMetaIntent({ type: 'undo' }, '/undo', { ctx: {}, dispatch, lastUndoToken: null, setLastUndoToken: () => {} } as unknown as DispatchCallbacks);
+  const runAsJob = vi.fn();
+  await dispatchIntent(detectIntent('/undo'), '/undo', { ctx: {}, dispatch, runAsJob, lastUndoToken: null, setLastUndoToken: () => {} } as unknown as DispatchCallbacks);
+  expect(runAsJob).not.toHaveBeenCalled();
   return dispatch.mock.calls.map(([event]) => String(event.message)).join('\n');
 };
 const read = (file: string) => readFileSync(join(cwd, file), 'utf8');

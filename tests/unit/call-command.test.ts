@@ -501,6 +501,20 @@ describe('agon call command mapping', () => {
     ]);
   });
 
+  it('splits a repeated or spaced review path, or pins multi-tree review to uncommitted when no target was given', () => {
+    expect(buildCallCommands({
+      workflow: 'review',
+      worktree: ['../tree with space', '../b,c'],
+      context: 'docs/my notes.md',
+      maxTrees: '3',
+    }).commands).toEqual([
+      ['review', '--worktree', '../tree with space', '--worktree', '../b,c', '--max-trees', '3', '--context', 'docs/my notes.md'],
+    ]);
+    expect(buildCallCommands({ workflow: 'review', input: 'uncommitted', allWorktrees: true, context: ['a', 'b'], contextMaxChars: '9' }).commands).toEqual([
+      ['review', 'uncommitted', '--all-worktrees', '--context', 'a', '--context', 'b', '--context-max-chars', '9'],
+    ]);
+  });
+
   it('forwards --roles to review (role-lens bridge for external CLIs)', () => {
     expect(buildCallCommands({
       workflow: 'review',

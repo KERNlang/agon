@@ -50,6 +50,11 @@ export interface CallCommandOptions {
   lens?: string;
   build?: string;
   test?: string;
+  worktree?: string | string[];
+  allWorktrees?: boolean;
+  maxTrees?: string;
+  context?: string | string[];
+  contextMaxChars?: string;
 }
 
 export interface WorkflowCallMeta {
@@ -67,6 +72,10 @@ export interface BuiltCallCommands {
 export function textFlag(flag: string, value: string|undefined): string[] {
   const text = value?.trim();
   return text ? [flag, text] : [];
+}
+
+function repeatedFlag(flag: string, values: string | string[] | undefined): string[] {
+  return [values ?? []].flat().flatMap((value) => textFlag(flag, value));
 }
 
 export function requireInput(workflow: string, input: string|undefined): string {
@@ -264,9 +273,16 @@ export function buildCallCommands(opts: CallCommandOptions): BuiltCallCommands {
       ...textFlag('--engine', opts.engine),
     ]);
   } else if (workflow === 'review') {
+    const worktrees = repeatedFlag('--worktree', opts.worktree);
+    const multiTree = worktrees.length > 0 || opts.allWorktrees === true;
     commands.push([
       'review',
-      opts.input?.trim() || 'uncommitted',
+      ...(opts.input?.trim() ? [opts.input.trim()] : multiTree ? [] : ['uncommitted']),
+      ...worktrees,
+      ...(opts.allWorktrees ? ['--all-worktrees'] : []),
+      ...textFlag('--max-trees', opts.maxTrees),
+      ...repeatedFlag('--context', opts.context),
+      ...textFlag('--context-max-chars', opts.contextMaxChars),
       ...textFlag('--engine', opts.engine),
       // Role-lens review: 'auto' deals the fixed roster (security, correctness,
       // dryness, performance, overall backstop); a comma list zips per engine.
@@ -429,6 +445,11 @@ export const callCommand: any = defineCommand({
     description: 'Live bridge for external CLIs to run Agon modes',
   },
   args: {
+    worktree: { type: 'string', description: 'review: a git work tree to review; repeat for more' },
+    allWorktrees: { type: 'boolean', description: 'review: every worktree of this repo, locked ones included' },
+    maxTrees: { type: 'string', description: 'review: most trees to review (default 8)' },
+    context: { type: 'string', description: 'review: file or directory to send reviewers as read-only reference; repeat for more' },
+    contextMaxChars: { type: 'string', description: 'review: largest --context total in chars (default 40000)' },
     workflow: {
       type: 'positional',
       description: 'Workflow: forge, brainstorm, synthesis, tribunal, council, campfire, think, nero, research, conquer, chrome, pipeline, review, goal, sanitize, naturalize, mutate, doctor, or team-*',
@@ -644,6 +665,11 @@ export const callCommand: any = defineCommand({
         lens: args.lens,
         build: args.build,
         test: args.test,
+        worktree: args.worktree,
+        allWorktrees: args.allWorktrees,
+        maxTrees: args.maxTrees,
+        context: args.context,
+        contextMaxChars: args.contextMaxChars,
       });
     } catch (err) {
       exitWithFailure(err instanceof Error ? err.message : String(err));

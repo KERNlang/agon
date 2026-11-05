@@ -803,6 +803,14 @@ function captureCleanupGuard(cb: DispatchCallbacks): () => boolean {
   };
 }
 
+function turnWasStopped(outcome: { terminalState?: string }): boolean {
+  return outcome.terminalState === 'cancelled' || outcome.terminalState === 'timed_out';
+}
+
+function isAbortFailure(error: unknown): boolean {
+  return (error as { name?: unknown } | null)?.name === 'AbortError';
+}
+
 /**
  * Last-resort recovery: same-engine retry, fresh dispatch, then acting Cesar.
  * crashDel preserves legacy fallback-suggestion engine selection.
@@ -841,8 +849,9 @@ export async function runCesarBrainFallback(input: string, cb: DispatchCallbacks
         return false;
       }
       if (retried.delegated && retried.responded) return true;
-      if (retried.responded) return false;
+      if (retried.responded || turnWasStopped(retried)) return false;
     } catch (e) {
+      if (isAbortFailure(e)) return false;
       console.warn(`[agon] dispatch: Cesar API retry failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
@@ -1247,8 +1256,10 @@ async function routeCesarTurn(input: string, images: ImageAttachment[], cb: Disp
       const localLabel = result.mode === 'self-nero' ? 'self + nero' : result.mode;
       cb.dispatch({ type: 'info', message: `Cesar → ${localLabel}` });
     }
-    if (result.responded || result.terminalState === 'cancelled') return false;
-  } catch (e) { console.warn(`[agon] dispatch: Cesar brain threw: ${e instanceof Error ? e.message : String(e)}`); }
+    if (result.responded || turnWasStopped(result)) return false;
+  } catch (e) {
+    if (isAbortFailure(e)) return false;
+    console.warn(`[agon] dispatch: Cesar brain threw: ${e instanceof Error ? e.message : String(e)}`); }
   
   if (cleanupFailed()) return false;
   // If brain handler queued the message (responded=true), don't fall back

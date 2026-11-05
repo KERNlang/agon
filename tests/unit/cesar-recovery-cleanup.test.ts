@@ -73,6 +73,30 @@ it('does not silently re-run a turn the user cancelled with Esc', async () => {
   expect(ctx.adapter.dispatch).not.toHaveBeenCalled();
 });
 
+it('does not re-run a turn whose abort surfaced as a thrown AbortError', async () => {
+  backend.mockReturnValue({ backend: 'api', engine: { id: 'fixture' } });
+  brain.mockRejectedValue(new DOMException('This operation was aborted', 'AbortError'));
+  const ctx = { config: {}, cesar: {}, adapter: { dispatch: vi.fn() }, activeEngines: () => [], chatSession: startChatSession() } as any;
+  const cb = { ctx, dispatch: vi.fn(), setActivePlan: vi.fn(), runAsJob: vi.fn(), setPendingImages: vi.fn() } as any;
+
+  await expect(routeWithCesar('prompt', [], cb)).resolves.toBe(false);
+
+  expect(brain).toHaveBeenCalledOnce();
+  expect(ctx.adapter.dispatch).not.toHaveBeenCalled();
+});
+
+it('does not silently re-run a turn the watchdog already timed out', async () => {
+  backend.mockReturnValue({ backend: 'api', engine: { id: 'fixture' } });
+  brain.mockResolvedValue({ responded: false, delegated: false, terminalState: 'timed_out', decisionReason: 'timeout' });
+  const ctx = { config: {}, cesar: {}, adapter: { dispatch: vi.fn() }, activeEngines: () => [], chatSession: startChatSession() } as any;
+  const cb = { ctx, dispatch: vi.fn(), setActivePlan: vi.fn(), runAsJob: vi.fn(), setPendingImages: vi.fn() } as any;
+
+  await expect(routeWithCesar('prompt', [], cb)).resolves.toBe(false);
+
+  expect(brain).toHaveBeenCalledOnce();
+  expect(ctx.adapter.dispatch).not.toHaveBeenCalled();
+});
+
 it.each([
   ['recovered', 'original'], ['recovered', 'current'], ['recovered', 'healthy'],
   ['one-shot', 'original'], ['one-shot', 'current'], ['one-shot', 'healthy'],

@@ -1901,9 +1901,7 @@ async function runCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerCont
           // safe no-op when no entry exists.
           if (previewShown) dispatch({ type: 'streaming-end', engineId: cesarEngineId });
           const elapsed = Math.round((Date.now() - _turnStart) / 1000);
-          if (elapsed >= cesarTimeout) {
-            _timedOut = true;
-            _turnTerminalState = 'timed_out';
+          if (_timedOut) {
             dispatch({ type: 'warning', message: `Cesar timed out after ${elapsed}s. Try a simpler question, or use /forge for complex tasks.` });
           }
           const abortOutcome = resolveCesarAbortOutcome(_timedOut, response.length > 0 || streaming || hadToolActivity);

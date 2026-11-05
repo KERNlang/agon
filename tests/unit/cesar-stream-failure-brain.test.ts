@@ -77,6 +77,22 @@ describe('Cesar brain after a model stream failure', () => {
     expect(turnEndLine(String(outcome.turnId))).toMatchObject({ status: 'api_error', summary: { endReason: 'api_error', errorKind: 'rate_limit' } });
   });
 
+  it('reports an Esc after the watchdog window as a cancel, not a timeout', async () => {
+    const parent = new AbortController();
+    const { session, ctx, dispatch } = fixture([]);
+    ctx.config.cesarTimeout = 0;
+    session.send = vi.fn(async function* () {
+      yield { type: 'text', content: 'working' };
+      parent.abort();
+      yield { type: 'text', content: ' more' };
+    });
+
+    const outcome = await handleCesarBrain('go', dispatch, ctx, [], parent.signal);
+
+    expect(outcome.terminalState).toBe('cancelled');
+    expect(warnings(dispatch).join('\n')).not.toMatch(/timed out/);
+  });
+
   it('still calls a 401 a config or auth problem', async () => {
     const { ctx, dispatch } = fixture([
       { type: 'error', content: 'API stream failed: Unauthorized', metadata: { modelRetryFinal: true, statusCode: 401, modelRetries: 0 } },

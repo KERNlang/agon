@@ -1,11 +1,11 @@
 import type { Json } from '@kernlang/agon-mod-api';
+import { REVIEW_TREE_FLAGS } from '@kernlang/agon-support-verification';
+import { isMultiTreeInput } from './trees.js';
 
 const KNOWN_ROLES = new Set(['security', 'correctness', 'dryness', 'performance', 'overall']);
 const CONNECTIVES = ['and', 'or', 'plus', 'with', 'it', 'this', 'that', 'them', 'changes', 'diff'];
 const TARGET_PREFIXES = ['branch:', 'commit:', 'range:'];
-const LIST_FLAGS: Readonly<Record<string, string>> = { '--worktree': 'worktree', '--context': 'context' };
-const VALUE_FLAGS: Readonly<Record<string, string>> = { '--max-trees': 'max-trees', '--context-max-chars': 'context-max-chars' };
-const FLAG_USAGE = '/review accepts --worktree <path>, --all-worktrees, --max-trees <n>, --context <path> and --context-max-chars <n>; use agon review for the rest.';
+const FLAG_USAGE = `/review accepts ${REVIEW_TREE_FLAGS.map(flag => `--${flag.key}`).join(', ')}; use agon review for the rest.`;
 
 function tokenize(text: string): string[] | { error: string } {
   const tokens: string[] = [];
@@ -42,14 +42,17 @@ function extractFlags(text: string): { rest: string; flags: Record<string, Json>
     if (!token.startsWith('-')) { rest.push(token); continue; }
     const equals = token.indexOf('=');
     const name = equals < 0 ? token : token.slice(0, equals);
-    if (name === '--all-worktrees' && equals < 0) { flags['all-worktrees'] = true; continue; }
-    const listKey = Object.hasOwn(LIST_FLAGS, name) ? LIST_FLAGS[name] : undefined;
-    const valueKey = Object.hasOwn(VALUE_FLAGS, name) ? VALUE_FLAGS[name] : undefined;
-    if (!listKey && !valueKey) return { error: `Unknown /review flag ${name}. ${FLAG_USAGE}` };
+    const flag = REVIEW_TREE_FLAGS.find(candidate => `--${candidate.key}` === name);
+    if (!flag) return { error: `Unknown /review flag ${name}. ${FLAG_USAGE}` };
+    if (flag.kind === 'switch') {
+      if (equals >= 0) return { error: `/review ${name} takes no value. ${FLAG_USAGE}` };
+      flags[flag.key] = true;
+      continue;
+    }
     const value = equals < 0 ? tokens[++index] : token.slice(equals + 1);
     if (!value) return { error: `/review ${name} needs a value. ${FLAG_USAGE}` };
-    if (listKey) flags[listKey] = [...((flags[listKey] as string[] | undefined) ?? []), value];
-    else flags[valueKey!] = value;
+    if (flag.kind === 'list') flags[flag.key] = [...((flags[flag.key] as string[] | undefined) ?? []), value];
+    else flags[flag.key] = value;
   }
   return { rest: rest.join(' '), flags };
 }
@@ -89,14 +92,12 @@ export function parseReviewIntent(input: string) {
 }
 
 export function reviewIntentInput(parsed: Record<string, Json>): Record<string, Json> {
-  const multiTree = parsed['all-worktrees'] === true || Array.isArray(parsed.worktree);
   return {
     ...(typeof parsed.target === 'string' ? { target: parsed.target } : {}),
     ...(Array.isArray(parsed.engineIds) ? { engines: parsed.engineIds.join(',') }
       : typeof parsed.engineId === 'string' ? { engine: parsed.engineId } : {}),
     ...(Array.isArray(parsed.roles) ? { roles: parsed.roles.join(',') } : {}),
-    ...(multiTree || Array.isArray(parsed.context) ? { format: 'text' } : {}),
-    ...Object.fromEntries(['worktree', 'all-worktrees', 'max-trees', 'context', 'context-max-chars']
-      .filter(key => parsed[key] !== undefined).map(key => [key, parsed[key]!])),
+    ...(isMultiTreeInput(parsed) || Array.isArray(parsed.context) ? { format: 'text' } : {}),
+    ...Object.fromEntries(REVIEW_TREE_FLAGS.filter(({ key }) => parsed[key] !== undefined).map(({ key }) => [key, parsed[key]!])),
   };
 }

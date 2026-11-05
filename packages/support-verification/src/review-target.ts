@@ -4,6 +4,15 @@ import { lstatSync, openSync, readSync, closeSync, constants } from 'node:fs';
 
 export const DEFAULT_REVIEW_MAX_DIFF_CHARS = 100_000;
 
+/** The one list of multi-tree review flags: the review schema, REPL /review and `agon call review` all derive from it. */
+export const REVIEW_TREE_FLAGS = [
+  { key: 'worktree', option: 'worktree', kind: 'list', help: 'a git work tree to review; repeat for more' },
+  { key: 'all-worktrees', option: 'allWorktrees', kind: 'switch', help: 'every worktree of this repo, locked ones included' },
+  { key: 'max-trees', option: 'maxTrees', kind: 'value', help: 'most trees to review (default 8)' },
+  { key: 'context', option: 'context', kind: 'list', help: 'file or directory to send reviewers as read-only reference; repeat for more' },
+  { key: 'context-max-chars', option: 'contextMaxChars', kind: 'value', help: 'largest --context total in chars (default 40000)' },
+] as const;
+
 export interface ReviewTarget { readonly diff: string; readonly label: string; readonly maxDiffChars: number }
 
 export function reviewMaxDiffChars(config: unknown): number {

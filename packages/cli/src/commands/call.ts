@@ -2,6 +2,8 @@ import { spawn } from 'node:child_process';
 
 import { defineCommand } from 'citty';
 
+import { REVIEW_TREE_FLAGS } from '@kernlang/agon-support-verification';
+
 import { EngineRegistry, loadConfig, getCoreWorkflowRegistry, compileWorkflowSpec, verifyWorkflowExecutionPlanFlow, verifyWorkflowRunFlow, throwWorkflowConformance, createWorkflowIssue, createWorkflowRun, appendWorkflowPhaseEvent } from '@kernlang/agon-core';
 
 import type { WorkflowConformanceIssue, WorkflowRun } from '@kernlang/agon-core';
@@ -74,8 +76,16 @@ export function textFlag(flag: string, value: string|undefined): string[] {
   return text ? [flag, text] : [];
 }
 
-function repeatedFlag(flag: string, values: string | string[] | undefined): string[] {
-  return [values ?? []].flat().flatMap((value) => textFlag(flag, value));
+function reviewTreeArguments(opts: CallCommandOptions): string[] {
+  return REVIEW_TREE_FLAGS.flatMap(({ key, option, kind }) => {
+    const flag = `--${key}`;
+    if (kind === 'switch') return opts[option] === true ? [flag] : [];
+    if (kind === 'value') return textFlag(flag, opts[option] as string | undefined);
+    return [(opts[option] as string | string[] | undefined) ?? []].flat().flatMap((path) => {
+      if (!path.trim()) throw new Error(`agon call review ${flag} needs a path; got an empty value.`);
+      return [flag, path];
+    });
+  });
 }
 
 export function requireInput(workflow: string, input: string|undefined): string {
@@ -273,16 +283,12 @@ export function buildCallCommands(opts: CallCommandOptions): BuiltCallCommands {
       ...textFlag('--engine', opts.engine),
     ]);
   } else if (workflow === 'review') {
-    const worktrees = repeatedFlag('--worktree', opts.worktree);
-    const multiTree = worktrees.length > 0 || opts.allWorktrees === true;
+    const treeArguments = reviewTreeArguments(opts);
+    const multiTree = treeArguments.includes('--worktree') || treeArguments.includes('--all-worktrees');
     commands.push([
       'review',
       ...(opts.input?.trim() ? [opts.input.trim()] : multiTree ? [] : ['uncommitted']),
-      ...worktrees,
-      ...(opts.allWorktrees ? ['--all-worktrees'] : []),
-      ...textFlag('--max-trees', opts.maxTrees),
-      ...repeatedFlag('--context', opts.context),
-      ...textFlag('--context-max-chars', opts.contextMaxChars),
+      ...treeArguments,
       ...textFlag('--engine', opts.engine),
       // Role-lens review: 'auto' deals the fixed roster (security, correctness,
       // dryness, performance, overall backstop); a comma list zips per engine.
@@ -445,11 +451,10 @@ export const callCommand: any = defineCommand({
     description: 'Live bridge for external CLIs to run Agon modes',
   },
   args: {
-    worktree: { type: 'string', description: 'review: a git work tree to review; repeat for more' },
-    allWorktrees: { type: 'boolean', description: 'review: every worktree of this repo, locked ones included' },
-    maxTrees: { type: 'string', description: 'review: most trees to review (default 8)' },
-    context: { type: 'string', description: 'review: file or directory to send reviewers as read-only reference; repeat for more' },
-    contextMaxChars: { type: 'string', description: 'review: largest --context total in chars (default 40000)' },
+    ...Object.fromEntries(REVIEW_TREE_FLAGS.map(({ option, kind, help }) => [option, {
+      type: kind === 'switch' ? 'boolean' : 'string',
+      description: `review: ${help}`,
+    }])),
     workflow: {
       type: 'positional',
       description: 'Workflow: forge, brainstorm, synthesis, tribunal, council, campfire, think, nero, research, conquer, chrome, pipeline, review, goal, sanitize, naturalize, mutate, doctor, or team-*',
@@ -665,11 +670,7 @@ export const callCommand: any = defineCommand({
         lens: args.lens,
         build: args.build,
         test: args.test,
-        worktree: args.worktree,
-        allWorktrees: args.allWorktrees,
-        maxTrees: args.maxTrees,
-        context: args.context,
-        contextMaxChars: args.contextMaxChars,
+        ...Object.fromEntries(REVIEW_TREE_FLAGS.map(({ option }) => [option, args[option]])),
       });
     } catch (err) {
       exitWithFailure(err instanceof Error ? err.message : String(err));

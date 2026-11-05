@@ -36,7 +36,7 @@ const _snapshotSeq: { value: number, seeded: boolean } = ({ value: 0, seeded: fa
 
 function ensureSnapshotsDir(): void {
   ensurePersistenceHome();
-  mkdirSync(snapshotsDir(), { recursive: true });
+  mkdirSync(snapshotsDir(), { recursive: true, mode: 0o700 });
 }
 
 /**
@@ -88,7 +88,7 @@ export function takeSnapshot(label: string, cwd: string, filePaths: string[]): H
   };
 
   const entryPath = join(snapshotsDir(), `${entry.id}.json`);
-  writeFileSync(entryPath, JSON.stringify(entry, null, 2) + '\n');
+  writeFileSync(entryPath, JSON.stringify(entry, null, 2) + '\n', { mode: 0o600 });
 
   // Prune old snapshots
   pruneSnapshots();

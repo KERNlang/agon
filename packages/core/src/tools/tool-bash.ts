@@ -2,13 +2,11 @@ import type { ToolResult, ToolContext, ToolDefinition, PermissionDecision, ToolH
 
 import { spawnStream } from '../blocks/process.js';
 
-import { evaluateBashRules, hasShellControl, isReadOnlyCommand, splitShellSegments } from './tool-permissions.js';
+import { evaluateBashRules, isReadOnlyCommand } from './tool-permissions.js';
 
 import { PERMISSION_DENIED_MESSAGE } from '../signals/tool-registry.js';
 
 export const DANGEROUS_PREFIXES: readonly string[] = [ 'rm -rf /', 'dd if=', 'mkfs', '> /dev/', 'chmod 777', 'curl | sh', 'wget | sh' ] as const;
-
-export const READONLY_COMMANDS: readonly string[] = [ 'ls', 'cat', 'head', 'tail', 'git status', 'git log', 'git diff', 'npm test', 'echo', 'pwd', 'which', 'find', 'grep', 'wc', 'date' ] as const;
 
 /**
  * Extract the actual command from wrappers like sudo, env, nice.
@@ -97,20 +95,7 @@ export function createBashTool(): ToolHandler {
       }
     }
 
-    // Check read-only commands — allow automatically. Compound-aware: a
-    // read-only PREFIX must not launder an appended mutating command
-    // (`ls & rm -rf /`, `git status ; rm -rf /`) — every segment has to be
-    // read-only on its own for the compound to count as read-only.
-    const isSegmentReadOnly = (seg: string): boolean => {
-      // Substitution bodies execute opaquely and redirection writes a file —
-      // neither is read-only no matter the leading token (`ls $(rm x)`).
-      if (/\$\(|`|>>?/.test(seg)) return false;
-      const segLower = seg.trim().toLowerCase();
-      return READONLY_COMMANDS.some((safe: string) => segLower === safe || segLower.startsWith(safe + ' '));
-    };
-    const isReadOnly = isReadOnlyCommand(command) && (hasShellControl(command)
-      ? splitShellSegments(command).every(isSegmentReadOnly)
-      : isSegmentReadOnly(lower));
+    const isReadOnly = isReadOnlyCommand(command);
 
     // Investigation mode: allow read-only commands, block mutating ones
     if ((_ctx as any).readOnlyMode) {

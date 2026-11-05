@@ -77,6 +77,46 @@ const WRITES_OR_EXECUTES = [
   'timeout -k ls 5 rm x',
   'time -o ls rm x',
   'sudo ls',
+  'git branch newbranch # --list',
+  "ls #'\nrm x\n#'",
+  'find . $"-delete"',
+  'rg $"--pre=./x" y',
+  'git diff $"--output=f"',
+  `echo "\${X:-"'"}$(rm x)"'\\'`,
+  'git branch newbranch<<<--list',
+  'git branch newbranch <<< --list',
+  'git branch newbranch < --list',
+  'cat <<<x',
+  'cat <<EOF',
+  'rg foo *',
+  'find . -delet?',
+  'git diff [a]',
+  'git diff --textconv',
+  'git log --textconv',
+  'git show --textconv',
+  'git blame --textconv f',
+  'git log --show-signature',
+  'git show --show-signature',
+  'less f',
+  "less '+!cmd' f",
+  'more f',
+  'fzf',
+  'npm test',
+  'npm run test',
+  'npx vitest',
+  'npx vitest run x',
+  'npx tsc',
+  'npx tsc --noEmit false',
+  'npx tsc --noEmit -b',
+  'npx tsc --noEmit --build',
+  'npx tsc --noEmit --incremental',
+  'npx tsc --noEmit --generateTrace d',
+  'npx tsc --noEmit -p --build',
+  'npx tsc -p x',
+  'ag -p x y',
+  'date 010112002030',
+  'RIPGREP_CONFIG_PATH=x rg foo',
+  'env RIPGREP_CONFIG_PATH=x rg foo',
 ];
 
 const STAYS_READ_ONLY = [
@@ -111,6 +151,11 @@ const STAYS_READ_ONLY = [
   'git branch --show-current',
   'git log --format="%h|%s" --since="2 days ago"',
   'date +%s',
+  'date -u +%s',
+  'ls *.ts',
+  'cat *.md',
+  'echo a#b',
+  'npx tsc --noEmit -p packages/core',
 ];
 
 describe('isReadOnlyCommand', () => {
@@ -121,11 +166,28 @@ describe('isReadOnlyCommand', () => {
 
   it.each(STAYS_READ_ONLY)('%j must not start prompting after the hardening', (command) => {
     expect(isReadOnlyCommand(command)).toBe(true);
+    expect(createBashTool().checkPermission!({ command }, { permissionMode: 'ask' } as never)).toEqual({ behavior: 'allow' });
   });
 });
 
 describe('permission gates', () => {
   const redirect = 'echo x > f';
+
+  it('investigation mode must run read-only Bash and block a writing flag on a read-only name', () => {
+    const gate = createBashTool().checkPermission!;
+    const ctx = { permissionMode: 'ask', readOnlyMode: true } as never;
+    expect(gate({ command: 'ls -la' }, ctx)).toEqual({ behavior: 'allow' });
+    expect(gate({ command: 'find . -delete' }, ctx)).toMatchObject({ behavior: 'deny', reason: 'read-only-mode' });
+  });
+
+  it('a Bash(npm test:*) rule must keep allowing test runs that no longer pass as read-only', () => {
+    const base = { tool: 'Bash', target: 'npm test', cwd: process.cwd(), source: 'native' as const };
+    const config = { agonPermissionMode: 'ask', allowedCommands: [], toolPermissions: {} };
+    expect(resolvePermissionDecision({ ...base, config: { ...config, permissions: {} } }))
+      .toMatchObject({ decision: 'ask', stage: 'mode' });
+    expect(resolvePermissionDecision({ ...base, config: { ...config, permissions: { allow: ['Bash(npm test:*)'] } } }))
+      .toMatchObject({ decision: 'allow', stage: 'allow-rule' });
+  });
 
   it('a read-only name with an output redirect prompts in ask mode and is blocked in plan mode', async () => {
     const asked = resolvePermissionDecision({

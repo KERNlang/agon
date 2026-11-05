@@ -893,7 +893,7 @@
         "id": "/undo",
         "source": "packages/cli/src/signals/intent.ts:56",
         "category": "execution",
-        "description": "                        — revert last patch or Cesar checkpoint"
+        "description": "                        — revert the last turn or applied patch, or a checkpoint by id"
       },
       {
         "id": "/workspace",

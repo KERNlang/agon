@@ -261,7 +261,7 @@ describe('app scroll helpers', () => {
     expect(text).not.toContain('3 tools:');
     expect(text).not.toContain('non-fatal');
     expect(text).toContain('a.ts');
-    expect(text).toContain('undo: /undo abc12345');
+    expect(text).toContain('undo: /undo reverts the last turn');
     expect(text).not.toContain('reverts checkpoint');
     expect(text).toContain('+new');
   });

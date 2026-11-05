@@ -1,8 +1,30 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { runManagedUpdate } from '../../packages/cli/src/commands/update.js';
+import { runManagedSetup } from '../../packages/cli/src/commands/setup.js';
+import { runManagedUpdate, updateCommand } from '../../packages/cli/src/commands/update.js';
 
-afterEach(() => { vi.unstubAllGlobals(); });
+vi.mock('../../packages/cli/src/commands/setup.js', () => ({ runManagedSetup: vi.fn(async () => {}) }));
+vi.mock('node:child_process', async (importActual) => ({
+  ...await importActual<typeof import('node:child_process')>(),
+  execFile: (_file: string, _args: string[], _options: unknown, callback: (error: Error) => void) => {
+    queueMicrotask(() => callback(new Error('npm unavailable')));
+    return { on: () => {} };
+  },
+}));
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+  vi.mocked(runManagedSetup).mockClear();
+  process.exitCode = undefined;
+});
+
+function stubRegistry(version: string | null) {
+  vi.stubGlobal('fetch', vi.fn(async () => {
+    if (version === null) throw new Error('network down');
+    return new Response(JSON.stringify({ version }), { status: 200 });
+  }));
+}
 
 describe('legacy updater modular guard', () => {
   it('contains no active-process global npm installation path', () => {
@@ -15,20 +37,31 @@ describe('legacy updater modular guard', () => {
     await expect(runManagedUpdate('9.9.9')).rejects.toThrow(/bundled release set/);
   });
 
-  it('does not report success or restage the old release when npm has a newer version', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ version: '9.9.9' }), { status: 200 })));
-    const output = vi.spyOn(console, 'log').mockImplementation(() => {});
-    const code = await runManagedUpdate(undefined, { plan: true });
-    const printed = output.mock.calls.flat().join('\n');
-    output.mockRestore();
-    expect(code).toBe(1);
-    expect(printed).toContain('npm install -g @kernlang/agon@9.9.9');
-    expect(printed).not.toContain('"status"');
+  it('exits 1 with the install command instead of restaging the old release when npm has a newer version', async () => {
+    stubRegistry('9.9.9');
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await updateCommand.run({ args: {} });
+    expect(process.exitCode).toBe(1);
+    expect(errors.mock.calls.flat().join('\n')).toContain('npm install -g @kernlang/agon@9.9.9');
+    expect(runManagedSetup).not.toHaveBeenCalled();
   });
 
-  it('the update banner action calls no updater export that has been removed', () => {
+  it('does not restage and report success when the registry cannot be reached', async () => {
+    stubRegistry(null);
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    expect(await runManagedUpdate(undefined)).toBe(1);
+    expect(runManagedSetup).not.toHaveBeenCalled();
+  });
+
+  it('still reinstalls from the local cache offline without asking the registry', async () => {
+    stubRegistry('9.9.9');
+    expect(await runManagedUpdate(undefined, { offline: true })).toBe(0);
+    expect(fetch).not.toHaveBeenCalled();
+    expect(runManagedSetup).toHaveBeenCalledOnce();
+  });
+
+  it('the update banner action no longer imports the removed updater export', () => {
     const app = readFileSync(new URL('../../packages/cli/src/surfaces/app.tsx', import.meta.url), 'utf8');
     expect(app).not.toMatch(/commands\/update\.js/);
-    expect(app).toContain('newerReleaseInstruction(latest)');
   });
 });

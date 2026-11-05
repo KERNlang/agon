@@ -852,13 +852,13 @@ agon update             # stage, verify, and atomically select the installed rel
 agon update --offline   # require a complete local npm cache, no network
 ```
 
-An update never overwrites the running process. `agon update` can only stage the release you have installed, so when npm has a newer version it prints the command and exits 1:
+An update never overwrites the running process. `agon update` can only stage the release you have installed, so when npm has a newer version, or npm can't be reached, it prints what to do and exits 1. To move to a newer version:
 
 ```bash
-npm install -g @kernlang/agon@<version>
+npm install -g @kernlang/agon@latest
 ```
 
-If you use a managed install from `agon setup`, run `agon update` afterwards.
+If you use a managed install from `agon setup`, run `agon update` afterwards. To repair the installed release without moving, run `agon update` with its exact version number.
 
 ## Architecture
 

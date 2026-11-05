@@ -15,7 +15,11 @@ export async function runManagedUpdate(version: string | undefined, options: { p
   if (requested === 'latest' && !options.offline) {
     const probed = await checkForUpdate(VERSION, undefined);
     if (probed.hasUpdate) {
-      console.log(newerReleaseInstruction(probed.latestVersion));
+      console.error(newerReleaseInstruction(probed.latestVersion));
+      return 1;
+    }
+    if (probed.error) {
+      console.error(`Could not check npm for a newer Agon: ${probed.error}. Use --offline to reinstall this release from the local npm cache.`);
       return 1;
     }
   }

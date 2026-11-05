@@ -185,7 +185,7 @@ describe('Cesar model-call retry against a real HTTP stub', () => {
     const chunks = await collect(session.send({ message: 'go' }));
 
     expect(requestTimes).toHaveLength(3);
-    expect(ofType(chunks, 'error')[0]?.content).toMatch(/gave up after 2 retries/);
+    expect(ofType(chunks, 'error')[0]?.content).toMatch(/gave up after 2 retries/i);
     expect(ofType(chunks, 'error')[0]?.metadata?.modelRetryFinal).toBe(true);
   });
 });

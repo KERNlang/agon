@@ -6,7 +6,7 @@ import { mkdirSync, appendFileSync, existsSync, readFileSync, unlinkSync, readdi
 
 import type { ImageAttachment, PersistentSession } from '@kernlang/agon-core';
 
-import { ensureAgonHome, RUNS_DIR, appendMessage, appendUserTurnIfAbsent, buildHistoryPrimedPrompt, tracker, resolveWorkingDir, ToolRegistry, getProjectFileStateCache, parseToolCalls, formatToolResults, runToolLoop, classifyTask, loadConfig, createStreamBridge, engineHealth, authLoginHint, discoverGate, bashRanGate, isGateSkipSignal, parsePermissionRuleSet, parseToolHooks, isReadOnlyCommand } from '@kernlang/agon-core';
+import { ensureAgonHome, RUNS_DIR, appendMessage, appendUserTurnIfAbsent, buildHistoryPrimedPrompt, tracker, resolveWorkingDir, ToolRegistry, getProjectFileStateCache, formatToolResults, classifyTask, loadConfig, createStreamBridge, engineHealth, authLoginHint, discoverGate, bashRanGate, isGateSkipSignal, parsePermissionRuleSet, parseToolHooks, isReadOnlyCommand } from '@kernlang/agon-core';
 
 import type { ToolContext, ToolCallResult } from '@kernlang/agon-core';
 
@@ -80,6 +80,8 @@ import { createFollowUpDisplay } from './follow-up-display.js';
 import { consumeCesarPlanControlSignals } from './plan-control-signals.js';
 
 import { hostNowIso, hostWaitForInteractiveChoice } from '../lib/kern-host.js';
+
+import { classifyCesarStreamFailure, createStreamFailureGuard } from './stream-failure.js';
 
 import { createCesarTurnEndTracker } from './turn-end-log.js';
 
@@ -174,6 +176,8 @@ async function enterCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerCo
 
 async function runCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images: ImageAttachment[] | undefined, abort: AbortController, ownsActiveAbort: boolean, turnEnd: CesarTurnEndTracker, assertOwnerAvailable?: () => void): Promise<CesarTurnOutcome> {
   const assertHostCurrent = captureProcessSurfaceAuthority();
+  const _streamFailure = createStreamFailureGuard();
+  const { parseToolCalls, runToolLoop } = _streamFailure;
   let _runtimeHost: any = null;
   let _turnRuntime: any = null;
   const assertExecutionAvailable = (): void => {
@@ -961,6 +965,10 @@ async function runCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerCont
         };
         const _observeSendChunk = (chunk: any): void => {
           turnEnd.observe(chunk);
+          if (_streamFailure.note(chunk)) {
+            _engineErrored = true;
+            _engineErrorMsg = String(chunk.content ?? '').slice(0, 300);
+          }
           if (chunk.type === 'status' && chunk.metadata?.kind === 'model-retry') {
             dispatch({ type: 'spinner-start', message: `Cesar ${chunk.content}`, color });
           }
@@ -1667,8 +1675,9 @@ async function runCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerCont
               // skip its silent same-engine retry (which just re-hits the identical
               // 404) and go straight to acting-Cesar. Transient stream drops
               // (timeouts, 5xx, resets) are NOT matched here, so their retry stays.
-              const _deterministic = chunk.metadata?.modelRetryFinal === true || /\b(?:400|401|403|404)\b|not found|unauthorized|invalid api key|authentication|no such (?:route|endpoint)/i.test(_errFull);
-              dispatch({ type: 'warning', message: `Cesar (${cesarEngineId}) stream error before any output: ${errBody}.${_deterministic ? ' Looks like an engine config/auth issue — check the engine with /engines.' : ' Try again or switch engine with /engine.'}` });
+              const _failure = classifyCesarStreamFailure(_errFull, chunk.metadata);
+              const _deterministic = _failure.skipSameEngineRetry;
+              dispatch({ type: 'warning', message: `Cesar (${cesarEngineId}) stream error before any output: ${errBody}.${_failure.configShaped ? ' Looks like an engine config/auth issue — check the engine with /engines.' : ' Try again or switch engine with /engine.'}` });
               // Drop a lingering speculative preview draft on the pre-stream-error
               // exit (firewall drops a draft-only entry without committing).
               if (previewShown) dispatch({ type: 'streaming-end', engineId: cesarEngineId });
@@ -1901,7 +1910,7 @@ async function runCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerCont
           return { turnId: _turnId, mode: 'self', delegated: false, ...abortOutcome };
         }
 
-        response = response.trim();
+        response = _streamFailure.clean(response).trim();
 
         // Strip <think> blocks and internal markers
         response = response.replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();

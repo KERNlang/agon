@@ -24,7 +24,7 @@ import { saveSessionState, loadSessionState, saveToolResultToDisk, loadToolResul
 
 import { lookupCatalogContextWindow } from '../signals/models-registry.js';
 
-import { parseToolCalls } from '../tools/tool-parser.js';
+import { parseToolCalls, stripToolMarkup } from '../tools/tool-parser.js';
 
 import { createTurnTracker, contentHashOf } from '../telemetry/guard-telemetry.js';
 
@@ -1302,9 +1302,8 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
               yield { type: 'error' as const, content: err.message ?? String(err) };
               break;
             }
-            // Got partial output before crash — preserve it, log warning
-            console.warn(`[agon] API stream error after ${fullResponse.length} chars (preserved): ${(err.message ?? '').slice(0, 200)}`);
-            // Fall through to process fullResponse as if stream completed
+            failedAfterOutput = true;
+            lastStderr = String(err?.message ?? err);
           }
 
           if (modelRetryPlan) {
@@ -1316,7 +1315,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
           if (failedAfterOutput) {
             // Never retried: this call may already have emitted a tool call. Its
             // markers are dropped unexecuted so history holds no dangling call.
-            const partialText = fullResponse.replace(/<tool\s+name="[^"]+">[\s\S]*?<\/tool>/g, '').trim();
+            const partialText = stripToolMarkup(fullResponse);
             if (partialText) messageHistory.push({ role: 'assistant', content: `${partialText}\n[Response cut off by a stream failure]` });
             yield {
               type: 'error' as const,

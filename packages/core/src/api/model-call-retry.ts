@@ -173,10 +173,10 @@ export function createModelCallRetryGate(config: ModelRetryConfig | undefined, s
       const metadata = { modelRetryFinal: final, statusCode: failure.statusCode, modelRetries: attempt };
       const reason = refusal && !refusal.retry ? refusal.reason : undefined;
       if (reason === 'wait_cap_exhausted') {
-        return { content: `${stderr} (not retrying: the wait would pass the ${Math.round(policy.maxWaitMs / 1000)}s retry cap, after ${attempt} retries)`, metadata };
+        return { content: `Not retrying, the wait would pass the ${Math.round(policy.maxWaitMs / 1000)}s retry cap after ${attempt} retries: ${stderr}`, metadata };
       }
       if (reason === 'attempts_exhausted') {
-        return { content: `${stderr} (gave up after ${attempt} retries, ${Math.round(waitedMs / 1000)}s waited)`, metadata };
+        return { content: `Gave up after ${attempt} retries, ${Math.round(waitedMs / 1000)}s waited: ${stderr}`, metadata };
       }
       return { content: stderr, metadata };
     },

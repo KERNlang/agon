@@ -66,7 +66,7 @@ export function shouldAutoRunGate(snapshot: GateAutoRunSnapshot): boolean {
 }
 
 /**
- * Output-redirection detector (mirrors isAgenticMutationOutcome). Read-only command CLASSIFICATION strips redirections, so `npm test > file` resolves 'allow' in ask mode even though it mutates the workspace — in non-auto modes a redirecting gate falls back to the prompt nudge instead of auto-running. >/dev/null and fd-dup stay allowed.
+ * Output-redirection detector (mirrors isAgenticMutationOutcome). In non-auto modes a redirecting gate falls back to the prompt nudge instead of auto-running, even under a covering allow source. >/dev/null and fd-dup stay allowed.
  */
 export const GATE_REDIRECTION_RE: RegExp = /(?:^|[\s;|&])\d*(?:>>?|&>)\s*(?!\s|\/dev\/null\b|&\d\b)/;
 
@@ -82,7 +82,7 @@ export function gateAutoRunTriggered(signals: {agenticAuto:boolean, agenticTaskS
 }
 
 /**
- * The harness may only run the gate when the unified resolver would ALLOW the command outright — mode auto for routine gates, or a persisted/session allow rule (the Always artifact, e.g. Bash(npm test:*)) in any mode. A resolver 'ask' (ask/auto-edit without a covering rule, or a gate command that trips a dangerous boundary even in auto) falls back to the prompt nudge — this path never prompts and never bypasses a boundary. Additionally, outside mode auto a gate command containing output redirection is refused even when the read-only classifier would allow it (the classifier strips redirections, so `npm test > file` would otherwise mutate under an ask posture).
+ * The harness may only run the gate when the unified resolver would ALLOW the command outright — mode auto for routine gates, or a persisted/session allow rule (the Always artifact, e.g. Bash(npm test:*)) in any mode. A resolver 'ask' (ask/auto-edit without a covering rule, or a gate command that trips a dangerous boundary even in auto) falls back to the prompt nudge — this path never prompts and never bypasses a boundary. Additionally, outside mode auto a gate command containing output redirection is refused.
  */
 export function gateAutoRunPermitted(command: string, cwd: string, config: any): boolean {
   try {

@@ -1,4 +1,7 @@
-export const READONLY_COMMANDS: Set<string> = new Set(['ls', 'cat', 'head', 'tail', 'less', 'more', 'wc', 'file', 'stat', 'pwd', 'echo', 'printf', 'date', 'which', 'whereis', 'type', 'find', 'grep', 'rg', 'ag', 'fd', 'fzf', 'git status', 'git log', 'git diff', 'git branch', 'git show', 'git blame', 'npm test', 'npm run test', 'npx vitest', 'npx tsc', 'node --version', 'npm --version', 'python --version', 'agon --help', 'agon config --help', 'agon config list', 'agon config get', 'tree', 'du', 'df']);
+export const READONLY_COMMANDS: Set<string> = new Set(['ls', 'cat', 'head', 'tail', 'wc', 'file', 'stat', 'pwd', 'echo', 'printf', 'date', 'which', 'whereis', 'type', 'find', 'grep', 'rg', 'ag', 'fd', 'git status', 'git log', 'git diff', 'git branch', 'git show', 'git blame', 'npx tsc', 'node --version', 'npm --version', 'python --version', 'agon --help', 'agon config --help', 'agon config list', 'agon config get', 'tree', 'du', 'df']);
+
+/** Repo code runs, so these need permission, but a run is not a workspace edit for task-state accounting. */
+const TEST_RUNNER_COMMANDS: readonly string[] = ['npm test', 'npm run test', 'npx vitest'];
 
 interface UnsafeFlagPolicy {
   /** Matched whole, for tools with single-dash long options such as find. */
@@ -9,23 +12,27 @@ interface UnsafeFlagPolicy {
   short?: string;
   /** Without one of these flags, a positional argument makes the command write. */
   operandsRequire?: readonly string[];
+  /** Every positional argument must start with this, as in `date +%s`. */
+  operandPrefix?: string;
+  /** Closed argument list: anything else is unsafe, and `required` must be present. */
+  exact?: { required: string; flags: readonly string[]; valueFlags: readonly string[] };
 }
 
-const GIT_DIFF_POLICY: UnsafeFlagPolicy = { long: ['--output', '--ext-diff'] };
+const GIT_DIFF_POLICY: UnsafeFlagPolicy = { long: ['--output', '--ext-diff', '--textconv', '--show-signature'] };
 
 const UNSAFE_READONLY_FLAGS:Readonly<Record<string, UnsafeFlagPolicy>> = {
   find: { words: ['-delete', '-exec', '-execdir', '-ok', '-okdir', '-fprint', '-fprint0', '-fprintf', '-fls'] },
   fd: { long: ['--exec', '--exec-batch'], short: 'xX' },
   rg: { long: ['--pre', '--hostname-bin'] },
-  ag: { long: ['--pager'] },
-  fzf: { long: ['--bind', '--preview', '--history', '--listen', '--with-shell'] },
-  less: { long: ['--log-file', '--LOG-FILE'], short: 'oO' },
+  ag: { long: ['--pager'], short: 'p' },
   tree: { short: 'o' },
   file: { long: ['--compile'], short: 'C' },
-  date: { long: ['--set'], short: 's' },
+  date: { long: ['--set'], short: 's', operandPrefix: '+' },
+  'npx tsc': { exact: { required: '--noEmit', flags: ['--noEmit', '--pretty', '--skipLibCheck'], valueFlags: ['-p', '--project'] } },
   'git log': GIT_DIFF_POLICY,
   'git diff': GIT_DIFF_POLICY,
   'git show': GIT_DIFF_POLICY,
+  'git blame': { long: ['--textconv'] },
   'git branch': {
     long: ['--delete', '--move', '--copy', '--force', '--track', '--set-upstream-to', '--unset-upstream', '--edit-description'],
     short: 'dDmMcCfut',
@@ -35,9 +42,11 @@ const UNSAFE_READONLY_FLAGS:Readonly<Record<string, UnsafeFlagPolicy>> = {
 
 const SHELL_WRAPPERS: ReadonlySet<string> = new Set(['timeout', 'time', 'nice', 'nohup', 'env', 'command']);
 
-const EXPANSION_START = /[A-Za-z0-9_{@*#?!$-]/;
+const EXPANSION_START = /[A-Za-z0-9_@*#?!$-]/;
 
 const SAFE_OUTPUT_TARGET = /^(?:[ \t]*\/dev\/null|&(?:\d+|-))(?=[\s;|&]|$)/;
+
+const SAFE_INPUT_TARGET = /^(?:[ \t]*[\w./~@%+:,=][\w./~@%+:,=-]*|&(?:\d+|-))(?=[\s;|&]|$)/;
 
 interface ShellSegment {
   words: string[];
@@ -65,7 +74,7 @@ function scanDoubleQuoted(command: string, start: number): DoubleQuotedText | nu
       continue;
     }
     if (ch === '$' && next !== undefined) {
-      if (next === '(') return null;
+      if (next === '(' || next === '{' || next === '[') return null;
       if (EXPANSION_START.test(next)) hasExpansion = true;
     }
     text += ch;
@@ -126,7 +135,7 @@ function scanShellCommand(command: string): ShellSegment[] | null {
       word += next;
       inWord = wordQuoted = true;
       i += 2;
-    } else if (ch === '`' || ch === '\n' || ch === '\r' || ch === '(' || ch === ')') {
+    } else if (ch === '`' || ch === '\n' || ch === '\r' || ch === '(' || ch === ')' || (ch === '#' && !inWord)) {
       return null;
     } else if (ch === '>' || (ch === '&' && next === '>')) {
       let after = ch === '>' ? i + 1 : i + 2;
@@ -136,11 +145,10 @@ function scanShellCommand(command: string): ShellSegment[] | null {
       endRedirectSource();
       i = after + target[0].length;
     } else if (ch === '<') {
-      if (next === '(' || next === '>') return null;
+      const target = SAFE_INPUT_TARGET.exec(command.slice(i + 1));
+      if (!target) return null;
       endRedirectSource();
-      i++;
-      while (command[i] === '<') i++;
-      if (command[i] === '&') i++;
+      i += 1 + target[0].length;
     } else if (ch === ';' || ch === '|' || ch === '&') {
       if (!endSegment()) return null;
       i += ch !== ';' && (next === ch || (ch === '|' && next === '&')) ? 2 : 1;
@@ -149,11 +157,10 @@ function scanShellCommand(command: string): ShellSegment[] | null {
       i++;
     } else {
       if (ch === '$') {
-        // ANSI-C $'...' has its own escape rules, so quote tracking cannot follow it.
-        if (next === '(' || next === "'") return null;
+        if (next !== undefined && '({["\''.includes(next)) return null;
         if (next !== undefined && EXPANSION_START.test(next)) hasExpansion = true;
       }
-      if (ch === '{') hasExpansion = true;
+      if ('{*?['.includes(ch)) hasExpansion = true;
       word += ch;
       inWord = true;
       i++;
@@ -176,29 +183,61 @@ function hasUnsafeFlag(args: readonly string[], policy: UnsafeFlagPolicy): boole
 }
 
 function operandsAllowed(args: readonly string[], policy: UnsafeFlagPolicy): boolean {
-  const required = policy.operandsRequire;
-  if (!required || args.every((arg) => arg.startsWith('-'))) return true;
-  return args.some((arg) => required.includes(arg.split('=', 1)[0]));
+  const operands = args.filter((arg) => !arg.startsWith('-'));
+  const { operandPrefix, operandsRequire } = policy;
+  if (operandPrefix !== undefined && !operands.every((operand) => operand.startsWith(operandPrefix))) return false;
+  if (!operandsRequire || operands.length === 0) return true;
+  return args.some((arg) => operandsRequire.includes(arg.split('=', 1)[0]));
+}
+
+function matchesExactArgs(args: readonly string[], exact: NonNullable<UnsafeFlagPolicy['exact']>): boolean {
+  if (!args.includes(exact.required)) return false;
+  for (let i = 0; i < args.length; i++) {
+    if (exact.flags.includes(args[i])) continue;
+    if (!exact.valueFlags.includes(args[i])) return false;
+    i++;
+    if (args[i] === undefined || args[i].startsWith('-')) return false;
+  }
+  return true;
+}
+
+function unwrapArgv(words: string[]): string[] | null {
+  if (!SHELL_WRAPPERS.has(words[0])) return words;
+  return words[1]?.startsWith('-') ? null : words.slice(1);
+}
+
+function argvStartsWith(argv: readonly string[], commandWords: readonly string[]): boolean {
+  return commandWords.every((word, index) => argv[index] === word);
 }
 
 function isReadOnlySegment({ words, hasExpansion }: ShellSegment): boolean {
-  let argv = words;
-  if (SHELL_WRAPPERS.has(argv[0])) {
-    if (argv[1]?.startsWith('-')) return false;
-    argv = argv.slice(1);
-  }
+  const argv = unwrapArgv(words);
+  if (!argv) return false;
   for (const safe of READONLY_COMMANDS) {
     const safeWords = safe.split(' ');
-    if (!safeWords.every((safeWord, index) => argv[index] === safeWord)) continue;
+    if (!argvStartsWith(argv, safeWords)) continue;
     const policy = UNSAFE_READONLY_FLAGS[safe];
     if (!policy) return true;
+    if (hasExpansion) return false;
     const args = argv.slice(safeWords.length);
-    return !hasExpansion && !hasUnsafeFlag(args, policy) && operandsAllowed(args, policy);
+    if (policy.exact) return matchesExactArgs(args, policy.exact);
+    return !hasUnsafeFlag(args, policy) && operandsAllowed(args, policy);
   }
   return false;
+}
+
+function isTestRunnerSegment({ words }: ShellSegment): boolean {
+  const argv = unwrapArgv(words);
+  return argv !== null && TEST_RUNNER_COMMANDS.some((runner) => argvStartsWith(argv, runner.split(' ')));
 }
 
 export function isReadOnlyCommand(command: string): boolean {
   const segments = scanShellCommand(command.trim());
   return segments !== null && segments.every(isReadOnlySegment);
+}
+
+/** For effect accounting only, never for permission: a test run needs a prompt but does not count as a workspace edit. */
+export function isNonMutatingCommand(command: string): boolean {
+  const segments = scanShellCommand(command.trim());
+  return segments !== null && segments.every((segment) => isReadOnlySegment(segment) || isTestRunnerSegment(segment));
 }

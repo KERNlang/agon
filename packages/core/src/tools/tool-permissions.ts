@@ -13,7 +13,7 @@ export const DANGEROUS_COMMANDS: string[] = ['rm -rf /', 'rm -rf ~', 'rm -rf *',
 export const DANGEROUS_PREFIXES: string[] = ['sudo ', 'su ', 'doas '];
 
 
-export { READONLY_COMMANDS, isReadOnlyCommand } from './tool-readonly-command.js';
+export { READONLY_COMMANDS, isNonMutatingCommand, isReadOnlyCommand } from './tool-readonly-command.js';
 
 // ── Module: ShellParsing ──
 

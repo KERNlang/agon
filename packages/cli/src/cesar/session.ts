@@ -938,7 +938,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
     // orchestration dispatches (which cost real engine time/money; this repo's
     // policy makes confidence the investigate-before-dispatch gate). What
     // changed: read-only INVESTIGATION is now exempt — Read/Grep/Glob/Delegate
-    // AND read-only Bash (status, ls, npm test) — so Cesar can investigate
+    // AND read-only Bash (git status, ls, tsc --noEmit) — so Cesar can investigate
     // freely without a confidence call first (the real "feels blocked" friction).
     // Mutating Bash stays gated: in auto-approve/conquer modes it never hits the
     // permission UI, so the confidence signal is the only checkpoint on

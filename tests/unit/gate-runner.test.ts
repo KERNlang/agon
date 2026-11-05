@@ -122,9 +122,11 @@ describe('gateAutoRunPermitted', () => {
     expect(gateAutoRunPermitted('npm run typecheck', WS, { agonPermissionMode: 'auto' })).toBe(true);
   });
 
-  it('a read-only-classified gate (npm test) is allowed in every mode — resolver read-only Bash policy', () => {
-    expect(gateAutoRunPermitted('npm test', WS, { agonPermissionMode: 'ask' })).toBe(true);
-    expect(gateAutoRunPermitted('npm test', WS, { agonPermissionMode: 'auto-edit' })).toBe(true);
+  it('a test-runner gate runs repo code, so it auto-runs outside mode auto only under a covering rule', () => {
+    expect(gateAutoRunPermitted('npm test', WS, { agonPermissionMode: 'ask' })).toBe(false);
+    expect(gateAutoRunPermitted('npm test', WS, { agonPermissionMode: 'auto-edit' })).toBe(false);
+    expect(gateAutoRunPermitted('npm test', WS, { agonPermissionMode: 'ask', permissions: { allow: ['Bash(npm test:*)'], deny: [] } })).toBe(true);
+    expect(gateAutoRunPermitted('npx tsc --noEmit', WS, { agonPermissionMode: 'ask' })).toBe(true);
   });
 
   it('a mutating-classified gate does not run in ask mode without a covering rule', () => {
@@ -156,7 +158,7 @@ describe('gateAutoRunPermitted', () => {
 
   it('redirection stays allowed in mode auto, and >/dev/null anywhere', () => {
     expect(gateAutoRunPermitted('npm test > /tmp/out.txt', WS, { agonPermissionMode: 'auto' })).toBe(true);
-    expect(gateAutoRunPermitted('npm test > /dev/null', WS, { agonPermissionMode: 'ask' })).toBe(true);
+    expect(gateAutoRunPermitted('npx tsc --noEmit > /dev/null', WS, { agonPermissionMode: 'ask' })).toBe(true);
   });
 });
 

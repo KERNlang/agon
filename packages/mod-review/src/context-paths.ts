@@ -76,17 +76,18 @@ export function loadExtraContext(input: Record<string, Json>, context: Invocatio
   const skipped: { path: string; reason: string }[] = [];
   const included = new Map<string, { path: string; chars: number; bytes?: number; content?: string }>();
   let total = 0;
+  let sufficientLimit = 0;
   const take = (path: string, real: string) => {
     if (included.has(real)) return;
-    const probed = probe(real, maxChars - total);
+    const probed: Probed = total > maxChars ? { kind: 'oversized', bytes: statSync(real).size } : probe(real, maxChars - total);
     if (probed.kind === 'binary') { skipped.push({ path, reason: 'binary' }); return; }
     const chars = probed.kind === 'text' ? probed.chars : Math.ceil(probed.bytes / MAX_BYTES_PER_CHAR);
     total += chars;
+    sufficientLimit += probed.kind === 'text' ? chars : probed.bytes;
     included.set(real, probed.kind === 'text' ? { path, chars, content: probed.content } : { path, chars, bytes: probed.bytes });
   };
 
   for (const raw of requested) {
-    if (total > maxChars) break;
     if (!raw.trim()) return { error: '--context needs a path; got an empty value.' };
     const lexical = resolve(context.cwd, raw);
     let real: string;
@@ -104,7 +105,6 @@ export function loadExtraContext(input: Record<string, Json>, context: Invocatio
     if (!tracked) return { error: `Refusing --context ${raw}: it is a directory outside any git repo, so tracked files cannot be told from local ones. Name the files instead.` };
     if (!tracked.files.length) return { error: `Refusing --context ${raw}: the directory has no tracked files. Name the files instead.` };
     for (const file of tracked.files) {
-      if (total > maxChars) break;
       const path = display(join(lexical, file));
       if (isSecretPath(file)) { skipped.push({ path, reason: 'secret-named' }); continue; }
       try {
@@ -122,9 +122,9 @@ export function loadExtraContext(input: Record<string, Json>, context: Invocatio
 
   const files = [...included.values()];
   if (total > maxChars) {
-    const largest = [...files].sort((a, b) => b.chars - a.chars).slice(0, LARGEST_NAMED)
+    const largest = [...files].sort((a, b) => (b.bytes ?? b.chars) - (a.bytes ?? a.chars)).slice(0, LARGEST_NAMED)
       .map(file => `${file.path} (${file.bytes === undefined ? `${file.chars.toLocaleString('en-US')} chars` : `${file.bytes.toLocaleString('en-US')} bytes`})`).join(', ');
-    return { error: `Refusing --context: at least ${total.toLocaleString('en-US')} chars, over the ${maxChars.toLocaleString('en-US')} limit, and context is never truncated. Reading stopped at the limit, so this list may be partial. Largest seen: ${largest}. Raise the limit to at least --context-max-chars ${total} or name fewer files.` };
+    return { error: `Refusing --context: at least ${total.toLocaleString('en-US')} chars, over the ${maxChars.toLocaleString('en-US')} limit, and context is never truncated. Files past the limit were sized, not read. Largest: ${largest}. Raise the limit with --context-max-chars ${sufficientLimit} or name fewer files.` };
   }
 
   const list = files.map(file => file.path);

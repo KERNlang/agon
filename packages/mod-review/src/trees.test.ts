@@ -480,17 +480,21 @@ describe('--context through runReview', () => {
     expect(named.out.stderr).toContain('secret-named');
   });
 
-  it('reads every file before refusing an over-budget context, or reports bytes as chars and inflates the suggested limit', async () => {
+  it('reads files past the context budget, reports bytes as chars, or suggests a limit that is refused again', async () => {
     const root = dirtyRepo();
     writeFileSync(join(root, 'huge.md'), 'y'.repeat(1000));
-    writeFileSync(join(root, 'never-read.md'), 'z'.repeat(50));
+    writeFileSync(join(root, 'after-budget.md'), 'z'.repeat(50));
+    chmodSync(join(root, 'after-budget.md'), 0o000);
     const h = harness();
-    const out = await review({ context: ['huge.md', 'never-read.md'], 'context-max-chars': '10' }, root, h);
-    expect(out.out.exitCode).toBe(1);
-    expect(out.out.stderr).toContain('huge.md (1,000 bytes)');
-    expect(out.out.stderr).toContain('--context-max-chars 250');
-    expect(out.out.stderr).not.toContain('never-read.md');
+    const refused = await review({ context: ['huge.md', 'after-budget.md'], 'context-max-chars': '10' }, root, h);
+    chmodSync(join(root, 'after-budget.md'), 0o644);
+    expect(refused.out.exitCode).toBe(1);
+    expect(refused.out.stderr).toContain('huge.md (1,000 bytes)');
     expect(h.calls).toHaveLength(0);
+    const suggested = /--context-max-chars (\d+)/.exec(refused.out.stderr!)![1]!;
+    const retried = await review({ context: ['huge.md', 'after-budget.md'], 'context-max-chars': suggested }, root, h);
+    expect(retried.out.exitCode).toBe(0);
+    expect(h.calls.length).toBeGreaterThan(0);
   });
 
   it('loses the audit of what left the machine with --split, in SARIF or in text', async () => {

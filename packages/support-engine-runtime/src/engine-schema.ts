@@ -99,8 +99,9 @@ export const ApiConfigSchema = z.object({
   firstChunkRetryCount: z.number().int().nonnegative().optional(),
   firstChunkRetryBackoffMs: z.number().int().nonnegative().optional(),
   emptyResponseRetryCount: z.number().int().nonnegative().optional(),
-  modelRetryMaxAttempts: z.number().int().nonnegative().optional(),
+  modelRetryMaxRetries: z.number().int().nonnegative().optional(),
   modelRetryMaxWaitMs: z.number().int().nonnegative().optional(),
+  modelRetryMaxElapsedMs: z.number().int().nonnegative().optional(),
   modelRetryBaseDelayMs: z.number().int().nonnegative().optional(),
   modelRetryMaxDelayMs: z.number().int().nonnegative().optional(),
 });

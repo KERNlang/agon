@@ -10,7 +10,7 @@ import { apiStreamDispatchWithHistory, apiDispatch } from '../api/dispatch-lazy.
 
 import { abortableDelay, createModelCallRetryGate } from '../api/model-call-retry.js';
 
-import type { ModelRetryPlan } from '../api/model-call-retry.js';
+import type { ModelRetryBudget, ModelRetryPlan } from '../api/model-call-retry.js';
 
 import { engineSupportsVision } from '../signals/models-registry.js';
 
@@ -69,6 +69,7 @@ import { decideFirstChunkRetry, decodeEventStreamOutput, planPromptDelivery } fr
  * Fallback: spawn per turn with --resume/--continue. Works for any CLI engine.
  */
 export function createResumeSession(config: PersistentSessionConfig): PersistentSession {
+  let modelRetryBudget: ModelRetryBudget = { spentMs: 0 };
   let alive = false;
   let sessionId: string | null = null;
   let firstTurn = true;
@@ -1097,7 +1098,9 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
           ? requestedFirstChunkBackoffMs
           : 1000;
         let hadTurnSideEffects = false;
-        const modelRetry = createModelCallRetryGate(config.engine.api, opts.signal);
+        const turnKey = opts.controlPlane?.turnId;
+        if (!turnKey || modelRetryBudget.turnId !== turnKey) modelRetryBudget = { turnId: turnKey, spentMs: 0 };
+        const modelRetry = createModelCallRetryGate(config.engine.api, opts.signal, modelRetryBudget);
         // One-shot emergency recovery: if a request fails with an overflow-shaped
         // error, hard-trim history once and retry the same step instead of
         // surfacing an empty response (the spin trigger). Token estimates can be

@@ -65,7 +65,7 @@ export interface EngineDefinition {
     baseUrl: string; apiKeyEnv: string; model: string; maxTokens?: number; contextWindow?: number;
     format?: 'openai' | 'anthropic'; firstChunkTimeoutMs?: number; idleTimeoutMs?: number; activityWindowMs?: number;
     firstChunkRetryCount?: number; firstChunkRetryBackoffMs?: number; emptyResponseRetryCount?: number;
-    modelRetryMaxAttempts?: number; modelRetryMaxWaitMs?: number; modelRetryBaseDelayMs?: number; modelRetryMaxDelayMs?: number;
+    modelRetryMaxRetries?: number; modelRetryMaxWaitMs?: number; modelRetryMaxElapsedMs?: number; modelRetryBaseDelayMs?: number; modelRetryMaxDelayMs?: number;
   };
   companion?: CompanionConfig;
   sessionBudget?: SessionBudget;

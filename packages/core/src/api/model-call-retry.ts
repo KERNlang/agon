@@ -3,22 +3,29 @@ import type { ModelCallFailure } from '@kernlang/agon-support-engine-runtime';
 import { classifyApiFailure } from './failure-classify.js';
 
 export interface ModelRetryConfig {
-  modelRetryMaxAttempts?: number;
+  modelRetryMaxRetries?: number;
   modelRetryMaxWaitMs?: number;
+  modelRetryMaxElapsedMs?: number;
   modelRetryBaseDelayMs?: number;
   modelRetryMaxDelayMs?: number;
 }
 
 export interface ModelRetryPolicy {
-  maxAttempts: number;
+  maxRetries: number;
   maxWaitMs: number;
+  maxElapsedMs: number;
   baseDelayMs: number;
   maxDelayMs: number;
 }
 
 export type ModelRetryDecision =
   | { retry: true; delayMs: number }
-  | { retry: false; reason: 'not_retryable' | 'output_started' | 'attempts_exhausted' | 'wait_cap_exhausted' };
+  | { retry: false; reason: 'not_retryable' | 'output_started' | 'retries_exhausted' | 'wait_cap_exhausted' | 'elapsed_cap_exhausted' };
+
+export interface ModelRetryBudget {
+  turnId?: string;
+  spentMs: number;
+}
 
 export interface ModelRetryPlan {
   delayMs: number;
@@ -39,8 +46,9 @@ function nonNegativeInteger(value: unknown, fallback: number): number {
 
 export function resolveModelRetryPolicy(config?: ModelRetryConfig): ModelRetryPolicy {
   return {
-    maxAttempts: nonNegativeInteger(config?.modelRetryMaxAttempts, 5),
+    maxRetries: nonNegativeInteger(config?.modelRetryMaxRetries, 5),
     maxWaitMs: nonNegativeInteger(config?.modelRetryMaxWaitMs, 120_000),
+    maxElapsedMs: nonNegativeInteger(config?.modelRetryMaxElapsedMs, 300_000),
     baseDelayMs: nonNegativeInteger(config?.modelRetryBaseDelayMs, 2_000),
     maxDelayMs: nonNegativeInteger(config?.modelRetryMaxDelayMs, 30_000),
   };
@@ -94,15 +102,16 @@ export function describeModelCallFailure(err: unknown, outputStarted: boolean): 
   };
 }
 
-export function decideModelCallRetry(input: { failure: ModelCallFailure; attempt: number; waitedMs: number; policy: ModelRetryPolicy; random?: () => number }): ModelRetryDecision {
-  const { failure, attempt, waitedMs, policy } = input;
+export function decideModelCallRetry(input: { failure: ModelCallFailure; retries: number; waitedMs: number; spentMs: number; policy: ModelRetryPolicy; random?: () => number }): ModelRetryDecision {
+  const { failure, retries, waitedMs, spentMs, policy } = input;
   if (failure.outputStarted) return { retry: false, reason: 'output_started' };
   if (!failure.retryable) return { retry: false, reason: 'not_retryable' };
-  if (attempt >= policy.maxAttempts) return { retry: false, reason: 'attempts_exhausted' };
-  const exponential = Math.min(policy.baseDelayMs * 2 ** attempt, policy.maxDelayMs);
+  if (retries >= policy.maxRetries) return { retry: false, reason: 'retries_exhausted' };
+  const exponential = Math.min(policy.baseDelayMs * 2 ** retries, policy.maxDelayMs);
   const jittered = Math.round(exponential * (0.5 + (input.random ?? Math.random)() * 0.5));
   const delayMs = failure.retryAfterMs ?? jittered;
   if (waitedMs + delayMs > policy.maxWaitMs) return { retry: false, reason: 'wait_cap_exhausted' };
+  if (spentMs + delayMs > policy.maxElapsedMs) return { retry: false, reason: 'elapsed_cap_exhausted' };
   return { retry: true, delayMs };
 }
 
@@ -126,57 +135,71 @@ function failureLabel(failure: ModelCallFailure): string {
 }
 
 /**
- * Per-model-call retry state for the Cesar API loop. Attempts and waited time reset as soon as a call returns without failing.
+ * Retry state for the Cesar API loop. Retries and waited time are per model call and reset once a call returns without failing. The budget spans the whole turn, so it also bounds the time failing calls themselves take, which each get a fresh engine timeout.
  */
-export function createModelCallRetryGate(config: ModelRetryConfig | undefined, signal?: AbortSignal) {
+export function createModelCallRetryGate(config: ModelRetryConfig | undefined, signal?: AbortSignal, budget: ModelRetryBudget = { spentMs: 0 }) {
   const policy = resolveModelRetryPolicy(config);
-  let attempt = 0;
+  let retries = 0;
   let waitedMs = 0;
+  let failingSince: number | undefined;
   let refusal: ModelRetryDecision | undefined;
+
+  const closeFailureSpan = (): void => {
+    if (failingSince !== undefined) budget.spentMs += Date.now() - failingSince;
+    failingSince = undefined;
+  };
 
   return {
     plan(failure: ModelCallFailure | undefined): ModelRetryPlan | null {
       refusal = undefined;
       if (!failure) {
-        attempt = 0;
+        closeFailureSpan();
+        retries = 0;
         waitedMs = 0;
         return null;
       }
-      const decision = decideModelCallRetry({ failure, attempt, waitedMs, policy });
+      failingSince ??= Date.now();
+      const spentMs = budget.spentMs + Date.now() - failingSince;
+      const decision = decideModelCallRetry({ failure, retries, waitedMs, spentMs, policy });
       if (!decision.retry) {
         refusal = decision;
+        closeFailureSpan();
         return null;
       }
-      attempt++;
-      waitedMs += decision.delayMs;
-      return { delayMs: decision.delayMs, attempt, failure };
+      return { delayMs: decision.delayMs, attempt: retries + 1, failure };
     },
 
     async *wait(plan: ModelRetryPlan) {
       const label = failureLabel(plan.failure);
-      const metadata = { kind: 'model-retry', attempt: plan.attempt, maxAttempts: policy.maxAttempts, delayMs: plan.delayMs, statusCode: plan.failure.statusCode };
+      const metadata = { kind: 'model-retry', attempt: plan.attempt, maxRetries: policy.maxRetries, delayMs: plan.delayMs, statusCode: plan.failure.statusCode };
       let remaining = plan.delayMs;
+      let tick = 0;
       while (remaining > 0 && !signal?.aborted) {
-        yield { type: 'status' as const, content: `${label}, retry ${plan.attempt}/${policy.maxAttempts} in ${Math.ceil(remaining / 1000)}s (Esc to cancel)`, metadata };
-        const tick = Math.min(remaining, STATUS_TICK_MS);
-        await abortableDelay(tick, signal);
-        remaining -= tick;
+        yield { type: 'status' as const, content: `${label}, retry ${plan.attempt}/${policy.maxRetries} in ${Math.ceil(remaining / 1000)}s (Esc to cancel)`, metadata: { ...metadata, phase: 'waiting', tick: tick++ } };
+        const slice = Math.min(remaining, STATUS_TICK_MS);
+        await abortableDelay(slice, signal);
+        remaining -= slice;
       }
       if (!signal?.aborted) {
-        yield { type: 'status' as const, content: `${label}, retrying now (${plan.attempt}/${policy.maxAttempts})…`, metadata };
+        retries = plan.attempt;
+        waitedMs += plan.delayMs;
+        yield { type: 'status' as const, content: `${label}, retrying now (${plan.attempt}/${policy.maxRetries})…`, metadata: { ...metadata, phase: 'retrying', tick } };
       }
     },
 
     finalError(stderr: string, failure: ModelCallFailure | undefined): { content: string; metadata?: Record<string, unknown> } {
       if (!failure) return { content: stderr };
-      const final = failure.statusCode !== undefined || attempt > 0;
-      const metadata = { modelRetryFinal: final, statusCode: failure.statusCode, modelRetries: attempt };
+      const final = failure.statusCode !== undefined || retries > 0;
+      const metadata = { modelRetryFinal: final, statusCode: failure.statusCode, modelRetries: retries };
       const reason = refusal && !refusal.retry ? refusal.reason : undefined;
       if (reason === 'wait_cap_exhausted') {
-        return { content: `Not retrying, the wait would pass the ${Math.round(policy.maxWaitMs / 1000)}s retry cap after ${attempt} retries: ${stderr}`, metadata };
+        return { content: `Not retrying, the wait would pass the ${Math.round(policy.maxWaitMs / 1000)}s retry cap after ${retries} retries: ${stderr}`, metadata };
       }
-      if (reason === 'attempts_exhausted') {
-        return { content: `Gave up after ${attempt} retries, ${Math.round(waitedMs / 1000)}s waited: ${stderr}`, metadata };
+      if (reason === 'elapsed_cap_exhausted') {
+        return { content: `Not retrying, this turn used its ${Math.round(policy.maxElapsedMs / 1000)}s retry budget after ${retries} retries: ${stderr}`, metadata };
+      }
+      if (reason === 'retries_exhausted') {
+        return { content: `Gave up after ${retries} retries, ${Math.round(waitedMs / 1000)}s waited: ${stderr}`, metadata };
       }
       return { content: stderr, metadata };
     },

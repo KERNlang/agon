@@ -158,7 +158,7 @@ export function createCesarTurnEndTracker(runsDir?: string): CesarTurnEndTracker
         sendStep = Math.max(sendStep, Number(metadata.step) || 0);
         budget = Number(metadata.budget) || budget;
       } else if (chunk.type === 'status' && metadata.kind === 'model-retry') {
-        modelRetries = Math.max(modelRetries, Number(metadata.attempt) || 0);
+        if (metadata.phase === 'retrying') modelRetries++;
       } else if (chunk.type === 'error') {
         errorCount++;
         lastError = chunk.content;

@@ -178,9 +178,24 @@ describe('Cesar model-call retry against a real HTTP stub', () => {
     expect(ofType(chunks, 'error')[0]?.content).toMatch(/5s retry cap/);
   });
 
-  it('stops after the configured attempts on a persistent 500 so one outage cannot retry forever', async () => {
+  it('holds a turn to its retry budget across sends, so failing calls with fresh timeouts cannot add up', async () => {
     const baseUrl = await startStub((_req, res) => respondStatus(res, 500));
-    const session = await sessionFor(baseUrl, { modelRetryMaxAttempts: 2 });
+    const session = await sessionFor(baseUrl, { modelRetryMaxRetries: 500, modelRetryMaxElapsedMs: 200 });
+    const controlPlane = { turnId: 'turn-1' } as any;
+
+    const first = await collect(session.send({ message: 'go', controlPlane }));
+    const requestsAfterFirst = requestTimes.length;
+    const second = await collect(session.send({ message: 'again', controlPlane }));
+
+    expect(ofType(first, 'error')[0]?.content).toMatch(/retry budget/);
+    expect(requestsAfterFirst).toBeLessThan(40);
+    expect(requestTimes.length).toBeLessThanOrEqual(requestsAfterFirst + 2);
+    expect(ofType(second, 'error')[0]?.content).toMatch(/retry budget/);
+  });
+
+  it('stops after the configured retries on a persistent 500 so one outage cannot retry forever', async () => {
+    const baseUrl = await startStub((_req, res) => respondStatus(res, 500));
+    const session = await sessionFor(baseUrl, { modelRetryMaxRetries: 2 });
 
     const chunks = await collect(session.send({ message: 'go' }));
 

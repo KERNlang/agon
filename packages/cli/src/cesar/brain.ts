@@ -970,7 +970,8 @@ async function runCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerCont
             _engineErrorMsg = String(chunk.content ?? '').slice(0, 300);
           }
           if (chunk.type === 'status' && chunk.metadata?.kind === 'model-retry') {
-            dispatch({ type: 'spinner-start', message: `Cesar ${chunk.content}`, color });
+            const message = `Cesar ${chunk.content}`;
+            dispatch(chunk.metadata.tick === 0 ? { type: 'spinner-start', message, color } : { type: 'spinner-update', message });
           }
         };
         const _cesarSend = (opts: any) => {

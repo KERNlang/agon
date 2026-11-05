@@ -52,7 +52,7 @@ import { applyCesarSelfTurnApproval } from './self-turn-approval.js';
 
 import { approvalToolIsFileMutating, buildApprovalDiffPreview } from './approval-diff.js';
 
-import { createCesarTurnId, recordCesarApprovalDecision, recordCesarToolTimeline, recordCesarConfidence } from './tool-observability.js';
+import { recordCesarApprovalDecision, recordCesarToolTimeline, recordCesarConfidence } from './tool-observability.js';
 
 import { markSteeringTurn, drainSteering, releaseSteeringTurn, hasPendingSteering, formatSteeringIntoSend } from './steering.js';
 
@@ -197,7 +197,7 @@ async function runCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerCont
   // Retain the entry session across awaits: detachment does not erase a failure.
   const _entrySession = ctx.cesarSession;
       const _turnStart = Date.now();
-      const _turnId = createCesarTurnId();
+      const _turnId = turnEnd.turnId;
       let _turnTerminalState: 'completed' | 'failed' | 'timed_out' = 'completed';
       let _timedOut = false;
       const _turnCwd = resolveWorkingDir();

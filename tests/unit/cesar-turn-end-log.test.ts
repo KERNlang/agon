@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { classifyCesarTurnEnd, createCesarTurnEndTracker } from '../../packages/cli/src/cesar/turn-end-log.js';
-import { replayCesarHarnessLogs } from '../../packages/cli/src/cesar/tool-observability.js';
+import { replayCesarHarnessLogs, summarizeErrorForLog } from '../../packages/cli/src/cesar/tool-observability.js';
 import { cleanupTestAgonHome, setupTestAgonHome } from '../helpers/agon-home.js';
 
 const apiStreamDispatchWithHistoryMock = vi.hoisted(() => vi.fn());
@@ -53,16 +53,71 @@ describe('Cesar turn-end log', () => {
     await session.start();
 
     const tracker = createCesarTurnEndTracker(runsDir);
-    tracker.bindTelemetry(() => ({ turnId: 'turn-budget', cesarEngineId: 'turn-end-budget', toolCount: 3 }));
+    tracker.bindTelemetry(() => ({ cesarEngineId: 'turn-end-budget', toolCount: 3 }));
     tracker.beginSend();
     for await (const chunk of session.send({ message: 'go', toolLoopBaseBudget: 3, toolLoopMaxBudget: 3 })) tracker.observe(chunk);
     tracker.settle({ delegated: false, responded: true, decisionReason: 'self-executed', terminalState: 'completed' } as any, false);
 
     const line = JSON.parse(readFileSync(join(runsDir, 'cesar-tool-timeline.jsonl'), 'utf-8').trim());
-    expect(line).toMatchObject({ event: 'turn_end', turnId: 'turn-budget', status: 'step_budget' });
+    expect(line).toMatchObject({ event: 'turn_end', turnId: tracker.turnId, status: 'step_budget' });
     expect(line.summary).toMatchObject({ endReason: 'step_budget', steps: 3, budget: 3, toolCount: 3, stepBudgetHits: 1 });
     expect(typeof line.summary.durationMs).toBe('number');
-    expect(replayCesarHarnessLogs({ runsDir, turnId: 'turn-budget' }).rendered).toContain('ended: step_budget steps=3/3 sends=1');
+    expect(replayCesarHarnessLogs({ runsDir, turnId: tracker.turnId }).rendered).toContain('ended: step_budget steps=3/3 sends=1');
+  });
+
+  it('does not label an error stop on the last allowed step as step_budget', async () => {
+    const { createResumeSession } = await import('../../packages/core/src/persistent-session.js');
+    apiStreamDispatchWithHistoryMock.mockImplementation(async function* () {
+      return { exitCode: 1, stdout: '', stderr: 'API stream failed: Unauthorized', modelFailure: { retryable: false, outputStarted: false, statusCode: 401 } };
+    });
+    const session = createResumeSession({
+      engine: { id: 'turn-end-stopped', api: { baseUrl: 'https://example.invalid', apiKeyEnv: 'TEST_KEY', model: 'm' } } as any,
+      binaryPath: '',
+      cwd: process.cwd(),
+      systemPrompt: 'You are Cesar.',
+      nativeTools: TOOLS,
+      onToolCall: async () => 'ok',
+    });
+    await session.start();
+
+    const chunks: any[] = [];
+    for await (const chunk of session.send({ message: 'go', toolLoopBaseBudget: 1, toolLoopMaxBudget: 1 })) chunks.push(chunk);
+
+    expect(chunks.find((c) => c.type === 'done')?.metadata?.loopEnd).toBe('stopped');
+  });
+
+  it('does not report an earlier send\'s error, or an aborted backoff as a retry, on a turn that finished cleanly', () => {
+    const tracker = createCesarTurnEndTracker(runsDir);
+    tracker.beginSend();
+    tracker.observe({ type: 'error', content: 'partial stream failure' });
+    tracker.beginSend();
+    tracker.observe({ type: 'status', metadata: { kind: 'model-retry', phase: 'waiting', attempt: 1 } });
+    tracker.observe({ type: 'done', metadata: { loopEnd: 'completed', step: 1, budget: 15 } });
+    tracker.settle({ delegated: false, responded: true, terminalState: 'completed' } as any, false);
+
+    const line = JSON.parse(readFileSync(join(runsDir, 'cesar-tool-timeline.jsonl'), 'utf-8').trim());
+    expect(line.status).toBe('completed');
+    expect(line.turnId).toBe(tracker.turnId);
+    expect(line.summary).toMatchObject({ errorCount: 1, modelRetries: 0 });
+    expect(line.summary.error).toBeUndefined();
+  });
+
+  it('never persists credentials from a provider error into the turn-end log', () => {
+    const jwt = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.c2lnbmF0dXJlX3ZhbHVl';
+    const leaks = [
+      'request failed: Authorization: Basic dXNlcjpwYXNzd29yZA==',
+      'upstream said Bearer abcdefghijklmnopqrstuvwx rejected',
+      `bad token ${jwt}`,
+      'set-cookie: session=topsecretvalue; Path=/',
+      'POST https://user:hunter2hunter2@api.example.com/v1 failed',
+      'GET https://api.example.com/v1?key=AIzaFakeButLongEnough&x=1 failed',
+    ];
+    for (const leak of leaks) {
+      const scrubbed = summarizeErrorForLog(leak);
+      for (const secret of ['dXNlcjpwYXNzd29yZA', 'abcdefghijklmnopqrstuvwx', jwt, 'topsecretvalue', 'hunter2hunter2', 'AIzaFakeButLongEnough']) {
+        expect(scrubbed).not.toContain(secret);
+      }
+    }
   });
 
   it('does not blame the engine or the user for the wrong stop: watchdog, Esc and API error stay distinct', () => {

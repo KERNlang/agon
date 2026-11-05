@@ -4,7 +4,7 @@ import { hostNowMs } from '../lib/kern-host.js';
 
 import type { CesarTurnOutcome } from '../handlers/types.js';
 
-import { recordCesarToolTimeline, summarizeErrorForLog } from './tool-observability.js';
+import { createCesarTurnId, recordCesarToolTimeline, summarizeErrorForLog } from './tool-observability.js';
 
 export type CesarTurnEndReason =
   | 'completed'
@@ -83,6 +83,7 @@ export function classifyCesarTurnEnd(input: CesarTurnEndInput): CesarTurnEndReas
 }
 
 export interface CesarTurnEndTracker {
+  readonly turnId: string;
   bindTelemetry(read: () => Record<string, unknown>): void;
   beginSend(): void;
   observe(chunk: { type?: string; content?: unknown; metadata?: Record<string, unknown> }): void;
@@ -95,6 +96,7 @@ export interface CesarTurnEndTracker {
  * One `turn_end` line per Cesar turn in cesar-tool-timeline.jsonl. Observation only: it never changes a chunk or an outcome, and a logging failure never reaches the turn.
  */
 export function createCesarTurnEndTracker(runsDir?: string): CesarTurnEndTracker {
+  const turnId = createCesarTurnId();
   const startedAt = hostNowMs();
   let readTelemetry: () => Record<string, unknown> = () => ({});
   let sendCount = 0;
@@ -117,7 +119,7 @@ export function createCesarTurnEndTracker(runsDir?: string): CesarTurnEndTracker
       const endReason = classifyCesarTurnEnd({ ...input, sendCount, lastSendEnd, continuationCapHit });
       const errorSource = thrown ?? lastError;
       recordCesarToolTimeline({
-        turnId: String(telemetry.turnId ?? 'unknown'),
+        turnId,
         event: 'turn_end',
         engineId: typeof telemetry.cesarEngineId === 'string' ? telemetry.cesarEngineId : undefined,
         status: endReason,
@@ -145,12 +147,14 @@ export function createCesarTurnEndTracker(runsDir?: string): CesarTurnEndTracker
   };
 
   return {
+    turnId,
     bindTelemetry(read) { readTelemetry = read; },
     beginSend() {
       completedSteps += sendStep;
       sendStep = 0;
       sendCount++;
       lastSendEnd = undefined;
+      lastError = undefined;
     },
     observe(chunk) {
       const metadata = chunk.metadata ?? {};
@@ -164,7 +168,8 @@ export function createCesarTurnEndTracker(runsDir?: string): CesarTurnEndTracker
         lastError = chunk.content;
         lastSendEnd = typeof metadata.loopEnd === 'string' ? metadata.loopEnd : 'api_error';
       } else if (chunk.type === 'done' && typeof metadata.loopEnd === 'string') {
-        lastSendEnd ??= metadata.loopEnd;
+        if (metadata.loopEnd !== 'stopped') lastSendEnd = metadata.loopEnd;
+        if (metadata.loopEnd === 'completed') lastError = undefined;
         if (metadata.loopEnd === 'step_budget') stepBudgetHits++;
       }
     },

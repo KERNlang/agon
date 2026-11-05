@@ -4,6 +4,8 @@ import { join } from 'node:path';
 
 import { RUNS_DIR, agonPath, isReadOnlyCommand } from '@kernlang/agon-core';
 
+import { redactSecrets } from '@kernlang/agon-support-verification';
+
 import { hostDateMs, hostNowIso, hostNowMs } from '../lib/kern-host.js';
 
 import { isBashToolName, isWriteToolName } from './brain-helpers.js';
@@ -94,9 +96,17 @@ function looksSensitiveString(value: string): boolean {
   return /(?:secret|token|password|credential|api[_-]?key|private[_-]?key)[ \t\n\r\f\v]*[:=]/i.test(value) || /-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(value) || /\b(?:sk-[A-Za-z0-9_-]{16,}|ghp_[A-Za-z0-9_]{16,}|AKIA[0-9A-Z]{16})\b/.test(value);
 }
 
+const LOG_ONLY_SECRET_PATTERNS: RegExp[] = [
+  /\b(?:proxy-)?authorization\s*[:=]\s*[^\n,;]+/gi,
+  /\b(?:set-)?cookie\s*[:=]\s*[^\n]+/gi,
+  /([?&](?:api[_-]?key|key|token|access_token|secret|password)=)[^\s&]+/gi,
+];
+
 export function summarizeErrorForLog(error: unknown): string {
   const text = error instanceof Error ? error.message : String(error ?? '');
-  return looksSensitiveString(text) ? '[redacted]' : text.replace(/\s+/g, ' ').trim().slice(0, 200);
+  if (looksSensitiveString(text)) return '[redacted]';
+  const scrubbed = LOG_ONLY_SECRET_PATTERNS.reduce((out, pattern) => out.replace(pattern, '[REDACTED-SECRET]'), redactSecrets(text));
+  return scrubbed.replace(/\s+/g, ' ').trim().slice(0, 200);
 }
 
 function summarizeCommandString(value: string): Record<string,unknown> {

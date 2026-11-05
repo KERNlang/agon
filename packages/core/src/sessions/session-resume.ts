@@ -1007,6 +1007,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
         const MAX_CONSECUTIVE_ERRORS = 3;
         let budget = BASE_BUDGET;
         let step = 0;
+        let budgetExhausted = false;
         // ── Earned budget + novelty ledger (effect classification) ──
         // productiveSteps is the GROWTH counter: it now advances only on a
         // step that did something effectful (mutate / verify / NOVEL read /
@@ -1165,7 +1166,11 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
         // fns swallow their own errors, and the whole body is wrapped in try/catch
         // so telemetry can NEVER throw into the session. The finally yields nothing.
         try {
-        while (step < budget) {
+        while (true) {
+          if (step >= budget) {
+            budgetExhausted = true;
+            break;
+          }
           step++;
           let fullResponse = '';
           let lastStderr = ''; // captured non-throwing error from the dispatch result
@@ -2674,7 +2679,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
         // (opts.shouldYield); every other exit keeps the historical
         // 'end_turn'. Consumers break on chunk.type === 'done' and treat the
         // content as an opaque stop reason, so the extra value is additive.
-        const loopEnd = yieldedForCaller ? 'steering_yield' : guardDoneNormally ? 'completed' : step >= budget ? 'step_budget' : 'stopped';
+        const loopEnd = yieldedForCaller ? 'steering_yield' : guardDoneNormally ? 'completed' : budgetExhausted ? 'step_budget' : 'stopped';
         yield { type: 'done' as const, content: yieldedForCaller ? 'steering-yield' : 'end_turn', metadata: { loopEnd, step, budget } };
         return;
         } finally {

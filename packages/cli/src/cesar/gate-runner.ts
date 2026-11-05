@@ -1,3 +1,9 @@
+import { createHash } from 'node:crypto';
+
+import { readFileSync } from 'node:fs';
+
+import { join } from 'node:path';
+
 import { isNonMutatingCommand, spawnWithTimeout } from '@kernlang/agon-core';
 
 import type { DiscoveredGate } from '@kernlang/agon-core';
@@ -81,11 +87,45 @@ export function gateAutoRunTriggered(signals: {agenticAuto:boolean, agenticTaskS
   return signals.legacyState === 'done';
 }
 
+const GATE_DEFINITION_FILES: readonly string[] = ['Makefile', 'makefile', 'GNUmakefile', 'justfile', 'pyproject.toml'];
+
+function readOrEmpty(path: string): string {
+  try {
+    return readFileSync(path, 'utf-8');
+  } catch {
+    return '';
+  }
+}
+
+function packageScriptsSource(cwd: string): string {
+  const raw = readOrEmpty(join(cwd, 'package.json'));
+  try {
+    return JSON.stringify(JSON.parse(raw)?.scripts ?? null);
+  } catch {
+    return raw;
+  }
+}
+
+/**
+ * Hash of everything a discovered gate command resolves at run time: the whole package.json `scripts` object (npm also runs pre/post hooks) and the task-runner files a fitness command may delegate to. Record it at discovery; a different value before an auto-run means the agent may have rewritten what the gate executes.
+ */
+export function gateDefinitionFingerprint(cwd: string): string {
+  const hash = createHash('sha256').update(packageScriptsSource(cwd));
+  for (const file of GATE_DEFINITION_FILES) hash.update('\0').update(file).update('\0').update(readOrEmpty(join(cwd, file)));
+  return hash.digest('hex');
+}
+
+export function gateDefinitionChangeNotice(recordedDefinition: string | undefined, cwd: string): string | null {
+  if (recordedDefinition === undefined || gateDefinitionFingerprint(cwd) === recordedDefinition) return null;
+  return 'Gate definition changed during this turn (package.json scripts or task-runner file) — not auto-running it; the run needs normal Bash approval.';
+}
+
 /**
  * The harness may only run the gate when the unified resolver would ALLOW the command outright — mode auto for routine gates, or a persisted/session allow rule (the Always artifact, e.g. Bash(npm test:*)) in any mode. A resolver 'ask' (ask/auto-edit without a covering rule, or a gate command that trips a dangerous boundary even in auto) falls back to the prompt nudge — this path never prompts and never bypasses a boundary. The one exception is a test-runner gate (npm test, npx vitest) that reaches only the plain mode ask: the harness discovered it itself rather than the model issuing it, so it auto-runs in every mode, while a model-issued run still prompts. Additionally, outside mode auto a gate command containing output redirection is refused.
  */
-export function gateAutoRunPermitted(command: string, cwd: string, config: any): boolean {
+export function gateAutoRunPermitted(command: string, cwd: string, config: any, recordedDefinition?: string): boolean {
   try {
+    if (recordedDefinition !== undefined && gateDefinitionFingerprint(cwd) !== recordedDefinition) return false;
     const mode = resolveAgonPermissionMode(config);
     if (mode !== 'auto' && GATE_REDIRECTION_RE.test(command)) return false;
     const resolution = resolvePermissionDecision({ tool: 'Bash', target: command, cwd, source: 'native', config });

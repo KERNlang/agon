@@ -243,8 +243,8 @@
         "range": "^19.2.0"
       }
     ],
-    "packedBytes": 1529720,
-    "unpackedBytes": 7120816,
+    "packedBytes": 1529699,
+    "unpackedBytes": 7121107,
     "fileCount": 144,
     "files": [
       {
@@ -256,11 +256,11 @@
         "size": 51
       },
       {
-        "path": "dist/app-ZSN5OX6Q.js",
+        "path": "dist/app-KUB7AEED.js",
         "size": 379193
       },
       {
-        "path": "dist/app-ZSN5OX6Q.js.map",
+        "path": "dist/app-KUB7AEED.js.map",
         "size": 253730
       },
       {
@@ -358,14 +358,6 @@
       {
         "path": "dist/chunk-C4OUBIJA.js.map",
         "size": 140
-      },
-      {
-        "path": "dist/chunk-CTTQ673J.js",
-        "size": 6575
-      },
-      {
-        "path": "dist/chunk-CTTQ673J.js.map",
-        "size": 4847
       },
       {
         "path": "dist/chunk-D5ULWETI.js",
@@ -496,6 +488,14 @@
         "size": 96819
       },
       {
+        "path": "dist/chunk-REQVSAB5.js",
+        "size": 15097
+      },
+      {
+        "path": "dist/chunk-REQVSAB5.js.map",
+        "size": 9883
+      },
+      {
         "path": "dist/chunk-RKNHQ2TR.js",
         "size": 8041
       },
@@ -520,14 +520,6 @@
         "size": 100495
       },
       {
-        "path": "dist/chunk-U2PRH7BJ.js",
-        "size": 15097
-      },
-      {
-        "path": "dist/chunk-U2PRH7BJ.js.map",
-        "size": 9883
-      },
-      {
         "path": "dist/chunk-URYTEI62.js",
         "size": 54176
       },
@@ -550,6 +542,14 @@
       {
         "path": "dist/chunk-W5JIOSDF.js.map",
         "size": 23370
+      },
+      {
+        "path": "dist/chunk-WD2EJXWA.js",
+        "size": 6582
+      },
+      {
+        "path": "dist/chunk-WD2EJXWA.js.map",
+        "size": 4857
       },
       {
         "path": "dist/chunk-YNGJH262.js",
@@ -696,11 +696,11 @@
         "size": 51
       },
       {
-        "path": "dist/lazy-commands-NUIUZJB2.js",
+        "path": "dist/lazy-commands-LIVINSPO.js",
         "size": 433
       },
       {
-        "path": "dist/lazy-commands-NUIUZJB2.js.map",
+        "path": "dist/lazy-commands-LIVINSPO.js.map",
         "size": 51
       },
       {
@@ -792,12 +792,12 @@
         "size": 51
       },
       {
-        "path": "dist/update-4R45P4CO.js",
-        "size": 2901
+        "path": "dist/update-HMBJYTUU.js",
+        "size": 3094
       },
       {
-        "path": "dist/update-4R45P4CO.js.map",
-        "size": 1366
+        "path": "dist/update-HMBJYTUU.js.map",
+        "size": 1447
       },
       {
         "path": "LICENSE",
@@ -824,10 +824,10 @@
         "size": 127220
       }
     ],
-    "payloadHash": "sha256:c7d2e91a17833441cf2d4429237911bc3b8c38f893bad3eade04b9d7c232a98c",
-    "integrity": "sha512-DVfYD0L13mqN85eShBzmfiH47+arp9wh3eaq2PgyQvho5qieWN0x2It2k/1wwR8fyY8IisSMcJTttGjbF1lzZw==",
-    "shasum": "7d849191fcf0ee89f4dbba2768507cb0593787fe",
-    "tarballHash": "sha256:a8a995ebedc91e7aa330b60616eebd9805911879479c0a327cf2de79c85cdd27",
+    "payloadHash": "sha256:4ebf30388d4fb0516e2b221e0081811da8be6ee04d2243367b79a2e1281960a8",
+    "integrity": "sha512-PbquFnsqh3FZGAct/VAuJeeUEqe3+B5qp2ytLzVjDW++rxIPCcpKXK9XkQlgKLfGAVAkpp84jzeR+8OlV1ytsA==",
+    "shasum": "d2cfec8cdd2c92228000738af6b6e9375c242756",
+    "tarballHash": "sha256:ab51e1eb00e96291b3071330221367fdd839deee7e352d353bdeb042b2d08896",
     "packageJsonHash": "sha256:bad1a80d2913b8d7e6d96279ea638c0c390ecb235dcf12dc9e1693ca6f9339b1"
   },
   "packages": [

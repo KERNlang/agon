@@ -1,6 +1,6 @@
 import { basename } from 'node:path';
 
-const ENV_SECRET_PATTERN = /\b([A-Z][A-Z0-9_]{2,}(?:TOKEN|SECRET|PASSWORD|API_KEY|PRIVATE_KEY))[\s:=]+['"]?([^\s'"]{12,})['"]?/g;
+const ENV_SECRET_PATTERN = /\b((?:[A-Z][A-Z0-9_]*)?(?:TOKEN|SECRET|PASSWORD|API_KEY|PRIVATE_KEY))[\s:=]+['"]?([^\s'"]{12,})['"]?/g;
 
 export const SECRET_PATTERNS: RegExp[] = [
   // AWS access keys

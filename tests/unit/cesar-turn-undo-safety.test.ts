@@ -164,6 +164,15 @@ describe('tool event lifecycle', () => {
     expect(undoLastTurn(cwd).untrackedWrites).toEqual(['x']);
   });
 
+  it('an adapter reusing a tool-call id in the next turn still records that turn\'s write', () => {
+    markUserTurnBoundary();
+    noteTurnToolEvent('Edit', 'running', undefined, { file_path: 'a' }, cwd, 'reused');
+    markUserTurnBoundary();
+    noteTurnToolEvent('Edit', 'running', undefined, { file_path: 'b' }, cwd, 'reused');
+    expect(undoLastTurn(cwd).untrackedWrites).toEqual(['b']);
+    expect(undoLastTurn(cwd).untrackedWrites).toEqual(['a']);
+  });
+
   it('a shell command that fails stays reported because it may have changed files first', () => {
     markUserTurnBoundary();
     noteTurnToolEvent('Bash', 'running', undefined, { command: 'rm x && false' }, cwd, 'id1');

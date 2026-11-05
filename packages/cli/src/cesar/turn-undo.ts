@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { chmodSync, closeSync, fchmodSync, fchownSync, fstatSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync, writeSync } from 'node:fs';
-import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { chmodSync, lstatSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { isAbsolute, join, relative, resolve } from 'node:path';
 
 import { agonPath, getProjectFileStateCache, loadConfig, resolveRulePath } from '@kernlang/agon-core';
 import type { ToolContext, ToolHandler, ToolResult } from '@kernlang/agon-core';
@@ -8,6 +8,8 @@ import type { ToolContext, ToolHandler, ToolResult } from '@kernlang/agon-core';
 import { bashMayMutate } from './bash-read-only.js';
 import { isBashToolName, isWriteToolName } from './brain-helpers.js';
 import { mutatedPathFromToolArgs } from './mutate-reflex.js';
+import { assertStillValidated, restoreBytes } from './turn-undo-restore.js';
+import type { Identity } from './turn-undo-restore.js';
 
 const DEFAULT_MAX_TURNS = 20;
 const DEFAULT_MAX_FILE_BYTES = 2 * 1024 * 1024;
@@ -289,14 +291,9 @@ function recordToolEvent(turn: UndoTurn, id: string | undefined, target: Set<str
   turn.lastChangeAt = Date.now();
 }
 
-function turnHoldingToolEvent(id: string): UndoTurn | undefined {
-  return session.turns.find((turn) => turn.toolEvents.has(id));
-}
-
-function retractToolEvent(id: string): void {
-  const turn = turnHoldingToolEvent(id);
-  const event = turn?.toolEvents.get(id);
-  if (!turn || !event) return;
+function retractToolEvent(turn: UndoTurn, id: string): void {
+  const event = turn.toolEvents.get(id);
+  if (!event) return;
   turn.toolEvents.delete(id);
   const stillClaimed = [...turn.toolEvents.values()].some((other) => other.target === event.target && other.key === event.key);
   if (!stillClaimed) event.target.delete(event.key);
@@ -323,17 +320,17 @@ export function noteTurnToolEvent(tool: string, status: string | undefined, inpu
   if (!session.tracking) return;
   const isBash = isBashToolName(tool);
   if (!isBash && !isWriteToolName(tool)) return;
+  const turn = currentTurn(cwd);
+  if (!turn) return;
   if (status === 'rejected' || (!isBash && (status === 'error' || status === 'failed'))) {
-    if (toolCallId) retractToolEvent(toolCallId);
+    if (toolCallId) retractToolEvent(turn, toolCallId);
     return;
   }
-  if (status === 'error' || status === 'failed' || (toolCallId && turnHoldingToolEvent(toolCallId))) return;
+  if (status === 'error' || status === 'failed' || (toolCallId && turn.toolEvents.has(toolCallId))) return;
   if (isBash) {
     noteBash(typeof args?.command === 'string' ? args.command : input ?? '', cwd, toolCallId);
     return;
   }
-  const turn = currentTurn(cwd);
-  if (!turn) return;
   const path = mutatedPathFromToolArgs(tool, args);
   recordToolEvent(turn, toolCallId, turn.observedWrites, path ? resolve(cwd, path) : `(${tool})`);
 }
@@ -370,46 +367,28 @@ export function withTurnUndo(handler: ToolHandler): ToolHandler {
   };
 }
 
-function restoreBytes(realPath: string, bytes: Buffer, pre: { mode: number; uid: number; gid: number }): void {
-  const parent = dirname(realPath);
-  const temp = join(parent, `.${basename(realPath)}.agon-undo-${randomUUID().slice(0, 8)}`);
-  const fd = openSync(temp, 'wx', 0o600);
-  try {
-    try {
-      writeSync(fd, bytes);
-      const created = fstatSync(fd);
-      if (created.uid !== pre.uid || created.gid !== pre.gid) fchownSync(fd, pre.uid, pre.gid);
-      fchmodSync(fd, pre.mode);
-      fsyncSync(fd);
-    } finally {
-      closeSync(fd);
-    }
-    if (realpathSync(parent) !== parent) throw new Error('parent directory changed during undo');
-    renameSync(temp, realPath);
-  } catch (error) {
-    rmSync(temp, { force: true });
-    throw error;
-  }
-}
-
 function restoreFile(file: TrackedFile, cwd: string): { outcome: 'restored' | 'removed' | 'unchanged' } | { refused: string } {
   const pre = file.pre;
   if (pre.kind === 'unavailable') return { refused: pre.reason };
   if (resolveRulePath(file.path, cwd) !== file.realPath) return { refused: 'path now resolves somewhere else (symlink changed)' };
   if (!file.post) return { refused: 'no verified state was recorded after the edit' };
+  let validated: Identity | null = null;
+  try { validated = lstatSync(file.realPath); } catch { /* absent: readDiskState reports it */ }
   const current = readDiskState(file.realPath, file.post.kind === 'file' ? file.post.size : undefined);
   if (current.kind === 'other') return { refused: 'no longer a regular file' };
   const drift = driftSince(file.post, current);
   if (drift) return { refused: drift };
   if (matchesPre(pre, current)) return { outcome: 'unchanged' };
+  if (!validated) return { refused: 'changed since the turn' };
   try {
+    assertStillValidated(file.realPath, validated);
     if (pre.kind === 'absent') {
       unlinkSync(file.realPath);
       return { outcome: 'removed' };
     }
     const bytes = session.dir ? readFileSync(join(session.dir, pre.hash)) : null;
     if (!bytes || sha256(bytes) !== pre.hash) return { refused: 'snapshot failed verification' };
-    restoreBytes(file.realPath, bytes, pre);
+    restoreBytes(file.realPath, bytes, pre, validated);
     return { outcome: 'restored' };
   } catch (error) {
     return { refused: `restore failed: ${error instanceof Error ? error.message : String(error)}` };

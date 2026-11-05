@@ -34,3 +34,16 @@ it('preserves an explicit command message without another question', async () =>
   expect(askQuestion).not.toHaveBeenCalled();
   expect(effects.commit).toHaveBeenCalledWith('git', ['commit', '-m', 'fix: explicit message'], expect.anything());
 });
+
+it('nothing staged plus a dirty tracked file means no commit and no staging', async () => {
+  effects.exec.mockImplementation((command: string) => {
+    if (command.includes('--name-only')) return '';
+    if (command === 'git status --short') return ' M other-session.ts';
+    return 'diff';
+  });
+  const dispatch = vi.fn();
+  await handleCommit('fix: x', dispatch, { askQuestion: async () => 'y' } as unknown as HandlerContext);
+  expect(effects.commit).not.toHaveBeenCalled();
+  expect(effects.exec.mock.calls.some(([command]) => /\badd\b/.test(String(command)))).toBe(false);
+  expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'warning', message: expect.stringContaining('Nothing is staged') }));
+});

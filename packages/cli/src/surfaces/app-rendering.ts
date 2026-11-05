@@ -1196,9 +1196,9 @@ export function renderBlockOwnRows(block: OutputBlock, mode: string, toolOutputE
         if (checkpoints.length > 0) {
           pushSegmentsRow(`${baseKey}-recap-checkpoint`, 1, [
             { text: '  undo: ', dimColor: true },
-            { text: `/undo ${checkpoints[0].id}`, color: '#22d3ee' },
-            checkpoints.length > 1 ? { text: ` (+${checkpoints.length - 1} more)`, dimColor: true } : null,
-          ].filter(Boolean));
+            { text: '/undo', color: '#22d3ee' },
+            { text: ' reverts the last turn', dimColor: true },
+          ]);
         }
         diffFiles.slice(0, 4).forEach((file: any, index: number) => {
           pushSegmentsRow(`${baseKey}-recap-diff-${index}`, 1, [

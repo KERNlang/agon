@@ -39,6 +39,9 @@ try {
     join(root, 'docs/specs/evidence/modular-agon-physical-contributions.json'),
     join(evidenceDir, 'modular-agon-physical-contributions.json'),
   );
+  for (const name of ['modular-agon-cli-descriptions.json', 'modular-agon-tui-descriptions.json']) {
+    copyFileSync(join(root, 'docs/specs/evidence', name), join(evidenceDir, name));
+  }
   run('scripts/spec/generate-modular-agon-inventory.mjs');
 
   if (process.argv.includes('--self-test')) {

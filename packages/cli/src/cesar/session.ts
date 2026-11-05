@@ -26,6 +26,8 @@ import type { GuardMode } from '@kernlang/agon-core';
 import type { HandlerContext } from '../handlers/types.js';
 
 import { createCesarToolRegistry } from './tools.js';
+
+import { undoGeneration } from './turn-undo.js';
 import { closeAndDetachSession, markSessionCleanupFailed, sessionCleanupFailed, SESSION_CLEANUP_FAILURE_MESSAGE } from './session-health.js';
 
 import { getSessionAllowList } from '../signals/output.js';
@@ -694,6 +696,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
   const cwd = resolveWorkingDir();
   const fsc = getProjectFileStateCache(cwd);
   const toolResultCache = new Map<string, string>();
+  let toolResultCacheGeneration = undoGeneration();
   const nativeToolErrorRetries = new Map<string, number>();
   const CACHEABLE_TOOLS = new Set(['Grep', 'Glob']);
   const explorationMode = ctx.explorationMode ?? false;
@@ -978,6 +981,10 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
     // Dedup stable discovery tools. Do not cache Read here: the Read tool
     // performs mtime-aware dedup itself and must run on explicit re-read so
     // Edit/Write snapshots refresh after a file changes.
+    if (toolResultCacheGeneration !== undoGeneration()) {
+      toolResultCache.clear();
+      toolResultCacheGeneration = undoGeneration();
+    }
     const cacheKey = `${name}:${JSON.stringify(args)}`;
     const cached = CACHEABLE_TOOLS.has(name) ? toolResultCache.get(cacheKey) : undefined;
     if (cached !== undefined) return cached;

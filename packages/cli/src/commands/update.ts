@@ -1,7 +1,7 @@
 import { defineCommand } from 'citty';
-import { bold, fail, info, success, yellow } from '../blocks/output-format.js';
+import { bold, fail, info, success } from '../blocks/output-format.js';
 import { VERSION } from '../blocks/engine.js';
-import { checkForUpdate } from '../services/update-check.js';
+import { checkForUpdate, newerReleaseInstruction } from '../services/update-check.js';
 import { runManagedSetup } from './setup.js';
 
 export const DEFAULT_UPDATE_PACKAGE = '@kernlang/agon';
@@ -10,6 +10,18 @@ export async function runManagedUpdate(version: string | undefined, options: { p
   const requested = version?.trim() || 'latest';
   if (requested !== 'latest' && requested !== VERSION) {
     throw new Error(`This release can transactionally update only to its bundled release set (${VERSION}), not ${requested}.`);
+  }
+  // A release can only stage the set pinned in its own channel, so a newer version needs the newer launcher first.
+  if (requested === 'latest' && !options.offline) {
+    const probed = await checkForUpdate(VERSION, undefined);
+    if (probed.hasUpdate) {
+      console.error(newerReleaseInstruction(probed.latestVersion));
+      return 1;
+    }
+    if (probed.error) {
+      console.error(`Could not check npm for a newer Agon: ${probed.error}. Use --offline to reinstall this release from the local npm cache.`);
+      return 1;
+    }
   }
   await runManagedSetup({ plan: options.plan, offline: options.offline, cache: options.cache }, { preserveExistingState: true });
   return 0;
@@ -30,10 +42,10 @@ export const updateCommand: any = defineCommand({
       if (probed.error && !probed.hasUpdate) { fail(`Could not reach the npm registry: ${probed.error}`); process.exitCode = 1; return; }
       if (probed.hasUpdate) {
         info(`Update available: ${bold(probed.currentVersion)} → ${bold(probed.latestVersion)}`);
-        info(`Run ${yellow('agon update --plan')} to inspect the transactional update first.`);
+        info(newerReleaseInstruction(probed.latestVersion));
       } else success(`Already on the latest version (${bold(probed.latestVersion)}).`);
       return;
     }
-    await runManagedUpdate(args.version, args);
+    process.exitCode = await runManagedUpdate(args.version, args);
   },
 });

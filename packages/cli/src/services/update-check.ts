@@ -190,6 +190,10 @@ export async function checkForUpdate(currentVersion: string, opts: UpdateCheckOp
   return result;
 }
 
+export function newerReleaseInstruction(latestVersion: string): string {
+  return `Agon ${latestVersion} is on npm. To install it, run:\nnpm install -g @kernlang/agon@${latestVersion}\nThen restart Agon. With a managed install from \`agon setup\`, also run \`agon update\`.`;
+}
+
 function updateStatePath(): Promise<string> {
   const home = getAgonHome ? getAgonHome() : join(homedir(), '.agon');
   return Promise.resolve(join(home, 'update-state.json'));

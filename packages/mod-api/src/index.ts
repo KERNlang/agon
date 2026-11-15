@@ -84,8 +84,8 @@ export interface CommandContribution {
     readonly positionals?: readonly string[];
     readonly descriptions?: Readonly<Record<string, string>>;
     readonly aliases?: Readonly<Record<string, string>>;
-    /** Normalize repeated string flags before schema validation. Unlisted flags stay unchanged. */
-    readonly repeatedOptions?: Readonly<Record<string, 'last' | 'comma-separated'>>;
+    /** Normalize repeated flags before schema validation. Unlisted flags stay unchanged. `list` declares an array option: one flag or many always reaches the mod as an array, values untouched. */
+    readonly repeatedOptions?: Readonly<Record<string, 'last' | 'comma-separated' | 'list'>>;
     /** Option values used when stdout is a terminal and the caller did not pass that option. Piped output keeps the schema default. */
     readonly ttyDefaults?: Readonly<Record<string, string>>;
   };

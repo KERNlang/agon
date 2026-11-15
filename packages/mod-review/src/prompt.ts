@@ -45,7 +45,7 @@ const REDACTION_MARKER = '[REDACTED-SECRET]';
 const REDACTION_NOTE = `NOTE: Agon replaced credential-looking values with ${REDACTION_MARKER} before this review. The real code contains the original value; do not report the marker itself as a bug.`;
 
 export function buildSeatPrompt(
-  input: { label: string; diff: string; roleId?: string; mutationEvidence?: string },
+  input: { label: string; diff: string; roleId?: string; mutationEvidence?: string; extraContext?: string },
   grounding: ReviewPromptContext,
 ): string {
   const prompt = buildReviewPrompt({
@@ -55,6 +55,7 @@ export function buildSeatPrompt(
     projectContext: grounding.projectContext,
     ...(input.roleId ? { roleId: input.roleId } : {}),
     ...(input.mutationEvidence ? { mutationEvidence: input.mutationEvidence } : {}),
+    ...(input.extraContext ? { extraContext: input.extraContext } : {}),
   });
   return prompt.includes(REDACTION_MARKER) ? `${REDACTION_NOTE}\n\n${prompt}` : prompt;
 }

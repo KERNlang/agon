@@ -25,6 +25,8 @@ export const DEFAULT_AGON_CONFIG: Required<AgonConfig> = {
   reviewDefaultEngine: DEFAULT_ENGINE_SETTINGS.reviewDefaultEngine,
   goalReviewEngines: [...DEFAULT_FIRST_PARTY_SETTINGS.goalReviewEngines],
   reviewMaxDiffChars: DEFAULT_FIRST_PARTY_SETTINGS.reviewMaxDiffChars,
+  reviewMaxTrees: DEFAULT_FIRST_PARTY_SETTINGS.reviewMaxTrees,
+  reviewContextMaxChars: DEFAULT_FIRST_PARTY_SETTINGS.reviewContextMaxChars,
   forgeRequireBaselineCheck: DEFAULT_KERNEL_SETTINGS.forgeRequireBaselineCheck,
   engineActivationMode: DEFAULT_ENGINE_SETTINGS.engineActivationMode,
   forgeEnabledEngines: DEFAULT_ENGINE_SETTINGS.forgeEnabledEngines,

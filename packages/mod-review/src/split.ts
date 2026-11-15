@@ -1,6 +1,7 @@
 import type { CommandResult, InvocationContext, Json, ModServices } from '@kernlang/agon-mod-api';
 import { gitHeaderPath, inferReviewRisk, redactSecretsDeep, redactSecretsPreservingLines, type ReviewRiskRequest, type ReviewTarget } from '@kernlang/agon-support-verification';
 import type { ConsensusReport } from './consensus.js';
+import { extraContextReport, type ExtraContext } from './context-paths.js';
 import { formatReport, formatSummaryLine, SPLIT_CAVEAT, type ReviewFormat, type ReviewReport } from './report.js';
 
 interface FileDiff {
@@ -41,7 +42,7 @@ function oversizedFilesMessage(label: string, oversized: readonly FileDiff[], li
 
 type BatchReport = Record<string, unknown> & Partial<ReviewReport> & { findings?: unknown[]; engines?: string[]; roles?: Record<string, string> };
 
-function mergeConsensus(reports: readonly ConsensusReport[]): ConsensusReport | undefined {
+export function mergeConsensus(reports: readonly ConsensusReport[], unitLabel: (index: number) => string = index => `batch ${index + 1}`): ConsensusReport | undefined {
   if (!reports.length) return undefined;
   const all = <K extends 'findings' | 'verified' | 'needsCheck' | 'speculative' | 'nits' | 'blockers' | 'engineFailures'>(key: K) =>
     reports.flatMap(report => report[key] as unknown[]) as unknown as ConsensusReport[K];
@@ -53,7 +54,7 @@ function mergeConsensus(reports: readonly ConsensusReport[]): ConsensusReport | 
     okCount: reports.reduce((sum, report) => sum + report.okCount, 0),
     autoBlock,
     needsJudge: !autoBlock && reports.some(report => report.needsJudge),
-    summary: reports.map((report, index) => `batch ${index + 1}: ${report.summary}`).join(' | '),
+    summary: reports.map((report, index) => `${unitLabel(index)}: ${report.summary}`).join(' | '),
     degraded: reports.find(report => report.degraded)?.degraded,
   };
 }
@@ -90,6 +91,7 @@ export async function runSplitReview(
   context: InvocationContext,
   services: ModServices,
   runBatch: ReviewBatchRunner,
+  extra?: ExtraContext,
 ): Promise<CommandResult> {
   const files = splitDiffByFile(target.diff);
   const oversized = files.filter(file => file.text.length > limit);
@@ -180,6 +182,7 @@ export async function runSplitReview(
       responded: reports.reduce((sum, report) => sum + (report.panelHealth?.responded ?? 0), 0),
       degraded: incomplete > 0 || reports.some(report => report.panelHealth?.degraded),
     },
+    ...extraContextReport(extra),
     warnings: [`${summaryLine}; ${SPLIT_CAVEAT}`, ...(incompleteNote ? [`${incompleteNote}; the verdict does not cover the whole diff`] : []), ...warnings],
     ...(run ? { runDir: run.path } : {}),
   };

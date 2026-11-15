@@ -2,6 +2,8 @@ import { spawn } from 'node:child_process';
 
 import { defineCommand } from 'citty';
 
+import { REVIEW_TREE_FLAGS } from '@kernlang/agon-support-verification';
+
 import { EngineRegistry, loadConfig, getCoreWorkflowRegistry, compileWorkflowSpec, verifyWorkflowExecutionPlanFlow, verifyWorkflowRunFlow, throwWorkflowConformance, createWorkflowIssue, createWorkflowRun, appendWorkflowPhaseEvent } from '@kernlang/agon-core';
 
 import type { WorkflowConformanceIssue, WorkflowRun } from '@kernlang/agon-core';
@@ -50,6 +52,11 @@ export interface CallCommandOptions {
   lens?: string;
   build?: string;
   test?: string;
+  worktree?: string | string[];
+  allWorktrees?: boolean;
+  maxTrees?: string;
+  context?: string | string[];
+  contextMaxChars?: string;
 }
 
 export interface WorkflowCallMeta {
@@ -67,6 +74,18 @@ export interface BuiltCallCommands {
 export function textFlag(flag: string, value: string|undefined): string[] {
   const text = value?.trim();
   return text ? [flag, text] : [];
+}
+
+function reviewTreeArguments(opts: CallCommandOptions): string[] {
+  return REVIEW_TREE_FLAGS.flatMap(({ key, option, kind }) => {
+    const flag = `--${key}`;
+    if (kind === 'switch') return opts[option] === true ? [flag] : [];
+    if (kind === 'value') return textFlag(flag, opts[option] as string | undefined);
+    return [(opts[option] as string | string[] | undefined) ?? []].flat().flatMap((path) => {
+      if (!path.trim()) throw new Error(`agon call review ${flag} needs a path; got an empty value.`);
+      return [flag, path];
+    });
+  });
 }
 
 export function requireInput(workflow: string, input: string|undefined): string {
@@ -264,9 +283,12 @@ export function buildCallCommands(opts: CallCommandOptions): BuiltCallCommands {
       ...textFlag('--engine', opts.engine),
     ]);
   } else if (workflow === 'review') {
+    const treeArguments = reviewTreeArguments(opts);
+    const multiTree = treeArguments.includes('--worktree') || treeArguments.includes('--all-worktrees');
     commands.push([
       'review',
-      opts.input?.trim() || 'uncommitted',
+      ...(opts.input?.trim() ? [opts.input.trim()] : multiTree ? [] : ['uncommitted']),
+      ...treeArguments,
       ...textFlag('--engine', opts.engine),
       // Role-lens review: 'auto' deals the fixed roster (security, correctness,
       // dryness, performance, overall backstop); a comma list zips per engine.
@@ -429,6 +451,10 @@ export const callCommand: any = defineCommand({
     description: 'Live bridge for external CLIs to run Agon modes',
   },
   args: {
+    ...Object.fromEntries(REVIEW_TREE_FLAGS.map(({ option, kind, help }) => [option, {
+      type: kind === 'switch' ? 'boolean' : 'string',
+      description: `review: ${help}`,
+    }])),
     workflow: {
       type: 'positional',
       description: 'Workflow: forge, brainstorm, synthesis, tribunal, council, campfire, think, nero, research, conquer, chrome, pipeline, review, goal, sanitize, naturalize, mutate, doctor, or team-*',
@@ -644,6 +670,7 @@ export const callCommand: any = defineCommand({
         lens: args.lens,
         build: args.build,
         test: args.test,
+        ...Object.fromEntries(REVIEW_TREE_FLAGS.map(({ option }) => [option, args[option]])),
       });
     } catch (err) {
       exitWithFailure(err instanceof Error ? err.message : String(err));

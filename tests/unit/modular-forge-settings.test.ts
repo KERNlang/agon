@@ -728,7 +728,7 @@ describe('Forge configuration ownership', () => {
   });
 
   it.each([
-    ['review', () => import('../../packages/mod-review/src/index.js'), { autoReviewAfterImpl: true, goalReviewEngines: [], reviewFileContext: true, reviewMaxDiffChars: 100000 }],
+    ['review', () => import('../../packages/mod-review/src/index.js'), { autoReviewAfterImpl: true, goalReviewEngines: [], reviewFileContext: true, reviewMaxDiffChars: 100000, reviewMaxTrees: 8, reviewContextMaxChars: 40000 }],
     ['agent', () => import('../../packages/mod-agent/src/index.js'), { cesarAgenticContinuationLimit: 12 }],
     ['mutate', () => import('../../packages/mod-mutate/src/index.js'), { cesarMutateReflex: true }],
     ['synthesis', () => import('../../packages/mod-synthesis/src/index.js'), { skillSynthesisThreshold: 3 }],
@@ -773,7 +773,7 @@ describe('Forge configuration ownership', () => {
       const schema = JSON.parse(readFileSync(new URL(`../../packages/mod-${name}/schemas/config.schema.json`, import.meta.url), 'utf8'));
       const keys = ledger.assignments.filter((item: { category: string; package: string }) => item.category === 'configKeys' && item.package === `@kernlang/agon-mod-${name}`)
         .map((item: { id: string }) => item.id).sort();
-      const added = name === 'review' ? ['reviewMaxDiffChars'] : [];
+      const added = name === 'review' ? ['reviewMaxDiffChars', 'reviewMaxTrees', 'reviewContextMaxChars'] : [];
       expect(Object.keys(schema.properties ?? {}).sort()).toEqual([...keys, ...added].sort());
       for (const key of [...keys, ...added]) expected[key] = schema.properties[key].default;
     }

@@ -450,8 +450,8 @@ export function evaluateTaskAction(lease: TaskExecutionLease, action: string, ta
     if (lease.autoMode && taskExplicitlyAuthorizes(lease, action, target)) return { decision: 'allow', signature, reason: 'explicit_authority' };
     // The reason is reported even with AUTO off (instead of the generic
     // auto_off) so the resolver recognizes it as a real boundary and no
-    // blunt allow source — or the redirection-stripping read-only command
-    // classifier — can absorb a force push or an out-of-workspace write.
+    // blunt allow source — or the read-only command classifier — can absorb
+    // a force push or an out-of-workspace write.
     return { decision: 'ask_boundary_once', signature, reason: destructive ? 'destructive_boundary' : 'workspace_escape' };
   }
   // A resolver-stage ask outranks every remaining allow branch below. It is

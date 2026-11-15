@@ -126,7 +126,7 @@ describe('metadata drift', () => {
 describe('shell command classification', () => {
   it.each([
     'rm x', 'cp a b', 'mv a b', 'mkdir d', 'truncate -s0 a', "sed -i '' s/a/b/ f", 'perl -i -pe s/a/b/ f', 'npm test', 'FOO=1 cat a', '/bin/rm x', 'tee x', 'awk 1 f',
-    'git diff --output=x', 'git branch -D main', 'git branch new', 'git -c core.pager=evil status', 'git stash', 'git commit -m x',
+    'git show --textconv HEAD:a', 'git log --show-signature', 'git branch 123&>/dev/null', 'git branch \"123\">/dev/null', 'git diff --output=x', 'git branch -D main', 'git branch new', 'git -c core.pager=evil status', 'git stash', 'git commit -m x',
     'rg --pre ./evil x', 'fd -x rm', 'find . -delete', 'find . -exec rm {} ;', 'sort -o a b',
     'cat a; rm b', 'cat a && rm b', 'cat a || rm b', 'cat a | tee b', 'cat a & rm b', 'echo hi\nrm x', 'echo hi > x', 'echo hi >> x', 'cat < a',
     'echo $(rm x)', 'echo `rm x`', 'echo "$(rm x)"', 'cat <(rm x)', 'echo $X', 'echo "unterminated', 'ls 2>/dev/nullx',
@@ -149,11 +149,14 @@ describe('shell command classification', () => {
 });
 
 describe('tool event lifecycle', () => {
-  it('an engine write that errors after running leaves no false warning or undoable turn', () => {
+  it('an engine write that fails after a partial change retains its warning', () => {
+    writeFileSync(join(cwd, 'x'), 'original');
     markUserTurnBoundary();
     noteTurnToolEvent('Edit', 'running', undefined, { file_path: 'x' }, cwd, 'id1');
+    writeFileSync(join(cwd, 'x'), 'partial');
     noteTurnToolEvent('Edit', 'error', undefined, undefined, cwd, 'id1');
-    expect(undoLastTurn(cwd).status).toBe('empty');
+    expect(undoLastTurn(cwd).untrackedWrites).toEqual(['x']);
+    expect(read('x')).toBe('partial');
   });
 
   it('a second successful write to the same path keeps its warning when the first errors', () => {
@@ -204,6 +207,38 @@ describe('failed edits', () => {
     const report = undoLastTurn(cwd);
     expect(report.failedButChanged).toEqual(['a']);
     expect(read('a')).toBe('v0');
+  });
+
+  it('a failed no-op does not evict history when its snapshot would exceed the cap', async () => {
+    configSet('undoMaxTotalBytes', 1500);
+    invalidateConfigCache();
+    writeFileSync(join(cwd, 'old'), 'o'.repeat(1000));
+    writeFileSync(join(cwd, 'doomed'), 'd'.repeat(1000));
+    markUserTurnBoundary();
+    await write('old', 'old-edited');
+    markUserTurnBoundary();
+    await withTurnUndo(failingHandler(() => {})).execute({ file_path: 'doomed' }, toolContext());
+    expect(undoLastTurn(cwd).restored).toEqual(['old']);
+    expect(read('old')).toBe('o'.repeat(1000));
+  });
+
+  it.each([false, true])('evicts the oldest snapshot only after a real change, even when the edit fails: %s', async (fails) => {
+    configSet('undoMaxTotalBytes', 1500);
+    invalidateConfigCache();
+    writeFileSync(join(cwd, 'old'), 'o'.repeat(1000));
+    writeFileSync(join(cwd, 'new'), 'n'.repeat(1000));
+    markUserTurnBoundary();
+    await write('old', 'old-edited');
+    markUserTurnBoundary();
+    if (fails) await withTurnUndo(failingHandler(() => writeFileSync(join(cwd, 'new'), 'partial'))).execute({ file_path: 'new' }, toolContext());
+    else await write('new', 'new-edited');
+    const report = undoLastTurn(cwd);
+    expect(report.restored).toEqual(['new']);
+    expect(report.droppedTurns).toBe(1);
+    expect(report.failedButChanged).toEqual(fails ? ['new'] : []);
+    expect(read('new')).toBe('n'.repeat(1000));
+    expect(read('old')).toBe('old-edited');
+    expect(undoLastTurn(cwd).status).toBe('empty');
   });
 
   it('a blob from a failed first edit does not evict a valid older turn', async () => {

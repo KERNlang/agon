@@ -12,7 +12,7 @@ const READ_ONLY_VERBS = new Map<string, RegExp | null>([
 ]);
 
 const GIT_READ_ONLY = new Map<string, { deny?: RegExp; only?: RegExp }>([
-  ...['blame', 'diff', 'log', 'ls-files', 'rev-parse', 'show', 'status'].map((sub): [string, { deny: RegExp }] => [sub, { deny: /^--(?:output|ext-diff)/ }]),
+  ...['blame', 'diff', 'log', 'ls-files', 'rev-parse', 'show', 'status'].map((sub): [string, { deny: RegExp }] => [sub, { deny: /^--(?:output|ext-diff|textconv|show-signature)/ }]),
   ['branch', { only: /^(?:-a|-r|-v|-vv|--all|--list|--remotes|--show-current)$/ }],
   ['remote', { only: /^-v$/ }],
   ['tag', { only: /^(?:-l|--list)$/ }],
@@ -22,11 +22,13 @@ function splitSimpleCommands(command: string): string[][] | null {
   const commands: string[][] = [[]];
   let word = '';
   let started = false;
+  let wordQuoted = false;
   let quote: '"' | "'" | null = null;
   const endWord = () => {
     if (started) commands[commands.length - 1].push(word);
     word = '';
     started = false;
+    wordQuoted = false;
   };
   for (let i = 0; i < command.length; i += 1) {
     const ch = command[i];
@@ -41,6 +43,7 @@ function splitSimpleCommands(command: string): string[][] | null {
       if (i >= command.length || command[i] === '\n') return null;
       word += command[i];
       started = true;
+      wordQuoted = true;
       continue;
     }
     if (quote === '"') {
@@ -51,12 +54,13 @@ function splitSimpleCommands(command: string): string[][] | null {
     if (ch === '"' || ch === "'") {
       quote = ch;
       started = true;
+      wordQuoted = true;
       continue;
     }
     if (ch === '>' || (ch === '&' && command[i + 1] === '>')) {
       const redirect = SAFE_REDIRECT.exec(command.slice(i));
       if (!redirect) return null;
-      if (/^\d+$/.test(word)) {
+      if (ch === '>' && !wordQuoted && /^\d+$/.test(word)) {
         word = '';
         started = false;
       }

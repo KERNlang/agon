@@ -22,7 +22,7 @@ const JOBS_THAT_DO_NOT_EDIT = new Set(['brainstorm', 'team-brainstorm', 'tribuna
 
 type PreState =
   | { kind: 'absent' }
-  | { kind: 'file'; hash: string; mode: number; uid: number; gid: number }
+  | { kind: 'file'; hash: string; mode: number; uid: number; gid: number; pendingBytes?: Buffer }
   | { kind: 'unavailable'; reason: string; signature: string };
 
 type DiskState = { kind: 'absent' } | { kind: 'file'; hash: string; size: number; mode: number; uid: number; gid: number } | { kind: 'other' };
@@ -203,13 +203,14 @@ function capturePreState(path: string, realPath: string, turn: UndoTurn): PreSta
     if (link.isSymbolicLink() && statSignature(path) === 'absent') return unavailable('dangling symlink');
     const stat = statSync(realPath);
     if (!stat.isFile()) return unavailable('not a regular file');
-    const { maxFileBytes } = undoLimits(turn.cwd);
+    const { maxFileBytes, maxTotalBytes } = undoLimits(turn.cwd);
     if (stat.size > maxFileBytes) return unavailable(`${stat.size} bytes is over undoMaxFileBytes (${maxFileBytes})`);
+    if (stat.size > maxTotalBytes) return unavailable('undoMaxTotalBytes storage limit reached');
     const bytes = readFileSync(realPath);
     if (bytes.subarray(0, BINARY_SNIFF_BYTES).includes(0)) return unavailable('binary file');
     const hash = sha256(bytes);
-    if (!storeBlob(hash, bytes, turn.cwd, turn)) return unavailable('undoMaxTotalBytes storage limit reached');
-    return { kind: 'file', hash, mode: stat.mode & 0o7777, uid: stat.uid, gid: stat.gid };
+    // Keep the preimage until the edit changes the file. A failed no-op must not evict history.
+    return { kind: 'file', hash, mode: stat.mode & 0o7777, uid: stat.uid, gid: stat.gid, pendingBytes: bytes };
   } catch (error) {
     return unavailable(`snapshot failed: ${error instanceof Error ? error.message : String(error)}`);
   }
@@ -277,6 +278,17 @@ function finishFileMutation({ turn, file, first }: PendingMutation, ok: boolean)
     forgetFile(turn, file);
     return;
   }
+  if (file.pre.kind === 'file' && file.pre.pendingBytes) {
+    try {
+      if (!storeBlob(file.pre.hash, file.pre.pendingBytes, turn.cwd, turn)) {
+        file.pre = { kind: 'unavailable', reason: 'undoMaxTotalBytes storage limit reached', signature: statSignature(file.realPath) };
+      } else {
+        delete file.pre.pendingBytes;
+      }
+    } catch (error) {
+      file.pre = { kind: 'unavailable', reason: `snapshot failed: ${error instanceof Error ? error.message : String(error)}`, signature: statSignature(file.realPath) };
+    }
+  }
   turn.lastChangeAt = Date.now();
 }
 
@@ -322,7 +334,7 @@ export function noteTurnToolEvent(tool: string, status: string | undefined, inpu
   if (!isBash && !isWriteToolName(tool)) return;
   const turn = currentTurn(cwd);
   if (!turn) return;
-  if (status === 'rejected' || (!isBash && (status === 'error' || status === 'failed'))) {
+  if (status === 'rejected') {
     if (toolCallId) retractToolEvent(turn, toolCallId);
     return;
   }
@@ -357,12 +369,12 @@ export function withTurnUndo(handler: ToolHandler): ToolHandler {
       let result: ToolResult | undefined;
       try {
         result = await handler.execute(input, ctx);
-        return result.ok && pending.file.pre.kind === 'unavailable'
-          ? { ...result, content: `${result.content}\n[/undo cannot revert this file: ${pending.file.pre.reason}]` }
-          : result;
       } finally {
         finishFileMutation(pending, result?.ok === true);
       }
+      return result.ok && pending.file.pre.kind === 'unavailable'
+        ? { ...result, content: `${result.content}\n[/undo cannot revert this file: ${pending.file.pre.reason}]` }
+        : result;
     },
   };
 }

@@ -182,7 +182,7 @@ describe('inline Bash gate floor (createBashTool().checkPermission)', () => {
   });
   it('does not auto-allow a read-only command that redirects (redirection writes)', () => {
     expect(
-      bashGate('agon config --help 2>/dev/null && echo "---" && agon config list 2>/dev/null', baseCtx({ permissionMode: 'ask' })).behavior,
+      bashGate('agon config --help 2>/dev/null && agon config list > config.txt', baseCtx({ permissionMode: 'ask' })).behavior,
     ).toBe('ask');
   });
 });

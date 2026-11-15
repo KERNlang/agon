@@ -1,6 +1,6 @@
 import type { HandlerContext } from '../handlers/types.js';
 
-import { isReadOnlyCommand } from '@kernlang/agon-core';
+import { isNonMutatingCommand } from '@kernlang/agon-core';
 
 import { isBashToolName, isWriteToolName } from './brain-helpers.js';
 
@@ -79,7 +79,7 @@ export function isAgenticMutationOutcome(name: string, input: string, status: st
   const command = extractAgenticBashCommand(input).trim();
   if (!command) return false;
   const writesThroughRedirection = /(?:^|[\s;|&])\d*(?:>>?|&>)\s*(?!\/dev\/null\b|&\d\b)/.test(command);
-  return writesThroughRedirection || !isReadOnlyCommand(command);
+  return writesThroughRedirection || !isNonMutatingCommand(command);
 }
 
 /**

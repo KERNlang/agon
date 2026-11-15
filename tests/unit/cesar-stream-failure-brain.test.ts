@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { RUNS_DIR, startChatSession } from '@kernlang/agon-core';
 import { handleCesarBrain } from '../../packages/cli/src/cesar/brain.js';
+import { createModelCallRetryGate } from '../../packages/core/src/api/model-call-retry.js';
 
 const { budget, ensure, backend, toolLoop } = vi.hoisted(() => ({ budget: vi.fn(), ensure: vi.fn(), backend: vi.fn(), toolLoop: vi.fn() }));
 vi.mock('@kernlang/agon-core', async (original) => ({ ...await original<object>(), runToolLoop: toolLoop }));
@@ -50,6 +51,26 @@ beforeEach(() => {
 });
 
 describe('Cesar brain after a model stream failure', () => {
+  it('keeps a refused elapsed budget exhausted across sends in the same turn', () => {
+    const budget = { spentMs: 95 };
+    const policy = { modelRetryMaxElapsedMs: 100, modelRetryBaseDelayMs: 20, modelRetryMaxDelayMs: 20 };
+    const failure = { retryable: true, outputStarted: false };
+    expect(createModelCallRetryGate(policy, undefined, budget).plan(failure)).toBeNull();
+    expect(createModelCallRetryGate(policy, undefined, budget).plan({ ...failure, retryAfterMs: 0 })).toBeNull();
+  });
+
+  it.each([{ modelRetryMaxRetries: 0 }, { modelRetryMaxWaitMs: 0 }])('does not recover through the same engine after a statusless retry is refused: %j', async (policy) => {
+    const gate = createModelCallRetryGate(policy);
+    const failure = { retryable: true, outputStarted: false };
+    expect(gate.plan(failure)).toBeNull();
+    const { session, ctx, dispatch } = fixture([
+      { type: 'error', ...gate.finalError('connection refused', failure) },
+    ]);
+    const outcome = await handleCesarBrain('go', dispatch, ctx, []);
+    expect(outcome.deterministicFailure).toBe(true);
+    expect(session.send).toHaveBeenCalledOnce();
+  });
+
   it('does not run tool markup that was already streamed before the stream failed', async () => {
     const { session, ctx, dispatch } = fixture([
       { type: 'text', content: 'Checking.\n<tool name="Bash">{"command":"touch /tmp/never"}</tool>\n' },

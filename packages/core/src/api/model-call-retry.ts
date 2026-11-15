@@ -111,7 +111,7 @@ export function decideModelCallRetry(input: { failure: ModelCallFailure; retries
   const jittered = Math.round(exponential * (0.5 + (input.random ?? Math.random)() * 0.5));
   const delayMs = failure.retryAfterMs ?? jittered;
   if (waitedMs + delayMs > policy.maxWaitMs) return { retry: false, reason: 'wait_cap_exhausted' };
-  if (spentMs + delayMs > policy.maxElapsedMs) return { retry: false, reason: 'elapsed_cap_exhausted' };
+  if (spentMs >= policy.maxElapsedMs || spentMs + delayMs > policy.maxElapsedMs) return { retry: false, reason: 'elapsed_cap_exhausted' };
   return { retry: true, delayMs };
 }
 
@@ -164,6 +164,8 @@ export function createModelCallRetryGate(config: ModelRetryConfig | undefined, s
       if (!decision.retry) {
         refusal = decision;
         closeFailureSpan();
+        // Keep an exhausted turn budget closed when a later send creates a new gate.
+        if (decision.reason === 'elapsed_cap_exhausted') budget.spentMs = Math.max(budget.spentMs, policy.maxElapsedMs);
         return null;
       }
       return { delayMs: decision.delayMs, attempt: retries + 1, failure };
@@ -189,7 +191,7 @@ export function createModelCallRetryGate(config: ModelRetryConfig | undefined, s
 
     finalError(stderr: string, failure: ModelCallFailure | undefined): { content: string; metadata?: Record<string, unknown> } {
       if (!failure) return { content: stderr };
-      const final = failure.statusCode !== undefined || retries > 0;
+      const final = refusal?.retry === false || failure.statusCode !== undefined || retries > 0;
       const metadata = { modelRetryFinal: final, statusCode: failure.statusCode, modelRetries: retries };
       const reason = refusal && !refusal.retry ? refusal.reason : undefined;
       if (reason === 'wait_cap_exhausted') {

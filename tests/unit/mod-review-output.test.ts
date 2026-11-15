@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CommandResult, InvocationContext, Json, ModServices } from '@kernlang/agon-mod-api';
 import { runReview } from '../../packages/mod-review/src/implementation.js';
+import { loadExtraContext } from '../../packages/mod-review/src/context-paths.js';
 import { annotateExistingCode, existingCodeMatch, existingCodeReader } from '../../packages/mod-review/src/existing-code.js';
 import { formatSarif, lineRegion } from '../../packages/mod-review/src/report.js';
 import { gatherReviewFileContext } from '../../packages/support-verification/src/review-file-context.js';
@@ -173,6 +174,29 @@ describe('mod-review existingCode', () => {
 });
 
 describe('mod-review phase B review fixes', () => {
+  it.each(['abcd(1234567890)', 'abcd)1234567890', 'getAccessToken()'])('redacts literal passwords containing parentheses: %s', (value) => {
+    for (const redact of [redactSecrets, redactSecretsPreservingLines]) {
+      expect(redact(`SERVICE_PASSWORD=${value}`)).not.toContain(value);
+      expect(redact(`const SERVICE_PASSWORD = '${value}';`)).not.toContain(value);
+    }
+  });
+
+  it('does not include ignored data through a tracked directory-context symlink', () => {
+    const cwd = repo();
+    mkdirSync(join(cwd, 'private'));
+    writeFileSync(join(cwd, '.gitignore'), 'private/\n');
+    writeFileSync(join(cwd, 'private/customer-export.csv'), 'FAKE_PRIVATE_CUSTOMER_DATA');
+    symlinkSync('../private/customer-export.csv', join(cwd, 'src/reference.txt'));
+    execFileSync('git', ['add', '--', '.gitignore', 'src/reference.txt'], { cwd });
+    const result = loadExtraContext({ context: ['src'] }, { cwd, config: {} } as InvocationContext, () => {});
+    expect(result).toHaveProperty('text');
+    expect(result && 'text' in result && result.text).not.toContain('FAKE_PRIVATE_CUSTOMER_DATA');
+    expect(result && 'skipped' in result && result.skipped).toContainEqual({ path: 'src/reference.txt', reason: 'symlink target is not tracked' });
+    execFileSync('git', ['add', '-f', '--', 'private/customer-export.csv'], { cwd });
+    const tracked = loadExtraContext({ context: ['src'] }, { cwd, config: {} } as InvocationContext, () => {});
+    expect(tracked && 'text' in tracked && tracked.text).toContain('FAKE_PRIVATE_CUSTOMER_DATA');
+  });
+
   it('gatherReviewFileContext leaks .npmrc, prod.env.backup and key files to reviewers from a diff, or starves them of source named like a secret', () => {
     const cwd = repo();
     const leaked = ['.npmrc', 'prod.env.backup', 'deploy.pem', 'id_ed25519', 'secrets.yaml'];

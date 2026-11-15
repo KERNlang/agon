@@ -49,12 +49,14 @@ function probe(real: string, remainingChars: number): Probed {
   return content.includes('\u0000') ? { kind: 'binary' } : { kind: 'text', content, chars: content.length };
 }
 
-function trackedFiles(directory: string): { root: string; files: string[] } | null {
+function trackedFiles(directory: string): { root: string; files: string[]; targets: Set<string> } | null {
   try {
     const git = (args: string[]) => execFileSync('git', args, { cwd: directory, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 10 * 1024 * 1024 });
+    const root = realpathSync(git(['rev-parse', '--show-toplevel']).replace(/\r?\n$/, ''));
     return {
-      root: realpathSync(git(['rev-parse', '--show-toplevel']).replace(/\r?\n$/, '')),
+      root,
       files: git(['ls-files', '-z']).split('\0').filter(Boolean),
+      targets: new Set(git(['ls-files', '--full-name', '-z', '--', ':/']).split('\0').filter(Boolean).map(file => join(root, file))),
     };
   } catch {
     return null;
@@ -112,6 +114,7 @@ export function loadExtraContext(input: Record<string, Json>, context: Invocatio
         const inRepo = relative(tracked.root, target);
         if (inRepo.startsWith('..') || isAbsolute(inRepo)) skipped.push({ path, reason: 'symlink leaves the repo' });
         else if (isSecretPath(target)) skipped.push({ path, reason: 'secret-named' });
+        else if (!tracked.targets.has(target)) skipped.push({ path, reason: 'symlink target is not tracked' });
         else if (!statSync(target).isFile()) skipped.push({ path, reason: 'not a regular file' });
         else take(path, target);
       } catch {

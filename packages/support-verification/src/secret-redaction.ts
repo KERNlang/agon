@@ -1,6 +1,12 @@
 import { basename } from 'node:path';
 
-const ENV_SECRET_PATTERN = /\b((?:[A-Z][A-Z0-9_]*)?(?:TOKEN|SECRET|PASSWORD|API_KEY|PRIVATE_KEY))\s*[:=]+\s*['"]?(?![^\s'"]*[()])([^\s'"]{12,})['"]?/g;
+const ENV_SECRET_PATTERN = /\b((?:[A-Z][A-Z0-9_]*)?(?:TOKEN|SECRET|PASSWORD|API_KEY|PRIVATE_KEY))\s*[:=]+\s*['"]?([^\s'"]{12,})['"]?/g;
+
+function isCodeCall(match: string, offset: number, content: string): boolean {
+  const prefix = content.slice(content.lastIndexOf('\n', offset - 1) + 1, offset);
+  return /^\s*(?:export\s+)?(?:const|let|var)\s+$/.test(prefix)
+    && /^[A-Z][A-Z0-9_]*\s*=\s*[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*\([^'"`]*\);?$/.test(match);
+}
 
 export const SECRET_PATTERNS: RegExp[] = [
   // AWS access keys
@@ -53,7 +59,8 @@ export function redactSecrets(content: string): string {
   }
   let out = content;
   for (const re of SECRET_PATTERNS) {
-    out = out.replace(re, '[REDACTED-SECRET]');
+    out = out.replace(re, (match, ...groups) =>
+      re === ENV_SECRET_PATTERN && isCodeCall(match, Number(groups[2]), String(groups[3])) ? match : '[REDACTED-SECRET]');
   }
   return out;
 }
@@ -65,7 +72,7 @@ export function redactSecretsPreservingLines(content: string): string {
   let out = content;
   for (const re of SECRET_PATTERNS) {
     out = out.replace(re, (match, ...groups) =>
-      re === ENV_SECRET_PATTERN && ENV_REFERENCE.test(String(groups[1])) ? match : '[REDACTED-SECRET]' + '\n'.repeat(match.split('\n').length - 1));
+      re === ENV_SECRET_PATTERN && (ENV_REFERENCE.test(String(groups[1])) || isCodeCall(match, Number(groups[2]), String(groups[3]))) ? match : '[REDACTED-SECRET]' + '\n'.repeat(match.split('\n').length - 1));
   }
   return out;
 }

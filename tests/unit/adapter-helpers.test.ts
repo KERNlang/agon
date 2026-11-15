@@ -133,7 +133,7 @@ describe('claude launches in a hostile repository', () => {
 
   it('never lets exec, review, agent or companion launches load repo hooks, settings or MCP servers, even without a clean config dir', async () => {
     const stub = join(dir, 'claude');
-    writeFileSync(stub, '#!/bin/sh\nf=$(mktemp "$AGON_LAUNCH_RECORDS/XXXXXX")\nprintf "%s\\n" "$CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD" "$CLAUDE_CONFIG_DIR" "$@" > "$f"\n');
+    writeFileSync(stub, `#!/bin/sh\nf=$(mktemp "$AGON_LAUNCH_RECORDS/XXXXXX")\nprintf "%s\\n" "$CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD" "$CLAUDE_CONFIG_DIR" "$@" > "$f"\ncat >/dev/null\nprintf '%s\\n' '{"type":"result","result":""}'\n`);
     chmodSync(stub, 0o755);
     const engine = { ...JSON.parse(readFileSync(join(process.cwd(), 'engines', 'claude.json'), 'utf-8')), binary: stub };
     const cwd = realpathSync(join(dir, 'repo'));

@@ -53,6 +53,9 @@ const WRITES_OR_EXECUTES = [
   'git branch --delete x',
   'git branch -m a b',
   'git branch newbranch',
+  'git branch -l newbranch',
+  'git branch 123&>/dev/null',
+  'git branch 123&>>/dev/null',
   'git diff --output=f',
   'git diff --output f',
   'git log --output=f',
@@ -149,6 +152,8 @@ const STAYS_READ_ONLY = [
   'git branch --merged main',
   'git branch --list "feat/*"',
   'git branch --show-current',
+  'git branch --list 123&>/dev/null',
+  'git branch 2>/dev/null',
   'git log --format="%h|%s" --since="2 days ago"',
   'date +%s',
   'date -u +%s',
@@ -162,6 +167,7 @@ describe('isReadOnlyCommand', () => {
   it.each(WRITES_OR_EXECUTES)('%j must not skip the permission prompt as read-only', (command) => {
     expect(isReadOnlyCommand(command)).toBe(false);
     expect(createBashTool().checkPermission!({ command }, { permissionMode: 'ask' } as never).behavior).not.toBe('allow');
+    expect(createBashTool().checkPermission!({ command }, { permissionMode: 'ask', readOnlyMode: true } as never).behavior).toBe('deny');
   });
 
   it.each(STAYS_READ_ONLY)('%j must not start prompting after the hardening', (command) => {

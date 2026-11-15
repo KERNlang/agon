@@ -36,7 +36,7 @@ const UNSAFE_READONLY_FLAGS:Readonly<Record<string, UnsafeFlagPolicy>> = {
   'git branch': {
     long: ['--delete', '--move', '--copy', '--force', '--track', '--set-upstream-to', '--unset-upstream', '--edit-description'],
     short: 'dDmMcCfut',
-    operandsRequire: ['--list', '-l', '--merged', '--no-merged', '--contains', '--no-contains', '--points-at'],
+    operandsRequire: ['--list', '--merged', '--no-merged', '--contains', '--no-contains', '--points-at'],
   },
 };
 
@@ -142,7 +142,9 @@ function scanShellCommand(command: string): ShellSegment[] | null {
       if (command[after] === '>') after++;
       const target = SAFE_OUTPUT_TARGET.exec(command.slice(after));
       if (!target) return null;
-      endRedirectSource();
+      // Only > accepts a numeric file descriptor. Before &>, digits are an operand.
+      if (ch === '>') endRedirectSource();
+      else endWord();
       i = after + target[0].length;
     } else if (ch === '<') {
       const target = SAFE_INPUT_TARGET.exec(command.slice(i + 1));

@@ -70,6 +70,10 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
       emitPostDispatch(intent, input, cb);
       return result!;
     }
+    if (record.owner.id === 'agon.git-actions') {
+      const operatorGated = { ...(marker.value as object), type: marker.publicId };
+      return (await (marker.publicId === 'undo' ? dispatchMetaIntent : dispatchSessionInfoIntent)(operatorGated, input, cb))!;
+    }
     const label = marker.publicId.slice(0, 40);
     if (record.owner.id === 'agon.jobs') {
       try {

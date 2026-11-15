@@ -25,6 +25,8 @@ import { asLiveTodos } from '../signals/todos.js';
 
 import { isBashToolName } from './brain-helpers.js';
 
+import { noteUntrackedActivity, withTurnUndo } from './turn-undo.js';
+
 /**
  * Create and populate the standard Cesar tool registry. Single source of truth — no more duplication.
  */
@@ -69,6 +71,7 @@ export function createCesarToolRegistry(engineId?: string, available: ReadonlySe
         execute: async (input, context) => {
           assertSelected();
           assertContributionInput(payload.inputSchema, input);
+          if (!readOnly) noteUntrackedActivity(`${name} tool`, context.cwd);
           const platform = `${process.platform}-${process.arch}`;
           if (!['darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64'].includes(platform)) return { ok: false, content: '', error: `unsupported platform: ${platform}` };
           const value = await payload.run(input, {
@@ -92,7 +95,7 @@ export function createCesarToolRegistry(engineId?: string, available: ReadonlySe
   const registerHost = (handler: ToolHandler): void => {
     const entry = catalog.find(({ publicId, aliases }) => publicId === handler.definition.name || aliases.includes(handler.definition.name));
     if (!entry || entry.ownerClass === 'user-toggleable-mod-package' || !available.has(handler.definition.name) || toolRegistry.has(handler.definition.name)) return;
-    toolRegistry.register(handler);
+    toolRegistry.register(withTurnUndo(handler));
   };
   registerHost(createReadTool());
   registerHost(createEditTool());

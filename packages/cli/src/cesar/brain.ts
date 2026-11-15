@@ -31,6 +31,7 @@ import { ensureCesarSession, buildCesarSystemPrompt, resolveCesarBackend, render
 import { enforceContextBudget } from './context-budget.js';
 
 import { createCesarToolRegistry, createEagerToolContext, executeEagerTool } from './tools.js';
+import { consumeUndoNotice, noteTurnToolEvent } from './turn-undo.js';
 
 import { fireQuickNero, deactivateNero, promptDelegation } from './escalation.js';
 
@@ -329,9 +330,10 @@ async function runCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerCont
           }
         }
       };
-      const recordToolUse = (name: string, source: 'native'|'mcp'|'xml'|'eager'|'auto'|'signal', input?: string, status?: string, args?: Record<string, unknown>) => {
+      const recordToolUse = (name: string, source: 'native'|'mcp'|'xml'|'eager'|'auto'|'signal', input?: string, status?: string, args?: Record<string, unknown>, toolCallId?: unknown) => {
         const toolName = String(name || 'tool');
         noteToolOutcome(toolName, input, status);
+        noteTurnToolEvent(toolName, status, input, args, _turnCwd, typeof toolCallId === 'string' ? toolCallId : undefined);
         if (isWriteToolName(toolName)) {
           const _writtenPath = mutatedPathFromToolArgs(toolName, args);
           if (_writtenPath) _turnWritePaths.add(_writtenPath);
@@ -1009,6 +1011,7 @@ async function runCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerCont
         _actualHasNativeTools = ctx.cesar!.hasNativeTools === true;
 
         const reviewFollowup = buildReviewFollowupPrompt(input, ctx);
+        reviewFollowup.prompt = consumeUndoNotice(reviewFollowup.prompt);
         let response = '';
         let streaming = false;
         let wasStreamed = false; // tracks if response was already shown via streaming chunks
@@ -1090,7 +1093,7 @@ async function runCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerCont
           // verification / novelty / gate ledgers see a continuation step exactly as
           // they see an initial-stream step. Args are passed through so the step
           // signature is the shared canonical one, not a stringified variant.
-          recordToolUse(toolName, 'native', toolInput, rawStatus, meta.input && typeof meta.input === 'object' ? meta.input as Record<string, unknown> : undefined);
+          recordToolUse(toolName, 'native', toolInput, rawStatus, meta.input && typeof meta.input === 'object' ? meta.input as Record<string, unknown> : undefined, meta.toolCallId);
           dispatch({ type: 'spinner-update', message: `Cesar: ${toolName}…` });
           const displayStatus = rawStatus === 'done' || rawStatus === 'ok' || rawStatus === 'completed'
             ? 'done'
@@ -1588,7 +1591,7 @@ async function runCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerCont
               const toolStatus = (meta.status as string) ?? 'running';
               const STREAM_ORCH = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Council', 'Pipeline', 'Review', 'Agent', 'Goal', 'Conquer']);
               hadToolActivity = true;
-              recordToolUse(toolName, ctx.cesar!.hasNativeTools ? 'native' : 'eager', toolInput, toolStatus, meta.input && typeof meta.input === 'object' ? meta.input as Record<string, unknown> : undefined);
+              recordToolUse(toolName, ctx.cesar!.hasNativeTools ? 'native' : 'eager', toolInput, toolStatus, meta.input && typeof meta.input === 'object' ? meta.input as Record<string, unknown> : undefined, meta.toolCallId);
               dispatch({ type: 'spinner-update', message: `Cesar: ${toolName}…` });
 
               const successfulOrchestrationSignal = toolStatus === 'running'
@@ -1958,7 +1961,7 @@ async function runCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerCont
                 const toolName = chunk.content || 'tool';
                 const toolInput = typeof meta.input === 'string' ? meta.input : meta.input ? JSON.stringify(meta.input) : '';
                 const toolStatus = (meta.status as string) ?? 'running';
-                recordToolUse(toolName, 'eager', toolInput, toolStatus === 'running' ? 'repair' : toolStatus, meta.input && typeof meta.input === 'object' ? meta.input as Record<string, unknown> : undefined);
+                recordToolUse(toolName, 'eager', toolInput, toolStatus === 'running' ? 'repair' : toolStatus, meta.input && typeof meta.input === 'object' ? meta.input as Record<string, unknown> : undefined, meta.toolCallId);
                 if (shouldRunEagerRepairTool(toolName, meta, failedTools, repairUsed)) {
                   repairUsed.push(toolName);
                   dispatch({ type: 'spinner-update', message: `Cesar: retrying ${toolName} with corrected input…` });

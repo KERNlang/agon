@@ -52,18 +52,8 @@ export async function handleCommit(message: string|undefined, dispatch: Dispatch
   // Step 2: Check if there are staged changes, if not stage all tracked
   const hasStaged = gitExec('git diff --cached --name-only', cwd);
   if (!hasStaged) {
-    dispatch({ type: 'info', message: 'No staged changes. Staging all modified files...' });
-    // Stage tracked modified files only (not untracked)
-    const modifiedFiles = status.split('\n').filter((l: string) => /^[ \t\n\r\f\v]*M/.test(l)).map((l: string) => l.trim().replace(/^\S+[ \t\n\r\f\v]+/, ''));
-    if (modifiedFiles.length === 0) {
-      dispatch({ type: 'warning', message: 'No modified tracked files to commit. Use git add to stage new files.' });
-      return;
-    }
-    for (const f of modifiedFiles) {
-      // execFileSync (argv array) — never interpolate a filename into a shell string (injection-safe)
-      execFileSync('git', ['add', f], { cwd: cwd, encoding: 'utf-8', timeout: 10000, stdio: ['ignore', 'pipe', 'pipe'] });
-    }
-    dispatch({ type: 'success', message: `Staged ${modifiedFiles.length} file(s)` });
+    dispatch({ type: 'warning', message: 'Nothing is staged. Stage the files to commit with git add <path>, then run /commit again.' });
+    return;
   }
   // Step 3: Generate or use provided commit message
   let commitMsg = message?.trim();

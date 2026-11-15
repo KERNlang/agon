@@ -1,4 +1,7 @@
-import { expect, it, vi } from 'vitest';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { cleanupTestAgonHome, setupTestAgonHome } from '../helpers/agon-home.js';
 import type { DispatchCallbacks } from '../../packages/cli/src/signals/dispatch.js';
 const effects = vi.hoisted(() => ({ undo: vi.fn() }));
 vi.mock('@kernlang/agon-core', async original => ({
@@ -11,6 +14,15 @@ vi.mock('@kernlang/agon-support-worktree', async original => ({
 }));
 import { persistencePath } from '@kernlang/agon-support-persistence';
 import { dispatchMetaIntent } from '../../packages/cli/src/signals/dispatch/intent-meta.js';
+
+let home = '';
+beforeEach(() => {
+  home = setupTestAgonHome('undo-feedback');
+  const record = persistencePath('undo', 'fixture.patch');
+  mkdirSync(dirname(record), { recursive: true });
+  writeFileSync(record, 'recorded\n');
+});
+afterEach(() => cleanupTestAgonHome(home));
 
 it('clears the used token and reports cleanup failure without offering another undo', async () => {
   effects.undo.mockReturnValue({ ok: true, warning: 'Record cleanup failed; do not reuse this token.' });

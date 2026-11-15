@@ -72,7 +72,7 @@ describe('Exploration Mode', () => {
     };
 
     expect(tool.checkPermission({ command: 'ls -la' }, ctx)).toEqual({ behavior: 'allow' });
-    expect(tool.checkPermission({ command: 'npm test' }, ctx)).toEqual({ behavior: 'allow' });
+    expect(tool.checkPermission({ command: 'npm test' }, ctx)).toMatchObject({ behavior: 'deny', reason: 'exploration-mode' });
     expect(tool.checkPermission({ command: 'npm install' }, ctx)).toEqual({
       behavior: 'deny',
       message: 'Bash blocked: exploration mode is active (read-only)',

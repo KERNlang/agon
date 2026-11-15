@@ -2,7 +2,7 @@ import { appendFileSync, mkdirSync, existsSync, readFileSync } from 'node:fs';
 
 import { join } from 'node:path';
 
-import { RUNS_DIR, agonPath, isReadOnlyCommand } from '@kernlang/agon-core';
+import { RUNS_DIR, agonPath, isNonMutatingCommand } from '@kernlang/agon-core';
 
 import { hostDateMs, hostNowIso, hostNowMs } from '../lib/kern-host.js';
 
@@ -65,7 +65,7 @@ export function createCesarTurnId(): string {
 export const READ_ONLY_TOOL_NAMES: Set<string> = new Set(['read', 'read_file', 'view_file', 'cat', 'grep', 'search', 'glob', 'find', 'ls', 'webfetch', 'websearch', 'retrieveresult', 'listplans', 'reportconfidence', 'todowrite']);
 
 /**
- * Classify a timeline tool event by effect class so the ledger can split read-only exploration from mutations. Bash splits on isReadOnlyCommand (same predicate the permission system uses) after unwrapping JSON-encoded inputs — the native stream path supplies input as the raw JSON args string, which must never be fed to the predicate wholesale; a command-less or unparseable Bash input fails CLOSED to bash-write, never read. Write tools (Edit/Write/MultiEdit/NotebookEdit + Agon-prefixed aliases) are 'write'; only tools on the explicit read-only list are 'read'. Everything else (Agent, MCP tools, SaveMemory, …) and tool-less events (turn_start, interrupts) return undefined so an unknown-effect tool can NEVER masquerade as read-only — replay shows it as 'unknown'.
+ * Classify a timeline tool event by effect class so the ledger can split read-only exploration from mutations. Bash splits on isNonMutatingCommand after unwrapping JSON-encoded inputs — the native stream path supplies input as the raw JSON args string, which must never be fed to the predicate wholesale; a command-less or unparseable Bash input fails CLOSED to bash-write, never read. Write tools (Edit/Write/MultiEdit/NotebookEdit + Agon-prefixed aliases) are 'write'; only tools on the explicit read-only list are 'read'. Everything else (Agent, MCP tools, SaveMemory, …) and tool-less events (turn_start, interrupts) return undefined so an unknown-effect tool can NEVER masquerade as read-only — replay shows it as 'unknown'.
  */
 export function classifyCesarToolEffect(tool: string|undefined, input: Record<string,unknown>|string|undefined): 'read'|'write'|'bash-read'|'bash-write'|undefined {
   const name = String(tool ?? '');
@@ -84,7 +84,7 @@ export function classifyCesarToolEffect(tool: string|undefined, input: Record<st
         }
       } catch {}
     }
-    return command && isReadOnlyCommand(command) ? 'bash-read' : 'bash-write';
+    return command && isNonMutatingCommand(command) ? 'bash-read' : 'bash-write';
   }
   const bare = name.toLowerCase().startsWith('agon') ? name.slice(4) : name;
   return READ_ONLY_TOOL_NAMES.has(bare.toLowerCase()) ? 'read' : undefined;

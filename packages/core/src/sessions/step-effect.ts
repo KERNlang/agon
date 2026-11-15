@@ -1,4 +1,4 @@
-import { isReadOnlyCommand } from '../tools/tool-permissions.js';
+import { isNonMutatingCommand } from '../tools/tool-permissions.js';
 
 import { bashRanGate } from '../blocks/context-scanner.js';
 
@@ -94,7 +94,7 @@ export function classifyToolEffect(tool: string, input: string, gateMatchers?: s
   if (bashRanGate(command, gateMatchers ?? [])) {
     return 'verify';
   }
-  if (isReadOnlyCommand(command)) {
+  if (isNonMutatingCommand(command)) {
     return 'read';
   }
   return 'other';

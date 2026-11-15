@@ -4,7 +4,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { cleanupTestAgonHome, setupTestAgonHome } from '../helpers/agon-home.js';
 
-import { buildCallCommands, validateCallEngineRoster } from '../../packages/cli/src/commands/call.js';
+import { parseArgs } from 'citty';
+import { buildCallCommands, callCommand, validateCallEngineRoster } from '../../packages/cli/src/commands/call.js';
+import { normalizeCliArguments } from '../../packages/cli/src/lazy-commands.js';
 
 describe('agon call command mapping', () => {
   it('rejects a singular engine that is hard-removed in global config', () => {
@@ -498,6 +500,34 @@ describe('agon call command mapping', () => {
       engines: 'codex,gemini',
     }).commands).toEqual([
       ['review', 'branch:main', '--timeout', '90', '--engines', 'codex,gemini'],
+    ]);
+  });
+
+  it('turns a blank review path into a default review, trims a path, swallows a target after --all-worktrees or loses --max-trees', async () => {
+    expect(() => buildCallCommands({ workflow: 'review', worktree: [''] })).toThrow(/--worktree needs a path/);
+    expect(() => buildCallCommands({ workflow: 'review', context: '  ' })).toThrow(/--context needs a path/);
+    expect(buildCallCommands({ workflow: 'review', worktree: ' edge ' }).commands[0]).toEqual(['review', '--worktree', ' edge ']);
+
+    const raw = ['review', '--all-worktrees', 'branch:main', '--max-trees', '3', '--worktree', 'a', '--worktree', 'b'];
+    const args = parseArgs(await normalizeCliArguments(callCommand, raw), callCommand.args) as Record<string, any>;
+    expect(args.workflow).toBe('review');
+    expect(args.input).toBe('branch:main');
+    expect(args.allWorktrees).toBe(true);
+    expect(args.maxTrees).toBe('3');
+    expect(args.worktree).toEqual(['a', 'b']);
+  });
+
+  it('splits a repeated or spaced review path, or pins multi-tree review to uncommitted when no target was given', () => {
+    expect(buildCallCommands({
+      workflow: 'review',
+      worktree: ['../tree with space', '../b,c'],
+      context: 'docs/my notes.md',
+      maxTrees: '3',
+    }).commands).toEqual([
+      ['review', '--worktree', '../tree with space', '--worktree', '../b,c', '--max-trees', '3', '--context', 'docs/my notes.md'],
+    ]);
+    expect(buildCallCommands({ workflow: 'review', input: 'uncommitted', allWorktrees: true, context: ['a', 'b'], contextMaxChars: '9' }).commands).toEqual([
+      ['review', 'uncommitted', '--all-worktrees', '--context', 'a', '--context', 'b', '--context-max-chars', '9'],
     ]);
   });
 

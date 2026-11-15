@@ -8,6 +8,10 @@ import { existsSync, statSync } from 'node:fs';
 
 import { apiStreamDispatchWithHistory, apiDispatch } from '../api/dispatch-lazy.js';
 
+import { abortableDelay, createModelCallRetryGate } from '../api/model-call-retry.js';
+
+import type { ModelRetryBudget, ModelRetryPlan } from '../api/model-call-retry.js';
+
 import { engineSupportsVision } from '../signals/models-registry.js';
 
 import { findSafeKeepStart, buildCompactionSummary, renderCompactionText, buildSummarizationContext, buildCompactionPrompt } from './compaction.js';
@@ -20,7 +24,7 @@ import { saveSessionState, loadSessionState, saveToolResultToDisk, loadToolResul
 
 import { lookupCatalogContextWindow } from '../signals/models-registry.js';
 
-import { parseToolCalls } from '../tools/tool-parser.js';
+import { parseToolCalls, stripToolMarkup } from '../tools/tool-parser.js';
 
 import { createTurnTracker, contentHashOf } from '../telemetry/guard-telemetry.js';
 
@@ -65,6 +69,7 @@ import { decideFirstChunkRetry, decodeEventStreamOutput, planPromptDelivery } fr
  * Fallback: spawn per turn with --resume/--continue. Works for any CLI engine.
  */
 export function createResumeSession(config: PersistentSessionConfig): PersistentSession {
+  let modelRetryBudget: ModelRetryBudget = { spentMs: 0 };
   let alive = false;
   let sessionId: string | null = null;
   let firstTurn = true;
@@ -1002,6 +1007,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
         const MAX_CONSECUTIVE_ERRORS = 3;
         let budget = BASE_BUDGET;
         let step = 0;
+        let budgetExhausted = false;
         // ── Earned budget + novelty ledger (effect classification) ──
         // productiveSteps is the GROWTH counter: it now advances only on a
         // step that did something effectful (mutate / verify / NOVEL read /
@@ -1093,6 +1099,9 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
           ? requestedFirstChunkBackoffMs
           : 1000;
         let hadTurnSideEffects = false;
+        const turnKey = opts.controlPlane?.turnId;
+        if (!turnKey || modelRetryBudget.turnId !== turnKey) modelRetryBudget = { turnId: turnKey, spentMs: 0 };
+        const modelRetry = createModelCallRetryGate(config.engine.api, opts.signal, modelRetryBudget);
         // One-shot emergency recovery: if a request fails with an overflow-shaped
         // error, hard-trim history once and retry the same step instead of
         // surfacing an empty response (the spin trigger). Token estimates can be
@@ -1157,11 +1166,18 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
         // fns swallow their own errors, and the whole body is wrapped in try/catch
         // so telemetry can NEVER throw into the session. The finally yields nothing.
         try {
-        while (step < budget) {
+        while (true) {
+          if (step >= budget) {
+            budgetExhausted = true;
+            break;
+          }
           step++;
           let fullResponse = '';
           let lastStderr = ''; // captured non-throwing error from the dispatch result
           let lastDispatchParts: any[] | undefined; // Structured parts from dispatch
+          let modelRetryPlan: ModelRetryPlan | null = null;
+          let lastModelFailure: any;
+          let failedAfterOutput = false;
 
           // ── P2 DiagnosticRunner: drain pending digests BEFORE this dispatch ──
           // Post-edit type/lint results that completed since the last iteration
@@ -1185,9 +1201,9 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
 
           // ── Status update so the UI shows activity during API tool loops ──
           if (step === 1) {
-            yield { type: 'status' as const, content: 'dispatching engine…' };
+            yield { type: 'status' as const, content: 'dispatching engine…', metadata: { kind: 'loop-step', step, budget } };
           } else {
-            yield { type: 'status' as const, content: `tool loop turn ${step}/${budget}…` };
+            yield { type: 'status' as const, content: `tool loop turn ${step}/${budget}…`, metadata: { kind: 'loop-step', step, budget } };
           }
 
           // Anchor for real-usage projection: messages at index >= this were
@@ -1202,12 +1218,16 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
             guardAssembleRecorded = true;
           }
           const guardRoundTripStart = performance.now();
-          const gen = apiStreamDispatchWithHistory(config.engine.api, withImages(messageHistory), config.engine.timeout ?? 180, opts.signal, effectiveTools);
+          const gen = apiStreamDispatchWithHistory({ ...config.engine.api, sdkMaxRetries: 0 } as typeof config.engine.api, withImages(messageHistory), config.engine.timeout ?? 180, opts.signal, effectiveTools);
           try {
             while (true) {
               const { value, done } = await gen.next();
               if (done) {
                 const result = value as any;
+                lastModelFailure = result?.modelFailure;
+                modelRetryPlan = modelRetry.plan(lastModelFailure, Number(result?.durationMs) || 0);
+                failedAfterOutput = lastModelFailure?.outputStarted === true
+                  || (fullResponse.length > 0 && Number(result?.exitCode) > 0 && result?.exitCode !== 130);
                 // Capture structured parts for smarter compaction
                 if (result?.parts && Array.isArray(result.parts)) {
                   lastDispatchParts = result.parts;
@@ -1243,10 +1263,11 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                   if (fullResponse.length === 0) {
                     // Don't surface yet — the empty-response block below decides
                     // whether to recover (overflow) or surface the error.
-                    if (!OVERFLOW_RE.test(lastStderr) || emergencyTrimmed) {
-                      yield { type: 'error' as const, content: result.stderr };
+                    const recovers = modelRetryPlan !== null || failedAfterOutput || (OVERFLOW_RE.test(lastStderr) && !emergencyTrimmed);
+                    if (!recovers) {
+                      yield { type: 'error' as const, ...modelRetry.finalError(result.stderr, lastModelFailure) };
                     }
-                  } else {
+                  } else if (!failedAfterOutput) {
                     console.warn(`[agon] API warning (response preserved): ${result.stderr.slice(0, 200)}`);
                   }
                 }
@@ -1270,7 +1291,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
               }
               if (step === 1) {
                 yield { type: 'error' as const, content: `API stream failed, retrying… (${err.message ?? String(err)})` };
-                await new Promise(r => setTimeout(r, 1000));
+                await abortableDelay(1000, opts.signal);
                 continue; // Retry the same step
               }
               // Don't kill session — preserve history for next turn. Disk
@@ -1289,9 +1310,27 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
               yield { type: 'error' as const, content: err.message ?? String(err) };
               break;
             }
-            // Got partial output before crash — preserve it, log warning
-            console.warn(`[agon] API stream error after ${fullResponse.length} chars (preserved): ${(err.message ?? '').slice(0, 200)}`);
-            // Fall through to process fullResponse as if stream completed
+            failedAfterOutput = true;
+            lastStderr = String(err?.message ?? err);
+          }
+
+          if (modelRetryPlan) {
+            yield* modelRetry.wait(modelRetryPlan);
+            if (opts.signal?.aborted) break;
+            step--;
+            continue;
+          }
+          if (failedAfterOutput) {
+            // Never retried: this call may already have emitted a tool call. Its
+            // markers are dropped unexecuted so history holds no dangling call.
+            const partialText = stripToolMarkup(fullResponse);
+            if (partialText) messageHistory.push({ role: 'assistant', content: `${partialText}\n[Response cut off by a stream failure]` });
+            yield {
+              type: 'error' as const,
+              content: `Stream failed after output started, not retried: ${lastStderr}`,
+              metadata: { modelRetryFinal: true, outputStarted: true },
+            };
+            break;
           }
 
           if (!fullResponse) {
@@ -1315,12 +1354,18 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                 firstChunkRetries++;
                 yield { type: 'status' as const, content: `first chunk timed out — safe retry ${firstChunkRetries}/${MAX_FIRST_CHUNK_RETRIES}…` };
                 if (FIRST_CHUNK_RETRY_BACKOFF_MS > 0) {
-                  await new Promise(r => setTimeout(r, FIRST_CHUNK_RETRY_BACKOFF_MS));
+                  await abortableDelay(FIRST_CHUNK_RETRY_BACKOFF_MS, opts.signal);
                 }
                 step--;
                 continue;
               }
               yield { type: 'error' as const, content: lastStderr };
+              break;
+            }
+            if (lastModelFailure) {
+              if (OVERFLOW_RE.test(lastStderr) && !emergencyTrimmed) {
+                yield { type: 'error' as const, content: `Engine context overflow could not be recovered: ${lastStderr.slice(0, 160)}`, metadata: { modelRetryFinal: true } };
+              }
               break;
             }
             // Empty response after successful stream: usually means the model returned
@@ -1334,7 +1379,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
             if (!opts.signal?.aborted && emptyResponseRetries < MAX_EMPTY_RETRIES) {
               emptyResponseRetries++;
               yield { type: 'status' as const, content: `engine returned empty — retrying (${emptyResponseRetries}/${MAX_EMPTY_RETRIES})…` };
-              await new Promise(r => setTimeout(r, Math.min(1500 * 2 ** (emptyResponseRetries - 1), 8000)));
+              await abortableDelay(Math.min(1500 * 2 ** (emptyResponseRetries - 1), 8000), opts.signal);
               step--; // retry the same step
               continue;
             }
@@ -1543,7 +1588,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                 readSpinRecoveryFireId = null;
                 readSpinRecoveryCostMs = 0;
               }
-              yield { type: 'error' as const, content: 'Tool loop stopped: repeated read-only retry loop after recovery. The engine kept repeating reads instead of finishing, editing, or explaining the blocker.' };
+              yield { type: 'error' as const, content: 'Tool loop stopped: repeated read-only retry loop after recovery. The engine kept repeating reads instead of finishing, editing, or explaining the blocker.', metadata: { loopEnd: 'read_spin_stop' } };
               messageHistory.push({
                 role: 'assistant',
                 content: `${cleanText ? `${cleanText}\n` : ''}[Tool loop stopped — repeated read-only stale-edit retry before executing duplicate read-only calls]`,
@@ -1614,7 +1659,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                 }
                 if (stall.verdict.action === 'block') {
                   // Hard stop (consecutive≥8 or global≥12): end the turn.
-                  yield { type: 'error' as const, content: stall.verdict.feedback };
+                  yield { type: 'error' as const, content: stall.verdict.feedback, metadata: { loopEnd: 'stall_stop' } };
                   messageHistory.push({
                     role: 'assistant',
                     content: `${cleanText ? `${cleanText}\n` : ''}[Tool loop stopped — information-gain hard stop: too many consecutive zero-information read-only steps]`,
@@ -1844,7 +1889,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                   })), 0);
                   guardTracker.addGuardOverheadMs(performance.now() - wsT0);
                   const wsPaths = blockedPaths.join(', ');
-                  yield { type: 'error' as const, content: `Tool loop stopped: the engine kept re-issuing writes to unread file(s) ${wsPaths} instead of reading them first.` };
+                  yield { type: 'error' as const, content: `Tool loop stopped: the engine kept re-issuing writes to unread file(s) ${wsPaths} instead of reading them first.`, metadata: { loopEnd: 'write_spin_stop' } };
                   messageHistory.push({
                     role: 'assistant',
                     content: `${cleanText ? `${cleanText}\n` : ''}[Tool loop stopped — write-spin hard stop: the engine re-issued ungrounded writes to ${wsPaths} without reading them]`,
@@ -2310,7 +2355,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
               // ALL tools failed — shrink budget, count consecutive errors
               consecutiveErrors++;
               if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
-                yield { type: 'error' as const, content: `Tool loop circuit breaker: ${consecutiveErrors} consecutive steps with all tools failing. Stopping to avoid token waste.` };
+                yield { type: 'error' as const, content: `Tool loop circuit breaker: ${consecutiveErrors} consecutive steps with all tools failing. Stopping to avoid token waste.`, metadata: { loopEnd: 'tool_circuit_breaker' } };
                 messageHistory.push({ role: 'assistant', content: '[Tool loop stopped — repeated failures]' });
                 break;
               }
@@ -2634,7 +2679,8 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
         // (opts.shouldYield); every other exit keeps the historical
         // 'end_turn'. Consumers break on chunk.type === 'done' and treat the
         // content as an opaque stop reason, so the extra value is additive.
-        yield { type: 'done' as const, content: yieldedForCaller ? 'steering-yield' : 'end_turn' };
+        const loopEnd = yieldedForCaller ? 'steering_yield' : guardDoneNormally ? 'completed' : budgetExhausted ? 'step_budget' : 'stopped';
+        yield { type: 'done' as const, content: yieldedForCaller ? 'steering-yield' : 'end_turn', metadata: { loopEnd, step, budget } };
         return;
         } finally {
           // ── Phase-0 telemetry flush — EXACTLY ONCE on every exit path ──

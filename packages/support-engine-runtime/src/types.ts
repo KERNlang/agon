@@ -65,6 +65,7 @@ export interface EngineDefinition {
     baseUrl: string; apiKeyEnv: string; model: string; maxTokens?: number; contextWindow?: number;
     format?: 'openai' | 'anthropic'; firstChunkTimeoutMs?: number; idleTimeoutMs?: number; activityWindowMs?: number;
     firstChunkRetryCount?: number; firstChunkRetryBackoffMs?: number; emptyResponseRetryCount?: number;
+    modelRetryMaxRetries?: number; modelRetryMaxWaitMs?: number; modelRetryMaxElapsedMs?: number; modelRetryBaseDelayMs?: number; modelRetryMaxDelayMs?: number;
   };
   companion?: CompanionConfig;
   sessionBudget?: SessionBudget;
@@ -103,6 +104,12 @@ export interface DispatchOptions {
   maxWallSeconds?: number;
 }
 export type DispatchTimeoutKind = 'base' | 'ceiling' | 'idle';
+export interface ModelCallFailure {
+  retryable: boolean;
+  outputStarted: boolean;
+  statusCode?: number;
+  retryAfterMs?: number;
+}
 export interface DispatchResult {
   exitCode: number;
   stdout: string;
@@ -116,6 +123,7 @@ export interface DispatchResult {
   finishReason?: string;
   extendedSeconds?: number;
   timeoutKind?: DispatchTimeoutKind;
+  modelFailure?: ModelCallFailure;
 }
 export interface AgentDispatchResult extends DispatchResult { diff: string; diffLines: number; filesChanged: number }
 export interface EngineAdapter {

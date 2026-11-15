@@ -301,6 +301,19 @@ function parseCohereToolCalls(text: string): ParseResult {
   return { textBefore, toolCalls, textAfter, hasToolCalls: true };
 }
 
+const TOOL_MARKUP_OPEN = /<(?:tool|invoke|tool_call|toolcall|tool_call_tool|function_calls|[a-z]+:tool_call)\b|\[TOOL_CALLS\]/i;
+
+/**
+ * Remove every parsed tool call, then cut at the first remaining opening marker, which is a block the stream never finished.
+ */
+export function stripToolMarkup(text: string): string {
+  let rest = text;
+  const calls = [...parseToolCalls(text).toolCalls].sort((a, b) => b.startIndex - a.startIndex);
+  for (const call of calls) rest = rest.slice(0, call.startIndex) + rest.slice(call.endIndex);
+  const open = rest.search(TOOL_MARKUP_OPEN);
+  return (open >= 0 ? rest.slice(0, open) : rest).trim();
+}
+
 /**
  * Parse tool call markers from engine output text. Handles JSON and XML parameter formats.
  */

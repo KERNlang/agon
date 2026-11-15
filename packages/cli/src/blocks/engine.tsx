@@ -229,8 +229,8 @@ const CesarRecapBlock = React.memo(function CesarRecapBlock({ event }: { event:O
       {checkpoints.length > 0 ? (
         <Text>
           <Text dimColor>{'  undo: '}</Text>
-          <Text color="#22d3ee">{'/undo '}{checkpoints[0].id}</Text>
-          {checkpoints.length > 1 ? <Text dimColor>{' (+'}{checkpoints.length - 1}{' more)'}</Text> : null}
+          <Text color="#22d3ee">{'/undo'}</Text>
+          <Text dimColor>{' reverts the last turn'}</Text>
         </Text>
       ) : null}
       {diffFiles.slice(0, 4).map((file: any, index: number) => (

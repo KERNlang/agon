@@ -11,6 +11,8 @@ const ownership = JSON.parse(readFileSync(resolve(evidenceRoot, 'modular-agon-ow
 const physicalContributions = JSON.parse(readFileSync(resolve(evidenceRoot, 'modular-agon-physical-contributions.json'), 'utf8')).contributions;
 const cliDescriptionsPath = resolve(evidenceRoot, 'modular-agon-cli-descriptions.json');
 const cliDescriptions = existsSync(cliDescriptionsPath) ? JSON.parse(readFileSync(cliDescriptionsPath, 'utf8')) : {};
+const tuiDescriptionsPath = resolve(evidenceRoot, 'modular-agon-tui-descriptions.json');
+const tuiDescriptions = existsSync(tuiDescriptionsPath) ? JSON.parse(readFileSync(tuiDescriptionsPath, 'utf8')) : {};
 const output = resolve(generatedRoot, 'first-party-surface-catalog.ts');
 
 const projection = new Map([
@@ -60,7 +62,7 @@ for (const [category, [surface, kind]] of projection) {
   for (const [index, occurrence] of (inventory.categories[category] ?? []).entries()) {
     const assignment = assignmentByOccurrence.get(assignmentKey({ category, id: occurrence.id, source: occurrence.source }));
     if (!assignment) throw new Error(`surface occurrence has no owner: ${category}/${occurrence.id}@${occurrence.source}`);
-    const description = String((category === 'cliCommands' ? cliDescriptions[occurrence.id] : undefined) ?? occurrence.description ?? occurrence.title ?? occurrence.id);
+    const description = String((category === 'cliCommands' ? cliDescriptions[occurrence.id] : category === 'tuiSlashCommands' ? tuiDescriptions[occurrence.id] : undefined) ?? occurrence.description ?? occurrence.title ?? occurrence.id);
     entries.push({
       surface,
       kind,

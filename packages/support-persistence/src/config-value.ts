@@ -8,6 +8,10 @@ type ConfigValueKind = 'boolean' | 'number' | 'array' | 'string';
 export const OPTIONAL_CONFIG_KEYS = Object.freeze({
   reviewTimeout: 'number',
   reviewMaxWallSeconds: 'number',
+  undoMaxTurns: 'number',
+  undoMaxFileBytes: 'number',
+  undoMaxTotalBytes: 'number',
+  undoMaxAgeHours: 'number',
 } as const satisfies Record<string, ConfigValueKind>);
 
 export type OptionalConfigKey = keyof typeof OPTIONAL_CONFIG_KEYS;

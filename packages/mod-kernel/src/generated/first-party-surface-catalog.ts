@@ -10424,10 +10424,10 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
       "contentHash": "sha256:5677334d0d613330ab9852c9544d6ae0e1e410bb946c612c05e2ce15c8fcf8c5"
     },
     "ownerClass": "user-toggleable-mod-package",
-    "description": "                        — revert last patch or Cesar checkpoint",
+    "description": "                        — revert the last turn or applied patch, or a checkpoint by id",
     "accessibility": {
-      "label": "                        — revert last patch or Cesar checkpoint",
-      "fallbackText": "                        — revert last patch or Cesar checkpoint",
+      "label": "                        — revert the last turn or applied patch, or a checkpoint by id",
+      "fallbackText": "                        — revert the last turn or applied patch, or a checkpoint by id",
       "keyboardAccessible": true,
       "colorIndependent": true
     }

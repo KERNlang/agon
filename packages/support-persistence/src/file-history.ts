@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, unlinkSync } from 'node:fs';
+import { chmodSync, lstatSync, readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, unlinkSync } from 'node:fs';
 
 import { join, dirname, resolve } from 'node:path';
 
@@ -34,9 +34,26 @@ export interface HistoryEntry {
 
 const _snapshotSeq: { value: number, seeded: boolean } = ({ value: 0, seeded: false }) as { value: number, seeded: boolean };
 
+const ownedByCurrentUser = (uid: number): boolean => !process.getuid || uid === process.getuid();
+
 function ensureSnapshotsDir(): void {
   ensurePersistenceHome();
-  mkdirSync(snapshotsDir(), { recursive: true });
+  const dir = snapshotsDir();
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const stat = lstatSync(dir);
+  if (!stat.isDirectory() || !ownedByCurrentUser(stat.uid)) {
+    throw new Error(`Snapshot storage ${dir} is not a directory owned by the current user`);
+  }
+  if ((stat.mode & 0o777) !== 0o700) chmodSync(dir, 0o700);
+  for (const name of readdirSync(dir)) {
+    const path = join(dir, name);
+    const entry = lstatSync(path);
+    if (!entry.isFile() || !ownedByCurrentUser(entry.uid)) {
+      console.warn(`[agon] snapshot: left ${name} alone: not a regular file owned by the current user`);
+    } else if ((entry.mode & 0o777) !== 0o600) {
+      chmodSync(path, 0o600);
+    }
+  }
 }
 
 /**
@@ -88,7 +105,7 @@ export function takeSnapshot(label: string, cwd: string, filePaths: string[]): H
   };
 
   const entryPath = join(snapshotsDir(), `${entry.id}.json`);
-  writeFileSync(entryPath, JSON.stringify(entry, null, 2) + '\n');
+  writeFileSync(entryPath, JSON.stringify(entry, null, 2) + '\n', { mode: 0o600 });
 
   // Prune old snapshots
   pruneSnapshots();
@@ -141,8 +158,8 @@ export function revertSnapshot(id: string): {ok:boolean, error?:string, filesRev
 }
 
 export function listSnapshots(): HistoryEntry[] {
-  ensureSnapshotsDir();
   try {
+    ensureSnapshotsDir();
     const files = readdirSync(snapshotsDir()).filter((f: string) => f.endsWith('.json'));
     const entries = files.map((f: string) => {
       try {

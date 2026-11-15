@@ -1,4 +1,10 @@
-import { spawnWithTimeout } from '@kernlang/agon-core';
+import { createHash } from 'node:crypto';
+
+import { readFileSync } from 'node:fs';
+
+import { join } from 'node:path';
+
+import { isNonMutatingCommand, spawnWithTimeout } from '@kernlang/agon-core';
 
 import type { DiscoveredGate } from '@kernlang/agon-core';
 
@@ -66,7 +72,7 @@ export function shouldAutoRunGate(snapshot: GateAutoRunSnapshot): boolean {
 }
 
 /**
- * Output-redirection detector (mirrors isAgenticMutationOutcome). Read-only command CLASSIFICATION strips redirections, so `npm test > file` resolves 'allow' in ask mode even though it mutates the workspace — in non-auto modes a redirecting gate falls back to the prompt nudge instead of auto-running. >/dev/null and fd-dup stay allowed.
+ * Output-redirection detector (mirrors isAgenticMutationOutcome). In non-auto modes a redirecting gate falls back to the prompt nudge instead of auto-running, even under a covering allow source. >/dev/null and fd-dup stay allowed.
  */
 export const GATE_REDIRECTION_RE: RegExp = /(?:^|[\s;|&])\d*(?:>>?|&>)\s*(?!\s|\/dev\/null\b|&\d\b)/;
 
@@ -81,14 +87,75 @@ export function gateAutoRunTriggered(signals: {agenticAuto:boolean, agenticTaskS
   return signals.legacyState === 'done';
 }
 
-/**
- * The harness may only run the gate when the unified resolver would ALLOW the command outright — mode auto for routine gates, or a persisted/session allow rule (the Always artifact, e.g. Bash(npm test:*)) in any mode. A resolver 'ask' (ask/auto-edit without a covering rule, or a gate command that trips a dangerous boundary even in auto) falls back to the prompt nudge — this path never prompts and never bypasses a boundary. Additionally, outside mode auto a gate command containing output redirection is refused even when the read-only classifier would allow it (the classifier strips redirections, so `npm test > file` would otherwise mutate under an ask posture).
- */
-export function gateAutoRunPermitted(command: string, cwd: string, config: any): boolean {
+const GATE_DEFINITION_FILES: readonly string[] = ['Makefile', 'makefile', 'GNUmakefile', 'justfile', 'pyproject.toml'];
+
+function readOrEmpty(path: string): string {
   try {
-    if (resolveAgonPermissionMode(config) !== 'auto' && GATE_REDIRECTION_RE.test(command)) return false;
+    return readFileSync(path, 'utf-8');
+  } catch {
+    return '';
+  }
+}
+
+function packageScriptsSource(cwd: string): string {
+  const raw = readOrEmpty(join(cwd, 'package.json'));
+  try {
+    return JSON.stringify(JSON.parse(raw)?.scripts ?? null);
+  } catch {
+    return raw;
+  }
+}
+
+/**
+ * Hash of everything a discovered gate command resolves at run time: the whole package.json `scripts` object (npm also runs pre/post hooks) and the task-runner files a fitness command may delegate to. Record it at discovery; a different value before an auto-run means the agent may have rewritten what the gate executes.
+ */
+export function gateDefinitionFingerprint(cwd: string): string {
+  const hash = createHash('sha256').update(packageScriptsSource(cwd));
+  for (const file of GATE_DEFINITION_FILES) hash.update('\0').update(file).update('\0').update(readOrEmpty(join(cwd, file)));
+  return hash.digest('hex');
+}
+
+/**
+ * The session's pinned gate definition for cwd, pinning the current one on first use. A pin is never refreshed by a new turn, so an edit in one turn cannot become the next turn's baseline.
+ */
+export function pinnedGateDefinition(pins: Record<string, string>, cwd: string): string {
+  pins[cwd] ??= gateDefinitionFingerprint(cwd);
+  return pins[cwd];
+}
+
+function invokesGateCommand(command: string, gate: DiscoveredGate): boolean {
+  const normalized = command.trim().replace(/\s+/g, ' ');
+  return normalized === gate.command || (gate.command === 'npm run test' && normalized === 'npm test');
+}
+
+/**
+ * Re-pins only after the exact gate command completed through the normal Bash permission path, the one approval that may accept a changed definition.
+ */
+export function repinGateDefinitionAfterApprovedRun(pins: Record<string, string>, cwd: string, gate: DiscoveredGate, command: string, status: string): boolean {
+  if (!/^(?:done|ok|completed)$/i.test(status) || !invokesGateCommand(command, gate)) return false;
+  pins[cwd] = gateDefinitionFingerprint(cwd);
+  return true;
+}
+
+export function gateDefinitionChangeNotice(recordedDefinition: string | undefined, cwd: string): string | null {
+  if (recordedDefinition === undefined || gateDefinitionFingerprint(cwd) === recordedDefinition) return null;
+  return 'Gate definition changed during this turn (package.json scripts or task-runner file) — not auto-running it; the run needs normal Bash approval.';
+}
+
+/**
+ * The harness may only run the gate when the unified resolver would ALLOW the command outright — mode auto for routine gates, or a persisted/session allow rule (the Always artifact, e.g. Bash(npm test:*)) in any mode. A resolver 'ask' (ask/auto-edit without a covering rule, or a gate command that trips a dangerous boundary even in auto) falls back to the prompt nudge — this path never prompts and never bypasses a boundary. The one exception is a test-runner gate (npm test, npx vitest) that reaches only the plain mode ask: the harness discovered it itself rather than the model issuing it, so it auto-runs in every mode, while a model-issued run still prompts. Additionally, outside mode auto a gate command containing output redirection is refused.
+ */
+export function gateAutoRunPermitted(command: string, cwd: string, config: any, recordedDefinition?: string): boolean {
+  try {
+    if (recordedDefinition !== undefined && gateDefinitionFingerprint(cwd) !== recordedDefinition) return false;
+    const mode = resolveAgonPermissionMode(config);
+    if (mode !== 'auto' && GATE_REDIRECTION_RE.test(command)) return false;
     const resolution = resolvePermissionDecision({ tool: 'Bash', target: command, cwd, source: 'native', config });
-    return resolution.decision === 'allow';
+    if (resolution.decision === 'allow') return true;
+    return resolution.decision === 'ask'
+      && resolution.stage === 'mode'
+      && resolution.reason === `${mode} mode requires approval`
+      && isNonMutatingCommand(command);
   } catch {
     return false;
   }

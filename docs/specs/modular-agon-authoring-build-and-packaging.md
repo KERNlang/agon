@@ -54,6 +54,10 @@ against the unchanged contribution input schema. Unlisted options are unchanged.
 Empty or non-string arrays remain invalid scalar inputs. Positional arguments,
 including `_`, cannot declare repeat policies. Unknown policies are rejected.
 
+A third policy, `list`, is for options whose schema type is `array`: one flag or
+many always reaches the mod as an array of the values as given, never split on
+commas. Review declares `list` for `worktree` and `context`.
+
 Both generated CLI execution and command-text parsing use the same projection.
 Mixed long/short aliases keep the parser's existing precedence; this extension
 does not reinterpret argument order. Provenance declares `last` for `id`,

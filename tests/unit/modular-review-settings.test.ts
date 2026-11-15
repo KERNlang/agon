@@ -21,3 +21,12 @@ it('reviewFileContext=false reaches the review mod instead of being dropped by n
   writeFileSync(join(home, 'config.json'), JSON.stringify({ reviewFileContext: false }));
   expect(selectModSettings(loadConfig(project), 'agon.review')).toMatchObject({ reviewFileContext: false });
 });
+
+it('drops the reviewMaxTrees and reviewContextMaxChars budgets on the way to the review mod', () => {
+  const home = mkdtempSync(join(tmpdir(), 'agon-review-settings-home-'));
+  const project = mkdtempSync(join(tmpdir(), 'agon-review-settings-project-'));
+  dirs.push(home, project);
+  process.env.AGON_HOME = home;
+  writeFileSync(join(home, 'config.json'), JSON.stringify({ reviewMaxTrees: 3, reviewContextMaxChars: 500 }));
+  expect(selectModSettings(loadConfig(project), 'agon.review')).toMatchObject({ reviewMaxTrees: 3, reviewContextMaxChars: 500 });
+});

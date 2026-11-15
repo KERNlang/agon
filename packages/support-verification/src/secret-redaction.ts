@@ -1,6 +1,12 @@
 import { basename } from 'node:path';
 
-const ENV_SECRET_PATTERN = /\b([A-Z][A-Z0-9_]{2,}(?:TOKEN|SECRET|PASSWORD|API_KEY|PRIVATE_KEY))[\s:=]+['"]?([^\s'"]{12,})['"]?/g;
+const ENV_SECRET_PATTERN = /\b((?:[A-Z][A-Z0-9_]*)?(?:TOKEN|SECRET|PASSWORD|API_KEY|PRIVATE_KEY))\s*[:=]+\s*['"]?([^\s'"]{12,})['"]?/g;
+
+function isCodeCall(match: string, offset: number, content: string): boolean {
+  const prefix = content.slice(content.lastIndexOf('\n', offset - 1) + 1, offset);
+  return /^\s*(?:export\s+)?(?:const|let|var)\s+$/.test(prefix)
+    && /^[A-Z][A-Z0-9_]*\s*=\s*[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*\([^'"`]*\);?$/.test(match);
+}
 
 export const SECRET_PATTERNS: RegExp[] = [
   // AWS access keys
@@ -33,6 +39,9 @@ export const SECRET_PATTERNS: RegExp[] = [
 
 export const SECRET_PATH_BLOCKLIST: string[] = ['.env', '.env.local', '.env.production', '.env.staging', '.env.development', 'credentials.json', 'secrets.json', 'auth.json', '.ssh/id_rsa', '.ssh/id_ed25519', '.ssh/id_ecdsa', '.aws/credentials', '.docker/config.json', '.netrc', '.pgpass', '.my.cnf'] as string[];
 
+const SECRET_FILE_NAME = /^(\.npmrc|\.pypirc|\.git-credentials|id_(rsa|dsa|ecdsa|ed25519)(\.(?!pub$).*)?)$|\.env(\.|$)|^(credentials|secrets?)(\.(json|ya?ml|toml|ini|txt|conf|cfg))?$|\.(pem|key|p12|pfx|jks|keystore)$/;
+const NOT_A_SECRET_FILE = /\.(example|sample|template|dist|defaults)$|\.(ts|tsx|mts|cts|js|jsx|mjs|cjs|py|go|rs|java|kt|rb|php|c|h|cc|cpp|cs|swift|sh|md)$/;
+
 /**
  * Check if a file path is known to contain secrets. Used by redactSecrets to replace tool-output of forbidden files with a stub before it ever lands in the thread.
  */
@@ -44,7 +53,7 @@ export function isSecretPath(path: string): boolean {
       return true;
     }
   }
-  return false;
+  return SECRET_FILE_NAME.test(name) && !NOT_A_SECRET_FILE.test(name);
 }
 
 /**
@@ -56,7 +65,8 @@ export function redactSecrets(content: string): string {
   }
   let out = content;
   for (const re of SECRET_PATTERNS) {
-    out = out.replace(re, '[REDACTED-SECRET]');
+    out = out.replace(re, (match, ...groups) =>
+      re === ENV_SECRET_PATTERN && isCodeCall(match, Number(groups[2]), String(groups[3])) ? match : '[REDACTED-SECRET]');
   }
   return out;
 }
@@ -68,7 +78,7 @@ export function redactSecretsPreservingLines(content: string): string {
   let out = content;
   for (const re of SECRET_PATTERNS) {
     out = out.replace(re, (match, ...groups) =>
-      re === ENV_SECRET_PATTERN && ENV_REFERENCE.test(String(groups[1])) ? match : '[REDACTED-SECRET]' + '\n'.repeat(match.split('\n').length - 1));
+      re === ENV_SECRET_PATTERN && (ENV_REFERENCE.test(String(groups[1])) || isCodeCall(match, Number(groups[2]), String(groups[3]))) ? match : '[REDACTED-SECRET]' + '\n'.repeat(match.split('\n').length - 1));
   }
   return out;
 }

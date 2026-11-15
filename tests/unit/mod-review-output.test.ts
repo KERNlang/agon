@@ -5,8 +5,10 @@ import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CommandResult, InvocationContext, Json, ModServices } from '@kernlang/agon-mod-api';
 import { runReview } from '../../packages/mod-review/src/implementation.js';
+import { loadExtraContext } from '../../packages/mod-review/src/context-paths.js';
 import { annotateExistingCode, existingCodeMatch, existingCodeReader } from '../../packages/mod-review/src/existing-code.js';
 import { formatSarif, lineRegion } from '../../packages/mod-review/src/report.js';
+import { gatherReviewFileContext } from '../../packages/support-verification/src/review-file-context.js';
 import { isSecretPath, redactSecrets, redactSecretsPreservingLines } from '../../packages/support-verification/src/secret-redaction.js';
 
 const TOKEN = `ghp_${'A1b2C3d4E5'.repeat(4)}`;
@@ -172,6 +174,40 @@ describe('mod-review existingCode', () => {
 });
 
 describe('mod-review phase B review fixes', () => {
+  it.each(['abcd(1234567890)', 'abcd)1234567890', 'getAccessToken()'])('redacts literal passwords containing parentheses: %s', (value) => {
+    for (const redact of [redactSecrets, redactSecretsPreservingLines]) {
+      expect(redact(`SERVICE_PASSWORD=${value}`)).not.toContain(value);
+      expect(redact(`const SERVICE_PASSWORD = '${value}';`)).not.toContain(value);
+    }
+  });
+
+  it('does not include ignored data through a tracked directory-context symlink', () => {
+    const cwd = repo();
+    mkdirSync(join(cwd, 'private'));
+    writeFileSync(join(cwd, '.gitignore'), 'private/\n');
+    writeFileSync(join(cwd, 'private/customer-export.csv'), 'FAKE_PRIVATE_CUSTOMER_DATA');
+    symlinkSync('../private/customer-export.csv', join(cwd, 'src/reference.txt'));
+    execFileSync('git', ['add', '--', '.gitignore', 'src/reference.txt'], { cwd });
+    const result = loadExtraContext({ context: ['src'] }, { cwd, config: {} } as InvocationContext, () => {});
+    expect(result).toHaveProperty('text');
+    expect(result && 'text' in result && result.text).not.toContain('FAKE_PRIVATE_CUSTOMER_DATA');
+    expect(result && 'skipped' in result && result.skipped).toContainEqual({ path: 'src/reference.txt', reason: 'symlink target is not tracked' });
+    execFileSync('git', ['add', '-f', '--', 'private/customer-export.csv'], { cwd });
+    const tracked = loadExtraContext({ context: ['src'] }, { cwd, config: {} } as InvocationContext, () => {});
+    expect(tracked && 'text' in tracked && tracked.text).toContain('FAKE_PRIVATE_CUSTOMER_DATA');
+  });
+
+  it('gatherReviewFileContext leaks .npmrc, prod.env.backup and key files to reviewers from a diff, or starves them of source named like a secret', () => {
+    const cwd = repo();
+    const leaked = ['.npmrc', 'prod.env.backup', 'deploy.pem', 'id_ed25519', 'secrets.yaml'];
+    const kept = ['.env.example', 'key.ts', 'secrets.ts', 'credentials.ts', 'vite.env.d.ts', 'id_rsa.pub'];
+    for (const file of [...leaked, ...kept]) writeFileSync(join(cwd, file), `CONTENT_OF_${file}\n`);
+    const diff = [...leaked, ...kept].map(file => `diff --git a/${file} b/${file}\n`).join('');
+    const context = gatherReviewFileContext(diff, cwd);
+    for (const file of leaked) expect(context).not.toContain(`CONTENT_OF_${file}`);
+    for (const file of kept) expect(context).toContain(`CONTENT_OF_${file}`);
+  });
+
   it('blocks relative and backslash secret paths', () => {
     for (const path of ['.aws/credentials', './.ssh/id_rsa', 'home\\me\\.docker\\config.json', 'a/.env']) expect(isSecretPath(path)).toBe(true);
     expect(isSecretPath('src/credentials.ts')).toBe(false);
@@ -181,6 +217,16 @@ describe('mod-review phase B review fixes', () => {
     const code = 'const GITHUB_TOKEN = process.env.GITHUB_TOKEN_VALUE;';
     expect(redactSecretsPreservingLines(code)).toBe(code);
     expect(redactSecretsPreservingLines('GITHUB_TOKEN=abcd1234efgh5678')).toBe('[REDACTED-SECRET]');
+  });
+
+  it('redacts ordinary code and prose in review prompts, or lets a real secret assignment through', () => {
+    const value = 'abcdef' + '1234567890';
+    const secrets = [`API_KEY=${value}`, `TOKEN: "${value}"`, `X_TOKEN=${value}`, `export PASSWORD=${value}`];
+    const ordinary = ['const TOKEN = getAccessToken();', 'TOKEN authenticationIsRequired', 'const SESSION_TOKEN = readSessionTokenFromVault(request);'];
+    for (const redact of [redactSecrets, redactSecretsPreservingLines]) {
+      for (const line of secrets) expect(redact(line)).not.toContain(value);
+      for (const line of ordinary) expect(redact(line)).toBe(line);
+    }
   });
 
   it('refuses a symlink that resolves to a secret file', () => {

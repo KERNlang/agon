@@ -4,6 +4,15 @@ import { lstatSync, openSync, readSync, closeSync, constants } from 'node:fs';
 
 export const DEFAULT_REVIEW_MAX_DIFF_CHARS = 100_000;
 
+/** The one list of multi-tree review flags: the review schema, REPL /review and `agon call review` all derive from it. */
+export const REVIEW_TREE_FLAGS = [
+  { key: 'worktree', option: 'worktree', kind: 'list', help: 'a git work tree to review; repeat for more' },
+  { key: 'all-worktrees', option: 'allWorktrees', kind: 'switch', help: 'every worktree of this repo, locked ones included' },
+  { key: 'max-trees', option: 'maxTrees', kind: 'value', help: 'most trees to review (default 8)' },
+  { key: 'context', option: 'context', kind: 'list', help: 'file or directory to send reviewers as read-only reference; repeat for more' },
+  { key: 'context-max-chars', option: 'contextMaxChars', kind: 'value', help: 'largest --context total in chars (default 40000)' },
+] as const;
+
 export interface ReviewTarget { readonly diff: string; readonly label: string; readonly maxDiffChars: number }
 
 export function reviewMaxDiffChars(config: unknown): number {
@@ -61,7 +70,7 @@ function assertSafeRef(value: string): void {
 function resolveCommit(ref: string, cwd: string): string {
   assertSafeRef(ref);
   return execFileSync('git', ['rev-parse', '--verify', '--end-of-options', `${ref}^{commit}`],
-    { cwd, encoding: 'utf8' }).trim();
+    { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 }
 
 /**
@@ -82,7 +91,7 @@ function refResolvesToCommit(ref: string, cwd: string): boolean {
 export function resolveAutoReviewBase(cwd: string, branch: string): string|null {
   const branchName = (ref: string) => ref.replace(/^refs\/(?:heads|remotes)\//, '').replace(/^origin\//, '');
   try {
-    const sym = execFileSync('git', ['symbolic-ref', 'refs/remotes/origin/HEAD'], { cwd: cwd, encoding: 'utf-8' }).trim();
+    const sym = execFileSync('git', ['symbolic-ref', 'refs/remotes/origin/HEAD'], { cwd: cwd, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
     if (sym) {
       // origin/main
       const cand = sym.replace(/^refs\/remotes\//, '');

@@ -35,6 +35,10 @@
       {
         "id": "agon.worktree",
         "range": ">=0.0.0-0"
+      },
+      {
+        "id": "agon.panel",
+        "range": ">=0.0.0-0"
       }
     ],
     "optional": [],
@@ -119,6 +123,7 @@
       "dist/index.d.ts",
       "dist/implementation.d.ts",
       "dist/semantic-policy.d.ts",
+      "dist/semantic-collection.d.ts",
       "ownership.json",
       "schemas/config.schema.json"
     ],

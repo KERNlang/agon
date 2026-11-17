@@ -254,9 +254,9 @@ describe('frozen first-party package graph', () => {
     },
   );
 
-  it('contains the complete 48-package/157-edge target map without dangling dependencies', () => {
+  it('contains the complete 48-package/158-edge target map without dangling dependencies', () => {
     expect(FIRST_PARTY_PACKAGE_GRAPH.packages).toHaveLength(48);
-    expect(FIRST_PARTY_PACKAGE_GRAPH.dependencyEdges).toHaveLength(157);
+    expect(FIRST_PARTY_PACKAGE_GRAPH.dependencyEdges).toHaveLength(158);
     expect(FIRST_PARTY_PACKAGE_GRAPH.packages.find(({ id }) => id === '@kernlang/agon-support-persistence')?.dependencies)
       .toEqual(['@kernlang/agon-kernel', '@kernlang/agon-support-engine-runtime', '@kernlang/agon-support-browser-bridge']);
     expect(FIRST_PARTY_PACKAGE_GRAPH.dependencyEdges.filter(({ from, to }) =>
@@ -268,6 +268,9 @@ describe('frozen first-party package graph', () => {
     expect(FIRST_PARTY_PACKAGE_GRAPH.dependencyEdges.filter(({ from, to }) =>
       from === '@kernlang/agon-mod-plan' && to === '@kernlang/agon-support-worktree',
     )).toEqual([{ from: '@kernlang/agon-mod-plan', to: '@kernlang/agon-support-worktree', kind: 'hard' }]);
+    expect(FIRST_PARTY_PACKAGE_GRAPH.dependencyEdges.filter(({ from, to }) =>
+      from === '@kernlang/agon-mod-mutate' && to === '@kernlang/agon-support-panel',
+    )).toEqual([{ from: '@kernlang/agon-mod-mutate', to: '@kernlang/agon-support-panel', kind: 'hard' }]);
     const ids = new Set(FIRST_PARTY_PACKAGE_GRAPH.packages.map(({ id }) => id));
     expect(ids.size).toBe(48);
     for (const entry of FIRST_PARTY_PACKAGE_GRAPH.packages) {

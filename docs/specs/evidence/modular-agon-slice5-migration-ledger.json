@@ -311,7 +311,8 @@
         "@kernlang/agon-mod-api",
         "@kernlang/agon-support-engine-runtime",
         "@kernlang/agon-support-verification",
-        "@kernlang/agon-support-worktree"
+        "@kernlang/agon-support-worktree",
+        "@kernlang/agon-support-panel"
       ],
       "assignments": 5,
       "assignmentHash": "sha256:8d2c6f87be2fb1754e698b5270cd74baac1e79fde97814f99589678006a910c2",

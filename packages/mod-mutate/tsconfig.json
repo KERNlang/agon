@@ -17,6 +17,9 @@
       ],
       "@kernlang/agon-support-worktree": [
         "../support-worktree/src/index.ts"
+      ],
+      "@kernlang/agon-support-panel": [
+        "../support-panel/src/index.ts"
       ]
     },
     "sourceMap": false,
@@ -35,6 +38,9 @@
     },
     {
       "path": "../support-worktree"
+    },
+    {
+      "path": "../support-panel"
     }
   ],
   "include": [

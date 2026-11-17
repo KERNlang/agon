@@ -350,7 +350,8 @@
         "@kernlang/agon-mod-api",
         "@kernlang/agon-support-engine-runtime",
         "@kernlang/agon-support-verification",
-        "@kernlang/agon-support-worktree"
+        "@kernlang/agon-support-worktree",
+        "@kernlang/agon-support-panel"
       ]
     },
     {
@@ -1068,6 +1069,11 @@
     {
       "from": "@kernlang/agon-mod-mutate",
       "to": "@kernlang/agon-support-worktree",
+      "kind": "hard"
+    },
+    {
+      "from": "@kernlang/agon-mod-mutate",
+      "to": "@kernlang/agon-support-panel",
       "kind": "hard"
     },
     {

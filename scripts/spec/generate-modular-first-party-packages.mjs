@@ -189,6 +189,7 @@ function expectedFiles(packageRecord) {
     : short === 'council' ? ['dist/runtime.d.ts', 'dist/host.d.ts', 'dist/presentation.d.ts', 'dist/command.d.ts', 'dist/session-workflow.d.ts']
     : short === 'review' ? ['dist/consensus.d.ts', 'dist/findings.d.ts']
     : short === 'provenance' ? ['dist/models.d.ts', 'dist/reports.d.ts']
+    : short === 'mutate' ? ['dist/semantic-policy.d.ts']
     : short === 'synthesis' ? ['dist/judge-parser.d.ts', 'dist/runtime.d.ts', 'dist/host.d.ts', 'dist/session-workflow.d.ts', 'dist/routing-policy.d.ts', 'dist/presentation.d.ts']
     : short === 'agent' ? ['dist/team-refinement.d.ts', 'dist/events.d.ts', 'dist/team-results.d.ts', 'dist/team-scoring.d.ts', 'dist/team-runtime.d.ts']
     : short === 'conquer' ? ['dist/completion-policy.d.ts', 'dist/workflow.d.ts', 'dist/falsifier.d.ts', 'dist/host.d.ts', 'dist/isolation.d.ts', 'dist/publication.d.ts']
@@ -342,6 +343,8 @@ export type { ResearchRequest } from './discovery-policy.js';
 export { extractCitations, judgeProbe, formatCitationReport } from './citation-policy.js';
 export type { CitationStatus, CitationProbe, CitationVerdict, CitationReport } from './citation-policy.js';
 ` : short === 'mutate' ? `export { runMutate, generateMutants } from './implementation.js';
+export { buildSemanticMutantPrompt, extractJsonArray, validateSemanticMutants, stripControlChars, normalizeLens, MUTATE_LENS_PRESETS, MUTATE_LENS_MAX_CHARS, SEMANTIC_MAX_FILES, SEMANTIC_MAX_LINES_PER_FILE } from './semantic-policy.js';
+export type { SemanticTargetLine, SemanticTarget, DroppedSemanticEntry, SemanticMutantsResult } from './semantic-policy.js';
 ` : short === 'naturalize' ? `export { runNaturalize } from './implementation.js';
 export { tokenizeWords, wordDiffStats } from './lexical-policy.js';
 ` : short === 'sanitize' ? `export { runSanitize, scanText, cleanText } from './implementation.js';

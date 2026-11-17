@@ -3556,7 +3556,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.mutate",
       "version": "1.0.0",
-      "contentHash": "sha256:1fa073ce35d44616c22ff309844028d95a2486c1c5a9ccc0c3dfb7751e425475"
+      "contentHash": "sha256:ecadd4dd5a2b883b420c7be2985778e659ed2e496ec8c32a5f3e91665fb29f9a"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "Measure test strength with isolated mechanical or semantic mutants",
@@ -9827,7 +9827,7 @@ export const FIRST_PARTY_SURFACE_CATALOG = Object.freeze([
     "owner": {
       "id": "agon.mutate",
       "version": "1.0.0",
-      "contentHash": "sha256:1fa073ce35d44616c22ff309844028d95a2486c1c5a9ccc0c3dfb7751e425475"
+      "contentHash": "sha256:ecadd4dd5a2b883b420c7be2985778e659ed2e496ec8c32a5f3e91665fb29f9a"
     },
     "ownerClass": "user-toggleable-mod-package",
     "description": "[path] [--diff <base>] [--test \"<cmd>\"] [--semantic] [--lens security|privacy|perf|ratelimit|concurrency|<text>] — mutation testing: which of your tests are fake?",

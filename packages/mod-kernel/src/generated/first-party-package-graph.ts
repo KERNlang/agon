@@ -351,7 +351,8 @@ export const FIRST_PARTY_PACKAGE_GRAPH = {
         "@kernlang/agon-mod-api",
         "@kernlang/agon-support-engine-runtime",
         "@kernlang/agon-support-verification",
-        "@kernlang/agon-support-worktree"
+        "@kernlang/agon-support-worktree",
+        "@kernlang/agon-support-panel"
       ]
     },
     {
@@ -1069,6 +1070,11 @@ export const FIRST_PARTY_PACKAGE_GRAPH = {
     {
       "from": "@kernlang/agon-mod-mutate",
       "to": "@kernlang/agon-support-worktree",
+      "kind": "hard"
+    },
+    {
+      "from": "@kernlang/agon-mod-mutate",
+      "to": "@kernlang/agon-support-panel",
       "kind": "hard"
     },
     {

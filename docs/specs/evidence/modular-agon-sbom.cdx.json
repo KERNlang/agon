@@ -1,7 +1,7 @@
 {
   "bomFormat": "CycloneDX",
   "specVersion": "1.6",
-  "serialNumber": "urn:uuid:ec839f0e-e0b8-5342-bbf0-da85759feb21",
+  "serialNumber": "urn:uuid:a5358dfc-c663-5c41-bae9-19e0ba70baca",
   "version": 1,
   "metadata": {
     "component": {
@@ -38,7 +38,7 @@
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "cce89ce9c3976b1967d1bb22bf459fb4b8f36437c38c520ea8d65edd3c170cd1"
+          "content": "fda8ba8db67165f6a2132f6dce6794875f921370afe784b68dd51fb91eccff57"
         }
       ],
       "licenses": [
@@ -51,7 +51,7 @@
       "properties": [
         {
           "name": "npm:integrity",
-          "value": "sha512-5T0lRzEXdDGdSmtAIPYekEMksWaanVG7/Eu5yD1JGPUsZWMyowyWvnAN1uaDJsOxjBuJ5RE3qjNDXfomDqqecw=="
+          "value": "sha512-APpDoli2EKNbt9PoDhSbUZLM/0vsrOuM3PAvnLeeLtM52PmYbB0fxK0kNW6dGUyybWLTJ69kXUC+bzPS5/ukCQ=="
         },
         {
           "name": "agon:class",
@@ -68,7 +68,7 @@
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "0f71e628752667ac1c6c4b7f6146fc013f4c9a689ac16bf162c3410b555e836d"
+          "content": "21148f0a47c3f9c898569a5d15c9f913bdcf810ca1b789e835f8706c747317da"
         }
       ],
       "licenses": [
@@ -81,7 +81,7 @@
       "properties": [
         {
           "name": "npm:integrity",
-          "value": "sha512-2s/xmVjsCiWe1tIkUrxQRZTwqCLs9lkRptHWz7MP5kmjmjVm0X72eGuildnFQ6DXklT79eZio4LSq+jF3lZBkA=="
+          "value": "sha512-T8it8KJMMifoFI+/CESGLiQpJ+V0M4QPLZ1jMRiktEJJwy8k9ngTVsaI3uP8uU9Cd/CKCLIhCExoMpp30Xzuyw=="
         },
         {
           "name": "agon:class",
@@ -1058,7 +1058,7 @@
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "9d7fa799a8c879a7c63b9f6024fd9c00b3b7b46ff161d1423e7f62c83925d0ba"
+          "content": "aed80f48e411e775b783af2ef266c1dc73d711b9a90463434436239e091c604f"
         }
       ],
       "licenses": [
@@ -1071,7 +1071,7 @@
       "properties": [
         {
           "name": "npm:integrity",
-          "value": "sha512-J/lfALJI85Q0LEmO6UDv/sAQHS9E1pKu4hlQb4Jrw9jUt/qEvfTIXBVWvDEDJLpf1NgIMkuJV5pzzxcOf+oJ8A=="
+          "value": "sha512-JqygFB4VwzITxpP2T/mwBOnA9YcuGpZDV7kwwNmJwvCKShdmGYq/dStcyQODE6MjzMkj3GdyF00ERNuYzt2faw=="
         },
         {
           "name": "agon:class",
@@ -4786,6 +4786,7 @@
         "@kernlang/agon-kernel@1.0.0",
         "@kernlang/agon-mod-api@1.0.0",
         "@kernlang/agon-support-engine-runtime@1.0.0",
+        "@kernlang/agon-support-panel@1.0.0",
         "@kernlang/agon-support-verification@1.0.0",
         "@kernlang/agon-support-worktree@1.0.0"
       ]

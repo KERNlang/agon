@@ -26,7 +26,7 @@ it.each([[3, true], [1, true], [3, false], [0, false]] as const)(
       isSourceBearingPath: () => false,
       hashReviewSubject: () => 'sha256:fixture',
       validateSliceReview: () => ({ passed: false }),
-      validateDependencyGraph: () => ({ duplicateEdges: [], uniqueEdges: 157 }),
+      validateDependencyGraph: () => ({ duplicateEdges: [], uniqueEdges: 158 }),
       readFileSync: (path: string) => {
         if (path.endsWith('package-map.json')) return JSON.stringify({ packages: Array.from({ length: 48 }, (_, i) => ({ class: i < 36 ? 'user-toggleable-mod-package' : 'support' })) });
         if (path.endsWith('ownership.json')) return JSON.stringify({ assignments: Array(864).fill(null) });
@@ -106,7 +106,7 @@ it.each([
     isSourceBearingPath: () => false,
     hashReviewSubject: () => 'sha256:fixture',
     validateSliceReview: () => ({ passed: true }),
-    validateDependencyGraph: () => ({ duplicateEdges: [], uniqueEdges: 157 }),
+    validateDependencyGraph: () => ({ duplicateEdges: [], uniqueEdges: 158 }),
     loadEvidencePasses,
     readFileSync: (path: string) => {
       if (path.endsWith('package-map.json')) return JSON.stringify({ packages: Array.from({ length: 48 }, (_, i) => ({ class: i < 36 ? 'user-toggleable-mod-package' : 'support' })) });

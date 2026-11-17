@@ -54,7 +54,7 @@ const mods = {
   council: ['@kernlang/agon-support-panel', '@kernlang/agon-support-judge'],
   research: ['@kernlang/agon-support-engine-runtime'],
   rag: ['@kernlang/agon-support-persistence', '@kernlang/agon-support-dedup'],
-  mutate: ['@kernlang/agon-support-verification', '@kernlang/agon-support-worktree'],
+  mutate: ['@kernlang/agon-support-verification', '@kernlang/agon-support-worktree', '@kernlang/agon-support-panel'],
   naturalize: ['@kernlang/agon-support-engine-runtime', '@kernlang/agon-mod-sanitize'],
   sanitize: ['@kernlang/agon-support-engine-runtime'],
   rooms: ['@kernlang/agon-support-persistence'],

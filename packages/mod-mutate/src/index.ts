@@ -12,3 +12,5 @@ export { runMutate, generateMutants } from './implementation.js';
 export { buildSemanticMutantPrompt, extractJsonArray, validateSemanticMutants, stripControlChars, normalizeLens, MUTATE_LENS_PRESETS, MUTATE_LENS_MAX_CHARS, SEMANTIC_MAX_FILES, SEMANTIC_MAX_LINES_PER_FILE } from './semantic-policy.js';
 export type { SemanticTargetLine, SemanticTarget, DroppedSemanticEntry, SemanticMutantsResult } from './semantic-policy.js';
 export { collectSemanticMutants } from './semantic-collection.js';
+export { runLegacyMutate, dedupeMutants, selectMutants } from './legacy-workflow.js';
+export type { MutateOptions, MutateResult, LegacyMutateHost } from './legacy-workflow.js';

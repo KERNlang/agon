@@ -124,6 +124,7 @@
       "dist/implementation.d.ts",
       "dist/semantic-policy.d.ts",
       "dist/semantic-collection.d.ts",
+      "dist/legacy-workflow.d.ts",
       "ownership.json",
       "schemas/config.schema.json"
     ],
